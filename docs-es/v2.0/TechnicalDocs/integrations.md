@@ -127,6 +127,8 @@ If a network.json file exists, it will not be overwritten, unless you set ```alw
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
+Cuando varios sitios cliente de UISP comparten el mismo nombre, LibreQoS ahora intenta diferenciar los nombres visibles generados para circuitos/sitios con un sufijo más humano, como el primer segmento de la dirección, recurriendo al nombre del servicio y luego a un ID corto solo cuando hace falta. La identidad estable del circuito sigue viniendo del ID de sitio/servicio de UISP, no del nombre visible.
+
 To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
 Edit the file to set the value of `always_overwrite_network_json` to `true`.
 Then, run `sudo systemctl restart lqosd`.

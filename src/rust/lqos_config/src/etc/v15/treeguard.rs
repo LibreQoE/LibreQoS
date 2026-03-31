@@ -68,7 +68,7 @@ fn default_max_switches_per_hour() -> u32 {
 }
 
 fn default_min_score() -> f32 {
-    80.0
+    70.0
 }
 
 /// CPU modes supported by TreeGuard.
@@ -76,9 +76,9 @@ fn default_min_score() -> f32 {
 #[serde(rename_all = "snake_case")]
 pub enum TreeguardCpuMode {
     /// Consider CPU thresholds when making decisions.
+    #[default]
     CpuAware,
     /// Use only traffic and RTT signals.
-    #[default]
     TrafficRttOnly,
 }
 

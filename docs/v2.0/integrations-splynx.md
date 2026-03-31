@@ -130,11 +130,15 @@ If sync looks successful but data is incomplete, recheck API permissions and str
 
 You can also modify the the file `integrationSplynxBandwidths.csv` to override the default bandwidths for each Node (Site, AP).
 
+Tree-page `Operator Override` edits are separate from this legacy Splynx file. Current builds write those operator-owned node rate changes to `lqos_overrides.json` and do not rewrite `integrationSplynxBandwidths.csv`.
+
 A template is available in the `/opt/libreqos/src` folder. To utilize the template, copy the file `integrationSplynxBandwidths.template.csv` (removing the `.template` part of the filename) and set the appropriate information inside each file. For example, if you want to change the set bandwidth for a site, you would do:
 ```
 sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
 ```
 And edit the CSV using LibreOffice or your preferred CSV editor.
+
+To avoid conflicting sources of truth, prefer one durable override path per node: either the legacy Splynx CSV workflow or the operator override layer.
 
 
 ## Related Pages

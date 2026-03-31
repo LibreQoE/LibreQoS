@@ -3,7 +3,7 @@
 
 use crate::TcHandle;
 use allocative::Allocative;
-use lqos_utils::units::DownUpOrder;
+use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -30,8 +30,8 @@ pub struct IpStats {
     /// Associated TC traffic control handle.
     pub tc_handle: TcHandle,
 
-    /// TCP Retransmits for this host at the current time.
-    pub tcp_retransmits: (f64, f64),
+    /// TCP retransmit samples for this host at the current time.
+    pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
 }
 
 /// Represents an IP Mapping in the XDP IP to TC/CPU mapping system.
@@ -224,10 +224,8 @@ pub struct Circuit {
     /// QoO score (0..100), per direction.
     #[serde(default)]
     pub qoo: DownUpOrder<Option<f32>>,
-    /// TCP Retransmits for this host at the current time.
-    pub tcp_retransmits: DownUpOrder<u64>,
-    /// The number of TCP packets per second.
-    pub tcp_packets: DownUpOrder<u64>,
+    /// TCP retransmit samples for this host at the current time.
+    pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
     /// The mapped circuit ID
     pub circuit_id: Option<String>,
     /// The mapped device ID

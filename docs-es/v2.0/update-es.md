@@ -39,10 +39,13 @@ sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 
+El instalador del hotfix configura el repositorio APT de LibreQoS en `https://repo.libreqos.com`, instala el conjunto parchado de paquetes `systemd` de Noble y fija esos paquetes para futuras actualizaciones.
+
 Después del reinicio, reanuda la actualización y reinicia los servicios:
 
 ```bash
 cd /tmp
+wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 sudo systemctl restart lqosd lqos_scheduler
 ```

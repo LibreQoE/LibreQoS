@@ -10,9 +10,10 @@ use std::sync::Arc;
 
 use crate::node_manager::auth::{LoginResult, login_from_token};
 use crate::node_manager::local_api::{
-    circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, flow_explorer,
-    flow_map, lts, network_tree, packet_analysis, reload_libreqos, scheduler, search,
-    shaped_device_api, unknown_ips, urgent, warnings,
+    circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
+    ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
+    node_rate_overrides, packet_analysis, reload_libreqos, scheduler, search, shaped_device_api,
+    shaped_devices_page, unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -20,6 +21,12 @@ use crate::node_manager::ws::messages::{
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
+use crate::node_manager::ws::single_user_channels::circuit::{
+    circuit_devices_result, circuit_devices_snapshot,
+};
+use crate::node_manager::ws::single_user_channels::flows_by_circuit::{
+    circuit_flow_sankey_result, circuit_top_asns_result, circuit_traffic_flows_result,
+};
 use crate::node_manager::ws::ticker::channel_ticker;
 use crate::system_stats::SystemStats;
 use axum::{
@@ -181,7 +188,11 @@ async fn handle_socket(
                         }
                     }
                     Some(Err(err)) => {
-                        warn!("Websocket recv error: {err}");
+                        if is_benign_recv_error(&err, handshake_complete) {
+                            info!("Websocket client disconnected: {err}");
+                        } else {
+                            warn!("Websocket recv error: {err}");
+                        }
                         break;
                     }
                     None => break, // The channel has closed
@@ -192,6 +203,14 @@ async fn handle_socket(
     outbound_handle.abort();
     let _ = outbound_handle.await;
     info!("Websocket disconnected");
+}
+
+fn is_benign_recv_error(err: &axum::Error, handshake_complete: bool) -> bool {
+    if !handshake_complete {
+        return false;
+    }
+    let err_text = err.to_string();
+    err_text.contains("Connection reset by peer") || err_text.contains("Broken pipe")
 }
 
 struct WsRequestState<'a> {
@@ -222,7 +241,11 @@ async fn receive_channel_message(
             return false;
         }
         Message::Close(frame) => {
-            warn!("Websocket close frame received: {:?}", frame);
+            if is_benign_close_frame(frame.as_ref()) {
+                info!("Websocket close frame received: {:?}", frame);
+            } else {
+                warn!("Websocket close frame received: {:?}", frame);
+            }
             return true;
         }
     };
@@ -355,9 +378,49 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::ShapedDevicesPage { query } => {
+            let response = WsResponse::ShapedDevicesPage {
+                data: shaped_devices_page::shaped_devices_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::EthernetCapsPage { query } => {
+            let response = WsResponse::EthernetCapsPage {
+                data: ethernet_caps::ethernet_caps_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::ExecutiveHeatmapPage { query } => {
+            let response = WsResponse::ExecutiveHeatmapPage {
+                data: executive::executive_heatmap_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::ExecutiveLeaderboardPage { query } => {
+            let response = WsResponse::ExecutiveLeaderboardPage {
+                data: executive::executive_leaderboard_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
         WsRequest::NetworkTree => {
             let response = WsResponse::NetworkTree {
                 data: network_tree::network_tree_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::NetworkTreeLite => {
+            let response = WsResponse::NetworkTreeLite {
+                data: network_tree_lite::network_tree_lite_data(),
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -372,11 +435,45 @@ async fn receive_channel_message(
             }
         }
         WsRequest::CircuitById { id } => {
-            let (ok, devices) = match circuit::circuit_by_id_data(&id) {
-                Some(devices) => (true, devices),
-                None => (false, Vec::new()),
+            let (ok, data) = match circuit::circuit_by_id_data(&id) {
+                Some(data) => (true, Some(data)),
+                None => (false, None),
             };
-            let response = WsResponse::CircuitByIdResult { id, devices, ok };
+            let response = WsResponse::CircuitByIdResult { id, data, ok };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitDevices { circuit } => {
+            let devices = circuit_devices_snapshot(&circuit, request_state.private_state.bus_tx()).await;
+            let response = circuit_devices_result(circuit, devices);
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitFlowSankey { circuit } => {
+            let response = WsResponse::CircuitFlowSankeyResult {
+                circuit_id: circuit.clone(),
+                flows: circuit_flow_sankey_result(&circuit),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitTopAsns { query } => {
+            let response = WsResponse::CircuitTopAsnsResult {
+                circuit_id: query.circuit.clone(),
+                data: circuit_top_asns_result(&query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CircuitTrafficFlowsPage { query } => {
+            let response = WsResponse::CircuitTrafficFlowsPageResult {
+                circuit_id: query.circuit.clone(),
+                data: circuit_traffic_flows_result(&query),
+            };
             if send_ws_response(&tx, response).await {
                 return true;
             }
@@ -423,6 +520,14 @@ async fn receive_channel_message(
         WsRequest::CpuAffinitySummary => {
             let response = WsResponse::CpuAffinitySummary {
                 data: cpu_affinity::cpu_affinity_summary_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CpuAffinityRuntimeSnapshot => {
+            let response = WsResponse::CpuAffinityRuntimeSnapshot {
+                data: cpu_affinity::cpu_affinity_runtime_snapshot_data(),
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -931,6 +1036,34 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::LtsStartSignup => {
+            let result = lts::lts_trial_start_signup_data().await;
+            match result {
+                Ok(claim_id) => {
+                    lts::spawn_signup_poll_loop(claim_id.clone());
+                    let response = WsResponse::LtsStartSignupResult { claim_id };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to start the Insight signup session.".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
         WsRequest::LtsSignUp { license_key } => {
             let result = lts::lts_trial_signup_data(license_key).await;
             let (ok, message) = match result {
@@ -1351,6 +1484,17 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::UpdateNetworkJsonOnly { network_json } => {
+            let result = config::update_network_json_only_data(*request_state.login, network_json);
+            let (ok, message) = match result {
+                Ok(()) => (true, "Ok".to_string()),
+                Err(message) => (false, message),
+            };
+            let response = WsResponse::UpdateNetworkJsonOnlyResult { ok, message };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
         WsRequest::UpdateNetworkAndDevices {
             network_json,
             shaped_devices,
@@ -1362,12 +1506,151 @@ async fn receive_channel_message(
             );
             let (ok, message) = match result {
                 Ok(()) => (true, "Ok".to_string()),
-                Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),
-                Err(_) => (false, "Error".to_string()),
+                Err(message) => (false, message),
             };
             let response = WsResponse::UpdateNetworkAndDevicesResult { ok, message };
             if send_ws_response(&tx, response).await {
                 return true;
+            }
+        }
+        WsRequest::GetNodeRateOverride { query } => {
+            match node_rate_overrides::get_node_rate_override_data(*request_state.login, query) {
+                Ok(data) => {
+                    let response = WsResponse::GetNodeRateOverride { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid tree node override request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load tree node override state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetNodeRateOverride { update } => {
+            let result =
+                node_rate_overrides::set_node_rate_override_data(*request_state.login, update);
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetNodeRateOverrideResult {
+                        ok: true,
+                        message: "Override saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::SetNodeRateOverrideResult {
+                        ok: false,
+                        message: "Unauthorized".to_string(),
+                        data: node_rate_overrides::NodeRateOverrideData {
+                            writable: false,
+                            can_edit: false,
+                            disabled_reason: Some(
+                                "Only administrators can edit node rate overrides.".to_string(),
+                            ),
+                            has_override: false,
+                            override_node_id: None,
+                            override_download_bandwidth_mbps: None,
+                            override_upload_bandwidth_mbps: None,
+                            legacy_warnings: Vec::new(),
+                        },
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid tree node override payload".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::SetNodeRateOverrideResult {
+                        ok: false,
+                        message: "Error saving override".to_string(),
+                        data: node_rate_overrides::NodeRateOverrideData {
+                            writable: true,
+                            can_edit: false,
+                            disabled_reason: Some(
+                                "Unable to reload tree node override state.".to_string(),
+                            ),
+                            has_override: false,
+                            override_node_id: None,
+                            override_download_bandwidth_mbps: None,
+                            override_upload_bandwidth_mbps: None,
+                            legacy_warnings: Vec::new(),
+                        },
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearNodeRateOverride { query } => {
+            let result =
+                node_rate_overrides::clear_node_rate_override_data(*request_state.login, query);
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearNodeRateOverrideResult {
+                        ok: true,
+                        message: "Override cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid tree node override payload".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear tree node override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
             }
         }
         WsRequest::ListNics => match config::list_nics_data(*request_state.login) {
@@ -1405,6 +1688,146 @@ async fn receive_channel_message(
         WsRequest::AllShapedDevices => {
             let response = WsResponse::AllShapedDevices {
                 data: config::all_shaped_devices_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::GetShapedDevice { device_id } => {
+            match config::get_shaped_device_data(*request_state.login, device_id) {
+                Ok(device) => {
+                    let response = WsResponse::GetShapedDeviceResult {
+                        ok: device.is_some(),
+                        message: if device.is_some() {
+                            "Ok".to_string()
+                        } else {
+                            "Not found".to_string()
+                        },
+                        device,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::GetShapedDeviceResult {
+                        ok: false,
+                        message: "Unauthorized".to_string(),
+                        device: None,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::GetShapedDeviceResult {
+                        ok: false,
+                        message: "Error".to_string(),
+                        device: None,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::CreateShapedDevice { device } => {
+            match config::create_shaped_device_data(*request_state.login, device) {
+                Ok(device) => {
+                    let response = WsResponse::CreateShapedDeviceResult {
+                        ok: true,
+                        message: "Ok".to_string(),
+                        device: Some(device),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(message) => {
+                    let response = WsResponse::CreateShapedDeviceResult {
+                        ok: false,
+                        message,
+                        device: None,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::UpdateShapedDevice {
+            original_device_id,
+            device,
+        } => match config::update_shaped_device_data(
+            *request_state.login,
+            original_device_id,
+            device,
+        ) {
+            Ok(device) => {
+                let response = WsResponse::UpdateShapedDeviceResult {
+                    ok: true,
+                    message: "Ok".to_string(),
+                    device: Some(device),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(message) => {
+                let response = WsResponse::UpdateShapedDeviceResult {
+                    ok: false,
+                    message,
+                    device: None,
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
+        WsRequest::DeleteShapedDevice { device_id } => {
+            let device_id_clone = device_id.clone();
+            match config::delete_shaped_device_data(*request_state.login, device_id) {
+                Ok(()) => {
+                    let response = WsResponse::DeleteShapedDeviceResult {
+                        ok: true,
+                        message: "Ok".to_string(),
+                        device_id: device_id_clone,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(message) => {
+                    let response = WsResponse::DeleteShapedDeviceResult {
+                        ok: false,
+                        message,
+                        device_id: device_id_clone,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::CircuitDirectoryPage { query } => {
+            let response = WsResponse::CircuitDirectoryPage {
+                data: directories::circuit_directory_page(query),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::NodeDirectory => {
+            let response = WsResponse::NodeDirectory {
+                data: directories::node_directory_data(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::TreeGuardMetadataSummary => {
+            let response = WsResponse::TreeGuardMetadataSummary {
+                data: directories::treeguard_metadata_summary(),
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -1507,6 +1930,10 @@ async fn receive_channel_message(
         WsRequest::HelloReply(_) => {}
     }
     false
+}
+
+fn is_benign_close_frame(frame: Option<&axum::extract::ws::CloseFrame<'_>>) -> bool {
+    frame.is_some_and(|frame| matches!(frame.code, 1000 | 1001))
 }
 
 async fn send_ws_response(tx: &Sender<Arc<Vec<u8>>>, response: WsResponse) -> bool {

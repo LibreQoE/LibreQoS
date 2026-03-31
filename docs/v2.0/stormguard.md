@@ -12,6 +12,8 @@ StormGuard is LibreQoS' adaptive queue-adjustment subsystem for congestion and q
 - Applies bounded adjustments to configured node limits to protect quality under stress.
 - Exposes status/debug data in the WebUI (Node Manager).
 
+StormGuard adaptive site-speed changes are stored in the StormGuard override layer. They are not written back into `network.json`.
+
 ## Configuration
 
 StormGuard is configured in `/etc/lqos.conf` under `[stormguard]`.
@@ -41,7 +43,12 @@ If you are testing, start with `dry_run = true` so you can observe decisions bef
 
 ## UI and Debugging
 
-- WebUI provides StormGuard status and debug views.
+- WebUI provides a dedicated StormGuard dashboard tab plus status and debug views.
+- The StormGuard dashboard tab is intended to answer "what is StormGuard doing right now?" with:
+  - summary cards for watched, cooling-down, and recently changed sites
+  - a site list that works for single-site and multi-site watched sets
+  - a selected-site detail panel explaining current limits, last actions, and why StormGuard is holding or changing rates
+  - a recent activity feed for quick operator triage
 - The StormGuard debug page shows:
   - current effective limits
   - evaluation metrics
@@ -71,6 +78,7 @@ Also verify:
 - target node names still match your current `network.json` hierarchy
 - integration updates have not renamed key nodes/APs
 - your minimum percentage floors are reasonable for expected traffic profiles
+- `network.json` still reflects your planned/source-of-truth site rates if you are investigating an unexpected StormGuard reduction
 - `log_file` path (if configured) is writable by the service user
 
 ## Related Pages

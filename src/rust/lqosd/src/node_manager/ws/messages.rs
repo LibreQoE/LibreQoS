@@ -1,17 +1,41 @@
 use crate::lts2_sys::control_channel::{SupportTicket, SupportTicketSummary};
 use crate::node_manager::WarningLevel;
+use crate::node_manager::local_api::circuit::CircuitByIdData;
+use crate::node_manager::local_api::circuit_activity::{
+    CircuitFlowSankeyRow, CircuitSummaryData, CircuitTopAsnsData, CircuitTopAsnsQuery,
+    CircuitTrafficFlowsPage, CircuitTrafficFlowsQuery,
+};
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
+use crate::node_manager::local_api::directories::{
+    CircuitDirectoryPage, CircuitDirectoryQuery, NodeDirectoryEntry, TreeGuardMetadataSummary,
+};
+use crate::node_manager::local_api::ethernet_caps::{EthernetCapsPage, EthernetCapsPageQuery};
+use crate::node_manager::local_api::executive::{
+    ExecutiveDashboardSummary, ExecutiveHeatmapPage, ExecutiveHeatmapPageQuery,
+    ExecutiveLeaderboardPage, ExecutiveLeaderboardPageQuery,
+};
+use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
+use crate::node_manager::local_api::node_rate_overrides::{
+    NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
+};
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
+use crate::node_manager::local_api::shaped_devices_page::{
+    ShapedDevicesPage, ShapedDevicesPageQuery,
+};
+use crate::node_manager::local_api::tree_attached_circuits::{
+    TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery,
+};
 use crate::node_manager::local_api::unknown_ips::{ClearUnknownIpsResponse, UnknownIp};
 use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
 use crate::node_manager::local_api::{
     circuit_count::CircuitCount,
+    circuit_live::{CircuitLiveMetrics, CircuitMetricsQuery},
     cpu_affinity::{
-        CircuitBrief, CpuAffinityCircuitsPage, CpuAffinitySiteTreeNode, CpuAffinitySummaryEntry,
-        PreviewWeightItem,
+        CircuitBrief, CpuAffinityCircuitsPage, CpuAffinityRuntimeSnapshot, CpuAffinitySiteTreeNode,
+        CpuAffinitySummaryEntry, PreviewWeightItem,
     },
     flow_explorer::FlowTimeline,
     lts::{
@@ -26,15 +50,9 @@ use crate::throughput_tracker::TcpRetransmitTotal;
 use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry,
 };
-use crate::throughput_tracker::flow_data::{FlowAnalysis, FlowbeeLocalData};
-use lqos_bus::{
-    AsnHeatmapData, Circuit, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeSummaryData,
-    QueueStoreTransit, SiteHeatmapData, StormguardDebugEntry,
-};
+use lqos_bus::{Circuit, FlowbeeSummaryData, QueueStoreTransit, StormguardDebugEntry};
 use lqos_config::QooProfileInfo;
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
-use lqos_utils::qoq_heatmap::QoqHeatmapBlocks;
-use lqos_utils::temporal_heatmap::HeatmapBlocks;
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -58,10 +76,15 @@ pub struct WsHelloReply {
 pub enum PrivateRequest {
     CircuitWatcher { circuit: String },
     PingMonitor { ips: Vec<(String, String)> },
-    FlowsByCircuit { circuit: String },
+    StopCircuitWatcher,
+    StopPingMonitorWatch,
     CakeWatcher { circuit: String },
     Chatbot { browser_ts_ms: Option<f64> },
     ChatbotUserInput { text: String },
+    WatchTreeAttachedCircuits { query: TreeAttachedCircuitsQuery },
+    StopTreeAttachedCircuitsWatch,
+    WatchCircuitMetrics { query: CircuitMetricsQuery },
+    StopCircuitMetricsWatch,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -90,7 +113,17 @@ pub enum WsRequest {
     SchedulerDetails,
     DeviceCount,
     DevicesAll,
+    ShapedDevicesPage {
+        query: ShapedDevicesPageQuery,
+    },
+    ExecutiveHeatmapPage {
+        query: ExecutiveHeatmapPageQuery,
+    },
+    ExecutiveLeaderboardPage {
+        query: ExecutiveLeaderboardPageQuery,
+    },
     NetworkTree,
+    NetworkTreeLite,
     FlowMap,
     GlobalWarnings,
     Search {
@@ -99,6 +132,7 @@ pub enum WsRequest {
     ReloadLibreQoS,
     LtsTrialConfig,
     CircuitCount,
+    LtsStartSignup,
     LtsSignUp {
         license_key: String,
     },
@@ -140,13 +174,46 @@ pub enum WsRequest {
     UpdateConfig {
         config: Config,
     },
+    UpdateNetworkJsonOnly {
+        network_json: Value,
+    },
     UpdateNetworkAndDevices {
         network_json: Value,
         shaped_devices: Vec<ShapedDevice>,
     },
+    GetNodeRateOverride {
+        query: NodeRateOverrideQuery,
+    },
+    SetNodeRateOverride {
+        update: NodeRateOverrideUpdate,
+    },
+    ClearNodeRateOverride {
+        query: NodeRateOverrideQuery,
+    },
     ListNics,
     NetworkJson,
     AllShapedDevices,
+    GetShapedDevice {
+        device_id: String,
+    },
+    CreateShapedDevice {
+        device: ShapedDevice,
+    },
+    UpdateShapedDevice {
+        original_device_id: String,
+        device: ShapedDevice,
+    },
+    DeleteShapedDevice {
+        device_id: String,
+    },
+    CircuitDirectoryPage {
+        query: CircuitDirectoryQuery,
+    },
+    EthernetCapsPage {
+        query: EthernetCapsPageQuery,
+    },
+    NodeDirectory,
+    TreeGuardMetadataSummary,
     GetUsers,
     AddUser {
         username: String,
@@ -164,6 +231,18 @@ pub enum WsRequest {
     CircuitById {
         id: String,
     },
+    CircuitDevices {
+        circuit: String,
+    },
+    CircuitFlowSankey {
+        circuit: String,
+    },
+    CircuitTopAsns {
+        query: CircuitTopAsnsQuery,
+    },
+    CircuitTrafficFlowsPage {
+        query: CircuitTrafficFlowsQuery,
+    },
     SetCircuitRttExcluded {
         circuit_id: String,
         excluded: bool,
@@ -172,6 +251,7 @@ pub enum WsRequest {
         ip: String,
     },
     CpuAffinitySummary,
+    CpuAffinityRuntimeSnapshot,
     CpuAffinityCircuits {
         cpu: u32,
         direction: Option<String>,
@@ -260,32 +340,147 @@ pub struct RamData {
     pub used: u64,
 }
 
-#[derive(Debug, Serialize)]
-pub struct BakeryStatusState {
-    #[serde(rename = "activeCircuits")]
-    pub active_circuits: usize,
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryCapacityInterfaceData {
+    pub name: String,
+    pub planned_qdiscs: usize,
+    pub infra_qdiscs: usize,
+    pub cake_qdiscs: usize,
+    pub fq_codel_qdiscs: usize,
+    pub estimated_memory_bytes: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryLiveCapacityInterfaceData {
+    pub name: String,
+    pub live_qdiscs: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryPreflightData {
+    pub ok: bool,
+    pub message: String,
+    pub safe_budget: usize,
+    pub hard_limit: usize,
+    pub estimated_total_memory_bytes: u64,
+    pub memory_available_bytes: Option<u64>,
+    pub memory_guard_min_available_bytes: u64,
+    pub memory_ok: bool,
+    pub interfaces: Vec<BakeryCapacityInterfaceData>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryStatusState {
+    pub active_circuits: usize,
+    pub mode: String,
+    pub current_action_started_unix: Option<u64>,
+    pub current_apply_phase: Option<String>,
+    pub current_apply_total_tc_commands: usize,
+    pub current_apply_completed_tc_commands: usize,
+    pub current_apply_total_chunks: usize,
+    pub current_apply_completed_chunks: usize,
+    pub last_success_unix: Option<u64>,
+    pub last_full_reload_success_unix: Option<u64>,
+    pub last_failure_unix: Option<u64>,
+    pub last_failure_summary: Option<String>,
+    pub last_apply_type: String,
+    pub last_total_tc_commands: usize,
+    pub last_class_commands: usize,
+    pub last_qdisc_commands: usize,
+    pub last_build_duration_ms: u64,
+    pub last_apply_duration_ms: u64,
+    pub avg_tc_io_interval_ms: Option<u64>,
+    pub last_tc_io_unix: Option<u64>,
+    pub tc_io_interval_samples: usize,
+    pub runtime_operations: BakeryRuntimeOperationsData,
+    pub queue_distribution: Vec<BakeryQueueDistributionData>,
+    pub live_capacity_interfaces: Vec<BakeryLiveCapacityInterfaceData>,
+    pub live_capacity_safe_budget: usize,
+    pub live_capacity_updated_at_unix: Option<u64>,
+    pub preflight: Option<BakeryPreflightData>,
+    pub reload_required: bool,
+    pub reload_required_reason: Option<String>,
+    pub dirty_subtree_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BakeryStatusData {
-    #[serde(rename = "currentState")]
     pub current_state: BakeryStatusState,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryQueueDistributionData {
+    pub queue: u32,
+    pub top_level_site_count: usize,
+    pub site_count: usize,
+    pub circuit_count: usize,
+    pub download_mbps: u64,
+    pub upload_mbps: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryRuntimeOperationsData {
+    pub submitted_count: usize,
+    pub deferred_count: usize,
+    pub applying_count: usize,
+    pub awaiting_cleanup_count: usize,
+    pub failed_count: usize,
+    pub dirty_count: usize,
+    pub latest: Option<BakeryRuntimeOperationHeadlineData>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryRuntimeOperationHeadlineData {
+    pub operation_id: u64,
+    pub site_hash: i64,
+    pub site_name: Option<String>,
+    pub action: String,
+    pub status: String,
+    pub attempt_count: u32,
+    pub updated_at_unix: u64,
+    pub next_retry_at_unix: Option<u64>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakeryActivityEntry {
+    pub ts: u64,
+    pub event: String,
+    pub status: String,
+    pub summary: String,
+    pub site_hash: Option<i64>,
+    pub site_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct TreeguardStatusData {
     pub enabled: bool,
     pub dry_run: bool,
+    pub paused_for_bakery_reload: bool,
+    pub pause_reason: Option<String>,
     pub cpu_max_pct: Option<u8>,
+    pub total_nodes: usize,
+    pub total_circuits: usize,
     pub managed_nodes: usize,
     pub managed_circuits: usize,
     pub virtualized_nodes: usize,
+    pub cake_circuits: usize,
+    pub mixed_sqm_circuits: usize,
     pub fq_codel_circuits: usize,
     pub last_action_summary: Option<String>,
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct TreeguardActivityEntry {
     pub time: String,
     pub entity_type: String,
@@ -293,6 +488,10 @@ pub struct TreeguardActivityEntry {
     pub action: String,
     pub persisted: bool,
     pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_kind: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -322,41 +521,11 @@ pub struct NodeCapacity {
     pub median_rtt: f32,
 }
 
-#[derive(Debug, Serialize)]
-pub struct OversubscribedSite {
-    pub site_name: String,
-    pub cap_down: f32,
-    pub cap_up: f32,
-    pub sub_down: f32,
-    pub sub_up: f32,
-    pub ratio_down: Option<f32>,
-    pub ratio_up: Option<f32>,
-    pub ratio_max: Option<f32>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ExecutiveHeatmapsData {
-    pub header: ExecutiveSummaryHeader,
-    pub global: HeatmapBlocks,
-    pub global_qoq: QoqHeatmapBlocks,
-    pub circuits: Vec<CircuitHeatmapData>,
-    pub sites: Vec<SiteHeatmapData>,
-    pub asns: Vec<AsnHeatmapData>,
-    pub oversubscribed_sites: Vec<OversubscribedSite>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct FlowbeeKeyTransit {
-    pub remote_ip: String,
-    pub local_ip: String,
-    pub src_port: u16,
-    pub dst_port: u16,
-    pub ip_protocol: u8,
-    pub device_name: String,
-    pub asn_name: String,
-    pub asn_country: String,
-    pub protocol_name: String,
-    pub last_seen_nanos: u64,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CircuitDevicesResult {
+    pub circuit_id: String,
+    pub devices: Vec<Circuit>,
+    pub ok: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -451,9 +620,58 @@ pub enum WsResponse {
         ok: bool,
         message: String,
     },
+    UpdateNetworkJsonOnlyResult {
+        ok: bool,
+        message: String,
+    },
     UpdateNetworkAndDevicesResult {
         ok: bool,
         message: String,
+    },
+    GetShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device: Option<ShapedDevice>,
+    },
+    CreateShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device: Option<ShapedDevice>,
+    },
+    UpdateShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device: Option<ShapedDevice>,
+    },
+    DeleteShapedDeviceResult {
+        ok: bool,
+        message: String,
+        device_id: String,
+    },
+    CircuitDirectoryPage {
+        data: CircuitDirectoryPage,
+    },
+    EthernetCapsPage {
+        data: EthernetCapsPage,
+    },
+    NodeDirectory {
+        data: Vec<NodeDirectoryEntry>,
+    },
+    TreeGuardMetadataSummary {
+        data: TreeGuardMetadataSummary,
+    },
+    GetNodeRateOverride {
+        data: NodeRateOverrideData,
+    },
+    SetNodeRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: NodeRateOverrideData,
+    },
+    ClearNodeRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: NodeRateOverrideData,
     },
     GetUsers {
         data: Vec<WebUser>,
@@ -475,6 +693,9 @@ pub enum WsResponse {
     },
     CircuitCountResult {
         data: CircuitCount,
+    },
+    LtsStartSignupResult {
+        claim_id: String,
     },
     LtsSignUpResult {
         ok: bool,
@@ -529,12 +750,24 @@ pub enum WsResponse {
     DevicesAll {
         data: Vec<ShapedDevice>,
     },
+    ShapedDevicesPage {
+        data: ShapedDevicesPage,
+    },
+    ExecutiveDashboardSummary {
+        data: ExecutiveDashboardSummary,
+    },
+    ExecutiveHeatmapPage {
+        data: ExecutiveHeatmapPage,
+    },
+    ExecutiveLeaderboardPage {
+        data: ExecutiveLeaderboardPage,
+    },
     FlowMap {
         data: Vec<(f64, f64, String, u64, f32)>,
     },
     CircuitByIdResult {
         id: String,
-        devices: Vec<ShapedDevice>,
+        data: Option<CircuitByIdData>,
         ok: bool,
     },
     RequestAnalysisResult {
@@ -542,6 +775,9 @@ pub enum WsResponse {
     },
     CpuAffinitySummary {
         data: Vec<CpuAffinitySummaryEntry>,
+    },
+    CpuAffinityRuntimeSnapshot {
+        data: CpuAffinityRuntimeSnapshot,
     },
     CpuAffinityCircuits {
         data: CpuAffinityCircuitsPage,
@@ -642,8 +878,23 @@ pub enum WsResponse {
     NetworkTree {
         data: Vec<(usize, NetworkJsonTransport)>,
     },
+    NetworkTreeLite {
+        data: Vec<(usize, NetworkTreeLiteNode)>,
+    },
     NetworkTreeClients {
         data: Vec<Circuit>,
+    },
+    TreeAttachedCircuitsSnapshot {
+        data: TreeAttachedCircuitsPage,
+    },
+    TreeAttachedCircuitsUpdate {
+        data: TreeAttachedCircuitsPage,
+    },
+    CircuitMetricsSnapshot {
+        data: Vec<CircuitLiveMetrics>,
+    },
+    CircuitMetricsUpdate {
+        data: Vec<CircuitLiveMetrics>,
     },
     QueueStatsTotal {
         marks: DownUpOrder<u64>,
@@ -673,20 +924,20 @@ pub enum WsResponse {
     BakeryStatus {
         data: BakeryStatusData,
     },
+    BakeryActivity {
+        data: Vec<BakeryActivityEntry>,
+    },
     TreeGuardStatus {
         data: TreeguardStatusData,
     },
     TreeGuardActivity {
         data: Vec<TreeguardActivityEntry>,
     },
-    ExecutiveHeatmaps {
-        data: ExecutiveHeatmapsData,
-    },
     CircuitWatcher {
-        circuit_id: String,
-        devices: Vec<Circuit>,
-        qoo_score: Option<f32>,
-        rtt_excluded: bool,
+        data: CircuitSummaryData,
+    },
+    CircuitDevicesResult {
+        data: CircuitDevicesResult,
     },
     SetCircuitRttExcludedResult {
         ok: bool,
@@ -698,9 +949,17 @@ pub enum WsResponse {
         ip: String,
         result: PingState,
     },
-    FlowsByCircuit {
+    CircuitFlowSankeyResult {
         circuit_id: String,
-        flows: Vec<(FlowbeeKeyTransit, FlowbeeLocalData, FlowAnalysis)>,
+        flows: Vec<CircuitFlowSankeyRow>,
+    },
+    CircuitTopAsnsResult {
+        circuit_id: String,
+        data: CircuitTopAsnsData,
+    },
+    CircuitTrafficFlowsPageResult {
+        circuit_id: String,
+        data: CircuitTrafficFlowsPage,
     },
     CakeWatcher {
         #[serde(flatten)]

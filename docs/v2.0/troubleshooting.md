@@ -48,13 +48,16 @@ And include:
 
 ### User password not working
 
-Delete the lqusers file:
+Current builds will:
+- migrate older auth files automatically
+- redirect `/login.html` to `/first-run.html` when no users exist
+
+If the correct username/password still fails, first restart `lqosd` and try again:
+```bash
+sudo systemctl restart lqosd
 ```
-sudo rm /opt/libreqos/src/lqusers.toml
-sudo systemctl restart lqosd lqos_scheduler
-```
-Then visit: BOX_IP:9123/index.html
-This will allow you to set up the user again from scratch using the WebUI.
+
+Only remove `lqusers.toml` if you are intentionally resetting access or if the file is corrupt and cannot be repaired. After removing it, restart `lqosd` and open `BOX_IP:9123/login.html`; the WebUI should redirect you to first-run setup automatically.
 
 ### No WebUI at x.x.x.x:9123
 
@@ -129,6 +132,10 @@ sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_lo
 ```
 This exports a log file to lqos_sched_log.txt. You can review this file to see what caused the scheduler to error out.
 
+If the scheduler fails immediately after a restart with a message like `Socket (typically /run/lqos/bus) not found`, that indicates `lqosd` had not finished binding the local bus yet. Current builds wait briefly for bus readiness at scheduler startup instead of crashing immediately, so repeated startup panics after restart should no longer be expected.
+
+If an integration subprocess fails, current builds keep the scheduler alive, publish a shortened output preview to the scheduler status/error surfaces, and save the full captured output to a timestamped file under `/tmp` such as `lqos_scheduler_uisp_integration_YYYYMMDD_HHMMSS.log`.
+
 ### Scheduler status in WebUI looks unhealthy
 
 Recent builds expose scheduler readiness/state in the WebUI (Node Manager).
@@ -194,6 +201,21 @@ journalctl -u lqosd --since "10 minutes ago"
 
 If still blank under normal traffic, collect recent logs and open an issue.
 
+### Site Map appears blank or slow
+
+Site Map has one extra dependency beyond normal WebUI data feeds: current builds fetch bbox/bootstrap data and raster tiles from `https://insight.libreqos.com`.
+
+If Site Map alone is blank or slow:
+1. Confirm `lqosd` is healthy.
+2. Confirm the box can reach `insight.libreqos.com` from its management network.
+3. Wait briefly and reload the page; the browser retries tile requests automatically while cold tiles are being populated upstream.
+4. Check recent `lqosd` logs:
+```
+journalctl -u lqosd --since "10 minutes ago"
+```
+
+If the rest of WebUI is healthy but Site Map continues to fail, treat it as a map/tile dependency issue rather than a general scheduler or shaping failure.
+
 ### Virtual node promotion collision (network.json)
 
 If LibreQoS.py fails with an error like `Virtual node promotion collision: 'AP_A' already exists at this level.`, you have a `"virtual": true` node whose children get promoted into a parent level where a node with the same name already exists.
@@ -234,6 +256,10 @@ WebUI urgent issues include machine-readable codes. Use them to triage quickly.
 |---|---|---|---|
 | `MAPPED_CIRCUIT_LIMIT` | Bakery is enforcing a mapped-circuit limit. | Insight license status, `journalctl -u lqosd` for requested/allowed/dropped counts. | Reduce mapped circuits immediately or update license/limits. |
 | `TC_U16_OVERFLOW` | Queue/class minor IDs exceeded the Linux tc u16 range on a CPU queue. | `journalctl -u lqos_scheduler -u lqosd`, topology depth/queue distribution. | Increase queue count and/or simplify/rebalance hierarchy (for example with integration strategy or root promotion changes). |
+| `TC_QDISC_CAPACITY` | Planned auto-allocated qdiscs exceed the per-interface safe budget or Bakery's conservative memory-safety preflight before apply. | Estimated per-interface qdisc counts, qdisc-kind breakdown, and memory fields in the urgent issue context, `journalctl -u lqos_scheduler -u lqosd`, `on_a_stick` and `queue_mode` config. | Reduce the planned qdisc load for this run (for example fewer circuits/devices in the test shape) before retrying; do not trust partial apply. |
+| `BAKERY_MEMORY_GUARD` | A chunked Bakery full reload was stopped mid-apply because available host memory fell below the safety floor. | `journalctl -u lqosd`, available/total memory in the urgent issue context, and recent Bakery apply progress. | Treat the run as failed, reduce memory pressure or queue footprint, and retry only after the host is stable. |
+| `XDP_IP_MAPPING_CAPACITY` | Required IP mappings exceed the current XDP kernel map capacity. | `ShapedDevices.csv` row shape, IPv4/IPv6 mix, one-device-vs-many-device assumptions, `journalctl -u lqos_scheduler -u lqosd`. | Reduce required mappings immediately (for example fewer devices or IPv4-only test shape), or raise kernel map capacity in a coordinated change. |
+| `XDP_IP_MAPPING_APPLY_FAILED` | One or more IP mapping inserts failed during apply. | `journalctl -u lqos_scheduler -u lqosd` for summarized failure examples and counts. | Fix the underlying mapping failure, then rerun; do not trust partial shaping. |
 
 Operational pattern:
 1. Open urgent issue details in WebUI (code/message/context).

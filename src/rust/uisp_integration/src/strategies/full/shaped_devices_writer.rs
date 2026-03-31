@@ -1,5 +1,7 @@
 use crate::errors::UispIntegrationError;
+use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
+use lqos_config::CircuitEthernetMetadata;
 use lqos_config::Config;
 use serde::Serialize;
 use std::path::Path;
@@ -24,6 +26,11 @@ pub struct ShapedDevice {
     pub comment: String,
 }
 
+struct ShapedDeviceOutputs<'a> {
+    shaped_devices: &'a mut Vec<ShapedDevice>,
+    ethernet_advisories: &'a mut Vec<CircuitEthernetMetadata>,
+}
+
 /// Writes the ShapedDevices.csv file for UISP
 ///
 /// # Arguments
@@ -39,17 +46,14 @@ pub fn write_shaped_devices(
 ) -> Result<(), UispIntegrationError> {
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut shaped_devices = Vec::new();
+    let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
 
     // Traverse
-    traverse(
-        sites,
-        root_idx,
-        0,
-        devices,
-        &mut shaped_devices,
-        config,
-        root_idx,
-    );
+    let mut outputs = ShapedDeviceOutputs {
+        shaped_devices: &mut shaped_devices,
+        ethernet_advisories: &mut ethernet_advisories,
+    };
+    traverse(sites, root_idx, 0, devices, &mut outputs, config, root_idx);
 
     // Write the CSV
     let mut writer = csv::WriterBuilder::new()
@@ -65,6 +69,7 @@ pub fn write_shaped_devices(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_ethernet_advisories(config, &ethernet_advisories)?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 
     Ok(())
@@ -75,52 +80,60 @@ fn traverse(
     idx: usize,
     depth: u32,
     devices: &[UispDevice],
-    shaped_devices: &mut Vec<ShapedDevice>,
+    outputs: &mut ShapedDeviceOutputs<'_>,
     config: &Config,
     root_idx: usize,
 ) {
     if !sites[idx].device_indices.is_empty() {
         // We have devices!
         if sites[idx].site_type == UispSiteType::Client {
+            let site_devices: Vec<&UispDevice> = sites[idx]
+                .device_indices
+                .iter()
+                .filter_map(|device_idx| devices.get(*device_idx))
+                .collect();
+
+            let requested =
+                if let Some((dl_min, dl_max, ul_min, ul_max)) = sites[idx].burst_rates(config) {
+                    (
+                        f32::max(0.1, dl_min),
+                        f32::max(0.1, dl_max),
+                        f32::max(0.1, ul_min),
+                        f32::max(0.1, ul_max),
+                    )
+                } else {
+                    let download_max_f32 = sites[idx].max_down_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor;
+                    let upload_max_f32 = sites[idx].max_up_mbps as f32
+                        * config.uisp_integration.bandwidth_overhead_factor;
+                    let download_min_f32 =
+                        download_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                    let upload_min_f32 =
+                        upload_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                    (
+                        f32::max(0.1, download_min_f32),
+                        f32::max(0.1, download_max_f32),
+                        f32::max(0.1, upload_min_f32),
+                        f32::max(0.1, upload_max_f32),
+                    )
+                };
+            let ethernet_decision = apply_ethernet_rate_cap(
+                &sites[idx].id,
+                &sites[idx].name,
+                site_devices.iter().copied(),
+                requested.0,
+                requested.2,
+                requested.1,
+                requested.3,
+            );
+            if let Some(advisory) = ethernet_decision.advisory.clone() {
+                outputs.ethernet_advisories.push(advisory);
+            }
+
             // Add as normal clients
             for device in sites[idx].device_indices.iter() {
                 let device = &devices[*device];
                 if device.has_address() {
-                    // Prefer UISP QoS + burst if available; else fallback to capacity-based
-                    let (download_min, mut download_max, upload_min, mut upload_max) =
-                        if let Some((dl_min, dl_max, ul_min, ul_max)) =
-                            sites[idx].burst_rates(config)
-                        {
-                            (
-                                f32::max(0.1, dl_min),
-                                f32::max(0.1, dl_max),
-                                f32::max(0.1, ul_min),
-                                f32::max(0.1, ul_max),
-                            )
-                        } else {
-                            let download_max_f32 = sites[idx].max_down_mbps as f32
-                                * config.uisp_integration.bandwidth_overhead_factor;
-                            let upload_max_f32 = sites[idx].max_up_mbps as f32
-                                * config.uisp_integration.bandwidth_overhead_factor;
-                            let download_min_f32 = download_max_f32
-                                * config.uisp_integration.commit_bandwidth_multiplier;
-                            let upload_min_f32 = upload_max_f32
-                                * config.uisp_integration.commit_bandwidth_multiplier;
-                            (
-                                f32::max(0.1, download_min_f32),
-                                f32::max(0.1, download_max_f32),
-                                f32::max(0.1, upload_min_f32),
-                                f32::max(0.1, upload_max_f32),
-                            )
-                        };
-                    // Ensure max >= min per LibreQoS requirements
-                    if download_max < download_min {
-                        download_max = download_min;
-                    }
-                    if upload_max < upload_min {
-                        upload_max = upload_min;
-                    }
-
                     let sd = ShapedDevice {
                         circuit_id: sites[idx].id.clone(),
                         circuit_name: sites[idx].name.clone(),
@@ -130,13 +143,13 @@ fn traverse(
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
-                        download_min,
-                        download_max,
-                        upload_min,
-                        upload_max,
+                        download_min: ethernet_decision.download_min,
+                        download_max: ethernet_decision.download_max,
+                        upload_min: ethernet_decision.upload_min,
+                        upload_max: ethernet_decision.upload_max,
                         comment: "".to_string(),
                     };
-                    shaped_devices.push(sd);
+                    outputs.shaped_devices.push(sd);
                 }
             }
         } else {
@@ -178,7 +191,7 @@ fn traverse(
                         upload_max,
                         comment: "Infrastructure Entry".to_string(),
                     };
-                    shaped_devices.push(sd);
+                    outputs.shaped_devices.push(sd);
                 }
             }
         }
@@ -194,7 +207,7 @@ fn traverse(
                     child_idx,
                     depth + 1,
                     devices,
-                    shaped_devices,
+                    outputs,
                     config,
                     root_idx,
                 );
@@ -206,6 +219,8 @@ fn traverse(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
+    use std::collections::HashSet;
 
     #[test]
     fn test_fractional_csv_serialization() {
@@ -349,5 +364,55 @@ mod tests {
         assert_eq!(preserved_rate, 2.5, "Normal rates should be preserved");
 
         println!("✅ Rate safeguard tests passed!");
+    }
+
+    #[test]
+    fn ignored_only_client_device_produces_no_shaped_rows() {
+        let config = Config::default();
+        let sites = vec![
+            UispSite {
+                id: "root-site".to_string(),
+                name: "Root Site".to_string(),
+                site_type: UispSiteType::Site,
+                max_down_mbps: 1000,
+                max_up_mbps: 1000,
+                ..Default::default()
+            },
+            UispSite {
+                id: "client-site".to_string(),
+                name: "Client Site".to_string(),
+                site_type: UispSiteType::Client,
+                max_down_mbps: 100,
+                max_up_mbps: 50,
+                selected_parent: Some(0),
+                device_indices: vec![0],
+                ..Default::default()
+            },
+        ];
+        let devices = vec![UispDevice {
+            id: "device-1".to_string(),
+            name: "CPE 1".to_string(),
+            mac: "".to_string(),
+            role: None,
+            wireless_mode: None,
+            site_id: "client-site".to_string(),
+            download: 100,
+            upload: 50,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+        }];
+
+        let mut shaped_devices = Vec::new();
+        let mut ethernet_advisories = Vec::new();
+        let mut outputs = ShapedDeviceOutputs {
+            shaped_devices: &mut shaped_devices,
+            ethernet_advisories: &mut ethernet_advisories,
+        };
+
+        traverse(&sites, 0, 0, &devices, &mut outputs, &config, 0);
+
+        assert!(outputs.shaped_devices.is_empty());
     }
 }

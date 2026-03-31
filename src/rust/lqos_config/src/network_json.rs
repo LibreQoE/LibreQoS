@@ -87,6 +87,7 @@ impl NetworkJson {
             current_udp_packets: DownUpOrder::zeroed(),
             current_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_tcp_retransmit_packets: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
@@ -169,6 +170,7 @@ impl NetworkJson {
             n.current_udp_packets.set_to_zero();
             n.current_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
+            n.current_tcp_retransmit_packets.set_to_zero();
             n.rtt_buffer.clear();
             n.current_drops.set_to_zero();
             n.current_marks.set_to_zero();
@@ -214,11 +216,17 @@ impl NetworkJson {
     }
 
     /// Record TCP Retransmits in the tree.
-    pub fn add_retransmit_cycle(&mut self, targets: &[usize], tcp_retransmits: DownUpOrder<u64>) {
+    pub fn add_retransmit_cycle(
+        &mut self,
+        targets: &[usize],
+        tcp_retransmits: DownUpOrder<u64>,
+        tcp_packets: DownUpOrder<u64>,
+    ) {
         for idx in targets {
             // Safety first; use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
                 node.current_tcp_retransmits.checked_add(tcp_retransmits);
+                node.current_tcp_retransmit_packets.checked_add(tcp_packets);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -280,10 +288,12 @@ impl NetworkJson {
                 .map(|rtt| rtt.as_millis() as f32);
             let retransmit_down = retransmit_percent(
                 node.current_tcp_retransmits.down,
-                node.current_tcp_packets.down,
+                node.current_tcp_retransmit_packets.down,
             );
-            let retransmit_up =
-                retransmit_percent(node.current_tcp_retransmits.up, node.current_tcp_packets.up);
+            let retransmit_up = retransmit_percent(
+                node.current_tcp_retransmits.up,
+                node.current_tcp_retransmit_packets.up,
+            );
 
             let heatmap = node.heatmap.get_or_insert_with(TemporalHeatmap::new);
             heatmap.add_sample(
@@ -299,11 +309,11 @@ impl NetworkJson {
 
             let loss_download = tcp_retransmit_loss_proxy(
                 node.current_tcp_retransmits.down,
-                node.current_tcp_packets.down,
+                node.current_tcp_retransmit_packets.down,
             );
             let loss_upload = tcp_retransmit_loss_proxy(
                 node.current_tcp_retransmits.up,
-                node.current_tcp_packets.up,
+                node.current_tcp_retransmit_packets.up,
             );
             let scores = if let Some(profile) = qoo_profile.as_ref() {
                 compute_qoq_scores(
@@ -380,6 +390,7 @@ fn recurse_node(
         current_udp_packets: DownUpOrder::zeroed(),
         current_icmp_packets: DownUpOrder::zeroed(),
         current_tcp_retransmits: DownUpOrder::zeroed(),
+        current_tcp_retransmit_packets: DownUpOrder::zeroed(),
         current_drops: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
@@ -467,6 +478,7 @@ mod test {
             current_udp_packets: DownUpOrder::zeroed(),
             current_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_tcp_retransmit_packets: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
@@ -570,8 +582,10 @@ mod test {
         assert!(tiny.max_throughput.1 > 0.0);
 
         let transport = tiny.clone_to_transit();
+        assert!(!transport.runtime_virtualized);
         let encoded = serde_json::to_value(&transport).expect("transport must serialize");
         assert_eq!(encoded["max_throughput"], serde_json::json!([1.5, 0.5]));
+        assert_eq!(encoded["runtime_virtualized"], serde_json::json!(false));
     }
 
     #[test]
@@ -606,14 +620,8 @@ mod test {
 
         assert_eq!(site.id.as_deref(), Some("uisp:site:123"));
         assert_eq!(ap.id.as_deref(), Some("uisp:device:456"));
-        assert_eq!(
-            site.clone_to_transit().id.as_deref(),
-            Some("uisp:site:123")
-        );
-        assert_eq!(
-            ap.clone_to_transit().id.as_deref(),
-            Some("uisp:device:456")
-        );
+        assert_eq!(site.clone_to_transit().id.as_deref(), Some("uisp:site:123"));
+        assert_eq!(ap.clone_to_transit().id.as_deref(), Some("uisp:device:456"));
     }
 
     #[test]
@@ -647,14 +655,20 @@ mod test {
             .find(|n| n.name == "Bad Tower")
             .expect("Bad Tower must be present");
 
-        assert!((good.latitude.unwrap() - 45.123).abs() < 0.001);
-        assert!((good.longitude.unwrap() + 111.75).abs() < 0.001);
+        let good_latitude = good.latitude.expect("Tower A latitude must parse");
+        let good_longitude = good.longitude.expect("Tower A longitude must parse");
+        assert!((good_latitude - 45.123).abs() < 0.001);
+        assert!((good_longitude + 111.75).abs() < 0.001);
         assert_eq!(bad.latitude, None);
         assert_eq!(bad.longitude, None);
 
         let encoded = serde_json::to_value(good.clone_to_transit()).expect("transport serializes");
-        let encoded_lat = encoded["latitude"].as_f64().expect("latitude encodes as number");
-        let encoded_lon = encoded["longitude"].as_f64().expect("longitude encodes as number");
+        let encoded_lat = encoded["latitude"]
+            .as_f64()
+            .expect("latitude encodes as number");
+        let encoded_lon = encoded["longitude"]
+            .as_f64()
+            .expect("longitude encodes as number");
         assert!((encoded_lat - 45.123).abs() < 0.001);
         assert!((encoded_lon + 111.75).abs() < 0.001);
     }

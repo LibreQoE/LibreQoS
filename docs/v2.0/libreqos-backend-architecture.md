@@ -36,6 +36,7 @@ In production terms:
 - `XDP`/`eBPF` and lookup maps decide packet identity and CPU path.
 - Linux traffic control (`tc`) enforces queueing policy.
 - Bakery manages update deltas and reload boundaries.
+- Queue mode (`shape` vs `observe`) controls whether the subscriber shaping tree is active or intentionally removed for baseline measurement.
 
 ## 2) Runtime Invariants
 
@@ -48,8 +49,23 @@ These invariants are useful for reasoning about whether backend behavior is heal
 | Data-plane mapping is stable between XDP and `tc` | Mis-mapped packets cause wrong queue assignment | Unexpected class counters, mis-accounted traffic | Compare expected class IDs vs observed `tc -s` class counters |
 | Control-plane changes stay within incremental-safe bounds | Reduces disruption from full-tree rebuilds | Frequent packet-impacting reload windows | Review change patterns: structural vs speed/mapping updates |
 | Queue count stays within CPU/RAM budget | Leaf qdisc scale directly impacts resources | Memory growth, reload slowdowns, jitter under churn | Track queue count, RAM headroom, and update cadence |
+| Queue mode and dataplane mappings are sequenced consistently | Packets must not be steered toward removed queue state | Brief outages, stale class targets, mis-accounted traffic | Check queue mode, IP mapping lifecycle, and live `tc` state together |
 
-## 3) End-to-End Packet and Control Path
+## 3) Runtime Authority and Configuration Model
+
+LibreQoS has both on-disk config files and a long-running runtime daemon, but they are not the same authority at every moment.
+
+1. `lqosd` is the runtime control-plane authority while it is running.
+2. UI/config API updates go through `lqosd`, which updates in-memory state and then drives apply/reload behavior.
+3. Manual edits to `/etc/lqos.conf` are operator-managed source inputs, but they do not automatically become active runtime state until the daemon reload path consumes them.
+
+Operational takeaway:
+
+- treat the UI/config API path as the authoritative live-update workflow
+- treat direct file edits as a separate operator action that still needs a runtime reload/apply boundary
+- do not assume “file changed” and “runtime desired state changed” are equivalent at the same instant
+
+## 4) End-to-End Packet and Control Path
 
 ```{mermaid}
 flowchart LR
@@ -76,9 +92,9 @@ flowchart LR
     N -. updates queue state .-> H
 ```
 
-## 4) Data Plane Design
+## 5) Data Plane Design
 
-### 4.1 XDP and classification pipeline
+### 5.1 XDP and classification pipeline
 
 LibreQoS performs early packet work in XDP where possible:
 
@@ -93,11 +109,11 @@ A key optimization direction has been reducing repeated lookups:
 - avoid duplicate work between XDP and `tc` when metadata can be passed forward
 
 
-### 4.2 Why `cpumap` is central
+### 5.2 Why `cpumap` is central
 
 `cpumap` is used to spread work across cores so shaping does not bottleneck on a single queue path. This is a major part of scaling from "works" to "works at ISP traffic levels".
 
-### 4.3 Cache, generation, and lock-pressure reduction
+### 5.3 Cache, generation, and lock-pressure reduction
 
 The high-level progression described in development notes/devblogs:
 
@@ -107,8 +123,19 @@ The high-level progression described in development notes/devblogs:
 
 Operationally, this helps stabilize latency and CPU under frequent updates.
 
+### 5.4 Mapping state is part of the data-path contract
 
-## 5) Queue Hierarchy: `mq` -> `HTB` -> leaf qdisc
+Queue classes and IP mappings are related but not identical backend state.
+
+1. The shaping tree defines where packets can land in `tc`.
+2. IP mappings define which circuit/class packets are currently steered toward.
+3. During ordinary `shape -> shape` updates, LibreQoS tries to preserve stable mappings and stable queue handles where safe.
+4. During disruptive transitions, especially `observe <-> shape`, LibreQoS can intentionally clear and later republish mappings so packets are not pointed at queue state that no longer exists.
+
+This sequencing matters as much as the queue commands themselves. A healthy backend design must reason about queue-tree changes and mapping changes together.
+
+
+## 6) Queue Hierarchy: `mq` -> `HTB` -> leaf qdisc
 
 LibreQoS queueing is intentionally layered:
 
@@ -134,7 +161,7 @@ flowchart TD
     I --> J
 ```
 
-### 5.1 HTB internals that matter in production
+### 6.1 HTB internals that matter in production
 
 Important mechanics:
 
@@ -150,16 +177,16 @@ Why operators care:
 - HTB is the rate envelope; leaf qdiscs are not a drop-in replacement for HTB policy
 
 
-## 6) AQM in LibreQoS: `fq_codel` and `CAKE`
+## 7) AQM in LibreQoS: `fq_codel` and `CAKE`
 
-### 6.1 Responsibility split
+### 7.1 Responsibility split
 
 Practical split:
 
 1. HTB: hierarchical bandwidth policy and limits
 2. `fq_codel`/`CAKE`: queue fairness and delay control within that policy
 
-### 6.2 Why AQM still helps even below line-rate saturation
+### 7.2 Why AQM still helps even below line-rate saturation
 
 Even when a link is not saturated, fq_codel and CAKE still affect packet behavior. The drop logic (CoDel/BLUE/COBALT) usually stays idle, but the fair-queueing scheduler continues to interleave flows, preventing bursts from one flow from monopolizing the serialization point of the link. This keeps latency-sensitive traffic responsive.
 
@@ -189,7 +216,7 @@ Even without sustained congestion:
 
 So even when the AQM drop logic is mostly idle, the fair-queueing part of SQM is still doing useful work by controlling how packets reach the wire.
 
-### 6.3 CAKE vs fq_codel in LibreQoS terms
+### 7.3 CAKE vs fq_codel in LibreQoS terms
 
 General pattern:
 
@@ -202,7 +229,7 @@ Resource reality:
 - both are flow-aware and keep state
 - CAKE can have higher memory/CPU footprint in large queue populations
 
-### 6.4 When below-line-rate gains may be limited
+### 7.4 When below-line-rate gains may be limited
 
 Lower latency under mixed load is common, but not guaranteed in every scenario.
 
@@ -218,7 +245,7 @@ Operator takeaway:
 - Treat AQM gains as a result of queue dynamics and contention control, then validate empirically on your own traffic mix.
 
 
-## 7) Bakery and Reload Behavior
+## 8) Bakery and Reload Behavior
 
 Bakery exists to avoid unnecessary queue rebuilds and reduce reload penalties.
 
@@ -227,10 +254,10 @@ High-level flow:
 1. Build desired state.
 2. Diff desired vs active state.
 3. Apply smallest safe delta.
-4. Trigger full reload only when update type crosses live-mutation limits.
+4. Trigger full reload when a change is outside live-mutation support, or when runtime verification/drift detection marks incremental topology mutation unsafe.
 
 
-### 7.1 Lazy queueing and expiration
+### 8.1 Lazy queueing and expiration
 
 Key controls:
 
@@ -242,42 +269,132 @@ Practical effect:
 - reduced memory overhead for dormant endpoints
 - lower churn for large but partially active subscriber populations
 
-### 7.2 Incremental vs reload boundary
+### 8.2 Incremental vs reload boundary
 
 | Change type | Usually incremental-safe | Often requires full reload | Why |
 |---|---|---|---|
-| Circuit IP-only change | Yes | No | Mapping update can often be applied without tree rebuild |
-| Circuit/site speed change (subset) | Yes | Sometimes | Depends on structural impact and available class handles |
-| Bulk all-circuit changes | Sometimes | Often | Scale and transaction/cardinality limits |
-| Topology re-parent/restructure | Rarely | Yes | HTB subtree mutation constraints |
-| Add/remove circuits | Yes (small/moderate) | Sometimes | Handle availability and diff correctness boundaries |
+| Circuit IP-only change | Yes | No | Mapping updates can usually be applied without rebuilding the queue tree |
+| Circuit SQM-only change | Yes | No | Leaf qdisc kind/parameter changes can usually be applied live |
+| Circuit/site speed change (subset) | Yes | Sometimes | Depends on structural impact, queue-count pressure, and available class handles |
+| Ordinary circuit parent move | Yes | Sometimes | Bakery uses staged live migration for common active parent/class moves, including qdisc-handle rotation and final-state verification, but it still escalates to reload if the migration cannot be applied or verified safely |
+| TreeGuard runtime node virtualization (supported subtree/top-level rebalance path) | Yes | Sometimes | Bakery can apply supported runtime virtualization live, but deferred cleanup, live-state verification failures, or accumulated dirty runtime subtrees can mark `reload required` and freeze further incremental topology mutation until a full reload |
+| Bulk all-circuit changes | Sometimes | Often | Scale and transaction/cardinality limits still matter, even with better incremental behavior |
+| Site add/remove or broader structural topology change | Rarely | Yes | HTB subtree mutation constraints remain much stricter at site/topology level than at per-circuit level |
+| Add/remove circuits | Yes (small/moderate) | Sometimes | Handle availability, tree size, and diff correctness boundaries |
 
 This table reflects Bakery design behavior and Linux `tc` mutation constraints discussed in the devblog material.
 
 ```{mermaid}
 flowchart TD
-    A[Config or integration change arrives] --> B[Build desired state and compute diff]
+    A[Config or runtime change arrives] --> B[Build desired or runtime target state]
     B --> C{Any effective state change?}
     C -->|No| D[No-op]
-    C -->|Yes| E{Structural hierarchy change?}
-    E -->|Yes| F[Controlled full reload]
-    E -->|No| G{Within incremental-safe limits?}
-    G -->|Yes| H[Apply incremental tc updates]
-    G -->|No| F
-    H --> I[Verify class/qdisc state and counters]
-    F --> I
+    C -->|Yes| E{Supported live mutation path?}
+    E -->|No| F[Controlled full reload]
+    E -->|Yes| G[Apply staged incremental/runtime mutation]
+    G --> H{Live verification and cleanup safe?}
+    H -->|Yes| I[Keep incremental state authoritative]
+    H -->|No| J[Mark reload required and freeze further incremental topology mutation]
+    J --> F
+    F --> K[Re-establish single authoritative queue model]
 ```
 
-### 7.3 Reload boundary quick rules
+### 8.3 Queue modes and transition semantics
+
+LibreQoS currently has two explicit queue modes:
+
+1. `shape`
+   - normal shaping mode
+   - root `mq` present
+   - HTB hierarchy present
+   - leaf qdiscs present
+   - per-circuit IP mappings present
+2. `observe`
+   - true-baseline mode
+   - root `mq` retained
+   - subscriber shaping tree removed
+   - per-circuit IP mappings cleared before teardown
+   - mappings republished after returning to `shape`
+
+Important operator boundary:
+
+- `observe` is intentionally honest, not hitless
+- switching `observe <-> shape` can briefly interrupt traffic because the shaping tree really is removed and later rebuilt
+- this is different from ordinary `shape -> shape` updates, where LibreQoS tries to preserve stable handles and queue placement where possible
+
+### 8.4 Retained-root full reload behavior
+
+Current Bakery full reloads try to avoid unnecessary root churn.
+
+1. Verify live kernel `tc` state, not just planned state.
+2. If the root `mq` is healthy and matches the expected layout, retain it.
+3. Prune child qdiscs beneath the retained root and verify the subtree is clean.
+4. Rebuild the shaping tree beneath that retained root.
+5. Fall back to root recovery only when retained-root reuse is unsafe or verification fails.
+
+This retained-root strategy reduces avoidable root-level churn, while still preferring explicit recovery when live state is ambiguous.
+
+### 8.5 Reload boundary quick rules
 
 1. Prefer frequent small mapping/speed deltas over large structural churn.
 2. Batch topology surgery into planned windows.
 3. Expect higher risk when many circuits and many structure-affecting changes happen together.
 4. Build operations cadence around incremental-safe updates by default.
 
-## 8) Design Boundaries for Operators
+### 8.6 Full-reload safety guards
 
-### 8.1 Observability boundaries
+Current Bakery full reloads apply two conservative safety checks before and during large queue rebuilds:
+
+1. A qdisc preflight estimates planned qdiscs per interface and also separates infrastructure, `cake`, and `fq_codel` leaf qdiscs.
+2. That same preflight applies a conservative memory forecast and hard-blocks clearly unsafe full reloads before `tc -batch` starts.
+3. During chunked full reload apply, Bakery re-checks host memory at chunk boundaries and aborts the remaining apply if available memory drops below its safety floor.
+4. These guards are intentionally biased toward false positives on large reloads so the system fails early with diagnostics instead of spiraling into an OOM event.
+
+### 8.7 Runtime safety model
+
+Bakery's newer runtime-safety direction is intentionally narrow:
+
+1. Reconcile enough live state to decide whether deferred cleanup is safe.
+2. Detect material drift between Bakery's intended state and live kernel `tc` state.
+3. Stop trusting incremental/runtime mutation once drift is real.
+4. Escalate to a controlled full reload as the recovery path.
+
+This is intentionally **not** a broad self-healing reconciler. LibreQoS is biased toward:
+
+- lightweight cleanup gating for expected lag
+- explicit `reload required` escalation on material live-state drift
+- one controlled full reload to re-establish a single authoritative queue model
+
+That design keeps failure handling easier to reason about than trying to incrementally repair arbitrary split-brain queue state.
+
+### 8.8 Explicit qdisc-handle management
+
+Bakery now treats leaf qdisc handles as persistent runtime state rather than disposable auto-allocation details.
+
+1. Circuit leaf qdiscs are assigned explicit handle majors and persisted across applies.
+2. Handle assignments rotate when a live mutation changes the effective leaf qdisc kind or qdisc parent.
+3. Full reload planning reserves live handle majors so rebuilds do not collide with surviving kernel state.
+4. Parent-changed live migration is rejected if Bakery detects stale-handle reuse that would make final state ambiguous.
+
+This handle model is one of the mechanisms that makes common live circuit migration safer than earlier Bakery generations.
+
+### 8.9 Runtime virtualization limits and operator expectations
+
+Current runtime virtualization support is intentionally constrained.
+
+1. Non-top-level runtime virtualization is limited to same-queue / same-major-domain subtree paths.
+2. Top-level runtime virtualization uses a separate rebalance/promote path and only applies when Bakery can derive a deterministic split.
+3. Runtime operations may remain in `AppliedAwaitingCleanup` while deferred prune work completes.
+4. Runtime operations can become `Dirty`; repeated dirty subtree states escalate to `reload required` rather than attempting broad self-healing.
+
+Operator takeaway:
+
+- treat runtime virtualization as a narrow live-mutation feature with verification gates
+- treat `reload required` as the authoritative signal that Bakery no longer trusts incremental topology mutation
+
+## 9) Design Boundaries for Operators
+
+### 9.1 Observability boundaries
 
 | Signal | Strong for | Weak for |
 |---|---|---|
@@ -285,32 +402,47 @@ flowchart TD
 | CAKE/fq_codel drops/marks | Detecting persistent queue pressure and policy effects | Full end-to-end application blame assignment |
 | CPU/RAM and command timing | Capacity and reload risk planning | Isolating every microburst source |
 
+### 9.2 Metric sample semantics and clock domains
 
-### 8.2 Capacity risk factors and mitigations
+Backend metrics do not all come from the same sampling source or clock edge.
+
+1. Some values are sampled from queue/kernel state.
+2. Some values are sampled from flow telemetry.
+3. Some rollups are built from canonical raw samples and only later rendered as percentages.
+
+Practical implication:
+
+- do not casually combine unrelated numerator/denominator sources and assume they describe the same exact second
+- prefer transporting canonical samples/counts and deriving percentages at presentation time
+- treat “same field name” and “same clock domain” as separate questions
+
+This matters especially for retransmit, packet, and rate-derived health metrics.
+
+### 9.3 Capacity risk factors and mitigations
 
 | Risk factor | Typical symptom | Mitigation |
 |---|---|---|
 | Very high queue counts with CAKE everywhere | RAM growth and scheduler overhead | Use `lazy_queues`, expiry, selective fq_codel where appropriate |
-| Frequent full-tree updates | Brief packet disruption windows | Increase incremental-safe update usage; batch structural changes |
+| Frequent full-tree updates | Brief packet disruption windows | Increase incremental-safe update usage; batch structural changes, and let Bakery keep ordinary circuit moves incremental where possible |
 | Incomplete parent mapping in hierarchy | Subscribers unexpectedly unshaped | Validate parent relationships in `network.json` and input data |
 | Single-queue/weak NIC virtualization behavior | Poor spread and unstable shaping | Ensure multi-queue NIC path and verify queue mapping assumptions |
 
-## 9) Symptom-to-Cause Troubleshooting Matrix
+## 10) Symptom-to-Cause Troubleshooting Matrix
 
 | Symptom | Common backend cause | First checks | Typical corrective direction |
 |---|---|---|---|
 | Latency spikes but interface throughput is not fully pegged | Microburst queue buildup, poor flow isolation, or direction mismatch | Compare latency vs queue/drop trends; verify both directions are shaped | Tune leaf qdisc strategy and verify directional shaping design |
 | One CPU runs hot while others are underused | Queue steering imbalance or weak multi-queue path | Inspect CPU utilization and per-class counters by queue branch | Fix queue mapping assumptions and verify `mq`/class structure |
 | Subscribers intermittently appear unshaped | Parent/hierarchy mapping mismatch | Validate parent node references and resulting class creation | Correct hierarchy mappings, then apply and verify class presence |
-| Frequent short disruption during updates | Too many full-reload-triggering changes | Classify recent changes as structural vs incremental | Re-batch operations to favor incremental-safe deltas |
+| Frequent short disruption during updates | Too many full-reload-triggering changes or runtime drift escalation | Classify recent changes as structural vs incremental, and check for `reload required` events | Re-batch operations to favor incremental-safe deltas and investigate live-state drift |
 | RAM growth during scale-up | Too many active leaf qdiscs or aggressive CAKE footprint | Measure queue count and memory trends over update windows | Use lazy queue creation/expiry and consider selective fq_codel use |
 | Dashboard traffic appears higher than expected user throughput | Counter scope differs from post-drop forwarded traffic | Compare dashboard metrics with `tc` drop/mark context | Align runbooks to metric semantics before escalating |
 
-## 10) Change Validation Workflow
+## 11) Change Validation Workflow
 
 Use this lightweight workflow for backend-impacting changes.
 
-### 10.1 Pre-change
+### 11.1 Pre-change
 
 1. Classify change type: mapping/speed/structure.
 2. Estimate impact scope: number of affected circuits/classes.
@@ -320,7 +452,7 @@ Use this lightweight workflow for backend-impacting changes.
    - CPU and RAM headroom
    - `tc` class/qdisc snapshot
 
-### 10.2 During change
+### 11.2 During change
 
 1. Watch control-plane behavior:
    - incremental apply vs full reload occurrence
@@ -330,14 +462,19 @@ Use this lightweight workflow for backend-impacting changes.
    - directional latency drift
    - per-class counter discontinuities
 
-### 10.3 Post-change
+### 11.3 Post-change
 
 1. Re-check the same baseline signals.
 2. Confirm hierarchy/class presence for changed circuits.
 3. Verify subscriber-facing latency and throughput expectations.
 4. If degraded, rollback or reduce change scope and re-apply in smaller batches.
 
-### 10.4 Minimal command checklist
+For `observe <-> shape` transitions, add two specific checks:
+
+1. confirm the queue mode actually matches the intended state
+2. confirm per-circuit mappings were cleared or republished at the right phase of the transition
+
+### 11.4 Minimal command checklist
 
 Adjust device names to your environment.
 
@@ -347,7 +484,7 @@ tc -s class show dev <ifname>
 journalctl -u lqosd --since "15 min ago"
 ```
 
-## 11) Practical Tuning Sequence
+## 12) Practical Tuning Sequence
 
 Recommended order:
 
@@ -358,7 +495,7 @@ Recommended order:
 5. Tune update cadence to favor incremental-safe changes.
 6. Re-test after major speed-plan, topology, or integration-cadence changes.
 
-## 12) Glossary
+## 13) Glossary
 
 - `XDP`: earliest high-performance packet hook in Linux.
 - `eBPF`: in-kernel programmable packet processing.

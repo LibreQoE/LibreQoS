@@ -61,7 +61,12 @@ export class ShaperTopAsnDownload extends BaseDashlet {
     tooltip() { return "<h5>Top Download ASNs</h5><p>Aggregated from live top flows by rate (bps)."; }
     subscribeTo() { return ["AsnTopDownload", "TopFlowsRate"]; }
     buildContainer() { let b = super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
-    setup() { this.graph = new TopAsnSankeyGraph(this.graphDivId(), 'down'); if (this.last) this.graph.update(this.last); }
+    setup() {
+        this.traceRender("setup-start");
+        this.graph = new TopAsnSankeyGraph(this.graphDivId(), 'down');
+        this.traceRender("setup-complete", { graphId: this.graphDivId() });
+        if (this.last) this.graph.update(this.last);
+    }
     _showEmpty(show, msg = "No recent data") {
         const card = document.getElementById(this.id);
         if (!card) return;
@@ -118,7 +123,14 @@ export class ShaperTopAsnDownload extends BaseDashlet {
             this._showEmpty(!hasData);
             if (hasData) {
                 this.last = items;
-                this.graph.update(items);
+                this.traceRender("onMessage", { eventName: msg.event, rowCount: items.length });
+                try {
+                    this.graph.update(items);
+                    this.traceRender("update-ok", { eventName: msg.event, rowCount: items.length });
+                } catch (err) {
+                    this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err) });
+                    throw err;
+                }
             }
             return;
         }
@@ -142,7 +154,14 @@ export class ShaperTopAsnDownload extends BaseDashlet {
         this._showEmpty(!hasData);
         if (hasData) {
             this.last = items;
-            this.graph.update(items);
+            this.traceRender("onMessage", { eventName: msg.event, rowCount: items.length });
+            try {
+                this.graph.update(items);
+                this.traceRender("update-ok", { eventName: msg.event, rowCount: items.length });
+            } catch (err) {
+                this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err) });
+                throw err;
+            }
         }
     }
 }

@@ -32,6 +32,8 @@ to_network = "eth1"
 
 [queues]
 default_sqm = "cake diffserv4"
+queue_mode = "shape"
+# Legacy compatibility field preserved for older binaries during upgrades.
 monitor_only = false
 uplink_bandwidth_mbps = 1000
 downlink_bandwidth_mbps = 1000
@@ -48,7 +50,7 @@ dry_run = false
 tick_seconds = 1
 
 [treeguard.cpu]
-mode = "traffic_rtt_only"
+mode = "cpu_aware"
 cpu_high_pct = 75
 cpu_low_pct = 55
 
@@ -82,7 +84,7 @@ persist_sqm_overrides = true
 
 [treeguard.qoo]
 enabled = true
-min_score = 80.0
+min_score = 70.0
 
 [long_term_stats]
 gather_stats = true
@@ -153,6 +155,8 @@ snmp_community = "public"
 airmax_model_ids = [ "" ]
 ltu_model_ids = [ "" ]
 active_status_ids = [ "" ]
+recurring_excluded_service_names = []
+recurring_service_rates = []
 
 [influxdb]
 enable_influxdb = false

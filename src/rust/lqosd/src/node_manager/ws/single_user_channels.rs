@@ -1,14 +1,17 @@
 mod cake_watcher;
 mod chatbot;
-mod circuit;
-mod flows_by_circuit;
+pub(crate) mod circuit;
+mod circuit_metrics;
+pub(crate) mod flows_by_circuit;
 mod ping_monitor;
+mod tree_attached_circuits;
 
 use crate::node_manager::ws::messages::{PrivateRequest, WsResponse, encode_ws_message};
 use crate::node_manager::ws::single_user_channels::cake_watcher::cake_watcher;
 use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
-use crate::node_manager::ws::single_user_channels::flows_by_circuit::flows_by_circuit;
+use crate::node_manager::ws::single_user_channels::circuit_metrics::watch_circuit_metrics;
 use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
+use crate::node_manager::ws::single_user_channels::tree_attached_circuits::watch_tree_attached_circuits;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tracing::info;
@@ -22,6 +25,10 @@ pub struct PrivateState {
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
     browser_language: Option<String>,
     chatbot_request: Option<u64>,
+    circuit_watch: Option<tokio::task::JoinHandle<()>>,
+    ping_monitor_watch: Option<tokio::task::JoinHandle<()>>,
+    tree_attached_circuits_watch: Option<tokio::task::JoinHandle<()>>,
+    circuit_metrics_watch: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl PrivateState {
@@ -42,6 +49,10 @@ impl PrivateState {
             control_tx,
             browser_language,
             chatbot_request: None,
+            circuit_watch: None,
+            ping_monitor_watch: None,
+            tree_attached_circuits_watch: None,
+            circuit_metrics_watch: None,
         }
     }
 
@@ -51,20 +62,28 @@ impl PrivateState {
         self.control_tx.clone()
     }
 
+    pub fn bus_tx(
+        &self,
+    ) -> Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        lqos_bus::BusRequest,
+    )> {
+        self.bus_tx.clone()
+    }
+
     pub async fn handle_request(&mut self, request: PrivateRequest) {
         match request {
             PrivateRequest::CircuitWatcher { circuit } => {
-                spawn(circuit_watcher(
-                    circuit,
-                    self.tx.clone(),
-                    self.bus_tx.clone(),
-                ));
+                self.replace_circuit_watch(circuit);
             }
             PrivateRequest::PingMonitor { ips } => {
-                spawn(ping_monitor(ips, self.tx.clone()));
+                self.replace_ping_monitor_watch(ips);
             }
-            PrivateRequest::FlowsByCircuit { circuit } => {
-                spawn(flows_by_circuit(circuit, self.tx.clone()));
+            PrivateRequest::StopCircuitWatcher => {
+                self.abort_circuit_watch();
+            }
+            PrivateRequest::StopPingMonitorWatch => {
+                self.abort_ping_monitor_watch();
             }
             PrivateRequest::CakeWatcher { circuit } => {
                 spawn(cake_watcher(circuit, self.tx.clone()));
@@ -76,6 +95,73 @@ impl PrivateState {
             PrivateRequest::ChatbotUserInput { text } => {
                 self.forward_chatbot_input(text).await;
             }
+            PrivateRequest::WatchTreeAttachedCircuits { query } => {
+                self.replace_tree_attached_circuits_watch(query);
+            }
+            PrivateRequest::StopTreeAttachedCircuitsWatch => {
+                self.abort_tree_attached_circuits_watch();
+            }
+            PrivateRequest::WatchCircuitMetrics { query } => {
+                self.replace_circuit_metrics_watch(query);
+            }
+            PrivateRequest::StopCircuitMetricsWatch => {
+                self.abort_circuit_metrics_watch();
+            }
+        }
+    }
+
+    fn replace_circuit_watch(&mut self, circuit: String) {
+        self.abort_circuit_watch();
+        self.circuit_watch = Some(spawn(circuit_watcher(
+            circuit,
+            self.tx.clone(),
+            self.bus_tx.clone(),
+        )));
+    }
+
+    fn abort_circuit_watch(&mut self) {
+        if let Some(handle) = self.circuit_watch.take() {
+            handle.abort();
+        }
+    }
+
+    fn replace_ping_monitor_watch(&mut self, ips: Vec<(String, String)>) {
+        self.abort_ping_monitor_watch();
+        self.ping_monitor_watch = Some(spawn(ping_monitor(ips, self.tx.clone())));
+    }
+
+    fn abort_ping_monitor_watch(&mut self) {
+        if let Some(handle) = self.ping_monitor_watch.take() {
+            handle.abort();
+        }
+    }
+
+    fn replace_tree_attached_circuits_watch(
+        &mut self,
+        query: crate::node_manager::local_api::tree_attached_circuits::TreeAttachedCircuitsQuery,
+    ) {
+        self.abort_tree_attached_circuits_watch();
+        self.tree_attached_circuits_watch =
+            Some(spawn(watch_tree_attached_circuits(query, self.tx.clone())));
+    }
+
+    fn abort_tree_attached_circuits_watch(&mut self) {
+        if let Some(handle) = self.tree_attached_circuits_watch.take() {
+            handle.abort();
+        }
+    }
+
+    fn replace_circuit_metrics_watch(
+        &mut self,
+        query: crate::node_manager::local_api::circuit_live::CircuitMetricsQuery,
+    ) {
+        self.abort_circuit_metrics_watch();
+        self.circuit_metrics_watch = Some(spawn(watch_circuit_metrics(query, self.tx.clone())));
+    }
+
+    fn abort_circuit_metrics_watch(&mut self) {
+        if let Some(handle) = self.circuit_metrics_watch.take() {
+            handle.abort();
         }
     }
 
@@ -133,6 +219,15 @@ impl PrivateState {
                 },
             )
             .await;
+    }
+}
+
+impl Drop for PrivateState {
+    fn drop(&mut self) {
+        self.abort_circuit_watch();
+        self.abort_ping_monitor_watch();
+        self.abort_tree_attached_circuits_watch();
+        self.abort_circuit_metrics_watch();
     }
 }
 

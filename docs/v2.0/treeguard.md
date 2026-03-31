@@ -32,10 +32,18 @@ TreeGuard evaluates utilization, RTT freshness, CPU guardrails, and optional QoO
 High-level behavior:
 
 1. For sustained low-load conditions, TreeGuard may switch a direction from `cake` to `fq_codel`.
-2. If utilization rises, RTT/QoO guardrails are unsafe, or revert conditions are met, TreeGuard switches back to `cake`.
+2. If utilization rises, QoO guardrails are unsafe, or revert conditions are met, TreeGuard switches back toward the circuit's base SQM policy.
 3. Decisions can be independent per direction when `independent_directions = true`.
 
 This gives a dynamic profile where loaded directions favor `cake diffserv4`, while low-load directions can use `fq_codel` when conditions are safe.
+
+The base SQM policy comes from operator intent, not from TreeGuard defaults. In practice, TreeGuard starts from the effective configured policy for each circuit and only persists its own temporary overlay when it needs to differ from that base.
+
+Important base-policy rule:
+
+1. If a direction's base SQM policy is `cake`, TreeGuard may temporarily switch that direction to `fq_codel` and later return it to base.
+2. If a direction's base SQM policy is `fq_codel`, TreeGuard does not circuit-switch that direction to `cake`.
+3. Link virtualization remains available regardless of the circuit SQM base policy.
 
 ## Configuration (`/etc/lqos.conf`)
 
@@ -55,6 +63,11 @@ enabled = true
 dry_run = false
 tick_seconds = 1
 
+[treeguard.cpu]
+mode = "cpu_aware"
+cpu_high_pct = 75
+cpu_low_pct = 55
+
 [treeguard.links]
 enabled = true
 all_nodes = true
@@ -70,6 +83,11 @@ independent_directions = true
 enabled = true
 ```
 
+TreeGuard node virtualization is intended to be CPU-aware by default. Traffic, RTT, and QoO
+remain important safety and restore signals, but new automatic virtualization should happen when
+CPU pressure suggests HTB savings are worthwhile. Upgraded installs from older defaults are
+silently migrated from `traffic_rtt_only` to `cpu_aware`, with a visible notice in logs/UI.
+
 ## Safe Rollout Pattern
 
 1. Review TreeGuard settings early in deployment instead of assuming static/manual queue behavior.
@@ -80,11 +98,51 @@ enabled = true
 
 ## Overrides and Operational Notes
 
-When enabled and not dry-run, TreeGuard may persist decisions to:
+When enabled and not dry-run, TreeGuard may persist circuit SQM decisions to:
 
 - `lqos_overrides.treeguard.json`
 
 TreeGuard is designed to avoid fighting operator-owned overrides. If operator overrides exist for enrolled entities, TreeGuard skips those entities and reports warnings.
+
+TreeGuard virtual-node decisions are runtime-only Bakery operations. They are not materialized back
+into the base `network.json` by the scheduler, and they are not persisted as TreeGuard-owned
+`set_node_virtual` entries in the effective shaping input. In v1 they are ephemeral: a daemon
+restart returns the physical tree to the base operator-defined topology until TreeGuard decides
+again.
+
+For local runtime verification and debugging, `liblqos_python` now exposes both the current
+TreeGuard node-operation status and a Bakery runtime branch-state snapshot. The branch-state
+snapshot is the authoritative control-plane view of which retained branch is active for a node, and
+is more reliable than inferring parent changes from `tc` output alone for non-top-level cases.
+The local confidence workflow also now uses a larger synthetic Bakery TreeGuard fixture for scale
+checks: 8 top-level nodes, 3 levels deep, and 1,000 circuits attached only at the lowest level.
+When traffic-backed verification is enabled, the runtime verifier now defaults to 10 tracked
+circuits per successful case instead of the earlier smaller smoke-test default.
+
+TreeGuard circuit SQM decisions are also runtime overrides. The scheduler does not materialize TreeGuard-owned SQM changes back into the base `ShapedDevices.csv`, so clearing TreeGuard does not permanently rewrite operator-authored circuit SQM policy.
+
+TreeGuard also refuses to manage nodes that are already marked `"virtual": true` in the base `network.json`. If stale legacy TreeGuard-owned node-virtualization overrides exist for those nodes, TreeGuard clears that legacy override state and falls back to the base topology definition.
+
+For circuit SQM management, TreeGuard treats duplicate `device_id` values as unsafe identity collisions. If the same `device_id` appears in more than one circuit in `ShapedDevices.csv`, TreeGuard skips those affected circuits and clears any TreeGuard-owned SQM overrides for those duplicate device IDs.
+
+If RTT telemetry is temporarily unavailable after a restart, TreeGuard does not treat missing RTT alone as evidence that it should revert `fq_codel` directions. Other guardrails such as utilization, QoO, and CPU pressure still apply.
+
+TreeGuard also applies a conservative global per-tick circuit SQM change budget. On very large enrolled populations, excess circuit SQM changes are deferred to later ticks instead of stampeding Bakery in one pass.
+
+For scale, TreeGuard no longer rebuilds circuit membership from `ShapedDevices.csv` on every circuit tick. It now keeps a cached per-circuit inventory derived from `ShapedDevices.csv`, reads per-circuit live telemetry from the shared once-per-second circuit rollup snapshot, and spreads large `all_circuits = true` SQM evaluations across multiple ticks instead of rescanning every enrolled circuit every second.
+
+In practice, this means:
+
+1. Link virtualization still follows the normal TreeGuard tick cadence.
+2. Circuit SQM evaluation for small enrollments still completes quickly.
+3. Very large `all_circuits` enrollments are swept incrementally over multiple ticks, with a target full sweep around 15 seconds instead of attempting a full per-second scan.
+4. TreeGuard node virtualization now goes through Bakery live runtime planning/apply paths instead of forcing a LibreQoS reload or Bakery full reload.
+5. Supported top-level runtime virtualization now uses a Bakery-side rebalance/migration plan that can promote child sites and direct circuits across queue roots while preserving the logical hierarchy for reporting.
+
+Recent TreeGuard activity is available in two places:
+
+- The WebUI TreeGuard status/activity views.
+- The `lqosd` journal, where TreeGuard now logs each recorded activity event so reloads, override cleanup, SQM changes, and failures are diagnosable without websocket inspection.
 
 ## Related Pages
 

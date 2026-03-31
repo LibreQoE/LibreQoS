@@ -39,7 +39,7 @@ export class Top10EndpointsByCountry extends DashletBaseInsight {
             let target = document.getElementById(this.id);
 
             let t = document.createElement("table");
-            t.classList.add("dash-table", "table-sm", "small");
+            t.classList.add("lqos-table", "lqos-table-compact", "small", "lqos-topn-plain");
 
             let th = document.createElement("thead");
             th.classList.add("small");
@@ -89,14 +89,17 @@ export class Top10EndpointsByCountry extends DashletBaseInsight {
                 rttu.innerHTML = rttNanosAsSpan(r[2][1]);
                 row.appendChild(rttu);
 
-                t.appendChild(row);
+                tbody.appendChild(row);
                 count++;
             });
             t.appendChild(tbody);
 
             // Display it
             clearDashDiv(this.id, target);
-            target.appendChild(t);
+            const tableWrap = document.createElement("div");
+            tableWrap.classList.add("lqos-table-wrap");
+            tableWrap.appendChild(t);
+            target.appendChild(tableWrap);
         }
     }
 }

@@ -1,19 +1,23 @@
 import {DashboardGraph} from "./dashboard_graph";
-import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
+import {toNumber} from "../lq_js_common/helpers/scaling";
+import {
+    CAKE_CHART_WINDOW_SECONDS,
+    cakeChartTitle,
+    cakeCommonGrid,
+    cakeCommonXAxis,
+    cakeHistoryWindow,
+    cakeScatterSeries,
+    cakeTooltip,
+    formatCakeBitsPerSecond,
+} from "./cake_history";
 
 export class CakeTraffic extends DashboardGraph {
     constructor(id) {
         super(id);
 
-        let xaxis = [];
-        for (let i=0; i<600; i++) {
-            xaxis.push(i);
-        }
-
         this.option = {
-            title: {
-                text: "Traffic",
-            },
+            title: cakeChartTitle("Traffic", "Bits per second"),
+            grid: cakeCommonGrid(),
             legend: {
                 orient: "horizontal",
                 right: 10,
@@ -50,111 +54,24 @@ export class CakeTraffic extends DashboardGraph {
                     }
                 ]
             },
-            xAxis: {
-                type: 'category',
-                data: xaxis,
-            },
+            xAxis: cakeCommonXAxis(CAKE_CHART_WINDOW_SECONDS),
             yAxis: {
                 type: 'value',
                 axisLabel: {
-                    formatter: (val) => {
-                        return scaleNumber(Math.abs(val), 0);
-                    },
+                    formatter: (val) => formatCakeBitsPerSecond(val),
                 }
             },
             series: [
-                {
-                    name: 'Bulk',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[0],
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[0] }
-                },
-                {
-                    name: 'Best Effort',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[1]
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[1] }
-                },
-                {
-                    name: 'RT Video',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[2]
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[2] }
-                },
-                {
-                    name: 'Voice',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[3]
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[3] }
-                },
-                {
-                    name: 'Bulk Up',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[0],
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[0] }
-                },
-                {
-                    name: 'Best Effort Up',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[1]
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[1] }
-                },
-                {
-                    name: 'RT Video Up',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[2]
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[2] }
-                },
-                {
-                    name: 'RT Voice Up',
-                    data: [],
-                    type: 'scatter',
-                    lineStyle: {
-                        color: window.graphPalette[3]
-                    },
-                    symbol: 'circle',
-                    symbolSize: 2,
-                    itemStyle: { color: window.graphPalette[3] }
-                },
+                cakeScatterSeries("Bulk", window.graphPalette[0]),
+                cakeScatterSeries("Best Effort", window.graphPalette[1]),
+                cakeScatterSeries("RT Video", window.graphPalette[2]),
+                cakeScatterSeries("Voice", window.graphPalette[3]),
+                cakeScatterSeries("Bulk Up", window.graphPalette[0]),
+                cakeScatterSeries("Best Effort Up", window.graphPalette[1]),
+                cakeScatterSeries("RT Video Up", window.graphPalette[2]),
+                cakeScatterSeries("RT Voice Up", window.graphPalette[3]),
             ],
-            tooltip: {
-                trigger: 'item',
-            },
+            tooltip: cakeTooltip(formatCakeBitsPerSecond),
             animation: false,
         }
         this.option && this.chart.setOption(this.option);
@@ -183,21 +100,15 @@ export class CakeTraffic extends DashboardGraph {
         for (let i=0; i<8; i++) {
             this.option.series[i].data = [];
         }
-        //console.log(msg);
-        for (let i=msg.history_head; i<600; i++) {
+        for (const sample of cakeHistoryWindow(msg, CAKE_CHART_WINDOW_SECONDS)) {
             for (let j=0; j<4; j++) {
-                if (msg.history[i][0].tins[0] === undefined) continue;
-                const downBits = toNumber(msg.history[i][0].tins[j].sent_bytes, 0) * 8;
-                const upBits = toNumber(msg.history[i][1].tins[j].sent_bytes, 0) * 8;
-                this.option.series[j].data.push(downBits);
-                this.option.series[j+4].data.push(0 - upBits);
-            }
-        }
-        for (let i=0; i<msg.history_head; i++) {
-            for (let j=0; j<4; j++) {
-                if (msg.history[i][0].tins[0] === undefined) continue;
-                const downBits = toNumber(msg.history[i][0].tins[j].sent_bytes, 0) * 8;
-                const upBits = toNumber(msg.history[i][1].tins[j].sent_bytes, 0) * 8;
+                if (!sample || sample[0].tins[0] === undefined) {
+                    this.option.series[j].data.push(null);
+                    this.option.series[j+4].data.push(null);
+                    continue;
+                }
+                const downBits = toNumber(sample[0].tins[j].sent_bytes, 0) * 8;
+                const upBits = toNumber(sample[1].tins[j].sent_bytes, 0) * 8;
                 this.option.series[j].data.push(downBits);
                 this.option.series[j+4].data.push(0 - upBits);
             }

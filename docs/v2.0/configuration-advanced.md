@@ -81,6 +81,20 @@ If integration mode is enabled, integration refresh cycles typically own `Shaped
 - Use WebUI/manual edits for short operational adjustments only.
 - Put permanent changes in your integration system, integration overrides, or declared external source of truth workflow.
 
+#### IP range allow/ignore behavior for integrations
+
+The `[ip_ranges]` section is also used when integrations generate subscriber/device shaping data.
+
+- `allow_subnets` defines the address space LibreQoS should consider shapeable.
+- `ignore_subnets` removes matching addresses from generated subscriber devices even if they are otherwise present in the source CRM/NMS.
+- Current shared integration-output pruning uses `ignore_subnets` to exclude generated subscriber/device rows, but does not newly require all imported integration IPs to be inside `allow_subnets` just to survive generation.
+- If an imported device is left with no remaining non-ignored IPs after `ignore_subnets` is applied, that device is omitted from generated `ShapedDevices.csv`.
+- If an imported circuit is left with no remaining shaped devices, that circuit is omitted from generated `ShapedDevices.csv`.
+
+This can be used to exclude entire subscriber populations from LibreQoS shaping and Insight-reported shaped-device inventory. For example, some operators shape wireless subscribers in LibreQoS but exclude FTTH subscribers whose ONTs already enforce service rates.
+
+Use this carefully: `ignore_subnets` is broader than a billing-only toggle. The same setting also affects other LibreQoS/Insight IP-policy handling.
+
 #### CRM/NMS Integrations
 
 Learn more about [configuring integrations here](integrations.md).
@@ -125,13 +139,16 @@ How overrides apply:
 - `lqos_scheduler` applies overrides during refresh cycles.
 - persistent devices are merged into `ShapedDevices.csv`.
 - circuit/device/network adjustments are applied on top of imported/manual data.
+- operator-owned site bandwidth overrides prefer `node_id` when present and fall back to legacy name-only matching.
+- tree-page `Operator Override` writes to the operator override layer in `lqos_overrides.json`, not to legacy integration bandwidth CSV files.
+- automated runtime layers such as StormGuard and TreeGuard remain separate from the operator layer and are not written back into operator-authored source files.
 
 ### Network Hierarchy
 #### Network.json
 
 Network.json allows ISP operators to define a Hierarchical Network Topology, or Flat Network Topology.
 
-Each topology node may optionally include an `"id"` field. This is intended to carry a stable node identifier from the source CRM/NMS when one exists. LibreQoS currently still matches hierarchy and overrides by node name, not by this ID, so `"id"` is metadata for now.
+Each topology node may optionally include an `"id"` field. This is intended to carry a stable node identifier from the source CRM/NMS when one exists. Current builds prefer this ID when matching operator-owned site bandwidth overrides, while still supporting legacy name-only matching as a fallback.
 
 Recommended format:
 
@@ -150,6 +167,15 @@ Notes:
 - Use namespaced string IDs such as `uisp:site:<id>`, `splynx:network_site:<id>`, or `sonar:ap:<id>`.
 - Generated LibreQoS-only nodes may use stable generated IDs such as `libreqos:generated:uisp:site:orphans`.
 - Existing integration-specific metadata fields such as `uisp_site` and `uisp_device` may also appear alongside the generic `id` field.
+
+#### Queue mode (`shape` / `observe`)
+
+LibreQoS currently uses `queue_mode` in the `[queues]` section to control whether the shaping tree is active:
+
+- `queue_mode = "shape"`: normal shaping mode
+- `queue_mode = "observe"`: remove the subscriber shaping tree for a true baseline while keeping the root MQ in place
+
+The older `monitor_only` setting is retained as a compatibility alias in some configs and serialized output, but `queue_mode` is the current operator-facing setting and documentation term.
 
 If you plan to use the built-in UISP, Splynx, or Netzur integrations, you do not need to create a network.json file quite yet.
 If you plan to use the built-in UISP integration, it will create this automatically on its first run (assuming network.json is not already present).

@@ -1,96 +1,134 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
-            <div class="mb-3">
-                <label for="defaultSqm" class="form-label">Default SQM Algorithm</label>
-                <select class="form-select" id="defaultSqm">
-                    <option value="cake diffserv4">cake diffserv4</option>
-                    <option value="cake diffserv4 ack-filter">cake diffserv4 ack-filter</option>
-                    <option value="fq_codel">fq_codel</option>
-                </select>
-                <div class="form-text">Queue management algorithm to use by default</div>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Queues and Shaping</h5>
+                    <div class="lqos-config-panel-subtitle">Default SQM behavior, shaping mode, interface capacity, and lazy-queue behavior.</div>
+                </div>
             </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="monitorOnly">
-                <label class="form-check-label" for="monitorOnly">Monitor Only</label>
-                <div class="form-text">Monitor traffic without shaping</div>
-            </div>
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Shaping Defaults</h6>
+                        <div class="lqos-config-section-subtitle">Core shaping mode and default SQM selection for new circuits.</div>
 
-            <div class="mb-3">
-                <label for="uplinkBandwidth" class="form-label">Uplink Bandwidth (Mbps)</label>
-                <input type="number" class="form-control" id="uplinkBandwidth" min="1">
-                <div class="form-text">Total upstream bandwidth capacity</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="defaultSqm" class="form-label">Default SQM Algorithm</label>
+                            <select class="form-select" id="defaultSqm">
+                                <option value="cake diffserv4">cake diffserv4</option>
+                                <option value="cake diffserv4 ack-filter">cake diffserv4 ack-filter</option>
+                                <option value="fq_codel">fq_codel</option>
+                            </select>
+                            <div class="form-text">Queue management algorithm to use by default.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="downlinkBandwidth" class="form-label">Downlink Bandwidth (Mbps)</label>
-                <input type="number" class="form-control" id="downlinkBandwidth" min="1">
-                <div class="form-text">Total downstream bandwidth capacity</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="queueMode" class="form-label">Queue Mode</label>
+                            <select class="form-select" id="queueMode">
+                                <option value="shape">Shape</option>
+                                <option value="observe">Observe</option>
+                            </select>
+                            <div class="form-text">Observe keeps root MQ active for the transparent bridge, but does not apply the LibreQoS shaping tree.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="fastQueuesFqCodel" class="form-label">Prefer fq_codel at or above (Mbps)</label>
-                <input type="number" class="form-control" id="fastQueuesFqCodel" min="1" step="0.1">
-                <div class="form-text">If unset, defaults to 1000. For circuits with download >= this rate, fq_codel is preferred when no per-circuit override is set.</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="fastQueuesFqCodel" class="form-label">Prefer fq_codel at or above (Mbps)</label>
+                            <input type="number" class="form-control" id="fastQueuesFqCodel" min="1" step="0.1">
+                            <div class="form-text">If unset, defaults to 1000. For circuits with download at or above this rate, fq_codel is preferred when no per-circuit override is set.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="generatedPnDownload" class="form-label">Generated Per-Node Download (Mbps)</label>
-                <input type="number" class="form-control" id="generatedPnDownload" min="1">
-                <div class="form-text">Download bandwidth per interface queue</div>
-            </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="dryRun">
+                            <label class="form-check-label" for="dryRun">Dry Run</label>
+                            <div class="form-text">Print commands without executing them.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="generatedPnUpload" class="form-label">Generated Per-Node Upload (Mbps)</label>
-                <input type="number" class="form-control" id="generatedPnUpload" min="1">
-                <div class="form-text">Upload bandwidth per interface queue</div>
-            </div>
+                        <div class="mb-0 form-check">
+                            <input type="checkbox" class="form-check-input" id="sudo">
+                            <label class="form-check-label" for="sudo">Use Sudo</label>
+                            <div class="form-text">Prefix commands with sudo.</div>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="dryRun">
-                <label class="form-check-label" for="dryRun">Dry Run</label>
-                <div class="form-text">Print commands without executing them</div>
-            </div>
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Capacity and Queue Count</h6>
+                        <div class="lqos-config-section-subtitle">Bandwidth ceilings and queue-count controls used during tree generation.</div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="sudo">
-                <label class="form-check-label" for="sudo">Use Sudo</label>
-                <div class="form-text">Prefix commands with sudo</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="uplinkBandwidth" class="form-label">Uplink Bandwidth (Mbps)</label>
+                            <input type="number" class="form-control" id="uplinkBandwidth" min="1">
+                            <div class="form-text">Total upstream bandwidth capacity.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="overrideQueues" class="form-label">Override Available Queues</label>
-                <input type="number" class="form-control" id="overrideQueues" min="1">
-                <div class="form-text">Override the number of available queues (leave blank for auto)</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="downlinkBandwidth" class="form-label">Downlink Bandwidth (Mbps)</label>
+                            <input type="number" class="form-control" id="downlinkBandwidth" min="1">
+                            <div class="form-text">Total downstream bandwidth capacity.</div>
+                        </div>
 
-            <div class="mb-3 form-check">
-                <input type="checkbox" class="form-check-input" id="useBinpacking">
-                <label class="form-check-label" for="useBinpacking">Use Binpacking</label>
-                <div class="form-text">Use binpacking algorithm to optimize flat networks</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="generatedPnDownload" class="form-label">Generated Per-Node Download (Mbps)</label>
+                            <input type="number" class="form-control" id="generatedPnDownload" min="1">
+                            <div class="form-text">Download bandwidth per interface queue.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="lazyQueues" class="form-label">Lazy Queue Mode</label>
-                <select class="form-select" id="lazyQueues">
-                    <option value="No">No - Disabled</option>
-                    <option value="Htb">Htb - HTB queues on build, CAKE classes on demand</option>
-                    <option value="Full">Full - Both HTB and CAKE queues on demand</option>
-                </select>
-                <div class="form-text">Control how circuit queues are created for fractional rate plans</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="generatedPnUpload" class="form-label">Generated Per-Node Upload (Mbps)</label>
+                            <input type="number" class="form-control" id="generatedPnUpload" min="1">
+                            <div class="form-text">Upload bandwidth per interface queue.</div>
+                        </div>
 
-            <div class="mb-3">
-                <label for="lazyExpireSeconds" class="form-label">Lazy Queue Expiration (seconds)</label>
-                <input type="number" class="form-control" id="lazyExpireSeconds" min="30">
-                <div class="form-text">Time before unused lazy queues are removed (leave blank for default: 600 seconds)</div>
-            </div>
+                        <div class="mb-3">
+                            <label for="overrideQueues" class="form-label">Override Available Queues</label>
+                            <input type="number" class="form-control" id="overrideQueues" min="1">
+                            <div class="form-text">Override the number of available queues (leave blank for auto).</div>
+                        </div>
 
+                        <div class="mb-0 form-check">
+                            <input type="checkbox" class="form-check-input" id="useBinpacking">
+                            <label class="form-check-label" for="useBinpacking">Use Binpacking</label>
+                            <div class="form-text">Use the binpacking algorithm to optimize flat networks.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <h6 class="lqos-config-section-title">Lazy Queue Mode</h6>
+                        <div class="lqos-config-section-subtitle">Control when HTB and CAKE structures are created for fractional plans.</div>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-lg-6">
+                                <label for="lazyQueues" class="form-label">Lazy Queue Mode</label>
+                                <select class="form-select" id="lazyQueues">
+                                    <option value="No">No - Disabled</option>
+                                    <option value="Htb">Htb - HTB queues on build, CAKE classes on demand</option>
+                                    <option value="Full">Full - Both HTB and CAKE queues on demand</option>
+                                </select>
+                                <div class="form-text">Control how circuit queues are created for fractional rate plans.</div>
+                            </div>
+
+                            <div class="col-12 col-lg-6">
+                                <label for="lazyExpireSeconds" class="form-label">Lazy Queue Expiration (seconds)</label>
+                                <input type="number" class="form-control" id="lazyExpireSeconds" min="30">
+                                <div class="form-text">Time before unused lazy queues are removed (leave blank for default: 600 seconds).</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_queues.js%CACHEBUSTERS%"></script>

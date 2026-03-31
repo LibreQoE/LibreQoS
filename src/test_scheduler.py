@@ -18,7 +18,8 @@ def install_scheduler_stubs():
     lqlib.automatic_import_powercode = lambda: False
     lqlib.automatic_import_sonar = lambda: False
     lqlib.influx_db_enabled = lambda: False
-    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"
+    # Test-only fake install root.
+    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"  # nosec B108
     lqlib.blackboard_finish = Mock()
     lqlib.blackboard_submit = Mock()
     lqlib.automatic_import_wispgate = lambda: False
@@ -27,13 +28,18 @@ def install_scheduler_stubs():
     lqlib.automatic_import_netzur = lambda: False
     lqlib.automatic_import_visp = lambda: False
     lqlib.calculate_hash = lambda: 0
+    lqlib.calculate_shaping_runtime_hash = lambda: 0
     lqlib.efficiency_core_ids = lambda: []
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
     lqlib.scheduler_output = Mock()
+    lqlib.wait_for_bus_ready = Mock(return_value=True)
     lqlib.overrides_persistent_devices_effective = lambda: []
+    lqlib.overrides_persistent_devices_materialized = lambda: []
     lqlib.overrides_circuit_adjustments_effective = lambda: []
+    lqlib.overrides_circuit_adjustments_materialized = lambda: []
     lqlib.overrides_network_adjustments_effective = lambda: []
+    lqlib.overrides_network_adjustments_materialized = lambda: []
     sys.modules["liblqos_python"] = lqlib
 
     apscheduler_pkg = types.ModuleType("apscheduler")
@@ -137,7 +143,8 @@ class TestSchedulerAffinity(unittest.TestCase):
         result = types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
         with patch.object(scheduler, "automatic_import_uisp", return_value=True):
-            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+            # Test-only fake install root.
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result) as mock_run:
                     with patch.object(scheduler, "apply_lqos_overrides"):
                         with patch.object(scheduler.os.path, "isfile", return_value=True):
@@ -146,8 +153,8 @@ class TestSchedulerAffinity(unittest.TestCase):
 
         mock_run.assert_called_once()
         mock_popen.assert_called_once_with(
-            "/tmp/libreqos/bin/post_integration_hook.sh",
-            cwd="/tmp/libreqos/bin",
+            "/tmp/libreqos/bin/post_integration_hook.sh",  # nosec B108
+            cwd="/tmp/libreqos/bin",  # nosec B108
         )
 
 
@@ -190,7 +197,8 @@ class TestSchedulerErrorReporting(unittest.TestCase):
         result = types.SimpleNamespace(returncode=0, stdout="uisp info\n", stderr="")
 
         with patch.object(scheduler, "automatic_import_uisp", return_value=True):
-            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+            # Test-only fake install root.
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result):
                     with patch.object(scheduler, "apply_lqos_overrides"):
                         with patch.object(scheduler.os.path, "isfile", return_value=False):
@@ -209,7 +217,8 @@ class TestSchedulerErrorReporting(unittest.TestCase):
         result = types.SimpleNamespace(returncode=1, stdout="uisp info\n", stderr="")
 
         with patch.object(scheduler, "automatic_import_uisp", return_value=True):
-            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):
+            # Test-only fake install root.
+            with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result):
                     with patch.object(scheduler, "apply_lqos_overrides"):
                         with patch.object(scheduler.os.path, "isfile", return_value=False):
@@ -262,12 +271,13 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
             "1", "1", "330", "330", "", ""
         ]]
 
-        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):
+        # Test-only fake csv path.
+        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):  # nosec B108
             with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
-                with patch.object(scheduler, "overrides_persistent_devices_effective", return_value=[]):
+                with patch.object(scheduler, "overrides_persistent_devices_materialized", return_value=[]):
                     with patch.object(
                         scheduler,
-                        "overrides_circuit_adjustments_effective",
+                        "overrides_circuit_adjustments_materialized",
                         return_value=[{
                             "type": "device_adjust_sqm",
                             "device_id": "splynx_service_93",
@@ -281,6 +291,166 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         self.assertEqual(written_rows[0][10], "330")
         self.assertEqual(written_rows[0][11], "330")
         self.assertEqual(written_rows[0][13], "fq_codel/fq_codel")
+
+    def test_apply_network_adjustments_uses_materialized_adjustments(self):
+        network = {
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "SiteA": {
+                        "downloadBandwidthMbps": 100,
+                        "uploadBandwidthMbps": 50,
+                        "children": {},
+                    },
+                    "NodeB": {
+                        "id": "node-b",
+                        "downloadBandwidthMbps": 200,
+                        "uploadBandwidthMbps": 100,
+                        "virtual": False,
+                        "children": {},
+                    },
+                },
+            }
+        }
+
+        with patch.object(
+            scheduler,
+            "overrides_network_adjustments_materialized",
+            return_value=[
+                {
+                    "type": "adjust_site_speed",
+                    "node_id": "node-b",
+                    "site_name": "NodeB",
+                    "download_bandwidth_mbps": 80.5,
+                    "upload_bandwidth_mbps": 40.25,
+                },
+                {
+                    "type": "set_node_virtual",
+                    "node_name": "NodeB",
+                    "virtual": True,
+                },
+            ],
+        ):
+            changed = scheduler.apply_network_adjustments(network)
+
+        self.assertTrue(changed)
+        node = network["Root"]["children"]["NodeB"]
+        self.assertEqual(node["downloadBandwidthMbps"], 80.5)
+        self.assertEqual(node["uploadBandwidthMbps"], 40.25)
+        self.assertTrue(network["Root"]["children"]["NodeB"]["virtual"])
+
+    def test_apply_network_adjustments_keeps_legacy_name_based_matching(self):
+        network = {
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "SiteA": {
+                        "downloadBandwidthMbps": 100,
+                        "uploadBandwidthMbps": 50,
+                        "children": {},
+                    },
+                },
+            }
+        }
+
+        with patch.object(
+            scheduler,
+            "overrides_network_adjustments_materialized",
+            return_value=[
+                {
+                    "type": "adjust_site_speed",
+                    "site_name": "SiteA",
+                    "download_bandwidth_mbps": 80,
+                    "upload_bandwidth_mbps": 40,
+                },
+            ],
+        ):
+            changed = scheduler.apply_network_adjustments(network)
+
+        self.assertTrue(changed)
+        site = network["Root"]["children"]["SiteA"]
+        self.assertEqual(site["downloadBandwidthMbps"], 80)
+        self.assertEqual(site["uploadBandwidthMbps"], 40)
+
+    def test_apply_network_adjustments_does_not_use_effective_stormguard_speeds(self):
+        network = {
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "Pine Hills": {
+                        "downloadBandwidthMbps": 940,
+                        "uploadBandwidthMbps": 500,
+                        "children": {},
+                    }
+                },
+            }
+        }
+
+        effective_adjustments = [
+            {
+                "type": "adjust_site_speed",
+                "site_name": "Pine Hills",
+                "download_bandwidth_mbps": 4,
+                "upload_bandwidth_mbps": 4,
+            }
+        ]
+
+        with patch.dict(
+            scheduler.apply_network_adjustments.__globals__,
+            {"overrides_network_adjustments_effective": lambda: effective_adjustments},
+            clear=False,
+        ):
+            with patch.object(
+            scheduler,
+            "overrides_network_adjustments_materialized",
+            return_value=[],
+            ) as mock_materialized:
+                changed = scheduler.apply_network_adjustments(network)
+
+        mock_materialized.assert_called_once_with()
+        self.assertFalse(changed)
+        site = network["Root"]["children"]["Pine Hills"]
+        self.assertEqual(site["downloadBandwidthMbps"], 940)
+        self.assertEqual(site["uploadBandwidthMbps"], 500)
+
+    def test_apply_network_adjustments_does_not_materialize_runtime_treeguard_virtual_state(self):
+        network = {
+            "Root": {
+                "children": {
+                    "REGION_01": {
+                        "virtual": False,
+                        "children": {},
+                    }
+                },
+            }
+        }
+
+        effective_adjustments = [
+            {
+                "type": "set_node_virtual",
+                "node_name": "REGION_01",
+                "virtual": True,
+            }
+        ]
+
+        with patch.dict(
+            scheduler.apply_network_adjustments.__globals__,
+            {"overrides_network_adjustments_effective": lambda: effective_adjustments},
+            clear=False,
+        ):
+            with patch.object(
+                scheduler,
+                "overrides_network_adjustments_materialized",
+                return_value=[],
+            ) as mock_materialized:
+                changed = scheduler.apply_network_adjustments(network)
+
+        mock_materialized.assert_called_once_with()
+        self.assertFalse(changed)
+        self.assertFalse(network["Root"]["children"]["REGION_01"]["virtual"])
 
 
 if __name__ == "__main__":

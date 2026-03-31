@@ -12,6 +12,8 @@ StormGuard es el subsistema de ajuste adaptativo de colas de LibreQoS para event
 - Aplica ajustes acotados a límites de nodos configurados para proteger calidad bajo estrés.
 - Expone estado y depuración en WebUI.
 
+Los cambios adaptativos de velocidad por sitio de StormGuard se guardan en la capa de overrides de StormGuard. No se escriben de vuelta en `network.json`.
+
 ## Configuración
 
 StormGuard se configura en `/etc/lqos.conf` bajo `[stormguard]`.
@@ -41,7 +43,12 @@ Si está probando, comience con `dry_run = true`.
 
 ## UI y depuración
 
-- WebUI (Node Manager) incluye vistas de estado y depuración de StormGuard.
+- WebUI (Node Manager) incluye una pestaña dedicada de StormGuard además de las vistas de estado y depuración.
+- La pestaña del dashboard está pensada para responder "qué está haciendo StormGuard ahora mismo?" con:
+  - tarjetas resumen para sitios observados, en cooldown y con cambios recientes
+  - una lista de sitios que funciona tanto con un único sitio observado como con conjuntos más grandes
+  - un panel de detalle por sitio seleccionado que explica límites actuales, últimas acciones y por qué StormGuard mantiene o cambia velocidades
+  - un feed de actividad reciente para triage rápido del operador
 - La página de depuración muestra:
   - límites efectivos actuales
   - métricas de evaluación
@@ -69,6 +76,7 @@ También verifique:
 - que los nombres en `targets` aún coincidan con `network.json`
 - que cambios de integración no hayan renombrado nodos clave
 - que los pisos mínimos sean razonables para su perfil de tráfico
+- que `network.json` siga reflejando sus velocidades planificadas/de origen si está investigando una reducción inesperada de StormGuard
 - que `log_file` (si se usa) sea escribible por el servicio
 
 ## Páginas relacionadas

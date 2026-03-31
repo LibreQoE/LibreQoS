@@ -1,7 +1,16 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">WispGate Integration</h5>
+                    <div class="lqos-config-panel-subtitle">Configure API credentials and endpoint details for automated imports from WispGate.</div>
+                </div>
+            </div>
+
+            <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableWispgate">
                 <label class="form-check-label" for="enableWispgate">Enable WispGate Integration</label>
@@ -20,10 +29,13 @@
                 <div class="form-text">WispGate API URL</div>
             </div>
 
+            </div>
+        </section>
 
+        <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 
 <script src="config_wispgate.js%CACHEBUSTERS%"></script>

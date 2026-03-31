@@ -1,5 +1,12 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {toNumber} from "../lq_js_common/helpers/scaling";
 import {get_ws_client} from "../pubsub/ws";
+import {mkBadge} from "./bakery_shared";
+import {renderOperationCards} from "./operation_cards";
+
+const TREEGUARD_OPERATION_MERGE_WINDOW_SECONDS = 180;
+const TREEGUARD_ACTIVITY_VIEW_STORAGE_KEY = "lqos_treeguard_activity_view";
+const TREEGUARD_ACTIVITY_PAGE_SIZE = 5;
 
 function formatUnixSecondsToLocalTime(unixSeconds) {
     const n = typeof unixSeconds === "number" ? unixSeconds : parseInt(unixSeconds, 10);
@@ -80,6 +87,85 @@ function formatReason(reasonRaw) {
     return { label: raw.replace(m[0], `next allowed ${next}`), title: raw };
 }
 
+function loadViewMode() {
+    try {
+        const saved = window?.localStorage?.getItem(TREEGUARD_ACTIVITY_VIEW_STORAGE_KEY);
+        return saved === "events" ? "events" : "operations";
+    } catch (_) {
+        return "operations";
+    }
+}
+
+function classifyOutcome(entry, action) {
+    const rawAction = (entry?.action ?? "").toString().trim().toLowerCase();
+    const reasonRaw = (entry?.reason ?? "").toString().trim();
+    const reasonLower = reasonRaw.toLowerCase();
+
+    if (rawAction.startsWith("would_")) {
+        return {
+            label: "Dry Run",
+            className: "bg-light text-secondary border",
+            detail: null,
+        };
+    }
+
+    if (rawAction.endsWith("_requested")) {
+        return {
+            label: "Queued",
+            className: "bg-primary-subtle text-primary border border-primary-subtle",
+            detail: mkBadge("Bakery", "bg-info-subtle text-info border border-info-subtle"),
+        };
+    }
+
+    if (rawAction === "reload_skipped") {
+        return {
+            label: "Skipped",
+            className: "bg-light text-secondary border",
+            detail: null,
+        };
+    }
+
+    if (rawAction.endsWith("_failed") || rawAction.includes("failed")) {
+        return {
+            label: "Failed",
+            className: "bg-danger-subtle text-danger border border-danger-subtle",
+            detail: null,
+        };
+    }
+
+    if (reasonLower.includes("cleanup pending") || reasonLower.includes("awaiting cleanup")) {
+        return {
+            label: "Cleanup Pending",
+            className: "bg-warning-subtle text-warning border border-warning-subtle",
+            detail: mkBadge("Live", "bg-info-subtle text-info border border-info-subtle"),
+        };
+    }
+
+    if (rawAction === "dry_run_toggled") {
+        return {
+            label: "Updated",
+            className: "bg-primary-subtle text-primary border border-primary-subtle",
+            detail: null,
+        };
+    }
+
+    const actionLower = (action?.label ?? "").toLowerCase();
+    const isLiveIntent = actionLower.includes("virtualize")
+        || actionLower.includes("sqm live")
+        || actionLower.includes("reload");
+    const detail = isLiveIntent
+        ? mkBadge("Live", "bg-info-subtle text-info border border-info-subtle")
+        : (entry?.persisted
+            ? mkBadge("Stored", "bg-primary-subtle text-primary border border-primary-subtle")
+            : null);
+
+    return {
+        label: "Applied",
+        className: "bg-success-subtle text-success border border-success-subtle",
+        detail,
+    };
+}
+
 function renderAction(actionRaw) {
     const raw = (actionRaw ?? "").toString();
     const [verbRaw, payloadRaw] = splitOnce(raw, ":");
@@ -97,10 +183,18 @@ function renderAction(actionRaw) {
         iconClass = "fa-compress";
         iconExtra = [];
         label = "Virtualize";
+    } else if (lowerVerb === "virtualize_requested") {
+        iconClass = "fa-hourglass-half";
+        iconExtra = ["text-primary"];
+        label = "Queued virtualization";
     } else if (lowerVerb === "unvirtualize") {
         iconClass = "fa-expand";
         iconExtra = [];
         label = "Unvirtualize";
+    } else if (lowerVerb === "unvirtualize_requested") {
+        iconClass = "fa-hourglass-half";
+        iconExtra = ["text-primary"];
+        label = "Queued restore";
     } else if (lowerVerb === "dry_run_toggled") {
         iconClass = "fa-toggle-on";
         iconExtra = ["text-muted"];
@@ -167,12 +261,238 @@ function renderAction(actionRaw) {
     return { raw, label, iconClass, iconExtra };
 }
 
+function normalizedActionFamily(actionRaw) {
+    const raw = (actionRaw ?? "").toString().trim().toLowerCase();
+    const [verbRaw] = splitOnce(raw, ":");
+    let verb = (verbRaw ?? "").trim();
+    if (!verb) return "activity";
+
+    if (verb.startsWith("would_")) {
+        verb = verb.slice("would_".length);
+    }
+
+    if (
+        verb.startsWith("set_sqm_")
+        || verb.startsWith("clear_sqm_")
+        || verb.startsWith("apply_sqm_")
+    ) {
+        return "sqm";
+    }
+
+    if (verb.startsWith("reload")) {
+        return "reload";
+    }
+
+    return verb
+        .replace(/_requested$/, "")
+        .replace(/_failed$/, "")
+        .replace(/_conflict$/, "");
+}
+
+function entityLabel(entry) {
+    const entityType = (entry?.entity_type ?? "").toString().trim().toLowerCase();
+    const entityId = (entry?.entity_id ?? "").toString().trim();
+    if (!entityId) {
+        return "";
+    }
+    if (entityType === "circuit") {
+        return parseCircuitEntityId(entityId).display || entityId;
+    }
+    return entityId;
+}
+
+function isSqmBatchEntry(entry) {
+    return (entry?.batchKind ?? "").toString().trim().toLowerCase() === "sqm"
+        && !!(entry?.batchId ?? "").toString().trim();
+}
+
+function describeTreeGuardOperation(entry, action) {
+    const family = normalizedActionFamily(entry?.action);
+    const target = entityLabel(entry);
+    const scopedTarget = target ? ` ${target}` : "";
+    const rawAction = (entry?.action ?? "").toString().trim().toLowerCase();
+
+    if (isSqmBatchEntry(entry)) {
+        return {
+            kind: "sqm_batch",
+            key: `sqm_batch:${entry.batchId}`,
+            label: "SQM change batch",
+            scopeLabel: "Circuits",
+            stages: rawAction.startsWith("would_")
+                ? ["Observed", "Would Apply"]
+                : ["Queued", "Applied", "Cleanup", "Done"],
+        };
+    }
+
+    if (rawAction.startsWith("would_")) {
+        return {
+            kind: "dry_run",
+            key: `${family}:${(entry?.entity_type ?? "").toString()}:${(entry?.entity_id ?? "").toString()}`,
+            label: target ? `${action.label} ${target}` : action.label,
+            scopeLabel: (entry?.entity_type ?? "TreeGuard").toString(),
+            stages: ["Observed", "Would Apply"],
+        };
+    }
+
+    switch (family) {
+        case "virtualize":
+            return {
+                kind: "mutation",
+                key: `${family}:${(entry?.entity_type ?? "").toString()}:${(entry?.entity_id ?? "").toString()}`,
+                label: `Virtualize${scopedTarget}`,
+                scopeLabel: (entry?.entity_type ?? "Node").toString(),
+                stages: ["Queued", "Applied", "Cleanup", "Done"],
+            };
+        case "unvirtualize":
+            return {
+                kind: "mutation",
+                key: `${family}:${(entry?.entity_type ?? "").toString()}:${(entry?.entity_id ?? "").toString()}`,
+                label: `Restore${scopedTarget}`,
+                scopeLabel: (entry?.entity_type ?? "Node").toString(),
+                stages: ["Queued", "Applied", "Cleanup", "Done"],
+            };
+        case "sqm":
+            return {
+                kind: "sqm",
+                key: `${family}:${(entry?.entity_type ?? "").toString()}:${(entry?.entity_id ?? "").toString()}`,
+                label: `SQM change${scopedTarget}`,
+                scopeLabel: (entry?.entity_type ?? "Circuit").toString(),
+                stages: ["Queued", "Applied", "Cleanup", "Done"],
+            };
+        case "reload":
+            return {
+                kind: "reload",
+                key: `${family}:${(entry?.entity_type ?? "").toString()}:${(entry?.entity_id ?? "").toString()}`,
+                label: target ? `Reload ${target}` : "Reload",
+                scopeLabel: "Reload",
+                stages: ["Requested", "Applied", "Done"],
+            };
+        case "dry_run_toggled":
+            return {
+                kind: "config",
+                key: family,
+                label: "Dry-run toggled",
+                scopeLabel: "Config",
+                stages: [],
+            };
+        default:
+            return {
+                kind: "activity",
+                key: `${family}:${(entry?.entity_type ?? "").toString()}:${(entry?.entity_id ?? "").toString()}`,
+                label: target ? `${action.label} ${target}` : action.label,
+                scopeLabel: (entry?.entity_type ?? "TreeGuard").toString(),
+                stages: ["Queued", "Applied", "Cleanup", "Done"],
+            };
+    }
+}
+
+function summarizeSqmBatch(group) {
+    const uniqueCircuits = new Set(
+        group.events
+            .map((entry) => (entry?.entity_id ?? "").toString().trim())
+            .filter(Boolean),
+    ).size;
+    const failed = group.events.filter((entry) => {
+        const action = renderAction(entry.action);
+        return classifyOutcome(entry, action).label === "Failed";
+    }).length;
+    const dryRun = group.events.filter((entry) => {
+        const action = renderAction(entry.action);
+        return classifyOutcome(entry, action).label === "Dry Run";
+    }).length;
+    const applied = group.events.filter((entry) => {
+        const action = renderAction(entry.action);
+        return classifyOutcome(entry, action).label === "Applied";
+    }).length;
+    const queued = group.events.filter((entry) => {
+        const action = renderAction(entry.action);
+        return classifyOutcome(entry, action).label === "Queued";
+    }).length;
+
+    const parts = [`${uniqueCircuits} circuit${uniqueCircuits === 1 ? "" : "s"}`];
+    if (applied > 0) parts.push(`${applied} applied`);
+    if (failed > 0) parts.push(`${failed} failed`);
+    if (dryRun > 0) parts.push(`${dryRun} dry-run`);
+    if (queued > 0) parts.push(`${queued} queued`);
+    return parts.join(" • ");
+}
+
+function treeguardProgressPercent(group) {
+    const outcome = group.outcome.label;
+    if (group.kind === "dry_run") return 100;
+    if (outcome === "Queued") return 8;
+    if (outcome === "Cleanup Pending") return 75;
+    if (outcome === "Failed") return 50;
+    if (outcome === "Dry Run") return 100;
+    if (outcome === "Applied" || outcome === "Updated" || outcome === "Skipped") return 100;
+    return 55;
+}
+
+function treeguardProgressClass(group) {
+    switch (group.outcome.label) {
+        case "Applied":
+        case "Updated":
+        case "Skipped":
+            return "bg-success";
+        case "Dry Run":
+            return "bg-secondary";
+        case "Failed":
+            return "bg-danger";
+        case "Cleanup Pending":
+            return "bg-warning";
+        case "Queued":
+            return "bg-primary";
+        default:
+            return "bg-info";
+    }
+}
+
+function buildTreeGuardOperationGroups(entries) {
+    const groups = [];
+    const recent = Array.isArray(entries) ? entries.slice(0, 50) : [];
+
+    recent.forEach((entry) => {
+        const action = renderAction(entry.action);
+        const descriptor = describeTreeGuardOperation(entry, action);
+        const outcome = classifyOutcome(entry, action);
+        const reason = formatReason(entry.reason);
+        const ts = toNumber(entry.time, 0);
+        const match = groups.find((group) =>
+            group.key === descriptor.key
+            && Math.abs((group.oldestTs ?? 0) - ts) <= TREEGUARD_OPERATION_MERGE_WINDOW_SECONDS);
+
+        if (match) {
+            match.events.push(entry);
+            match.latestEntry = entry;
+            match.latestAction = action;
+            match.outcome = outcome;
+            match.reason = reason;
+            match.oldestTs = Math.min(match.oldestTs, ts);
+            return;
+        }
+
+        groups.push({
+            ...descriptor,
+            latestEntry: entry,
+            latestAction: action,
+            outcome,
+            reason,
+            oldestTs: ts,
+            events: [entry],
+        });
+    });
+
+    return groups;
+}
+
 export class TreeGuardActivityDashlet extends BaseDashlet {
     constructor(slot) {
         super(slot);
         this.size = 12;
-        this.circuitNameById = new Map();
         this.nodeIdByName = new Map();
+        this.lastEntries = [];
+        this.currentPage = 0;
+        this.viewMode = loadViewMode();
     }
 
     title() {
@@ -180,7 +500,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard actions, including dry-run entries and persisted changes.</p>";
+        return "<h5>TreeGuard Activity</h5><p>Recent TreeGuard intents with explicit outcomes so operators can distinguish queued requests, dry-runs, successful applies, cleanup-pending actions, skips, and failures.</p>";
     }
 
     subscribeTo() {
@@ -189,43 +509,67 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
 
     setup() {
         const wsClient = get_ws_client();
-        const shapedWrapped = (msg) => {
-            wsClient.off("AllShapedDevices", shapedWrapped);
-            const devices = msg && Array.isArray(msg.data) ? msg.data : [];
-            devices.forEach((d) => {
-                const id = (d && d.circuit_id ? String(d.circuit_id) : "").trim();
-                const name = (d && d.circuit_name ? String(d.circuit_name) : "").trim();
-                if (!id || !name) return;
-                if (!this.circuitNameById.has(id)) {
-                    this.circuitNameById.set(id, name);
-                }
-            });
-        };
-        wsClient.on("AllShapedDevices", shapedWrapped);
-        wsClient.send({ AllShapedDevices: {} });
-
-        const treeWrapped = (msg) => {
-            wsClient.off("NetworkTree", treeWrapped);
+        const nodeWrapped = (msg) => {
+            wsClient.off("NodeDirectory", nodeWrapped);
             const data = msg && Array.isArray(msg.data) ? msg.data : [];
             data.forEach((entry) => {
-                if (!Array.isArray(entry) || entry.length < 2) return;
-                const id = entry[0];
-                const node = entry[1];
-                const name = (node && node.name ? String(node.name) : "").trim();
+                const id = entry?.tree_index;
+                const name = (entry?.node_name ?? "").trim();
                 if (!name) return;
                 if (!this.nodeIdByName.has(name)) {
                     this.nodeIdByName.set(name, id);
                 }
             });
+            this.rerenderWithMetadata();
         };
-        wsClient.on("NetworkTree", treeWrapped);
-        wsClient.send({ NetworkTree: {} });
+        wsClient.on("NodeDirectory", nodeWrapped);
+        wsClient.send({ NodeDirectory: {} });
     }
 
     buildContainer() {
         const base = super.buildContainer();
         const wrap = document.createElement("div");
         wrap.classList.add("p-2");
+
+        const viewControls = document.createElement("div");
+        viewControls.classList.add("d-flex", "justify-content-between", "align-items-center", "gap-2", "flex-wrap", "mb-3");
+
+        const viewLabel = document.createElement("div");
+        viewLabel.classList.add("small", "fw-semibold", "text-uppercase", "text-body-secondary", "mb-0");
+        viewLabel.textContent = "View";
+        viewControls.appendChild(viewLabel);
+
+        const toggleGroup = document.createElement("div");
+        toggleGroup.classList.add("btn-group", "btn-group-sm");
+        this.operationsButton = document.createElement("button");
+        this.operationsButton.type = "button";
+        this.operationsButton.textContent = "Operations";
+        this.operationsButton.addEventListener("click", () => this.setViewMode("operations"));
+        this.eventsButton = document.createElement("button");
+        this.eventsButton.type = "button";
+        this.eventsButton.textContent = "Event Log";
+        this.eventsButton.addEventListener("click", () => this.setViewMode("events"));
+        toggleGroup.appendChild(this.operationsButton);
+        toggleGroup.appendChild(this.eventsButton);
+        viewControls.appendChild(toggleGroup);
+        wrap.appendChild(viewControls);
+
+        this.operationsSection = document.createElement("div");
+        const operationsHeader = document.createElement("div");
+        operationsHeader.classList.add("small", "fw-semibold", "text-uppercase", "text-body-secondary", "mb-2");
+        operationsHeader.textContent = "Recent Operations";
+        this.operationsSection.appendChild(operationsHeader);
+
+        this.operationsList = document.createElement("div");
+        this.operationsList.classList.add("d-flex", "flex-column", "gap-2");
+        this.operationsSection.appendChild(this.operationsList);
+        wrap.appendChild(this.operationsSection);
+
+        this.eventsSection = document.createElement("div");
+        const eventHeader = document.createElement("div");
+        eventHeader.classList.add("small", "fw-semibold", "text-uppercase", "text-body-secondary", "mb-2");
+        eventHeader.textContent = "Detailed Events";
+        this.eventsSection.appendChild(eventHeader);
 
         const tableWrap = document.createElement("div");
         tableWrap.classList.add("lqos-table-wrap");
@@ -236,7 +580,7 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         const thead = document.createElement("thead");
         thead.classList.add("small");
         const headRow = document.createElement("tr");
-        ["Local Time", "Entity", "Action", "Persisted", "Reason"].forEach((header) => {
+        ["Local Time", "Target", "Intent", "Outcome", "Why"].forEach((header) => {
             const th = document.createElement("th");
             th.textContent = header;
             headRow.appendChild(th);
@@ -247,9 +591,86 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         table.appendChild(thead);
         table.appendChild(this.tbody);
         tableWrap.appendChild(table);
-        wrap.appendChild(tableWrap);
+        this.eventsSection.appendChild(tableWrap);
+        wrap.appendChild(this.eventsSection);
+
+        const footer = document.createElement("div");
+        footer.classList.add("d-flex", "justify-content-between", "align-items-center", "gap-2", "pt-2", "flex-wrap");
+
+        this.pageSummary = document.createElement("div");
+        this.pageSummary.classList.add("small", "text-secondary");
+        footer.appendChild(this.pageSummary);
+
+        const pager = document.createElement("div");
+        pager.classList.add("btn-group", "btn-group-sm");
+
+        this.prevButton = document.createElement("button");
+        this.prevButton.type = "button";
+        this.prevButton.classList.add("btn", "btn-outline-secondary");
+        this.prevButton.innerHTML = "<i class='fa fa-chevron-left'></i> Newer";
+        this.prevButton.setAttribute("aria-label", "Show newer TreeGuard activity");
+        this.prevButton.addEventListener("click", () => {
+            if (this.currentPage > 0) {
+                this.currentPage -= 1;
+                this.renderEntries(this.lastEntries);
+            }
+        });
+
+        this.nextButton = document.createElement("button");
+        this.nextButton.type = "button";
+        this.nextButton.classList.add("btn", "btn-outline-secondary");
+        this.nextButton.innerHTML = "Older <i class='fa fa-chevron-right'></i>";
+        this.nextButton.setAttribute("aria-label", "Show older TreeGuard activity");
+        this.nextButton.addEventListener("click", () => {
+            if (this.currentPage + 1 < this.totalPages()) {
+                this.currentPage += 1;
+                this.renderEntries(this.lastEntries);
+            }
+        });
+
+        pager.appendChild(this.prevButton);
+        pager.appendChild(this.nextButton);
+        footer.appendChild(pager);
+        wrap.appendChild(footer);
+
         base.appendChild(wrap);
+        this.renderViewMode();
         return base;
+    }
+
+    setViewMode(mode) {
+        this.viewMode = mode === "events" ? "events" : "operations";
+        this.currentPage = 0;
+        try {
+            window?.localStorage?.setItem(TREEGUARD_ACTIVITY_VIEW_STORAGE_KEY, this.viewMode);
+        } catch (_) {}
+        this.renderViewMode();
+        this.renderEntries(this.lastEntries);
+    }
+
+    renderViewMode() {
+        if (this.operationsSection) {
+            this.operationsSection.classList.toggle("d-none", this.viewMode !== "operations");
+        }
+        if (this.eventsSection) {
+            this.eventsSection.classList.toggle("d-none", this.viewMode !== "events");
+        }
+        if (this.operationsButton) {
+            this.operationsButton.className = this.viewMode === "operations" ? "btn btn-primary" : "btn btn-outline-secondary";
+        }
+        if (this.eventsButton) {
+            this.eventsButton.className = this.viewMode === "events" ? "btn btn-primary" : "btn btn-outline-secondary";
+        }
+    }
+
+    totalPagesForCount(count) {
+        return Math.max(1, Math.ceil(count / TREEGUARD_ACTIVITY_PAGE_SIZE));
+    }
+
+    totalPages() {
+        const operationCount = buildTreeGuardOperationGroups(this.lastEntries).length;
+        const activeCount = this.viewMode === "events" ? this.lastEntries.length : operationCount;
+        return this.totalPagesForCount(activeCount);
     }
 
     onMessage(msg) {
@@ -258,6 +679,48 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
         }
 
         const entries = Array.isArray(msg.data) ? msg.data : [];
+        this.lastEntries = entries;
+        this.renderEntries(entries);
+    }
+
+    rerenderWithMetadata() {
+        if (this.lastEntries.length > 0) {
+            this.renderEntries(this.lastEntries);
+        }
+    }
+
+    renderEntries(entries) {
+        const operationGroups = buildTreeGuardOperationGroups(entries);
+        const totalRows = this.viewMode === "events" ? entries.length : operationGroups.length;
+        const totalPages = this.totalPagesForCount(totalRows);
+        this.currentPage = Math.min(this.currentPage, totalPages - 1);
+        const start = this.currentPage * TREEGUARD_ACTIVITY_PAGE_SIZE;
+        const end = Math.min(start + TREEGUARD_ACTIVITY_PAGE_SIZE, totalRows);
+
+        const pagedGroups = operationGroups.slice(start, end).map((group) => {
+            const fullReason = group.kind === "sqm_batch"
+                ? summarizeSqmBatch(group)
+                : (group.reason.label || "");
+            const eventCount = group.events.length;
+            const footerLeft = group.kind === "sqm_batch"
+                ? `Circuits • ${eventCount} event${eventCount === 1 ? "" : "s"}`
+                : `${group.scopeLabel} • ${eventCount} event${eventCount === 1 ? "" : "s"}`;
+            return {
+                label: group.label,
+                outcomeLabel: group.outcome.label,
+                outcomeClass: group.outcome.className,
+                outcomeTitle: group.latestEntry?.reason || "",
+                summary: fullReason,
+                summaryTitle: group.reason.title || fullReason,
+                footerLeft,
+                footerRight: formatUnixSecondsToLocalTime(group.latestEntry?.time),
+                stages: group.stages,
+                progressPercent: group.stages.length > 0 ? treeguardProgressPercent(group) : 0,
+                progressBarClass: treeguardProgressClass(group),
+            };
+        });
+        renderOperationCards(this.operationsList, pagedGroups, { emptyText: "No recent operations" });
+
         this.tbody.innerHTML = "";
 
         if (entries.length === 0) {
@@ -268,10 +731,14 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             td.textContent = "No recent activity";
             tr.appendChild(td);
             this.tbody.appendChild(tr);
+            this.pageSummary.textContent = this.viewMode === "events" ? "0 events" : "0 operations";
+            this.prevButton.disabled = true;
+            this.nextButton.disabled = true;
+            this.renderViewMode();
             return;
         }
 
-        entries.slice(0, 50).forEach((entry) => {
+        entries.slice(start, end).forEach((entry) => {
             const tr = document.createElement("tr");
             tr.classList.add("small");
 
@@ -303,13 +770,6 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
                 const circuitId = parsed.circuitId;
                 let display = parsed.display;
                 let title = parsed.hasName ? circuitId : "";
-                if (!parsed.hasName && circuitId) {
-                    const name = this.circuitNameById.get(circuitId);
-                    if (name) {
-                        display = name;
-                        title = circuitId;
-                    }
-                }
                 tdEntity.appendChild(
                     mkLink(`circuit.html?id=${encodeURIComponent(circuitId)}`, display, title),
                 );
@@ -344,15 +804,13 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             actionText.textContent = ` ${action.label}`;
             tdAction.appendChild(actionText);
 
-            const tdPersisted = document.createElement("td");
-            tdPersisted.classList.add("text-center");
-            const persisted = !!entry.persisted;
-            const persistedIcon = persisted
-                ? mkIcon("fa-check", ["text-success"])
-                : mkIcon("fa-times", ["text-muted"]);
-            persistedIcon.setAttribute("aria-label", persisted ? "Persisted" : "Not persisted");
-            persistedIcon.title = persisted ? "Persisted" : "Not persisted";
-            tdPersisted.appendChild(persistedIcon);
+            const tdOutcome = document.createElement("td");
+            const outcome = classifyOutcome(entry, action);
+            tdOutcome.appendChild(mkBadge(outcome.label, outcome.className, entry.reason || ""));
+            if (outcome.detail) {
+                tdOutcome.appendChild(document.createTextNode(" "));
+                tdOutcome.appendChild(outcome.detail);
+            }
 
             const tdReason = document.createElement("td");
             const reason = formatReason(entry.reason);
@@ -362,9 +820,15 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             tr.appendChild(tdTime);
             tr.appendChild(tdEntity);
             tr.appendChild(tdAction);
-            tr.appendChild(tdPersisted);
+            tr.appendChild(tdOutcome);
             tr.appendChild(tdReason);
             this.tbody.appendChild(tr);
         });
+
+        const label = this.viewMode === "events" ? "events" : "operations";
+        this.pageSummary.textContent = `${start + 1}-${end} of ${totalRows} ${label}`;
+        this.prevButton.disabled = this.currentPage === 0;
+        this.nextButton.disabled = this.currentPage + 1 >= totalPages;
+        this.renderViewMode();
     }
 }

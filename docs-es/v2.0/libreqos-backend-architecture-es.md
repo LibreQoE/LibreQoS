@@ -242,6 +242,7 @@ Efecto práctico:
 |---|---|---|---|
 | Cambio solo de IP de circuito | Sí | No | Actualización de mapeo puede aplicarse sin reconstruir árbol |
 | Cambio de velocidad de circuito/sitio (subconjunto) | Sí | A veces | Depende del impacto estructural y class handles disponibles |
+| Virtualización runtime de nodos TreeGuard (subárbol soportado / ruta de rebalanceo top-level) | Sí | No | Bakery ahora la aplica como un plan runtime vivo: nodos no top-level usan reparent/prune/restore, y nodos top-level soportados usan una ruta de rebalanceo y migración entre colas |
 | Cambios masivos en todos los circuitos | A veces | Frecuente | Límites de escala y cardinalidad de transacciones |
 | Re-parent/reestructura topológica | Rara vez | Sí | Restricciones de mutación de subárbol HTB |
 | Alta/baja de circuitos | Sí (pequeño/mediano) | A veces | Límites de handles y fronteras de corrección en el diff |
@@ -268,6 +269,15 @@ flowchart TD
 2. Agrupar cirugía topológica en ventanas planificadas.
 3. Esperar mayor riesgo cuando coinciden muchos circuitos y muchos cambios estructurales.
 4. Diseñar la cadencia operativa para priorizar cambios incrementalmente seguros.
+
+### 7.4 Guardrails de seguridad para recargas completas
+
+Las recargas completas actuales de Bakery aplican dos verificaciones conservadoras de seguridad antes y durante reconstrucciones grandes de colas:
+
+1. Un preflight de qdisc estima los qdisc planificados por interfaz y además separa qdisc de infraestructura, hojas `cake` y hojas `fq_codel`.
+2. Ese mismo preflight aplica una proyección conservadora de memoria y bloquea de forma estricta las recargas completas claramente inseguras antes de arrancar `tc -batch`.
+3. Durante la aplicación chunked de una recarga completa, Bakery vuelve a revisar la memoria del host en los límites de chunk y aborta el resto de la aplicación si la memoria disponible cae por debajo de su piso de seguridad.
+4. Estos guardrails están sesgados intencionalmente hacia falsos positivos en recargas grandes para fallar temprano con diagnósticos en lugar de entrar en una espiral OOM.
 
 ## 8) Límites de Diseño para Operadores
 

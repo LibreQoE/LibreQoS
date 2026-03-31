@@ -1,46 +1,133 @@
-<div class="row">
-    <div class="col-4">
-        <h5><i class="fa fa-tree"></i> Network Tree (<span id="nodeName" class="redactable"></span>)</h5>
-        <div class="lqos-table-wrap">
-            <table class="lqos-table lqos-table-compact">
-                <thead>
-                    <th></th>
-                    <th>Download</th>
-                    <th>Upload</th>
-                </thead>
-                <tbody>
-                    <tr class="small">
-                        <td class="table-label-cell">Effective Limit</td>
-                        <td class="small"><span id="parentEffectiveD"></span></td>
-                        <td class="small"><span id="parentEffectiveU"></span></td>
-                    </tr>
-                    <tr class="small">
-                        <td class="table-label-cell">Configured Limit</td>
-                        <td class="small"><span id="parentConfiguredD"></span></td>
-                        <td class="small"><span id="parentConfiguredU"></span></td>
-                    </tr>
-                    <tr class="small">
-                        <td class="table-label-cell">Throughput</td>
-                        <td><span id="parentTpD"></span></td>
-                        <td><span id="parentTpU"></span></td>
-                    </tr>
-                    <tr class="small">
-                        <td class="table-label-cell">RTT</td>
-                        <td><span id="parentRttD"></span></td>
-                        <td><span id="parentRttU"></span></td>
-                    </tr>
-                    <tr class="small">
-                        <td class="table-label-cell">QoO</td>
-                        <td><span id="parentQooD"></span></td>
-                        <td><span id="parentQooU"></span></td>
-                    </tr>
-                    <tr class="small">
-                        <td class="table-label-cell">TCP Retransmits</td>
-                        <td><span id="parentRxmitD"></span></td>
-                        <td><span id="parentRxmitU"></span></td>
-                    </tr>
-                </tbody>
-            </table>
+<div class="row g-4 align-items-stretch">
+    <div class="col-12">
+        <div class="lqos-tree-hero">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <div class="lqos-tree-kicker mb-0"><i class="fa fa-tree"></i> Network Tree</div>
+                <div id="nodeOverrideStatus" class="small text-body-secondary lqos-tree-hero-status"></div>
+            </div>
+            <div class="lqos-tree-hero-bar">
+                <div id="treeBreadcrumb" class="lqos-tree-hero-breadcrumb"></div>
+                <div id="treeContextMeta" class="lqos-tree-context-meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="lqos-tree-panel lqos-tree-state-panel">
+            <div class="d-flex align-items-center justify-content-between gap-2">
+                <h5 class="mb-0"><i class="fa fa-gauge-high"></i> Live Queue State</h5>
+                <div id="nodeStateBadges" class="lqos-tree-state-badges"></div>
+            </div>
+            <div class="lqos-table-wrap">
+                <table class="lqos-table lqos-table-compact">
+                    <thead>
+                        <th></th>
+                        <th>Download</th>
+                        <th>Upload</th>
+                    </thead>
+                    <tbody>
+                        <tr class="small">
+                            <td class="table-label-cell">Effective Limit</td>
+                            <td class="small"><span id="parentEffectiveD"></span></td>
+                            <td class="small"><span id="parentEffectiveU"></span></td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">Configured Limit</td>
+                            <td class="small"><span id="parentConfiguredD"></span></td>
+                            <td class="small"><span id="parentConfiguredU"></span></td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">Throughput</td>
+                            <td><span id="parentTpD"></span></td>
+                            <td><span id="parentTpU"></span></td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">RTT</td>
+                            <td><span id="parentRttD"></span></td>
+                            <td><span id="parentRttU"></span></td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">QoO</td>
+                            <td><span id="parentQooD"></span></td>
+                            <td><span id="parentQooU"></span></td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">TCP Retransmits</td>
+                            <td><span id="parentRxmitD"></span></td>
+                            <td><span id="parentRxmitU"></span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3">
+        <div class="lqos-circuit-panel lqos-circuit-gauge-panel lqos-tree-snapshot-panel">
+            <div class="d-flex align-items-center justify-content-between gap-2 lqos-tree-panel-heading">
+                <h5 class="mb-0"><i class="fa fa-chart-line"></i> Node Snapshot</h5>
+            </div>
+            <div class="lqos-circuit-gauge-grid">
+                <div id="treeBitsGauge" style="width: 100%; height: 180px;"></div>
+                <div id="treeQooGauge" style="width: 100%; height: 180px;"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="lqos-tree-panel lqos-tree-details-panel">
+            <div class="d-flex align-items-center justify-content-between gap-2">
+                <h5 class="mb-0"><i class="fa fa-circle-info"></i> Node Details</h5>
+            </div>
+            <div class="lqos-table-wrap">
+                <table class="lqos-table lqos-table-compact">
+                    <tbody>
+                        <tr class="small">
+                            <td class="table-label-cell">Node Type</td>
+                            <td class="table-value-cell" id="nodeSettingsType">-</td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">Branch Size</td>
+                            <td class="table-value-cell" id="nodeSettingsBranchSize">-</td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">Base Configured Rate</td>
+                            <td class="table-value-cell" id="nodeSettingsBaseConfigured">-</td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">Operator Override</td>
+                            <td class="table-value-cell" id="nodeSettingsOverride">None</td>
+                        </tr>
+                        <tr class="small">
+                            <td class="table-label-cell">Effective Now</td>
+                            <td class="table-value-cell" id="nodeSettingsEffectiveNow">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="nodeOverrideDisabledReason"></div>
+            <div class="lqos-tree-editor" id="nodeOverrideEditorSection">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 lqos-tree-editor-heading">
+                    <h6 class="mb-0"><i class="fa fa-sliders"></i> Operator Override</h6>
+                    <span id="nodeOverrideCompatibilityIndicator" class="lqos-tree-editor-heading-end"></span>
+                </div>
+                <div id="nodeOverrideFlash"></div>
+                <div class="lqos-tree-editor-row">
+                    <div class="lqos-tree-editor-field input-group">
+                        <span class="input-group-text" id="nodeOverrideDownloadLabel">Download</span>
+                        <input class="form-control" id="nodeOverrideDownload" type="number" min="0" step="0.01" inputmode="decimal" aria-labelledby="nodeOverrideDownloadLabel">
+                    </div>
+                    <div class="lqos-tree-editor-field input-group">
+                        <span class="input-group-text" id="nodeOverrideUploadLabel">Upload</span>
+                        <input class="form-control" id="nodeOverrideUpload" type="number" min="0" step="0.01" inputmode="decimal" aria-labelledby="nodeOverrideUploadLabel">
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 lqos-tree-editor-actions">
+                        <button class="btn btn-primary" id="nodeOverrideSave" type="button">
+                            <i class="fa fa-save"></i> Save
+                        </button>
+                        <button class="btn btn-outline-secondary" id="nodeOverrideClear" type="button">
+                            <i class="fa fa-eraser"></i> Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

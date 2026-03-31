@@ -1,5 +1,4 @@
 import {Dashboard} from "./lq_js_common/dashboard/dashboard";
-import {checkForUpgrades} from "./toasts/version_check";
 import {sponsorTag} from "./toasts/sponsor_us";
 import {globalWarningToasts} from "./toasts/global_warnings";
 import {showTimeControls} from "./components/timescale";
@@ -10,18 +9,20 @@ const defaultLayout = {
     activeTab: 0,
     tabs: [
         {
+            id: "executive-summary",
             name: "Executive Summary",
             dashlets: [
                 { tag: "executiveSnapshot", size: 12 },
-                { tag: "executiveHelpers", size: 12 },
                 { tag: "executiveGlobalHeatmap", size: 12 },
                 { tag: "executiveHeatmapDownload", size: 6 },
                 { tag: "executiveHeatmapUpload", size: 6 },
                 { tag: "executiveHeatmapRtt", size: 6 },
-                { tag: "executiveHeatmapRetrans", size: 6 }
+                { tag: "executiveHeatmapRetrans", size: 6 },
+                { tag: "executiveHelpers", size: 12 }
             ]
         },
         {
+            id: "overview",
             name: "Overview",
             dashlets: [
                 { tag: "throughputRing", size: 12 },
@@ -34,18 +35,20 @@ const defaultLayout = {
             ]
         },
         {
+            id: "system-overview",
             name: "System Overview",
             dashlets: [
                 { tag: "throughputBps", size: 2 },
                 { tag: "shapedUnshaped", size: 2 },
-                { tag: "throughputPps", size: 2 },
-                { tag: "trackedFlowsCount", size: 2 },
-                { tag: "rttHistogram", size: 2 },
-                { tag: "cpu", size: 3 },
-                { tag: "ram", size: 3 }
+                { tag: "ram", size: 2 },
+                { tag: "cpu", size: 5 },
+                { tag: "rttHistogram", size: 3 },
+                { tag: "throughputPps", size: 4 },
+                { tag: "trackedFlowsCount", size: 4 }
             ]
         },
         {
+            id: "network",
             name: "Network",
             dashlets: [
                 { tag: "networkTreeSankey", size: 6 },
@@ -53,6 +56,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "top-10",
             name: "Top 10",
             dashlets: [
                 { tag: "top10downloaders", size: 6 },
@@ -65,6 +69,7 @@ const defaultLayout = {
             ]
         },
         {
+            id: "protocols-cake",
             name: "Protocols & Cake",
             dashlets: [
                 { tag: "etherProtocols", size: 6 },
@@ -73,11 +78,34 @@ const defaultLayout = {
             ]
         },
         {
+            id: "treeguard",
             name: "TreeGuard",
             dashlets: [
-                { tag: "treeguardControls", size: 6 },
-                { tag: "treeguardStatus", size: 6 },
+                { tag: "treeguardControlLoop", size: 4 },
+                { tag: "treeguardStateMix", size: 4 },
+                { tag: "treeguardDecisionImpact", size: 4 },
                 { tag: "treeguardActivity", size: 12 }
+            ]
+        },
+        {
+            id: "stormguard",
+            name: "StormGuard",
+            dashlets: [
+                { tag: "stormguardSummary", size: 12 },
+                { tag: "stormguardSiteList", size: 4 },
+                { tag: "stormguardSiteDetail", size: 8 },
+                { tag: "stormguardRecentActivity", size: 12 }
+            ]
+        },
+        {
+            id: "bakery",
+            name: "Bakery",
+            dashlets: [
+                { tag: "bakeryPipeline", size: 3 },
+                { tag: "bakeryChangeMix", size: 3 },
+                { tag: "bakeryStatus", size: 3 },
+                { tag: "bakeryCapacity", size: 3 },
+                { tag: "bakeryActivity", size: 12 }
             ]
         }
     ]
@@ -85,7 +113,6 @@ const defaultLayout = {
 
 window.timeGraphs = [];
 showTimeControls("timescale");
-checkForUpgrades();
 sponsorTag("toasts");
 globalWarningToasts();
 const dashboard = new Dashboard("dashboard", "mainDashboard", defaultLayout, widgetFactory, DashletMenu, false, "");

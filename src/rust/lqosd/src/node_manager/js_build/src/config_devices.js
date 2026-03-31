@@ -1,21 +1,52 @@
 import {
-    loadAllShapedDevices,
+    loadConfig,
+    createShapedDevice,
+    deleteShapedDevice,
     loadNetworkJson,
+    loadShapedDevicesPage,
     renderConfigMenu,
-    saveNetworkAndDevices,
+    topologyEditorsLockMessage,
+    topologyEditorsLocked,
+    updateShapedDevice,
     validNodeList,
 } from "./config/config_helper";
 
-let shaped_devices = [];
+let current_rows = [];
 let network_json = null;
-let filtered_indices = [];
+let total_rows = 0;
+let total_circuits = 0;
 let page = 0;
 let page_size = 25;
 let search_term = "";
-let invalid_indices = new Set();
-let edit_index = null;
+let edit_device_id = null;
 let creating_new = false;
 let search_timer = null;
+let modal_busy = false;
+let topology_editor_locked = false;
+let topology_editor_lock_message = "";
+
+function setModalReadOnly(readOnly) {
+    $("#sdEditForm input, #sdEditForm textarea, #sdEditForm select").prop("disabled", readOnly);
+    $("#sdModalSave").prop("disabled", readOnly || modal_busy);
+}
+
+function applyEditorLockState() {
+    $("#btnAddDevice").prop("disabled", topology_editor_locked);
+    $("#sdTableContainer").toggleClass("opacity-75", topology_editor_locked);
+
+    const banner = $("#devicesEditorLock");
+    if (topology_editor_locked && topology_editor_lock_message) {
+        banner.removeClass("d-none").text(topology_editor_lock_message);
+    } else {
+        banner.addClass("d-none").text("");
+    }
+
+    setModalReadOnly(topology_editor_locked);
+}
+
+function actionButtonAttrs() {
+    return topology_editor_locked ? " disabled aria-disabled='true'" : "";
+}
 
 function defaultDevice() {
     return {
@@ -231,93 +262,92 @@ function buildParentNodeOptions(selectedNode) {
 }
 
 function totalPages() {
-    return Math.max(1, Math.ceil(filtered_indices.length / page_size));
+    return Math.max(1, Math.ceil(total_rows / page_size));
 }
 
-function applySearch(resetPage = true) {
-    const term = (search_term || "").toLowerCase().trim();
-    filtered_indices = [];
+function currentQuery() {
+    return {
+        page,
+        page_size,
+        search: search_term.trim().length > 0 ? search_term.trim() : undefined,
+    };
+}
 
-    if (!term) {
-        for (let i = 0; i < shaped_devices.length; i++) {
-            filtered_indices.push(i);
-        }
-    } else {
-        for (let i = 0; i < shaped_devices.length; i++) {
-            const device = shaped_devices[i] || {};
-            const parts = [
-                device.circuit_id,
-                device.circuit_name,
-                device.device_id,
-                device.device_name,
-                device.parent_node,
-                device.mac,
-            ];
+function renderLoading() {
+    $("#sdTableContainer").html(
+        "<div class='text-center py-5'><div class='spinner-border' role='status'><span class='visually-hidden'>Loading...</span></div></div>",
+    );
+}
 
-            if (Array.isArray(device.ipv4)) {
-                device.ipv4.forEach((tuple) => parts.push(formatIpTuple(tuple, 32)));
+function requestPage() {
+    renderLoading();
+    $("#btnAddDevice").prop("disabled", true);
+    $("#btnSaveDevices").prop("disabled", true);
+    loadShapedDevicesPage(
+        currentQuery(),
+        (data) => {
+            current_rows = Array.isArray(data?.rows) ? data.rows : [];
+            total_rows = Number.isFinite(Number(data?.total_rows))
+                ? Math.max(0, Math.trunc(Number(data.total_rows)))
+                : current_rows.length;
+            total_circuits = Number.isFinite(Number(data?.total_circuits))
+                ? Math.max(0, Math.trunc(Number(data.total_circuits)))
+                : 0;
+
+            const totalPagesForResult = Math.max(1, Math.ceil(total_rows / page_size));
+            if (page >= totalPagesForResult && total_rows > 0) {
+                page = totalPagesForResult - 1;
+                requestPage();
+                return;
             }
-            if (Array.isArray(device.ipv6)) {
-                device.ipv6.forEach((tuple) => parts.push(formatIpTuple(tuple, 128)));
-            }
 
-            const haystack = parts
-                .filter((val) => val !== undefined && val !== null)
-                .join(" ")
-                .toLowerCase();
-
-            if (haystack.includes(term)) {
-                filtered_indices.push(i);
-            }
-        }
-    }
-
-    if (resetPage) {
-        page = 0;
-    } else {
-        page = Math.min(page, totalPages() - 1);
-    }
-
-    render();
+            render();
+            $("#btnAddDevice").prop("disabled", topology_editor_locked);
+            $("#btnSaveDevices").prop("disabled", false);
+            applyEditorLockState();
+        },
+        () => {
+            $("#sdTableContainer").html(
+                "<div class='alert alert-danger mb-0'>Failed to load shaped devices.</div>",
+            );
+            $("#btnAddDevice").prop("disabled", topology_editor_locked);
+            $("#btnSaveDevices").prop("disabled", false);
+        },
+    );
 }
 
 function setPage(newPage) {
     const total = totalPages();
     page = Math.min(Math.max(newPage, 0), total - 1);
-    render();
+    requestPage();
 }
 
 function setPageSize(newSize) {
     page_size = newSize;
     page = 0;
-    render();
+    requestPage();
 }
 
 function renderSummary() {
-    const total = shaped_devices.length;
-    const filtered = filtered_indices.length;
-    const start = filtered === 0 ? 0 : page * page_size + 1;
-    const end = filtered === 0 ? 0 : Math.min(page * page_size + page_size, filtered);
+    const start = total_rows === 0 ? 0 : page * page_size + 1;
+    const end = total_rows === 0 ? 0 : page * page_size + current_rows.length;
     let text = "";
-    if (filtered === 0) {
+    if (total_rows === 0) {
         text = "No devices to display";
-    } else if (filtered === total) {
-        text = `Showing ${start}-${end} of ${total} devices`;
+    } else if (search_term.trim().length > 0) {
+        text = `Showing ${start}-${end} of ${total_rows} matching devices`;
     } else {
-        text = `Showing ${start}-${end} of ${filtered} devices (filtered from ${total})`;
+        text = `Showing ${start}-${end} of ${total_rows} devices across ${total_circuits} circuits`;
     }
     $("#sdSummary").text(text);
 }
 
 function renderTable() {
     const container = $("#sdTableContainer");
-    if (filtered_indices.length === 0) {
+    if (current_rows.length === 0) {
         container.html("<div class='alert alert-info mb-0'>No devices match the current search.</div>");
         return;
     }
-
-    const start = page * page_size;
-    const end = Math.min(start + page_size, filtered_indices.length);
 
     let html =
         "<table id='shapedDeviceTable' class='table table-striped table-hover table-sm align-middle small mb-0'>";
@@ -338,21 +368,20 @@ function renderTable() {
     html += "</tr>";
     html += "</thead><tbody>";
 
-    for (let i = start; i < end; i++) {
-        const idx = filtered_indices[i];
-        const row = shaped_devices[idx] || {};
-        const invalidClass = invalid_indices.has(idx) ? " table-danger" : "";
+    current_rows.forEach((row) => {
         const comment = row.comment ? String(row.comment) : "";
+        const deviceId = escapeHtml(row.device_id || "");
+        const actionAttrs = actionButtonAttrs();
 
-        html += "<tr data-index='" + idx + "' class='" + invalidClass + "'>";
+        html += "<tr data-device-id='" + deviceId + "'>";
         html +=
             "<td class='text-nowrap'>" +
-            "<button class='btn btn-sm btn-outline-primary sd-edit me-1' type='button' data-index='" +
-            idx +
-            "' title='Edit device' aria-label='Edit device'><i class='fa fa-edit' aria-hidden='true'></i></button>" +
-            "<button class='btn btn-sm btn-outline-danger sd-delete' type='button' data-index='" +
-            idx +
-            "' title='Delete device' aria-label='Delete device'><i class='fa fa-trash' aria-hidden='true'></i></button>" +
+            "<button class='btn btn-sm btn-outline-primary sd-edit me-1' type='button' data-device-id='" +
+            deviceId +
+            "' title='Edit device' aria-label='Edit device'" + actionAttrs + "><i class='fa fa-edit' aria-hidden='true'></i></button>" +
+            "<button class='btn btn-sm btn-outline-danger sd-delete' type='button' data-device-id='" +
+            deviceId +
+            "' title='Delete device' aria-label='Delete device'" + actionAttrs + "><i class='fa fa-trash' aria-hidden='true'></i></button>" +
             "</td>";
         html += "<td class='text-nowrap'>" + formatIdCell(row.circuit_id, 5) + "</td>";
         html +=
@@ -386,14 +415,14 @@ function renderTable() {
         }
         html += "</td>";
         html += "</tr>";
-    }
+    });
 
     html += "</tbody></table>";
     container.html(html);
 }
 
 function buildPaginationModel(total, current) {
-    let pages = [];
+    const pages = [];
     const add = (value) => {
         if (value < 0 || value >= total) return;
         if (!pages.includes(value)) pages.push(value);
@@ -407,7 +436,7 @@ function buildPaginationModel(total, current) {
     add(current + 2);
     pages.sort((a, b) => a - b);
 
-    let result = [];
+    const result = [];
     let last = null;
     pages.forEach((p) => {
         if (last !== null && p - last > 1) {
@@ -423,7 +452,7 @@ function renderPagination() {
     const total = totalPages();
     const listBottom = $("#sdPagination");
     const listTop = $("#sdPaginationTop");
-    if (filtered_indices.length === 0) {
+    if (total_rows === 0) {
         listBottom.html("");
         listTop.html("");
         return;
@@ -531,19 +560,22 @@ function collectModalDevice() {
 
     const sqmDown = $("#sdModalSqmDown").val().trim().toLowerCase();
     const sqmUp = $("#sdModalSqmUp").val().trim().toLowerCase();
-    if (!sqmDown && !sqmUp) {
-        delete device.sqm_override;
-    } else {
+    if (sqmDown || sqmUp) {
         device.sqm_override = `${sqmDown}/${sqmUp}`;
     }
 
     return device;
 }
 
-function openEditModal(index) {
-    const device = shaped_devices[index];
+function findCurrentRow(deviceId) {
+    return current_rows.find((row) => row.device_id === deviceId);
+}
+
+function openEditModal(deviceId) {
+    if (topology_editor_locked) return;
+    const device = findCurrentRow(deviceId);
     if (!device) return;
-    edit_index = index;
+    edit_device_id = device.device_id;
     creating_new = false;
     $("#sdEditModalLabel").text("Edit Device");
     populateModal(device);
@@ -551,39 +583,18 @@ function openEditModal(index) {
 }
 
 function openNewModal() {
-    edit_index = null;
+    if (topology_editor_locked) return;
+    edit_device_id = null;
     creating_new = true;
     $("#sdEditModalLabel").text("Add Device");
     populateModal(defaultDevice());
     showModal();
 }
 
-function saveModalChanges() {
-    const device = collectModalDevice();
-    if (creating_new) {
-        shaped_devices.unshift(device);
-    } else if (edit_index !== null) {
-        shaped_devices[edit_index] = device;
-    }
-    invalid_indices = new Set();
-    hideModal();
-    applySearch(creating_new);
-}
-
-function deleteDevice(index) {
-    const device = shaped_devices[index];
-    if (!device) return;
-    const label = device.device_name || device.device_id || "this device";
-    if (!confirm(`Delete ${label}?`)) return;
-    shaped_devices.splice(index, 1);
-    invalid_indices = new Set();
-    applySearch(false);
-}
-
 function checkIpv4(ip) {
-    const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+    const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+    if (!ipv4Pattern.test(ip)) return false;
     const parts = ip.split("/");
-    if (!ipv4Pattern.test(parts[0])) return false;
     if (parts.length > 1 && parts[1].length > 0) {
         const prefix = parseInt(parts[1], 10);
         if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return false;
@@ -596,148 +607,134 @@ function checkIpv6(ip) {
     return regex.test(ip);
 }
 
-function normalizeIp(tuple, family) {
-    const defaultPrefix = family === 6 ? 128 : 32;
-    if (!tuple || tuple.length === 0) return "";
-    const addr = tuple[0] ? formatIpAddr(tuple[0], family).trim() : "";
-    if (!addr) return "";
-    const prefix = Number.isFinite(tuple[1]) ? tuple[1] : defaultPrefix;
-    const normalizedAddr = family === 6 ? addr.toLowerCase() : addr;
-    return normalizedAddr + "/" + prefix;
-}
-
-function validateDevices() {
-    let valid = true;
-    let errors = [];
-    invalid_indices = new Set();
-
+function validateModalDevice(device) {
+    const errors = [];
     const nodes = network_json ? validNodeList(network_json) : [];
-    const deviceIds = new Map();
-    const ipv4s = new Map();
-    const ipv6s = new Map();
 
-    const markInvalid = (index, message) => {
-        valid = false;
-        errors.push(message);
-        invalid_indices.add(index);
-    };
+    if (!device.circuit_id) errors.push("Circuit ID is required");
+    if (!device.circuit_name) errors.push("Circuit Name is required");
+    if (!device.device_id) errors.push("Device ID is required");
+    if (!device.device_name) errors.push("Device Name is required");
 
-    shaped_devices.forEach((device, index) => {
-        if (!device.circuit_id || device.circuit_id.trim().length === 0) {
-            markInvalid(index, "Circuits must have a Circuit ID");
+    const parentNode = device.parent_node || "";
+    if (nodes.length === 0) {
+        if (parentNode.length > 0) {
+            errors.push("You have a flat network, so you can't specify a parent node.");
         }
-        if (!device.circuit_name || device.circuit_name.trim().length === 0) {
-            markInvalid(index, "Circuits must have a Circuit Name");
-        }
-        if (!device.device_id || device.device_id.trim().length === 0) {
-            markInvalid(index, "Circuits must have a Device ID");
-        }
-        if (!device.device_name || device.device_name.trim().length === 0) {
-            markInvalid(index, "Circuits must have a Device Name");
-        }
+    } else if (parentNode.length > 0 && nodes.indexOf(parentNode) === -1) {
+        errors.push("Parent node does not exist.");
+    }
 
-        if (device.device_id) {
-            const existing = deviceIds.get(device.device_id);
-            if (existing !== undefined && existing !== index) {
-                markInvalid(index, `Devices with duplicate ID [${device.device_id}] detected`);
-                invalid_indices.add(existing);
-            } else {
-                deviceIds.set(device.device_id, index);
-            }
-        }
+    const ipv4List = Array.isArray(device.ipv4) ? device.ipv4 : [];
+    const ipv6List = Array.isArray(device.ipv6) ? device.ipv6 : [];
+    if (ipv4List.length === 0 && ipv6List.length === 0) {
+        errors.push("You must specify either an IPv4 or IPv6 (or both) address.");
+    }
 
-        const parentNode = device.parent_node || "";
-        if (nodes.length === 0) {
-            if (parentNode.length > 0) {
-                markInvalid(index, "You have a flat network, so you can't specify a parent node.");
-            }
-        } else if (parentNode.length > 0 && nodes.indexOf(parentNode) === -1) {
-            markInvalid(index, "Parent node: " + parentNode + " does not exist");
-        }
-
-        const ipv4List = Array.isArray(device.ipv4) ? device.ipv4 : [];
-        const ipv6List = Array.isArray(device.ipv6) ? device.ipv6 : [];
-        if (ipv4List.length === 0 && ipv6List.length === 0) {
-            markInvalid(index, "You must specify either an IPv4 or IPv6 (or both) address");
-        }
-
-        ipv4List.forEach((tuple) => {
-            const formatted = normalizeIp(tuple, 4);
-            if (!formatted) return;
-            if (!checkIpv4(formatted)) {
-                markInvalid(index, formatted + " is not a valid IPv4 address");
-            }
-            const dupe = ipv4s.get(formatted);
-            if (dupe !== undefined && dupe !== index) {
-                markInvalid(index, formatted + " is a duplicate IP");
-                invalid_indices.add(dupe);
-            } else {
-                ipv4s.set(formatted, index);
-            }
-        });
-
-        ipv6List.forEach((tuple) => {
-            const formatted = normalizeIp(tuple, 6);
-            if (!formatted) return;
-            if (!checkIpv6(formatted)) {
-                markInvalid(index, formatted + " is not a valid IPv6 address");
-            }
-            const dupe = ipv6s.get(formatted);
-            if (dupe !== undefined && dupe !== index) {
-                markInvalid(index, formatted + " is a duplicate IP");
-                invalid_indices.add(dupe);
-            } else {
-                ipv6s.set(formatted, index);
-            }
-        });
-
-        const downloadMin = parseFloat(device.download_min_mbps);
-        const uploadMin = parseFloat(device.upload_min_mbps);
-        const downloadMax = parseFloat(device.download_max_mbps);
-        const uploadMax = parseFloat(device.upload_max_mbps);
-
-        if (Number.isNaN(downloadMin)) {
-            markInvalid(index, "Download min is not a valid number");
-        } else if (downloadMin < 0.1) {
-            markInvalid(index, "Download min must be 0.1 or more");
-        }
-
-        if (Number.isNaN(uploadMin)) {
-            markInvalid(index, "Upload min is not a valid number");
-        } else if (uploadMin < 0.1) {
-            markInvalid(index, "Upload min must be 0.1 or more");
-        }
-
-        if (Number.isNaN(downloadMax)) {
-            markInvalid(index, "Download max is not a valid number");
-        } else if (downloadMax < 0.2) {
-            markInvalid(index, "Download max must be 0.2 or more");
-        }
-
-        if (Number.isNaN(uploadMax)) {
-            markInvalid(index, "Upload max is not a valid number");
-        } else if (uploadMax < 0.2) {
-            markInvalid(index, "Upload max must be 0.2 or more");
+    ipv4List.forEach((tuple) => {
+        const formatted = formatIpTuple(tuple, 32);
+        if (!formatted || !checkIpv4(formatted)) {
+            errors.push(`${formatted || "IPv4 entry"} is not a valid IPv4 address.`);
         }
     });
 
-    if (!valid) {
-        let errorMessage = "Invalid ShapedDevices Entries:\n";
-        errors.forEach((message) => {
-            errorMessage += message + "\n";
-        });
-        alert(errorMessage);
+    ipv6List.forEach((tuple) => {
+        const formatted = formatIpTuple(tuple, 128);
+        if (!formatted || !checkIpv6(formatted)) {
+            errors.push(`${formatted || "IPv6 entry"} is not a valid IPv6 address.`);
+        }
+    });
+
+    if (!Number.isFinite(device.download_min_mbps) || device.download_min_mbps < 0.1) {
+        errors.push("Download min must be 0.1 or more.");
+    }
+    if (!Number.isFinite(device.upload_min_mbps) || device.upload_min_mbps < 0.1) {
+        errors.push("Upload min must be 0.1 or more.");
+    }
+    if (!Number.isFinite(device.download_max_mbps) || device.download_max_mbps < 0.2) {
+        errors.push("Download max must be 0.2 or more.");
+    }
+    if (!Number.isFinite(device.upload_max_mbps) || device.upload_max_mbps < 0.2) {
+        errors.push("Upload max must be 0.2 or more.");
     }
 
-    render();
-    return { valid, errors };
+    const sqm = device.sqm_override ? parseSqmOverride(device.sqm_override) : { down: "", up: "" };
+    const validSqm = (token) => token === "" || token === "cake" || token === "fq_codel" || token === "none";
+    if (!validSqm(sqm.down) || !validSqm(sqm.up)) {
+        errors.push("SQM overrides must be blank, cake, fq_codel, or none.");
+    }
+
+    return { valid: errors.length === 0, errors };
+}
+
+function setModalBusy(busy) {
+    modal_busy = busy;
+    $("#sdModalSave").prop("disabled", busy || topology_editor_locked);
+}
+
+function saveModalChanges() {
+    if (topology_editor_locked) return;
+    if (modal_busy) return;
+    const device = collectModalDevice();
+    const validation = validateModalDevice(device);
+    if (!validation.valid) {
+        alert(validation.errors.join("\n"));
+        return;
+    }
+
+    setModalBusy(true);
+    const onComplete = (msg) => {
+        setModalBusy(false);
+        if (msg && msg.ok) {
+            hideModal();
+            if (creating_new) {
+                page = 0;
+            }
+            requestPage();
+            return;
+        }
+        alert((msg && msg.message) ? msg.message : "Unable to save shaped device.");
+    };
+
+    if (creating_new) {
+        createShapedDevice(device, onComplete, () => {
+            setModalBusy(false);
+            alert("Unable to create shaped device.");
+        });
+        return;
+    }
+
+    updateShapedDevice(edit_device_id, device, onComplete, () => {
+        setModalBusy(false);
+        alert("Unable to update shaped device.");
+    });
+}
+
+function deleteDevice(deviceId) {
+    if (topology_editor_locked) return;
+    const device = findCurrentRow(deviceId);
+    const label = device?.device_name || deviceId || "this device";
+    if (!confirm(`Delete ${label}?`)) return;
+    deleteShapedDevice(
+        deviceId,
+        (msg) => {
+            if (msg && msg.ok) {
+                requestPage();
+                return;
+            }
+            alert((msg && msg.message) ? msg.message : "Unable to delete shaped device.");
+        },
+        () => {
+            alert("Unable to delete shaped device.");
+        },
+    );
 }
 
 function start() {
     renderConfigMenu("devices");
 
-    $("#btnSaveDevices").prop("disabled", true);
     $("#btnAddDevice").prop("disabled", true);
+    $("#btnSaveDevices").prop("disabled", true);
     const initialPageSize = parseInt($("#sdPageSize").val(), 10);
     if (!Number.isNaN(initialPageSize)) {
         page_size = initialPageSize;
@@ -748,7 +745,10 @@ function start() {
         if (search_timer) {
             clearTimeout(search_timer);
         }
-        search_timer = setTimeout(() => applySearch(true), 200);
+        search_timer = setTimeout(() => {
+            page = 0;
+            requestPage();
+        }, 200);
     });
 
     $("#sdPageSize").on("change", (event) => {
@@ -756,7 +756,7 @@ function start() {
         if (!Number.isNaN(value)) setPageSize(value);
     });
 
-    $("#sdPagination").on("click", "a.page-link", (event) => {
+    $("#sdPagination, #sdPaginationTop").on("click", "a.page-link", (event) => {
         event.preventDefault();
         const target = parseInt($(event.currentTarget).data("page"), 10);
         if (!Number.isNaN(target)) setPage(target);
@@ -764,14 +764,18 @@ function start() {
 
     $("#sdTableContainer").on("click", ".sd-edit", (event) => {
         event.preventDefault();
-        const idx = parseInt($(event.currentTarget).data("index"), 10);
-        if (!Number.isNaN(idx)) openEditModal(idx);
+        const deviceId = $(event.currentTarget).data("device-id");
+        if (typeof deviceId === "string" && deviceId.length > 0) {
+            openEditModal(deviceId);
+        }
     });
 
     $("#sdTableContainer").on("click", ".sd-delete", (event) => {
         event.preventDefault();
-        const idx = parseInt($(event.currentTarget).data("index"), 10);
-        if (!Number.isNaN(idx)) deleteDevice(idx);
+        const deviceId = $(event.currentTarget).data("device-id");
+        if (typeof deviceId === "string" && deviceId.length > 0) {
+            deleteDevice(deviceId);
+        }
     });
 
     $("#btnAddDevice").on("click", (event) => {
@@ -784,41 +788,34 @@ function start() {
         saveModalChanges();
     });
 
-    $("#btnSaveDevices").on("click", () => {
-        const validation = validateDevices();
-        if (!validation.valid) {
-            return;
-        }
-        saveNetworkAndDevices(network_json, shaped_devices, (success, message) => {
-            if (success) {
-                alert("Configuration saved successfully!");
-            } else {
-                alert("Failed to save configuration: " + message);
-            }
-        });
+    $("#btnSaveDevices").on("click", (event) => {
+        event.preventDefault();
+        requestPage();
     });
 
-    loadNetworkJson(
-        (njs) => {
-            network_json = njs;
-            loadAllShapedDevices(
-                (data) => {
-                    shaped_devices = Array.isArray(data) ? data : [];
-                    invalid_indices = new Set();
-                    applySearch(true);
-                    $("#btnSaveDevices").prop("disabled", false);
-                    $("#btnAddDevice").prop("disabled", false);
+    loadConfig(
+        (msg) => {
+            const config = msg?.data || window.config || {};
+            topology_editor_locked = topologyEditorsLocked(config);
+            topology_editor_lock_message = topologyEditorsLockMessage(config);
+            applyEditorLockState();
+
+            loadNetworkJson(
+                (njs) => {
+                    network_json = njs;
+                    requestPage();
+                    applyEditorLockState();
                 },
                 () => {
                     $("#sdTableContainer").html(
-                        "<div class='alert alert-danger mb-0'>Failed to load shaped devices.</div>",
+                        "<div class='alert alert-danger mb-0'>Failed to load network configuration.</div>",
                     );
                 },
             );
         },
         () => {
             $("#sdTableContainer").html(
-                "<div class='alert alert-danger mb-0'>Failed to load network configuration.</div>",
+                "<div class='alert alert-danger mb-0'>Failed to load configuration.</div>",
             );
         },
     );

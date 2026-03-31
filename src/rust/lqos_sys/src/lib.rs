@@ -32,6 +32,7 @@ pub use ip_mapping::{
 pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
 pub use lqos_kernel::interface_name_to_index;
+pub use lqos_kernel::ip_mapping_capacity;
 pub use lqos_kernel::max_tracked_ips;
 pub use lqos_kernel::unload_xdp_from_interface;
 pub use throughput::{HostCounter, throughput_for_each};

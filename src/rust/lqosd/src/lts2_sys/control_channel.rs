@@ -20,6 +20,13 @@ pub use messages::{
     SupportTicketSummary, WsMessage,
 };
 
+const SHAPER_VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
+
+fn current_shaper_version() -> Option<String> {
+    let version = SHAPER_VERSION_STRING.trim();
+    (!version.is_empty()).then(|| version.to_string())
+}
+
 #[derive(Debug)]
 pub struct HistoryQueryResultPayload {
     pub tag: String,
@@ -1064,6 +1071,7 @@ async fn persistent_connection(
                             license,
                             node_id: config.node_id.clone(),
                             node_name: config.node_name.clone(),
+                            shaper_version: current_shaper_version(),
                         };
                         let Ok((_, _, bytes)) = message.to_bytes() else {
                             error!("Failed to serialize license message");
@@ -1204,6 +1212,7 @@ async fn send_license(
         license,
         node_id: config.node_id.clone(),
         node_name: config.node_name.clone(),
+        shaper_version: current_shaper_version(),
     };
     let (_, _, bytes) = message.to_bytes()?;
     timeout(

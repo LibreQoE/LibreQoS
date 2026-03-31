@@ -119,20 +119,44 @@ export function formatRtt(rtt) {
     return blob;
 }
 
-export function formatRetransmit(retransmits) {
+export function retransmitFractionFromSample(sample) {
+    const retransmits = toNumber(sample?.retransmits, 0);
+    const packets = toNumber(sample?.packets, 0);
+    if (packets <= 0) {
+        return 0;
+    }
+    return retransmits / packets;
+}
+
+export function retransmitPercentFromSample(sample) {
+    return retransmitFractionFromSample(sample) * 100.0;
+}
+
+export function formatRetransmitFraction(fraction) {
+    const percent = toNumber(fraction, 0) * 100.0;
+    const clampedPercent = Math.min(100, Math.max(0, percent));
+    const color = lerpColor([0, 255, 0], [255, 0, 0], clampedPercent / 100.0);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + percent.toFixed(1) + "%</span>";
+}
+
+export function formatRetransmitPercent(percent) {
+    percent = toNumber(percent, 0);
+    const clampedPercent = Math.min(100, Math.max(0, percent));
+    const color = lerpColor([0, 255, 0], [255, 0, 0], clampedPercent / 100.0);
+    return "<span class='muted' style='color: " + color + "'>■</span>" + percent.toFixed(1) + "%</span>";
+}
+
+export function formatRetransmitCount(retransmits) {
     retransmits = toNumber(retransmits, 0);
-    retransmits *= 100;
-    let percent = Math.min(100, retransmits);
-    let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
-    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits.toFixed(1) + "%</span>";
+    return "<span class='text-body-secondary'>" + retransmits.toFixed(0) + "</span>";
+}
+
+export function formatRetransmit(retransmits) {
+    return formatRetransmitFraction(retransmits);
 }
 
 export function formatRetransmitRaw(retransmits) {
-    retransmits = toNumber(retransmits, 0);
-    retransmits *= 100;
-    let percent = Math.min(100, retransmits);
-    let color = lerpColor([0, 255, 0], [255, 0, 0], percent);
-    return "<span class='muted' style='color: " + color + "'>■</span>" + retransmits.toFixed(0) + "</span>";
+    return formatRetransmitCount(retransmits);
 }
 
 export function formatCakeStat(n) {

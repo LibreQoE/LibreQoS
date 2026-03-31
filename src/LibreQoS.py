@@ -36,10 +36,13 @@ from shaping_skip_report import (
 from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping, validate_shaped_devices, \
     is_libre_already_running, create_lock_file, free_lock_file, add_ip_mapping, BatchedCommands, \
     check_config, sqm, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
-    interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, monitor_mode_only, \
+    interface_a, interface_b, enable_actual_shell_commands, use_bin_packing_to_balance_cpu, queue_mode, \
     run_shell_commands_as_sudo, generated_pn_download_mbps, generated_pn_upload_mbps, queues_available_override, \
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
-    is_insight_enabled, \
+    is_insight_enabled, scheduler_error, xdp_ip_mapping_capacity, \
+    overrides_circuit_adjustments_effective, \
+    plan_top_level_cpu_bins, \
+    plan_class_identities, \
     fast_queues_fq_codel, \
     shaping_cpu_count, \
     Bakery
@@ -50,6 +53,31 @@ try:
 except Exception:
     def submit_urgent_issue(*_args, **_kwargs):
         return False
+
+
+class RefreshFailure(Exception):
+    pass
+
+
+def report_refresh_failure(code, message, context=None, dedupe_key=None):
+    logging.error(message)
+    print("ERROR: " + message)
+    try:
+        scheduler_error(message)
+    except Exception:
+        pass
+    try:
+        submit_urgent_issue(
+            "LibreQoS",
+            "Error",
+            code,
+            message,
+            json.dumps(context) if context is not None else None,
+            dedupe_key,
+        )
+    except Exception:
+        pass
+    raise RefreshFailure(message)
 
 R2Q = 10
 #MAX_R2Q = 200_000
@@ -86,6 +114,145 @@ def get_network_json_path():
 
     # Either insight not enabled, or file doesn't exist
     return os.path.join(base_dir, "network.json")
+
+
+def get_planner_state_path():
+    return os.path.join(get_libreqos_directory(), "planner_state.json")
+
+
+def observe_mode_enabled():
+    return queue_mode() == "observe"
+
+
+def _load_json_dict(path):
+    try:
+        with open(path, "r") as infile:
+            data = json.load(infile)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def load_planner_state(state_path=None, planner_module=None):
+    if state_path is None:
+        state_path = get_planner_state_path()
+    if planner_module is not None:
+        try:
+            state = planner_module.load_state(state_path)
+            if isinstance(state, dict):
+                return state
+        except Exception:
+            pass
+    return _load_json_dict(state_path)
+
+
+def save_planner_state(state, state_path=None, planner_module=None):
+    if state_path is None:
+        state_path = get_planner_state_path()
+    if planner_module is not None:
+        planner_module.save_state(state_path, state)
+        return
+
+    parent = os.path.dirname(state_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    temp_path = state_path + ".tmp"
+    with open(temp_path, "w") as outfile:
+        json.dump(state, outfile, indent=2, sort_keys=True)
+    os.replace(temp_path, state_path)
+
+
+def _parse_int_token(value):
+    if value is None:
+        return None
+    try:
+        if isinstance(value, int):
+            return value
+        token = str(value).strip()
+        if not token:
+            return None
+        if token.lower().startswith("0x"):
+            return int(token, 16)
+        return int(token)
+    except Exception:
+        return None
+
+
+def is_generated_parent_node_name(node_name):
+    return isinstance(node_name, str) and node_name.startswith("Generated_PN_")
+
+
+def generated_parent_node_queue_key(node_name, queues_available):
+    if not is_generated_parent_node_name(node_name) or queues_available <= 0:
+        return None
+    suffix = _parse_int_token(str(node_name).rsplit("_", 1)[-1])
+    if suffix is None or suffix <= 0:
+        return None
+    return "CpueQueue" + str((suffix - 1) % queues_available)
+
+
+def planner_circuit_identity_key(circuit):
+    circuit_id = str(circuit.get("circuitID", "") or "").strip()
+    if not circuit_id:
+        raise ValueError("Missing circuitID is unsupported for planner identity")
+    return circuit_id
+
+
+def load_minor_state_from_queuing_structure(path=None):
+    if path is None:
+        path = os.path.join(get_libreqos_directory(), "queuingStructure.json")
+    data = _load_json_dict(path)
+    network = data.get("Network")
+    if not isinstance(network, dict):
+        return {"sites": {}, "circuits": {}}
+
+    sites = {}
+    circuits = {}
+
+    def walk(node_map, trail=()):
+        for node_name, node in sorted(node_map.items()):
+            if not isinstance(node, dict):
+                continue
+            node_path = trail + (node_name,)
+            site_key = "/".join(node_path)
+            parent_path = "/".join(trail)
+            queue = _parse_int_token(node.get("cpuNum"))
+            class_minor = _parse_int_token(node.get("classMinor"))
+            class_major = _parse_int_token(node.get("classMajor"))
+            up_class_major = _parse_int_token(node.get("up_classMajor"))
+            if queue is not None and class_minor is not None:
+                sites[site_key] = {
+                    "class_minor": class_minor,
+                    "queue": queue + 1,
+                    "parent_path": parent_path,
+                    "class_major": class_major,
+                    "up_class_major": up_class_major,
+                }
+
+            if isinstance(node.get("circuits"), list):
+                for circuit in node.get("circuits", []):
+                    if not isinstance(circuit, dict):
+                        continue
+                    circuit_id = circuit.get("circuitID")
+                    circuit_minor = _parse_int_token(circuit.get("classMinor"))
+                    if queue is None or circuit_id is None or circuit_minor is None:
+                        continue
+                    circuits[str(circuit_id)] = {
+                        "class_minor": circuit_minor,
+                        "queue": queue + 1,
+                        "parent_node": circuit.get("ParentNode", node_name),
+                        "class_major": _parse_int_token(circuit.get("classMajor")),
+                        "up_class_major": _parse_int_token(circuit.get("up_classMajor")),
+                    }
+
+            children = node.get("children")
+            if isinstance(children, dict):
+                walk(children, node_path)
+
+    walk(network)
+    return {"sites": sites, "circuits": circuits}
 
 def calculateR2q(maxRateInMbps):
     # So we've learned that r2q defaults to 10, and is used to calculate quantum. Quantum is rateInBytes/r2q by
@@ -235,19 +402,23 @@ def validateNetworkAndDevices():
             data = json.load(file) # put JSON-data to a variable
             if data != {}:
                 #Traverse
-                observedNodes = {} # Will not be used later
+                observedNodes = set()
+                duplicateNodes = set()
                 def traverseToVerifyValidity(data):
                     for elem in data:
                         if isinstance(elem, str):
                             if (isinstance(data[elem], dict)) and (elem != 'children'):
                                 if elem not in observedNodes:
-                                    observedNodes[elem] = {'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps'], 'downloadBandwidthMbps': data[elem]['uploadBandwidthMbps']}
+                                    observedNodes.add(elem)
                                     if 'children' in data[elem]:
                                         traverseToVerifyValidity(data[elem]['children'])
                                 else:
-                                    warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
-                                    networkValidatedOrNot = False
+                                    duplicateNodes.add(elem)
                 traverseToVerifyValidity(data)
+                if len(duplicateNodes) > 0:
+                    for elem in sorted(duplicateNodes):
+                        warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
+                    networkValidatedOrNot = False
                 if len(observedNodes) < 1:
                     warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
                     networkValidatedOrNot = False
@@ -282,15 +453,16 @@ def validateNetworkAndDevices():
     # And read from the sanitized byte stream
     with io.StringIO(text_content) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
-        #Remove comments if any
-        commentsRemoved = []
+        header_consumed = False
+        seenTheseIPsAlready = set()
         for row in csv_reader:
-            if not row[0].startswith('#'):
-                commentsRemoved.append(row)
-        #Remove header
-        commentsRemoved.pop(0)
-        seenTheseIPsAlready = []
-        for row in commentsRemoved:
+            if not row:
+                continue
+            if row[0].startswith('#'):
+                continue
+            if not header_consumed:
+                header_consumed = True
+                continue
             # Accept optional 14th column 'sqm' but ignore here (validation focuses on core fields)
             circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
             # Must have circuitID, it's a unique identifier required for stateful changes to queue structure
@@ -311,14 +483,14 @@ def validateNetworkAndDevices():
                         if ipEntry in seenTheseIPsAlready:
                             warnings.warn("Provided IPv4 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
                             #devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                         else:
                             if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv4Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv4Address):
                                 ipv4_subnets_and_hosts.extend(ipEntry)
                             else:
                                 warnings.warn("Provided IPv4 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                                 devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                 except:
                         warnings.warn("Provided IPv4 '" + ipv4_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                         devicesValidatedOrNot = False
@@ -333,14 +505,14 @@ def validateNetworkAndDevices():
                         if ipEntry in seenTheseIPsAlready:
                             warnings.warn("Provided IPv6 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is duplicate.", stacklevel=2)
                             devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                         else:
                             if (type(ipaddress.ip_network(ipEntry)) is ipaddress.IPv6Network) or (type(ipaddress.ip_address(ipEntry)) is ipaddress.IPv6Address):
                                 ipv6_subnets_and_hosts.extend(ipEntry)
                             else:
                                 warnings.warn("Provided IPv6 '" + ipEntry + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                                 devicesValidatedOrNot = False
-                            seenTheseIPsAlready.append(ipEntry)
+                            seenTheseIPsAlready.add(ipEntry)
                 except:
                         warnings.warn("Provided IPv6 '" + ipv6_input + "' in ShapedDevices.csv at row " + str(rowNum) + " is not valid.", stacklevel=2)
                         devicesValidatedOrNot = False
@@ -404,19 +576,20 @@ def validateNetworkAndDevices():
 def loadSubscriberCircuits(shapedDevicesFile):
     # Load Subscriber Circuits & Devices
     subscriberCircuits = []
-    knownCircuitIDs = []
+    circuitsById = {}
     counterForCircuitsWithoutParentNodes = 0
     dictForCircuitsWithoutParentNodes = {}
     with open(shapedDevicesFile) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
-        # Remove comments if any
-        commentsRemoved = []
+        header_consumed = False
         for row in csv_reader:
-            if not row[0].startswith('#'):
-                commentsRemoved.append(row)
-        # Remove header
-        commentsRemoved.pop(0)
-        for row in commentsRemoved:
+            if not row:
+                continue
+            if row[0].startswith('#'):
+                continue
+            if not header_consumed:
+                header_consumed = True
+                continue
             # Optional per-circuit SQM override in last column
             sqm_override_token = ''
             if len(row) > 13:
@@ -430,12 +603,6 @@ def loadSubscriberCircuits(shapedDevicesFile):
                     token = left + '/' + right
                 sqm_override_token = token
             circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
-            # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
-            if monitor_mode_only() == True:
-                downloadMin = 10000
-                uploadMin = 10000
-                downloadMax = 10000
-                uploadMax = 10000
             ipv4_subnets_and_hosts = []
             # Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s separated by commas. Split them up and parse each
             if ipv4_input != "":
@@ -458,41 +625,37 @@ def loadSubscriberCircuits(shapedDevicesFile):
             # If there is something in the circuit ID field
             if circuitID != "":
                 # Seen circuit before
-                if circuitID in knownCircuitIDs:
-                    for circuit in subscriberCircuits:
-                        if circuit['circuitID'] == circuitID:
-                            if circuit['ParentNode'] != "none":
-                                if circuit['ParentNode'] != ParentNode:
-                                    errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
-                                    raise ValueError(errorMessageString)
-                            # Check if bandwidth parameters match other cdevices of this same circuit ID, but only check if monitorOnlyMode is Off
-                            if monitor_mode_only() == False:
-                                if ((circuit['minDownload'] != float(downloadMin))
-                                    or (circuit['minUpload'] != float(uploadMin))
-                                    or (circuit['maxDownload'] != float(downloadMax))
-                                    or (circuit['maxUpload'] != float(uploadMax))):
-                                    warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
-                            # If this row specifies an SQM override, but the circuit already has a different one, warn and keep the first.
-                            if sqm_override_token != '':
-                                if 'sqm' in circuit:
-                                    if circuit['sqm'] != sqm_override_token:
-                                        warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different SQM override than other devices on this circuit. Will instead use the SQM defined by the first device added to its circuit.", stacklevel=2)
-                                else:
-                                    circuit['sqm'] = sqm_override_token
-                            devicesListForCircuit = circuit['devices']
-                            thisDevice = 	{
-                                              "deviceID": deviceID,
-                                              "deviceName": deviceName,
-                                              "mac": mac,
-                                              "ipv4s": ipv4_subnets_and_hosts,
-                                              "ipv6s": ipv6_subnets_and_hosts,
-                                              "comment": comment
-                                            }
-                            devicesListForCircuit.append(thisDevice)
-                            circuit['devices'] = devicesListForCircuit
+                circuit = circuitsById.get(circuitID)
+                if circuit is not None:
+                    if circuit['ParentNode'] != "none":
+                        if circuit['ParentNode'] != ParentNode:
+                            errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
+                            raise ValueError(errorMessageString)
+                    if ((circuit['minDownload'] != float(downloadMin))
+                        or (circuit['minUpload'] != float(uploadMin))
+                        or (circuit['maxDownload'] != float(downloadMax))
+                        or (circuit['maxUpload'] != float(uploadMax))):
+                        warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different bandwidth parameters than other devices on this circuit. Will instead use the bandwidth parameters defined by the first device added to its circuit.", stacklevel=2)
+                    # If this row specifies an SQM override, but the circuit already has a different one, warn and keep the first.
+                    if sqm_override_token != '':
+                        if 'sqm' in circuit:
+                            if circuit['sqm'] != sqm_override_token:
+                                warnings.warn("Device " + deviceName + " with ID " + deviceID + " had different SQM override than other devices on this circuit. Will instead use the SQM defined by the first device added to its circuit.", stacklevel=2)
+                        else:
+                            circuit['sqm'] = sqm_override_token
+                    devicesListForCircuit = circuit['devices']
+                    thisDevice = 	{
+                                      "deviceID": deviceID,
+                                      "deviceName": deviceName,
+                                      "mac": mac,
+                                      "ipv4s": ipv4_subnets_and_hosts,
+                                      "ipv6s": ipv6_subnets_and_hosts,
+                                      "comment": comment
+                                    }
+                    devicesListForCircuit.append(thisDevice)
+                    circuit['devices'] = devicesListForCircuit
                 # Have not seen circuit before
                 else:
-                    knownCircuitIDs.append(circuitID)
                     if ParentNode == "":
                         ParentNode = "none"
                     #ParentNode = ParentNode.strip()
@@ -525,57 +688,92 @@ def loadSubscriberCircuits(shapedDevicesFile):
                         dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
                         counterForCircuitsWithoutParentNodes += 1
                     subscriberCircuits.append(thisCircuit)
-            # If there is nothing in the circuit ID field
+                    circuitsById[circuitID] = thisCircuit
             else:
-                # Copy deviceName to circuitName if none defined already
-                if circuitName == "":
-                    circuitName = deviceName
-                if ParentNode == "":
-                    ParentNode = "none"
-                #ParentNode = ParentNode.strip()
-                deviceListForCircuit = []
-                thisDevice = 	{
-                                  "deviceID": deviceID,
-                                  "deviceName": deviceName,
-                                  "mac": mac,
-                                  "ipv4s": ipv4_subnets_and_hosts,
-                                  "ipv6s": ipv6_subnets_and_hosts,
-                                }
-                deviceListForCircuit.append(thisDevice)
-                thisCircuit = {
-                  "circuitID": circuitID,
-                  "circuitName": circuitName,
-                  "ParentNode": ParentNode,
-                  "devices": deviceListForCircuit,
-                  "minDownload": float(downloadMin),
-                  "minUpload": float(uploadMin),
-                  "maxDownload": float(downloadMax),
-                  "maxUpload": float(uploadMax),
-                  "classid": '',
-                  "comment": comment
-                }
-                if sqm_override_token != '':
-                    thisCircuit['sqm'] = sqm_override_token
-                if thisCircuit['ParentNode'] == 'none':
-                    thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
-                    dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = ((float(downloadMax))+(float(uploadMax)))
-                    counterForCircuitsWithoutParentNodes += 1
-                subscriberCircuits.append(thisCircuit)
+                raise ValueError(
+                    "Missing circuitID is unsupported in ShapedDevices.csv "
+                    f"(deviceID={deviceID}, deviceName={deviceName}, parent={ParentNode})"
+                )
     return (subscriberCircuits,	dictForCircuitsWithoutParentNodes)
+
+
+def normalize_sqm_override_token(raw_token):
+    token = (raw_token or '').strip().lower()
+    if token == '':
+        return ''
+    if '/' in token:
+        left, right = token.split('/', 1)
+        token = left.strip() + '/' + right.strip()
+    return token
+
+
+def apply_effective_runtime_circuit_overrides(subscriberCircuits):
+    """
+    Overlay adaptive runtime circuit adjustments in memory without mutating
+    ShapedDevices.csv, so rebuilds can honor TreeGuard/StormGuard state.
+    """
+    try:
+        adjustments = overrides_circuit_adjustments_effective()
+    except Exception as e:
+        warnings.warn(f"Unable to load effective runtime circuit overrides: {e}", stacklevel=2)
+        return 0
+
+    sqm_by_device_id = {}
+    for adj in adjustments:
+        if adj.get('type') != 'device_adjust_sqm':
+            continue
+        device_id = (adj.get('device_id') or '').strip()
+        sqm_override = normalize_sqm_override_token(adj.get('sqm_override'))
+        if device_id == '' or sqm_override == '':
+            continue
+        sqm_by_device_id[device_id] = sqm_override
+
+    if not sqm_by_device_id:
+        return 0
+
+    overlay_count = 0
+    for circuit in subscriberCircuits:
+        circuit_override = None
+        for device in circuit.get('devices', []):
+            override = sqm_by_device_id.get(device.get('deviceID', ''))
+            if override is None:
+                continue
+            if circuit_override is not None and circuit_override != override:
+                warnings.warn(
+                    "Effective runtime SQM override conflict on circuit "
+                    + circuit.get('circuitID', 'unknown')
+                    + ". Will instead use the first runtime SQM override discovered.",
+                    stacklevel=2,
+                )
+                continue
+            circuit_override = override
+
+        if circuit_override is None:
+            continue
+        if circuit.get('sqm') != circuit_override:
+            overlay_count += 1
+        circuit['sqm'] = circuit_override
+
+    return overlay_count
 
 def refreshShapers():
 
     # Starting
     print("refreshShapers starting at " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+    observe_mode = observe_mode_enabled()
     # Create a single batch of xdp update commands to execute together
     ipMapBatch = BatchedCommands()
+    requiredIpMappings = 0
 
     # Warn user if enableActualShellCommands is False, because that would mean no actual commands are executing
     if enable_actual_shell_commands() == False:
         warnings.warn("enableActualShellCommands is set to False. None of the commands below will actually be executed. Simulated run.", stacklevel=2)
-    # Warn user if monitorOnlyMode is True, because that would mean no actual shaping is happening
-    if monitor_mode_only() == True:
-        warnings.warn("monitorOnlyMode is set to True. Shaping will not occur.", stacklevel=2)
+    if observe_mode:
+        warnings.warn(
+            "queue_mode is set to observe. LibreQoS will keep the root MQ and remove the shaping tree for a true baseline. "
+            "Switching between Observe and Shape may briefly interrupt traffic.",
+            stacklevel=2,
+        )
 
 
     # Check if first run since boot
@@ -609,6 +807,13 @@ def refreshShapers():
 
         # Load Subscriber Circuits & Devices
         subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
+        runtime_override_count = apply_effective_runtime_circuit_overrides(subscriberCircuits)
+        if runtime_override_count > 0:
+            print(
+                "Applied "
+                + str(runtime_override_count)
+                + " effective runtime circuit SQM override(s) in memory"
+            )
 
         # Preserve the logical parent (as configured in ShapedDevices.csv) before any shaping-time rewrites.
         for circuit in subscriberCircuits:
@@ -732,27 +937,12 @@ def refreshShapers():
             queuesAvailable = math.floor(queuesAvailable / 2)
             stickOffset = queuesAvailable
 
-        # If in monitorOnlyMode, override network.json bandwidth rates to where no shaping will actually occur
-        if monitor_mode_only() == True:
-            def overrideNetworkBandwidths(data):
-                for elem in data:
-                    if 'children' in data[elem]:
-                        overrideNetworkBandwidths(data[elem]['children'])
-                    data[elem]['downloadBandwidthMbpsMin'] = 100000
-                    data[elem]['uploadBandwidthMbpsMin'] = 100000
-            overrideNetworkBandwidths(network)
-
         # Generate Parent Nodes. Spread ShapedDevices.csv which lack defined ParentNode across these (balance across CPUs)
         print("Generating parent nodes")
         generatedPNs = []
         numberOfGeneratedPNs = queuesAvailable
-        # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
-        if monitor_mode_only() == True:
-            chosenDownloadMbps = 10000
-            chosenUploadMbps = 10000
-        else:
-            chosenDownloadMbps = generated_pn_download_mbps()
-            chosenUploadMbps = generated_pn_upload_mbps()
+        chosenDownloadMbps = generated_pn_download_mbps()
+        chosenUploadMbps = generated_pn_upload_mbps()
         for x in range(numberOfGeneratedPNs):
             genPNname = "Generated_PN_" + str(x+1)
             network[genPNname] =	{
@@ -807,10 +997,10 @@ def refreshShapers():
             except ImportError:
                 bin_planner = None
             # Store planner state directly in lqos_directory (no hidden subdirs)
-            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            state_path = get_planner_state_path()
             state = {}
             if bin_planner is not None:
-                state = bin_planner.load_state(state_path)
+                state = load_planner_state(state_path, bin_planner)
             now_ts = time.time()
             prev_assign = {}
             last_change_ts = {}
@@ -834,7 +1024,7 @@ def refreshShapers():
                 "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
                 "last_change_ts_by_item": last_change_ts,
             }
-            if monitor_mode_only() == True:
+            if observe_mode:
                 params["move_budget_per_run"] = 0
 
             if bin_planner is not None:
@@ -876,7 +1066,7 @@ def refreshShapers():
                     state["assignments"][iid] = b
                 try:
                     print(f"Saving planner state to {state_path} (generated PNs)")
-                    bin_planner.save_state(state_path, state)
+                    save_planner_state(state, state_path, bin_planner)
                 except Exception as e:
                     warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
 
@@ -1031,26 +1221,34 @@ def refreshShapers():
         print("Parsing network structure and tallying devices")
         parentNodes = []
         minorByCPUpreloaded = {}
-        knownClassIDs = []
         nodes_requiring_min_squashing = {}
-        # Persisted circuit minor assignments for stability across reloads
-        circuit_state_from_disk = {}
-        circuit_state_updated = {}
-        used_minors_by_queue = {cpu + 1: set() for cpu in range(queuesAvailable)}
         # Track minor counter by CPU. This way we can have > 32000 hosts (htb has u16 limit to minor handle)
         # Minor numbers start at 3 to reserve 1 for root qdisc and 2 for default class
         # With CIRCUIT_PADDING, we leave gaps between nodes to allow future circuit additions
         # without disrupting existing ClassID assignments. This maintains stability across reloads.
         for x in range(queuesAvailable):
             minorByCPUpreloaded[x+1] = 3
-        def traverseNetwork(data, depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL):
-            # ClassID Assignment Strategy:
-            # - Nodes and circuits are processed in alphabetical order for stability
-            # - Each node gets a unique minor number that increments sequentially
-            # - After processing all circuits for a node, we add CIRCUIT_PADDING to the minor counter
-            # - This creates gaps that allow adding new circuits without affecting other ClassIDs
-            # - Children are also sorted before recursive processing to ensure deterministic traversal
-            # For top-level binpacked keys (CpueQueueN), enforce numeric ordering of N
+        def report_minor_overflow(queue, minor):
+            msg = f"Minor class ID overflow on CPU {queue}: {minor} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
+            logging.error(msg)
+            try:
+                ctx = json.dumps({"cpu": queue, "minor": minor})
+                submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
+            except Exception:
+                pass
+            raise ValueError(msg)
+
+        def ensure_minor_capacity(queue, minor):
+            if minor > 0xFFFF:
+                report_minor_overflow(queue, minor)
+
+        def next_free_minor(start_minor, reserved):
+            candidate = max(3, start_minor)
+            while candidate in reserved:
+                candidate += 1
+            return candidate
+
+        def sorted_node_keys(data, depth):
             keys = list(data.keys())
             if depth == 0 and len(keys) > 0 and all(k.startswith("CpueQueue") for k in keys):
                 try:
@@ -1059,227 +1257,7 @@ def refreshShapers():
                     keys = sorted(keys)
             else:
                 keys = sorted(keys)
-            for node in keys:
-                #if data[node]['type'] == "virtual":
-                #	print(node + " is a virtual node. Skipping.")
-                #	if depth == 0:
-                #		parentClassID = hex(major) + ':'
-                #		upParentClassID = hex(major+stickOffset) + ':'
-                #	data[node]['parentClassID'] = parentClassID
-                #	data[node]['up_parentClassID'] = upParentClassID
-                #	data[node]['classMajor'] = hex(major)
-                #	data[node]['up_classMajor'] = hex(major + stickOffset)
-                #	data[node]['classMinor'] = hex(minorByCPU[queue])
-                #	data[node]['cpuNum'] = hex(queue-1)
-                #	data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
-                #	traverseNetwork(data[node]['children'], depth, major, minorByCPU, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL)
-                #	continue
-                circuitsForThisNetworkNode = []
-                nodeClassID = hex(major) + ':' + hex(minorByCPU[queue])
-                upNodeClassID = hex(major+stickOffset) + ':' + hex(minorByCPU[queue])
-                data[node]['classid'] = nodeClassID
-                data[node]['up_classid'] = upNodeClassID
-                if depth == 0:
-                    parentClassID = hex(major) + ':'
-                    upParentClassID = hex(major+stickOffset) + ':'
-                data[node]['parentClassID'] = parentClassID
-                data[node]['up_parentClassID'] = upParentClassID
-                # If in monitorOnlyMode, override bandwidth rates to where no shaping will actually occur
-                if monitor_mode_only() == True:
-                    data[node]['downloadBandwidthMbps'] = 100000
-                    data[node]['uploadBandwidthMbps'] = 100000
-                    data[node]['downloadBandwidthMbpsMin'] = 100000
-                    data[node]['uploadBandwidthMbpsMin'] = 100000
-                # If not in monitorOnlyMode
-                else:
-                    # Cap based on this node's max bandwidth, or parent node's max bandwidth, whichever is lower
-                    data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'],parentMaxDL)
-                    data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'],parentMaxUL)
-                    data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'], data[node]['downloadBandwidthMbps'], parentMinDL)
-                    data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'], data[node]['uploadBandwidthMbps'], parentMinUL)
-                # Calculations are done in findBandwidthMins() to determine optimal HTB rates (mins) and ceils (maxs)
-                data[node]['classMajor'] = hex(major)
-                data[node]['up_classMajor'] = hex(major + stickOffset)
-                data[node]['classMinor'] = hex(minorByCPU[queue])
-                data[node]['cpuNum'] = hex(queue-1)
-                data[node]['up_cpuNum'] = hex(queue-1+stickOffset)
-                used_minors_by_queue.setdefault(queue, set()).add(minorByCPU[queue])
-                thisParentNode =	{
-                                    "parentNodeName": node,
-                                    "classID": nodeClassID,
-                                    "maxDownload": data[node]['downloadBandwidthMbps'],
-                                    "maxUpload": data[node]['uploadBandwidthMbps'],
-                                    }
-                parentNodes.append(thisParentNode)
-                minorByCPU[queue] = minorByCPU[queue] + 1
-                # Check for overflow - TC uses u16 for minor class ID (max 65535)
-                if minorByCPU[queue] > 0xFFFF:
-                    msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
-                    logging.error(msg)
-                    try:
-                        ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
-                        submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
-                    except Exception:
-                        pass
-                    raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
-                # If a device from ShapedDevices.csv lists this node as its Parent Node, attach it as a leaf to this node HTB
-                if node in circuits_by_parent_node:
-                    # If mins of circuits combined exceed min of parent node - set to 1
-                    override_min_down = None
-                    override_min_up = None
-                    if monitor_mode_only() == False:
-                        if (circuit_min_down_combined_by_parent_node[node] > data[node]['downloadBandwidthMbpsMin']) or (circuit_min_up_combined_by_parent_node[node] > data[node]['uploadBandwidthMbpsMin']):
-                            override_min_down = 1
-                            override_min_up = 1
-                            logging.info("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
-                            if ((override_min_down * len(circuits_by_parent_node[node])) > data[node]['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > data[node]['uploadBandwidthMbpsMin']):
-                                logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
-                                nodes_requiring_min_squashing[node] = True
-                    # Sort circuits by name for stable ordering
-                    sorted_circuits = sorted(circuits_by_parent_node[node],
-                               key=lambda c: c.get('circuitName', c.get('circuitID', '')))
-                    for circuit in sorted_circuits:
-                        if node == circuit['ParentNode']:
-                            if monitor_mode_only() == False:
-                                if circuit['maxDownload'] > data[node]['downloadBandwidthMbps']:
-                                    logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
-                                if circuit['maxUpload'] > data[node]['uploadBandwidthMbps']:
-                                    logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
-                            parentString = hex(major) + ':'
-                            # Attempt to reuse a stored minor for stability (only if parent/bin unchanged and not colliding)
-                            reuse_minor = None
-                            try:
-                                circuit_id_str = str(circuit.get('circuitID'))
-                                stored_entry = circuit_state_from_disk.get(circuit_id_str, {}) if isinstance(circuit_state_from_disk, dict) else {}
-                                stored_minor = stored_entry.get("class_minor")
-                                stored_queue = stored_entry.get("queue")
-                                stored_parent = stored_entry.get("parent_node")
-                                if stored_minor is not None and stored_queue is not None and stored_parent is not None:
-                                    try:
-                                        stored_minor = int(stored_minor)
-                                    except Exception:
-                                        stored_minor = None
-                                    try:
-                                        stored_queue = int(stored_queue)
-                                    except Exception:
-                                        stored_queue = None
-                                if stored_minor is not None and stored_queue == queue and stored_parent == circuit['ParentNode']:
-                                    if stored_minor not in used_minors_by_queue.setdefault(queue, set()):
-                                        reuse_minor = stored_minor
-                            except Exception:
-                                pass
-
-                            candidate_minor = reuse_minor if reuse_minor is not None else minorByCPU[queue]
-                            reserved = used_minors_by_queue.setdefault(queue, set())
-                            while candidate_minor in reserved:
-                                candidate_minor += 1
-
-                            flowIDstring = hex(major) + ':' + hex(candidate_minor)
-                            upFlowIDstring = hex(major + stickOffset) + ':' + hex(candidate_minor)
-                            circuit['classid'] = flowIDstring
-                            circuit['up_classid'] = upFlowIDstring
-                            logging.info("Added up_classid to circuit: " + circuit['up_classid'])
-                            # Create circuit dictionary to be added to network structure, eventually output as queuingStructure.json
-                            maxDownload = min(circuit['maxDownload'],data[node]['downloadBandwidthMbps'])
-                            maxUpload = min(circuit['maxUpload'],data[node]['uploadBandwidthMbps'])
-                            if override_min_down:
-                                circuit['minDownload'] = 1
-                            if override_min_up:
-                                circuit['minUpload'] = 1
-                            minDownload = min(circuit['minDownload'],maxDownload)
-                            minUpload = min(circuit['minUpload'],maxUpload)
-                            thisNewCircuitItemForNetwork = {
-                                'maxDownload' : maxDownload,
-                                'maxUpload' : maxUpload,
-                                'minDownload' : minDownload,
-                                'minUpload' : minUpload,
-                                "circuitID": circuit['circuitID'],
-                                "circuitName": circuit['circuitName'],
-                                "ParentNode": circuit['ParentNode'],
-                                "logicalParentNode": circuit.get('logicalParentNode', circuit['ParentNode']),
-                                "devices": circuit['devices'],
-                                "classid": flowIDstring,
-                                "up_classid" : upFlowIDstring,
-                                "classMajor": hex(major),
-                                "up_classMajor" : hex(major + stickOffset),
-                                "classMinor": hex(candidate_minor),
-                                "comment": circuit['comment']
-                            }
-                            # Attach the planner weight used by the planner/UI summary
-                            # Priority: explicit weight -> fallback to maxDownload
-                            try:
-                                cid = str(circuit.get('circuitID',''))
-                                w = None
-                                if cid in weight_by_circuit_id:
-                                    w = float(weight_by_circuit_id[cid])
-                                if w is None:
-                                    w = float(maxDownload)
-                                # Treat 1000 as a sentinel default from Insight; use maxDownload instead
-                                if abs(w - 1000.0) < 1e-6:
-                                    w = float(maxDownload)
-                                # If the circuit's configured rate equals the generated PN default,
-                                # ignore it for weight purposes.
-                                try:
-                                    default_rate = float(generated_pn_download_mbps())
-                                    if abs(float(maxDownload) - default_rate) < 1e-6:
-                                        w = 0.0
-                                except Exception:
-                                    pass
-                                thisNewCircuitItemForNetwork['planner_weight'] = w
-                            except Exception:
-                                pass
-                            # Preserve optional per-circuit SQM override for downstream bakery call
-                            if 'sqm' in circuit and circuit['sqm']:
-                                thisNewCircuitItemForNetwork['sqm'] = circuit['sqm']
-                            # Generate TC commands to be executed later
-                            thisNewCircuitItemForNetwork['devices'] = circuit['devices']
-                            circuitsForThisNetworkNode.append(thisNewCircuitItemForNetwork)
-                            reserved.add(candidate_minor)
-                            minorByCPU[queue] = max(minorByCPU[queue], candidate_minor) + 1
-                            try:
-                                # Record the assigned minor for future stability
-                                circuit_state_updated[str(circuit.get('circuitID'))] = {
-                                    "class_minor": candidate_minor,
-                                    "queue": queue,
-                                    "parent_node": circuit['ParentNode'],
-                                    "class_major": major,
-                                    "up_class_major": major + stickOffset,
-                                }
-                            except Exception:
-                                pass
-                if len(circuitsForThisNetworkNode) > 0:
-                    data[node]['circuits'] = circuitsForThisNetworkNode
-
-                # Add padding for future circuit additions (applies to all nodes)
-                # This ensures space is reserved even for nodes without circuits
-                minorByCPU[queue] = minorByCPU[queue] + CIRCUIT_PADDING
-
-                # Recursive call this function for children nodes attached to this node
-                if 'children' in data[node]:
-                    # Sort children to ensure consistent traversal order
-                    sorted_children = dict(sorted(data[node]['children'].items()))
-                    # We need to keep tabs on the minor counter, because we can't have repeating class IDs. Here, we bring back the minor counter from the recursive function
-                    minorByCPU[queue] = minorByCPU[queue] + 1
-                    # Check for overflow - TC uses u16 for minor class ID (max 65535)
-                    if minorByCPU[queue] > 0xFFFF:
-                        msg = f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds TC's u16 limit (65535). Consider increasing queue count or restructuring network hierarchy."
-                        logging.error(msg)
-                        try:
-                            ctx = json.dumps({"cpu": queue, "minor": minorByCPU[queue]})
-                            submit_urgent_issue("LibreQoS", "Error", "TC_U16_OVERFLOW", msg, ctx, f"TC_U16_OVERFLOW_CPU_{queue}")
-                        except Exception:
-                            pass
-                        raise ValueError(f"Minor class ID overflow on CPU {queue}: {minorByCPU[queue]} exceeds limit of 65535")
-                    minorByCPU = traverseNetwork(sorted_children, depth+1, major, minorByCPU, queue, nodeClassID, upNodeClassID, data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'], data[node]['downloadBandwidthMbpsMin'], data[node]['uploadBandwidthMbpsMin'])
-                # If top level node, increment to next queue / cpu core
-                if depth == 0:
-                    if queue >= queuesAvailable:
-                        queue = 1
-                        major = queue
-                    else:
-                        queue += 1
-                        major += 1
-            return minorByCPU
+            return keys
 
         # If we're in binpacking mode, we need to sort the network structure a bit
         if use_bin_packing_to_balance_cpu() and not is_network_flat():
@@ -1318,17 +1296,9 @@ def refreshShapers():
                 except Exception:
                     pass
 
-            def round_robin_assign(items_list, bins):
-                if not bins:
-                    return {}, []
-                names = [str(it["id"]) for it in items_list]
-                names.sort()
-                assignment_local = {}
-                for idx, name in enumerate(names):
-                    assignment_local[name] = bins[idx % len(bins)]
-                return assignment_local, list(assignment_local.keys())
-
             for node in network:
+                if is_generated_parent_node_name(node):
+                    continue
                 w = weight_by_name.get(str(node), 1.0)
                 try:
                     w = float(w)
@@ -1340,138 +1310,79 @@ def refreshShapers():
                     w = 1.0
                 items.append({"id": str(node), "weight": w})
 
-            def greedy_assign(items_list, bins):
-                bin_loads = {key: 0.0 for key in bins}
-                pairs = [(str(it["id"]), float(it["weight"])) for it in items_list]
-                pairs.sort(key=lambda nw: (-nw[1], nw[0]))
-                assignment_local = {}
-                for name, wgt in pairs:
-                    target = min(bin_loads.items(), key=lambda kv: (kv[1], kv[0]))[0]
-                    assignment_local[name] = target
-                    bin_loads[target] += wgt
-                return assignment_local, list(assignment_local.keys())
-
-            # Prepare bins and capacities
             cpu_keys = ["CpueQueue" + str(cpu) for cpu in range(queuesAvailable)]
-            bins_list = [{"id": key} for key in cpu_keys]
-            capacities = {key: 1.0 for key in cpu_keys}
-            valid_bins = set(capacities.keys())
+            valid_bins = set(cpu_keys)
 
             planner_used = False
-            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            state_path = get_planner_state_path()
             state = {}
             now_ts = time.time()
             assignment = {}
             changed = []
-            bin_planner = None
+            try:
+                state = load_planner_state(state_path, None)
+            except Exception:
+                state = {}
 
-            # Load planner state and generate assignments when Insight is enabled/licensed
-            if insight_enabled:
-                try:
-                    import bin_planner as bin_planner  # type: ignore
-                except ImportError:
-                    bin_planner = None
+            prev_assign = {}
+            last_change_ts = {}
+            if isinstance(state, dict):
+                prev_assign = state.get("assignments", {}) or {}
+                last_change_ts = state.get("last_change_ts", {}) or {}
+            item_ids = {str(it["id"]) for it in items}
+            prev_assign = {
+                iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins
+            }
+            last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
 
-                if bin_planner is not None:
-                    try:
-                        state = bin_planner.load_state(state_path)
-                    except Exception:
-                        state = {}
-                    prev_assign = {}
-                    last_change_ts = {}
-                    if isinstance(state, dict):
-                        prev_assign = state.get("assignments", {}) or {}
-                        last_change_ts = state.get("last_change_ts", {}) or {}
-                    item_ids = {str(it["id"]) for it in items}
-                    prev_assign = {
-                        iid: b for iid, b in prev_assign.items() if iid in item_ids and b in valid_bins
-                    }
-                    last_change_ts = {iid: last_change_ts.get(iid, 0.0) for iid in item_ids}
+            move_budget = max(1, min(32, int(0.01 * max(1, len(items)))))
+            if observe_mode:
+                move_budget = 0
 
-                    params = {
-                        "candidate_set_size": 4,
-                        "headroom": 0.05,
-                        "alpha": 0.1,
-                        "hysteresis_threshold": 0.03,
-                        "cooldown_seconds": 3600,
-                        "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
-                        "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
-                        "last_change_ts_by_item": last_change_ts,
-                    }
-                    if monitor_mode_only() == True:
-                        params["move_budget_per_run"] = 0
-
-                    try:
-                        assignment, changed = bin_planner.plan_assignments(
-                            items, bins_list, capacities, prev_assign, now_ts, params
-                        )
-                        planner_used = True
-                    except Exception as e:
-                        warnings.warn(
-                            f"Planner failed ({e}); falling back to greedy distribution.",
-                            stacklevel=2,
-                        )
-                        assignment, changed = greedy_assign(items, cpu_keys)
-                        planner_used = False
-                else:
-                    warnings.warn(
-                        "Binpacking requested, but planner module is unavailable; using greedy distribution.",
-                        stacklevel=2,
-                    )
-                    assignment, changed = greedy_assign(items, cpu_keys)
-                    planner_used = False
-            else:
-                # Insight is unavailable; use deterministic round-robin distribution.
-                assignment, changed = round_robin_assign(items, cpu_keys)
+            planner_mode = "stable_greedy" if insight_enabled else "round_robin"
+            try:
+                plan_result = plan_top_level_cpu_bins(
+                    items,
+                    queuesAvailable,
+                    prev_assign=prev_assign,
+                    last_change_ts=last_change_ts,
+                    now_ts=now_ts,
+                    mode=planner_mode,
+                    move_budget_per_run=move_budget,
+                    cooldown_seconds=3600.0,
+                    hysteresis_threshold=0.03,
+                )
+                assignment = dict(plan_result.get("assignment", {}) or {})
+                changed = list(plan_result.get("changed", []) or [])
+                planner_used = bool(plan_result.get("planner_used", False))
+            except Exception as e:
+                warnings.warn(
+                    f"Shared Rust planner failed ({e}); falling back to deterministic local assignment.",
+                    stacklevel=2,
+                )
+                assignment = {}
+                names = sorted(str(it["id"]) for it in items)
+                if cpu_keys:
+                    for idx, name in enumerate(names):
+                        if insight_enabled:
+                            assignment[name] = cpu_keys[idx % len(cpu_keys)]
+                        else:
+                            assignment[name] = cpu_keys[idx % len(cpu_keys)]
+                changed = list(assignment.keys())
                 planner_used = False
 
-            # Validate assignment covers all items and uses known bins (planner may return partial results)
-            try:
-                if not isinstance(assignment, dict):
-                    assignment, changed = greedy_assign(items, cpu_keys)
-            except Exception:
-                assignment, changed = greedy_assign(items, cpu_keys)
-            try:
-                item_ids = {str(it["id"]) for it in items}
-                rr_fallback, _ = round_robin_assign(items, cpu_keys)
-                for iid in item_ids:
-                    tgt = assignment.get(iid)
-                    if tgt not in valid_bins:
-                        assignment[iid] = rr_fallback.get(
-                            iid, cpu_keys[-1] if cpu_keys else "CpueQueue0"
-                        )
-            except Exception:
-                pass
-
-            # Sanity check: if planner returns a degenerate assignment (everything in one bin),
-            # fall back to a simple greedy distribution so the physical tree can spread.
-            if planner_used:
-                try:
-                    # Exclude Generated_PN_* placeholders from the degeneracy test: they may not
-                    # appear in the UI tree and can mask a collapsed real topology.
-                    interesting_ids = {
-                        str(it["id"])
-                        for it in items
-                        if not str(it["id"]).startswith("Generated_PN_")
-                    }
-                    used = {
-                        tgt
-                        for iid, tgt in assignment.items()
-                        if iid in interesting_ids and tgt in valid_bins
-                    }
-                    if queuesAvailable > 1 and len(interesting_ids) > 1 and len(used) <= 1:
-                        warnings.warn(
-                            "Planner produced degenerate CPU binning (single-bin result); falling back to greedy distribution.",
-                            stacklevel=2,
-                        )
-                        assignment, changed = greedy_assign(items, cpu_keys)
-                        planner_used = False
-                except Exception:
-                    pass
+            resolved_assignment = {}
+            for node in network:
+                tgt = generated_parent_node_queue_key(node, queuesAvailable)
+                if tgt is None:
+                    tgt = assignment.get(node)
+                if tgt is None:
+                    tgt = "CpueQueue" + str(queuesAvailable - 1)
+                resolved_assignment[str(node)] = tgt
 
             for x in range(queuesAvailable):
                 key = "CpueQueue" + str(x)
-                assigned = [name for name, tgt in assignment.items() if tgt == key]
+                assigned = [name for name, tgt in resolved_assignment.items() if tgt == key]
                 print("Bin " + str(x) + " = ", assigned)
 
             # Build the binned network structure
@@ -1488,74 +1399,325 @@ def refreshShapers():
                     'name': cpuKey
                 }
             for node in network:
-                tgt = assignment.get(node)
+                tgt = resolved_assignment.get(str(node))
                 if tgt is None:
                     tgt = "CpueQueue" + str(queuesAvailable - 1)
                 binnedNetwork[tgt]['children'][node] = network[node]
             network = binnedNetwork
 
             # Update and save state
-            if planner_used and bin_planner is not None and isinstance(state, dict):
+            if planner_used and isinstance(state, dict):
                 if state.get("salt") is None:
                     state["salt"] = "default_salt"
                 if "assignments" not in state or not isinstance(state["assignments"], dict):
                     state["assignments"] = {}
                 if "last_change_ts" not in state or not isinstance(state["last_change_ts"], dict):
                     state["last_change_ts"] = {}
+                stale_generated = [
+                    iid for iid in list(state["assignments"].keys())
+                    if is_generated_parent_node_name(iid)
+                ]
+                for iid in stale_generated:
+                    state["assignments"].pop(iid, None)
+                    state["last_change_ts"].pop(iid, None)
                 for iid, b in assignment.items():
                     if iid in changed:
                         state["last_change_ts"][iid] = now_ts
                     state["assignments"][iid] = b
                 try:
                     print(f"Saving planner state to {state_path} (top-level CPU binning)")
-                    bin_planner.save_state(state_path, state)
+                    save_planner_state(state, state_path, None)
                 except Exception as e:
                     warnings.warn(
                         f"Failed to save planner state at {state_path}: {e}", stacklevel=2
                     )
 
-        # Seed persisted circuit minor assignments (TTL already enforced in bin_planner.load_state()).
+        # Seed persisted site/circuit minor assignments. When planner state is absent,
+        # fall back to the previous queuing structure so the first run after an upgrade
+        # can preserve existing class IDs.
         try:
             state  # noqa: B018
         except NameError:
             state = {}
-        try:
-            import bin_planner  # noqa: F401
-        except ImportError:
-            bin_planner = None
-        if bin_planner is not None and (not isinstance(state, dict) or len(state.keys()) == 0):
-            try:
-                state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
-                state = bin_planner.load_state(state_path)
-            except Exception:
-                state = {}
+        state_path = get_planner_state_path()
+        if not isinstance(state, dict) or len(state.keys()) == 0:
+            state = load_planner_state(state_path, None)
         try:
             circuit_state_from_disk = state.get("circuits", {}) if isinstance(state, dict) else {}
         except Exception:
             circuit_state_from_disk = {}
+        try:
+            site_state_from_disk = state.get("sites", {}) if isinstance(state, dict) else {}
+        except Exception:
+            site_state_from_disk = {}
+        if not isinstance(circuit_state_from_disk, dict):
+            circuit_state_from_disk = {}
+        if not isinstance(site_state_from_disk, dict):
+            site_state_from_disk = {}
+        if not circuit_state_from_disk or not site_state_from_disk:
+            fallback_minor_state = load_minor_state_from_queuing_structure()
+            if not site_state_from_disk:
+                site_state_from_disk = fallback_minor_state.get("sites", {}) or {}
+            if not circuit_state_from_disk:
+                circuit_state_from_disk = fallback_minor_state.get("circuits", {}) or {}
         circuit_state_updated = {}
-        used_minors_by_queue = {cpu + 1: set() for cpu in range(queuesAvailable)}
+        site_state_updated = {}
+        planner_site_inputs = []
+        planner_circuit_groups = []
 
-        # Here is the actual call to the recursive traverseNetwork() function. finalMinor is not used.
-        minorByCPU = traverseNetwork(network, 0, major=1, minorByCPU=minorByCPUpreloaded, queue=1, parentClassID=None, upParentClassID=None, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps(), parentMinDL=upstream_bandwidth_capacity_download_mbps(), parentMinUL=upstream_bandwidth_capacity_upload_mbps())
+        def collect_identity_planner_inputs(data, depth, queue, path=()):
+            for node in sorted_node_keys(data, depth):
+                current_queue = queue
+                node_path = path + (node,)
+                parent_path = '/'.join(path)
+                has_children = bool(data[node].get('children'))
+                planner_site_inputs.append(
+                    {
+                        "site_key": '/'.join(node_path),
+                        "parent_path": parent_path,
+                        "queue": current_queue,
+                        "has_children": has_children,
+                    }
+                )
+                if node in circuits_by_parent_node:
+                    sorted_circuits = sorted(
+                        circuits_by_parent_node[node],
+                        key=lambda c: c.get('circuitName', c.get('circuitID', '')),
+                    )
+                    planner_circuit_groups.append(
+                        {
+                            "parent_node": node,
+                            "queue": current_queue,
+                            "circuit_ids": [
+                                planner_circuit_identity_key(circuit)
+                                for circuit in sorted_circuits
+                                if node == circuit['ParentNode']
+                            ],
+                        }
+                    )
 
-        # Persist the updated circuit minor map for future stability
-        if 'bin_planner' not in locals():
-            bin_planner = None
-        if bin_planner is not None and isinstance(state, dict):
-            if 'circuits' not in state or not isinstance(state.get('circuits'), dict):
-                state['circuits'] = {}
-            state['circuits'] = circuit_state_updated
-            try:
-                state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
-            except Exception:
-                state_path = None
-            if state_path:
-                try:
-                    print(f"Saving planner state to {state_path} (circuit minors)")
-                    bin_planner.save_state(state_path, state)
-                except Exception as e:
-                    warnings.warn(f"Failed to save planner circuit state at {state_path}: {e}", stacklevel=2)
+                if has_children:
+                    sorted_children = dict(sorted(data[node]['children'].items()))
+                    collect_identity_planner_inputs(
+                        sorted_children,
+                        depth + 1,
+                        current_queue,
+                        node_path,
+                    )
+
+                if depth == 0:
+                    if queue >= queuesAvailable:
+                        queue = 1
+                    else:
+                        queue += 1
+
+        collect_identity_planner_inputs(network, 0, 1)
+
+        identity_plan = plan_class_identities(
+            planner_site_inputs,
+            planner_circuit_groups,
+            site_state=site_state_from_disk,
+            circuit_state=circuit_state_from_disk,
+            stick_offset=stickOffset,
+            circuit_padding=CIRCUIT_PADDING,
+        )
+        site_assignment_by_key = {
+            entry["site_key"]: entry for entry in identity_plan.get("sites", [])
+        }
+        circuit_assignment_by_key = {
+            entry["circuit_id"]: entry for entry in identity_plan.get("circuits", [])
+        }
+        site_state_updated = identity_plan.get("site_state", {}) or {}
+        circuit_state_updated = identity_plan.get("circuit_state", {}) or {}
+
+        def apply_site_assignments(data, depth, queue, parentClassID, upParentClassID, parentMaxDL, parentMaxUL, parentMinDL, parentMinUL, path=()):
+            for node in sorted_node_keys(data, depth):
+                current_queue = queue
+                node_path = path + (node,)
+                site_key = '/'.join(node_path)
+                assignment = site_assignment_by_key.get(site_key)
+                if assignment is None:
+                    raise ValueError(f"Missing planned site identity for {site_key}")
+                assigned_site_minor = int(assignment["class_minor"])
+                major = int(assignment["class_major"])
+                up_major = int(assignment["up_class_major"])
+                ensure_minor_capacity(current_queue, assigned_site_minor)
+                nodeClassID = hex(major) + ':' + hex(assigned_site_minor)
+                upNodeClassID = hex(up_major) + ':' + hex(assigned_site_minor)
+                data[node]['classid'] = nodeClassID
+                data[node]['up_classid'] = upNodeClassID
+                current_parent_classid = parentClassID
+                current_up_parent_classid = upParentClassID
+                if depth == 0:
+                    current_parent_classid = hex(major) + ':'
+                    current_up_parent_classid = hex(up_major) + ':'
+                data[node]['parentClassID'] = current_parent_classid
+                data[node]['up_parentClassID'] = current_up_parent_classid
+                data[node]['downloadBandwidthMbps'] = min(data[node]['downloadBandwidthMbps'], parentMaxDL)
+                data[node]['uploadBandwidthMbps'] = min(data[node]['uploadBandwidthMbps'], parentMaxUL)
+                data[node]['downloadBandwidthMbpsMin'] = min(data[node]['downloadBandwidthMbpsMin'], data[node]['downloadBandwidthMbps'], parentMinDL)
+                data[node]['uploadBandwidthMbpsMin'] = min(data[node]['uploadBandwidthMbpsMin'], data[node]['uploadBandwidthMbps'], parentMinUL)
+                data[node]['classMajor'] = hex(major)
+                data[node]['up_classMajor'] = hex(up_major)
+                data[node]['classMinor'] = hex(assigned_site_minor)
+                data[node]['cpuNum'] = hex(current_queue-1)
+                data[node]['up_cpuNum'] = hex(current_queue-1+stickOffset)
+                parentNodes.append(
+                    {
+                        "parentNodeName": node,
+                        "classID": nodeClassID,
+                        "maxDownload": data[node]['downloadBandwidthMbps'],
+                        "maxUpload": data[node]['uploadBandwidthMbps'],
+                    }
+                )
+
+                if 'children' in data[node]:
+                    sorted_children = dict(sorted(data[node]['children'].items()))
+                    apply_site_assignments(
+                        sorted_children,
+                        depth+1,
+                        current_queue,
+                        nodeClassID,
+                        upNodeClassID,
+                        data[node]['downloadBandwidthMbps'],
+                        data[node]['uploadBandwidthMbps'],
+                        data[node]['downloadBandwidthMbpsMin'],
+                        data[node]['uploadBandwidthMbpsMin'],
+                        node_path,
+                    )
+
+                if depth == 0:
+                    if queue >= queuesAvailable:
+                        queue = 1
+                    else:
+                        queue += 1
+
+        apply_site_assignments(
+            network,
+            0,
+            queue=1,
+            parentClassID=None,
+            upParentClassID=None,
+            parentMaxDL=upstream_bandwidth_capacity_download_mbps(),
+            parentMaxUL=upstream_bandwidth_capacity_upload_mbps(),
+            parentMinDL=upstream_bandwidth_capacity_download_mbps(),
+            parentMinUL=upstream_bandwidth_capacity_upload_mbps(),
+        )
+
+        def attach_circuits(data, depth, path=()):
+            for node in sorted_node_keys(data, depth):
+                node_data = data[node]
+                queue_token = _parse_int_token(node_data.get('cpuNum'))
+                major = _parse_int_token(node_data.get('classMajor'))
+                if queue_token is None or major is None:
+                    continue
+                queue = queue_token + 1
+                circuitsForThisNetworkNode = []
+                if node in circuits_by_parent_node:
+                    override_min_down = None
+                    override_min_up = None
+                    if (circuit_min_down_combined_by_parent_node[node] > node_data['downloadBandwidthMbpsMin']) or (circuit_min_up_combined_by_parent_node[node] > node_data['uploadBandwidthMbpsMin']):
+                        override_min_down = 1
+                        override_min_up = 1
+                        logging.info("The combined minimums of circuits in Parent Node [" + node + "] exceeded that of the parent node. Reducing these circuits' minimums to 1 now.", stacklevel=2)
+                        if ((override_min_down * len(circuits_by_parent_node[node])) > node_data['downloadBandwidthMbpsMin']) or ((override_min_up * len(circuits_by_parent_node[node])) > node_data['uploadBandwidthMbpsMin']):
+                            logging.info("Even with this change, minimums will exceed the min rate of the parent node. Using 10 kbps as the minimum for these circuits instead.", stacklevel=2)
+                            nodes_requiring_min_squashing[node] = True
+                    sorted_circuits = sorted(circuits_by_parent_node[node], key=lambda c: c.get('circuitName', c.get('circuitID', '')))
+                    for circuit in sorted_circuits:
+                        if node != circuit['ParentNode']:
+                            continue
+                        if circuit['maxDownload'] > node_data['downloadBandwidthMbps']:
+                            logging.info("downloadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+                        if circuit['maxUpload'] > node_data['uploadBandwidthMbps']:
+                            logging.info("uploadMax of Circuit ID [" + circuit['circuitID'] + "] exceeded that of its parent node. Reducing to that of its parent node now.", stacklevel=2)
+                        planner_key = planner_circuit_identity_key(circuit)
+                        planned_identity = circuit_assignment_by_key.get(planner_key)
+                        if planned_identity is None:
+                            raise ValueError(f"Missing planned circuit identity for {planner_key}")
+                        candidate_minor = int(planned_identity["class_minor"])
+                        major = int(planned_identity["class_major"])
+                        up_major = int(planned_identity["up_class_major"])
+                        ensure_minor_capacity(queue, candidate_minor)
+                        flowIDstring = hex(major) + ':' + hex(candidate_minor)
+                        upFlowIDstring = hex(up_major) + ':' + hex(candidate_minor)
+                        circuit['classid'] = flowIDstring
+                        circuit['up_classid'] = upFlowIDstring
+                        logging.info("Added up_classid to circuit: " + circuit['up_classid'])
+                        maxDownload = min(circuit['maxDownload'], node_data['downloadBandwidthMbps'])
+                        maxUpload = min(circuit['maxUpload'], node_data['uploadBandwidthMbps'])
+                        if override_min_down:
+                            circuit['minDownload'] = 1
+                        if override_min_up:
+                            circuit['minUpload'] = 1
+                        minDownload = min(circuit['minDownload'], maxDownload)
+                        minUpload = min(circuit['minUpload'], maxUpload)
+                        thisNewCircuitItemForNetwork = {
+                            'maxDownload': maxDownload,
+                            'maxUpload': maxUpload,
+                            'minDownload': minDownload,
+                            'minUpload': minUpload,
+                            "circuitID": circuit['circuitID'],
+                            "circuitName": circuit['circuitName'],
+                            "ParentNode": circuit['ParentNode'],
+                            "logicalParentNode": circuit.get('logicalParentNode', circuit['ParentNode']),
+                            "devices": circuit['devices'],
+                            "classid": flowIDstring,
+                            "up_classid": upFlowIDstring,
+                            "classMajor": hex(major),
+                            "up_classMajor": hex(up_major),
+                            "classMinor": hex(candidate_minor),
+                            "comment": circuit['comment'],
+                        }
+                        try:
+                            cid = str(circuit.get('circuitID', ''))
+                            w = None
+                            if cid in weight_by_circuit_id:
+                                w = float(weight_by_circuit_id[cid])
+                            if w is None:
+                                w = float(maxDownload)
+                            if abs(w - 1000.0) < 1e-6:
+                                w = float(maxDownload)
+                            try:
+                                default_rate = float(generated_pn_download_mbps())
+                                if abs(float(maxDownload) - default_rate) < 1e-6:
+                                    w = 0.0
+                            except Exception:
+                                pass
+                            thisNewCircuitItemForNetwork['planner_weight'] = w
+                        except Exception:
+                            pass
+                        if 'sqm' in circuit and circuit['sqm']:
+                            thisNewCircuitItemForNetwork['sqm'] = circuit['sqm']
+                        thisNewCircuitItemForNetwork['devices'] = circuit['devices']
+                        circuitsForThisNetworkNode.append(thisNewCircuitItemForNetwork)
+
+                if len(circuitsForThisNetworkNode) > 0:
+                    node_data['circuits'] = circuitsForThisNetworkNode
+                else:
+                    node_data.pop('circuits', None)
+
+                if 'children' in node_data:
+                    sorted_children = dict(sorted(node_data['children'].items()))
+                    attach_circuits(sorted_children, depth+1, path + (node,))
+
+        attach_circuits(network, 0)
+        minorByCPU = {
+            int(queue): int(minor)
+            for queue, minor in (identity_plan.get("last_used_minor_by_queue", {}) or {}).items()
+        }
+        for cpu in range(queuesAvailable):
+            minorByCPU.setdefault(cpu + 1, 3)
+
+        if not isinstance(state, dict):
+            state = {}
+        state['circuits'] = circuit_state_updated
+        state['sites'] = site_state_updated
+        try:
+            print(f"Saving planner state to {state_path} (circuit/site minors)")
+            save_planner_state(state, state_path, None)
+        except Exception as e:
+            warnings.warn(f"Failed to save planner circuit state at {state_path}: {e}", stacklevel=2)
 
         bakery = Bakery()
         bakery.start_batch() # Initializes the bakery transaction
@@ -1611,6 +1773,7 @@ def refreshShapers():
         # Define lists for hash filters
         print("Preparing TC commands")
         def traverseNetwork(data):
+            nonlocal requiredIpMappings
 
             # Cake needs help handling rates lower than 5 Mbps
             def sqmFixupRate(rate:int, sqm:str) -> str:
@@ -1707,6 +1870,7 @@ def refreshShapers():
                         sqm_override = circuit['sqm'] if 'sqm' in circuit else None
                         bakery.add_circuit(
                             circuit_name,
+                            node,
                             data[node]['classid'],
                             data[node]['up_classid'],
                             int(circuit['classMinor'], 16),
@@ -1721,57 +1885,52 @@ def refreshShapers():
                         )
                         command = 'class add dev ' + interface_a() + ' parent ' + data[node]['classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_down) + ' ceil '+ format_rate_for_tc(circuit['maxDownload']) + ' prio 3' + quantum(circuit['maxDownload']) + tcComment
                         linuxTCcommands.append(command)
-                        # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
-                        if monitor_mode_only() == False:
-                            # SQM Fixup for lower rates (and per-circuit override)
-                            def effective_sqm_str(rate, override, direction):
-                                base = sqm()
-                                # Resolve per-direction token from override string
-                                chosen = None
-                                if override:
-                                    try:
-                                        ov = str(override).strip().lower()
-                                        if '/' in ov:
-                                            left, right = ov.split('/', 1)
-                                            left = left.strip()
-                                            right = right.strip()
-                                            chosen = left if direction == 'down' else right
-                                        else:
-                                            chosen = ov
-                                    except Exception:
-                                        chosen = None
-                                # If no explicit token for this direction, use default behavior
-                                if not chosen:
-                                    try:
-                                        thresh = fast_queues_fq_codel()
-                                    except Exception:
-                                        thresh = 1000.0
-                                    if rate >= thresh:
-                                        return 'fq_codel'
-                                    return sqmFixupRate(rate, base)
-                                if chosen == 'none':
-                                    return ''
-                                if chosen == 'fq_codel':
+                        # SQM Fixup for lower rates (and per-circuit override)
+                        def effective_sqm_str(rate, override, direction):
+                            base = sqm()
+                            # Resolve per-direction token from override string
+                            chosen = None
+                            if override:
+                                try:
+                                    ov = str(override).strip().lower()
+                                    if '/' in ov:
+                                        left, right = ov.split('/', 1)
+                                        left = left.strip()
+                                        right = right.strip()
+                                        chosen = left if direction == 'down' else right
+                                    else:
+                                        chosen = ov
+                                except Exception:
+                                    chosen = None
+                            # If no explicit token for this direction, use default behavior
+                            if not chosen:
+                                try:
+                                    thresh = fast_queues_fq_codel()
+                                except Exception:
+                                    thresh = 1000.0
+                                if rate >= thresh:
                                     return 'fq_codel'
-                                if chosen == 'cake':
-                                    cake_base = base if base.startswith('cake') else 'cake diffserv4'
-                                    return sqmFixupRate(rate, cake_base)
                                 return sqmFixupRate(rate, base)
-                            sqm_override = circuit['sqm'] if 'sqm' in circuit else None
-                            useSqm = effective_sqm_str(circuit['maxDownload'], sqm_override, 'down')
-                            if useSqm != '':
-                                command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
-                                linuxTCcommands.append(command)
+                            if chosen == 'none':
+                                return ''
+                            if chosen == 'fq_codel':
+                                return 'fq_codel'
+                            if chosen == 'cake':
+                                cake_base = base if base.startswith('cake') else 'cake diffserv4'
+                                return sqmFixupRate(rate, cake_base)
+                            return sqmFixupRate(rate, base)
+                        sqm_override = circuit['sqm'] if 'sqm' in circuit else None
+                        useSqm = effective_sqm_str(circuit['maxDownload'], sqm_override, 'down')
+                        if useSqm != '':
+                            command = 'qdisc add dev ' + interface_a() + ' parent ' + circuit['classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+                            linuxTCcommands.append(command)
                         command = 'class add dev ' + interface_b() + ' parent ' + data[node]['up_classid'] + ' classid ' + circuit['classMinor'] + ' htb rate '+ format_rate_for_tc(min_up) + ' ceil '+ format_rate_for_tc(circuit['maxUpload']) + ' prio 3' + quantum(circuit['maxUpload'])
                         linuxTCcommands.append(command)
-                        # Only add CAKE / fq_codel qdisc if monitorOnlyMode is Off
-                        if monitor_mode_only() == False:
-                            # SQM Fixup for lower rates (and per-circuit override)
-                            sqm_override = circuit['sqm'] if 'sqm' in circuit else None
-                            useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override, 'up')
-                            if useSqm != '':
-                                command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
-                                linuxTCcommands.append(command)
+                        sqm_override = circuit['sqm'] if 'sqm' in circuit else None
+                        useSqm = effective_sqm_str(circuit['maxUpload'], sqm_override, 'up')
+                        if useSqm != '':
+                            command = 'qdisc add dev ' + interface_b() + ' parent ' + circuit['up_classMajor'] + ':' + circuit['classMinor'] + ' ' + useSqm
+                            linuxTCcommands.append(command)
                         for device in circuit['devices']:
                             if device['ipv4s']:
                                 for ipv4 in device['ipv4s']:
@@ -1783,6 +1942,7 @@ def refreshShapers():
                                         circuit.get('circuitID', ''),
                                         device.get('deviceID', ''),
                                     )
+                                    requiredIpMappings += 1
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv4) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
                                         ipMapBatch.add_ip_mapping(
@@ -1804,6 +1964,7 @@ def refreshShapers():
                                         circuit.get('circuitID', ''),
                                         device.get('deviceID', ''),
                                     )
+                                    requiredIpMappings += 1
                                     #xdpCPUmapCommands.append('./bin/xdp_iphash_to_cpu_cmdline add --ip ' + str(ipv6) + ' --cpu ' + data[node]['cpuNum'] + ' --classid ' + circuit['classid'])
                                     if on_a_stick():
                                         ipMapBatch.add_ip_mapping(
@@ -1823,6 +1984,59 @@ def refreshShapers():
                     traverseNetwork(sorted_children)
         # Here is the actual call to the recursive traverseNetwork() function.
         traverseNetwork(network)
+
+        if enable_actual_shell_commands():
+            ipMappingCapacity = xdp_ip_mapping_capacity()
+            print(
+                "Prepared "
+                + str(requiredIpMappings)
+                + " unique XDP IP mappings against capacity "
+                + str(ipMappingCapacity)
+            )
+            if requiredIpMappings > ipMappingCapacity:
+                report_refresh_failure(
+                    "XDP_IP_MAPPING_CAPACITY",
+                    "Required XDP IP mappings ("
+                    + str(requiredIpMappings)
+                    + ") exceed current kernel map capacity ("
+                    + str(ipMappingCapacity)
+                    + "). Aborting refresh before apply.",
+                    {
+                        "required_ip_mappings": requiredIpMappings,
+                        "kernel_map_capacity": ipMappingCapacity,
+                        "queued_requests": ipMapBatch.length(),
+                        "on_a_stick": on_a_stick(),
+                        "shaped_devices_file": shapedDevicesFile,
+                        "network_json_file": networkJSONfile,
+                    },
+                    "XDP_IP_MAPPING_CAPACITY",
+                )
+
+            qdiscBudgetEstimate = bakery.estimate_qdisc_budget()
+            if not qdiscBudgetEstimate["ok"]:
+                interfaceCounts = qdiscBudgetEstimate["interfaces"]
+                sortedInterfaces = sorted(interfaceCounts.items())
+                preflightSummary = qdiscBudgetEstimate.get("summary") or ""
+                report_refresh_failure(
+                    "TC_QDISC_CAPACITY",
+                    (preflightSummary + " Aborting refresh before apply.").strip(),
+                    {
+                        "interfaces": dict(sortedInterfaces),
+                        "interface_details": qdiscBudgetEstimate.get("interface_details", {}),
+                        "safe_budget": qdiscBudgetEstimate["safe_budget"],
+                        "hard_limit": qdiscBudgetEstimate["hard_limit"],
+                        "estimated_total_memory_bytes": qdiscBudgetEstimate.get("estimated_total_memory_bytes"),
+                        "memory_ok": qdiscBudgetEstimate.get("memory_ok"),
+                        "memory_guard_min_available_bytes": qdiscBudgetEstimate.get("memory_guard_min_available_bytes"),
+                        "memory_total_bytes": qdiscBudgetEstimate.get("memory_total_bytes"),
+                        "memory_available_bytes": qdiscBudgetEstimate.get("memory_available_bytes"),
+                        "on_a_stick": on_a_stick(),
+                        "queue_mode": queue_mode(),
+                        "shaped_devices_file": shapedDevicesFile,
+                        "network_json_file": networkJSONfile,
+                    },
+                    "TC_QDISC_CAPACITY",
+                )
 
         # Save queuingStructure
         queuingStructure = {}
@@ -1847,7 +2061,25 @@ def refreshShapers():
         # Setup XDP and disable XPS regardless of whether it is first run or not (necessary to handle cases where systemctl stop was used)
         xdpStartTime = datetime.now()
         #if enable_actual_shell_commands():
-        # The bakery will handle stale mapping cleanup; avoid clearing mappings here.
+        # Observe mode removes the shaping tree entirely, so clear any live
+        # per-circuit IP mappings before the commit to avoid pointing packets
+        # at handles that are about to disappear.
+        if enable_actual_shell_commands() and observe_mode:
+            logging.info("# Observe Mode Mapping Quiesce")
+            try:
+                clear_ip_mappings()
+            except Exception as e:
+                report_refresh_failure(
+                    "XDP_IP_MAPPING_CLEAR_FAILED",
+                    "Failed to clear XDP IP mappings before entering Observe mode: " + str(e),
+                    {
+                        "required_ip_mappings": requiredIpMappings,
+                        "queued_requests": ipMapBatch.length(),
+                        "on_a_stick": on_a_stick(),
+                        "queue_mode": queue_mode(),
+                    },
+                    "XDP_IP_MAPPING_CLEAR_FAILED",
+                )
         # Set up XDP-CPUMAP-TC
         logging.info("# XDP Setup")
         # Commented out - the daemon does this
@@ -1863,6 +2095,8 @@ def refreshShapers():
         # Execute actual Linux TC commands
         tcStartTime = datetime.now()
         # print("Executing linux TC class/qdisc commands")
+        if observe_mode:
+            linuxTCcommands = []
         with open('linux_tc.txt', 'w') as f:
             for command in linuxTCcommands:
                 logging.info(command)
@@ -1881,8 +2115,24 @@ def refreshShapers():
         print("Executing XDP-CPUMAP-TC IP filter commands")
         numXdpCommands = ipMapBatch.length()
         if enable_actual_shell_commands():
-            ipMapBatch.finish_ip_mappings()
-            ipMapBatch.submit()
+            if observe_mode:
+                print("Observe mode active; skipping XDP-CPUMAP-TC IP filter apply after clearing mappings")
+                numXdpCommands = 0
+            else:
+                ipMapBatch.finish_ip_mappings()
+                try:
+                    ipMapBatch.submit()
+                except Exception as e:
+                    report_refresh_failure(
+                        "XDP_IP_MAPPING_APPLY_FAILED",
+                        "Failed to apply XDP IP mappings: " + str(e),
+                        {
+                            "required_ip_mappings": requiredIpMappings,
+                            "queued_requests": numXdpCommands,
+                            "on_a_stick": on_a_stick(),
+                        },
+                        "XDP_IP_MAPPING_APPLY_FAILED",
+                    )
             #for command in xdpCPUmapCommands:
             #	logging.info(command)
             #	commands = command.split(' ')
@@ -2086,26 +2336,33 @@ if __name__ == '__main__':
 
     if getattr(args, 'planner_reset', False):
         try:
-            state_path = os.path.join(get_libreqos_directory(), "planner_state.json")
+            state_path = get_planner_state_path()
             if os.path.exists(state_path):
                 os.remove(state_path)
                 print(f"Removed planner state: {state_path}")
         except Exception as e:
             print(f"Warning: could not remove planner state: {e}")
 
-    if args.validate:
-        status = validateNetworkAndDevices()
-    elif args.clearrules:
-        tearDown(interface_a(), interface_b())
-    elif args.updateonly:
-        # Single-interface updates don't work at all right now.
-        if on_a_stick():
-            print("--updateonly is not supported for single-interface configurations")
-            os._exit(-1)
-        refreshShapersUpdateOnly()
-    else:
-        # Refresh and/or set up queues
-        refreshShapers()
+    exit_code = 0
+    try:
+        if args.validate:
+            status = validateNetworkAndDevices()
+        elif args.clearrules:
+            tearDown(interface_a(), interface_b())
+        elif args.updateonly:
+            # Single-interface updates don't work at all right now.
+            if on_a_stick():
+                print("--updateonly is not supported for single-interface configurations")
+                exit_code = -1
+            else:
+                refreshShapersUpdateOnly()
+        else:
+            # Refresh and/or set up queues
+            refreshShapers()
+    except RefreshFailure:
+        exit_code = 1
+    finally:
+        free_lock_file()
 
-    # Free the lock file
-    free_lock_file()
+    if exit_code != 0:
+        os._exit(exit_code)

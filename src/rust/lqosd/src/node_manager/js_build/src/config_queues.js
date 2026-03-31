@@ -51,9 +51,10 @@ function validateConfig() {
 
 function updateConfig() {
     // Update only the queues section
+    const queueMode = document.getElementById("queueMode").value;
     window.config.queues = {
         default_sqm: document.getElementById("defaultSqm").value,
-        monitor_only: document.getElementById("monitorOnly").checked,
+        queue_mode: queueMode,
         uplink_bandwidth_mbps: parseInt(document.getElementById("uplinkBandwidth").value),
         downlink_bandwidth_mbps: parseInt(document.getElementById("downlinkBandwidth").value),
         generated_pn_download_mbps: parseInt(document.getElementById("generatedPnDownload").value),
@@ -82,9 +83,9 @@ loadConfig(() => {
         
         // Select field
         document.getElementById("defaultSqm").value = queues.default_sqm;
+        document.getElementById("queueMode").value = queues.queue_mode ?? ((queues.monitor_only ?? false) ? "observe" : "shape");
 
         // Boolean fields
-        document.getElementById("monitorOnly").checked = queues.monitor_only ?? false;
         document.getElementById("dryRun").checked = queues.dry_run ?? false;
         document.getElementById("sudo").checked = queues.sudo ?? false;
         document.getElementById("useBinpacking").checked = queues.use_binpacking ?? false;

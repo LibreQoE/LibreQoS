@@ -1,7 +1,6 @@
 use crate::queue_structure::{
     queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
 };
-use crate::tracking::ALL_QUEUE_SUMMARY;
 use arc_swap::ArcSwap;
 use lqos_utils::file_watcher::FileWatcher;
 use once_cell::sync::Lazy;
@@ -31,7 +30,9 @@ pub static EFFECTIVE_NODE_RATES: Lazy<ArcSwap<HashMap<String, (f64, f64)>>> = La
 /// to avoid circular dependencies.
 pub static QUEUE_STRUCTURE_CHANGED_STORMGUARD: AtomicBool = AtomicBool::new(false);
 
+#[allow(missing_docs)]
 #[derive(Clone)]
+/// Snapshot of the current flattened queue tree loaded from `queuingStructure.json`.
 pub struct QueueStructure {
     pub maybe_queues: Option<Vec<QueueNode>>,
 }
@@ -94,7 +95,6 @@ fn update_queue_structure() {
                 maybe_queues: Some(queues.clone()),
             };
             let effective_node_rates = build_effective_node_rates(&queues);
-            ALL_QUEUE_SUMMARY.clear();
             QUEUE_STRUCTURE.store(Arc::new(new_queue_structure));
             EFFECTIVE_NODE_RATES.store(Arc::new(effective_node_rates));
             QUEUE_STRUCTURE_CHANGED_STORMGUARD.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -108,7 +108,6 @@ fn update_queue_structure() {
                 warn!(
                     "Failed to load queuingStructure.json ({err:?}); leaving queue structure unavailable"
                 );
-                ALL_QUEUE_SUMMARY.clear();
                 QUEUE_STRUCTURE.store(Arc::new(QueueStructure { maybe_queues: None }));
                 EFFECTIVE_NODE_RATES.store(Arc::new(HashMap::new()));
             }

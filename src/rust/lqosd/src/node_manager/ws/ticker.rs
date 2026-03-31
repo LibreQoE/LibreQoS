@@ -13,11 +13,12 @@ mod bakery;
 mod cadence;
 mod circuit_capacity;
 mod endpoint_latlon;
-mod executive_heatmaps;
+mod executive_dashboard_summary;
 mod flow_counter;
 mod flow_endpoints;
 pub(crate) mod ipstats_conversion;
 mod network_tree;
+mod network_tree_lite;
 mod queue_stats_total;
 mod retransmits;
 mod rtt_histogram;
@@ -166,6 +167,10 @@ async fn one_second_cadence(
                 network_tree::network_tree(channels.clone(), bus_tx.clone())
             ),
             ticker_with_timeout(
+                "network_tree_lite",
+                network_tree_lite::network_tree_lite(channels.clone())
+            ),
+            ticker_with_timeout(
                 "circuit_capacity",
                 circuit_capacity::circuit_capacity(channels.clone())
             ),
@@ -189,10 +194,8 @@ async fn one_second_cadence(
                 "stormguard",
                 stormguard::stormguard_ticker(channels.clone(), bus_tx.clone())
             ),
-            ticker_with_timeout(
-                "bakery",
-                bakery::bakery_ticker(channels.clone(), bus_tx.clone())
-            ),
+            ticker_with_timeout("bakery_status", bakery::bakery_status(channels.clone())),
+            ticker_with_timeout("bakery_activity", bakery::bakery_activity(channels.clone())),
             ticker_with_timeout(
                 "treeguard_status",
                 treeguard::treeguard_status(channels.clone())
@@ -202,8 +205,8 @@ async fn one_second_cadence(
                 treeguard::treeguard_activity(channels.clone())
             ),
             ticker_with_timeout(
-                "executive_heatmaps",
-                executive_heatmaps::executive_heatmaps(channels.clone(), bus_tx.clone())
+                "executive_dashboard_summary",
+                executive_dashboard_summary::executive_dashboard_summary(channels.clone())
             ),
         );
 

@@ -46,14 +46,17 @@ Incluya también:
 
 ### La contraseña de usuario no funciona
 
-Elimine el archivo de usuarios:
+Los builds actuales:
+- migran automáticamente archivos de autenticación antiguos
+- redirigen `/login.html` a `/first-run.html` cuando no existen usuarios
 
 ```bash
-sudo rm /opt/libreqos/src/lqusers.toml
-sudo systemctl restart lqosd lqos_scheduler
+sudo systemctl restart lqosd
 ```
 
-Luego abra: `IP_CAJA:9123/index.html`.
+Si el usuario/contraseña correctos siguen fallando, pruebe primero con ese reinicio.
+
+Elimine `lqusers.toml` solo si desea reiniciar el acceso o si el archivo está corrupto y no se puede reparar. Después de eliminarlo, reinicie `lqosd` y abra `IP_CAJA:9123/login.html`; la WebUI debería redirigirlo automáticamente al flujo de primer inicio.
 
 ### No hay WebUI en x.x.x.x:9123
 
@@ -102,6 +105,8 @@ sudo RUST_LOG=info /opt/libreqos/src/bin/lqosd
 ```bash
 sudo journalctl -u lqos_scheduler --since "1 day ago" --no-pager > lqos_sched_log.txt
 ```
+
+Si el scheduler falla inmediatamente después de un reinicio con un mensaje como `Socket (typically /run/lqos/bus) not found`, eso indica que `lqosd` todavía no había terminado de enlazar el bus local. Los builds actuales esperan brevemente la disponibilidad del bus al arrancar el scheduler en lugar de abortar de inmediato, por lo que ya no deberían aparecer panics repetidos de arranque tras un reinicio.
 
 ### El estado del scheduler en WebUI aparece no saludable
 
@@ -214,6 +219,10 @@ WebUI muestra códigos legibles por máquina para triage rápido.
 |---|---|---|---|
 | `MAPPED_CIRCUIT_LIMIT` | Bakery está forzando límite de circuitos mapeados. | Estado de licencia Insight y `journalctl -u lqosd` con requested/allowed/dropped. | Reducir circuitos mapeados o actualizar licencia/límites. |
 | `TC_U16_OVERFLOW` | IDs minor de clases/colas excedieron rango u16 de tc en una cola CPU. | `journalctl -u lqos_scheduler -u lqosd`, profundidad topológica y distribución por colas. | Aumentar paralelismo de colas y/o simplificar/rebalancear jerarquía. |
+| `TC_QDISC_CAPACITY` | Los qdisc autoasignados planificados exceden el presupuesto seguro por interfaz o el preflight conservador de seguridad de memoria de Bakery antes de aplicar. | Conteos estimados por interfaz, desglose por tipo de qdisc y campos de memoria en el contexto del urgent issue, `journalctl -u lqos_scheduler -u lqosd`, configuración `on_a_stick` y `monitor_only`. | Reducir la carga planificada de qdisc para esta ejecución (por ejemplo menos circuitos/dispositivos en la forma de prueba) antes de reintentar; no confiar en una aplicación parcial. |
+| `BAKERY_MEMORY_GUARD` | Un full reload chunked de Bakery fue detenido a mitad de aplicación porque la memoria disponible del host cayó por debajo del piso de seguridad. | `journalctl -u lqosd`, memoria disponible/total en el contexto del urgent issue y progreso reciente de aplicación de Bakery. | Tratar la ejecución como fallida, reducir presión de memoria o huella de colas y reintentar solo cuando el host esté estable. |
+| `XDP_IP_MAPPING_CAPACITY` | Los mapeos IP requeridos exceden la capacidad actual del mapa XDP en el kernel. | Forma de `ShapedDevices.csv`, mezcla IPv4/IPv6, supuesto de un dispositivo frente a varios dispositivos, `journalctl -u lqos_scheduler -u lqosd`. | Reducir mapeos requeridos de inmediato (por ejemplo menos dispositivos o prueba IPv4-only), o aumentar la capacidad del mapa del kernel en un cambio coordinado. |
+| `XDP_IP_MAPPING_APPLY_FAILED` | Uno o más inserts de mapeo IP fallaron durante la aplicación. | `journalctl -u lqos_scheduler -u lqosd` para ejemplos resumidos y conteos de fallo. | Corregir la causa del fallo y volver a ejecutar; no confiar en shaping parcial. |
 
 Patrón operativo:
 

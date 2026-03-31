@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, warn};
 
+const SITE_DELTA_PREVIEW_THRESHOLD: usize = 8;
+
 pub(crate) enum SiteDiffResult {
-    RebuildRequired,
+    RebuildRequired { summary: String },
     SpeedChanges { changes: Vec<BakeryCommands> },
     NoChange,
 }
@@ -29,6 +31,7 @@ pub(crate) fn diff_sites(
         // Therefore, we must rebuild the entire site configuration.
         let old_keys: Vec<i64> = old_sites.keys().cloned().collect();
         let new_keys: Vec<i64> = new_sites.keys().copied().collect();
+        let (added_site_hashes, removed_site_hashes) = site_set_delta(old_sites, &new_sites);
         warn!(
             "Site count mismatch: old {} vs new {}",
             old_sites.len(),
@@ -36,7 +39,18 @@ pub(crate) fn diff_sites(
         );
         debug!("Old site hashes: {:?}", old_keys);
         debug!("New site hashes: {:?}", new_keys);
-        return SiteDiffResult::RebuildRequired;
+        debug!("Added site hashes: {:?}", added_site_hashes);
+        debug!("Removed site hashes: {:?}", removed_site_hashes);
+        return SiteDiffResult::RebuildRequired {
+            summary: format_site_delta_summary(
+                "site_count_mismatch",
+                None,
+                old_sites.len(),
+                new_sites.len(),
+                &added_site_hashes,
+                &removed_site_hashes,
+            ),
+        };
     }
 
     // Compare each site in the old and new maps for structural differences.
@@ -83,7 +97,12 @@ pub(crate) fn diff_sites(
                     "Site hash {} change detail: parent={}→{}, up_parent={}→{}, minor=0x{:x}→0x{:x}",
                     site_hash, opar, npar, oup, nup, omin, nmin
                 );
-                return SiteDiffResult::RebuildRequired;
+                return SiteDiffResult::RebuildRequired {
+                    summary: format!(
+                        "Bakery full reload triggered by site diff: site_hash={} parent={}→{} up_parent={}→{} minor=0x{:x}→0x{:x}",
+                        site_hash, opar, npar, oup, nup, omin, nmin
+                    ),
+                };
             }
             // If the speeds have changed, we need to store the change.
             if let Some(speed_change) = site_speeds_changed(old_cmd.as_ref(), new_cmd.as_ref()) {
@@ -93,7 +112,19 @@ pub(crate) fn diff_sites(
         } else {
             // If a site is missing in the new batch, we need to rebuild.
             debug!("Site hash {} is missing in the new batch", site_hash);
-            return SiteDiffResult::RebuildRequired;
+            let (added_site_hashes, removed_site_hashes) = site_set_delta(old_sites, &new_sites);
+            debug!("Added site hashes: {:?}", added_site_hashes);
+            debug!("Removed site hashes: {:?}", removed_site_hashes);
+            return SiteDiffResult::RebuildRequired {
+                summary: format_site_delta_summary(
+                    "site_set_changed",
+                    Some(*site_hash),
+                    old_sites.len(),
+                    new_sites.len(),
+                    &added_site_hashes,
+                    &removed_site_hashes,
+                ),
+            };
         }
     }
 
@@ -105,6 +136,67 @@ pub(crate) fn diff_sites(
     }
 
     SiteDiffResult::NoChange
+}
+
+fn site_set_delta(
+    old_sites: &HashMap<i64, Arc<BakeryCommands>>,
+    new_sites: &HashMap<i64, &Arc<BakeryCommands>>,
+) -> (Vec<i64>, Vec<i64>) {
+    let mut added_site_hashes: Vec<i64> = new_sites
+        .keys()
+        .filter(|hash| !old_sites.contains_key(hash))
+        .copied()
+        .collect();
+    added_site_hashes.sort_unstable();
+
+    let mut removed_site_hashes: Vec<i64> = old_sites
+        .keys()
+        .filter(|hash| !new_sites.contains_key(hash))
+        .copied()
+        .collect();
+    removed_site_hashes.sort_unstable();
+
+    (added_site_hashes, removed_site_hashes)
+}
+
+fn format_site_hash_preview(label: &str, hashes: &[i64], total_changed: usize) -> Option<String> {
+    if hashes.is_empty()
+        || hashes.len() > SITE_DELTA_PREVIEW_THRESHOLD
+        || total_changed > SITE_DELTA_PREVIEW_THRESHOLD
+    {
+        return None;
+    }
+    Some(format!(" {label}={hashes:?}"))
+}
+
+fn format_site_delta_summary(
+    reason: &str,
+    missing_old_site_hash: Option<i64>,
+    old_count: usize,
+    new_count: usize,
+    added_site_hashes: &[i64],
+    removed_site_hashes: &[i64],
+) -> String {
+    let mut summary = format!(
+        "Bakery full reload triggered by site diff: {reason} old_count={old_count} new_count={new_count} added_count={} removed_count={}",
+        added_site_hashes.len(),
+        removed_site_hashes.len()
+    );
+    let total_changed = added_site_hashes.len() + removed_site_hashes.len();
+    if let Some(site_hash) = missing_old_site_hash {
+        summary.push_str(&format!(" missing_old_site_hash={site_hash}"));
+    }
+    if let Some(preview) =
+        format_site_hash_preview("added_preview", added_site_hashes, total_changed)
+    {
+        summary.push_str(&preview);
+    }
+    if let Some(preview) =
+        format_site_hash_preview("removed_preview", removed_site_hashes, total_changed)
+    {
+        summary.push_str(&preview);
+    }
+    summary
 }
 
 fn is_structurally_different(a: &BakeryCommands, b: &BakeryCommands) -> bool {
@@ -209,5 +301,106 @@ fn site_speeds_changed(a: &BakeryCommands, b: &BakeryCommands) -> Option<BakeryC
         })
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SiteDiffResult, diff_sites};
+    use crate::BakeryCommands;
+    use lqos_bus::TcHandle;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_site(
+        site_hash: i64,
+        parent_class_id: u32,
+        up_parent_class_id: u32,
+        class_minor: u16,
+        dl_min: f32,
+        ul_min: f32,
+        dl_max: f32,
+        ul_max: f32,
+    ) -> Arc<BakeryCommands> {
+        Arc::new(BakeryCommands::AddSite {
+            site_hash,
+            parent_class_id: TcHandle::from_u32(parent_class_id),
+            up_parent_class_id: TcHandle::from_u32(up_parent_class_id),
+            class_minor,
+            download_bandwidth_min: dl_min,
+            upload_bandwidth_min: ul_min,
+            download_bandwidth_max: dl_max,
+            upload_bandwidth_max: ul_max,
+        })
+    }
+
+    #[test]
+    fn site_count_mismatch_reports_added_and_removed_hashes() {
+        let old_site = add_site(10, 0x10010, 0x20010, 0x11, 1.0, 1.0, 10.0, 10.0);
+        let new_site = add_site(20, 0x10020, 0x20020, 0x21, 1.0, 1.0, 10.0, 10.0);
+        let old_sites = HashMap::from([(10, old_site)]);
+        let batch = vec![
+            new_site,
+            add_site(30, 0x10030, 0x20030, 0x31, 1.0, 1.0, 10.0, 10.0),
+        ];
+
+        let SiteDiffResult::RebuildRequired { summary } = diff_sites(&batch, &old_sites) else {
+            panic!("expected rebuild-required site diff");
+        };
+
+        assert!(summary.contains("site_count_mismatch"));
+        assert!(summary.contains("added_count=2"));
+        assert!(summary.contains("removed_count=1"));
+        assert!(summary.contains("added_preview=[20, 30]"));
+        assert!(summary.contains("removed_preview=[10]"));
+    }
+
+    #[test]
+    fn large_site_count_mismatch_stays_counts_only() {
+        let old_sites = HashMap::from([(
+            10,
+            add_site(10, 0x10010, 0x20010, 0x11, 1.0, 1.0, 10.0, 10.0),
+        )]);
+        let mut batch = Vec::new();
+        for index in 20..30 {
+            batch.push(add_site(
+                index,
+                0x10000 | index as u32,
+                0x20000 | index as u32,
+                index as u16,
+                1.0,
+                1.0,
+                10.0,
+                10.0,
+            ));
+        }
+
+        let SiteDiffResult::RebuildRequired { summary } = diff_sites(&batch, &old_sites) else {
+            panic!("expected rebuild-required site diff");
+        };
+
+        assert!(summary.contains("site_count_mismatch"));
+        assert!(summary.contains("added_count=10"));
+        assert!(summary.contains("removed_count=1"));
+        assert!(!summary.contains("added_preview="));
+        assert!(!summary.contains("removed_preview="));
+    }
+
+    #[test]
+    fn structural_site_change_reports_parent_transition() {
+        let old_site = add_site(10, 0x10010, 0x20010, 0x11, 1.0, 1.0, 10.0, 10.0);
+        let new_site = add_site(10, 0x10020, 0x20020, 0x21, 1.0, 1.0, 10.0, 10.0);
+        let old_sites = HashMap::from([(10, old_site)]);
+        let batch = vec![new_site];
+
+        let SiteDiffResult::RebuildRequired { summary } = diff_sites(&batch, &old_sites) else {
+            panic!("expected rebuild-required site diff");
+        };
+
+        assert!(summary.contains("site_hash=10"));
+        assert!(summary.contains("parent=0x1:0x10→0x1:0x20"));
+        assert!(summary.contains("up_parent=0x2:0x10→0x2:0x20"));
+        assert!(summary.contains("minor=0x11→0x21"));
     }
 }

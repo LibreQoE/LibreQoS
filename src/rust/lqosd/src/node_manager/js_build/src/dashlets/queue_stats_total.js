@@ -72,7 +72,7 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
 
     onMessage(msg) {
         if (msg.event === "QueueStatsTotal" && window.timePeriods.activePeriod === "Live") {
-            this.graph.update(msg.marks, msg.drops);
+            this.#applyLiveSample(msg.marks, msg.drops);
         }
     }
 
@@ -140,5 +140,9 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
             },
         );
         wsClient.send({ LtsCake: { seconds } });
+    }
+
+    #applyLiveSample(marks, drops) {
+        this.graph.update(marks, drops);
     }
 }

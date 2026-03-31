@@ -8,11 +8,13 @@ help.js
 unknown-ips.js
 configuration.js
 circuit.js
+ethernet_caps.js
 site_map.js
 flow_map.js
 all_tree_sankey.js
 asn_analysis.js
 lts_trial.js
+lts_trial_setup.js
 config_general.js
 config_rtt.js
 config_tuning.js

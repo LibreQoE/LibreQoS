@@ -68,6 +68,22 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(graph.nodes[2].parentIndex, 1)
         self.assertEqual(graph.nodes[0].parentIndex, 0)
 
+    def test_add_child_by_named_parent_survives_reparent(self):
+        """
+        Ensures addNodeAsChild persists parent identity so later reparenting
+        keeps the child attached to the intended parent.
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("Site"))
+        graph.addNodeAsChild("Site", NetworkNode("Client", type=NodeType.client))
+
+        graph._NetworkGraph__reparentById()
+
+        self.assertEqual(len(graph.nodes), 3)
+        self.assertEqual(graph.nodes[2].parentId, "Site")
+        self.assertEqual(graph.nodes[2].parentIndex, 1)
+
     def test_reparent_by_name(self):
         """
         Tests that re-parenting a tree by name is functional
@@ -170,6 +186,25 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(graph.nodes[6].type, NodeType.client) # Test that a client is still a client
         self.assertEqual(graph.nodes[7].type, NodeType.site)
         self.assertEqual(graph.nodes[7].id, "Client 3_gen")
+
+    def test_generated_site_keeps_original_parent(self):
+        """
+        Ensures generated sites created from relay-style clients retain the
+        original non-root parent after the reparent pass.
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("Parent Site"))
+        graph.addRawNode(NetworkNode("Relay Client", parentId="Parent Site", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Child Client", parentId="Relay Client", type=NodeType.client))
+
+        graph._NetworkGraph__reparentById()
+        graph._NetworkGraph__promoteClientsWithChildren()
+        graph._NetworkGraph__clientsWithChildrenToSites()
+
+        generated_site = next(node for node in graph.nodes if node.id == "Relay Client_gen")
+        self.assertEqual(generated_site.parentId, "Parent Site")
+        self.assertEqual(generated_site.parentIndex, 1)
 
     def test_find_unconnected(self):
         """

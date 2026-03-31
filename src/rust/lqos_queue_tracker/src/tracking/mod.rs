@@ -2,7 +2,9 @@ use crate::{
     circuit_to_queue::CIRCUIT_TO_QUEUE, interval::QUEUE_MONITOR_INTERVAL, queue_store::QueueStore,
     tracking::reader::read_named_queue_from_interface,
 };
+use lqos_bakery::full_reload_in_progress;
 use lqos_utils::fdtimer::periodic;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{debug, error, warn};
@@ -18,7 +20,25 @@ use crate::tracking::reader::read_all_queues_from_interface;
 use watched_queues::WATCHED_QUEUES;
 pub use watched_queues::{add_watched_queue, still_watching};
 
+static QUEUE_STATS_STALE: AtomicBool = AtomicBool::new(false);
+const ALL_QUEUE_MONITOR_INTERVAL_SECONDS: u64 = 2;
+const RELOAD_QUEUE_MONITOR_INTERVAL_SECONDS: u64 = 10;
+
+/// Returns `true` when queue counts are intentionally held at their last-known values.
+///
+/// This is currently used during Bakery full reloads, where shelling out to `tc`
+/// for full-queue snapshots is too expensive to provide reliable live counts.
+pub fn queue_stats_stale() -> bool {
+    QUEUE_STATS_STALE.load(Ordering::Relaxed)
+}
+
 fn track_queues() {
+    if full_reload_in_progress() {
+        QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
+        debug!("(TC monitor) Skipping watched queue reads during Bakery full reload");
+        expire_watched_queues();
+        return;
+    }
     if WATCHED_QUEUES.is_empty() {
         //info!("No queues marked for read.");
         return; // There's nothing to do - bail out fast
@@ -83,6 +103,7 @@ fn count_queue_types(queues: &[QueueType]) -> QueueCounts {
     for queue in queues.iter() {
         match queue {
             QueueType::Cake(_) => counts.cake += 1,
+            QueueType::FqCodel(_) => counts.fq_codel += 1,
             QueueType::Htb(_) => counts.htb += 1,
             _ => {}
         }
@@ -153,6 +174,12 @@ fn connect_queues_to_circuit_up(
 
 fn all_queue_reader() {
     let start = Instant::now();
+    if full_reload_in_progress() {
+        QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
+        debug!("(TC monitor) Skipping full queue read during Bakery full reload");
+        return;
+    }
+
     let structure = QUEUE_STRUCTURE.load();
     if let Some(structure) = &structure.maybe_queues {
         if let Ok(config) = lqos_config::load_config() {
@@ -191,6 +218,7 @@ fn all_queue_reader() {
                     .unwrap_or_default();
                 let counts = QueueCounts {
                     cake: counts_down.cake + counts_up.cake,
+                    fq_codel: counts_down.fq_codel + counts_up.fq_codel,
                     htb: counts_down.htb + counts_up.htb,
                 };
                 (download, upload, counts)
@@ -198,10 +226,13 @@ fn all_queue_reader() {
 
             //println!("{}", download.len() + upload.len());
             ALL_QUEUE_SUMMARY.ingest_batch(download, upload, queue_counts);
+            QUEUE_STATS_STALE.store(false, Ordering::Relaxed);
         } else {
+            QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
             warn!("(TC monitor) Unable to read configuration");
         }
     } else {
+        QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
         warn!("(TC monitor) Not reading queues due to structure not yet ready");
     }
     let elapsed = start.elapsed();
@@ -238,7 +269,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
     std::thread::Builder::new()
         .name("All Queue Monitor".to_string())
         .spawn(|| {
-            let mut interval_seconds = 2;
+            let mut interval_seconds = ALL_QUEUE_MONITOR_INTERVAL_SECONDS;
             let Ok(mut tfd) = TimerFd::new() else {
                 error!("Unable to start timer file descriptor. All queue monitor cannot run.");
                 return;
@@ -246,7 +277,7 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
             assert_eq!(tfd.get_state(), TimerState::Disarmed);
             tfd.set_state(
                 TimerState::Periodic {
-                    current: Duration::new(2, 0),
+                    current: Duration::new(interval_seconds, 0),
                     interval: Duration::new(interval_seconds, 0),
                 },
                 SetTimeFlags::Default,
@@ -254,13 +285,34 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
             let _ = tfd.read(); // Initial pause
 
             loop {
-                all_queue_reader();
+                let desired_interval_seconds = if full_reload_in_progress() {
+                    RELOAD_QUEUE_MONITOR_INTERVAL_SECONDS
+                } else {
+                    ALL_QUEUE_MONITOR_INTERVAL_SECONDS
+                };
+                if interval_seconds != desired_interval_seconds {
+                    interval_seconds = desired_interval_seconds;
+                    tfd.set_state(
+                        TimerState::Periodic {
+                            current: Duration::new(interval_seconds, 0),
+                            interval: Duration::new(interval_seconds, 0),
+                        },
+                        SetTimeFlags::Default,
+                    );
+                }
+
+                if full_reload_in_progress() {
+                    QUEUE_STATS_STALE.store(true, Ordering::Relaxed);
+                    debug!("(TC monitor) Backing off full queue reads during Bakery full reload");
+                } else {
+                    all_queue_reader();
+                }
 
                 // Sleep until the next second
                 let missed_ticks = tfd.read();
                 if missed_ticks > 1 {
                     warn!("All Queue Reader: Missed {} ticks", missed_ticks - 1);
-                    interval_seconds = 2 + (missed_ticks - 1);
+                    interval_seconds = desired_interval_seconds + (missed_ticks - 1);
                     tfd.set_state(
                         TimerState::Periodic {
                             current: Duration::new(interval_seconds, 0),
@@ -273,4 +325,64 @@ pub fn spawn_queue_monitor() -> anyhow::Result<()> {
         })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::connect_queues_to_circuit;
+    use crate::{QueueNode, deserialize_tc_tree};
+    use lqos_bus::TcHandle;
+    use lqos_utils::hash_to_i64;
+
+    fn test_structure() -> Vec<QueueNode> {
+        vec![QueueNode {
+            class_id: TcHandle::from_string("3:14af").expect("valid class id"),
+            up_class_id: TcHandle::from_string("43:14af").expect("valid up class id"),
+            parent_class_id: TcHandle::from_string("3:20").expect("valid parent"),
+            up_parent_class_id: TcHandle::from_string("43:20").expect("valid up parent"),
+            class_major: 0x0003,
+            up_class_major: 0x0043,
+            class_minor: 0x14af,
+            circuit_id: Some("circuit-1".to_string()),
+            circuit_hash: Some(hash_to_i64("circuit-1")),
+            ..QueueNode::default()
+        }]
+    }
+
+    #[test]
+    fn cake_queue_matching_uses_parent_not_leaf_handle() {
+        let structure = test_structure();
+        let old_handle_queues = deserialize_tc_tree(
+            r#"[{
+                "kind":"cake",
+                "handle":"9000:",
+                "parent":"3:14af",
+                "options":{},
+                "tins":[],
+                "drops":7
+            }]"#,
+        )
+        .expect("old-handle cake should parse");
+        let rotated_handle_queues = deserialize_tc_tree(
+            r#"[{
+                "kind":"cake",
+                "handle":"9002:",
+                "parent":"3:14af",
+                "options":{},
+                "tins":[],
+                "drops":11
+            }]"#,
+        )
+        .expect("rotated-handle cake should parse");
+
+        let old_matches = connect_queues_to_circuit(&structure, &old_handle_queues);
+        let rotated_matches = connect_queues_to_circuit(&structure, &rotated_handle_queues);
+
+        assert_eq!(old_matches.len(), 1);
+        assert_eq!(rotated_matches.len(), 1);
+        assert_eq!(old_matches[0].circuit_hash, hash_to_i64("circuit-1"));
+        assert_eq!(rotated_matches[0].circuit_hash, hash_to_i64("circuit-1"));
+        assert_eq!(old_matches[0].drops, 7);
+        assert_eq!(rotated_matches[0].drops, 11);
+    }
 }

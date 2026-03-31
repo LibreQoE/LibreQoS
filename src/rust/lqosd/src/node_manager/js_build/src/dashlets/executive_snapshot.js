@@ -18,7 +18,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     canBeSlowedDown() { return true; }
     title() { return "Network Snapshot"; }
     tooltip() { return "Headline health metrics for the executive view."; }
-    subscribeTo() { return ["ExecutiveHeatmaps", "Throughput"]; }
+    subscribeTo() { return ["ExecutiveDashboardSummary", "Throughput"]; }
 
     buildContainer() {
         const container = super.buildContainer();
@@ -36,14 +36,14 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     }
 
     setup() {
-        if (window.executiveHeatmapData) {
+        if (window.executiveDashboardSummary) {
             this.render();
         }
     }
 
     onMessage(msg) {
-        if (msg.event === "ExecutiveHeatmaps") {
-            window.executiveHeatmapData = msg.data;
+        if (msg.event === "ExecutiveDashboardSummary") {
+            window.executiveDashboardSummary = msg.data;
             this.render();
             return;
         }
@@ -54,7 +54,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
     }
 
     render() {
-        const header = window.executiveHeatmapData?.header;
+        const header = window.executiveDashboardSummary?.header;
         const target = document.getElementById(this._contentId);
         if (!target) return;
         if (!header) {
@@ -63,15 +63,9 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         }
 
         target.innerHTML = `
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                <div class="exec-section-title mb-0 text-secondary"><i class="fas fa-chart-pie me-2 text-primary"></i>Network Snapshot</div>
-            </div>
             <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-3 g-3">
-                ${this.inventoryCard(header)}
-                ${this.queuesCard(header)}
                 ${this.throughputCard()}
-                ${this.simpleCard("Mapped IPs", "fa-map-marker-alt", "text-primary", formatCount(header.mapped_ip_count))}
-                ${this.simpleCard("Unknown IPs", "fa-question-circle", "text-warning", formatCount(header.unmapped_ip_count))}
+                ${this.inventoryCard(header)}
                 ${this.insightCard(header)}
             </div>
         `;
@@ -86,14 +80,6 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         return this.groupCard("Inventory", "fa-layer-group", "text-primary", items);
     }
 
-    queuesCard(header) {
-        const items = [
-            { label: "HTB", value: formatCount(header.htb_queue_count) },
-            { label: "CAKE", value: formatCount(header.cake_queue_count) },
-        ];
-        return this.groupCard("Queues", "fa-stream", "text-secondary", items, false, true);
-    }
-
     throughputCard() {
         const bps = this.latestThroughput?.bps;
         const items = [
@@ -101,22 +87,6 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
             { label: `<i class="fas fa-arrow-up"></i>`, value: this.formatBps(bps?.up) },
         ];
         return this.groupCard("Throughput", "fa-tachometer-alt", "text-info", items, true);
-    }
-
-    simpleCard(label, icon, accent, value) {
-        return `
-            <div class="col">
-                <div class="executive-card h-100">
-                    <div class="d-flex align-items-center gap-3">
-                        <span class="exec-icon ${accent}"><i class="fas ${icon}"></i></span>
-                        <div>
-                            <div class="text-secondary small">${label}</div>
-                            <div class="exec-metric-value text-secondary">${value}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
     }
 
     insightCard(header) {
@@ -141,7 +111,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
         `;
     }
 
-    groupCard(title, icon, accent, items, allowHtmlLabel = false, allowAlerts = false) {
+    groupCard(title, icon, accent, items, allowHtmlLabel = false, allowAlerts = false, statusBadge = "", footer = "") {
         const hasZero = allowAlerts && items.some(item => this.isZero(item.value));
         const rows = items.map((item, idx) => `
             <div class="d-flex align-items-baseline gap-1">
@@ -155,8 +125,12 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
                     <div class="d-flex align-items-start gap-3">
                         <span class="exec-icon ${accent}"><i class="fas ${icon}"></i></span>
                         <div class="flex-grow-1">
-                            <div class="text-secondary small">${title}</div>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <div class="text-secondary small">${title}</div>
+                                ${statusBadge}
+                            </div>
                             <div class="d-flex flex-wrap gap-3 mt-2">${rows}</div>
+                            ${footer}
                         </div>
                     </div>
                 </div>
@@ -166,7 +140,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
 
     renderValueWithAlert(value, showAlert) {
         const isZero = this.isZero(value);
-        const valueClass = isZero ? "text-danger" : "text-secondary";
+        const valueClass = isZero && showAlert ? "text-danger" : "text-secondary";
         if (!showAlert || !isZero) {
             return `<span class="exec-metric-value ${valueClass}">${value}</span>`;
         }

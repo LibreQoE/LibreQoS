@@ -33,6 +33,7 @@ flowchart LR
 - lqos_scheduler performs continuous refreshes of LibreQoS' shapers, including pulling from any enabled CRM Integrations (UISP, Splynx, Netzur).
 - Actions:
   - On start: Run a full setup of queues
+    - Current builds wait briefly for `lqosd` to finish binding the local bus before the first scheduler run.
   - Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.
     - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
     - The minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
@@ -83,6 +84,8 @@ To confirm that lqos_scheduler (scheduler.py) is able to work correctly, run:
 ```shell
 sudo python3 scheduler.py
 ```
+
+If an integration fails during a scheduler run, current builds keep the scheduler alive, surface a shortened output preview in scheduler status/error reporting, and save the full captured output to a timestamped `/tmp/lqos_scheduler_<integration>_*.log` file.
 
 Once you have any errors eliminated, restart lqos_scheduler with
 

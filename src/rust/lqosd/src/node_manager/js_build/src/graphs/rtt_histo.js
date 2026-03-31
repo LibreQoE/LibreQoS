@@ -3,6 +3,27 @@ import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 
 export const N_ITEMS = 50;
 
+function computeYAxisMax(maxPercent) {
+    if (!Number.isFinite(maxPercent) || maxPercent <= 0) {
+        return 1;
+    }
+
+    const padded = maxPercent * 1.1;
+    if (padded <= 5) {
+        return 5;
+    }
+    if (padded <= 10) {
+        return 10;
+    }
+    if (padded <= 25) {
+        return 25;
+    }
+    if (padded <= 50) {
+        return 50;
+    }
+    return Math.min(100, Math.ceil(padded / 10) * 10);
+}
+
 export class RttHistogram extends DashboardGraph {
     constructor(id) {
         super(id);
@@ -66,15 +87,17 @@ export class RttHistogram extends DashboardGraph {
         let sum = 0;
         this.rawCounts = [...rtt]; // Store raw counts
         rtt.forEach((v) => {
-            if (v > this.max) {
-                this.max = v;
-            }
             sum += v;
-        })
+        });
+        let maxPercent = 0;
         for (let i=0; i<N_ITEMS; i++) {
-            this.option.series.data[i].value = (rtt[i] / sum) * 100;
+            const pct = sum > 0 ? (rtt[i] / sum) * 100 : 0;
+            if (pct > maxPercent) {
+                maxPercent = pct;
+            }
+            this.option.series.data[i].value = pct;
         }
+        this.max = computeYAxisMax(maxPercent);
         this.chart.setOption(this.option);
     }
 }
-

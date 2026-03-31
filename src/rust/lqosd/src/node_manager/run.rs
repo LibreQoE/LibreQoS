@@ -52,6 +52,8 @@ pub async fn spawn_webserver(
     // Construct the router from parts
     let router = Router::new()
         .route("/", get(redirect_to_index))
+        .route("/login.html", get(auth::login_page))
+        .route("/first-run.html", get(auth::first_run_page))
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
         .route("/health", get(health_check))

@@ -34,6 +34,8 @@ sudo systemctl enable lqos_api
 sudo systemctl start lqos_api
 ```
 
+La plantilla incluida de `lqos_api.service.example` espera `network-online.target`, para que la API no arranque antes de que DNS y la ruta por defecto esten listas.
+
 Actualizar solo el binario de la API:
 
 ```bash

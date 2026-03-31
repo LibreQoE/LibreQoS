@@ -16,6 +16,8 @@ Notes:
 
 After install, sign in to WebUI at `http://your_shaper_ip:9123`.
 
+If no WebUI users exist yet, current builds redirect to first-run setup automatically.
+
 For most operators:
 1. Choose your operating mode: [Operating Modes and Source of Truth](operating-modes.md)
 2. Configure integration settings in WebUI: [CRM/NMS Integrations](integrations.md)
@@ -25,12 +27,24 @@ For most operators:
 
 Most day-to-day LibreQoS configuration is handled in WebUI (`http://your_shaper_ip:9123/config_general.html`).
 
+Current builds use shared configuration panels on the General, RTT, Queues, TreeGuard, Network Mode, Integration Defaults, Network Layout, Insight, provider-specific integration pages, IP Ranges, Flow Tracking, and Shaped Devices pages so node settings and operational tuning follow the same surface styling as the rest of Node Manager. The TreeGuard page starts with a live behavior summary rather than a permanent warning banner.
+
 ### Where in WebUI
 
 - General settings: `Configuration -> General`
 - Integration settings: `Configuration -> Integrations`
+- Network layout editor: `Configuration -> Network Layout`
 - Shaped devices editor: `Configuration -> Shaped Devices`
 - Runtime operational validation: `WebUI (Node Manager)` pages (dashboard/tree/flow/scheduler)
+
+When an integration is enabled and acting as the source of truth, the `Network Layout` and `Shaped Devices` editors remain viewable but become read-only in WebUI.
+
+Topology note:
+- `network.json` node names must be globally unique across the whole tree. Duplicate node names now fail validation and are not accepted by the WebUI save path or `LibreQoS.py`.
+- When a node exposes a stable `id`, current builds prefer that ID for operator-owned site bandwidth overrides while keeping legacy name-only matching as a fallback.
+
+Queue-mode note:
+- Current builds use `queue_mode` with `shape` and `observe` values. Older `monitor_only` wording is a compatibility alias rather than the primary operator-facing setting.
 
 ## Operating Modes and Source of Truth
 

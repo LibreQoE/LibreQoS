@@ -20,7 +20,7 @@ function validateConfig() {
         try {
             new URL(ltsUrl);
         } catch {
-            alert("LTS Server URL must be a valid URL");
+            alert("Insight Server URL must be a valid URL");
             return false;
         }
     }

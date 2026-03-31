@@ -1,37 +1,5 @@
 import {PLACEHOLDER_TEASERS} from "./lts_teasers_shared";
-import {get_ws_client} from "./pubsub/ws";
-
-const wsClient = get_ws_client();
-const listenOnce = (eventName, handler) => {
-    const wrapped = (msg) => {
-        wsClient.off(eventName, wrapped);
-        handler(msg);
-    };
-    wsClient.on(eventName, wrapped);
-};
-
-function sendWsRequest(responseEvent, request) {
-    return new Promise((resolve, reject) => {
-        let done = false;
-        const onResponse = (msg) => {
-            if (done) return;
-            done = true;
-            wsClient.off(responseEvent, onResponse);
-            wsClient.off("Error", onError);
-            resolve(msg);
-        };
-        const onError = (msg) => {
-            if (done) return;
-            done = true;
-            wsClient.off(responseEvent, onResponse);
-            wsClient.off("Error", onError);
-            reject(msg);
-        };
-        wsClient.on(responseEvent, onResponse);
-        wsClient.on("Error", onError);
-        wsClient.send(request);
-    });
-}
+import {buildSignupApiUrl, sendWsRequest, wsClient} from "./lts_trial_shared";
 
 // Paddle-compatible countries (excluding embargoed nations)
 const ALLOWED_COUNTRIES = [
@@ -288,6 +256,7 @@ $(document).ready(async function() {
     loadTeasers();        // Then load teasers with the correct URL
     fetchCircuitCount();
     attachEventHandlers();
+    openInitialViewFromQuery();
     
     // Apply dark mode if needed
     if (isDarkMode()) {
@@ -356,7 +325,7 @@ async function loadTeasers() {
         const response = await $.get(getLtsUrl('teasers'));
         if (response.teasers != null) {
              response.teasers.forEach(teaser => {
-                  teaser.image = getLtsUrl(teaser.image.replace("signup-api/", ""));
+                  teaser.image = getLtsUrl(teaser.image.replace(/^\/?signup-api\//, ""));
             });
         }
         currentTeasers = response.teasers || PLACEHOLDER_TEASERS;
@@ -434,7 +403,7 @@ function displayTeasers() {
     
     // Add click handlers to CTA buttons
     $('.btn-teaser-cta').on('click', function() {
-        showSection('signupSection');
+        redirectToTrialSetup();
     });
     
     // Reinitialize carousel if needed
@@ -448,19 +417,7 @@ function displayTeasers() {
 
 // Helper function to construct full LTS URLs
 function getLtsUrl(endpoint) {
-    // Ensure ltsBaseUrl starts with http:// or https://, otherwise prefix with https://
-    let baseUrl = ltsBaseUrl;
-    if (!/^https?:\/\//i.test(baseUrl)) {
-        baseUrl = 'https://' + baseUrl;
-    }
-    // Ensure baseUrl ends with a single slash
-    let base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
-    // Ensure 'signup-api/' is appended exactly once
-    base += base.endsWith('signup-api/') ? '' : 'signup-api/';
-    // Remove any leading slash from endpoint
-    endpoint = endpoint.replace(/^\/+/, '');
-    //console.log("Base: ", base, "Endpoint:", endpoint);
-    return base + endpoint;
+    return buildSignupApiUrl(ltsBaseUrl, endpoint);
 }
 
 // Fetch node ID and LTS URL from configuration
@@ -515,6 +472,29 @@ function showSection(sectionId) {
         $(`#${id}`).hide();
     });
     $(`#${sectionId}`).fadeIn();
+}
+
+function redirectToTrialSetup() {
+    window.location.href = 'lts_trial_setup.html';
+}
+
+function openInitialViewFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const view = params.get('view');
+
+    if (view === 'signup') {
+        showSection('signupSection');
+        return;
+    }
+
+    if (view === 'license') {
+        showSection('licenseKeySection');
+        return;
+    }
+
+    if (view === 'recover') {
+        showSection('licenseRecoverySection');
+    }
 }
 
 // Show loading modal
@@ -579,7 +559,7 @@ function attachEventHandlers() {
         // Analytics tracking for new customer path
         const trackingImg = new Image();
         trackingImg.src = getLtsUrl('signupPing') + '?t=' + Date.now() + '&type=new';
-        showSection('signupSection');
+        redirectToTrialSetup();
     });
     $('#btnBackFromLicense').on('click', () => showSection('teaserSection'));
     $('#btnBackFromSignup').on('click', () => showSection('teaserSection'));
@@ -721,13 +701,13 @@ function attachEventHandlers() {
                 showSection('successSection');
                 $('#successMessage').html(`
                     <strong>License Key:</strong> ${response.licenseKey}<br>
-                    <small>An email with your license key and portal access has been sent to your email address.</small>
+                    <small>Your trial is almost active. Watch for an email from Insight with your account details. No charge occurs until the trial ends, and you can cancel any time.</small>
                 `);
                 $('#configStatus').text('Saving configuration...');
 
                 wsClient.send({ LtsSignUp: { license_key: response.licenseKey } });
                 // Show success message now, then swap spinner to a check and enable dashboard after 5s
-                $('#configStatus').html(`Account created! Your configuration has been updated - data will start going to Insight shortly.`);
+                $('#configStatus').html(`Your Insight trial has been created. Check your email for the next steps while configuration is being saved.`);
                 setTimeout(() => {
                     $('#configSpinner').hide();
                     $('#configStatus').html(`<i class="fas fa-check-circle text-success"></i> Configuration saved.`);

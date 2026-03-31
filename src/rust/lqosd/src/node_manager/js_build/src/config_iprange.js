@@ -1,30 +1,43 @@
 import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
 
+function isValidIPv4(ip) {
+    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return false;
+    const parts = ip.split('.').map((p) => parseInt(p, 10));
+    return parts.length === 4 && !parts.some((p) => Number.isNaN(p) || p < 0 || p > 255);
+}
+
+function isValidIPv6(ip) {
+    return ip.includes(':') && /^[0-9a-fA-F:]+$/.test(ip);
+}
+
+function normalizeSubnetInput(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (raw.includes('/')) return raw;
+    if (isValidIPv4(raw)) return `${raw}/32`;
+    if (isValidIPv6(raw)) return `${raw}/128`;
+    return raw;
+}
+
 function isValidCIDR(cidr) {
     try {
-        const [ip, mask] = cidr.split('/');
-        if (!ip || !mask) return false;
-        
-        // Validate IP address
+        const [ip, mask, extra] = String(cidr).trim().split('/');
+        if (!ip || !mask || extra !== undefined) return false;
+
         if (ip.includes(':')) {
-            // IPv6
-            if (!/^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/.test(ip)) return false;
-        } else {
-            // IPv4
-            if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) return false;
+            if (!isValidIPv6(ip)) return false;
+        } else if (!isValidIPv4(ip)) {
+            return false;
         }
-        
-        // Validate mask
-        const maskNum = parseInt(mask);
-        if (isNaN(maskNum)) return false;
+
+        const maskNum = parseInt(mask, 10);
+        if (Number.isNaN(maskNum)) return false;
         if (ip.includes(':')) {
-            // IPv6
             if (maskNum < 0 || maskNum > 128) return false;
         } else {
-            // IPv4
             if (maskNum < 0 || maskNum > 32) return false;
         }
-        
+
         return true;
     } catch {
         return false;
@@ -44,17 +57,16 @@ function populateSubnetList(selectId, subnets) {
 
 function addSubnet(listId, inputId) {
     const input = document.getElementById(inputId);
-    const cidr = input.value.trim();
-    
+    const cidr = normalizeSubnetInput(input.value);
+
     if (!isValidCIDR(cidr)) {
-        alert('Please enter a valid CIDR notation (e.g. 192.168.1.0/24 or 2001:db8::/32)');
+        alert('Please enter a valid IP or CIDR notation (e.g. 192.168.1.0/24, 2803:16d0:40::/48, or 2001:db8::1)');
         return;
     }
-    
+
     const select = document.getElementById(listId);
-    // Check for duplicates
     for (let i = 0; i < select.options.length; i++) {
-        if (select.options[i].value === cidr) {
+        if (select.options[i].value.toLowerCase() === cidr.toLowerCase()) {
             alert('This CIDR is already in the list');
             return;
         }

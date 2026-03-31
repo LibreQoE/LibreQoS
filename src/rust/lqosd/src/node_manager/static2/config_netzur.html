@@ -1,7 +1,16 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Netzur Integration</h5>
+                    <div class="lqos-config-panel-subtitle">Configure API access and timeout behavior for automated imports from Netzur CRM.</div>
+                </div>
+            </div>
+
+            <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableNetzur">
                 <label class="form-check-label" for="enableNetzur">Enable Netzur Integration</label>
@@ -26,8 +35,12 @@
                 <div class="form-text">Adjust only if the API routinely needs more than 60 seconds</div>
             </div>
 
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
             <button type="button" id="saveNetzur" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 <script src="config_netzur.js%CACHEBUSTERS%"></script>

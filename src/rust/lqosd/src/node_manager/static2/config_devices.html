@@ -1,26 +1,21 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <div class="alert alert-warning" role="alert">
-            <i class="fa fa-exclamation-triangle"></i> If you have an integration active, these values will be automatically generated and any edits you perform here will be lost on the next update.
-        </div>
-    </div>
-</div>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+    <div id="devicesEditorLock" class="lqos-config-note d-none" role="alert"></div>
 
-<div class="row">
-    <div class="col-12">
+    <section class="lqos-config-panel">
         <div class="card">
             <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-3">
                 <div>
                     <h5 class="mb-0">Shaped Devices</h5>
                     <div class="small text-body-secondary" id="sdSummary">Loading devices...</div>
+                    <div class="small text-body-secondary">Adds, edits, and deletes save immediately.</div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
                     <button id="btnAddDevice" class="btn btn-primary">
                         <i class="fa fa-plus"></i> Add Device
                     </button>
                     <button id="btnSaveDevices" class="btn btn-outline-primary">
-                        <i class="fa fa-save"></i> Save Changes
+                        <i class="fa fa-refresh"></i> Reload
                     </button>
                 </div>
             </div>
@@ -41,7 +36,7 @@
                     </div>
                 </div>
 
-                <div class="alert alert-info py-2 small mb-3">
+                <div class="lqos-config-note py-2 small mb-3">
                     SQM overrides can be set per direction. Leave a side blank to use the global default; set to "none" to disable that side.
                 </div>
 
@@ -62,7 +57,7 @@
                 </nav>
             </div>
         </div>
-    </div>
+    </section>
 </div>
 
 <div class="modal fade" id="sdEditModal" tabindex="-1" aria-labelledby="sdEditModalLabel" aria-hidden="true">

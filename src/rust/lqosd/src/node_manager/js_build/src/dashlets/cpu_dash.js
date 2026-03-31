@@ -30,7 +30,11 @@ export class CpuDash extends BaseDashlet{
 
     setup() {
         super.setup();
+        this.traceRender("setup-start");
         this.graph = new CpuHistogram(this.graphDivId());
+        this.traceRender("setup-complete", {
+            graphId: this.graphDivId(),
+        });
     }
 
     setupZoomed() {
@@ -44,9 +48,24 @@ export class CpuDash extends BaseDashlet{
 
     onMessage(msg) {
         if (msg.event === "Cpu") {
-            this.graph.update(msg.data);
-            if (this.zoomGraph) {
-                this.zoomGraph.update(msg.data);
+            this.traceRender("onMessage", {
+                eventName: msg.event,
+                cpuRows: Array.isArray(msg.data) ? msg.data.length : 0,
+            });
+            try {
+                this.graph.update(msg.data);
+                if (this.zoomGraph) {
+                    this.zoomGraph.update(msg.data);
+                }
+                this.traceRender("update-ok", {
+                    eventName: msg.event,
+                });
+            } catch (err) {
+                this.traceRender("update-error", {
+                    eventName: msg.event,
+                    error: err && err.message ? err.message : String(err),
+                });
+                throw err;
             }
         }
     }

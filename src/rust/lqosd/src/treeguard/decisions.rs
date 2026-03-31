@@ -44,6 +44,23 @@ pub struct LinkVirtualizationInput<'a> {
     pub state: &'a LinkState,
 }
 
+/// Input to top-level link virtualization decisions.
+#[derive(Clone, Copy, Debug)]
+pub struct TopLevelLinkVirtualizationInput<'a> {
+    pub now_unix: u64,
+    pub cpu_max_pct: Option<u8>,
+    pub cpu_cfg: &'a TreeguardCpuConfig,
+    pub links_cfg: &'a TreeguardLinksConfig,
+    pub qoo_cfg: &'a TreeguardQooConfig,
+    pub rtt_missing: bool,
+    pub qoo: DownUpOrder<Option<f32>>,
+    pub util_ewma_pct: DownUpOrder<f64>,
+    pub safe_util_pct: f64,
+    pub sustained_safe: bool,
+    pub emergency_util_sustained: bool,
+    pub state: &'a LinkState,
+}
+
 /// Input to per-circuit SQM decisions.
 #[derive(Clone, Copy, Debug)]
 pub struct CircuitSqmInput<'a> {
@@ -133,25 +150,24 @@ pub fn decide_link_virtualization(input: LinkVirtualizationInput<'_>) -> LinkVir
         return LinkVirtualDecision::NoChange;
     }
 
-    if in_dwell_window(
-        now_unix,
-        state.last_change_unix,
-        links_cfg.min_state_dwell_minutes,
-    ) {
-        return LinkVirtualDecision::NoChange;
-    }
-
-    if rate_limited(
-        state.recent_changes_unix.len(),
-        links_cfg.max_link_changes_per_hour,
-    ) {
-        return LinkVirtualDecision::NoChange;
-    }
-
     let qoo_bad = qoo_below_threshold(qoo_cfg, qoo);
 
     match state.desired {
         LinkVirtualState::Physical => {
+            if in_dwell_window(
+                now_unix,
+                state.last_change_unix,
+                links_cfg.min_state_dwell_minutes,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
+
+            if rate_limited(
+                state.recent_changes_unix.len(),
+                links_cfg.max_link_changes_per_hour,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
             if !cpu_allows_saving(cpu_cfg, cpu_max_pct) {
                 return LinkVirtualDecision::NoChange;
             }
@@ -173,6 +189,60 @@ pub fn decide_link_virtualization(input: LinkVirtualizationInput<'_>) -> LinkVir
     }
 }
 
+/// Decide whether to virtualize/unvirtualize a managed top-level node.
+///
+/// This function is pure: it has no side effects.
+pub fn decide_top_level_link_virtualization(
+    input: TopLevelLinkVirtualizationInput<'_>,
+) -> LinkVirtualDecision {
+    let TopLevelLinkVirtualizationInput {
+        now_unix,
+        cpu_max_pct,
+        cpu_cfg,
+        links_cfg,
+        qoo_cfg: _qoo_cfg,
+        rtt_missing: _rtt_missing,
+        qoo: _qoo,
+        util_ewma_pct,
+        safe_util_pct,
+        sustained_safe,
+        emergency_util_sustained,
+        state,
+    } = input;
+
+    let util_high = util_ewma_pct.down >= safe_util_pct || util_ewma_pct.up >= safe_util_pct;
+
+    match state.desired {
+        LinkVirtualState::Physical => {
+            if in_dwell_window(
+                now_unix,
+                state.last_change_unix,
+                links_cfg.min_state_dwell_minutes,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
+            if rate_limited(
+                state.recent_changes_unix.len(),
+                links_cfg.max_link_changes_per_hour,
+            ) {
+                return LinkVirtualDecision::NoChange;
+            }
+            if cpu_allows_saving(cpu_cfg, cpu_max_pct) && sustained_safe {
+                LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+            } else {
+                LinkVirtualDecision::NoChange
+            }
+        }
+        LinkVirtualState::Virtual => {
+            if emergency_util_sustained || util_high {
+                LinkVirtualDecision::Set(LinkVirtualState::Physical)
+            } else {
+                LinkVirtualDecision::NoChange
+            }
+        }
+    }
+}
+
 /// Decide whether to switch a managed circuit's SQM profile per direction.
 ///
 /// This function is pure: it has no side effects.
@@ -184,7 +254,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
         cpu_cfg,
         circuits_cfg,
         qoo_cfg,
-        rtt_missing,
+        rtt_missing: _rtt_missing,
         qoo,
         state,
     } = input;
@@ -242,11 +312,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
                 }
             }
             CircuitSqmState::FqCodel => {
-                if util_high
-                    || qoo_bad
-                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
-                    || (rtt_missing && !sustained_idle)
-                {
+                if util_high || qoo_bad || cpu_calls_for_revert(cpu_cfg, cpu_max_pct) {
                     Some(CircuitSqmState::Cake)
                 } else {
                     None
@@ -300,11 +366,7 @@ pub fn decide_circuit_sqm(input: CircuitSqmInput<'_>) -> CircuitSqmDecision {
                 }
             }
             CircuitSqmState::FqCodel => {
-                if util_high
-                    || qoo_bad
-                    || cpu_calls_for_revert(cpu_cfg, cpu_max_pct)
-                    || (rtt_missing && !sustained_idle)
-                {
+                if util_high || qoo_bad || cpu_calls_for_revert(cpu_cfg, cpu_max_pct) {
                     Some(CircuitSqmState::Cake)
                 } else {
                     None
@@ -436,8 +498,11 @@ mod tests {
     }
 
     #[test]
-    fn link_does_not_virtualize_when_cpu_low() {
-        let cpu = TreeguardCpuConfig::default();
+    fn link_does_not_virtualize_when_cpu_low_in_cpu_aware_mode() {
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::CpuAware,
+            ..TreeguardCpuConfig::default()
+        };
         let links = TreeguardLinksConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = LinkState::default();
@@ -455,6 +520,203 @@ mod tests {
             },
             util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
             sustained_idle: true,
+            state: &state,
+        });
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn link_virtualizes_when_cpu_low_in_traffic_rtt_only_mode() {
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::TrafficRttOnly,
+            ..TreeguardCpuConfig::default()
+        };
+        let links = TreeguardLinksConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
+        let state = LinkState::default();
+        let decision = decide_link_virtualization(LinkVirtualizationInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &cpu,
+            links_cfg: &links,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder { down: 1.0, up: 1.0 },
+            sustained_idle: true,
+            state: &state,
+        });
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+        );
+    }
+
+    #[test]
+    fn top_level_link_does_not_virtualize_when_cpu_low_in_cpu_aware_mode() {
+        let state = LinkState {
+            desired: LinkVirtualState::Physical,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: true,
+            emergency_util_sustained: false,
+            state: &state,
+        });
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn top_level_link_virtualizes_when_cpu_high_and_safe() {
+        let state = LinkState {
+            desired: LinkVirtualState::Physical,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
+            cpu_max_pct: Some(90),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: true,
+            emergency_util_sustained: false,
+            state: &state,
+        });
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Virtual)
+        );
+    }
+
+    #[test]
+    fn top_level_link_restores_on_util_spike_even_when_cpu_low() {
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 90.0,
+                up: 5.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: false,
+            emergency_util_sustained: false,
+            state: &state,
+        });
+        assert_eq!(
+            decision,
+            LinkVirtualDecision::Set(LinkVirtualState::Physical)
+        );
+    }
+
+    #[test]
+    fn top_level_link_stays_virtual_when_only_qoo_is_low() {
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(65.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: false,
+            emergency_util_sustained: false,
+            state: &state,
+        });
+        assert_eq!(decision, LinkVirtualDecision::NoChange);
+    }
+
+    #[test]
+    fn top_level_link_stays_virtual_when_only_rtt_is_missing() {
+        let state = LinkState {
+            desired: LinkVirtualState::Virtual,
+            ..Default::default()
+        };
+        let decision = decide_top_level_link_virtualization(TopLevelLinkVirtualizationInput {
+            now_unix: 1000,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &TreeguardCpuConfig {
+                mode: TreeguardCpuMode::CpuAware,
+                ..TreeguardCpuConfig::default()
+            },
+            links_cfg: &TreeguardLinksConfig::default(),
+            qoo_cfg: &TreeguardQooConfig::default(),
+            rtt_missing: true,
+            qoo: DownUpOrder {
+                down: Some(100.0),
+                up: Some(100.0),
+            },
+            util_ewma_pct: DownUpOrder {
+                down: 10.0,
+                up: 12.0,
+            },
+            safe_util_pct: 85.0,
+            sustained_safe: false,
+            emergency_util_sustained: false,
             state: &state,
         });
         assert_eq!(decision, LinkVirtualDecision::NoChange);
@@ -694,8 +956,11 @@ mod tests {
     }
 
     #[test]
-    fn circuit_reverts_when_cpu_low() {
-        let cpu = TreeguardCpuConfig::default();
+    fn circuit_reverts_when_cpu_low_in_cpu_aware_mode() {
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::CpuAware,
+            ..TreeguardCpuConfig::default()
+        };
         let circuits = TreeguardCircuitsConfig::default();
         let qoo_cfg = TreeguardQooConfig::default();
         let state = CircuitState {
@@ -725,6 +990,43 @@ mod tests {
         });
         assert_eq!(decision.down, Some(CircuitSqmState::Cake));
         assert_eq!(decision.up, Some(CircuitSqmState::Cake));
+    }
+
+    #[test]
+    fn circuit_does_not_revert_when_cpu_low_in_traffic_rtt_only_mode() {
+        let cpu = TreeguardCpuConfig {
+            mode: TreeguardCpuMode::TrafficRttOnly,
+            ..TreeguardCpuConfig::default()
+        };
+        let circuits = TreeguardCircuitsConfig::default();
+        let qoo_cfg = TreeguardQooConfig::default();
+        let state = CircuitState {
+            down: CircuitDirectionState {
+                desired: CircuitSqmState::FqCodel,
+                ..Default::default()
+            },
+            up: CircuitDirectionState {
+                desired: CircuitSqmState::FqCodel,
+                ..Default::default()
+            },
+        };
+
+        let decision = decide_circuit_sqm(CircuitSqmInput {
+            now_unix: 1000,
+            allowlisted: true,
+            cpu_max_pct: Some(10),
+            cpu_cfg: &cpu,
+            circuits_cfg: &circuits,
+            qoo_cfg: &qoo_cfg,
+            rtt_missing: false,
+            qoo: DownUpOrder {
+                down: Some(90.0),
+                up: Some(90.0),
+            },
+            state: &state,
+        });
+        assert_eq!(decision.down, None);
+        assert_eq!(decision.up, None);
     }
 
     #[test]

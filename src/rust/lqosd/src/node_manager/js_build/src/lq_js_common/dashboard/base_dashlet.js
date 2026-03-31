@@ -48,7 +48,37 @@ export class BaseDashlet {
         return [];
     }
 
+    keepAliveWhenHidden() {
+        return false;
+    }
+
+    keepSubscribedWhenHidden() {
+        return this.keepAliveWhenHidden();
+    }
+
+    renderWhenHidden() {
+        return false;
+    }
+
     onMessage(msg) {
+    }
+
+    onBackgroundMessage(_msg) {
+    }
+
+    flushBackgroundMessages() {
+        return false;
+    }
+
+    traceRender(stage, details = {}) {
+        if (typeof window !== "undefined" && typeof window.__lqosDashboardRenderHook === "function") {
+            window.__lqosDashboardRenderHook({
+                dashletId: this.id,
+                title: this.title(),
+                stage,
+                ...details,
+            });
+        }
     }
 
     setupOnce(msg) {
@@ -59,10 +89,22 @@ export class BaseDashlet {
             this.setup(msg);
         }
         this.setupDone = true;
+        if (typeof window !== "undefined" && typeof window.__lqosDashboardDashletHook === "function") {
+            window.__lqosDashboardDashletHook({
+                type: "setup",
+                dashletId: this.id,
+                title: this.title(),
+                setupDone: this.setupDone,
+            });
+        }
         enableTooltips();
     }
 
     setup() {}
+
+    onTabActivated() {}
+
+    onTabDeactivated() {}
 
     graphDivId() {
         return this.id + "_graph";

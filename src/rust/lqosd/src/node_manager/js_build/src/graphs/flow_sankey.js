@@ -3,21 +3,16 @@ import {toNumber} from "../lq_js_common/helpers/scaling";
 import {isRedacted} from "../helpers/redact";
 
 const SANKEY_RECENT_FLOW_WINDOW_NANOS = 10_000_000_000;
-const SANKEY_TOP_FLOW_LIMIT = 20;
 
 function totalFlowRate(flow) {
-    return (
-        toNumber(flow?.[1]?.rate_estimate_bps?.down, 0) +
-        toNumber(flow?.[1]?.rate_estimate_bps?.up, 0)
-    );
+    return toNumber(flow?.down_bps, 0) + toNumber(flow?.up_bps, 0);
 }
 
 function renderableSankeyFlows(flowMsg) {
     const flows = Array.isArray(flowMsg?.flows) ? flowMsg.flows : [];
     return flows
-        .filter((flow) => toNumber(flow?.[0]?.last_seen_nanos, 0) <= SANKEY_RECENT_FLOW_WINDOW_NANOS)
-        .sort((a, b) => totalFlowRate(b) - totalFlowRate(a))
-        .slice(0, SANKEY_TOP_FLOW_LIMIT);
+        .filter((flow) => toNumber(flow?.last_seen_nanos, 0) <= SANKEY_RECENT_FLOW_WINDOW_NANOS)
+        .sort((a, b) => totalFlowRate(b) - totalFlowRate(a));
 }
 
 export function getRenderableSankeyFlowCount(flowMsg) {
@@ -53,11 +48,11 @@ export class FlowsSankey extends DashboardGraph {
 
         renderableSankeyFlows(flows).forEach((flow) => {
             flowCount++;
-            let localDevice = flow[0].device_name;
-            let proto = flow[0].protocol_name;
-            let asn = "ASN: " + flow[2].asn_id;
-            if (flow[0].asn_name !== "") asn += " " + flow[0].asn_name;
-            let remoteDevice = flow[0].remote_ip;
+            let localDevice = flow.device_name;
+            let proto = flow.protocol_name;
+            let asn = "ASN: " + flow.asn_id;
+            if (flow.asn_name !== "") asn += " " + flow.asn_name;
+            let remoteDevice = flow.remote_ip;
         
             // Ensure all members are present. The arrays hold links to subsequent
             // columns.
@@ -75,9 +70,7 @@ export class FlowsSankey extends DashboardGraph {
             }
 
             // Accumulate traffic.
-            let currentRate =
-                toNumber(flow[1].rate_estimate_bps.down, 0) +
-                toNumber(flow[1].rate_estimate_bps.up, 0);
+            let currentRate = toNumber(flow.down_bps, 0) + toNumber(flow.up_bps, 0);
             if (localDevices[localDevice][asn] === undefined) {
                 localDevices[localDevice][asn] = currentRate;
             } else {

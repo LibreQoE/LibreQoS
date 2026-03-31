@@ -108,7 +108,12 @@ export class ShaperWorldMapDown extends BaseDashlet {
     tooltip(){ return "<h5>World Map</h5><p>Endpoint locations sized by traffic and colored by RTT."; }
     subscribeTo(){ return ["EndpointLatLon"]; }
     buildContainer(){ let b=super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
-    setup(){ this.graph = new WorldMap3DGraph(this.graphDivId()); if (this.last) this.graph.update(this.last); }
+    setup(){
+        this.traceRender("setup-start");
+        this.graph = new WorldMap3DGraph(this.graphDivId());
+        this.traceRender("setup-complete", { graphId: this.graphDivId() });
+        if (this.last) this.graph.update(this.last);
+    }
     _showEmpty(show, msg = "No recent data"){
         const card = document.getElementById(this.id);
         if (!card) return;
@@ -158,11 +163,24 @@ export class ShaperWorldMapDown extends BaseDashlet {
         this._showEmpty(!hasData);
         if (hasData) {
             this.last = out;
+            this.traceRender("onMessage", { eventName: msg.event, pointCount: out.length });
             ensureWorldMap().then(() => {
-                this.graph.update(out);
+                try {
+                    this.graph.update(out);
+                    this.traceRender("update-ok", { eventName: msg.event, pointCount: out.length });
+                } catch (err) {
+                    this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err) });
+                    throw err;
+                }
             }).catch(() => {
                 // If the world map fails to load, still attempt to render points
-                this.graph.update(out);
+                try {
+                    this.graph.update(out);
+                    this.traceRender("update-ok", { eventName: msg.event, pointCount: out.length, fallback: true });
+                } catch (err) {
+                    this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err), fallback: true });
+                    throw err;
+                }
             });
         }
     }

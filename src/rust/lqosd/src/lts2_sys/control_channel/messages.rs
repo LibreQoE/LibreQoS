@@ -64,7 +64,7 @@ pub struct SupportTicket {
 
 pub const MAX_DECOMPRESSED_WS_MSG_BYTES: usize = 16 * 1024 * 1024; // 16 MiB
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum WsMessage {
     // Messages FROM the Shaper
     Hello {
@@ -74,6 +74,8 @@ pub enum WsMessage {
         license: Uuid,
         node_id: String,
         node_name: String,
+        #[serde(default)]
+        shaper_version: Option<String>,
     },
     LicenseGrantRequest {
         public_key: Vec<u8>,
@@ -254,7 +256,7 @@ pub enum WsMessage {
     },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ApiRequestType {
     Get,
     Post,
@@ -275,5 +277,71 @@ impl WsMessage {
         )
         .map_err(|_e| anyhow!("Decompression error or size limit exceeded"))?;
         Ok(serde_cbor::from_slice(&decompressed_bytes)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WsMessage;
+    use serde::Serialize;
+    use uuid::Uuid;
+
+    #[derive(Serialize)]
+    enum LegacyWsMessage {
+        License {
+            license: Uuid,
+            node_id: String,
+            node_name: String,
+        },
+    }
+
+    #[test]
+    fn license_round_trips_with_version() {
+        let message = WsMessage::License {
+            license: Uuid::nil(),
+            node_id: "node-1".to_string(),
+            node_name: "Node 1".to_string(),
+            shaper_version: Some("2.1.0".to_string()),
+        };
+        let (_, _, bytes) = message.to_bytes().unwrap();
+
+        match WsMessage::from_bytes(&bytes).unwrap() {
+            WsMessage::License {
+                shaper_version,
+                node_id,
+                node_name,
+                ..
+            } => {
+                assert_eq!(node_id, "node-1");
+                assert_eq!(node_name, "Node 1");
+                assert_eq!(shaper_version.as_deref(), Some("2.1.0"));
+            }
+            other => panic!("unexpected decoded message: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn legacy_license_payload_without_version_still_decodes() {
+        let legacy = LegacyWsMessage::License {
+            license: Uuid::nil(),
+            node_id: "legacy-node".to_string(),
+            node_name: "Legacy Node".to_string(),
+        };
+        let raw_bytes = serde_cbor::to_vec(&legacy).unwrap();
+        let bytes = miniz_oxide::deflate::compress_to_vec(&raw_bytes, 1);
+
+        match WsMessage::from_bytes(&bytes).unwrap() {
+            WsMessage::License {
+                shaper_version,
+                node_id,
+                node_name,
+                ..
+            } => {
+                assert_eq!(node_id, "legacy-node");
+                assert_eq!(node_name, "Legacy Node");
+                assert_eq!(shaper_version, None);
+            }
+            other => panic!("unexpected decoded message: {other:?}"),
+        }
     }
 }

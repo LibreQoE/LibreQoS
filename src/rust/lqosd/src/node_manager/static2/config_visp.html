@@ -1,7 +1,16 @@
-<div id="configMenuContainer"></div>
-<div class="row">
-    <div class="col-12">
-        <form>
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">VISP Integration</h5>
+                    <div class="lqos-config-panel-subtitle">Configure GraphQL UBO API access, tenant selection, and optional online-user enrichment from VISP.</div>
+                </div>
+            </div>
+
+            <div class="lqos-config-section">
             <div class="mb-3 form-check">
                 <input type="checkbox" class="form-check-input" id="enableVisp">
                 <label class="form-check-label" for="enableVisp">Enable VISP Integration</label>
@@ -46,8 +55,12 @@
                 <div class="form-text">Used to enrich IPs via online RADIUS sessions if VISP is missing static IPs</div>
             </div>
 
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
             <button type="button" id="saveVisp" class="btn btn-outline-primary">Save Changes</button>
-        </form>
-    </div>
+        </div>
+    </form>
 </div>
 <script src="config_visp.js%CACHEBUSTERS%"></script>

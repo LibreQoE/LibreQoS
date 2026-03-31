@@ -173,6 +173,8 @@ If a `network.json` file exists, it is only overwritten when `always_overwrite_n
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
+When UISP client sites share the same name, LibreQoS now tries to disambiguate the generated circuit/site display names with a human-friendly suffix such as the first street-address segment, falling back to service name and then a short ID only when needed. Stable circuit identity still comes from the UISP site/service ID, not the display name.
+
 For integration-driven deployments, keep `always_overwrite_network_json = true` so topology stays aligned with UISP on each refresh cycle.
 
 You have the option to run `uisp_integration` automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
@@ -183,12 +185,16 @@ You can also modify the following files to more accurately reflect your network:
 - integrationUISPbandwidths.csv
 - integrationUISProutes.csv
 
+Tree-page `Operator Override` edits are separate from these legacy UISP files. Current builds write those operator-owned node rate changes to `lqos_overrides.json` and do not rewrite `integrationUISPbandwidths.csv`.
+
 Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src). To utilize the template, copy the file (removing the `.template` part of the filename) and set the appropriate information inside each file.
 For example, if you want to change the set bandwidth for a site, you would do:
 ```
 sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
 ```
 And edit the CSV using LibreOffice or your preferred CSV editor.
+
+To avoid conflicting sources of truth, prefer one durable override path per node: either the legacy UISP CSV workflow or the operator override layer.
 
 #### UISP Route Overrides
 

@@ -32,6 +32,37 @@ fn command_warnings_errors_only(section: &str, command_result: &std::io::Result<
     }
 }
 
+fn require_successful_output(section: &str, command_result: std::io::Result<Output>) -> Output {
+    match command_result {
+        Ok(output) => {
+            if !output.stderr.is_empty() {
+                println!(
+                    "cargo:warning=[{section}] {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+
+            if !output.status.success() {
+                panic!(
+                    "{section} failed with status {}",
+                    output
+                        .status
+                        .code()
+                        .map_or_else(|| "signal".to_string(), |code| code.to_string())
+                );
+            }
+
+            output
+        }
+        Err(error) => {
+            panic!(
+                "{section} is required to build lqos_sys but was not available: {error}. \
+Install bpftool (or provide it in PATH) before building."
+            );
+        }
+    }
+}
+
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
 
@@ -84,7 +115,8 @@ fn main() {
         .args(["gen", "skeleton", &link_target])
         .output();
     command_warnings_errors_only("bpf skel", &skel_result);
-    let header_file = String::from_utf8(skel_result.unwrap().stdout).unwrap();
+    let skel_output = require_successful_output("bpftool gen skeleton", skel_result);
+    let header_file = String::from_utf8(skel_output.stdout).unwrap();
     std::fs::write(skel_target, header_file).unwrap();
 
     // 4: Copy the wrapper to our out dir

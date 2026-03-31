@@ -31,8 +31,12 @@ export class RttHistoDash extends DashletBaseInsight {
 
     setup() {
         super.setup();
+        this.traceRender("setup-start");
         this.graph = new RttHistogram(this.graphDivId());
         window.timeGraphs.push(this);
+        this.traceRender("setup-complete", {
+            graphId: this.graphDivId(),
+        });
     }
 
     setupZoomed() {
@@ -51,9 +55,24 @@ export class RttHistoDash extends DashletBaseInsight {
 
     onMessage(msg) {
         if (msg.event === "RttHistogram" && window.timePeriods.activePeriod === "Live") {
-            this.graph.update(msg.data);
-            if (this.zoomGraph) {
-                this.zoomGraph.update(msg.data);
+            this.traceRender("onMessage", {
+                eventName: msg.event,
+                bins: Array.isArray(msg.data) ? msg.data.length : 0,
+            });
+            try {
+                this.graph.update(msg.data);
+                if (this.zoomGraph) {
+                    this.zoomGraph.update(msg.data);
+                }
+                this.traceRender("update-ok", {
+                    eventName: msg.event,
+                });
+            } catch (err) {
+                this.traceRender("update-error", {
+                    eventName: msg.event,
+                    error: err && err.message ? err.message : String(err),
+                });
+                throw err;
             }
         }
     }

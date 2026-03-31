@@ -1,6 +1,12 @@
 use std::sync::Arc;
 use tracing::debug;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SqmKind {
+    Cake,
+    FqCodel,
+}
+
 pub(crate) fn sqm_as_vec(config: &Arc<lqos_config::Config>) -> Vec<String> {
     config
         .queues
@@ -190,5 +196,19 @@ pub(crate) fn sqm_tokens_for(
             base
         }
         Some(_) => sqm_rate_fixup(rate, config), // defensive fallback
+    }
+}
+
+pub(crate) fn effective_sqm_kind(
+    rate: f32,
+    config: &Arc<lqos_config::Config>,
+    override_opt: &Option<String>,
+) -> SqmKind {
+    match sqm_tokens_for(rate, config, override_opt)
+        .first()
+        .map(String::as_str)
+    {
+        Some("fq_codel") => SqmKind::FqCodel,
+        _ => SqmKind::Cake,
     }
 }
