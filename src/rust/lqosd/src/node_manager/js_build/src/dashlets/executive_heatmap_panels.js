@@ -11,6 +11,7 @@ import {
     retransmitHeatRow,
     utilizationHeatRow,
     MAX_HEATMAP_ROWS,
+    replaceHeatmapHtml,
 } from "./executive_heatmap_shared";
 
 const QOO_TOOLTIP_HTML = [
@@ -55,15 +56,17 @@ function qoqHeatmapRow(blocks, colorFn) {
             (dlTotal === null || dlTotal === undefined) &&
             (ulTotal === null || ulTotal === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" title="No data" aria-label="Block ${i + 1}: no data"></div>`;
+            cells += `<div class="exec-heat-cell empty" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title="${escapeAttr(`<div class=&quot;fw-semibold&quot;>15-minute block ${i + 1}</div><div>No data</div><div>This block has no QoO/QoQ totals yet.</div>`)}" aria-label="${escapeAttr(`15-minute block ${i + 1}. No data. This block has no QoO/QoQ totals yet.`)}"></div>`;
             continue;
         }
 
-        const title = [
-            `Block ${i + 1}`,
-            `UL Total: ${fmt(ulTotal)}`,
-            `DL Total: ${fmt(dlTotal)}`,
-        ].join(" • ");
+        const title = `
+            <div class="fw-semibold">15-minute block ${i + 1}</div>
+            <div>Upload score: ${fmt(ulTotal)}</div>
+            <div>Download score: ${fmt(dlTotal)}</div>
+            <div>Top is upload, bottom is download. Higher scores are better.</div>
+        `;
+        const aria = `15-minute block ${i + 1}. Upload score ${fmt(ulTotal)}. Download score ${fmt(dlTotal)}. Top is upload, bottom is download. Higher scores are better.`;
 
         const part = (v) => {
             if (v === null || v === undefined) {
@@ -79,7 +82,7 @@ function qoqHeatmapRow(blocks, colorFn) {
 
         // Top = upload, bottom = download.
         cells += `
-            <div class="exec-heat-cell split" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}">
+            <div class="exec-heat-cell split" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title="${escapeAttr(title)}" aria-label="${escapeAttr(aria)}">
                 <div class="exec-split-grid">
                     ${part(ulTotal)}
                     ${part(dlTotal)}
@@ -265,7 +268,12 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
         const global = this.lastData?.global;
         const globalQoq = this.lastData?.global_qoq;
         if (!global) {
-            target.innerHTML = this.emptyCard();
+            replaceHeatmapHtml(target, this.emptyCard(), (html) => {
+                disposeTooltipsWithin(target);
+                target.innerHTML = html;
+                target.__lqosLastHeatmapHtml = html;
+                enableTooltipsWithin(target);
+            });
             return;
         }
         const rows = [
@@ -309,8 +317,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 return heatRow(row.label, row.badge, row.values, row.color, row.format);
             })
             .join("");
-        disposeTooltipsWithin(target);
-        target.innerHTML = `
+        const html = `
                 <div class="card shadow-sm border-0">
                 <div class="card-body py-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
@@ -321,7 +328,12 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
                 </div>
             </div>
         `;
-        enableTooltipsWithin(target);
+        replaceHeatmapHtml(target, html, (nextHtml) => {
+            disposeTooltipsWithin(target);
+            target.innerHTML = nextHtml;
+            target.__lqosLastHeatmapHtml = nextHtml;
+            enableTooltipsWithin(target);
+        });
     }
 }
 
@@ -346,7 +358,12 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
         const summary = this.lastData || {};
         const rows = this.summaryRows(summary);
         if (!rows.length) {
-            target.innerHTML = this.emptyCard();
+            replaceHeatmapHtml(target, this.emptyCard(), (html) => {
+                disposeTooltipsWithin(target);
+                target.innerHTML = html;
+                target.__lqosLastHeatmapHtml = html;
+                enableTooltipsWithin(target);
+            });
             return;
         }
         const activeTarget = document.getElementById(this._contentId);
@@ -411,8 +428,7 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
         const titleHtml = this.config.link
             ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}${linkIcon}</a>`
             : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}`;
-        disposeTooltipsWithin(activeTarget);
-        activeTarget.innerHTML = `
+        const html = `
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body py-3">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
@@ -422,7 +438,12 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                 </div>
             </div>
         `;
-        enableTooltipsWithin(activeTarget);
+        replaceHeatmapHtml(activeTarget, html, (nextHtml) => {
+            disposeTooltipsWithin(activeTarget);
+            activeTarget.innerHTML = nextHtml;
+            activeTarget.__lqosLastHeatmapHtml = nextHtml;
+            enableTooltipsWithin(activeTarget);
+        });
     }
 
     summaryRows(summary) {

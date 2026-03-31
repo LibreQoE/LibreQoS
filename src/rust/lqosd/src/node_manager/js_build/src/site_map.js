@@ -340,6 +340,10 @@ function displayParentName(name, parentType) {
         : name;
 }
 
+function redactableHtml(text) {
+    return `<span class="redactable">${escapeHtml(text ?? "")}</span>`;
+}
+
 function findNearestAncestorSiteIndex(indexMap, startIndex) {
     let currentIndex = startIndex;
     const visited = new Set();
@@ -1921,9 +1925,14 @@ class SiteMapPage {
             return;
         }
         this.detailsPanel.style.display = "block";
-        this.detailsTitle.textContent = displayNodeName(props.name, props.nodeType);
+        this.detailsTitle.innerHTML = redactableHtml(displayNodeName(props.name, props.nodeType));
         const parentName = displayParentName(props.parentName, props.parentType);
-        this.detailsSubtitle.textContent = `${String(props.nodeType || "").toUpperCase()}${parentName ? ` · parent ${parentName}` : ""}${props.inheritedCoords ? " · using parent site coordinates" : ""}`;
+        const subtitleBits = [
+            escapeHtml(String(props.nodeType || "").toUpperCase()),
+            parentName ? ` · parent ${redactableHtml(parentName)}` : "",
+            props.inheritedCoords ? " · using parent site coordinates" : "",
+        ];
+        this.detailsSubtitle.innerHTML = subtitleBits.join("");
         const attachedAps = props.nodeType === "site" ? this.attachedApsForSite(props.key) : [];
         if (this.attachedList) {
             if (attachedAps.length === 0) {
@@ -1931,7 +1940,7 @@ class SiteMapPage {
             } else {
                 const preview = attachedAps
                     .slice(0, 6)
-                    .map((node) => `<div class="site-map-list-item">${escapeHtml(displayNodeName(node.name, node.type))}</div>`)
+                    .map((node) => `<div class="site-map-list-item">${redactableHtml(displayNodeName(node.name, node.type))}</div>`)
                     .join("");
                 const more = attachedAps.length > 6
                     ? `<div class="site-map-empty">+${attachedAps.length - 6} more APs attached to this site</div>`
@@ -1984,7 +1993,7 @@ class SiteMapPage {
     renderUnmappedGroup(label, nodes) {
         const items = nodes
             .sort((a, b) => a.name.localeCompare(b.name))
-            .map((node) => `<div class="site-map-list-item">${escapeHtml(displayNodeName(node.name, node.type))}${node.parentName ? `<div class="text-muted small">${escapeHtml(displayParentName(node.parentName, node.parentType))}</div>` : ""}</div>`)
+            .map((node) => `<div class="site-map-list-item">${redactableHtml(displayNodeName(node.name, node.type))}${node.parentName ? `<div class="text-muted small">${redactableHtml(displayParentName(node.parentName, node.parentType))}</div>` : ""}</div>`)
             .join("");
         return `<div class="site-map-list-group"><h6>${escapeHtml(label)}</h6>${items}</div>`;
     }

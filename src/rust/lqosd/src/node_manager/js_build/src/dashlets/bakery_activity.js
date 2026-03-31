@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {redactCell} from "../helpers/redact";
 import {formatUnixSecondsToLocalDateTime, mkBadge} from "./bakery_shared";
 import {renderOperationCards} from "./operation_cards";
 
@@ -579,6 +580,7 @@ export class BakeryActivityDashlet extends BaseDashlet {
             const fullSummary = displaySummary(entry);
             tdSummary.textContent = truncateSummary(fullSummary);
             tdSummary.title = fullSummary;
+            redactCell(tdSummary);
 
             tr.appendChild(tdTime);
             tr.appendChild(tdStage);

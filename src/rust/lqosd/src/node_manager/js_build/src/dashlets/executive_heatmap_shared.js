@@ -130,6 +130,59 @@ function escapeHeatAttr(text) {
         .replace(/>/g, "&gt;");
 }
 
+function tooltipHtmlFromLines(lines) {
+    return (Array.isArray(lines) ? lines : [])
+        .filter((line) => !!String(line ?? "").trim())
+        .map((line, idx) => `<div${idx === 0 ? ` class="fw-semibold"` : ""}>${escapeHeatAttr(line)}</div>`)
+        .join("");
+}
+
+function tooltipAttrsFromLines(lines) {
+    const filtered = (Array.isArray(lines) ? lines : [])
+        .map((line) => String(line ?? "").trim())
+        .filter(Boolean);
+    const html = tooltipHtmlFromLines(filtered);
+    const aria = filtered.join(". ");
+    return `data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title="${escapeHeatAttr(html)}" aria-label="${escapeHeatAttr(aria)}"`;
+}
+
+function noDataTooltipLines(blockIndex, meaning) {
+    return [
+        `15-minute block ${blockIndex}`,
+        "No data",
+        meaning || "",
+    ];
+}
+
+function scalarTooltipLines(blockIndex, valueLabel, valueText, meaning, extra = "") {
+    return [
+        `15-minute block ${blockIndex}`,
+        `${valueLabel}: ${valueText}`,
+        meaning,
+        extra,
+    ];
+}
+
+function splitTooltipLines(blockIndex, topLabel, topValue, bottomLabel, bottomValue, meaning) {
+    return [
+        `15-minute block ${blockIndex}`,
+        `${topLabel}: ${topValue}`,
+        `${bottomLabel}: ${bottomValue}`,
+        meaning,
+    ];
+}
+
+function rttTooltipLines(blockIndex, ulP50, ulP90, dlP50, dlP90, meaning) {
+    return [
+        `15-minute block ${blockIndex}`,
+        `Upload p50 RTT: ${ulP50}`,
+        `Upload p90 RTT: ${ulP90}`,
+        `Download p50 RTT: ${dlP50}`,
+        `Download p90 RTT: ${dlP90}`,
+        meaning,
+    ];
+}
+
 function latestDetailMarkup(latest, formatValue, describeValue) {
     const detail = describeValue ? describeValue(latest) : "";
     return `
@@ -144,15 +197,21 @@ export function heatmapRow(values, colorFn, formatValue, describeValue = null) {
     for (let i = 0; i < length; i++) {
         const val = values && values[i] !== undefined ? values[i] : null;
         if (val === null || val === undefined) {
-            cells += `<div class="exec-heat-cell empty" title="No data" aria-label="Block ${i + 1}: no data"></div>`;
+            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines(noDataTooltipLines(i + 1, "This block has no metric data yet."))}></div>`;
             continue;
         }
         const numeric = Number(val) || 0;
         const color = colorFn(numeric);
         const title = formatValue(numeric);
         const detail = describeValue ? describeValue(numeric) : "";
-        const label = detail ? `Block ${i + 1}: ${title}, ${detail}` : `Block ${i + 1}: ${title}`;
-        cells += `<div class="exec-heat-cell" style="background:${color}" title="${escapeHeatAttr(label)}" aria-label="${escapeHeatAttr(label)}"></div>`;
+        const tooltipLines = scalarTooltipLines(
+            i + 1,
+            "Value",
+            title,
+            "This cell shows the metric value for this 15-minute block.",
+            detail ? `Context: ${detail}` : "",
+        );
+        cells += `<div class="exec-heat-cell" style="background:${color}" ${tooltipAttrsFromLines(tooltipLines)}></div>`;
     }
     return cells;
 }
@@ -176,6 +235,71 @@ export function heatRow(label, badge, values, colorFn, formatValue, link = null,
     `;
 }
 
+function heatmapTooltipIsActive(target) {
+    if (!target) return false;
+    if (target.querySelector('[data-bs-toggle="tooltip"][aria-describedby]')) {
+        return true;
+    }
+    if (document.activeElement && target.contains(document.activeElement)) {
+        return true;
+    }
+    try {
+        return !!target.querySelector('[data-bs-toggle="tooltip"]:hover');
+    } catch (_err) {
+        return false;
+    }
+}
+
+function flushDeferredHeatmapHtml(target) {
+    if (!target) return false;
+    const pendingHtml = target.__lqosPendingHeatmapHtml;
+    if (pendingHtml === undefined || pendingHtml === null) {
+        return false;
+    }
+    if (heatmapTooltipIsActive(target)) {
+        return false;
+    }
+    delete target.__lqosPendingHeatmapHtml;
+    if (target.__lqosLastHeatmapHtml === pendingHtml) {
+        return false;
+    }
+    target.__lqosApplyHeatmapHtml?.(pendingHtml);
+    return true;
+}
+
+function ensureDeferredHeatmapFlushListeners(target) {
+    if (!target || target.__lqosHeatmapFlushListenersAttached) {
+        return;
+    }
+    const scheduleFlush = () => {
+        window.setTimeout(() => {
+            flushDeferredHeatmapHtml(target);
+        }, 0);
+    };
+    target.addEventListener("mouseleave", scheduleFlush);
+    target.addEventListener("focusout", scheduleFlush);
+    target.__lqosHeatmapFlushListenersAttached = true;
+}
+
+export function replaceHeatmapHtml(target, nextHtml, applyHtml) {
+    if (!target || typeof applyHtml !== "function") {
+        return false;
+    }
+    target.__lqosApplyHeatmapHtml = applyHtml;
+    ensureDeferredHeatmapFlushListeners(target);
+    if (target.__lqosLastHeatmapHtml === nextHtml) {
+        delete target.__lqosPendingHeatmapHtml;
+        return false;
+    }
+    if (heatmapTooltipIsActive(target)) {
+        target.__lqosPendingHeatmapHtml = nextHtml;
+        return false;
+    }
+    delete target.__lqosPendingHeatmapHtml;
+    applyHtml(nextHtml);
+    return true;
+}
+
 function heatmapRowQuadrants(quads, colorFn, formatValue, describeValue = null) {
     const length = Array.isArray(quads?.ul_p50) && quads.ul_p50.length ? quads.ul_p50.length : 15;
     let cells = "";
@@ -191,19 +315,20 @@ function heatmapRowQuadrants(quads, colorFn, formatValue, describeValue = null) 
             (dlP50 === null || dlP50 === undefined) &&
             (dlP90 === null || dlP90 === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" title="No data" aria-label="Block ${i + 1}: no RTT data"></div>`;
+            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines(noDataTooltipLines(i + 1, "This block has no RTT samples yet."))}></div>`;
             continue;
         }
 
         const fmt = (v) => formatValue(v);
         const describe = (v) => describeValue ? ` (${describeValue(v)})` : "";
-        const title = [
-            `Block ${i + 1}`,
-            `UL p50: ${fmt(ulP50)}${describe(ulP50)}`,
-            `UL p90: ${fmt(ulP90)}${describe(ulP90)}`,
-            `DL p50: ${fmt(dlP50)}${describe(dlP50)}`,
-            `DL p90: ${fmt(dlP90)}${describe(dlP90)}`,
-        ].join(" • ");
+        const tooltipLines = rttTooltipLines(
+            i + 1,
+            `${fmt(ulP50)}${describe(ulP50)}`,
+            `${fmt(ulP90)}${describe(ulP90)}`,
+            `${fmt(dlP50)}${describe(dlP50)}`,
+            `${fmt(dlP90)}${describe(dlP90)}`,
+            "Top row is upload, bottom row is download. Left is p50, right is p90.",
+        );
 
         const quad = (v) => {
             if (v === null || v === undefined) {
@@ -219,7 +344,7 @@ function heatmapRowQuadrants(quads, colorFn, formatValue, describeValue = null) 
 
         // Quadrants: upload at top, download at bottom. Left=p50, right=p90.
         cells += `
-            <div class="exec-heat-cell quad" title="${escapeHeatAttr(title)}" aria-label="${escapeHeatAttr(title)}">
+            <div class="exec-heat-cell quad" ${tooltipAttrsFromLines(tooltipLines)}>
                 <div class="exec-quad-grid">
                     ${quad(ulP50)}
                     ${quad(ulP90)}
@@ -257,10 +382,13 @@ export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = nu
     `;
 }
 
-function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue) {
+function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, options = {}) {
     const length = Array.isArray(topValues) && topValues.length
         ? topValues.length
         : (Array.isArray(bottomValues) && bottomValues.length ? bottomValues.length : 15);
+    const topLabel = options.topLabel || "Upload";
+    const bottomLabel = options.bottomLabel || "Download";
+    const meaning = options.meaning || "Top is upload, bottom is download.";
     let cells = "";
     for (let i = 0; i < length; i++) {
         const top = topValues?.[i];
@@ -270,17 +398,20 @@ function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue) {
             (top === null || top === undefined) &&
             (bottom === null || bottom === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" title="No data" aria-label="Block ${i + 1}: no data"></div>`;
+            cells += `<div class="exec-heat-cell empty" ${tooltipAttrsFromLines(noDataTooltipLines(i + 1, meaning))}></div>`;
             continue;
         }
 
         const numOrNull = (v) => (v === null || v === undefined ? null : Number(v));
         const fmt = (v) => formatValue(numOrNull(v));
-        const title = [
-            `Block ${i + 1}`,
-            `UL: ${fmt(top)}`,
-            `DL: ${fmt(bottom)}`,
-        ].join(" • ");
+        const tooltipLines = splitTooltipLines(
+            i + 1,
+            topLabel,
+            fmt(top),
+            bottomLabel,
+            fmt(bottom),
+            meaning,
+        );
 
         const part = (v) => {
             if (v === null || v === undefined) {
@@ -296,7 +427,7 @@ function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue) {
 
         // Top = upload, bottom = download.
         cells += `
-            <div class="exec-heat-cell split" title="${escapeHeatAttr(title)}" aria-label="${escapeHeatAttr(title)}">
+            <div class="exec-heat-cell split" ${tooltipAttrsFromLines(tooltipLines)}>
                 <div class="exec-split-grid">
                     ${part(top)}
                     ${part(bottom)}
@@ -307,7 +438,7 @@ function heatmapRowSplit(topValues, bottomValues, colorFn, formatValue) {
     return cells;
 }
 
-function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link = null) {
+function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link = null, options = {}) {
     const latestTop = latestValue(topValues);
     const latestBottom = latestValue(bottomValues);
     const formattedLatest = `
@@ -324,7 +455,7 @@ function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValu
                 <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
                 ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, options)}</div>
             <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
         </div>
     `;
@@ -333,11 +464,19 @@ function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValu
 export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
     const topValues = blocks?.retransmit_up || [];
     const bottomValues = blocks?.retransmit_down || [];
-    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link);
+    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link, {
+        topLabel: "Upload retransmits",
+        bottomLabel: "Download retransmits",
+        meaning: "Top is upload, bottom is download. Higher percentages mean more TCP retransmits during this 15-minute block.",
+    });
 }
 
 export function utilizationHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
     const topValues = blocks?.upload || [];
     const bottomValues = blocks?.download || [];
-    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link);
+    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link, {
+        topLabel: "Upload utilization",
+        bottomLabel: "Download utilization",
+        meaning: "Top is upload, bottom is download. This shows how much of planned or available capacity was in use during this 15-minute block.",
+    });
 }
