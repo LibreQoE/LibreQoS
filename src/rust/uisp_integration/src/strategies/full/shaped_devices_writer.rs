@@ -219,6 +219,8 @@ fn traverse(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
+    use std::collections::HashSet;
 
     #[test]
     fn test_fractional_csv_serialization() {
@@ -362,5 +364,55 @@ mod tests {
         assert_eq!(preserved_rate, 2.5, "Normal rates should be preserved");
 
         println!("✅ Rate safeguard tests passed!");
+    }
+
+    #[test]
+    fn ignored_only_client_device_produces_no_shaped_rows() {
+        let config = Config::default();
+        let sites = vec![
+            UispSite {
+                id: "root-site".to_string(),
+                name: "Root Site".to_string(),
+                site_type: UispSiteType::Site,
+                max_down_mbps: 1000,
+                max_up_mbps: 1000,
+                ..Default::default()
+            },
+            UispSite {
+                id: "client-site".to_string(),
+                name: "Client Site".to_string(),
+                site_type: UispSiteType::Client,
+                max_down_mbps: 100,
+                max_up_mbps: 50,
+                selected_parent: Some(0),
+                device_indices: vec![0],
+                ..Default::default()
+            },
+        ];
+        let devices = vec![UispDevice {
+            id: "device-1".to_string(),
+            name: "CPE 1".to_string(),
+            mac: "".to_string(),
+            role: None,
+            wireless_mode: None,
+            site_id: "client-site".to_string(),
+            download: 100,
+            upload: 50,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+        }];
+
+        let mut shaped_devices = Vec::new();
+        let mut ethernet_advisories = Vec::new();
+        let mut outputs = ShapedDeviceOutputs {
+            shaped_devices: &mut shaped_devices,
+            ethernet_advisories: &mut ethernet_advisories,
+        };
+
+        traverse(&sites, 0, 0, &devices, &mut outputs, &config, 0);
+
+        assert!(outputs.shaped_devices.is_empty());
     }
 }

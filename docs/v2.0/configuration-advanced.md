@@ -81,6 +81,20 @@ If integration mode is enabled, integration refresh cycles typically own `Shaped
 - Use WebUI/manual edits for short operational adjustments only.
 - Put permanent changes in your integration system, integration overrides, or declared external source of truth workflow.
 
+#### IP range allow/ignore behavior for integrations
+
+The `[ip_ranges]` section is also used when integrations generate subscriber/device shaping data.
+
+- `allow_subnets` defines the address space LibreQoS should consider shapeable.
+- `ignore_subnets` removes matching addresses from generated subscriber devices even if they are otherwise present in the source CRM/NMS.
+- Current shared integration-output pruning uses `ignore_subnets` to exclude generated subscriber/device rows, but does not newly require all imported integration IPs to be inside `allow_subnets` just to survive generation.
+- If an imported device is left with no remaining non-ignored IPs after `ignore_subnets` is applied, that device is omitted from generated `ShapedDevices.csv`.
+- If an imported circuit is left with no remaining shaped devices, that circuit is omitted from generated `ShapedDevices.csv`.
+
+This can be used to exclude entire subscriber populations from LibreQoS shaping and Insight-reported shaped-device inventory. For example, some operators shape wireless subscribers in LibreQoS but exclude FTTH subscribers whose ONTs already enforce service rates.
+
+Use this carefully: `ignore_subnets` is broader than a billing-only toggle. The same setting also affects other LibreQoS/Insight IP-policy handling.
+
 #### CRM/NMS Integrations
 
 Learn more about [configuring integrations here](integrations.md).

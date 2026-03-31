@@ -41,6 +41,18 @@ def isIpv4Permitted(inputIP):
 	return isInIgnoredSubnets(inputIP) == False and isInAllowedSubnets(inputIP)
 
 
+def isIpPermitted(inputIP):
+	# Generic form of subnet permission checking used by integrations.
+	# The configured allow/ignore ranges may include either IPv4 or IPv6.
+	return isIpv4Permitted(inputIP)
+
+
+def isIntegrationOutputIpAllowed(inputIP):
+	# Shared integration-output pruning is intentionally narrower than
+	# full "permitted" checks: only explicitly ignored subnets are removed.
+	return not isInIgnoredSubnets(inputIP)
+
+
 def fixSubnet(inputIP):
 	# If an IP address has a CIDR other than /32 (e.g. 192.168.1.1/24),
 	# but doesn't appear as a network address (e.g. 192.168.1.0/24)
@@ -252,6 +264,7 @@ class NetworkGraph:
 		# O(1) lookup instead of O(n) search
 		parentIdx = self._id_to_index.get(parent, 0)
 		node.parentIndex = parentIdx
+		node.parentId = parent
 		
 		idx = len(self.nodes)
 		self.nodes.append(node)
@@ -269,6 +282,7 @@ class NetworkGraph:
 		root_list_set = set(cached_root_list)
 		
 		for child in self.nodes:
+			child.parentIndex = 0
 			if child.parentId != "":
 				# O(1) lookup instead of O(n) search
 				parent_idx = self._id_to_index.get(child.parentId, -1)
@@ -330,26 +344,28 @@ class NetworkGraph:
 		if not self._cache_valid:
 			self._buildChildrenCache()
 		
-			for i, node in enumerate(self.nodes):
-				if node.type == NodeType.clientWithChildren:
-					siteNode = NetworkNode(
-						id=str(node.id) + "_gen",
-						displayName="(Generated Site) " + node.displayName,
-						type=NodeType.site,
-						networkJsonId=syntheticNetworkJsonId("graph", "site", node.displayName),
-					)
-					siteNode.parentIndex = node.parentIndex
-					node.parentId = siteNode.id
-					node.type = NodeType.client
-					
-					# Store reparenting operations for batch processing
-					children = self._children_cache.get(i, [])
-					for child_idx in children:
-						child = self.nodes[child_idx]
-						if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
-							reparent_map[child_idx] = siteNode.id
-					
-					toAdd.append(siteNode)
+		for i, node in enumerate(self.nodes):
+			if node.type == NodeType.clientWithChildren:
+				original_parent_id = node.parentId
+				siteNode = NetworkNode(
+					id=str(node.id) + "_gen",
+					displayName="(Generated Site) " + node.displayName,
+					type=NodeType.site,
+					networkJsonId=syntheticNetworkJsonId("graph", "site", node.displayName),
+				)
+				siteNode.parentIndex = node.parentIndex
+				siteNode.parentId = original_parent_id
+				node.parentId = siteNode.id
+				node.type = NodeType.client
+				
+				# Store reparenting operations for batch processing
+				children = self._children_cache.get(i, [])
+				for child_idx in children:
+					child = self.nodes[child_idx]
+					if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
+						reparent_map[child_idx] = siteNode.id
+				
+				toAdd.append(siteNode)
 		
 		# Batch add new nodes
 		for n in toAdd:
@@ -362,12 +378,12 @@ class NetworkGraph:
 		self.__reparentById()
 
 	def __findUnconnectedNodes(self) -> List:
-		# OPTIMIZED: Uses set for O(1) membership testing
+		# Rebuild the cache each time because callers may have adjusted
+		# parentIndex directly as part of repair/testing flows.
 		visited = set()
 		next = [0]
 		
-		if not self._cache_valid:
-			self._buildChildrenCache()
+		self._buildChildrenCache()
 		
 		while next:
 			current = next.pop()
@@ -422,6 +438,8 @@ class NetworkGraph:
 		self.__clientsWithChildrenToSites()
 		print("PrepareTree: Reconnecting unconnected nodes...")
 		self.__reconnectUnconnected()
+		print("PrepareTree: Pruning ignored-only devices and empty circuits...")
+		self.__pruneIgnoredCircuits()
 		print("PrepareTree: Complete")
 
 	def doesNetworkJsonExist(self):
@@ -501,6 +519,55 @@ class NetworkGraph:
 			else: ip = ipCidr
 			if ip in self.ipv4ToIPv6.keys():
 				ipv6.append(self.ipv4ToIPv6[ip])
+
+	def __rebuildIndexes(self) -> None:
+		self._id_to_index = {}
+		self._name_to_index = {}
+		for idx, node in enumerate(self.nodes):
+			self._id_to_index[node.id] = idx
+			self._name_to_index[node.displayName] = idx
+		self._cache_valid = False
+
+	def __filterPermittedIps(self, ip_list: List[str]) -> List[str]:
+		return [ip for ip in ip_list if isIntegrationOutputIpAllowed(ip)]
+
+	def __pruneIgnoredCircuits(self) -> None:
+		for node in self.nodes:
+			if node.type == NodeType.device:
+				node.ipv4 = self.__filterPermittedIps(node.ipv4)
+				node.ipv6 = self.__filterPermittedIps(node.ipv6)
+
+		if not self._cache_valid:
+			self._buildChildrenCache()
+
+		removable = set()
+		for idx, node in enumerate(self.nodes):
+			if node.type == NodeType.device and (len(node.ipv4) + len(node.ipv6) == 0):
+				removable.add(idx)
+
+		for idx, node in enumerate(self.nodes):
+			if node.type != NodeType.client:
+				continue
+			has_shapable_device = False
+			for child_idx in self._children_cache.get(idx, []):
+				if child_idx in removable:
+					continue
+				child = self.nodes[child_idx]
+				if child.type == NodeType.device and (len(child.ipv4) + len(child.ipv6) > 0):
+					has_shapable_device = True
+					break
+			if not has_shapable_device:
+				removable.add(idx)
+
+		if not removable:
+			return
+
+		self.nodes = [
+			node for idx, node in enumerate(self.nodes)
+			if idx not in removable
+		]
+		self.__rebuildIndexes()
+		self.__reparentById()
 
 	def createShapedDevices(self):
 		import csv

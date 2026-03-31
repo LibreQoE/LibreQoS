@@ -2,6 +2,7 @@ from pythonCheck import checkPythonVersion
 checkPythonVersion()
 import requests
 import subprocess
+import time
 from urllib.parse import urlsplit, urlunsplit
 from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
   sonar_ltu_ap_model_ids, sonar_active_status_ids, sonar_recurring_service_rates, \
@@ -27,6 +28,11 @@ from multiprocessing.pool import ThreadPool
 # If snmp fails to get the name of the AP then it's just called "Not found via snmp" We won't see that happen unless it is able to get the connected cpe and not the name.
 
 _SONAR_SESSION = None
+SONAR_CONNECT_TIMEOUT_SECONDS = 10
+SONAR_READ_TIMEOUT_SECONDS = 60
+SONAR_REQUEST_TIMEOUT = (SONAR_CONNECT_TIMEOUT_SECONDS, SONAR_READ_TIMEOUT_SECONDS)
+SONAR_PAGINATED_MAX_ATTEMPTS = 3
+SONAR_PAGINATED_RETRY_BACKOFF_SECONDS = (2, 5)
 
 
 def sonarGraphqlUrl():
@@ -69,15 +75,43 @@ def sonarSession():
   return _SONAR_SESSION
 
 
+def sonarPostWithRetry(session, graphql_url, payload, timeout, request_label, max_attempts=1, retry_backoffs=()):
+  last_error = None
+  for attempt in range(1, max_attempts + 1):
+    try:
+      return session.post(
+        graphql_url,
+        json=payload,
+        timeout=timeout
+      )
+    except requests.exceptions.ReadTimeout as error:
+      last_error = error
+      if attempt >= max_attempts:
+        break
+      backoff_seconds = 0
+      if retry_backoffs:
+        backoff_index = min(attempt - 1, len(retry_backoffs) - 1)
+        backoff_seconds = retry_backoffs[backoff_index]
+      if backoff_seconds > 0:
+        time.sleep(backoff_seconds)
+
+  raise RuntimeError(
+    f"Sonar API at {graphql_url} timed out while reading {request_label} "
+    f"after {max_attempts} attempts"
+  ) from last_error
+
+
 def sonarRequest(query, variables=None):
   if variables is None:
     variables = {}
 
   graphql_url = sonarGraphqlUrl()
-  r = sonarSession().post(
+  r = sonarPostWithRetry(
+    sonarSession(),
     graphql_url,
-    json={'query': query, 'variables': variables},
-    timeout=10
+    {'query': query, 'variables': variables},
+    SONAR_REQUEST_TIMEOUT,
+    "Sonar request"
   )
   try:
     r_json = r.json()
@@ -114,10 +148,14 @@ def sonarPaginatedRequest(query, variables=None, paginator_key='pages', records_
       'records_per_page': records_per_page,
       'page': page
     }
-    r = session.post(
+    r = sonarPostWithRetry(
+      session,
       graphql_url,
-      json={'query': query, 'variables': request_variables},
-      timeout=20
+      {'query': query, 'variables': request_variables},
+      SONAR_REQUEST_TIMEOUT,
+      f"Sonar page {page}",
+      max_attempts=SONAR_PAGINATED_MAX_ATTEMPTS,
+      retry_backoffs=SONAR_PAGINATED_RETRY_BACKOFF_SECONDS,
     )
     try:
       r_json = r.json()

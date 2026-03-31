@@ -5,6 +5,7 @@ First, set the relevant parameters for Sonar (sonar_api_key, sonar_api_url, etc.
 Current behavior notes:
 - `sonar_api_url` may be either the Sonar base URL or the full GraphQL endpoint. LibreQoS normalizes it to `/api/graphql` automatically.
 - Current builds page through Sonar GraphQL results instead of relying on a small first-page sample.
+- Paginated Sonar GraphQL requests now use a split connect/read timeout and retry transient read timeouts before failing the import.
 - Emitted Sonar identities are namespaced (for example `sonar:account:<id>` and `sonar:device:<id>`) so they remain stable across overrides and downstream tooling.
 - Account device discovery now preserves inventory-item IP handling and also imports Radius account IP assignments when they exist. Inventory-backed MACs are still used for AP mapping; Radius-only IPs are added as supplemental shaping devices and overlapping subnets are de-duplicated.
 - Sonar `child_accounts` are also imported when they expose their own service and usable IP data. If a child account lacks its own address, LibreQoS falls back to the parent account address so the child can still be emitted as its own circuit.
