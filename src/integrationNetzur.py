@@ -62,6 +62,28 @@ def fetch_netzur_data() -> Tuple[List[dict], List[dict]]:
 def _build_exclusion_set() -> set:
     return {entry.lower().strip() for entry in exclude_sites() if entry}
 
+
+def _split_ip_field(raw_value) -> List[str]:
+    values: List[str] = []
+    if raw_value in (None, ""):
+        return values
+
+    if isinstance(raw_value, (list, tuple, set)):
+        parts = raw_value
+    else:
+        parts = str(raw_value).split(",")
+
+    seen = set()
+    for part in parts:
+        entry = str(part).strip()
+        if not entry or entry in seen:
+            continue
+        seen.add(entry)
+        values.append(entry)
+
+    return values
+
+
 def createShaper() -> NetworkGraph:
     LOG.info("[Netzur] Starting sync")
     if integration_common_use_mikrotik_ipv6():
@@ -122,8 +144,8 @@ def createShaper() -> NetworkGraph:
                 )
             )
 
-        ipv4 = [subscriber["ip"]] if subscriber.get("ip") else []
-        ipv6 = [subscriber["ipv6"]] if subscriber.get("ipv6") else []
+        ipv4 = _split_ip_field(subscriber.get("ip"))
+        ipv6 = _split_ip_field(subscriber.get("ipv6"))
         mac = str(subscriber.get("mac") or "").strip()
         if ipv4 or ipv6 or mac:
             net.addRawNode(

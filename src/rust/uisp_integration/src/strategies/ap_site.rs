@@ -471,10 +471,19 @@ mod tests {
         );
 
         assert!(shaped_devices.is_empty());
-        let tower_site = network_json.get("Tower Site").and_then(|v| v.as_object()).unwrap();
-        let site_children = tower_site.get("children").and_then(|v| v.as_object()).unwrap();
+        let tower_site = network_json
+            .get("Tower Site")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        let site_children = tower_site
+            .get("children")
+            .and_then(|v| v.as_object())
+            .unwrap();
         assert!(site_children.contains_key("AP 1"));
-        let ap = site_children.get("AP 1").and_then(|v| v.as_object()).unwrap();
+        let ap = site_children
+            .get("AP 1")
+            .and_then(|v| v.as_object())
+            .unwrap();
         let ap_children = ap.get("children").and_then(|v| v.as_object()).unwrap();
         assert!(ap_children.is_empty());
     }
