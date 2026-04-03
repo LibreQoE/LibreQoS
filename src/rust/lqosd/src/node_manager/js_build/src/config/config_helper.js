@@ -104,46 +104,47 @@ export function saveConfig(onComplete, onError) {
 }
 
 export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, onError) {
-    // Validate network_json structure
-    if (!network_json || typeof network_json !== 'object') {
+    if (!network_json || typeof network_json !== "object") {
         alert("Invalid network configuration");
         return;
     }
-
-    // Validate shaped_devices structure
     if (!Array.isArray(shaped_devices)) {
         alert("Invalid shaped devices configuration");
         return;
     }
 
-    // Validate individual shaped devices
     const validationErrors = [];
     const validNodes = validNodeList(network_json);
-    console.log(validNodes);
-    
     shaped_devices.forEach((device, index) => {
-        // Required fields
         if (!device.circuit_id || device.circuit_id.trim() === "") {
             validationErrors.push(`Device ${index + 1}: Circuit ID is required`);
         }
         if (!device.device_id || device.device_id.trim() === "") {
             validationErrors.push(`Device ${index + 1}: Device ID is required`);
         }
-
-        // Parent node validation
-        if (device.parent_node && validNodes.length > 0 && !validNodes.includes(device.parent_node)) {
-            validationErrors.push(`Device ${index + 1}: Parent node '${device.parent_node}' does not exist`);
+        if (
+            device.parent_node &&
+            validNodes.length > 0 &&
+            !validNodes.includes(device.parent_node)
+        ) {
+            validationErrors.push(
+                `Device ${index + 1}: Parent node '${device.parent_node}' does not exist`,
+            );
         }
 
-        // Bandwidth validation (supports fractional Mbps)
-        // Minimums must be >= 0.1 Mbps, maximums must be >= 0.2 Mbps
         const dmin = parseFloat(device.download_min_mbps);
         const umin = parseFloat(device.upload_min_mbps);
         const dmax = parseFloat(device.download_max_mbps);
         const umax = parseFloat(device.upload_max_mbps);
-
-        if (Number.isNaN(dmin) || Number.isNaN(umin) || Number.isNaN(dmax) || Number.isNaN(umax)) {
-            validationErrors.push(`Device ${index + 1}: One or more bandwidth fields are not valid numbers`);
+        if (
+            Number.isNaN(dmin) ||
+            Number.isNaN(umin) ||
+            Number.isNaN(dmax) ||
+            Number.isNaN(umax)
+        ) {
+            validationErrors.push(
+                `Device ${index + 1}: One or more bandwidth fields are not valid numbers`,
+            );
         } else {
             if (dmin < 0.1 || umin < 0.1) {
                 validationErrors.push(`Device ${index + 1}: Min rates must be >= 0.1 Mbps`);
@@ -159,21 +160,14 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
         return;
     }
 
-    // Prepare data for submission
-    const submission = {
-        network_json,
-        shaped_devices
-    };
-    console.log(submission);
-
     sendWsRequest(
         "UpdateNetworkAndDevicesResult",
-        { UpdateNetworkAndDevices: submission },
+        { UpdateNetworkAndDevices: { network_json, shaped_devices } },
         (msg) => {
             if (onComplete) onComplete(!!msg.ok, msg.message);
         },
         (msg) => {
-            const errorMsg = (msg && msg.message) ? msg.message : "Request failed";
+            const errorMsg = msg && msg.message ? msg.message : "Request failed";
             if (onComplete) onComplete(false, errorMsg);
             if (onError) {
                 onError(msg);

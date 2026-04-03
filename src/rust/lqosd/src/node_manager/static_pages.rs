@@ -34,7 +34,6 @@ pub(super) fn static_routes() -> Result<Router> {
         "tree.html",
         "help.html",
         "unknown_ips.html",
-        "configuration.html",
         "circuit.html",
         "ethernet_caps.html",
         "site_map.html",

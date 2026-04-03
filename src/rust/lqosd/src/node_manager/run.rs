@@ -57,6 +57,7 @@ pub async fn spawn_webserver(
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
         .route("/health", get(health_check))
+        .route("/configuration.html", get(redirect_configuration_page))
         // Backwards compatible aliases for historical misspellings.
         .route_service(
             "/config_spylnx.js",
@@ -90,6 +91,10 @@ pub async fn spawn_webserver(
 /// to the index.html page.
 async fn redirect_to_index() -> Redirect {
     Redirect::permanent("/index.html")
+}
+
+async fn redirect_configuration_page() -> Redirect {
+    Redirect::permanent("/config_devices.html")
 }
 
 /// Provides a simple OK status

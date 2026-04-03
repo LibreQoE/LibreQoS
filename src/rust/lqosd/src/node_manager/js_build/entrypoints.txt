@@ -6,7 +6,6 @@ shaped-devices.js
 tree.js
 help.js
 unknown-ips.js
-configuration.js
 circuit.js
 ethernet_caps.js
 site_map.js
