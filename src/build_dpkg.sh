@@ -134,15 +134,14 @@ fi
 
 # Install Python Dependencies
 pushd /opt/libreqos > /dev/null
-# - Setup Python dependencies as a post-install task
+# - Setup Python dependencies as a post-install task. Use --ignore-installed so
+#   pip does not try to uninstall Debian-managed packages that do not ship a
+#   pip RECORD file (for example blinker on Ubuntu 24.04).
 if [ -s src/deb-requirements-constraints.txt ]; then
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -c src/deb-requirements-constraints.txt -r src/requirements.txt
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --ignore-installed -c src/deb-requirements-constraints.txt -r src/requirements.txt
 else
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
+PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --ignore-installed -r src/requirements.txt
 fi
-# - Setup Python dependencies as a post-install task - handle issue with packages on Ubuntu Server 24.04
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip uninstall apscheduler deepdiff --yes
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install apscheduler deepdiff
 
 # Ensure folder permissions are correct post-install
 sudo chown -R root:root /opt/libreqos

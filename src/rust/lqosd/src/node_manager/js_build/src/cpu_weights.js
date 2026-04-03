@@ -1,4 +1,5 @@
 import { clearDiv, enableTooltips, simpleRow, theading } from "./helpers/builders";
+import { redactCell } from "./helpers/redact";
 import { scaleNumber, toNumber } from "./lq_js_common/helpers/scaling";
 import { get_ws_client } from "./pubsub/ws";
 
@@ -478,6 +479,7 @@ function renderNodesTable(core) {
 
         const nameCell = document.createElement("td");
         nameCell.textContent = node.name || "";
+        redactCell(nameCell);
         tr.appendChild(nameCell);
 
         const assignmentCell = document.createElement("td");
@@ -537,9 +539,11 @@ function renderCircuits(page) {
             const a = document.createElement("a");
             a.href = `circuit.html?id=${encodeURIComponent(c.circuit_id)}`;
             a.textContent = c.circuit_name;
+            redactCell(a);
             nameCell.appendChild(a);
         } else {
             nameCell.textContent = c.circuit_name || "";
+            redactCell(nameCell);
         }
         tr.appendChild(nameCell);
         tr.appendChild(simpleRow(c.parent_node || "", true));

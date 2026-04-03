@@ -383,6 +383,112 @@ pub(crate) async fn find_troublesome_sites(data: &UispData) -> anyhow::Result<Tr
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::strategies::common::UispData;
+    use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
+    use std::collections::HashSet;
+
+    #[test]
+    fn ap_site_network_json_keeps_empty_shells_when_client_has_no_addresses() {
+        let config = Config::default();
+        let uisp_data = UispData {
+            sites_raw: vec![],
+            devices_raw: vec![],
+            data_links_raw: vec![],
+            sites: vec![
+                UispSite {
+                    id: "tower-site".to_string(),
+                    name: "Tower Site".to_string(),
+                    site_type: UispSiteType::Site,
+                    max_down_mbps: 1000,
+                    max_up_mbps: 1000,
+                    ..Default::default()
+                },
+                UispSite {
+                    id: "client-site".to_string(),
+                    name: "Client Site".to_string(),
+                    site_type: UispSiteType::Client,
+                    max_down_mbps: 100,
+                    max_up_mbps: 50,
+                    ..Default::default()
+                },
+            ],
+            devices: vec![
+                UispDevice {
+                    id: "ap-1".to_string(),
+                    name: "AP 1".to_string(),
+                    mac: "".to_string(),
+                    role: None,
+                    wireless_mode: None,
+                    site_id: "tower-site".to_string(),
+                    download: 500,
+                    upload: 500,
+                    ipv4: HashSet::from(["192.0.2.1/32".to_string()]),
+                    ipv6: HashSet::new(),
+                    negotiated_ethernet_mbps: None,
+                    negotiated_ethernet_interface: None,
+                },
+                UispDevice {
+                    id: "cpe-1".to_string(),
+                    name: "CPE 1".to_string(),
+                    mac: "".to_string(),
+                    role: None,
+                    wireless_mode: None,
+                    site_id: "client-site".to_string(),
+                    download: 100,
+                    upload: 50,
+                    ipv4: HashSet::new(),
+                    ipv6: HashSet::new(),
+                    negotiated_ethernet_mbps: None,
+                    negotiated_ethernet_interface: None,
+                },
+            ],
+        };
+        let root = Layer {
+            id: GraphMapping::Root,
+            children: vec![Layer {
+                id: GraphMapping::SiteByName("Tower Site".to_string()),
+                children: vec![Layer {
+                    id: GraphMapping::AccessPointByName("AP 1".to_string()),
+                    children: vec![Layer {
+                        id: GraphMapping::ClientById("client-site".to_string()),
+                        children: vec![],
+                    }],
+                }],
+            }],
+        };
+
+        let mut shaped_devices = Vec::new();
+        let mut ethernet_advisories = Vec::new();
+        let network_json = root.walk_children(
+            None,
+            &uisp_data,
+            &mut shaped_devices,
+            &mut ethernet_advisories,
+            &config,
+        );
+
+        assert!(shaped_devices.is_empty());
+        let tower_site = network_json
+            .get("Tower Site")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        let site_children = tower_site
+            .get("children")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert!(site_children.contains_key("AP 1"));
+        let ap = site_children
+            .get("AP 1")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        let ap_children = ap.get("children").and_then(|v| v.as_object()).unwrap();
+        assert!(ap_children.is_empty());
+    }
+}
+
 fn find_clients_with_multiple_entry_points(data: &UispData) -> anyhow::Result<HashSet<String>> {
     let mut result = HashSet::new();
     for client in data.find_client_sites() {

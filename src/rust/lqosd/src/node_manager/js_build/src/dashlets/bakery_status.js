@@ -1,4 +1,5 @@
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {redactCell} from "../helpers/redact";
 import {formatUnixSecondsToLocalDateTime, mkBadge} from "./bakery_shared";
 
 const CIRCUIT_ACTIVITY_MAX_ITEMS = 1;
@@ -184,6 +185,7 @@ export class BakeryStatusDashlet extends DashletBaseInsight {
             const fullSummary = (entry?.summary ?? "Bakery update").toString();
             summary.textContent = truncateSummary(fullSummary);
             summary.title = fullSummary;
+            redactCell(summary);
             top.appendChild(summary);
             top.appendChild(mkBadge(outcome.label, outcome.className, fullSummary));
             card.appendChild(top);

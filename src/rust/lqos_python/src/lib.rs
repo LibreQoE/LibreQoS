@@ -932,6 +932,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sonar_airmax_ap_model_ids, m)?)?;
     m.add_function(wrap_pyfunction!(sonar_ltu_ap_model_ids, m)?)?;
     m.add_function(wrap_pyfunction!(sonar_active_status_ids, m)?)?;
+    m.add_function(wrap_pyfunction!(sonar_recurring_service_rates, m)?)?;
+    m.add_function(wrap_pyfunction!(sonar_recurring_excluded_service_names, m)?)?;
     m.add_function(wrap_pyfunction!(influx_db_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(influx_db_bucket, m)?)?;
     m.add_function(wrap_pyfunction!(influx_db_org, m)?)?;
@@ -2383,6 +2385,34 @@ fn sonar_active_status_ids() -> PyResult<Vec<String>> {
     let config = lqos_config::load_config().unwrap();
     let key = config.sonar_integration.active_status_ids.clone();
     Ok(key)
+}
+
+#[pyfunction]
+fn sonar_recurring_service_rates() -> PyResult<Vec<(bool, String, f32, f32)>> {
+    let config = lqos_config::load_config().unwrap();
+    let rules = config
+        .sonar_integration
+        .recurring_service_rates
+        .iter()
+        .map(|rule| {
+            (
+                rule.enabled,
+                rule.service_name.clone(),
+                rule.download_mbps,
+                rule.upload_mbps,
+            )
+        })
+        .collect();
+    Ok(rules)
+}
+
+#[pyfunction]
+fn sonar_recurring_excluded_service_names() -> PyResult<Vec<String>> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .sonar_integration
+        .recurring_excluded_service_names
+        .clone())
 }
 
 #[pyfunction]

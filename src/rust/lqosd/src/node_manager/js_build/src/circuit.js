@@ -489,6 +489,20 @@ function initializeDeviceGraphs() {
     }
 }
 
+function ensureDeviceGraphs() {
+    const target = document.getElementById("devs");
+    if (!target || !isElementVisible(target)) {
+        return;
+    }
+    runWhenRenderable(target, () => {
+        if (!hasRenderableSize(target)) {
+            return;
+        }
+        initializeDeviceGraphs();
+        resizeDeviceGraphs();
+    });
+}
+
 function resizeDeviceGraphs() {
     Object.values(deviceGraphs).forEach((graph) => resizeGraphIfVisible(graph));
 }
@@ -912,8 +926,7 @@ function initTabLifecycle(parentNode) {
                     return;
                 }
                 if (target === "#devs") {
-                    initializeDeviceGraphs();
-                    resizeDeviceGraphs();
+                    ensureDeviceGraphs();
                     syncCircuitDetailSubscriptions();
                     return;
                 }
@@ -1546,6 +1559,15 @@ function sortTopAsnRows(rows) {
     rows.sort((a, b) => {
         const asc = topAsnSortDirection === "asc";
         const normalize = (value) => typeof value === "string" ? value.toLowerCase() : value;
+        const totalQoo = (row) => {
+            const scores = [row?.qoo_down, row?.qoo_up]
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value));
+            if (!scores.length) {
+                return asc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+            }
+            return scores.reduce((sum, value) => sum + value, 0);
+        };
         let aVal;
         let bVal;
         switch (topAsnSortColumn) {
@@ -1557,13 +1579,13 @@ function sortTopAsnRows(rows) {
                 aVal = normalize(a.asn_country);
                 bVal = normalize(b.asn_country);
                 break;
-            case "bytes":
-                aVal = a.bytes_sent_down + a.bytes_sent_up;
-                bVal = b.bytes_sent_down + b.bytes_sent_up;
+            case "rtt":
+                aVal = toNumber(a.rtt_down_nanos, 0) + toNumber(a.rtt_up_nanos, 0);
+                bVal = toNumber(b.rtt_down_nanos, 0) + toNumber(b.rtt_up_nanos, 0);
                 break;
-            case "packets":
-                aVal = a.packets_sent_down + a.packets_sent_up;
-                bVal = b.packets_sent_down + b.packets_sent_up;
+            case "qoo":
+                aVal = totalQoo(a);
+                bVal = totalQoo(b);
                 break;
             case "retransmits":
                 aVal = a.retransmit_down_pct + a.retransmit_up_pct;
@@ -1611,7 +1633,7 @@ function renderTopAsnTab() {
                 topAsnSortDirection = topAsnSortDirection === "asc" ? "desc" : "asc";
             } else {
                 topAsnSortColumn = sortKey;
-                topAsnSortDirection = "desc";
+                topAsnSortDirection = sortKey === "qoo" ? "asc" : "desc";
             }
             renderTopAsnTab();
         };
@@ -1624,8 +1646,8 @@ function renderTopAsnTab() {
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
-    thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
-    thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
+    thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
+    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("Flows", "flows"));
     table.appendChild(thead);
@@ -1648,10 +1670,10 @@ function renderTopAsnTab() {
             row.appendChild(truncatedTrafficCell(rowData.asn_country, "lqos-circuit-traffic-country-cell"));
             row.appendChild(simpleRowHtml(formatThroughput(rowData.down_bps, plan.down)));
             row.appendChild(simpleRowHtml(formatThroughput(rowData.up_bps, plan.up)));
-            row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_down)));
-            row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_up)));
-            row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_down)));
-            row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_up)));
+            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_down_nanos)));
+            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_up_nanos)));
+            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_down)));
+            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_up)));
             row.appendChild(simpleRowHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
             row.appendChild(simpleRowHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
             row.appendChild(simpleRow(scaleNumber(rowData.flow_count)));
@@ -1790,15 +1812,15 @@ function fillLiveDevices(devices) {
 
         if (throughputDown !== null) {
             throughputDown.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second.down, 0) * 8,
-                toNumber(device.plan.down, 0)
+                toNumber(device.bytes_per_second?.down, 0) * 8,
+                toNumber(device.plan?.down, 0)
             );
         }
 
         if (throughputUp !== null) {
             throughputUp.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second.up, 0) * 8,
-                toNumber(device.plan.up, 0)
+                toNumber(device.bytes_per_second?.up, 0) * 8,
+                toNumber(device.plan?.up, 0)
             );
         }
 

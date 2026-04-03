@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {redactCell} from "../helpers/redact";
 
 function chip(text, className) {
     const span = document.createElement("span");
@@ -237,6 +238,7 @@ export class TreeGuardDecisionImpactDashlet extends BaseDashlet {
 
             const text = document.createElement("div");
             text.textContent = item.text;
+            redactCell(text);
             row.appendChild(text);
 
             this.alertSummaryEl.appendChild(row);

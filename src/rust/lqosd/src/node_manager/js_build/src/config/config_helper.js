@@ -34,6 +34,25 @@ function ensureOptionalConfigSections(config) {
         config.splynx_integration = {};
     }
 
+    if (!config.sonar_integration || typeof config.sonar_integration !== "object") {
+        config.sonar_integration = {};
+    }
+
+    const sonar = config.sonar_integration;
+    if (typeof sonar.enable_sonar !== "boolean") sonar.enable_sonar = false;
+    if (typeof sonar.sonar_api_url !== "string") sonar.sonar_api_url = "";
+    if (typeof sonar.sonar_api_key !== "string") sonar.sonar_api_key = "";
+    if (typeof sonar.snmp_community !== "string") sonar.snmp_community = "public";
+    if (!Array.isArray(sonar.airmax_model_ids)) sonar.airmax_model_ids = [];
+    if (!Array.isArray(sonar.ltu_model_ids)) sonar.ltu_model_ids = [];
+    if (!Array.isArray(sonar.active_status_ids)) sonar.active_status_ids = [];
+    if (!Array.isArray(sonar.recurring_excluded_service_names)) {
+        sonar.recurring_excluded_service_names = [];
+    }
+    if (!Array.isArray(sonar.recurring_service_rates)) {
+        sonar.recurring_service_rates = [];
+    }
+
     const splynx = config.splynx_integration;
     if (typeof splynx.enable_splynx !== "boolean") splynx.enable_splynx = false;
     if (typeof splynx.api_key !== "string") splynx.api_key = "";

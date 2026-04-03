@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {redactCell} from "../helpers/redact";
 
 function clamp(n, min, max) {
     return Math.min(Math.max(n, min), max);
@@ -160,6 +161,7 @@ function renderLastAction(summaryRaw) {
     wrap.appendChild(mkIcon(iconClass, iconExtra));
     const span = document.createElement("span");
     span.textContent = label;
+    redactCell(span);
     wrap.appendChild(span);
     return wrap;
 }
@@ -348,6 +350,7 @@ export class TreeGuardStatusDashlet extends BaseDashlet {
         warnings.slice(0, 8).forEach((warning) => {
             const li = document.createElement("li");
             li.textContent = warning;
+            redactCell(li);
             ul.appendChild(li);
         });
         this.warningsEl.innerHTML = "";
