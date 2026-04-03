@@ -445,7 +445,8 @@ async fn receive_channel_message(
             }
         }
         WsRequest::CircuitDevices { circuit } => {
-            let devices = circuit_devices_snapshot(&circuit, request_state.private_state.bus_tx()).await;
+            let devices =
+                circuit_devices_snapshot(&circuit, request_state.private_state.bus_tx()).await;
             let response = circuit_devices_result(circuit, devices);
             if send_ws_response(&tx, response).await {
                 return true;

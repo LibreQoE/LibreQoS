@@ -117,7 +117,10 @@ fn classify_signup_check_response(response: SignupCheckResponse) -> Result<Signu
     }
 }
 
-async fn apply_insight_license(license_key: String, restart_lqos_api: bool) -> Result<(), StatusCode> {
+async fn apply_insight_license(
+    license_key: String,
+    restart_lqos_api: bool,
+) -> Result<(), StatusCode> {
     let license_key = license_key.trim().to_string();
     if license_key.is_empty() {
         return Err(StatusCode::BAD_GATEWAY);

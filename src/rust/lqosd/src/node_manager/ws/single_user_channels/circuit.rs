@@ -35,7 +35,10 @@ fn qoo_score_for_circuit(circuit: &str) -> Option<f32> {
     })
 }
 
-fn weighted_directional_rtt_p50_nanos(devices: &[Circuit], direction: fn(&Circuit) -> (u64, Option<u64>)) -> Option<u64> {
+fn weighted_directional_rtt_p50_nanos(
+    devices: &[Circuit],
+    direction: fn(&Circuit) -> (u64, Option<u64>),
+) -> Option<u64> {
     let mut weighted_entries = Vec::new();
     let mut fallback_values = Vec::new();
 
@@ -52,7 +55,10 @@ fn weighted_directional_rtt_p50_nanos(devices: &[Circuit], direction: fn(&Circui
 
     if !weighted_entries.is_empty() {
         weighted_entries.sort_by_key(|(rtt, _)| *rtt);
-        let total_weight: u128 = weighted_entries.iter().map(|(_, weight)| *weight as u128).sum();
+        let total_weight: u128 = weighted_entries
+            .iter()
+            .map(|(_, weight)| *weight as u128)
+            .sum();
         let threshold = total_weight / 2;
         let mut running = 0_u128;
         for (rtt, weight) in weighted_entries {
@@ -76,11 +82,13 @@ fn weighted_directional_rtt_p50_nanos(devices: &[Circuit], direction: fn(&Circui
 }
 
 fn summarize_circuit_devices(circuit: &str, devices: &[Circuit]) -> CircuitSummaryData {
-    let bytes_per_second = devices.iter().fold(DownUpOrder::default(), |mut acc, device| {
-        acc.down += device.bytes_per_second.down;
-        acc.up += device.bytes_per_second.up;
-        acc
-    });
+    let bytes_per_second = devices
+        .iter()
+        .fold(DownUpOrder::default(), |mut acc, device| {
+            acc.down += device.bytes_per_second.down;
+            acc.up += device.bytes_per_second.up;
+            acc
+        });
 
     let tcp_retransmit_sample = down_up_retransmit_sample(
         DownUpOrder {
