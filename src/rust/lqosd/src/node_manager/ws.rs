@@ -2003,3 +2003,153 @@ fn payload_hint(payload: &[u8]) -> &'static str {
         _ => "binary",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::decode_ws_request;
+    use crate::node_manager::ws::messages::WsRequest;
+    use serde_cbor::Value as CborValue;
+    use std::collections::BTreeMap;
+
+    fn text(value: &str) -> CborValue {
+        CborValue::Text(value.to_string())
+    }
+
+    fn integer(value: i128) -> CborValue {
+        CborValue::Integer(value)
+    }
+
+    fn float(value: f64) -> CborValue {
+        CborValue::Float(value)
+    }
+
+    fn array(items: Vec<CborValue>) -> CborValue {
+        CborValue::Array(items)
+    }
+
+    fn map(entries: Vec<(&str, CborValue)>) -> CborValue {
+        let mut out = BTreeMap::new();
+        for (key, value) in entries {
+            out.insert(text(key), value);
+        }
+        CborValue::Map(out)
+    }
+
+    fn device_value(ipv4: CborValue, ipv6: CborValue) -> CborValue {
+        map(vec![
+            ("circuit_id", text("circuit-1")),
+            ("circuit_name", text("Circuit 1")),
+            ("device_id", text("device-1")),
+            ("device_name", text("Device 1")),
+            ("parent_node", text("tower-a")),
+            ("mac", text("")),
+            ("ipv4", ipv4),
+            ("ipv6", ipv6),
+            ("download_min_mbps", float(100.0)),
+            ("upload_min_mbps", float(100.0)),
+            ("download_max_mbps", float(200.0)),
+            ("upload_max_mbps", float(200.0)),
+            ("comment", text("")),
+        ])
+    }
+
+    fn create_shaped_device_payload(device: CborValue) -> Vec<u8> {
+        serde_cbor::to_vec(&map(vec![(
+            "CreateShapedDevice",
+            map(vec![("device", device)]),
+        )]))
+        .expect("valid create payload")
+    }
+
+    fn update_shaped_device_payload(device: CborValue) -> Vec<u8> {
+        serde_cbor::to_vec(&map(vec![(
+            "UpdateShapedDevice",
+            map(vec![
+                ("original_device_id", text("device-1")),
+                ("device", device),
+            ]),
+        )]))
+        .expect("valid update payload")
+    }
+
+    #[test]
+    fn decodes_create_shaped_device_with_browser_style_ipv4_bytes() {
+        let payload = create_shaped_device_payload(device_value(
+            array(vec![array(vec![
+                array(vec![
+                    integer(192),
+                    integer(168),
+                    integer(1),
+                    integer(2),
+                ]),
+                integer(32),
+            ])]),
+            array(vec![]),
+        ));
+
+        let request = decode_ws_request(&payload).expect("create request should decode");
+        match request {
+            WsRequest::CreateShapedDevice { device } => {
+                assert_eq!(device.device_id, "device-1");
+                assert_eq!(device.ipv4.len(), 1);
+                assert_eq!(device.ipv4[0].0.octets(), [192, 168, 1, 2]);
+                assert_eq!(device.ipv4[0].1, 32);
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decodes_update_shaped_device_with_browser_style_ipv6_bytes() {
+        let payload = update_shaped_device_payload(device_value(
+            array(vec![]),
+            array(vec![array(vec![
+                array(vec![
+                    integer(0x20),
+                    integer(0x01),
+                    integer(0x0d),
+                    integer(0xb8),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(1),
+                ]),
+                integer(128),
+            ])]),
+        ));
+
+        let request = decode_ws_request(&payload).expect("update request should decode");
+        match request {
+            WsRequest::UpdateShapedDevice {
+                original_device_id,
+                device,
+            } => {
+                assert_eq!(original_device_id, "device-1");
+                assert_eq!(device.ipv6.len(), 1);
+                assert_eq!(device.ipv6[0].0.to_string(), "2001:db8::1");
+                assert_eq!(device.ipv6[0].1, 128);
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_legacy_string_encoded_ipv4_payloads() {
+        let payload = create_shaped_device_payload(device_value(
+            array(vec![array(vec![text("192.168.1.2"), integer(32)])]),
+            array(vec![]),
+        ));
+
+        let err = decode_ws_request(&payload).expect_err("legacy payload must fail");
+        assert!(err.contains("expected an array of length 4"));
+        assert!(err.contains("192.168.1.2"));
+    }
+}
