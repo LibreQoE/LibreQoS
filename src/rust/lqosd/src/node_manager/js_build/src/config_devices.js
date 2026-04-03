@@ -10,6 +10,7 @@ import {
     updateShapedDevice,
     validNodeList,
 } from "./config/config_helper";
+import { parseIpInput } from "./config/shaped_device_wire.mjs";
 
 let current_rows = [];
 let network_json = null;
@@ -185,27 +186,6 @@ function ipListToText(list, defaultPrefix) {
         .map((tuple) => formatIpTuple(tuple, defaultPrefix))
         .filter((val) => val.length > 0)
         .join("\n");
-}
-
-function parseIpInput(text, family) {
-    if (!text) return [];
-    const defaultPrefix = family === 6 ? 128 : 32;
-    const tokens = text.split(/[\n,]+/);
-    const result = [];
-    tokens.forEach((token) => {
-        const trimmed = token.trim();
-        if (!trimmed) return;
-        const parts = trimmed.split("/");
-        const addr = parts[0].trim();
-        if (!addr) return;
-        let prefix = defaultPrefix;
-        if (parts.length > 1 && parts[1].trim().length > 0) {
-            const parsed = parseInt(parts[1].trim(), 10);
-            if (!Number.isNaN(parsed)) prefix = parsed;
-        }
-        result.push([addr, prefix]);
-    });
-    return result;
 }
 
 function parseSqmOverride(raw) {

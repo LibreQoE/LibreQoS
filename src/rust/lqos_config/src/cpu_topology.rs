@@ -433,7 +433,9 @@ fn detect_from_cpuid(possible: &[u32]) -> Option<ResolvedHybridCpuTopology> {
     use std::arch::x86_64::__cpuid_count;
 
     // Query leaf 0 first to determine the maximum supported CPUID leaf before using leaf 0x1A.
-    if __cpuid_count(0, 0).eax < 0x1a {
+    // SAFETY: `CPUID` is a CPU identification instruction that does not dereference pointers or
+    // access memory. We probe leaf 0 first and only use the returned register values.
+    if unsafe { __cpuid_count(0, 0) }.eax < 0x1a {
         return None;
     }
 
@@ -453,7 +455,9 @@ fn detect_from_cpuid(possible: &[u32]) -> Option<ResolvedHybridCpuTopology> {
             return None;
         }
 
-        let leaf = __cpuid_count(0x1a, 0);
+        // SAFETY: leaf 0x1A is only queried after confirming via leaf 0 that the CPU supports it.
+        // The intrinsic only executes `CPUID` and reads the returned registers.
+        let leaf = unsafe { __cpuid_count(0x1a, 0) };
         let core_type = (leaf.eax >> 24) & 0xff;
         match core_type {
             CPUID_CORE_TYPE_CORE => performance.push(*cpu),

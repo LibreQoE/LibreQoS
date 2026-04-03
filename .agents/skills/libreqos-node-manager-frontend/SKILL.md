@@ -57,11 +57,13 @@ If the page is served through the templated/authenticated router, use `%CACHEBUS
 
 ## Validation
 
+- Run `src/rust/lqosd/src/node_manager/js_build/test-node-manager.sh`
 - Run `src/rust/lqosd/src/node_manager/js_build/test-build-contract.sh`
 - Run `src/rust/lqosd/src/node_manager/js_build/esbuild.sh`
 - For broader local iteration, run `src/rust/lqosd/dev_build.sh`
 
 ## Notes
 
+- `test-node-manager.sh` uses Node's built-in test runner only; it must not grow a `node_modules` workflow.
 - The build-contract test checks page list alignment, required vendored assets, entrypoint/source alignment, and bundle output presence.
 - `copy_files.sh` and `dev_build.sh` should stay aligned with the same node_manager asset pipeline.
