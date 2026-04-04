@@ -276,6 +276,12 @@ fn edit_disabled_reason(
         ));
     }
     let Some(node_id) = query.node_id.as_deref() else {
+        if trimmed_name == "Root" {
+            return Ok(Some(
+                "The Root node has no upstream parent, so a pinned-parent override does not apply."
+                    .to_string(),
+            ));
+        }
         return Ok(Some(
             "This node cannot be edited from the tree because it does not expose a stable node ID."
                 .to_string(),

@@ -25,7 +25,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Vista jerárquica de nodos/circuitos desde la perspectiva del shaper.
 - Útil para identificar cuellos de botella y patrones de utilización padre/hijo.
 - Las páginas de detalle del árbol muestran una ruta tipo breadcrumb, conteos de rama e indicadores de estado para el nodo seleccionado.
-- `Node Details` resume el tipo de nodo seleccionado, el tamaño de la rama, las velocidades configuradas y la velocidad efectiva.
+- `Node Details` resume las velocidades configuradas del nodo seleccionado, el estado de overrides y la velocidad efectiva.
 - `Node Snapshot` ofrece un resumen visual rápido del throughput y el QoO del nodo seleccionado.
 - Los circuitos adjuntos se muestran en una tabla dedicada para el nodo seleccionado.
 - La columna de IP de circuitos adjuntos mantiene las filas compactas mostrando una dirección inline y colapsando las adicionales como `+X`, mientras la lista completa sigue disponible al pasar el cursor.
@@ -37,6 +37,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - La página del árbol mantiene `Node Details` como una tarjeta compacta de resumen y coloca los editores de override como filas compactas directamente debajo de la tabla de detalles.
 - Los nodos de UISP con estrategia `full` también pueden exponer un editor de `Topology Override` en la página del árbol. Las compilaciones actuales soportan solo `Pinned Parent`, usando los candidatos inmediatos detectados aguas arriba del nodo y guardando esa decisión del operador en `lqos_overrides.json`.
 - El selector de padre fijado usa `Default upstream parent` cuando no existe un override. Elegir esa opción deja el nodo con el padre seleccionado por la integración.
+- En el nodo sintético `Root`, el topology override se muestra como no aplicable en lugar de mostrar una advertencia genérica por falta de `node_id`.
 
 ### Site Map
 - Mapa operativo plano de sitios y APs usando geodatos importados de nodos.

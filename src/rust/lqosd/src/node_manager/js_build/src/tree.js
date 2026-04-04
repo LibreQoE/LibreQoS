@@ -947,6 +947,13 @@ function renderTopologyOverrideValue(overrideData) {
     wrap.classList.add("lqos-tree-detail-value");
 
     const value = document.createElement("span");
+    const node = currentNode();
+    if (node && isSyntheticRootNode(node)) {
+        value.textContent = "Not applicable for Root";
+        wrap.appendChild(value);
+        target.appendChild(wrap);
+        return;
+    }
     if (!overrideData?.has_override) {
         value.textContent = "None";
         wrap.appendChild(value);
@@ -1084,11 +1091,8 @@ function renderNodeTopologySettings(node) {
         nodeTopologyOverrideState.data?.warnings || [],
         "warning",
     );
-    renderAlertMessages(
-        "nodeTopologyDisabledReason",
-        nodeTopologyOverrideState.data?.disabled_reason ? [nodeTopologyOverrideState.data.disabled_reason] : [],
-        "secondary",
-    );
+    const disabledReason = isSyntheticRootNode(node) ? null : nodeTopologyOverrideState.data?.disabled_reason;
+    renderAlertMessages("nodeTopologyDisabledReason", disabledReason ? [disabledReason] : [], "secondary");
 
     maybeSeedTopologyOverrideInputs(nodeTopologyOverrideState.data);
 

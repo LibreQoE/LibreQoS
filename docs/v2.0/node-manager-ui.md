@@ -25,7 +25,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Hierarchical topology view of nodes/circuits from the shaper perspective.
 - Useful for spotting bottlenecks and parent/child utilization patterns.
 - Tree detail pages show a breadcrumb path, branch counts, and status indicators for the selected node.
-- `Node Details` summarizes the selected node’s type, branch size, configured rates, and effective rate.
+- `Node Details` summarizes the selected node’s configured rates, override state, and effective rate.
 - `Node Snapshot` provides a quick visual summary of throughput and QoO for the selected node.
 - Attached circuits are shown in a dedicated table for the selected node.
 - The attached-circuits IP column keeps rows compact by showing one address inline and collapsing additional addresses as `+X`, with the full list still available on hover.
@@ -37,6 +37,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - The tree page keeps `Node Details` as a compact summary card and places the override editors as compact inline rows directly beneath the details table.
 - UISP `full` strategy nodes can also expose a `Topology Override` editor on the tree page. Current builds support `Pinned Parent` only, using the node's detected immediate upstream candidates and storing that operator choice in `lqos_overrides.json`.
 - The pinned-parent selector defaults to `Default upstream parent` when no override is set. Choosing that default leaves the node on the integration-selected parent.
+- On the synthetic `Root` node, topology override is shown as not applicable rather than as a generic missing-node-ID warning.
 
 ### Site Map
 - Flat operational map of Sites and APs using imported node geodata.
