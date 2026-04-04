@@ -216,7 +216,7 @@ fn legacy_warning_messages() -> Result<Vec<String>, StatusCode> {
 
     if config.uisp_integration.enable_uisp && base.join(LEGACY_UISP_FILE).exists() {
         warnings.push(format!(
-            "Legacy UISP bandwidth overrides are present in `{LEGACY_UISP_FILE}`. Tree edits write operator overrides to `lqos_overrides.json` and do not modify that file."
+            "Legacy UISP bandwidth overrides are present in `{LEGACY_UISP_FILE}`. Current UISP builds auto-migrate that file into operator `AdjustSiteSpeed` overrides in `lqos_overrides.json` when no operator rate overrides exist yet; otherwise the CSV is ignored."
         ));
     }
     if config.splynx_integration.enable_splynx && base.join(LEGACY_SPLYNX_FILE).exists() {

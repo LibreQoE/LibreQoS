@@ -3,7 +3,9 @@ use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisorie
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use std::collections::HashSet;
 use std::fs::write;
 use std::path::Path;
@@ -17,6 +19,7 @@ pub async fn build_ap_only_network(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
 
     // Find the clients
     let mappings = uisp_data.map_clients_to_aps();
@@ -114,13 +117,16 @@ pub async fn build_ap_only_network(
                 )
             };
             let ethernet_decision = apply_ethernet_rate_cap(
+                ethernet_policy,
                 &site.id,
                 &site.name,
                 devices.iter().copied(),
-                requested.0,
-                requested.2,
-                requested.1,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.2,
+                    download_max: requested.1,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);

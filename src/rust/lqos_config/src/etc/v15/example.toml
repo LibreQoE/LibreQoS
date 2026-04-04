@@ -101,6 +101,9 @@ circuit_name_as_address = false
 always_overwrite_network_json = false
 queue_refresh_interval_mins = 30
 use_mikrotik_ipv6 = false
+ethernet_port_limits_enabled = true
+# Optional override. If omitted, LibreQoS uses a conservative default of 0.94.
+# ethernet_port_limit_multiplier = 0.94
 
 [splynx_integration]
 enable_splynx = false
@@ -133,8 +136,9 @@ url = ""
 site = ""
 strategy = ""
 suspended_strategy = ""
-airmax_capacity = 0.65
-ltu_capacity = 0.9
+airmax_capacity = 1.0
+airmax_flexible_frame_download_ratio = 0.8
+ltu_capacity = 1.0
 exclude_sites = []
 ipv6_with_mikrotik = false
 bandwidth_overhead_factor = 1.0

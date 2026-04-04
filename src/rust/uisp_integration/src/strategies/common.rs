@@ -42,6 +42,70 @@ fn short_site_id(site: &Site) -> String {
     site.id.chars().take(8).collect()
 }
 
+fn looks_like_business_name_part(part: &str) -> bool {
+    let normalized = part.trim().trim_end_matches('.').to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "llc"
+            | "inc"
+            | "corp"
+            | "corporation"
+            | "co"
+            | "company"
+            | "ltd"
+            | "pllc"
+            | "llp"
+            | "lp"
+            | "pc"
+            | "plc"
+    )
+}
+
+fn normalized_client_personal_name(name: &str) -> Option<String> {
+    let mut parts = name.split(',');
+    let last_name = parts.next()?.trim();
+    let first_name = parts.next()?.trim();
+    if parts.next().is_some() || last_name.is_empty() || first_name.is_empty() {
+        return None;
+    }
+
+    if last_name.chars().any(|c| c.is_ascii_digit())
+        || first_name.chars().any(|c| c.is_ascii_digit())
+    {
+        return None;
+    }
+
+    if looks_like_business_name_part(last_name) || looks_like_business_name_part(first_name) {
+        return None;
+    }
+
+    Some(format!("{first_name} {last_name}"))
+}
+
+fn normalize_client_site_names(sites: &mut [Site]) {
+    for site in sites.iter_mut().filter(|site| site.is_client_site()) {
+        let original_name = site.name_or_blank();
+        let Some(normalized_name) = normalized_client_personal_name(&original_name) else {
+            continue;
+        };
+
+        if normalized_name == original_name {
+            continue;
+        }
+
+        if let Some(ident) = site.identification.as_mut() {
+            ident.name = Some(normalized_name.clone());
+        }
+
+        warn!(
+            site_id = %site.id,
+            original = %original_name,
+            normalized = %normalized_name,
+            "Normalized UISP client site name from last-name-first format"
+        );
+    }
+}
+
 fn disambiguation_candidates(site: &Site, base_name: &str) -> Vec<String> {
     let mut candidates = Vec::new();
 
@@ -122,6 +186,9 @@ impl UispData {
         // Obtain the UISP data and transform it into easier to work with types
         let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) =
             load_uisp_data(config.clone()).await?;
+
+        // Normalize endpoint/customer names before deduplication and downstream parsing.
+        normalize_client_site_names(&mut sites_raw);
 
         // Deduplicate site names so downstream graph building has unique keys
         dedup_site_names(&mut sites_raw);
@@ -291,7 +358,7 @@ impl UispData {
 
 #[cfg(test)]
 mod tests {
-    use super::dedup_site_names;
+    use super::{dedup_site_names, normalize_client_site_names};
     use serde_json::json;
     use uisp::Site;
 
@@ -377,5 +444,37 @@ mod tests {
 
         assert_eq!(sites[0].name_or_blank(), "Acme (abcd1234)");
         assert_eq!(sites[1].name_or_blank(), "Acme (efgh5678)");
+    }
+
+    #[test]
+    fn client_site_names_reorder_last_first_to_first_last() {
+        let mut sites = vec![mk_site("site-1", "Rubio, Jorge", None, None)];
+
+        normalize_client_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Jorge Rubio");
+    }
+
+    #[test]
+    fn client_site_names_leave_business_suffix_names_unchanged() {
+        let mut sites = vec![mk_site("site-1", "Acme, LLC", None, None)];
+
+        normalize_client_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Acme, LLC");
+    }
+
+    #[test]
+    fn normalize_client_site_names_skips_non_client_sites() {
+        let mut site = mk_site("site-1", "Rubio, Jorge", None, None);
+        site.identification
+            .as_mut()
+            .expect("site must have identification")
+            .site_type = Some("site".to_string());
+        let mut sites = vec![site];
+
+        normalize_client_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Rubio, Jorge");
     }
 }

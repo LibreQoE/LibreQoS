@@ -128,8 +128,9 @@ suspended_strategy = "none"
 
 # Capacity Adjustments
 # UISP's reported AP capacities can be optimistic
-airmax_capacity = 0.65  # Use 65% of reported AirMax capacity
-ltu_capacity = 0.95     # Use 95% of reported LTU capacity
+airmax_capacity = 0.8  # Use 80% of reported AirMax capacity on new installs
+airmax_flexible_frame_download_ratio = 0.8  # Fallback split for AirMax flexible framing when UISP does not expose dlRatio
+ltu_capacity = 1.0      # Use 100% of reported LTU capacity on new installs
 
 # Site Management
 exclude_sites = []  # Sites to exclude, e.g., ["Test_Site", "Lab_Site"]
@@ -162,6 +163,11 @@ The following UISP options are available in current builds and WebUI (Node Manag
 - `use_ptmp_as_parent`: prefer PtMP AP as parent for relevant topology paths.
 - `ignore_calculated_capacity`: prefer configured capacities instead of integration-calculated values.
 - `insecure_ssl`: disables TLS certificate verification for UISP API calls.
+- `airmax_flexible_frame_download_ratio`: when UISP reports aggregate AirMax AP capacity for flexible framing and the live `dlRatio` is absent, LibreQoS uses this fallback download share. `0.8` means 80/20 download/upload.
+
+Shared integration defaults also include Ethernet port limiting. When UISP can detect negotiated subscriber-facing Ethernet speed, current builds apply a conservative default multiplier of `0.94` unless the operator overrides it in `Configuration -> Integrations -> Integration Defaults`.
+
+Current builds scope this flexible-frame handling narrowly to devices where UISP reports `identification.type == "airMax"` and `identification.role == "ap"`. Those AirMax APs use `theoreticalTotalCapacity` only as a flexible-framing hint. The actual shaping rate comes from aggregate `totalCapacity` when UISP provides it, otherwise from the stronger directional capacity, and the split still prefers the live wireless `dlRatio` when UISP provides one.
 
 Recommended use:
 1. Keep `insecure_ssl = false` unless you have a known internal PKI/self-signed requirement.
@@ -181,20 +187,19 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 
 ### UISP Overrides
 
-You can also modify the following files to more accurately reflect your network:
-- integrationUISPbandwidths.csv
+You can also use the following override inputs to more accurately reflect your network:
+- Tree-page `Rate Override` edits, stored as operator `AdjustSiteSpeed` entries in `lqos_overrides.json`
+- Tree-page `Topology Override` edits for supported UISP `full` nodes, stored in `lqos_overrides.json`
 - integrationUISProutes.csv
+- integrationUISPbandwidths.csv as a legacy compatibility input only
 
-Tree-page `Operator Override` edits are separate from these legacy UISP files. Current builds write those operator-owned node rate changes to `lqos_overrides.json` and do not rewrite `integrationUISPbandwidths.csv`.
+Current UISP builds auto-migrate a legacy `integrationUISPbandwidths.csv` into operator `AdjustSiteSpeed` overrides on the next integration run when no operator rate overrides exist yet. If operator rate overrides already exist, the CSV is ignored and a warning is logged so there is only one active source of truth.
 
-Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src). To utilize the template, copy the file (removing the `.template` part of the filename) and set the appropriate information inside each file.
-For example, if you want to change the set bandwidth for a site, you would do:
-```
-sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
-```
-And edit the CSV using LibreOffice or your preferred CSV editor.
+UISP `full` strategy builds also expose tree-page `Topology Override` editing for supported nodes. These overrides are stored in `lqos_overrides.json`, take precedence over legacy UISP route-cost files, and resolve before final `network.json` / `ShapedDevices.csv` emission. Current WebUI support is `Pinned Parent` only.
 
-To avoid conflicting sources of truth, prefer one durable override path per node: either the legacy UISP CSV workflow or the operator override layer.
+Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src).
+
+For new bandwidth changes, prefer the operator override layer over the legacy bandwidth CSV. `integrationUISPbandwidths.csv` remains a compatibility input for one-time migration, not the preferred long-term workflow.
 
 #### UISP Route Overrides
 

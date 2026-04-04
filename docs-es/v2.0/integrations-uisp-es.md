@@ -56,3 +56,7 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 
 - [Referencia detallada de UISP](integrations-reference-es.md#integración-con-uisp)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
+
+Los valores por defecto de integración también incluyen el límite compartido para puertos Ethernet. Cuando UISP puede detectar la velocidad Ethernet negociada hacia el suscriptor, las versiones actuales aplican un multiplicador conservador por defecto de `0.94`, salvo que el operador lo sobrescriba en `Configuration -> Integrations -> Integration Defaults`.
+
+Las versiones actuales también manejan de forma específica los AP AirMax donde UISP reporta `identification.type == "airMax"` y `identification.role == "ap"`. En esos AP AirMax, `theoreticalTotalCapacity` se usa solo como pista de flexible framing. La velocidad real de shaping sale de `totalCapacity` cuando UISP lo entrega, o de la capacidad direccional más fuerte cuando no lo hace, y la división sigue prefiriendo `dlRatio` cuando UISP lo reporta; si no, usa `airmax_flexible_frame_download_ratio`, cuyo valor por defecto `0.8` significa 80/20 descarga/subida.

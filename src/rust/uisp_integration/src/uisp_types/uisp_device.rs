@@ -27,6 +27,137 @@ pub struct UispDevice {
 }
 
 impl UispDevice {
+    fn mbps_from_bps(raw: Option<i64>) -> Option<f64> {
+        let value = raw?;
+        if value <= 0 {
+            return None;
+        }
+        Some(value as f64 / 1_000_000.0)
+    }
+
+    fn normalize_download_ratio(raw: f64) -> Option<f64> {
+        if !raw.is_finite() || raw <= 0.0 {
+            return None;
+        }
+        if raw < 1.0 {
+            return Some(raw);
+        }
+        if raw <= 100.0 {
+            return Some(raw / 100.0);
+        }
+        None
+    }
+
+    fn active_wireless_dl_ratio(device: &Device) -> Option<f64> {
+        let Some(interfaces) = &device.interfaces else {
+            return None;
+        };
+
+        let active_interface_names = device
+            .overview
+            .as_ref()
+            .and_then(|overview| overview.wirelessActiveInterfaceIds.as_ref());
+
+        if let Some(active_interface_names) = active_interface_names {
+            for active_interface_name in active_interface_names {
+                let ratio = interfaces.iter().find_map(|interface| {
+                    let identification = interface.identification.as_ref()?;
+                    if identification.name.as_deref() != Some(active_interface_name.as_str()) {
+                        return None;
+                    }
+                    interface.wireless.as_ref()?.dlRatio
+                });
+                if let Some(ratio) = ratio.and_then(Self::normalize_download_ratio) {
+                    return Some(ratio);
+                }
+            }
+        }
+
+        interfaces
+            .iter()
+            .filter(|interface| {
+                let Some(identification) = &interface.identification else {
+                    return false;
+                };
+                identification.r#type.as_deref().is_some_and(|kind| {
+                    matches!(
+                        kind.to_ascii_lowercase().as_str(),
+                        "wlan" | "wifi" | "wireless"
+                    )
+                })
+            })
+            .find_map(|interface| interface.wireless.as_ref()?.dlRatio)
+            .and_then(Self::normalize_download_ratio)
+    }
+
+    fn is_airmax_ap(device: &Device) -> bool {
+        device
+            .identification
+            .r#type
+            .as_deref()
+            .is_some_and(|kind| kind.eq_ignore_ascii_case("airmax"))
+            && device
+                .identification
+                .role
+                .as_deref()
+                .is_some_and(|role| role.eq_ignore_ascii_case("ap"))
+    }
+
+    fn is_airmax_flexible_frame_ap(device: &Device) -> bool {
+        if !Self::is_airmax_ap(device) {
+            return false;
+        }
+
+        let Some(overview) = &device.overview else {
+            return false;
+        };
+
+        let is_ptmp_ap = overview
+            .wirelessMode
+            .as_deref()
+            .is_some_and(|mode| mode.eq_ignore_ascii_case("ap-ptmp"));
+        if !is_ptmp_ap {
+            return false;
+        }
+
+        Self::active_wireless_dl_ratio(device).is_some()
+            || overview
+                .theoreticalTotalCapacity
+                .is_some_and(|capacity| capacity > 0)
+    }
+
+    fn airmax_ap_capacities(device: &Device, config: &Config) -> Option<(u64, u64)> {
+        if !Self::is_airmax_flexible_frame_ap(device) {
+            return None;
+        }
+
+        let overview = device.overview.as_ref()?;
+        let total_capacity_mbps = overview
+            .totalCapacity
+            .and_then(|capacity| Self::mbps_from_bps(Some(capacity)))
+            .or_else(|| {
+                let downlink = Self::mbps_from_bps(overview.downlinkCapacity)?;
+                let uplink = Self::mbps_from_bps(overview.uplinkCapacity)?;
+                Some(downlink.max(uplink))
+            })?
+            * config.uisp_integration.airmax_capacity as f64;
+        if !(total_capacity_mbps.is_finite() && total_capacity_mbps > 0.0) {
+            return None;
+        }
+
+        let download_ratio = Self::active_wireless_dl_ratio(device)
+            .unwrap_or(config.uisp_integration.airmax_flexible_frame_download_ratio as f64);
+        let upload_ratio = 1.0 - download_ratio;
+        if !(upload_ratio.is_finite() && upload_ratio > 0.0) {
+            return None;
+        }
+
+        Some((
+            (total_capacity_mbps * download_ratio).round() as u64,
+            (total_capacity_mbps * upload_ratio).round() as u64,
+        ))
+    }
+
     fn parse_speed_mbps(raw: &str) -> Option<u64> {
         let lower = raw.trim().to_lowercase();
         if lower.is_empty() {
@@ -218,20 +349,29 @@ impl UispDevice {
         let mut download = config.queues.generated_pn_download_mbps;
         let mut upload = config.queues.generated_pn_upload_mbps;
         if let Some(overview) = &device.overview {
-            if let Some(dl) = overview.downlinkCapacity {
-                download = dl as u64 / 1000000;
-            }
-            if let Some(ul) = overview.uplinkCapacity {
-                upload = ul as u64 / 1000000;
-            }
-            if device.get_model().unwrap_or_default().contains("5AC") {
-                download =
-                    ((download as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
-                upload = ((upload as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
-            }
-            if device.get_model().unwrap_or_default().contains("LTU") {
-                download = ((download as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
-                upload = ((upload as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
+            if let Some((airmax_download, airmax_upload)) =
+                Self::airmax_ap_capacities(device, config)
+            {
+                download = airmax_download;
+                upload = airmax_upload;
+            } else {
+                if let Some(dl) = overview.downlinkCapacity {
+                    download = dl as u64 / 1000000;
+                }
+                if let Some(ul) = overview.uplinkCapacity {
+                    upload = ul as u64 / 1000000;
+                }
+                if device.get_model().unwrap_or_default().contains("5AC") {
+                    download =
+                        ((download as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
+                    upload =
+                        ((upload as f64) * config.uisp_integration.airmax_capacity as f64) as u64;
+                }
+                if device.get_model().unwrap_or_default().contains("LTU") {
+                    download =
+                        ((download as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
+                    upload = ((upload as f64) * config.uisp_integration.ltu_capacity as f64) as u64;
+                }
             }
         }
         if download == 0 {
@@ -401,6 +541,8 @@ impl UispDevice {
 #[cfg(test)]
 mod tests {
     use super::UispDevice;
+    use crate::ip_ranges::IpRanges;
+    use lqos_config::Config;
     use serde_json::json;
     use uisp::Device;
 
@@ -453,6 +595,7 @@ mod tests {
                 "id": "dev-1",
                 "hostname": "dev-1",
                 "role": null,
+                "type": null,
             },
             "overview": {
                 "wirelessMode": null
@@ -460,6 +603,17 @@ mod tests {
             "interfaces": interfaces,
         }))
         .expect("device JSON must deserialize")
+    }
+
+    fn test_ip_ranges() -> IpRanges {
+        IpRanges::new(&Config::default()).expect("test config should build ip ranges")
+    }
+
+    fn test_config() -> Config {
+        let mut config = Config::default();
+        config.uisp_integration.airmax_capacity = 1.0;
+        config.uisp_integration.airmax_flexible_frame_download_ratio = 0.8;
+        config
     }
 
     #[test]
@@ -505,5 +659,131 @@ mod tests {
         let (speed, iface) = UispDevice::negotiated_ethernet_from_device(&device);
         assert_eq!(speed, Some(1000));
         assert_eq!(iface.as_deref(), Some("eth0"));
+    }
+
+    #[test]
+    fn airmax_ptmp_ap_uses_reported_total_capacity_and_dl_ratio() {
+        let device: Device = serde_json::from_value(json!({
+            "identification": {
+                "id": "airmax-ap-1",
+                "hostname": "airmax-ap-1",
+                "model": "RP-5AC-Gen2",
+                "role": "ap",
+                "type": "airMax"
+            },
+            "overview": {
+                "wirelessMode": "ap-ptmp",
+                "totalCapacity": 200000000,
+                "theoreticalTotalCapacity": 1000000,
+                "wirelessActiveInterfaceIds": ["main"]
+            },
+            "interfaces": [
+                {
+                    "identification": { "name": "main", "type": "wlan" },
+                    "wireless": { "dlRatio": 75.0 }
+                }
+            ]
+        }))
+        .expect("device JSON must deserialize");
+
+        let trimmed = UispDevice::from_uisp(&device, &test_config(), &test_ip_ranges(), &[]);
+        assert_eq!(trimmed.download, 150);
+        assert_eq!(trimmed.upload, 50);
+    }
+
+    #[test]
+    fn airmax_ptmp_ap_uses_directional_capacities_when_total_missing() {
+        let device: Device = serde_json::from_value(json!({
+            "identification": {
+                "id": "airmax-ap-2",
+                "hostname": "airmax-ap-2",
+                "model": "RP-5AC-Gen2",
+                "role": "ap",
+                "type": "airMax"
+            },
+            "overview": {
+                "wirelessMode": "ap-ptmp",
+                "downlinkCapacity": 220000000,
+                "uplinkCapacity": 180000000,
+                "theoreticalTotalCapacity": 1000000,
+                "wirelessActiveInterfaceIds": ["main"]
+            },
+            "interfaces": [
+                {
+                    "identification": { "name": "main", "type": "wlan" },
+                    "wireless": { "dlRatio": null }
+                }
+            ]
+        }))
+        .expect("device JSON must deserialize");
+
+        let trimmed = UispDevice::from_uisp(&device, &test_config(), &test_ip_ranges(), &[]);
+        assert_eq!(trimmed.download, 176);
+        assert_eq!(trimmed.upload, 44);
+    }
+
+    #[test]
+    fn airmax_ptp_ap_ignores_theoretical_total_capacity() {
+        let device: Device = serde_json::from_value(json!({
+            "identification": {
+                "id": "airmax-ap-ptp-1",
+                "hostname": "airmax-ap-ptp-1",
+                "model": "GBE",
+                "role": "ap",
+                "type": "airMax"
+            },
+            "overview": {
+                "wirelessMode": "ap-ptp",
+                "downlinkCapacity": 1617000000,
+                "uplinkCapacity": 1078000000,
+                "theoreticalTotalCapacity": 19250000,
+                "wirelessActiveInterfaceIds": ["main"]
+            },
+            "interfaces": [
+                {
+                    "identification": { "name": "main", "type": "wlan" },
+                    "wireless": { "dlRatio": 90.0 }
+                }
+            ]
+        }))
+        .expect("device JSON must deserialize");
+
+        let trimmed = UispDevice::from_uisp(&device, &test_config(), &test_ip_ranges(), &[]);
+        assert_eq!(trimmed.download, 1617);
+        assert_eq!(trimmed.upload, 1078);
+    }
+
+    #[test]
+    fn non_airmax_ap_devices_keep_existing_capacity_path() {
+        let mut config = test_config();
+        config.uisp_integration.airmax_capacity = 0.5;
+
+        let device: Device = serde_json::from_value(json!({
+            "identification": {
+                "id": "airmax-station-1",
+                "hostname": "airmax-station-1",
+                "model": "LBE-5AC-Gen2",
+                "role": "station",
+                "type": "airMax"
+            },
+            "overview": {
+                "wirelessMode": "sta-ptmp",
+                "downlinkCapacity": 300000000,
+                "uplinkCapacity": 200000000,
+                "theoreticalTotalCapacity": 200000000,
+                "wirelessActiveInterfaceIds": ["main"]
+            },
+            "interfaces": [
+                {
+                    "identification": { "name": "main", "type": "wlan" },
+                    "wireless": { "dlRatio": 90.0 }
+                }
+            ]
+        }))
+        .expect("device JSON must deserialize");
+
+        let trimmed = UispDevice::from_uisp(&device, &config, &test_ip_ranges(), &[]);
+        assert_eq!(trimmed.download, 150);
+        assert_eq!(trimmed.upload, 100);
     }
 }

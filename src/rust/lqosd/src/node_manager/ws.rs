@@ -12,8 +12,8 @@ use crate::node_manager::auth::{LoginResult, login_from_token};
 use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
     ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
-    node_rate_overrides, packet_analysis, reload_libreqos, scheduler, search, shaped_device_api,
-    shaped_devices_page, unknown_ips, urgent, warnings,
+    node_rate_overrides, node_topology_overrides, packet_analysis, reload_libreqos, scheduler,
+    search, shaped_device_api, shaped_devices_page, unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -1654,6 +1654,127 @@ async fn receive_channel_message(
                 }
             }
         }
+        WsRequest::GetNodeTopologyOverride { query } => {
+            match node_topology_overrides::get_node_topology_override_data(
+                *request_state.login,
+                query,
+            ) {
+                Ok(data) => {
+                    let response = WsResponse::GetNodeTopologyOverride { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology override request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load topology override state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetNodeTopologyOverride { update } => {
+            let result = node_topology_overrides::set_node_topology_override_data(
+                *request_state.login,
+                update,
+            );
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetNodeTopologyOverrideResult {
+                        ok: true,
+                        message: "Topology override saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology override payload".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Error saving topology override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearNodeTopologyOverride { query } => {
+            let result = node_topology_overrides::clear_node_topology_override_data(
+                *request_state.login,
+                query,
+            );
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearNodeTopologyOverrideResult {
+                        ok: true,
+                        message: "Topology override cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology override request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Error clearing topology override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
         WsRequest::ListNics => match config::list_nics_data(*request_state.login) {
             Ok(data) => {
                 let response = WsResponse::ListNics { data };
@@ -2077,12 +2198,7 @@ mod tests {
     fn decodes_create_shaped_device_with_browser_style_ipv4_bytes() {
         let payload = create_shaped_device_payload(device_value(
             array(vec![array(vec![
-                array(vec![
-                    integer(192),
-                    integer(168),
-                    integer(1),
-                    integer(2),
-                ]),
+                array(vec![integer(192), integer(168), integer(1), integer(2)]),
                 integer(32),
             ])]),
             array(vec![]),

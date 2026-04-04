@@ -9,6 +9,7 @@ use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
+use crate::strategies::full::bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
 use crate::strategies::full::routes_override::RouteOverride;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 use crate::strategies::full2::directionality::{
@@ -19,7 +20,11 @@ use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
 use crate::uisp_types::UispDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+    TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
+};
+use lqos_overrides::TopologyParentOverrideMode;
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
@@ -31,10 +36,17 @@ use tracing::{debug, error, info, warn};
 
 type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Directed>;
 
+#[derive(Clone, Debug)]
+struct TopologyParentOverrideSelection {
+    mode: TopologyParentOverrideMode,
+    parent_node_ids: Vec<String>,
+}
+
 pub async fn build_full_network_v2(
     config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
     // Fetch the data
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
@@ -61,6 +73,7 @@ pub async fn build_full_network_v2(
     let bandwidth_overrides =
         crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
     let routing_overrides = crate::strategies::full::routes_override::get_route_overrides(&config)?;
+    let topology_parent_overrides = load_topology_parent_overrides();
 
     // Create a new graph
     let mut graph = GraphType::new();
@@ -197,6 +210,7 @@ pub async fn build_full_network_v2(
 
     // Figure out the network.json layers
     let mut parents = HashMap::<String, NetJsonParent>::new();
+    let mut topology_parent_candidates = Vec::<TopologyParentCandidatesNode>::new();
     for node in graph.node_indices() {
         if node == root_idx {
             continue;
@@ -205,36 +219,20 @@ pub async fn build_full_network_v2(
             GraphMapping::GeneratedSite { name }
             | GraphMapping::Site { name, .. }
             | GraphMapping::AccessPoint { name, .. } => {
-                // Generate two routes - one per direction
-                let route_from_root_to_node = petgraph::algo::astar(
+                let mut route_from_root_to_node = astar_route(
                     &graph,
                     root_idx,
-                    |n| n == node,
-                    |e| {
-                        (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            e.weight(),
-                            &uisp_data.devices,
-                            &routing_overrides,
-                        ))
-                    },
-                    |_| 0,
-                )
-                .unwrap_or((0, vec![]));
-
-                let route_from_node_to_root = petgraph::algo::astar(
+                    node,
+                    &uisp_data.devices,
+                    &routing_overrides,
+                );
+                let mut route_from_node_to_root = astar_route(
                     &graph,
                     node,
-                    |n| n == root_idx,
-                    |e| {
-                        (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            e.weight(),
-                            &uisp_data.devices,
-                            &routing_overrides,
-                        ))
-                    },
-                    |_| 0,
-                )
-                .unwrap_or((0, vec![]));
+                    root_idx,
+                    &uisp_data.devices,
+                    &routing_overrides,
+                );
 
                 // println!("From node to root:");
                 // println!("{:?}", route_from_node_to_root);
@@ -244,7 +242,7 @@ pub async fn build_full_network_v2(
                 // println!("{:?}", route_from_root_to_node);
                 // println!("{:?}", edges_from_node_path(&graph, &route_from_root_to_node.1));
 
-                if route_from_root_to_node.1.is_empty() {
+                if route_from_root_to_node.is_empty() {
                     //println!("No path detected from {:?} to {}", graph[node], root_site_name);
                     parents.insert(
                         name.to_owned(),
@@ -256,11 +254,43 @@ pub async fn build_full_network_v2(
                         },
                     );
                 } else {
+                    let native_parent = immediate_parent_from_route(&route_from_root_to_node);
+                    let candidate_parents = topology_parent_candidates_for_node(
+                        &graph,
+                        root_idx,
+                        node,
+                        &uisp_data.devices,
+                        &routing_overrides,
+                    );
+                    let resolved_parent = resolve_parent_candidate(
+                        &graph,
+                        node,
+                        native_parent,
+                        &candidate_parents,
+                        &topology_parent_overrides,
+                    );
+
+                    if let Some(parent_node) = resolved_parent
+                        && native_parent != Some(parent_node)
+                        && let Some((resolved_from_root, resolved_to_root)) =
+                            build_constrained_route(
+                                &graph,
+                                root_idx,
+                                node,
+                                parent_node,
+                                &uisp_data.devices,
+                                &routing_overrides,
+                            )
+                    {
+                        route_from_root_to_node = resolved_from_root;
+                        route_from_node_to_root = resolved_to_root;
+                    }
+
                     // Obtain capacities from route traversal
                     let mut download_capacity =
-                        min_capacity_along_route(&graph, &route_from_root_to_node.1);
+                        min_capacity_along_route(&graph, &route_from_root_to_node);
                     let mut upload_capacity =
-                        min_capacity_along_route(&graph, &route_from_node_to_root.1);
+                        min_capacity_along_route(&graph, &route_from_node_to_root);
 
                     // Apply AP capacities
                     if let GraphMapping::AccessPoint {
@@ -291,25 +321,64 @@ pub async fn build_full_network_v2(
 
                     // Overrides
                     if !bandwidth_overrides.is_empty()
-                        && let Some(bw_override) = bandwidth_overrides.get(name)
+                        && let Some(bw_override) = find_bandwidth_override(
+                            &bandwidth_overrides,
+                            Some(&graph[node].network_json_id()),
+                            name,
+                        )
                     {
                         debug!("Applying bandwidth override for {}", name);
                         debug!("Capacity was: {} / {}", download_capacity, upload_capacity);
-                        download_capacity = bw_override.0 as u64;
-                        upload_capacity = bw_override.1 as u64;
+                        if let Some(down) = bw_override.download_bandwidth_mbps {
+                            download_capacity = down as u64;
+                        }
+                        if let Some(up) = bw_override.upload_bandwidth_mbps {
+                            upload_capacity = up as u64;
+                        }
                         debug!(
                             "Capacity is now: {} / {}",
                             download_capacity, upload_capacity
                         );
                     }
 
-                    let parent_node =
-                        route_from_root_to_node.1[route_from_root_to_node.1.len() - 2];
+                    let Some(parent_node) = immediate_parent_from_route(&route_from_root_to_node)
+                    else {
+                        continue;
+                    };
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(_edge) = graph.find_edge(parent_node, node) {
-                        let parent = graph
-                            [route_from_root_to_node.1[route_from_root_to_node.1.len() - 2]]
-                            .name();
+                        let parent = graph[parent_node].name();
+                        let current_parent = if is_real_topology_node(&graph, parent_node) {
+                            Some(TopologyParentCandidate {
+                                node_id: graph[parent_node].network_json_id(),
+                                node_name: parent.clone(),
+                            })
+                        } else {
+                            None
+                        };
+                        let candidate_parent_rows: Vec<TopologyParentCandidate> = candidate_parents
+                            .iter()
+                            .copied()
+                            .filter(|candidate| is_real_topology_node(&graph, *candidate))
+                            .map(|candidate| TopologyParentCandidate {
+                                node_id: graph[candidate].network_json_id(),
+                                node_name: graph[candidate].name(),
+                            })
+                            .collect();
+
+                        if is_real_topology_node(&graph, node) {
+                            topology_parent_candidates.push(TopologyParentCandidatesNode {
+                                node_id: graph[node].network_json_id(),
+                                node_name: name.to_owned(),
+                                current_parent_node_id: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_id.clone()),
+                                current_parent_node_name: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_name.clone()),
+                                candidate_parents: candidate_parent_rows,
+                            });
+                        }
                         parents.insert(
                             name.to_owned(),
                             NetJsonParent {
@@ -371,6 +440,15 @@ pub async fn build_full_network_v2(
         info!("Written network.json");
     }
 
+    topology_parent_candidates.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
+    let topology_candidates_file = TopologyParentCandidatesFile {
+        source: "uisp/full".to_string(),
+        nodes: topology_parent_candidates,
+    };
+    if let Err(err) = topology_candidates_file.save(&config) {
+        warn!("Unable to write topology parent candidates snapshot: {err:?}");
+    }
+
     // Shaped Devices
     let mut shaped_devices = Vec::new();
     let mut seen_pairs = HashSet::new();
@@ -424,13 +502,16 @@ pub async fn build_full_network_v2(
                     )
                 };
             let ethernet_decision = apply_ethernet_rate_cap(
+                ethernet_policy,
                 &site.id,
                 &site.name,
                 site_devices.iter().copied(),
-                requested.0,
-                requested.2,
-                requested.1,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.2,
+                    download_max: requested.1,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);
@@ -612,7 +693,7 @@ fn add_devices_to_graph(
     site_map: &mut HashMap<String, NodeIndex>,
     device_map: &mut HashMap<String, NodeIndex>,
     config: &Arc<Config>,
-    bandwidth_overrides: &BandwidthOverrides,
+    bandwidth_overrides: &[BandwidthOverride],
 ) {
     for device in uisp_data.devices_raw.iter() {
         let Some(site_id) = &device.identification.site else {
@@ -644,9 +725,17 @@ fn add_devices_to_graph(
             upload_mbps = config.queues.generated_pn_upload_mbps;
         }
 
-        if let Some(bw_override) = bandwidth_overrides.get(&device.get_name().unwrap_or_default()) {
-            download_mbps = bw_override.0 as u64;
-            upload_mbps = bw_override.1 as u64;
+        if let Some(bw_override) = find_bandwidth_override(
+            bandwidth_overrides,
+            Some(&format!("uisp:device:{}", device.identification.id)),
+            &device.get_name().unwrap_or_default(),
+        ) {
+            if let Some(down) = bw_override.download_bandwidth_mbps {
+                download_mbps = down as u64;
+            }
+            if let Some(up) = bw_override.upload_bandwidth_mbps {
+                upload_mbps = up as u64;
+            }
         }
 
         let device_entry = GraphMapping::AccessPoint {
@@ -766,8 +855,160 @@ fn link_capacity_mbps_for_routing(
     }
 }
 
-use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
 use petgraph::prelude::*;
+
+fn astar_route(
+    graph: &GraphType,
+    start: NodeIndex,
+    end: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Vec<NodeIndex> {
+    petgraph::algo::astar(
+        graph,
+        start,
+        |n| n == end,
+        |e| {
+            (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
+                e.weight(),
+                devices,
+                route_overrides,
+            ))
+        },
+        |_| 0,
+    )
+    .map(|(_, path)| path)
+    .unwrap_or_default()
+}
+
+fn load_topology_parent_overrides() -> HashMap<String, TopologyParentOverrideSelection> {
+    let Ok(overrides) = lqos_overrides::OverrideFile::load() else {
+        warn!("Unable to load operator topology parent overrides from lqos_overrides.json");
+        return HashMap::new();
+    };
+
+    overrides
+        .network_adjustments()
+        .iter()
+        .filter_map(|adj| match adj {
+            lqos_overrides::NetworkAdjustment::TopologyParentOverride {
+                node_id,
+                mode,
+                parent_node_ids,
+                ..
+            } => Some((
+                node_id.clone(),
+                TopologyParentOverrideSelection {
+                    mode: *mode,
+                    parent_node_ids: parent_node_ids.clone(),
+                },
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+fn is_real_topology_node(graph: &GraphType, node: NodeIndex) -> bool {
+    matches!(
+        graph[node],
+        GraphMapping::Root { .. } | GraphMapping::Site { .. } | GraphMapping::AccessPoint { .. }
+    )
+}
+
+fn topology_parent_candidates_for_node(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Vec<NodeIndex> {
+    let mut candidates: Vec<NodeIndex> = graph
+        .neighbors_directed(node, petgraph::Incoming)
+        .filter(|candidate| is_real_topology_node(graph, *candidate))
+        .filter(|candidate| {
+            !astar_route(graph, root_idx, *candidate, devices, route_overrides).is_empty()
+        })
+        .collect();
+    candidates.sort_unstable_by_key(|candidate| stable_node_key(graph, *candidate));
+    candidates.dedup();
+    candidates
+}
+
+fn immediate_parent_from_route(path: &[NodeIndex]) -> Option<NodeIndex> {
+    if path.len() < 2 {
+        None
+    } else {
+        path.get(path.len().saturating_sub(2)).copied()
+    }
+}
+
+fn resolve_parent_candidate(
+    graph: &GraphType,
+    node: NodeIndex,
+    native_parent: Option<NodeIndex>,
+    candidates: &[NodeIndex],
+    overrides: &HashMap<String, TopologyParentOverrideSelection>,
+) -> Option<NodeIndex> {
+    let node_id = graph[node].network_json_id();
+    let Some(override_entry) = overrides.get(&node_id) else {
+        return native_parent.or_else(|| candidates.first().copied());
+    };
+
+    match override_entry.mode {
+        TopologyParentOverrideMode::Pinned | TopologyParentOverrideMode::PreferredOrder => {
+            if override_entry.mode == TopologyParentOverrideMode::PreferredOrder {
+                warn!(
+                    node = %graph[node].name(),
+                    node_id = %node_id,
+                    "Legacy preferred-upstream topology override detected; using the first saved parent as a pinned parent"
+                );
+            }
+            let chosen = override_entry
+                .parent_node_ids
+                .first()
+                .and_then(|desired_id| {
+                    candidates
+                        .iter()
+                        .copied()
+                        .find(|candidate| graph[*candidate].network_json_id() == *desired_id)
+                });
+            if chosen.is_none() {
+                warn!(
+                    node = %graph[node].name(),
+                    node_id = %node_id,
+                    "Pinned topology parent override is stale; falling back to native UISP selection"
+                );
+            }
+            chosen
+                .or(native_parent)
+                .or_else(|| candidates.first().copied())
+        }
+    }
+}
+
+fn build_constrained_route(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node: NodeIndex,
+    parent: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Option<(Vec<NodeIndex>, Vec<NodeIndex>)> {
+    if graph.find_edge(parent, node).is_none() || graph.find_edge(node, parent).is_none() {
+        return None;
+    }
+
+    let mut from_root = astar_route(graph, root_idx, parent, devices, route_overrides);
+    let mut to_root = astar_route(graph, parent, root_idx, devices, route_overrides);
+    if from_root.is_empty() || to_root.is_empty() {
+        return None;
+    }
+
+    from_root.push(node);
+    let mut from_node = vec![node];
+    from_node.append(&mut to_root);
+    Some((from_root, from_node))
+}
 
 fn edges_from_node_path(graph: &GraphType, path: &[NodeIndex]) -> Vec<EdgeIndex> {
     let mut edge_ids = Vec::new();
@@ -897,6 +1138,99 @@ fn sorted_unique_neighbors(graph: &GraphType, node: NodeIndex) -> Vec<NodeIndex>
     neighbors.sort_unstable_by_key(|neighbor| stable_node_key(graph, *neighbor));
     neighbors.dedup();
     neighbors
+}
+
+#[cfg(test)]
+mod topology_override_tests {
+    use super::{
+        GraphType, TopologyParentOverrideSelection, resolve_parent_candidate,
+        topology_parent_candidates_for_node,
+    };
+    use crate::strategies::full2::graph_mapping::GraphMapping;
+    use crate::strategies::full2::link_mapping::LinkMapping;
+    use lqos_overrides::TopologyParentOverrideMode;
+    use std::collections::HashMap;
+
+    fn site(name: &str, id: &str) -> GraphMapping {
+        GraphMapping::Site {
+            name: name.to_string(),
+            id: id.to_string(),
+            latitude: None,
+            longitude: None,
+        }
+    }
+
+    fn build_test_graph() -> (
+        GraphType,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+    ) {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let t1 = graph.add_node(site("T1", "t1"));
+        let t2 = graph.add_node(site("T2", "t2"));
+        let t3 = graph.add_node(site("T3", "t3"));
+
+        for (from, to) in [
+            (root, t1),
+            (t1, root),
+            (root, t3),
+            (t3, root),
+            (t1, t2),
+            (t2, t1),
+            (t3, t2),
+            (t2, t3),
+            (root, t2),
+            (t2, root),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        (graph, root, t1, t2, t3)
+    }
+
+    #[test]
+    fn legacy_preferred_override_uses_first_saved_parent() {
+        let (graph, root, t1, t2, t3) = build_test_graph();
+        let candidates = topology_parent_candidates_for_node(&graph, root, t2, &[], &[]);
+        let native_parent = Some(t1);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            graph[t2].network_json_id(),
+            TopologyParentOverrideSelection {
+                mode: TopologyParentOverrideMode::PreferredOrder,
+                parent_node_ids: vec![graph[t3].network_json_id(), graph[t1].network_json_id()],
+            },
+        );
+
+        let resolved = resolve_parent_candidate(&graph, t2, native_parent, &candidates, &overrides);
+        assert_eq!(resolved, Some(t3));
+    }
+
+    #[test]
+    fn stale_override_falls_back_to_native_parent() {
+        let (graph, root, t1, t2, _t3) = build_test_graph();
+        let candidates = topology_parent_candidates_for_node(&graph, root, t2, &[], &[]);
+        let native_parent = Some(t1);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            graph[t2].network_json_id(),
+            TopologyParentOverrideSelection {
+                mode: TopologyParentOverrideMode::Pinned,
+                parent_node_ids: vec!["uisp:site:missing".to_string()],
+            },
+        );
+
+        let resolved = resolve_parent_candidate(&graph, t2, native_parent, &candidates, &overrides);
+        assert_eq!(resolved, Some(t1));
+    }
 }
 
 fn total_degree(graph: &GraphType, node: NodeIndex) -> usize {

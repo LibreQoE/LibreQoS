@@ -16,6 +16,7 @@ pub mod lts;
 pub(crate) mod network_tree;
 pub(crate) mod network_tree_lite;
 pub(crate) mod node_rate_overrides;
+pub(crate) mod node_topology_overrides;
 pub(crate) mod packet_analysis;
 pub(crate) mod reload_libreqos;
 pub(crate) mod scheduler;

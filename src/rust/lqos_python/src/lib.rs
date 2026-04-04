@@ -1847,6 +1847,28 @@ fn network_adjustments_to_py(
                 d.set_item("node_name", node_name.clone())?;
                 d.set_item("virtual", *virtual_node)?;
             }
+            lqos_overrides::NetworkAdjustment::TopologyParentOverride {
+                node_id,
+                node_name,
+                mode,
+                parent_node_ids,
+                parent_node_names,
+            } => {
+                d.set_item("type", "topology_parent_override")?;
+                d.set_item("node_id", node_id.clone())?;
+                d.set_item("node_name", node_name.clone())?;
+                d.set_item(
+                    "mode",
+                    match mode {
+                        lqos_overrides::TopologyParentOverrideMode::Pinned => "pinned",
+                        lqos_overrides::TopologyParentOverrideMode::PreferredOrder => {
+                            "preferred_order"
+                        }
+                    },
+                )?;
+                d.set_item("parent_node_ids", parent_node_ids.clone())?;
+                d.set_item("parent_node_names", parent_node_names.clone())?;
+            }
         }
         let obj: PyObject = d.unbind().into();
         out.push(obj);

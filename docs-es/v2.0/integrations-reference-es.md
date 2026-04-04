@@ -283,8 +283,9 @@ suspended_strategy = "none"
 
 # Ajustes de Capacidad
 # Las capacidades de AP reportadas por UISP pueden ser optimistas
-airmax_capacity = 0.65  # Usar 65% de la capacidad reportada de AirMax
-ltu_capacity = 0.95     # Usar 95% de la capacidad reportada de LTU
+airmax_capacity = 0.8  # Usar 80% de la capacidad reportada de AirMax en instalaciones nuevas
+airmax_flexible_frame_download_ratio = 0.8  # Reparto de respaldo para flexible framing de AirMax cuando UISP no expone dlRatio
+ltu_capacity = 1.0      # Usar 100% de la capacidad reportada de LTU en instalaciones nuevas
 
 # Gestión de Sitios
 exclude_sites = []  # Sitios a excluir, ej: ["Sitio_Prueba", "Sitio_Lab"]
@@ -317,6 +318,9 @@ Las compilaciones actuales también incluyen estas opciones en los editores de c
 - `use_ptmp_as_parent`: prioriza AP PtMP como padre en rutas relevantes.
 - `ignore_calculated_capacity`: usa capacidades configuradas en lugar de calculadas.
 - `insecure_ssl`: deshabilita validación de certificados TLS para UISP.
+- `airmax_flexible_frame_download_ratio`: cuando UISP reporta capacidad agregada de un AP AirMax con flexible framing y no entrega `dlRatio`, LibreQoS usa esta proporción de descarga como respaldo. `0.8` significa 80/20 descarga/subida.
+
+Las versiones actuales limitan este manejo de flexible framing a equipos donde UISP reporta `identification.type == "airMax"` y `identification.role == "ap"`. En esos AP AirMax, `theoreticalTotalCapacity` se usa solo como pista de flexible framing. La velocidad real de shaping sale de `totalCapacity` cuando UISP lo entrega, o de la capacidad direccional más fuerte cuando no lo hace, y la división sigue prefiriendo `dlRatio` cuando UISP lo reporta.
 
 Uso recomendado:
 
@@ -342,16 +346,18 @@ Tiene la opción de ejecutar `uisp_integration` automáticamente al iniciar el e
 
 ### Sobrescrituras de UISP
 
-También puede modificar los siguientes archivos para reflejar su red con mayor precisión:
-- integrationUISPbandwidths.csv
+Puede usar las siguientes entradas de override para reflejar su red con mayor precisión:
+- `Rate Override` para cambios de ancho de banda a nivel de nodo guardados como entradas operatorias `AdjustSiteSpeed` en `lqos_overrides.json`
+- `Topology Override` para correcciones de selección de padre en UISP `full`, también guardadas en `lqos_overrides.json`
 - integrationUISProutes.csv
+- integrationUISPbandwidths.csv solo como entrada heredada de compatibilidad
+
+Las compilaciones actuales aplican `Topology Override` antes de generar `network.json` y `ShapedDevices.csv`, y le dan precedencia sobre los overrides heredados de costos de ruta de UISP. El soporte actual en WebUI es solo `Pinned Parent`, forzando un único padre inmediato detectado.
+
+Las compilaciones UISP actuales también auto-migran un `integrationUISPbandwidths.csv` heredado hacia overrides operatorios `AdjustSiteSpeed` en la siguiente ejecución de la integración cuando todavía no existen overrides de tasa del operador. Si ya existen, el CSV se ignora.
 
 Cada uno de los archivos mencionados arriba tienen plantillas, las cuales están disponibles en la carpeta `/opt/libreqos/src`. Si no los encuentra, puede obtenerlos [aquí](https://github.com/LibreQoE/LibreQoS/tree/develop/src). Para utilizarlos, copie el archivo (eliminando la parte `.template` del nombre) y edítelo con la información correspondiente.
-Por ejemplo, si desea cambiar el bando de ancha de un sitio, ejecutaría:
-```
-sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
-```
-Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
+Para cambios nuevos de ancho de banda, prefiera los overrides operatorios en `lqos_overrides.json`. `integrationUISPbandwidths.csv` queda como una entrada heredada para migración única, no como el flujo preferido a largo plazo.
 
 #### Sobrescrituras de Rutas UISP
 

@@ -19,6 +19,9 @@ use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::node_manager::local_api::node_rate_overrides::{
     NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
 };
+use crate::node_manager::local_api::node_topology_overrides::{
+    NodeTopologyOverrideData, NodeTopologyOverrideQuery, NodeTopologyOverrideUpdate,
+};
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
@@ -189,6 +192,15 @@ pub enum WsRequest {
     },
     ClearNodeRateOverride {
         query: NodeRateOverrideQuery,
+    },
+    GetNodeTopologyOverride {
+        query: NodeTopologyOverrideQuery,
+    },
+    SetNodeTopologyOverride {
+        update: NodeTopologyOverrideUpdate,
+    },
+    ClearNodeTopologyOverride {
+        query: NodeTopologyOverrideQuery,
     },
     ListNics,
     NetworkJson,
@@ -672,6 +684,19 @@ pub enum WsResponse {
         ok: bool,
         message: String,
         data: NodeRateOverrideData,
+    },
+    GetNodeTopologyOverride {
+        data: NodeTopologyOverrideData,
+    },
+    SetNodeTopologyOverrideResult {
+        ok: bool,
+        message: String,
+        data: NodeTopologyOverrideData,
+    },
+    ClearNodeTopologyOverrideResult {
+        ok: bool,
+        message: String,
+        data: NodeTopologyOverrideData,
     },
     GetUsers {
         data: Vec<WebUser>,
