@@ -46,6 +46,12 @@ function validateConfig() {
             return false;
         }
 
+        const airmaxFlexibleFrameDownloadRatio = parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value);
+        if (isNaN(airmaxFlexibleFrameDownloadRatio) || airmaxFlexibleFrameDownloadRatio <= 0 || airmaxFlexibleFrameDownloadRatio >= 1) {
+            alert("AirMax Flexible Frame Download Ratio must be a number greater than 0 and less than 1");
+            return false;
+        }
+
         const ltuCapacity = parseFloat(document.getElementById("uispLtuCapacity").value);
         if (isNaN(ltuCapacity) || ltuCapacity < 0) {
             alert("LTU Capacity must be a number greater than or equal to 0");
@@ -106,6 +112,7 @@ function updateConfig() {
         strategy: document.getElementById("uispStrategy").value.trim(),
         suspended_strategy: document.getElementById("uispSuspendedStrategy").value.trim(),
         airmax_capacity: parseFloat(document.getElementById("uispAirmaxCapacity").value),
+        airmax_flexible_frame_download_ratio: parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value),
         ltu_capacity: parseFloat(document.getElementById("uispLtuCapacity").value),
         ipv6_with_mikrotik: document.getElementById("uispIpv6WithMikrotik").checked,
         bandwidth_overhead_factor: parseFloat(document.getElementById("uispBandwidthOverhead").value),
@@ -145,8 +152,9 @@ loadConfig(() => {
         document.getElementById("uispSuspendedStrategy").value = uisp.suspended_strategy ?? "none";
 
         // Numeric fields
-        document.getElementById("uispAirmaxCapacity").value = uisp.airmax_capacity ?? 0.0;
-        document.getElementById("uispLtuCapacity").value = uisp.ltu_capacity ?? 0.0;
+        document.getElementById("uispAirmaxCapacity").value = uisp.airmax_capacity ?? 1.0;
+        document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value = uisp.airmax_flexible_frame_download_ratio ?? 0.8;
+        document.getElementById("uispLtuCapacity").value = uisp.ltu_capacity ?? 1.0;
         document.getElementById("uispBandwidthOverhead").value = uisp.bandwidth_overhead_factor ?? 1.0;
         document.getElementById("uispCommitMultiplier").value = uisp.commit_bandwidth_multiplier ?? 1.0;
 

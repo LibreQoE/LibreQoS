@@ -283,8 +283,9 @@ suspended_strategy = "none"
 
 # Ajustes de Capacidad
 # Las capacidades de AP reportadas por UISP pueden ser optimistas
-airmax_capacity = 0.65  # Usar 65% de la capacidad reportada de AirMax
-ltu_capacity = 0.95     # Usar 95% de la capacidad reportada de LTU
+airmax_capacity = 0.8  # Usar 80% de la capacidad reportada de AirMax en instalaciones nuevas
+airmax_flexible_frame_download_ratio = 0.8  # Reparto de respaldo para flexible framing de AirMax cuando UISP no expone dlRatio
+ltu_capacity = 1.0      # Usar 100% de la capacidad reportada de LTU en instalaciones nuevas
 
 # Gestión de Sitios
 exclude_sites = []  # Sitios a excluir, ej: ["Sitio_Prueba", "Sitio_Lab"]
@@ -317,6 +318,9 @@ Las compilaciones actuales también incluyen estas opciones en los editores de c
 - `use_ptmp_as_parent`: prioriza AP PtMP como padre en rutas relevantes.
 - `ignore_calculated_capacity`: usa capacidades configuradas en lugar de calculadas.
 - `insecure_ssl`: deshabilita validación de certificados TLS para UISP.
+- `airmax_flexible_frame_download_ratio`: cuando UISP reporta capacidad agregada de un AP AirMax con flexible framing y no entrega `dlRatio`, LibreQoS usa esta proporción de descarga como respaldo. `0.8` significa 80/20 descarga/subida.
+
+Las versiones actuales limitan este manejo de flexible framing a equipos donde UISP reporta `identification.type == "airMax"` y `identification.role == "ap"`. Esos AP AirMax prefieren la capacidad agregada de `theoreticalTotalCapacity` y la dividen usando `dlRatio` cuando UISP lo entrega.
 
 Uso recomendado:
 

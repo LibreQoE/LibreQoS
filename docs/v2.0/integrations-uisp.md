@@ -128,8 +128,9 @@ suspended_strategy = "none"
 
 # Capacity Adjustments
 # UISP's reported AP capacities can be optimistic
-airmax_capacity = 0.65  # Use 65% of reported AirMax capacity
-ltu_capacity = 0.95     # Use 95% of reported LTU capacity
+airmax_capacity = 0.8  # Use 80% of reported AirMax capacity on new installs
+airmax_flexible_frame_download_ratio = 0.8  # Fallback split for AirMax flexible framing when UISP does not expose dlRatio
+ltu_capacity = 1.0      # Use 100% of reported LTU capacity on new installs
 
 # Site Management
 exclude_sites = []  # Sites to exclude, e.g., ["Test_Site", "Lab_Site"]
@@ -162,6 +163,11 @@ The following UISP options are available in current builds and WebUI (Node Manag
 - `use_ptmp_as_parent`: prefer PtMP AP as parent for relevant topology paths.
 - `ignore_calculated_capacity`: prefer configured capacities instead of integration-calculated values.
 - `insecure_ssl`: disables TLS certificate verification for UISP API calls.
+- `airmax_flexible_frame_download_ratio`: when UISP reports aggregate AirMax AP capacity for flexible framing and the live `dlRatio` is absent, LibreQoS uses this fallback download share. `0.8` means 80/20 download/upload.
+
+Shared integration defaults also include Ethernet port limiting. When UISP can detect negotiated subscriber-facing Ethernet speed, current builds apply a conservative default multiplier of `0.94` unless the operator overrides it in `Configuration -> Integrations -> Integration Defaults`.
+
+Current builds scope this flexible-frame handling narrowly to devices where UISP reports `identification.type == "airMax"` and `identification.role == "ap"`. Those AirMax APs prefer aggregate capacity from `theoreticalTotalCapacity` and split it using the live wireless `dlRatio` when UISP provides one.
 
 Recommended use:
 1. Keep `insecure_ssl = false` unless you have a known internal PKI/self-signed requirement.

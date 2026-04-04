@@ -82,13 +82,19 @@
 
                         <div class="mb-3">
                             <label for="uispAirmaxCapacity" class="form-label">Airmax Capacity</label>
-                            <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1">
+                            <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1" value="1.0">
                             <div class="form-text">Capacity factor for Airmax devices.</div>
                         </div>
 
                         <div class="mb-3">
+                            <label for="uispAirmaxFlexibleFrameDownloadRatio" class="form-label">AirMax Flexible Frame Download Ratio</label>
+                            <input type="number" class="form-control" id="uispAirmaxFlexibleFrameDownloadRatio" step="0.01" min="0.01" max="0.99" value="0.8">
+                            <div class="form-text">Fallback download share for AirMax APs when UISP reports aggregate flexible-frame capacity but does not expose a live downlink ratio. <code>0.8</code> means 80/20 download/upload.</div>
+                        </div>
+
+                        <div class="mb-3">
                             <label for="uispLtuCapacity" class="form-label">LTU Capacity</label>
-                            <input type="number" class="form-control" id="uispLtuCapacity" step="0.1">
+                            <input type="number" class="form-control" id="uispLtuCapacity" step="0.1" value="1.0">
                             <div class="form-text">Capacity factor for LTU devices.</div>
                         </div>
 

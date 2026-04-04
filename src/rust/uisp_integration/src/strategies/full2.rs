@@ -19,7 +19,9 @@ use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
 use crate::uisp_types::UispDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
@@ -35,6 +37,7 @@ pub async fn build_full_network_v2(
     config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
     // Fetch the data
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
@@ -424,13 +427,16 @@ pub async fn build_full_network_v2(
                     )
                 };
             let ethernet_decision = apply_ethernet_rate_cap(
+                ethernet_policy,
                 &site.id,
                 &site.name,
                 site_devices.iter().copied(),
-                requested.0,
-                requested.2,
-                requested.1,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.2,
+                    download_max: requested.1,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);

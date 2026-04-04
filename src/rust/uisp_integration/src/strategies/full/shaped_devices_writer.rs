@@ -1,8 +1,9 @@
 use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
-use lqos_config::CircuitEthernetMetadata;
-use lqos_config::Config;
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use serde::Serialize;
 use std::path::Path;
 use tracing::{error, info};
@@ -31,6 +32,12 @@ struct ShapedDeviceOutputs<'a> {
     ethernet_advisories: &'a mut Vec<CircuitEthernetMetadata>,
 }
 
+struct TraverseContext<'a> {
+    config: &'a Config,
+    root_idx: usize,
+    ethernet_policy: EthernetPortLimitPolicy,
+}
+
 /// Writes the ShapedDevices.csv file for UISP
 ///
 /// # Arguments
@@ -44,6 +51,7 @@ pub fn write_shaped_devices(
     root_idx: usize,
     devices: &[UispDevice],
 ) -> Result<(), UispIntegrationError> {
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut shaped_devices = Vec::new();
     let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
@@ -53,7 +61,12 @@ pub fn write_shaped_devices(
         shaped_devices: &mut shaped_devices,
         ethernet_advisories: &mut ethernet_advisories,
     };
-    traverse(sites, root_idx, 0, devices, &mut outputs, config, root_idx);
+    let context = TraverseContext {
+        config,
+        root_idx,
+        ethernet_policy,
+    };
+    traverse(sites, root_idx, 0, devices, &mut outputs, &context);
 
     // Write the CSV
     let mut writer = csv::WriterBuilder::new()
@@ -81,8 +94,7 @@ fn traverse(
     depth: u32,
     devices: &[UispDevice],
     outputs: &mut ShapedDeviceOutputs<'_>,
-    config: &Config,
-    root_idx: usize,
+    context: &TraverseContext<'_>,
 ) {
     if !sites[idx].device_indices.is_empty() {
         // We have devices!
@@ -93,38 +105,42 @@ fn traverse(
                 .filter_map(|device_idx| devices.get(*device_idx))
                 .collect();
 
-            let requested =
-                if let Some((dl_min, dl_max, ul_min, ul_max)) = sites[idx].burst_rates(config) {
-                    (
-                        f32::max(0.1, dl_min),
-                        f32::max(0.1, dl_max),
-                        f32::max(0.1, ul_min),
-                        f32::max(0.1, ul_max),
-                    )
-                } else {
-                    let download_max_f32 = sites[idx].max_down_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor;
-                    let upload_max_f32 = sites[idx].max_up_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor;
-                    let download_min_f32 =
-                        download_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                    let upload_min_f32 =
-                        upload_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                    (
-                        f32::max(0.1, download_min_f32),
-                        f32::max(0.1, download_max_f32),
-                        f32::max(0.1, upload_min_f32),
-                        f32::max(0.1, upload_max_f32),
-                    )
-                };
+            let requested = if let Some((dl_min, dl_max, ul_min, ul_max)) =
+                sites[idx].burst_rates(context.config)
+            {
+                (
+                    f32::max(0.1, dl_min),
+                    f32::max(0.1, dl_max),
+                    f32::max(0.1, ul_min),
+                    f32::max(0.1, ul_max),
+                )
+            } else {
+                let download_max_f32 = sites[idx].max_down_mbps as f32
+                    * context.config.uisp_integration.bandwidth_overhead_factor;
+                let upload_max_f32 = sites[idx].max_up_mbps as f32
+                    * context.config.uisp_integration.bandwidth_overhead_factor;
+                let download_min_f32 =
+                    download_max_f32 * context.config.uisp_integration.commit_bandwidth_multiplier;
+                let upload_min_f32 =
+                    upload_max_f32 * context.config.uisp_integration.commit_bandwidth_multiplier;
+                (
+                    f32::max(0.1, download_min_f32),
+                    f32::max(0.1, download_max_f32),
+                    f32::max(0.1, upload_min_f32),
+                    f32::max(0.1, upload_max_f32),
+                )
+            };
             let ethernet_decision = apply_ethernet_rate_cap(
+                context.ethernet_policy,
                 &sites[idx].id,
                 &sites[idx].name,
                 site_devices.iter().copied(),
-                requested.0,
-                requested.2,
-                requested.1,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.2,
+                    download_max: requested.1,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 outputs.ethernet_advisories.push(advisory);
@@ -156,7 +172,7 @@ fn traverse(
             // It's an infrastructure node
             for device in sites[idx].device_indices.iter() {
                 let device = &devices[*device];
-                let parent_node = if idx != root_idx {
+                let parent_node = if idx != context.root_idx {
                     sites[idx].name.clone()
                 } else {
                     format!("{}_Infrastructure", sites[idx].name.clone())
@@ -164,13 +180,13 @@ fn traverse(
                 if device.has_address() {
                     // Infrastructure: keep capacity-based behavior
                     let download_max_f32 = sites[idx].max_down_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor;
+                        * context.config.uisp_integration.bandwidth_overhead_factor;
                     let upload_max_f32 = sites[idx].max_up_mbps as f32
-                        * config.uisp_integration.bandwidth_overhead_factor;
-                    let download_min_f32 =
-                        download_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
-                    let upload_min_f32 =
-                        upload_max_f32 * config.uisp_integration.commit_bandwidth_multiplier;
+                        * context.config.uisp_integration.bandwidth_overhead_factor;
+                    let download_min_f32 = download_max_f32
+                        * context.config.uisp_integration.commit_bandwidth_multiplier;
+                    let upload_min_f32 = upload_max_f32
+                        * context.config.uisp_integration.commit_bandwidth_multiplier;
                     let download_max = f32::max(0.2, download_max_f32);
                     let upload_max = f32::max(0.2, upload_max_f32);
                     let download_min = f32::max(0.2, download_min_f32);
@@ -202,15 +218,7 @@ fn traverse(
             if let Some(parent_idx) = child.selected_parent
                 && parent_idx == idx
             {
-                traverse(
-                    sites,
-                    child_idx,
-                    depth + 1,
-                    devices,
-                    outputs,
-                    config,
-                    root_idx,
-                );
+                traverse(sites, child_idx, depth + 1, devices, outputs, context);
             }
         }
     }
@@ -411,7 +419,18 @@ mod tests {
             ethernet_advisories: &mut ethernet_advisories,
         };
 
-        traverse(&sites, 0, 0, &devices, &mut outputs, &config, 0);
+        traverse(
+            &sites,
+            0,
+            0,
+            &devices,
+            &mut outputs,
+            &TraverseContext {
+                config: &config,
+                root_idx: 0,
+                ethernet_policy: EthernetPortLimitPolicy::default(),
+            },
+        );
 
         assert!(outputs.shaped_devices.is_empty());
     }

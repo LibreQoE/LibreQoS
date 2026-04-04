@@ -2077,12 +2077,7 @@ mod tests {
     fn decodes_create_shaped_device_with_browser_style_ipv4_bytes() {
         let payload = create_shaped_device_payload(device_value(
             array(vec![array(vec![
-                array(vec![
-                    integer(192),
-                    integer(168),
-                    integer(1),
-                    integer(2),
-                ]),
+                array(vec![integer(192), integer(168), integer(1), integer(2)]),
                 integer(32),
             ])]),
             array(vec![]),

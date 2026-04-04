@@ -86,13 +86,17 @@ strategy = "full"
 # * "slow" - limit suspended customers to 0.1 Mbps
 suspended_strategy = "none"
 
-# UISP's reported AP capacities for AirMax can be a bit optimistic. For AirMax APs, we limit
-# to 65% of what UISP claims an AP's capacity is, by default. This is adjustable.
-airmax_capacity = 0.65
+# UISP's reported AP capacities for AirMax can be a bit optimistic. For new installs, we limit
+# to 80% of what UISP claims an AP's capacity is, by default. This is adjustable.
+airmax_capacity = 0.8
 
-# UISP's reported AP capacities for LTU are more accurate, but to be safe we adjust to 95%
+# When UISP reports only aggregate AirMax AP capacity for flexible framing and does not expose
+# the live downlink ratio, use this fallback split. 0.8 means 80/20 download/upload.
+airmax_flexible_frame_download_ratio = 0.8
+
+# UISP's reported AP capacities for LTU are more accurate, and new installs now default to 100%
 # of those capacities. This is adjustable.
-ltu_capacity = 0.95
+ltu_capacity = 1.0
 
 # If you want to exclude sites in UISP from appearing in your LibreQoS network.json, simply
 # include them here. For example, exclude_sites = ["Site_1", "Site_2"]

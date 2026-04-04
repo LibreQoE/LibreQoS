@@ -104,6 +104,8 @@ python3 integrationSplynx.py
 On the first successful run, it creates `ShapedDevices.csv` and `network.json`.
 ShapedDevices.csv will be overwritten every time the Splynx integration is run.
 
+Current builds also expose a shared Ethernet port headroom policy under `Configuration -> Integrations -> Integration Defaults`. Integrations that can supply negotiated subscriber-facing port speed use a conservative default multiplier of `0.94` unless the operator overrides it.
+
 You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_splynx = true``` under the ```[splynx_integration]``` section in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.
 

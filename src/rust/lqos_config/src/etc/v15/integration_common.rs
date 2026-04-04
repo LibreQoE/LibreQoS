@@ -3,6 +3,11 @@
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
+fn default_ethernet_port_limits_enabled() -> bool {
+    true
+}
+
+/// Shared integration defaults used by CRM/NMS integrations.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct IntegrationConfig {
     /// Replace names with addresses?
@@ -23,6 +28,16 @@ pub struct IntegrationConfig {
 
     /// Client bandwidth multiplier
     pub client_bandwidth_multiplier: Option<f32>,
+
+    /// Enable circuit Ethernet-port based shaping caps for integrations that can detect negotiated port speed.
+    #[serde(default = "default_ethernet_port_limits_enabled")]
+    pub ethernet_port_limits_enabled: bool,
+
+    /// Optional operator override for Ethernet port headroom multiplier.
+    ///
+    /// When unset, LibreQoS defaults to `0.94`.
+    #[serde(default)]
+    pub ethernet_port_limit_multiplier: Option<f32>,
 }
 
 impl Default for IntegrationConfig {
@@ -34,6 +49,8 @@ impl Default for IntegrationConfig {
             use_mikrotik_ipv6: false,
             promote_to_root: None,
             client_bandwidth_multiplier: None,
+            ethernet_port_limits_enabled: true,
+            ethernet_port_limit_multiplier: None,
         }
     }
 }

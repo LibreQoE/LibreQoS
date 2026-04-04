@@ -4,7 +4,9 @@ use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisorie
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
@@ -28,6 +30,7 @@ pub async fn build_ap_site_network(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
 
     // Find trouble-spots!
     let _trouble = find_troublesome_sites(&uisp_data).await.map_err(|e| {
@@ -60,6 +63,7 @@ pub async fn build_ap_site_network(
         &mut shaped_devices,
         &mut ethernet_advisories,
         &config,
+        ethernet_policy,
     );
 
     let network_path = Path::new(&config.lqos_directory).join("network.json");
@@ -178,6 +182,7 @@ impl Layer {
         shaped_devices: &mut Vec<ShapedDevice>,
         ethernet_advisories: &mut Vec<CircuitEthernetMetadata>,
         config: &Config,
+        ethernet_policy: EthernetPortLimitPolicy,
     ) -> serde_json::Map<String, serde_json::Value> {
         let mut children = serde_json::Map::new();
         let parent_name = match &self.id {
@@ -198,6 +203,7 @@ impl Layer {
                                 shaped_devices,
                                 ethernet_advisories,
                                 config,
+                                ethernet_policy,
                             )
                             .into(),
                     );
@@ -209,6 +215,7 @@ impl Layer {
                         shaped_devices,
                         ethernet_advisories,
                         config,
+                        ethernet_policy,
                     );
                 }
                 _ => {}
@@ -309,13 +316,16 @@ impl Layer {
                             (0.1, 0.1, 0.1, 0.1)
                         };
                         let ethernet_decision = apply_ethernet_rate_cap(
+                            ethernet_policy,
                             &site.id,
                             &site.name,
                             devices.iter().copied(),
-                            requested.0,
-                            requested.2,
-                            requested.1,
-                            requested.3,
+                            RequestedCircuitRates {
+                                download_min: requested.0,
+                                upload_min: requested.2,
+                                download_max: requested.1,
+                                upload_max: requested.3,
+                            },
                         );
                         if let Some(advisory) = ethernet_decision.advisory.clone() {
                             ethernet_advisories.push(advisory);
@@ -381,6 +391,71 @@ pub(crate) async fn find_troublesome_sites(data: &UispData) -> anyhow::Result<Tr
         multi_entry_points,
         client_of_clients,
     })
+}
+
+fn find_clients_with_multiple_entry_points(data: &UispData) -> anyhow::Result<HashSet<String>> {
+    let mut result = HashSet::new();
+    for client in data.find_client_sites() {
+        let mut links_to_client = HashSet::new();
+        for link in data.data_links_raw.iter() {
+            if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
+                if from_site.identification.id == client.id
+                    && to_site.identification.id != client.id
+                {
+                    links_to_client.insert(to_site.identification.id.clone());
+                } else if from_site.identification.id != client.id
+                    && to_site.identification.id == client.id
+                {
+                    links_to_client.insert(from_site.identification.id.clone());
+                }
+            }
+        }
+        if links_to_client.len() > 1 {
+            warn!(
+                "Client {} has multiple entry points: {:?}",
+                client.name, links_to_client
+            );
+            result.insert(client.id.clone());
+        }
+    }
+
+    Ok(result)
+}
+
+fn find_clients_linked_from_other_clients(data: &UispData) -> anyhow::Result<HashSet<String>> {
+    let all_clients = data.find_client_sites();
+    let mut result = HashSet::new();
+    for client in &all_clients {
+        for link in data.data_links_raw.iter() {
+            if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
+                if from_site.identification.id == client.id
+                    && to_site.identification.id != client.id
+                    && all_clients
+                        .iter()
+                        .any(|c| c.id == to_site.identification.id)
+                {
+                    warn!(
+                        "Client {} is linked from another client: {}",
+                        client.name, to_site.identification.id
+                    );
+                    result.insert(client.id.clone());
+                }
+                if from_site.identification.id != client.id
+                    && to_site.identification.id == client.id
+                    && all_clients
+                        .iter()
+                        .any(|c| c.id == from_site.identification.id)
+                {
+                    warn!(
+                        "Client {} is linked to another client: {}",
+                        client.name, from_site.identification.id
+                    );
+                    result.insert(client.id.clone());
+                }
+            }
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -468,6 +543,7 @@ mod tests {
             &mut shaped_devices,
             &mut ethernet_advisories,
             &config,
+            EthernetPortLimitPolicy::default(),
         );
 
         assert!(shaped_devices.is_empty());
@@ -487,69 +563,4 @@ mod tests {
         let ap_children = ap.get("children").and_then(|v| v.as_object()).unwrap();
         assert!(ap_children.is_empty());
     }
-}
-
-fn find_clients_with_multiple_entry_points(data: &UispData) -> anyhow::Result<HashSet<String>> {
-    let mut result = HashSet::new();
-    for client in data.find_client_sites() {
-        let mut links_to_client = HashSet::new();
-        for link in data.data_links_raw.iter() {
-            if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
-                if from_site.identification.id == client.id
-                    && to_site.identification.id != client.id
-                {
-                    links_to_client.insert(to_site.identification.id.clone());
-                } else if from_site.identification.id != client.id
-                    && to_site.identification.id == client.id
-                {
-                    links_to_client.insert(from_site.identification.id.clone());
-                }
-            }
-        }
-        if links_to_client.len() > 1 {
-            warn!(
-                "Client {} has multiple entry points: {:?}",
-                client.name, links_to_client
-            );
-            result.insert(client.id.clone());
-        }
-    }
-
-    Ok(result)
-}
-
-fn find_clients_linked_from_other_clients(data: &UispData) -> anyhow::Result<HashSet<String>> {
-    let all_clients = data.find_client_sites();
-    let mut result = HashSet::new();
-    for client in &all_clients {
-        for link in data.data_links_raw.iter() {
-            if let (Some(from_site), Some(to_site)) = (&link.from.site, &link.to.site) {
-                if from_site.identification.id == client.id
-                    && to_site.identification.id != client.id
-                    && all_clients
-                        .iter()
-                        .any(|c| c.id == to_site.identification.id)
-                {
-                    warn!(
-                        "Client {} is linked from another client: {}",
-                        client.name, to_site.identification.id
-                    );
-                    result.insert(client.id.clone());
-                }
-                if from_site.identification.id != client.id
-                    && to_site.identification.id == client.id
-                    && all_clients
-                        .iter()
-                        .any(|c| c.id == from_site.identification.id)
-                {
-                    warn!(
-                        "Client {} is linked to another client: {}",
-                        client.name, from_site.identification.id
-                    );
-                    result.insert(client.id.clone());
-                }
-            }
-        }
-    }
-    Ok(result)
 }

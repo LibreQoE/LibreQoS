@@ -11,6 +11,7 @@ pub mod authentication;
 mod circuit_ethernet_metadata;
 mod cpu_topology;
 mod etc;
+mod ethernet_port_limits;
 mod network_json;
 mod planner;
 mod program_control;
@@ -30,6 +31,10 @@ pub use etc::{
     TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
     clear_cached_config, disable_xdp_bridge, enable_long_term_stats, load_config,
     treeguard_cpu_mode_migration_notice, update_config,
+};
+pub use ethernet_port_limits::{
+    DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
+    EthernetRateDecision, RequestedCircuitRates, apply_ethernet_rate_cap,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use planner::{
