@@ -323,7 +323,7 @@ The following UISP options are available in current builds and WebUI (Node Manag
 - `insecure_ssl`: disables TLS certificate verification for UISP API calls.
 - `airmax_flexible_frame_download_ratio`: when UISP reports aggregate AirMax AP capacity for flexible framing and the live `dlRatio` is absent, LibreQoS uses this fallback download share. `0.8` means 80/20 download/upload.
 
-Current builds scope this flexible-frame handling narrowly to devices where UISP reports `identification.type == "airMax"` and `identification.role == "ap"`. Those AirMax APs prefer aggregate capacity from `theoreticalTotalCapacity` and split it using the live wireless `dlRatio` when UISP provides one.
+Current builds scope this flexible-frame handling narrowly to devices where UISP reports `identification.type == "airMax"` and `identification.role == "ap"`. Those AirMax APs use `theoreticalTotalCapacity` only as a flexible-framing hint. The actual shaping rate comes from aggregate `totalCapacity` when UISP provides it, otherwise from the stronger directional capacity, and the split still prefers the live wireless `dlRatio` when UISP provides one.
 
 Recommended use:
 1. Keep `insecure_ssl = false` unless you have a known internal PKI/self-signed requirement.
@@ -350,16 +350,17 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 
 ### UISP Overrides
 
-You can also modify the the following files to more accurately reflect your network:
-- integrationUISPbandwidths.csv
+You can also use the following override inputs to more accurately reflect your network:
+- `Rate Override` for node bandwidth changes stored as operator `AdjustSiteSpeed` entries in `lqos_overrides.json`
+- `Topology Override` for UISP `full` parent-selection corrections stored in `lqos_overrides.json`
 - integrationUISProutes.csv
+- integrationUISPbandwidths.csv as a legacy compatibility input only
 
-Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src). To utilize the template, copy the file (removing the `.template` part of the filename) and set the appropriate information inside each file.
-For example, if you want to change the set bandwidth for a site, you would do:
-```
-sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
-```
-And edit the CSV using LibreOffice or your preferred CSV editor.
+Current builds apply `Topology Override` before final `network.json` / `ShapedDevices.csv` emission and give it precedence over legacy UISP route-cost overrides. Current WebUI support is `Pinned Parent` only, forcing one detected immediate upstream parent.
+
+Current UISP builds also auto-migrate a legacy `integrationUISPbandwidths.csv` into operator `AdjustSiteSpeed` overrides on the next integration run when no operator rate overrides exist yet. If operator rate overrides already exist, the CSV is ignored.
+
+Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src).
 
 #### UISP Route Overrides
 

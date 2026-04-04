@@ -1491,6 +1491,11 @@ h5 {
     flex-wrap: wrap;
     gap: 0.4rem;
 }
+.lqos-tree-inline-overrides {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
 .lqos-tree-editor {
     display: flex;
     flex-direction: column;
@@ -1526,12 +1531,15 @@ h5 {
     border-radius: var(--lqos-radius-md);
     background: color-mix(in srgb, var(--lqos-surface-2) 76%, transparent);
 }
+.lqos-tree-editor-row-compact {
+    padding: 0.5rem 0.6rem;
+}
 .lqos-tree-editor-field {
     flex: 1 1 0;
     min-width: 0;
 }
 .lqos-tree-editor-field .input-group-text {
-    min-width: 5.9rem;
+    min-width: 3rem;
     justify-content: center;
     background: color-mix(in srgb, var(--lqos-surface-2) 88%, transparent);
     border-color: color-mix(in srgb, var(--lqos-border) 78%, transparent);
@@ -1646,9 +1654,11 @@ h5 {
     .lqos-tree-editor-row {
         flex-wrap: wrap;
     }
+    .lqos-tree-override-label,
     .lqos-tree-editor-field,
     .lqos-tree-editor-actions {
         width: 100%;
+        min-width: 0;
     }
 }
 

@@ -17,6 +17,7 @@ mod planner;
 mod program_control;
 mod qoo_profiles;
 mod shaped_devices;
+mod topology_parent_candidates;
 
 pub use authentication::{AuthenticatedUser, UserRole, WebUser, WebUsers};
 pub use circuit_ethernet_metadata::{
@@ -51,6 +52,10 @@ pub use qoo_profiles::{
     list_qoo_profiles, load_qoo_profiles_file,
 };
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
+pub use topology_parent_candidates::{
+    TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,
+    TopologyParentCandidatesFile, TopologyParentCandidatesNode, topology_parent_candidates_path,
+};
 
 /// Used as a constant in determining buffer preallocation
 pub const SUPPORTED_CUSTOMERS: usize = 100_000;

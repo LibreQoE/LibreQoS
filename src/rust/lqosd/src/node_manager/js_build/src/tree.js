@@ -37,8 +37,17 @@ var nodeRateOverrideState = {
     error: null,
     flash: null,
 };
+var nodeTopologyOverrideState = {
+    loading: false,
+    saving: false,
+    data: null,
+    error: null,
+    flash: null,
+};
 var nodeOverrideInputsDirty = false;
 var nodeOverrideLastSeedSignature = null;
+var nodeTopologyInputsDirty = false;
+var nodeTopologyLastSeedSignature = null;
 const wsClient = get_ws_client();
 const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
     "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
@@ -46,6 +55,7 @@ const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
     "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
 const THROUGHPUT_COMPARE_EPSILON_MBPS = 0.01;
 const NODE_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator override. Will be applied to generated network.json on the next scheduler run.";
+const TOPOLOGY_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator topology override. The selected parent will be applied on the next scheduler run.";
 
 function retransmitPacketsForNode(node, direction) {
     return toNumber(
@@ -277,7 +287,7 @@ function currentNode() {
     return tree && tree[parent] ? tree[parent][1] : null;
 }
 
-function currentNodeRateQuery() {
+function currentNodeQuery() {
     const node = currentNode();
     if (!node) {
         return null;
@@ -289,6 +299,14 @@ function currentNodeRateQuery() {
         query.node_id = node.id;
     }
     return query;
+}
+
+function currentNodeRateQuery() {
+    return currentNodeQuery();
+}
+
+function currentNodeTopologyQuery() {
+    return currentNodeQuery();
 }
 
 function buildEffectiveLimitCellHtml(node) {
@@ -695,6 +713,11 @@ function setNodeOverrideFlash(message, variant = "success") {
     renderNodeSettings();
 }
 
+function setNodeTopologyOverrideFlash(message, variant = "success") {
+    nodeTopologyOverrideState.flash = message ? {message, variant} : null;
+    renderNodeSettings();
+}
+
 function renderAlertMessages(targetId, messages, variant) {
     const target = document.getElementById(targetId);
     if (!target) {
@@ -859,6 +882,231 @@ function renderOverrideValue(node, overrideData) {
     target.appendChild(wrap);
 }
 
+function topologyOverrideLabel() {
+    return "Pinned Parent";
+}
+
+function overrideParentNameMap(overrideData) {
+    const names = new Map();
+    const ids = Array.isArray(overrideData?.override_parent_node_ids)
+        ? overrideData.override_parent_node_ids
+        : [];
+    const labels = Array.isArray(overrideData?.override_parent_node_names)
+        ? overrideData.override_parent_node_names
+        : [];
+    ids.forEach((id, index) => {
+        if (typeof id === "string" && id.length > 0) {
+            names.set(id, labels[index] || id);
+        }
+    });
+    return names;
+}
+
+function candidateNameById(overrideData) {
+    const names = overrideParentNameMap(overrideData);
+    const candidates = Array.isArray(overrideData?.candidate_parents)
+        ? overrideData.candidate_parents
+        : [];
+    candidates.forEach((candidate) => {
+        if (candidate?.node_id) {
+            names.set(candidate.node_id, candidate.node_name || candidate.node_id);
+        }
+    });
+    return names;
+}
+
+function resolvedOverrideParentId(overrideData) {
+    if (!overrideData?.has_override) {
+        return null;
+    }
+    const savedIds = Array.isArray(overrideData.override_parent_node_ids)
+        ? overrideData.override_parent_node_ids.filter((id) => typeof id === "string" && id.length > 0)
+        : [];
+    if (savedIds.length === 0) {
+        return null;
+    }
+    return savedIds[0] || null;
+}
+
+function isTopologyPendingApply(overrideData) {
+    if (!overrideData?.has_override) {
+        return false;
+    }
+    const currentParentId = overrideData.current_parent_node_id || null;
+    const desiredParentId = resolvedOverrideParentId(overrideData);
+    return !!desiredParentId && desiredParentId !== currentParentId;
+}
+
+function renderTopologyOverrideValue(overrideData) {
+    const target = document.getElementById("nodeTopologyOverrideValue");
+    if (!target) {
+        return;
+    }
+    clearDiv(target);
+    const wrap = document.createElement("span");
+    wrap.classList.add("lqos-tree-detail-value");
+
+    const value = document.createElement("span");
+    if (!overrideData?.has_override) {
+        value.textContent = "None";
+        wrap.appendChild(value);
+        target.appendChild(wrap);
+        return;
+    }
+
+    const nameById = candidateNameById(overrideData);
+    const parentNames = (overrideData.override_parent_node_ids || [])
+        .map((id) => nameById.get(id) || id)
+        .filter(Boolean);
+    value.textContent = `Pinned: ${parentNames[0] || "-"}`;
+    wrap.appendChild(value);
+
+    if (isTopologyPendingApply(overrideData)) {
+        const pending = document.createElement("span");
+        pending.classList.add("lqos-tree-pending");
+        pending.setAttribute("data-bs-toggle", "tooltip");
+        pending.setAttribute("data-bs-placement", "top");
+        pending.setAttribute("title", TOPOLOGY_OVERRIDE_PENDING_TOOLTIP);
+
+        const symbol = document.createElement("span");
+        symbol.classList.add("lqos-tree-pending-symbol");
+        symbol.textContent = "⟳";
+        pending.appendChild(symbol);
+
+        const label = document.createElement("span");
+        label.textContent = "Pending";
+        pending.appendChild(label);
+        wrap.appendChild(pending);
+    }
+
+    target.appendChild(wrap);
+}
+
+function setNodeTopologyInputsDisabled(disabled) {
+    ["nodeTopologyPinnedParent", "nodeTopologySave", "nodeTopologyClear"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.disabled = disabled;
+        }
+    });
+}
+
+function currentTopologyInputParentIds() {
+    const pinnedParent = document.getElementById("nodeTopologyPinnedParent")?.value || "";
+    return pinnedParent ? [pinnedParent] : [];
+}
+
+function topologySeedParentId(overrideData) {
+    const savedIds = Array.isArray(overrideData?.override_parent_node_ids)
+        ? overrideData.override_parent_node_ids.filter((id) => typeof id === "string" && id.length > 0)
+        : [];
+    if (savedIds.length > 0) {
+        return savedIds[0];
+    }
+    return "";
+}
+
+function renderTopologyPinnedOptions(overrideData, selectedId) {
+    const target = document.getElementById("nodeTopologyPinnedParent");
+    if (!target) {
+        return;
+    }
+    clearDiv(target);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Default upstream parent";
+    placeholder.selected = !selectedId;
+    target.appendChild(placeholder);
+
+    (overrideData?.candidate_parents || []).forEach((candidate) => {
+        const option = document.createElement("option");
+        option.value = candidate.node_id;
+        option.textContent = candidate.node_name || candidate.node_id;
+        if (selectedId === candidate.node_id) {
+            option.selected = true;
+        }
+        target.appendChild(option);
+    });
+}
+
+function maybeSeedTopologyOverrideInputs(overrideData, force = false) {
+    const pinnedSelect = document.getElementById("nodeTopologyPinnedParent");
+    if (!pinnedSelect) {
+        return;
+    }
+    const candidates = Array.isArray(overrideData?.candidate_parents)
+        ? overrideData.candidate_parents
+        : [];
+    const selectedId = topologySeedParentId(overrideData);
+    const signature = JSON.stringify({
+        nodeId: currentNode()?.id ?? null,
+        selectedId,
+        currentParentId: overrideData?.current_parent_node_id || null,
+        candidates: candidates.map((candidate) => [candidate?.node_id || "", candidate?.node_name || ""]),
+        hasOverride: !!overrideData?.has_override,
+    });
+
+    if (!force && nodeTopologyInputsDirty) {
+        return;
+    }
+    if (!force && nodeTopologyLastSeedSignature === signature) {
+        return;
+    }
+
+    renderTopologyPinnedOptions(overrideData, selectedId);
+
+    nodeTopologyLastSeedSignature = signature;
+    nodeTopologyInputsDirty = false;
+}
+
+function renderNodeTopologySettings(node) {
+    const statusTarget = document.getElementById("nodeTopologyStatus");
+    if (statusTarget) {
+        if (nodeTopologyOverrideState.loading) {
+            statusTarget.textContent = "Loading topology override...";
+        } else if (nodeTopologyOverrideState.saving) {
+            statusTarget.textContent = "Saving topology override...";
+        } else if (nodeTopologyOverrideState.error) {
+            statusTarget.textContent = nodeTopologyOverrideState.error;
+        } else {
+            statusTarget.textContent = "";
+        }
+    }
+
+    renderTopologyOverrideValue(nodeTopologyOverrideState.data);
+    renderAlertMessages(
+        "nodeTopologyFlash",
+        nodeTopologyOverrideState.flash ? [nodeTopologyOverrideState.flash.message] : [],
+        nodeTopologyOverrideState.flash ? nodeTopologyOverrideState.flash.variant : "success",
+    );
+    renderAlertMessages(
+        "nodeTopologyWarnings",
+        nodeTopologyOverrideState.data?.warnings || [],
+        "warning",
+    );
+    renderAlertMessages(
+        "nodeTopologyDisabledReason",
+        nodeTopologyOverrideState.data?.disabled_reason ? [nodeTopologyOverrideState.data.disabled_reason] : [],
+        "secondary",
+    );
+
+    maybeSeedTopologyOverrideInputs(nodeTopologyOverrideState.data);
+
+    const canEdit = !!nodeTopologyOverrideState.data?.can_edit
+        && !nodeTopologyOverrideState.loading
+        && !nodeTopologyOverrideState.saving;
+    setNodeTopologyInputsDisabled(!canEdit);
+
+    const editorSection = document.getElementById("nodeTopologyEditorSection");
+    if (editorSection) {
+        editorSection.hidden = !canEdit;
+    }
+    const clearButton = document.getElementById("nodeTopologyClear");
+    if (clearButton) {
+        clearButton.disabled = !canEdit || !nodeTopologyOverrideState.data?.has_override;
+    }
+}
+
 function renderNodeSettings() {
     const node = currentNode();
     if (!node) {
@@ -926,6 +1174,8 @@ function renderNodeSettings() {
         clearButton.disabled = !canEdit || !nodeRateOverrideState.data?.has_override;
     }
 
+    renderNodeTopologySettings(node);
+
     const detailsPanel = document.querySelector(".lqos-tree-details-panel");
     if (detailsPanel) {
         enableTooltipsWithin(detailsPanel);
@@ -991,6 +1241,30 @@ async function loadNodeRateOverrideState() {
         nodeRateOverrideState.error = errorMsg?.message || "Unable to load override state";
     } finally {
         nodeRateOverrideState.loading = false;
+        renderNodeSettings();
+    }
+}
+
+async function loadNodeTopologyOverrideState() {
+    const query = currentNodeTopologyQuery();
+    if (!query) {
+        return;
+    }
+    nodeTopologyOverrideState.loading = true;
+    nodeTopologyOverrideState.error = null;
+    nodeTopologyOverrideState.data = null;
+    renderNodeSettings();
+    try {
+        const response = await sendWsRequest("GetNodeTopologyOverride", {
+            GetNodeTopologyOverride: {query},
+        });
+        nodeTopologyOverrideState.data = response.data || null;
+        nodeTopologyOverrideState.error = null;
+    } catch (errorMsg) {
+        nodeTopologyOverrideState.data = null;
+        nodeTopologyOverrideState.error = errorMsg?.message || "Unable to load topology override state";
+    } finally {
+        nodeTopologyOverrideState.loading = false;
         renderNodeSettings();
     }
 }
@@ -1073,6 +1347,94 @@ async function clearNodeRateOverride() {
         setNodeOverrideFlash(errorMsg?.message || "Unable to clear override.", "danger");
     } finally {
         nodeRateOverrideState.saving = false;
+        renderNodeSettings();
+    }
+}
+
+async function saveNodeTopologyOverride() {
+    const node = currentNode();
+    if (!node || !nodeTopologyOverrideState.data?.can_edit || nodeTopologyOverrideState.saving) {
+        return;
+    }
+
+    const parentNodeIds = currentTopologyInputParentIds();
+    if (parentNodeIds.length === 0) {
+        if (nodeTopologyOverrideState.data?.has_override) {
+            await clearNodeTopologyOverride();
+            return;
+        }
+        setNodeTopologyOverrideFlash("Default upstream parent selected. No topology override is set.", "secondary");
+        return;
+    }
+    if (parentNodeIds.length !== 1) {
+        setNodeTopologyOverrideFlash("Select exactly one pinned parent before saving.", "danger");
+        return;
+    }
+
+    nodeTopologyOverrideState.saving = true;
+    nodeTopologyOverrideState.error = null;
+    renderNodeSettings();
+    try {
+        const response = await sendWsRequest("SetNodeTopologyOverrideResult", {
+            SetNodeTopologyOverride: {
+                update: {
+                    node_id: node.id,
+                    node_name: node.name,
+                    mode: "pinned",
+                    parent_node_ids: parentNodeIds,
+                },
+            },
+        });
+        if (!response.ok) {
+            setNodeTopologyOverrideFlash(response.message || "Unable to save topology override.", "danger");
+            nodeTopologyOverrideState.data = response.data || nodeTopologyOverrideState.data;
+        } else {
+            nodeTopologyOverrideState.data = response.data || nodeTopologyOverrideState.data;
+            nodeTopologyInputsDirty = false;
+            nodeTopologyLastSeedSignature = null;
+            maybeSeedTopologyOverrideInputs(nodeTopologyOverrideState.data, true);
+            setNodeTopologyOverrideFlash(
+                response.message || `${topologyOverrideLabel()} saved.`,
+                "success",
+            );
+        }
+    } catch (errorMsg) {
+        setNodeTopologyOverrideFlash(errorMsg?.message || "Unable to save topology override.", "danger");
+    } finally {
+        nodeTopologyOverrideState.saving = false;
+        renderNodeSettings();
+    }
+}
+
+async function clearNodeTopologyOverride() {
+    const node = currentNode();
+    if (!node || !nodeTopologyOverrideState.data?.can_edit || nodeTopologyOverrideState.saving) {
+        return;
+    }
+
+    nodeTopologyOverrideState.saving = true;
+    nodeTopologyOverrideState.error = null;
+    renderNodeSettings();
+    try {
+        const response = await sendWsRequest("ClearNodeTopologyOverrideResult", {
+            ClearNodeTopologyOverride: {
+                query: currentNodeTopologyQuery(),
+            },
+        });
+        if (!response.ok) {
+            setNodeTopologyOverrideFlash(response.message || "Unable to clear topology override.", "danger");
+            nodeTopologyOverrideState.data = response.data || nodeTopologyOverrideState.data;
+        } else {
+            nodeTopologyOverrideState.data = response.data || nodeTopologyOverrideState.data;
+            nodeTopologyInputsDirty = false;
+            nodeTopologyLastSeedSignature = null;
+            maybeSeedTopologyOverrideInputs(nodeTopologyOverrideState.data, true);
+            setNodeTopologyOverrideFlash(response.message || "Topology override cleared.", "success");
+        }
+    } catch (errorMsg) {
+        setNodeTopologyOverrideFlash(errorMsg?.message || "Unable to clear topology override.", "danger");
+    } finally {
+        nodeTopologyOverrideState.saving = false;
         renderNodeSettings();
     }
 }
@@ -1211,10 +1573,11 @@ function getInitialTree() {
         const data = msg && msg.data ? msg.data : [];
         tree = data;
         buildChildrenMap();
-        const selectionState = reconcileSelection();
+        reconcileSelection();
         if (tree[parent] !== undefined) {
             fillHeader(tree[parent][1]);
             loadNodeRateOverrideState();
+            loadNodeTopologyOverrideState();
         }
         renderTree();
         requestTreeAttachedCircuitsWatch(true);
@@ -1610,6 +1973,7 @@ function treeUpdate(msg) {
     const selectionState = reconcileSelection();
     if (selectionState.identityChanged) {
         loadNodeRateOverrideState();
+        loadNodeTopologyOverrideState();
     }
     if (tree[parent] !== undefined) {
         fillHeader(tree[parent][1]);
@@ -1782,6 +2146,15 @@ document.getElementById("nodeOverrideSave")?.addEventListener("click", () => {
 document.getElementById("nodeOverrideClear")?.addEventListener("click", () => {
     clearNodeRateOverride();
 });
+document.getElementById("nodeTopologyPinnedParent")?.addEventListener("change", () => {
+    nodeTopologyInputsDirty = true;
+});
+document.getElementById("nodeTopologySave")?.addEventListener("click", () => {
+    saveNodeTopologyOverride();
+});
+document.getElementById("nodeTopologyClear")?.addEventListener("click", () => {
+    clearNodeTopologyOverride();
+});
 wsClient.on("TreeAttachedCircuitsSnapshot", attachedCircuitsUpdate);
 wsClient.on("TreeAttachedCircuitsUpdate", attachedCircuitsUpdate);
 wsClient.on("join", () => {
@@ -1790,6 +2163,7 @@ wsClient.on("join", () => {
     }
     requestTreeAttachedCircuitsWatch(true);
     loadNodeRateOverrideState();
+    loadNodeTopologyOverrideState();
 });
 
 loadRootGaugeConfigMax();

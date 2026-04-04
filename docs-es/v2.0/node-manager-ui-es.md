@@ -30,7 +30,13 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Los circuitos adjuntos se muestran en una tabla dedicada para el nodo seleccionado.
 - La columna de IP de circuitos adjuntos mantiene las filas compactas mostrando una dirección inline y colapsando las adicionales como `+X`, mientras la lista completa sigue disponible al pasar el cursor.
 - Los circuitos adjuntos limitados por Ethernet pueden mostrar insignias `10M`, `100M` o `1G` junto al valor de `Plan (Mbps)`; al pasar el cursor se explica el auto-cap y al hacer clic en la insignia se abre la página dedicada de revisión Ethernet.
-- Los administradores pueden guardar o limpiar valores de `Operator Override` cuando el nodo admite overrides a nivel de nodo. Los usuarios de solo lectura y los nodos no compatibles siguen mostrando los valores actuales sin controles de edición.
+- Los administradores pueden guardar o limpiar valores de `Rate Override` cuando el nodo admite overrides a nivel de nodo. Los usuarios de solo lectura y los nodos no compatibles siguen mostrando los valores actuales sin controles de edición.
+- Las ediciones de tasa desde la página del árbol escriben overrides operativos `AdjustSiteSpeed` en `lqos_overrides.json`.
+- En compilaciones UISP `full`, un `integrationUISPbandwidths.csv` heredado se auto-migra a esos overrides en la siguiente ejecución de la integración cuando todavía no existen overrides operativos de tasa; en caso contrario, el CSV se ignora.
+- Las ediciones de tasa desde la página del árbol requieren sesión de administrador, un `node_id` estable y un nodo no generado. Los nodos generados/sintéticos de la integración permanecen en solo lectura en este editor.
+- La página del árbol mantiene `Node Details` como una tarjeta compacta de resumen y coloca los editores de override como filas compactas directamente debajo de la tabla de detalles.
+- Los nodos de UISP con estrategia `full` también pueden exponer un editor de `Topology Override` en la página del árbol. Las compilaciones actuales soportan solo `Pinned Parent`, usando los candidatos inmediatos detectados aguas arriba del nodo y guardando esa decisión del operador en `lqos_overrides.json`.
+- El selector de padre fijado usa `Default upstream parent` cuando no existe un override. Elegir esa opción deja el nodo con el padre seleccionado por la integración.
 
 ### Site Map
 - Mapa operativo plano de sitios y APs usando geodatos importados de nodos.

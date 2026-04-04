@@ -30,9 +30,13 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Attached circuits are shown in a dedicated table for the selected node.
 - The attached-circuits IP column keeps rows compact by showing one address inline and collapsing additional addresses as `+X`, with the full list still available on hover.
 - Ethernet-limited attached circuits can show inline `10M`, `100M`, or `1G` warning badges beside the `Plan (Mbps)` value; hovering explains the auto-cap and clicking the badge opens the dedicated Ethernet review page.
-- Administrators can save or clear `Operator Override` values where node-level overrides are supported. Read-only users and unsupported nodes continue to display current values without edit controls.
-- Tree-page operator rate edits write operator-owned overrides to `lqos_overrides.json`; they do not rewrite legacy integration bandwidth CSV files.
+- Administrators can save or clear `Rate Override` values where node-level overrides are supported. Read-only users and unsupported nodes continue to display current values without edit controls.
+- Tree-page operator rate edits write operator-owned `AdjustSiteSpeed` overrides to `lqos_overrides.json`.
+- On UISP `full` builds, legacy `integrationUISPbandwidths.csv` files are auto-migrated into those operator overrides on the next integration run when no operator rate overrides exist yet; otherwise the CSV is ignored.
 - Tree-page operator rate edits require an administrator session, a stable node ID, and a non-generated node. Generated/integration-synthetic nodes remain read-only in this editor.
+- The tree page keeps `Node Details` as a compact summary card and places the override editors as compact inline rows directly beneath the details table.
+- UISP `full` strategy nodes can also expose a `Topology Override` editor on the tree page. Current builds support `Pinned Parent` only, using the node's detected immediate upstream candidates and storing that operator choice in `lqos_overrides.json`.
+- The pinned-parent selector defaults to `Default upstream parent` when no override is set. Choosing that default leaves the node on the integration-selected parent.
 
 ### Site Map
 - Flat operational map of Sites and APs using imported node geodata.
