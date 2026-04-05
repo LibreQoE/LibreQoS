@@ -404,12 +404,19 @@ mod tests {
             role: None,
             wireless_mode: None,
             site_id: "client-site".to_string(),
+            raw_download: 100,
+            raw_upload: 50,
             download: 100,
             upload: 50,
             ipv4: HashSet::new(),
             ipv6: HashSet::new(),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: None,
             negotiated_ethernet_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,
         }];
 
         let mut shaped_devices = Vec::new();

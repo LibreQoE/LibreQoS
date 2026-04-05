@@ -11,6 +11,7 @@ mod lqos_daht_test;
 pub mod lts2_sys;
 mod node_manager;
 mod preflight_checks;
+mod probe_provider;
 mod program_control;
 mod remote_commands;
 mod rtt_exclusions;
@@ -324,6 +325,11 @@ fn main() -> Result<()> {
                     }
                 });
 
+                let probe_client =
+                    lqos_probe::ProbeManager::spawn(lqos_probe::ProbeManagerConfig::default());
+                let probe_client_for_stormguard = probe_client.clone();
+                probe_provider::install_probe_client(probe_client.clone());
+
                 tokio::spawn(async move {
                     match lts2_sys::control_channel::start_control_channel(control_channel).await {
                         Ok(_) => info!("Insight control channel started successfully"),
@@ -333,6 +339,7 @@ fn main() -> Result<()> {
                     match lqos_stormguard::start_stormguard(
                         bakery_sender_for_async,
                         shaped_devices_tracker::full_network_map_snapshot,
+                        probe_client_for_stormguard,
                     )
                     .await
                     {
@@ -350,11 +357,13 @@ fn main() -> Result<()> {
                 let webserver_disabled = config.disable_webserver.unwrap_or(false);
                 if !webserver_disabled {
                     let control_tx_for_webserver = control_tx_for_webserver.clone();
+                    let probe_client_for_webserver = probe_client.clone();
                     tokio::spawn(async move {
                         if let Err(e) = node_manager::spawn_webserver(
                             bus_tx,
                             system_usage_tx,
                             control_tx_for_webserver,
+                            probe_client_for_webserver,
                         )
                         .await
                         {
@@ -490,6 +499,16 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::ListIpFlow => list_mapped_ips(),
             BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
             BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
+            BusRequest::ProbeBatch {
+                requests,
+                max_age_ms,
+            } => match probe_provider::probe_batch_blocking(
+                requests.clone(),
+                Duration::from_millis(*max_age_ms),
+            ) {
+                Ok(observations) => BusResponse::ProbeObservations(observations),
+                Err(err) => BusResponse::Fail(err),
+            },
             BusRequest::HostCounts => throughput_tracker::host_counts(),
             BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
             BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),

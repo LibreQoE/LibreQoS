@@ -30,7 +30,7 @@ pub struct BandwidthOverride {
 /// 1. Operator `AdjustSiteSpeed` overrides from `lqos_overrides.json`
 /// 2. One-time migration from `integrationUISPbandwidths.csv` into operator overrides
 ///
-/// Legacy `uisp.bandwidth_overrides` entries are intentionally ignored.
+/// Deprecated legacy `uisp.bandwidth_overrides` entries are intentionally ignored.
 pub fn get_site_bandwidth_overrides(
     config: &Config,
 ) -> Result<Vec<BandwidthOverride>, UispIntegrationError> {
@@ -43,6 +43,16 @@ pub fn get_site_bandwidth_overrides(
         error!("{err:?}");
         UispIntegrationError::CsvError
     })?;
+
+    if let Some(uisp) = operator_overrides.uisp()
+        && !uisp.bandwidth_overrides.is_empty()
+    {
+        warn!(
+            path = %operator_path.display(),
+            count = uisp.bandwidth_overrides.len(),
+            "Deprecated legacy uisp.bandwidth_overrides entries are present but ignored. Use operator AdjustSiteSpeed overrides in lqos_overrides.json instead"
+        );
+    }
 
     let mut materialized = materialize_operator_site_bandwidth_overrides(&operator_overrides);
     if !materialized.is_empty() {
@@ -365,6 +375,22 @@ mod test {
             }]
         );
         assert!(legacy_bandwidth_csv_path(&config).exists());
+    }
+
+    #[test]
+    fn legacy_uisp_json_bandwidth_overrides_are_ignored() {
+        let dir = unique_temp_dir("legacy-json-ignored");
+        let config = config_for_dir(&dir);
+        let operator_path = OverrideFile::operator_path_for_config(&config);
+
+        let mut overrides = OverrideFile::default();
+        overrides.set_uisp_bandwidth_override("Site1".to_string(), 222.0, 111.0);
+        overrides
+            .save_to_explicit_path(&operator_path)
+            .expect("operator overrides should save");
+
+        let loaded = get_site_bandwidth_overrides(&config).expect("overrides should load");
+        assert!(loaded.is_empty());
     }
 
     #[test]

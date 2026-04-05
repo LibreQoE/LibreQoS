@@ -303,9 +303,13 @@ mod tests {
             node_name: "Node 1".to_string(),
             shaper_version: Some("2.1.0".to_string()),
         };
-        let (_, _, bytes) = message.to_bytes().unwrap();
+        let (_, _, bytes) = message
+            .to_bytes()
+            .expect("license message should serialize for round-trip test");
 
-        match WsMessage::from_bytes(&bytes).unwrap() {
+        match WsMessage::from_bytes(&bytes)
+            .expect("license message should decode for round-trip test")
+        {
             WsMessage::License {
                 shaper_version,
                 node_id,
@@ -327,10 +331,13 @@ mod tests {
             node_id: "legacy-node".to_string(),
             node_name: "Legacy Node".to_string(),
         };
-        let raw_bytes = serde_cbor::to_vec(&legacy).unwrap();
+        let raw_bytes =
+            serde_cbor::to_vec(&legacy).expect("legacy license payload should encode to CBOR");
         let bytes = miniz_oxide::deflate::compress_to_vec(&raw_bytes, 1);
 
-        match WsMessage::from_bytes(&bytes).unwrap() {
+        match WsMessage::from_bytes(&bytes)
+            .expect("legacy license payload should decode without shaper_version")
+        {
             WsMessage::License {
                 shaper_version,
                 node_id,

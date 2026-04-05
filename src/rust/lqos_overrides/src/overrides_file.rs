@@ -138,20 +138,24 @@ pub enum TopologyParentOverrideMode {
 pub struct UispOverrides {
     #[serde(default)]
     /// Per-site UISP bandwidth overrides keyed by site name as `(download_mbps, upload_mbps)`.
+    /// Deprecated legacy entries. Current UISP builds ignore these and use
+    /// operator `AdjustSiteSpeed` entries instead.
     pub bandwidth_overrides: std::collections::HashMap<String, (f32, f32)>,
     #[serde(default)]
-    /// Route overrides applied between UISP sites.
+    /// Deprecated legacy UISP route overrides. Current UISP builds ignore these
+    /// entries and use Topology Manager parent or attachment preferences instead.
     pub route_overrides: Vec<UispRouteOverride>,
 }
 
 /// A UISP route cost override between two sites.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UispRouteOverride {
-    /// Source site name.
+    /// Source site name for a deprecated legacy UISP route override.
     pub from_site: String,
-    /// Destination site name.
+    /// Destination site name for a deprecated legacy UISP route override.
     pub to_site: String,
-    /// Replacement routing cost between the two sites.
+    /// Replacement routing cost between the two sites. Current UISP builds ignore
+    /// this value.
     pub cost: u32,
 }
 
@@ -970,13 +974,17 @@ impl OverrideFile {
         self.uisp.as_mut().unwrap()
     }
 
-    /// Adds or replaces the UISP bandwidth override for `site_name`.
+    /// Adds or replaces a deprecated legacy UISP bandwidth override for `site_name`.
+    ///
+    /// Current UISP builds ignore these entries. Use `set_site_bandwidth_override`
+    /// to create authoritative operator `AdjustSiteSpeed` overrides instead.
     pub fn set_uisp_bandwidth_override(&mut self, site_name: String, down: f32, up: f32) {
         let uisp = self.ensure_uisp_mut();
         uisp.bandwidth_overrides.insert(site_name, (down, up));
     }
 
-    /// Removes the UISP bandwidth override for `site_name`. Returns `true` when one existed.
+    /// Removes a deprecated legacy UISP bandwidth override for `site_name`.
+    /// Returns `true` when one existed.
     pub fn remove_uisp_bandwidth_override(&mut self, site_name: &str) -> bool {
         let uisp = self.ensure_uisp_mut();
         uisp.bandwidth_overrides.remove(site_name).is_some()

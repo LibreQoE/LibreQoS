@@ -20,7 +20,7 @@ use crate::node_manager::local_api::node_rate_overrides::{
     NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
 };
 use crate::node_manager::local_api::node_topology_overrides::{
-    NodeTopologyOverrideData, NodeTopologyOverrideQuery, NodeTopologyOverrideUpdate,
+    NodeTopologyOverrideData, NodeTopologyOverrideQuery,
 };
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
@@ -29,10 +29,12 @@ use crate::node_manager::local_api::shaped_devices_page::{
     ShapedDevicesPage, ShapedDevicesPageQuery,
 };
 use crate::node_manager::local_api::topology_manager::{
+    TopologyManagerAttachmentRateOverrideClear, TopologyManagerAttachmentRateOverrideUpdate,
     TopologyManagerClear, TopologyManagerManualAttachmentGroupClear,
     TopologyManagerManualAttachmentGroupUpdate, TopologyManagerProbePolicyUpdate,
     TopologyManagerStateData, TopologyManagerUpdate,
 };
+use crate::node_manager::local_api::topology_probes::TopologyProbesStateData;
 use crate::node_manager::local_api::tree_attached_circuits::{
     TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery,
 };
@@ -201,13 +203,8 @@ pub enum WsRequest {
     GetNodeTopologyOverride {
         query: NodeTopologyOverrideQuery,
     },
-    SetNodeTopologyOverride {
-        update: NodeTopologyOverrideUpdate,
-    },
-    ClearNodeTopologyOverride {
-        query: NodeTopologyOverrideQuery,
-    },
     GetTopologyManagerState,
+    GetTopologyProbesState,
     SetTopologyManagerOverride {
         update: TopologyManagerUpdate,
     },
@@ -216,6 +213,12 @@ pub enum WsRequest {
     },
     SetTopologyManagerProbePolicy {
         update: TopologyManagerProbePolicyUpdate,
+    },
+    SetTopologyManagerAttachmentRateOverride {
+        update: TopologyManagerAttachmentRateOverrideUpdate,
+    },
+    ClearTopologyManagerAttachmentRateOverride {
+        clear: TopologyManagerAttachmentRateOverrideClear,
     },
     SetTopologyManagerManualAttachmentGroup {
         update: TopologyManagerManualAttachmentGroupUpdate,
@@ -709,18 +712,11 @@ pub enum WsResponse {
     GetNodeTopologyOverride {
         data: NodeTopologyOverrideData,
     },
-    SetNodeTopologyOverrideResult {
-        ok: bool,
-        message: String,
-        data: NodeTopologyOverrideData,
-    },
-    ClearNodeTopologyOverrideResult {
-        ok: bool,
-        message: String,
-        data: NodeTopologyOverrideData,
-    },
     GetTopologyManagerState {
         data: TopologyManagerStateData,
+    },
+    GetTopologyProbesState {
+        data: TopologyProbesStateData,
     },
     SetTopologyManagerOverrideResult {
         ok: bool,
@@ -733,6 +729,16 @@ pub enum WsResponse {
         data: TopologyManagerStateData,
     },
     SetTopologyManagerProbePolicyResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerAttachmentRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerAttachmentRateOverrideResult {
         ok: bool,
         message: String,
         data: TopologyManagerStateData,

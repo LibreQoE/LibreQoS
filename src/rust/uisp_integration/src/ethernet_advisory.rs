@@ -112,12 +112,19 @@ mod tests {
             role: role.map(str::to_string),
             wireless_mode: wireless_mode.map(str::to_string),
             site_id: "site-1".to_string(),
+            raw_download: 1000,
+            raw_upload: 1000,
             download: 1000,
             upload: 1000,
             ipv4: HashSet::new(),
             ipv6: HashSet::new(),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: speed,
             negotiated_ethernet_interface: iface.map(str::to_string),
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,
         }
     }
 

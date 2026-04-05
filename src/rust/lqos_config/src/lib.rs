@@ -37,7 +37,7 @@ pub use etc::{
 };
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
-    EthernetRateDecision, RequestedCircuitRates, apply_ethernet_rate_cap,
+    EthernetRateDecision, RequestedCircuitRates, apply_ethernet_rate_cap, usable_ethernet_cap_mbps,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use planner::{
@@ -56,8 +56,9 @@ pub use qoo_profiles::{
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
 pub use topology_editor_state::{
     TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
-    TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyEditorNode,
-    TopologyEditorStateError, TopologyEditorStateFile, topology_editor_state_path,
+    TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,
+    TopologyAttachmentRole, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
+    topology_editor_state_path,
 };
 pub use topology_parent_candidates::{
     TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,

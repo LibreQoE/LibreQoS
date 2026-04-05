@@ -12,8 +12,13 @@ const MAP_ZOOM_MAX = 2.6;
 const MAP_ZOOM_STEP = 0.14;
 const MAP_PAN_THRESHOLD_SQ = 25;
 const ROOT_NODE_ID = "__topology_root__";
+const MAX_VISIBLE_UPSTREAM_PREVIEW_NODES = 2;
 const MAX_CHILD_PREVIEW_NODES = 6;
 const MAX_SEARCH_SUGGESTIONS = 8;
+const SELECTED_NODE_URL_PARAM = "node_id";
+const TOPOLOGY_STATE_REFRESH_INTERVAL_MS = 4000;
+const TOPOLOGY_STATE_REFRESH_VISIBLE_DELAY_MS = 250;
+const TOPOLOGY_STATE_REFRESH_EDIT_DEFER_MS = 1200;
 
 let topologyManagerState = null;
 let topologyNodeById = new Map();
@@ -35,6 +40,10 @@ let moveMode = false;
 let attachmentEditMode = false;
 let manualAttachmentEditMode = false;
 let manualAttachmentDraftRows = [];
+let attachmentRateEditParentId = null;
+let attachmentRateEditAttachmentId = null;
+let attachmentRateDraftDownloadMbps = "";
+let attachmentRateDraftUploadMbps = "";
 let dragActive = false;
 let dragMoved = false;
 let dragHoverParentId = null;
@@ -47,6 +56,15 @@ let mapPanStartView = null;
 let mapView = {scale: 1, x: 0, y: 0};
 let searchSuggestionNodeIds = [];
 let searchSuggestionIndex = -1;
+let topologyStateRefreshTimer = null;
+let topologyStateRefreshInFlight = false;
+
+function clearAttachmentRateEditState() {
+    attachmentRateEditParentId = null;
+    attachmentRateEditAttachmentId = null;
+    attachmentRateDraftDownloadMbps = "";
+    attachmentRateDraftUploadMbps = "";
+}
 
 function listenOnce(eventName, handler) {
     const wrapped = (msg) => {
@@ -77,6 +95,40 @@ function sendWsRequest(responseEvent, request) {
         wsClient.on("Error", errorHandler);
         wsClient.send(request);
     });
+}
+
+function selectedNodeIdFromUrl() {
+    try {
+        const params = new URLSearchParams(window.location.search || "");
+        const value = (params.get(SELECTED_NODE_URL_PARAM) || "").trim();
+        return value || null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function preferredInitialNodeId() {
+    return selectedNodeIdFromUrl() || ROOT_NODE_ID;
+}
+
+function urlWithSelectedNodeId(nodeId) {
+    const url = new URL(window.location.href);
+    if (nodeId) {
+        url.searchParams.set(SELECTED_NODE_URL_PARAM, nodeId);
+    } else {
+        url.searchParams.delete(SELECTED_NODE_URL_PARAM);
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function syncSelectedNodeUrl(nodeId, mode = "replace") {
+    const nextUrl = urlWithSelectedNodeId(nodeId);
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl === currentUrl) {
+        return;
+    }
+    const method = mode === "push" ? "pushState" : "replaceState";
+    history[method](null, "", nextUrl);
 }
 
 function escapeHtml(text) {
@@ -227,6 +279,95 @@ function canSelectNodeId(nodeId) {
         || topologyLabelById.has(nodeId);
 }
 
+function hasUnsavedTopologyEdits() {
+    return moveMode || attachmentEditMode || manualAttachmentEditMode || !!attachmentRateEditAttachmentId;
+}
+
+function reconcileSelectedNodeId(preferredNodeId = null) {
+    const nextSelectedNodeId = canSelectNodeId(preferredNodeId)
+        ? preferredNodeId
+        : (canSelectNodeId(selectedNodeId) ? selectedNodeId : pickDefaultNodeId());
+    const selectionChanged = nextSelectedNodeId !== selectedNodeId;
+    if (selectionChanged) {
+        selectedNodeId = nextSelectedNodeId;
+        moveMode = false;
+        attachmentEditMode = false;
+        manualAttachmentEditMode = false;
+        manualAttachmentDraftRows = [];
+        clearAttachmentRateEditState();
+        resetMapView();
+    }
+    syncSelectedNodeUrl(selectedNodeId, "replace");
+    return selectionChanged;
+}
+
+function applyTopologyManagerState(data, options = {}) {
+    indexTopologyState(data);
+    const selectionChanged = reconcileSelectedNodeId(options.preferredNodeId || null);
+    if (!options.preserveEdits || selectionChanged) {
+        initializeProposalFromSaved();
+    }
+    if (attachmentRateEditAttachmentId && !attachmentRateEditOption()) {
+        clearAttachmentRateEditState();
+    }
+    if (Object.prototype.hasOwnProperty.call(options, "flash")) {
+        lastFlash = options.flash;
+    }
+    renderEverything(options.warnings || data?.global_warnings || []);
+}
+
+function clearTopologyStateRefreshTimer() {
+    if (topologyStateRefreshTimer !== null) {
+        window.clearTimeout(topologyStateRefreshTimer);
+        topologyStateRefreshTimer = null;
+    }
+}
+
+function hasFocusedTopologyEditorInput() {
+    const active = document.activeElement;
+    const details = document.getElementById("topologyManagerDetails");
+    if (!active || !details || !details.contains(active)) {
+        return false;
+    }
+    const tagName = (active.tagName || "").toUpperCase();
+    return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+}
+
+function scheduleTopologyStateRefresh(delayMs = TOPOLOGY_STATE_REFRESH_INTERVAL_MS) {
+    clearTopologyStateRefreshTimer();
+    topologyStateRefreshTimer = window.setTimeout(() => {
+        refreshTopologyManagerState();
+    }, delayMs);
+}
+
+async function refreshTopologyManagerState(options = {}) {
+    if (topologyStateRefreshInFlight) {
+        return;
+    }
+    if (!options.force && document.hidden) {
+        scheduleTopologyStateRefresh();
+        return;
+    }
+    if (!options.force && hasFocusedTopologyEditorInput()) {
+        scheduleTopologyStateRefresh(TOPOLOGY_STATE_REFRESH_EDIT_DEFER_MS);
+        return;
+    }
+    topologyStateRefreshInFlight = true;
+    try {
+        const response = await sendWsRequest("GetTopologyManagerState", {GetTopologyManagerState: {}});
+        applyTopologyManagerState(response.data, {
+            preserveEdits: hasUnsavedTopologyEdits(),
+        });
+    } catch (error) {
+        if (options.reportErrors) {
+            showWarnings([error?.message || "Unable to refresh topology manager state."], null);
+        }
+    } finally {
+        topologyStateRefreshInFlight = false;
+        scheduleTopologyStateRefresh();
+    }
+}
+
 function synthesizeContextMeta(nodeId) {
     if (nodeId === ROOT_NODE_ID) {
         return {
@@ -340,6 +481,28 @@ function proposedPathIds(nodeId, parentId) {
         return parentPath;
     }
     return [...parentPath, nodeId];
+}
+
+function truncatedPreviewPath(pathIds, markerKey) {
+    if (!Array.isArray(pathIds) || pathIds.length === 0) {
+        return [];
+    }
+    const visibleCount = MAX_VISIBLE_UPSTREAM_PREVIEW_NODES + 1;
+    if (pathIds.length <= visibleCount) {
+        return pathIds.map((nodeId) => ({nodeId}));
+    }
+
+    const tail = pathIds.slice(-visibleCount);
+    const omittedCount = pathIds.length - tail.length;
+    return [
+        {
+            nodeId: `__topology_preview_stub__:${markerKey}`,
+            label: "…",
+            sublabel: `${omittedCount} earlier ${omittedCount === 1 ? "node" : "nodes"}`,
+            isSynthetic: true,
+        },
+        ...tail.map((nodeId) => ({nodeId})),
+    ];
 }
 
 function descendantCount(nodeId) {
@@ -633,6 +796,122 @@ function blankManualAttachmentRow() {
     };
 }
 
+function formatBandwidthValue(value) {
+    const numeric = Number.parseInt(String(value ?? ""), 10);
+    return Number.isFinite(numeric) && numeric > 0 ? `${numeric} Mbps` : null;
+}
+
+function formatAttachmentBandwidth(option) {
+    const download = Number.parseInt(String(option?.download_bandwidth_mbps ?? ""), 10);
+    const upload = Number.parseInt(String(option?.upload_bandwidth_mbps ?? ""), 10);
+    if (Number.isFinite(download) && download > 0 && Number.isFinite(upload) && upload > 0) {
+        return download === upload
+            ? `${download} Mbps`
+            : `${download} down / ${upload} up Mbps`;
+    }
+    return formatBandwidthValue(option?.capacity_mbps);
+}
+
+function attachmentRateSourceLabel(option) {
+    switch (option?.rate_source) {
+    case "dynamic_integration":
+        return "Dynamic integration rate";
+    case "manual":
+        return "Manual attachment rate";
+    case "static":
+        return "Static attachment rate";
+    default:
+        return null;
+    }
+}
+
+function attachmentRoleLabel(option) {
+    switch (option?.attachment_role) {
+    case "ptp_backhaul":
+        return "PtP Backhaul";
+    case "ptmp_uplink":
+        return "PtMP Uplink";
+    case "wired_uplink":
+        return "Wired Uplink";
+    case "manual":
+        return "Manual";
+    default:
+        return null;
+    }
+}
+
+function isEditingAttachmentRate(parentMeta, option) {
+    return !!parentMeta
+        && !!option
+        && attachmentRateEditParentId === parentMeta.parent_node_id
+        && attachmentRateEditAttachmentId === option.attachment_id;
+}
+
+function attachmentRateEditOption() {
+    const meta = selectedMeta();
+    if (!meta || !attachmentRateEditParentId || !attachmentRateEditAttachmentId) {
+        return null;
+    }
+    const parent = allowedParentsForSelected().find((entry) => entry.parent_node_id === attachmentRateEditParentId);
+    if (!parent) {
+        return null;
+    }
+    const option = explicitAttachmentOptions(parent).find((entry) => entry.attachment_id === attachmentRateEditAttachmentId);
+    if (!option) {
+        return null;
+    }
+    return {parent, option};
+}
+
+function startAttachmentRateEdit(parentNodeId, attachmentId) {
+    const parent = allowedParentsForSelected().find((entry) => entry.parent_node_id === parentNodeId);
+    const option = explicitAttachmentOptions(parent).find((entry) => entry.attachment_id === attachmentId);
+    if (!topologyManagerState?.writable || !option?.can_override_rate) {
+        return;
+    }
+    moveMode = false;
+    attachmentEditMode = false;
+    manualAttachmentEditMode = false;
+    manualAttachmentDraftRows = [];
+    attachmentRateEditParentId = parentNodeId;
+    attachmentRateEditAttachmentId = attachmentId;
+    attachmentRateDraftDownloadMbps = String(option.download_bandwidth_mbps ?? option.capacity_mbps ?? "");
+    attachmentRateDraftUploadMbps = String(option.upload_bandwidth_mbps ?? option.capacity_mbps ?? "");
+    renderEverything();
+}
+
+function cancelAttachmentRateEditMode() {
+    clearAttachmentRateEditState();
+    renderEverything();
+}
+
+function syncAttachmentRateDraftFromInputs() {
+    if (!attachmentRateEditAttachmentId) {
+        return;
+    }
+    const downloadInput = document.getElementById("topologyManagerAttachmentRateDownload");
+    const uploadInput = document.getElementById("topologyManagerAttachmentRateUpload");
+    if (downloadInput) {
+        attachmentRateDraftDownloadMbps = downloadInput.value || "";
+    }
+    if (uploadInput) {
+        attachmentRateDraftUploadMbps = uploadInput.value || "";
+    }
+}
+
+function attachmentRateSaveDisabled() {
+    const download = Number.parseInt(String(attachmentRateDraftDownloadMbps || ""), 10);
+    const upload = Number.parseInt(String(attachmentRateDraftUploadMbps || ""), 10);
+    return !Number.isFinite(download) || download <= 0 || !Number.isFinite(upload) || upload <= 0;
+}
+
+function refreshAttachmentRateSaveButton() {
+    const button = document.getElementById("topologyManagerSaveAttachmentRate");
+    if (button) {
+        button.disabled = attachmentRateSaveDisabled();
+    }
+}
+
 function formatUnixTimestamp(value) {
     if (!value) {
         return "Not scheduled";
@@ -658,6 +937,73 @@ function attachmentHealthBadge(option) {
     return `<span class="badge text-bg-secondary">Probe Disabled</span>`;
 }
 
+function attachmentProbeBadge(option) {
+    return option?.probe_enabled
+        ? "<span class='badge text-bg-info'>Probe On</span>"
+        : "<span class='badge text-bg-secondary'>Probe Off</span>";
+}
+
+function attachmentSelectionBadges(parentMeta, option) {
+    const meta = selectedMeta();
+    const badges = [];
+    const isUsingNow = !!option?.effective_selected;
+    const isPreferred = !!meta
+        && parentMeta?.parent_node_id === attachmentEditParentId(meta)
+        && (
+            (meta.override_attachment_preference_ids || []).includes(option?.attachment_id)
+            || meta.preferred_attachment_name === option?.attachment_name
+        );
+
+    if (isUsingNow && isPreferred) {
+        badges.push("<span class='badge text-bg-primary'>Using Now / Preferred</span>");
+        return badges.join("");
+    }
+    if (isUsingNow) {
+        badges.push("<span class='badge text-bg-primary'>Using Now</span>");
+    }
+    if (isPreferred) {
+        badges.push("<span class='badge text-bg-success'>Preferred</span>");
+    }
+    return badges.join("");
+}
+
+function attachmentStatusLine(option) {
+    const parts = [];
+    const bandwidth = formatAttachmentBandwidth(option);
+    if (bandwidth) {
+        parts.push(escapeHtml(bandwidth));
+    }
+    parts.push(option?.probe_enabled ? "Probe On" : "Probe Off");
+    if (option?.has_rate_override) {
+        parts.push("Attachment Rate");
+    }
+    const rateSource = attachmentRateSourceLabel(option);
+    if (rateSource) {
+        parts.push(escapeHtml(rateSource));
+    }
+    return parts.join(" • ");
+}
+
+function attachmentReasonNote(option) {
+    const rows = [];
+    if (option?.health_reason) {
+        rows.push(escapeHtml(option.health_reason));
+    }
+    if (option?.suppressed_until_unix) {
+        rows.push(`Suppressed until ${escapeHtml(formatUnixTimestamp(option.suppressed_until_unix))}`);
+    }
+    if (option?.transport_cap_reason) {
+        const capText = formatBandwidthValue(option.transport_cap_mbps);
+        rows.push(capText
+            ? `Transport cap ${escapeHtml(capText)}: ${escapeHtml(option.transport_cap_reason)}`
+            : escapeHtml(option.transport_cap_reason));
+    }
+    if (option?.local_probe_ip || option?.remote_probe_ip) {
+        rows.push(`${escapeHtml(option.local_probe_ip || "?")} ↔ ${escapeHtml(option.remote_probe_ip || "?")}`);
+    }
+    return rows.join(" · ");
+}
+
 function attachmentHealthDetails(option) {
     const rows = [];
     if (option?.health_reason) {
@@ -666,8 +1012,22 @@ function attachmentHealthDetails(option) {
     if (option?.suppressed_until_unix) {
         rows.push(`Suppressed until ${escapeHtml(formatUnixTimestamp(option.suppressed_until_unix))}`);
     }
-    if (option?.capacity_mbps) {
-        rows.push(`${escapeHtml(option.capacity_mbps)} Mbps`);
+    const bandwidth = formatAttachmentBandwidth(option);
+    if (bandwidth) {
+        rows.push(escapeHtml(bandwidth));
+    }
+    const rateSource = attachmentRateSourceLabel(option);
+    if (rateSource) {
+        rows.push(escapeHtml(rateSource));
+    }
+    if (option?.has_rate_override) {
+        rows.push("Attachment rate override active");
+    }
+    if (option?.transport_cap_reason) {
+        const capText = formatBandwidthValue(option.transport_cap_mbps);
+        rows.push(capText
+            ? `Transport cap ${escapeHtml(capText)}: ${escapeHtml(option.transport_cap_reason)}`
+            : escapeHtml(option.transport_cap_reason));
     }
     if (option?.local_probe_ip || option?.remote_probe_ip) {
         rows.push(`${escapeHtml(option.local_probe_ip || "?")} ↔ ${escapeHtml(option.remote_probe_ip || "?")}`);
@@ -772,57 +1132,41 @@ function renderModeBanner() {
 
     const meta = selectedMeta();
     if (!meta) {
-        container.innerHTML = "<div class='alert alert-secondary py-2 mb-0'>Select a branch to inspect it. Start a move only when you want to change its parentage.</div>";
+        container.innerHTML = "<span class='topology-manager-inline-note'><i class='fa fa-circle-info'></i>Select a branch to inspect or edit it.</span>";
         return;
     }
 
     if (!meta.can_move) {
-        container.innerHTML = `
-            <div class="alert alert-secondary py-2 mb-0">
-                <strong>Inspect mode.</strong> ${escapeHtml(meta.node_name)} is read-only. You can still click through upstream and downstream context in the preview, but this node cannot be rehomed here.
-            </div>
-        `;
-        return;
-    }
-
-    if (!moveMode && !attachmentEditMode) {
-        const attachmentAction = hasInspectableAttachmentChoices(meta)
-            ? " To tune radio preference without changing parentage, use <strong>Edit Attachment Preference</strong> in the Details panel."
-            : "";
-        container.innerHTML = `
-            <div class="alert alert-secondary py-2 mb-0">
-                <strong>Inspect mode.</strong> Click any node in the preview to navigate context. To change parentage for ${escapeHtml(meta.node_name)}, use <strong>Start Move</strong> in the Details panel.${attachmentAction} Until then, the preview is context only.
-            </div>
-        `;
+        container.innerHTML = "";
         return;
     }
 
     if (attachmentEditMode) {
         const attachmentParentName = attachmentEditParentMeta(meta)?.parent_node_name || "current parent";
-        container.innerHTML = `
-            <div class="alert alert-primary py-2 mb-0">
-                <strong>Attachment edit mode.</strong> Adjust attachment/radio preference for <strong>${escapeHtml(attachmentParentName)}</strong> without changing parentage.
-            </div>
-        `;
+        container.innerHTML = `<span class="topology-manager-inline-note"><i class="fa fa-tower-broadcast"></i>Editing attachment preference for ${escapeHtml(attachmentParentName)}.</span>`;
         return;
     }
 
     if (manualAttachmentEditMode) {
         const parentName = manualAttachmentParentMeta(meta)?.parent_node_name || "selected parent";
-        container.innerHTML = `
-            <div class="alert alert-primary py-2 mb-0">
-                <strong>Manual attachment group mode.</strong> Define explicit parallel attachments for <strong>${escapeHtml(parentName)}</strong>, including capacity, probe IPs, and probe opt-in.
-            </div>
-        `;
+        container.innerHTML = `<span class="topology-manager-inline-note"><i class="fa fa-diagram-project"></i>Editing a manual attachment group for ${escapeHtml(parentName)}.</span>`;
+        return;
+    }
+
+    if (attachmentRateEditAttachmentId) {
+        const current = attachmentRateEditOption();
+        const attachmentName = current?.option?.attachment_name || "selected attachment";
+        container.innerHTML = `<span class="topology-manager-inline-note"><i class="fa fa-gauge-high"></i>Editing attachment rate override for ${escapeHtml(attachmentName)}.</span>`;
+        return;
+    }
+
+    if (!moveMode) {
+        container.innerHTML = "";
         return;
     }
 
     const proposedParentName = proposedParentMeta()?.parent_node_name || "none selected yet";
-    container.innerHTML = `
-        <div class="alert alert-primary py-2 mb-0">
-            <strong>Move mode.</strong> Green nodes are allowed parents for ${escapeHtml(meta.node_name)}. Choose one from the target cards or drag the selected branch onto a green target. Current choice: <strong>${escapeHtml(proposedParentName)}</strong>.
-        </div>
-    `;
+    container.innerHTML = `<span class="topology-manager-inline-note"><i class="fa fa-arrows-up-down-left-right"></i>Move mode. Green nodes are legal parents. Current target: ${escapeHtml(proposedParentName)}.</span>`;
 }
 
 function updateHeader() {
@@ -834,10 +1178,10 @@ function updateHeader() {
     const overrideCount = topologyNodesSorted.filter((node) => node.has_override).length;
     const selected = selectedMeta();
     summary.textContent = selected
-        ? `${selected.node_name} selected, ${movableCount} movable branches, ${overrideCount} saved moves`
-        : `${movableCount} movable branches, ${overrideCount} saved moves`;
+        ? `${selected.node_name} selected · ${movableCount} movable · ${overrideCount} saved`
+        : `${movableCount} movable · ${overrideCount} saved`;
     source.textContent = topologyManagerState?.source
-        ? `Source: ${topologyManagerState.source} (schema ${topologyManagerState.schema_version})`
+        ? `${topologyManagerState.source} · schema ${topologyManagerState.schema_version}`
         : "No topology editor source is currently available";
 }
 
@@ -895,6 +1239,9 @@ function renderHierarchyPanel() {
         } else if (manualAttachmentEditMode) {
             badge.className = "badge rounded-pill text-bg-info";
             badge.textContent = "Manual Group";
+        } else if (attachmentRateEditAttachmentId) {
+            badge.className = "badge rounded-pill text-bg-info";
+            badge.textContent = "Attachment Rate";
         } else if (meta?.has_override) {
             badge.className = "badge rounded-pill text-bg-info";
             badge.textContent = "Saved Override";
@@ -983,20 +1330,23 @@ function renderAttachmentEditor(meta) {
                             ${explicitOptions.map((option) => {
                                 const isRanked = rankedIds.includes(option.attachment_id);
                                 const isEffective = !!option.effective_selected;
+                                const kindText = escapeHtml(option.attachment_kind || "attachment");
+                                const roleText = attachmentRoleLabel(option);
+                                const detailText = attachmentHealthDetails(option);
                                 return `
                                     <div class="list-group-item topology-manager-attachment-row">
-                                        <div class="d-flex align-items-center justify-content-between gap-2">
-                                            <div>
-                                                <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                                            <div class="flex-grow-1 min-w-0">
+                                                <div class="d-flex flex-wrap align-items-center gap-2">
                                                     <div class="fw-semibold">${escapeHtml(option.attachment_name)}</div>
+                                                    ${roleText ? `<span class="badge text-bg-light">${escapeHtml(roleText)}</span>` : ""}
                                                     ${attachmentHealthBadge(option)}
                                                     ${isEffective ? "<span class='badge text-bg-primary'>Effective</span>" : ""}
                                                     ${option.probe_enabled ? "<span class='badge text-bg-info'>Probe On</span>" : "<span class='badge text-bg-secondary'>Probe Off</span>"}
                                                 </div>
-                                                <div class="small text-body-secondary">${escapeHtml(option.attachment_kind || "attachment")}</div>
-                                                <div class="small text-body-secondary">${attachmentHealthDetails(option)}</div>
+                                                <div class="topology-manager-attachment-meta">${kindText}${detailText ? ` · ${detailText}` : ""}</div>
                                             </div>
-                                            <div class="d-flex flex-wrap gap-2 justify-content-end">
+                                            <div class="d-flex flex-wrap gap-2 justify-content-end flex-shrink-0">
                                                 <button class="btn btn-sm ${isRanked ? "btn-outline-secondary" : "btn-outline-primary"}" type="button" data-add-attachment-id="${escapeHtml(option.attachment_id)}">
                                                     ${isRanked ? "Added" : "Add"}
                                                 </button>
@@ -1055,29 +1405,96 @@ function renderAttachmentHealthList(parentMeta, options = {}) {
     }
 
     const showProbeButtons = options.showProbeButtons !== false;
+    const showRateButtons = options.showRateButtons !== false && !!topologyManagerState?.writable;
     return `
         <div class="list-group topology-manager-rank-list">
-            ${explicitOptions.map((option) => `
-                <div class="list-group-item topology-manager-attachment-row">
-                    <div class="d-flex align-items-center justify-content-between gap-2">
-                        <div>
-                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-                                <div class="fw-semibold">${escapeHtml(option.attachment_name)}</div>
-                                ${attachmentHealthBadge(option)}
-                                ${option.effective_selected ? "<span class='badge text-bg-primary'>Effective</span>" : ""}
-                                ${option.probe_enabled ? "<span class='badge text-bg-info'>Probe On</span>" : "<span class='badge text-bg-secondary'>Probe Off</span>"}
+            ${explicitOptions.map((option) => {
+                const kindText = escapeHtml(option.attachment_kind || "attachment");
+                const roleText = attachmentRoleLabel(option);
+                const detailText = attachmentHealthDetails(option);
+                const reasonNote = attachmentReasonNote(option);
+                const selectionBadges = attachmentSelectionBadges(parentMeta, option);
+                const isUsingNow = !!option.effective_selected;
+                const isPreferred = selectionBadges.includes("Preferred");
+                const editingRate = isEditingAttachmentRate(parentMeta, option);
+                const disabledReason = option.rate_override_disabled_reason
+                    ? `<div class="small text-body-secondary mt-1">${escapeHtml(option.rate_override_disabled_reason)}</div>`
+                    : "";
+                const rateButtonsHtml = !showRateButtons
+                    ? ""
+                    : option.can_override_rate
+                        ? `
+                            <button class="btn btn-sm ${editingRate ? "btn-primary" : "btn-outline-primary"}" type="button" data-edit-attachment-rate-parent-id="${escapeHtml(parentMeta.parent_node_id)}" data-edit-attachment-rate-id="${escapeHtml(option.attachment_id)}">
+                                ${editingRate ? "Editing Rates" : option.has_rate_override ? "Edit Rates" : "Set Rates"}
+                            </button>
+                            ${option.has_rate_override
+                                ? `<button class="btn btn-sm btn-outline-danger" type="button" data-clear-attachment-rate-parent-id="${escapeHtml(parentMeta.parent_node_id)}" data-clear-attachment-rate-id="${escapeHtml(option.attachment_id)}">
+                                    Clear Rates
+                                </button>`
+                                : ""}`
+                        : disabledReason;
+                return `
+                <div class="list-group-item topology-manager-attachment-row ${isUsingNow ? "topology-manager-attachment-row-active" : ""} ${!isUsingNow && isPreferred ? "topology-manager-attachment-row-preferred" : ""}">
+                    <div class="d-flex flex-column gap-2">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <div class="fw-semibold">${escapeHtml(option.attachment_name)}</div>
+                                    ${roleText ? `<span class="badge text-bg-light">${escapeHtml(roleText)}</span>` : ""}
+                                    ${attachmentHealthBadge(option)}
+                                    ${selectionBadges}
+                                    ${attachmentProbeBadge(option)}
+                                    ${option.has_rate_override ? "<span class='badge text-bg-warning'>Attachment Rate</span>" : ""}
+                                </div>
+                                <div class="topology-manager-attachment-status-line">
+                                    <span>${kindText}</span>
+                                    ${attachmentStatusLine(option) ? `<span>${attachmentStatusLine(option)}</span>` : ""}
+                                </div>
+                                ${reasonNote
+                                    ? `<div class="topology-manager-attachment-note mt-1">${reasonNote}</div>`
+                                    : detailText
+                                        ? `<div class="topology-manager-attachment-note mt-1">${detailText}</div>`
+                                        : ""}
                             </div>
-                            <div class="small text-body-secondary">${escapeHtml(option.attachment_kind || "attachment")}</div>
-                            <div class="small text-body-secondary">${attachmentHealthDetails(option)}</div>
+                            <div class="d-flex flex-wrap gap-2 justify-content-end">
+                                ${showProbeButtons && option.pair_id
+                                    ? `<button class="btn btn-sm ${option.probe_enabled ? "btn-outline-secondary" : "btn-outline-info"}" type="button" data-probe-policy-pair-id="${escapeHtml(option.pair_id)}" data-probe-policy-enabled="${option.probe_enabled ? "false" : "true"}">
+                                        ${option.probe_enabled ? "Turn Probe Off" : "Turn Probe On"}
+                                    </button>`
+                                    : ""}
+                                ${rateButtonsHtml}
+                            </div>
                         </div>
-                        ${showProbeButtons && option.pair_id
-                            ? `<button class="btn btn-sm ${option.probe_enabled ? "btn-outline-secondary" : "btn-outline-info"}" type="button" data-probe-policy-pair-id="${escapeHtml(option.pair_id)}" data-probe-policy-enabled="${option.probe_enabled ? "false" : "true"}">
-                                ${option.probe_enabled ? "Disable Probe" : "Enable Probe"}
-                            </button>`
+                        ${editingRate
+                            ? `
+                                <div class="border rounded p-2 bg-body-tertiary">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-md-4">
+                                            <label class="form-label small mb-1" for="topologyManagerAttachmentRateDownload">Download (Mbps)</label>
+                                            <input class="form-control form-control-sm" id="topologyManagerAttachmentRateDownload" type="number" min="1" value="${escapeHtml(attachmentRateDraftDownloadMbps)}" placeholder="500">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small mb-1" for="topologyManagerAttachmentRateUpload">Upload (Mbps)</label>
+                                            <input class="form-control form-control-sm" id="topologyManagerAttachmentRateUpload" type="number" min="1" value="${escapeHtml(attachmentRateDraftUploadMbps)}" placeholder="500">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="d-flex flex-wrap gap-2">
+                                                <button class="btn btn-sm btn-primary" type="button" id="topologyManagerSaveAttachmentRate" ${attachmentRateSaveDisabled() ? "disabled" : ""}>
+                                                    Save Rates
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-secondary" type="button" id="topologyManagerCancelAttachmentRate">
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `
                             : ""}
                     </div>
                 </div>
-            `).join("")}
+            `;
+            }).join("")}
         </div>
     `;
 }
@@ -1099,22 +1516,24 @@ function renderManualAttachmentGroupSection(meta) {
 
     if (!manualAttachmentEditMode) {
         return `
-            <div class="d-flex flex-column gap-2">
-                <div class="small text-uppercase text-body-secondary">Manual Attachment Group</div>
-                <div class="small text-body-secondary">
-                    Parent: <strong>${escapeHtml(parent.parent_node_name)}</strong><br>
-                    ${escapeHtml(summary)}<br>
-                    Explicit attachments currently visible: <strong>${explicit.length}</strong>
-                </div>
-                <div class="d-flex flex-wrap gap-2">
-                    <button class="btn btn-outline-primary" id="topologyManagerEditManualAttachments" type="button">
-                        <i class="fa fa-pen-to-square"></i> ${hasManualGroup ? "Edit Manual Attachment Group" : "Create Manual Attachment Group"}
-                    </button>
-                    ${hasManualGroup
-                        ? `<button class="btn btn-outline-danger" id="topologyManagerClearManualAttachments" type="button">
-                            <i class="fa fa-trash"></i> Clear Manual Attachment Group
-                        </button>`
-                        : ""}
+            <div class="topology-manager-section">
+                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+                    <div>
+                        <div class="small text-uppercase text-body-secondary">Manual Attachment Group</div>
+                        <div class="small text-body-secondary mt-1">
+                            Parent <strong>${escapeHtml(parent.parent_node_name)}</strong> · ${escapeHtml(summary)} · <strong>${explicit.length}</strong> explicit attachment${explicit.length === 1 ? "" : "s"}
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-outline-primary" id="topologyManagerEditManualAttachments" type="button">
+                            <i class="fa fa-pen-to-square"></i> ${hasManualGroup ? "Edit Manual Group" : "Create Manual Group"}
+                        </button>
+                        ${hasManualGroup
+                            ? `<button class="btn btn-outline-danger" id="topologyManagerClearManualAttachments" type="button">
+                                <i class="fa fa-trash"></i> Clear Group
+                            </button>`
+                            : ""}
+                    </div>
                 </div>
             </div>
         `;
@@ -1141,7 +1560,7 @@ function renderManualAttachmentGroupSection(meta) {
                         <div class="row g-2">
                             <div class="col-12">
                                 <label class="form-label small mb-1">Attachment Name</label>
-                                <input class="form-control form-control-sm" type="text" data-manual-row-index="${index}" data-manual-field="attachment_name" value="${escapeHtml(row.attachment_name)}" placeholder="WavePro-MREToRochester">
+                                <input class="form-control form-control-sm" type="text" data-manual-row-index="${index}" data-manual-field="attachment_name" value="${escapeHtml(row.attachment_name)}" placeholder="Backhaul Attachment A">
                             </div>
                             <div class="col-12">
                                 <label class="form-label small mb-1">Attachment ID</label>
@@ -1192,8 +1611,9 @@ function renderManualAttachmentGroupSection(meta) {
 
 function renderDetailsPanel() {
     const container = document.getElementById("topologyManagerDetails");
+    const primaryActions = document.getElementById("topologyManagerPrimaryActions");
     const clearSavedButton = document.getElementById("topologyManagerClearSaved");
-    if (!container || !clearSavedButton) {
+    if (!container || !clearSavedButton || !primaryActions) {
         return;
     }
 
@@ -1201,6 +1621,7 @@ function renderDetailsPanel() {
     const treeNode = selectedTreeNode();
     if (!meta) {
         clearSavedButton.disabled = true;
+        primaryActions.innerHTML = "";
         container.innerHTML = "<div class='topology-manager-empty'>Select a branch from the map or search box to begin.</div>";
         return;
     }
@@ -1217,119 +1638,165 @@ function renderDetailsPanel() {
     const saveDisabled = !proposalIsValid() || proposalMatchesSavedOverride(meta);
     const editingDisabled = !meta.can_move;
     const currentAttachment = meta.current_attachment_name || "Auto / integration default";
-    const preferredAttachment = meta.preferred_attachment_name || "Auto / integration default";
     const effectiveAttachment = meta.effective_attachment_name || "Auto / integration default";
+    const statusNote = editingDisabled
+        ? "This node is read-only here. You can still use the preview to inspect upstream and downstream context."
+        : moveMode
+            ? "Choose a legal parent, optionally adjust attachment preference, then save."
+            : attachmentEditMode
+                ? "Adjust attachment preference for the current logical parent without changing parentage."
+                : manualAttachmentEditMode
+                    ? "Manual attachment-group editing is active below."
+                    : attachmentRateEditAttachmentId
+                        ? "Attachment rate override editing is active below."
+                        : "Inspect mode only. Use Start Move to change parentage or Edit Attachment Preference to tune radios.";
+    const branchSummaryPills = [
+        `<span class="topology-manager-summary-pill"><span>Parent</span><strong>${escapeHtml(currentParent)}</strong></span>`,
+        `<span class="topology-manager-summary-pill"><span>Descendants</span><strong>${descendantCount(meta.node_id)}</strong></span>`,
+        `<span class="topology-manager-summary-pill"><span>Legal parents</span><strong>${legalParentCount}</strong></span>`,
+    ];
+    if (meta.has_override) {
+        branchSummaryPills.push(
+            `<span class="topology-manager-summary-pill"><span>Saved override</span><strong>${savedOverrideText}</strong></span>`
+        );
+    }
+    if (treeNode?.runtime_virtualized) {
+        branchSummaryPills.push(
+            "<span class=\"topology-manager-summary-pill\"><span>Runtime</span><strong class=\"text-warning-emphasis\">Virtualized in Bakery</strong></span>"
+        );
+    }
+    const showInlineAttachmentEditButton = !editingDisabled
+        && !moveMode
+        && !showAttachmentInspectEditor
+        && !manualAttachmentEditMode
+        && !attachmentRateEditAttachmentId
+        && hasInspectableAttachmentChoices(meta);
+    const attachmentPreferenceLabel = meta.preferred_attachment_name || "Auto / integration default";
+    const attachmentParentSummary = attachmentParent
+        ? `Upstream branch ${escapeHtml(attachmentParent.parent_node_name)}${attachmentOptionCount > 0
+            ? ` with ${attachmentOptionCount} available radio path${attachmentOptionCount === 1 ? "" : "s"}`
+            : " with Auto / Default only"}`
+        : "No explicit radio-path options are currently available for this branch.";
+
+    let primaryActionsHtml = "";
+    if (!editingDisabled) {
+        if (moveMode) {
+            primaryActionsHtml = `
+                <button class="btn btn-sm btn-primary" id="topologyManagerSave" type="button" ${saveDisabled ? "disabled" : ""}>
+                    <i class="fa fa-save"></i> Save Move
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetInline" type="button">
+                    <i class="fa fa-rotate-left"></i> Reset
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerCancelMove" type="button">
+                    <i class="fa fa-ban"></i> Cancel
+                </button>
+            `;
+        } else if (showAttachmentInspectEditor) {
+            primaryActionsHtml = `
+                <button class="btn btn-sm btn-primary" id="topologyManagerSave" type="button" ${saveDisabled ? "disabled" : ""}>
+                    <i class="fa fa-save"></i> Save Preference
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetInline" type="button">
+                    <i class="fa fa-rotate-left"></i> Reset
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerCancelAttachmentEdit" type="button">
+                    <i class="fa fa-ban"></i> Cancel
+                </button>
+            `;
+        } else if (!manualAttachmentEditMode && !attachmentRateEditAttachmentId) {
+            primaryActionsHtml = `
+                ${hasInspectableAttachmentChoices(meta) && !attachmentEditMode
+                    ? `
+                        <button class="btn btn-sm btn-primary" id="topologyManagerEditAttachmentPreference" type="button">
+                            <i class="fa fa-tower-broadcast"></i> Edit Link Path
+                        </button>
+                    `
+                    : ""}
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerStartMove" type="button" ${legalParentCount === 0 ? "disabled" : ""}>
+                    <i class="fa fa-arrows-up-down-left-right"></i> Start Move
+                </button>
+            `;
+        }
+    }
+    primaryActions.innerHTML = primaryActionsHtml;
 
     container.innerHTML = `
         ${(meta.warnings || []).map((warning) => `<div class="alert alert-warning py-2 mb-0">${escapeHtml(warning)}</div>`).join("")}
 
-        <div class="d-flex flex-column gap-2">
-            <div class="small text-uppercase text-body-secondary">Selected Branch</div>
-            <div class="d-flex align-items-center justify-content-between gap-2">
-                <div>
+        <div class="topology-manager-section">
+            <div class="topology-manager-section-header">
+                <div class="topology-manager-section-header-main">
+                    <div class="small text-uppercase text-body-secondary">Branch</div>
                     <div class="fw-semibold fs-5">${escapeHtml(meta.node_name)}</div>
                     <div class="small text-body-secondary">${escapeHtml(nodeKindLabel(meta.node_id))}</div>
                 </div>
                 <span class="badge ${meta.can_move ? "text-bg-info" : "text-bg-secondary"}">${meta.can_move ? "Movable" : "Read Only"}</span>
             </div>
-            <div class="small text-body-secondary">
-                Current parent: <strong>${escapeHtml(currentParent)}</strong><br>
-                Saved override: <strong>${savedOverrideText}</strong><br>
-                Current attachment: <strong>${escapeHtml(currentAttachment)}</strong><br>
-                Preferred attachment: <strong>${escapeHtml(preferredAttachment)}</strong><br>
-                Effective attachment: <strong>${escapeHtml(effectiveAttachment)}</strong><br>
-                Descendants in branch: <strong>${descendantCount(meta.node_id)}</strong><br>
-                Legal parent targets: <strong>${legalParentCount}</strong>
+            <div class="topology-manager-summary-meta">
+                ${branchSummaryPills.join("")}
             </div>
-            ${treeNode?.runtime_virtualized ? "<div class='small text-warning-emphasis'>Runtime virtualized in Bakery right now.</div>" : ""}
+            <div class="topology-manager-compact-note"><i class="fa fa-circle-info me-1"></i>${escapeHtml(statusNote)}</div>
         </div>
 
         ${editingDisabled
-            ? "<div class='alert alert-secondary py-2 mb-0'>This node is currently read-only in Topology Manager. Select a movable branch to rehome it.</div>"
+            ? ""
             : `
-                <div class="alert ${moveMode ? "alert-primary" : "alert-secondary"} py-2 mb-0">
-                    ${moveMode
-                        ? "Step 1: choose a legal parent below or drag the selected branch onto a green target. Step 2: adjust attachment preference if needed. Step 3: save the move."
-                        : attachmentEditMode
-                            ? "Edit attachment preference for the current logical parent, then save. This does not change parentage."
-                            : manualAttachmentEditMode
-                                ? "Define explicit parallel attachments for this logical parent, then save the manual group. This changes attachment modeling, not logical parentage."
-                            : "Inspect mode only. The preview on the left shows context, not an always-active editor. Click Start Move when you want to change parentage."}
-                </div>
-
                 ${moveMode
                     ? `
-                        <div>
+                        <div class="topology-manager-section">
                             <div class="small text-uppercase text-body-secondary mb-2">Choose New Parent</div>
                             ${renderTargetCards(meta)}
                         </div>
 
-                        <div>
+                        <div class="topology-manager-section">
                             <div class="small text-uppercase text-body-secondary mb-2">Attachment / Radio Preferences</div>
                             ${renderAttachmentEditor(meta)}
                         </div>
-
-                        <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-primary" id="topologyManagerSave" type="button" ${saveDisabled ? "disabled" : ""}>
-                                <i class="fa fa-save"></i> Save Move
-                            </button>
-                            <button class="btn btn-outline-secondary" id="topologyManagerResetInline" type="button">
-                                <i class="fa fa-rotate-left"></i> Reset to Saved
-                            </button>
-                            <button class="btn btn-outline-secondary" id="topologyManagerCancelMove" type="button">
-                                <i class="fa fa-ban"></i> Cancel Move
-                            </button>
-                        </div>
                     `
                     : `
-                        ${attachmentParent
-                            ? `
-                                <div class="d-flex flex-column gap-2">
-                                    <div class="small text-uppercase text-body-secondary">Current Attachment Preference</div>
-                                    <div class="small text-body-secondary">
-                                        Parent: <strong>${escapeHtml(attachmentParent.parent_node_name)}</strong><br>
-                                        ${attachmentOptionCount > 0
-                                            ? `Explicit attachment options: <strong>${attachmentOptionCount}</strong>`
-                                            : "This parent currently exposes only Auto / Default attachment behavior."}
+                        <div class="topology-manager-section">
+                            <div class="topology-manager-section-header">
+                                <div class="topology-manager-section-header-main">
+                                    <div class="small text-uppercase text-body-secondary">Radio Paths</div>
+                                    <div class="topology-manager-section-subtitle">${attachmentParentSummary}</div>
+                                </div>
+                                ${showInlineAttachmentEditButton
+                                    ? `
+                                        <button class="btn btn-sm btn-outline-primary" id="topologyManagerEditAttachmentPreference" type="button">
+                                            <i class="fa fa-tower-broadcast"></i> Edit Link Path
+                                        </button>
+                                    `
+                                    : ""}
+                            </div>
+                            <div class="topology-manager-kv-grid">
+                                <div class="topology-manager-kv-row"><span>Using now</span><strong>${escapeHtml(currentAttachment)}</strong></div>
+                                <div class="topology-manager-kv-row"><span>Preferred</span><strong>${escapeHtml(attachmentPreferenceLabel)}</strong></div>
+                                ${currentAttachment === effectiveAttachment
+                                    ? ""
+                                    : `<div class="topology-manager-kv-row"><span>Will apply</span><strong>${escapeHtml(effectiveAttachment)}</strong></div>`}
+                            </div>
+                            ${attachmentParent
+                                ? `
+                                    <div>
+                                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                                            <div class="small text-uppercase text-body-secondary mb-0">Attachment Health</div>
+                                            <a class="btn btn-sm btn-outline-secondary" href="topology_probes.html">
+                                                <i class="fa fa-wave-square"></i> Probe Debug
+                                            </a>
+                                        </div>
+                                        ${renderAttachmentHealthList(attachmentParent)}
                                     </div>
-                                </div>
-                            `
-                            : ""}
-                        ${attachmentParent
-                            ? `
-                                <div>
-                                    <div class="small text-uppercase text-body-secondary mb-2">Attachment Health</div>
-                                    ${renderAttachmentHealthList(attachmentParent)}
-                                </div>
-                            `
-                            : ""}
-                        ${showAttachmentInspectEditor
-                            ? `
-                                <div>
-                                    <div class="small text-uppercase text-body-secondary mb-2">Attachment / Radio Preferences</div>
-                                    ${renderAttachmentEditor(meta)}
-                                </div>
-
-                                <div class="d-flex flex-wrap gap-2">
-                                    <button class="btn btn-primary" id="topologyManagerSave" type="button" ${saveDisabled ? "disabled" : ""}>
-                                        <i class="fa fa-save"></i> Save Attachment Preference
-                                    </button>
-                                    <button class="btn btn-outline-secondary" id="topologyManagerResetInline" type="button">
-                                        <i class="fa fa-rotate-left"></i> Reset to Saved
-                                    </button>
-                                    <button class="btn btn-outline-secondary" id="topologyManagerCancelAttachmentEdit" type="button">
-                                        <i class="fa fa-ban"></i> Cancel
-                                    </button>
-                                </div>
-                            `
-                            : ""}
-                        <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-primary" id="topologyManagerStartMove" type="button" ${legalParentCount === 0 ? "disabled" : ""}>
-                                <i class="fa fa-arrows-up-down-left-right"></i> Start Move
-                            </button>
-                            <button class="btn btn-outline-primary" id="topologyManagerEditAttachmentPreference" type="button" ${hasInspectableAttachmentChoices(meta) && !attachmentEditMode ? "" : "disabled"}>
-                                <i class="fa fa-tower-broadcast"></i> Edit Attachment Preference
-                            </button>
+                                `
+                                : "<div class='topology-manager-compact-note'>No attachment-health rows are available for this branch yet.</div>"}
+                            ${showAttachmentInspectEditor
+                                ? `
+                                    <div class="pt-1 border-top border-secondary-subtle">
+                                        <div class="small text-uppercase text-body-secondary mb-2">Edit Link Path</div>
+                                        ${renderAttachmentEditor(meta)}
+                                    </div>
+                                `
+                                : ""}
                         </div>
                     `}
 
@@ -1346,11 +1813,11 @@ function buildMapGraph() {
         return {nodes: [], edges: []};
     }
 
-    const currentPath = currentPathIds(meta.node_id);
+    const currentPath = truncatedPreviewPath(currentPathIds(meta.node_id), `current:${meta.node_id}`);
     const allowedParents = moveMode ? allowedParentsForSelected() : [];
     const alternatePaths = allowedParents.map((parent) => ({
         parent,
-        path: currentPathIds(parent.parent_node_id),
+        path: truncatedPreviewPath(currentPathIds(parent.parent_node_id), `alternate:${parent.parent_node_id}`),
     }));
 
     const displayedNodes = new Map();
@@ -1364,9 +1831,10 @@ function buildMapGraph() {
     const xStep = Math.min(190, Math.max(110, 880 / Math.max(rootPathLength - 1, 1)));
     const startX = 100;
 
-    currentPath.forEach((nodeId, depth) => {
-        displayedNodes.set(nodeId, {
-            nodeId,
+    currentPath.forEach((node, depth) => {
+        displayedNodes.set(node.nodeId, {
+            ...node,
+            nodeId: node.nodeId,
             x: startX + (depth * xStep),
             y: MAP_CENTER_Y,
             depth,
@@ -1375,8 +1843,8 @@ function buildMapGraph() {
         });
         if (depth > 0) {
             displayedEdges.push({
-                from: currentPath[depth - 1],
-                to: nodeId,
+                from: currentPath[depth - 1].nodeId,
+                to: node.nodeId,
                 kind: "current",
             });
         }
@@ -1413,12 +1881,13 @@ function buildMapGraph() {
 
     alternatePaths.forEach((entry, index) => {
         const lane = alternateLanes[index];
-        entry.path.forEach((nodeId, depth) => {
-            if (displayedNodes.has(nodeId)) {
+        entry.path.forEach((node, depth) => {
+            if (displayedNodes.has(node.nodeId)) {
                 return;
             }
-            displayedNodes.set(nodeId, {
-                nodeId,
+            displayedNodes.set(node.nodeId, {
+                ...node,
+                nodeId: node.nodeId,
                 x: startX + (depth * xStep),
                 y: MAP_CENTER_Y + (lane * LANE_STEP),
                 depth,
@@ -1428,8 +1897,8 @@ function buildMapGraph() {
         });
         for (let depth = 1; depth < entry.path.length; depth += 1) {
             displayedEdges.push({
-                from: entry.path[depth - 1],
-                to: entry.path[depth],
+                from: entry.path[depth - 1].nodeId,
+                to: entry.path[depth].nodeId,
                 kind: "candidate_path",
                 lane,
             });
@@ -1543,14 +2012,14 @@ function renderMap() {
 
     const nodeHtml = graph.nodes.map((node) => {
         const topoNode = topologyNodeById.get(node.nodeId) || {};
-        const isSelectable = canSelectNodeId(node.nodeId);
+        const isSelectable = !node.isSynthetic && canSelectNodeId(node.nodeId);
         const isEditable = topologyNodeById.has(node.nodeId);
-        const label = truncateLabel(displayNameForNodeId(node.nodeId), 22);
-        const sublabel = isEditable
+        const label = truncateLabel(node.label || displayNameForNodeId(node.nodeId), 22);
+        const sublabel = node.sublabel || (isEditable
             ? nodeKindLabel(node.nodeId)
             : node.nodeId === ROOT_NODE_ID
                 ? "Root Context"
-                : `${nodeKindLabel(node.nodeId)} Context`;
+                : `${nodeKindLabel(node.nodeId)} Context`);
         const isSelected = node.nodeId === selectedNodeId;
         const isProposed = node.nodeId === proposedParentId;
         const isHoverTarget = dragActive && node.nodeId === dragHoverParentId;
@@ -1586,6 +2055,10 @@ function renderMap() {
             fill = "rgba(15, 23, 42, 0.62)";
             stroke = "rgba(148, 163, 184, 0.28)";
         }
+        if (node.isSynthetic) {
+            fill = "rgba(15, 23, 42, 0.48)";
+            stroke = "rgba(148, 163, 184, 0.36)";
+        }
 
         const opacity = isSelected
             ? 1
@@ -1602,8 +2075,12 @@ function renderMap() {
                 ? "grab"
                 : "pointer";
 
+        const interactiveAttrs = isSelectable
+            ? `data-map-node-id="${escapeHtml(node.nodeId)}" onclick="window.topologyManagerSelectNode(this.getAttribute('data-map-node-id')); event.stopPropagation();"`
+            : "";
+
         return `
-            <g class="topology-map-node" data-map-node-id="${escapeHtml(node.nodeId)}" transform="translate(${node.x}, ${node.y})" opacity="${opacity}" style="cursor:${cursor};" onclick="window.topologyManagerSelectNode(this.getAttribute('data-map-node-id')); event.stopPropagation();">
+            <g class="topology-map-node" ${interactiveAttrs} transform="translate(${node.x}, ${node.y})" opacity="${opacity}" style="cursor:${cursor};">
                 <rect x="-78" y="-36" rx="18" ry="18" width="156" height="72" fill="${fill}" stroke="${stroke}" stroke-width="${isSelected || isProposed ? 3 : 2}"></rect>
                 ${badge}
                 <text x="0" y="-4" text-anchor="middle" fill="${text}">${escapeHtml(label)}</text>
@@ -1784,6 +2261,66 @@ async function setProbePolicy(pairId, enabled) {
     }
 }
 
+async function saveAttachmentRateOverride() {
+    const current = attachmentRateEditOption();
+    if (!current) {
+        return;
+    }
+    syncAttachmentRateDraftFromInputs();
+    const download = Number.parseInt(String(attachmentRateDraftDownloadMbps || ""), 10);
+    const upload = Number.parseInt(String(attachmentRateDraftUploadMbps || ""), 10);
+    if (!Number.isFinite(download) || download <= 0 || !Number.isFinite(upload) || upload <= 0) {
+        showWarnings(["Attachment rate overrides require positive download and upload Mbps values."], null);
+        return;
+    }
+
+    try {
+        const response = await sendWsRequest("SetTopologyManagerAttachmentRateOverrideResult", {
+            SetTopologyManagerAttachmentRateOverride: {
+                update: {
+                    child_node_id: selectedMeta()?.node_id,
+                    parent_node_id: current.parent.parent_node_id,
+                    attachment_id: current.option.attachment_id,
+                    download_bandwidth_mbps: download,
+                    upload_bandwidth_mbps: upload,
+                },
+            },
+        });
+        indexTopologyState(response.data);
+        clearAttachmentRateEditState();
+        lastFlash = "Attachment rate override saved.";
+        renderEverything(response.data.global_warnings || []);
+    } catch (error) {
+        showWarnings([error?.message || "Unable to save attachment rate override."], null);
+    }
+}
+
+async function clearAttachmentRateOverride(parentNodeId, attachmentId) {
+    const meta = selectedMeta();
+    if (!meta || !parentNodeId || !attachmentId) {
+        return;
+    }
+    try {
+        const response = await sendWsRequest("ClearTopologyManagerAttachmentRateOverrideResult", {
+            ClearTopologyManagerAttachmentRateOverride: {
+                clear: {
+                    child_node_id: meta.node_id,
+                    parent_node_id: parentNodeId,
+                    attachment_id: attachmentId,
+                },
+            },
+        });
+        indexTopologyState(response.data);
+        if (attachmentRateEditParentId === parentNodeId && attachmentRateEditAttachmentId === attachmentId) {
+            clearAttachmentRateEditState();
+        }
+        lastFlash = "Attachment rate override cleared.";
+        renderEverything(response.data.global_warnings || []);
+    } catch (error) {
+        showWarnings([error?.message || "Unable to clear attachment rate override."], null);
+    }
+}
+
 function syncManualAttachmentDraftFromInputs() {
     if (!manualAttachmentEditMode) {
         return;
@@ -1809,6 +2346,7 @@ function enterManualAttachmentEditMode() {
         return;
     }
     manualAttachmentEditMode = true;
+    clearAttachmentRateEditState();
     manualAttachmentDraftRows = cloneManualAttachmentRows(parent);
     if (manualAttachmentDraftRows.length === 0) {
         manualAttachmentDraftRows = [blankManualAttachmentRow(), blankManualAttachmentRow()];
@@ -1819,6 +2357,7 @@ function enterManualAttachmentEditMode() {
 function cancelManualAttachmentEditMode() {
     manualAttachmentEditMode = false;
     manualAttachmentDraftRows = [];
+    clearAttachmentRateEditState();
     renderEverything();
 }
 
@@ -1849,6 +2388,7 @@ async function saveManualAttachmentGroup() {
         indexTopologyState(response.data);
         manualAttachmentEditMode = false;
         manualAttachmentDraftRows = [];
+        clearAttachmentRateEditState();
         lastFlash = "Manual attachment group saved.";
         if (selectedNodeId && topologyNodeById.has(selectedNodeId)) {
             initializeProposalFromSaved(selectedMeta());
@@ -1877,6 +2417,7 @@ async function clearManualAttachmentGroup() {
         indexTopologyState(response.data);
         manualAttachmentEditMode = false;
         manualAttachmentDraftRows = [];
+        clearAttachmentRateEditState();
         lastFlash = "Manual attachment group cleared.";
         if (selectedNodeId && topologyNodeById.has(selectedNodeId)) {
             initializeProposalFromSaved(selectedMeta());
@@ -1992,6 +2533,40 @@ function bindDetailsInteractions() {
             await setProbePolicy(pairId, enabled);
         });
     });
+    document.querySelectorAll("[data-edit-attachment-rate-parent-id]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const parentId = button.getAttribute("data-edit-attachment-rate-parent-id");
+            const attachmentId = button.getAttribute("data-edit-attachment-rate-id");
+            if (!parentId || !attachmentId) {
+                return;
+            }
+            startAttachmentRateEdit(parentId, attachmentId);
+        });
+    });
+    document.querySelectorAll("[data-clear-attachment-rate-parent-id]").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const parentId = button.getAttribute("data-clear-attachment-rate-parent-id");
+            const attachmentId = button.getAttribute("data-clear-attachment-rate-id");
+            if (!parentId || !attachmentId) {
+                return;
+            }
+            await clearAttachmentRateOverride(parentId, attachmentId);
+        });
+    });
+    document.getElementById("topologyManagerSaveAttachmentRate")?.addEventListener("click", () => {
+        saveAttachmentRateOverride();
+    });
+    document.getElementById("topologyManagerCancelAttachmentRate")?.addEventListener("click", () => {
+        cancelAttachmentRateEditMode();
+    });
+    document.getElementById("topologyManagerAttachmentRateDownload")?.addEventListener("input", () => {
+        syncAttachmentRateDraftFromInputs();
+        refreshAttachmentRateSaveButton();
+    });
+    document.getElementById("topologyManagerAttachmentRateUpload")?.addEventListener("input", () => {
+        syncAttachmentRateDraftFromInputs();
+        refreshAttachmentRateSaveButton();
+    });
     document.querySelectorAll("[data-remove-manual-row]").forEach((button) => {
         button.addEventListener("click", () => {
             syncManualAttachmentDraftFromInputs();
@@ -2013,7 +2588,7 @@ function bindDetailsInteractions() {
     });
 }
 
-function setSelectedNode(nodeId) {
+function setSelectedNode(nodeId, options = {}) {
     if (!canSelectNodeId(nodeId)) {
         return;
     }
@@ -2023,7 +2598,9 @@ function setSelectedNode(nodeId) {
     attachmentEditMode = false;
     manualAttachmentEditMode = false;
     manualAttachmentDraftRows = [];
+    clearAttachmentRateEditState();
     resetMapView();
+    syncSelectedNodeUrl(selectedNodeId, options.historyMode || "push");
     initializeProposalFromSaved();
     lastFlash = null;
     renderEverything();
@@ -2043,6 +2620,7 @@ function enterMoveMode() {
     attachmentEditMode = false;
     manualAttachmentEditMode = false;
     manualAttachmentDraftRows = [];
+    clearAttachmentRateEditState();
     initializeProposalFromSaved(meta);
     renderEverything();
 }
@@ -2052,6 +2630,7 @@ function cancelMoveMode() {
     attachmentEditMode = false;
     manualAttachmentEditMode = false;
     manualAttachmentDraftRows = [];
+    clearAttachmentRateEditState();
     initializeProposalFromSaved();
     renderEverything();
 }
@@ -2066,6 +2645,7 @@ function enterAttachmentEditMode() {
     attachmentEditMode = true;
     manualAttachmentEditMode = false;
     manualAttachmentDraftRows = [];
+    clearAttachmentRateEditState();
     proposedParentId = parent.parent_node_id;
     if (meta.has_override && meta.override_parent_node_id === parent.parent_node_id) {
         proposedMode = meta.override_mode || "auto";
@@ -2081,6 +2661,7 @@ function cancelAttachmentEditMode() {
     attachmentEditMode = false;
     manualAttachmentEditMode = false;
     manualAttachmentDraftRows = [];
+    clearAttachmentRateEditState();
     initializeProposalFromSaved();
     renderEverything();
 }
@@ -2147,6 +2728,7 @@ async function saveProposal() {
         attachmentEditMode = false;
         manualAttachmentEditMode = false;
         manualAttachmentDraftRows = [];
+        clearAttachmentRateEditState();
         lastFlash = "Topology override saved. It will be applied on the next scheduler/integration run.";
         if (selectedNodeId && topologyNodeById.has(selectedNodeId)) {
             initializeProposalFromSaved(selectedMeta());
@@ -2175,6 +2757,7 @@ async function clearSavedOverride() {
         attachmentEditMode = false;
         manualAttachmentEditMode = false;
         manualAttachmentDraftRows = [];
+        clearAttachmentRateEditState();
         lastFlash = "Saved topology override cleared.";
         if (selectedNodeId && topologyNodeById.has(selectedNodeId)) {
             initializeProposalFromSaved(selectedMeta());
@@ -2307,13 +2890,11 @@ async function loadPage() {
 
         indexTopologyState(stateResponse.data);
         indexNetworkTree(treeResponse.data || []);
-
-        if (!canSelectNodeId(selectedNodeId)) {
-            selectedNodeId = pickDefaultNodeId();
-        }
-        initializeProposalFromSaved();
-        lastFlash = null;
-        renderEverything(stateResponse.data.global_warnings || []);
+        applyTopologyManagerState(stateResponse.data, {
+            preferredNodeId: preferredInitialNodeId(),
+            flash: null,
+        });
+        scheduleTopologyStateRefresh();
     } catch (error) {
         showWarnings([error?.message || "Unable to load topology manager state."], null);
         const map = document.getElementById("topologyManagerMap");
@@ -2328,6 +2909,23 @@ async function loadPage() {
 }
 
 bindPageControls();
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        return;
+    }
+    scheduleTopologyStateRefresh(TOPOLOGY_STATE_REFRESH_VISIBLE_DELAY_MS);
+});
+window.addEventListener("popstate", () => {
+    if (!topologyManagerState) {
+        return;
+    }
+    const requestedNodeId = preferredInitialNodeId();
+    const nextNodeId = canSelectNodeId(requestedNodeId) ? requestedNodeId : pickDefaultNodeId();
+    if (!canSelectNodeId(nextNodeId) || nextNodeId === selectedNodeId) {
+        return;
+    }
+    setSelectedNode(nextNodeId, {historyMode: "replace"});
+});
 window.topologyManagerSelectNode = selectNodeFromMap;
 listenOnce("join", () => {
     loadPage();

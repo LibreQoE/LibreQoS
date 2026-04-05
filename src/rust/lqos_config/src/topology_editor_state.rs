@@ -27,6 +27,38 @@ pub enum TopologyAttachmentHealthStatus {
     Disabled,
 }
 
+/// Source category for attachment bandwidth values shown in Topology Manager.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyAttachmentRateSource {
+    /// The integration did not classify the attachment rate source.
+    #[default]
+    Unknown,
+    /// The attachment rate is static or operator-managed and may be overridden.
+    Static,
+    /// The attachment rate comes from dynamic integration telemetry and should not be overridden.
+    DynamicIntegration,
+    /// The attachment was defined manually by the operator.
+    Manual,
+}
+
+/// Feed-role classification for one attachment option.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyAttachmentRole {
+    /// The integration did not classify the attachment role.
+    #[default]
+    Unknown,
+    /// A point-to-point backhaul path between sites.
+    PtpBackhaul,
+    /// A site fed as a client of an upstream PtMP AP.
+    PtmpUplink,
+    /// A wired handoff such as an ethernet or switch-based uplink.
+    WiredUplink,
+    /// A manual operator-defined attachment.
+    Manual,
+}
+
 /// Errors returned while reading or writing topology editor snapshots.
 #[derive(Debug, Error)]
 pub enum TopologyEditorStateError {
@@ -51,6 +83,9 @@ pub struct TopologyAttachmentOption {
     /// Attachment kind such as `auto`, `site`, or `device`.
     #[serde(default)]
     pub attachment_kind: String,
+    /// Feed-role classification for this attachment.
+    #[serde(default)]
+    pub attachment_role: TopologyAttachmentRole,
     /// Stable pair identifier used for runtime probe policy and health state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pair_id: Option<String>,
@@ -63,6 +98,30 @@ pub struct TopologyAttachmentOption {
     /// Capacity used when this attachment is effective.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity_mbps: Option<u64>,
+    /// Effective download bandwidth for this attachment in Mbps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_bandwidth_mbps: Option<u64>,
+    /// Effective upload bandwidth for this attachment in Mbps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_bandwidth_mbps: Option<u64>,
+    /// Effective infrastructure transport cap applied to this attachment in Mbps, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_cap_mbps: Option<u64>,
+    /// Human-readable explanation for the transport cap, when one was applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_cap_reason: Option<String>,
+    /// Classification of where the attachment rates came from.
+    #[serde(default)]
+    pub rate_source: TopologyAttachmentRateSource,
+    /// Whether operators may save a rate override for this attachment.
+    #[serde(default)]
+    pub can_override_rate: bool,
+    /// Human-readable reason rate overrides are unavailable, when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_override_disabled_reason: Option<String>,
+    /// Whether an attachment-scoped rate override is currently active.
+    #[serde(default)]
+    pub has_rate_override: bool,
     /// Local management IP used for health probing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_probe_ip: Option<String>,
@@ -237,10 +296,19 @@ impl TopologyEditorStateFile {
                         attachment_id: TOPOLOGY_ATTACHMENT_AUTO_ID.to_string(),
                         attachment_name: "Auto".to_string(),
                         attachment_kind: "auto".to_string(),
+                        attachment_role: TopologyAttachmentRole::Unknown,
                         pair_id: None,
                         peer_attachment_id: None,
                         peer_attachment_name: None,
                         capacity_mbps: None,
+                        download_bandwidth_mbps: None,
+                        upload_bandwidth_mbps: None,
+                        transport_cap_mbps: None,
+                        transport_cap_reason: None,
+                        rate_source: TopologyAttachmentRateSource::Unknown,
+                        can_override_rate: false,
+                        rate_override_disabled_reason: None,
+                        has_rate_override: false,
                         local_probe_ip: None,
                         remote_probe_ip: None,
                         probe_enabled: false,

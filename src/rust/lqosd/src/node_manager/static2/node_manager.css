@@ -1496,6 +1496,9 @@ h5 {
     flex-direction: column;
     gap: 0.55rem;
 }
+.lqos-tree-inline-overrides > div:empty {
+    display: none;
+}
 .lqos-tree-editor {
     display: flex;
     flex-direction: column;

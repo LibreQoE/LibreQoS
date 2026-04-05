@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Runtime filename carrying transient attachment-health state.
-pub const TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME: &str =
-    "topology_attachment_health_state.json";
+pub const TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME: &str = "topology_attachment_health_state.json";
 
 /// Runtime filename carrying effective attachment selection state.
 pub const TOPOLOGY_EFFECTIVE_STATE_FILENAME: &str = "topology_effective_state.json";
@@ -42,6 +41,30 @@ pub struct TopologyAttachmentEndpointStatus {
 pub struct TopologyAttachmentHealthEntry {
     /// Stable attachment pair identifier.
     pub attachment_pair_id: String,
+    /// Stable attachment identifier used by the runtime topology/editor state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment_id: Option<String>,
+    /// Display name of the attachment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment_name: Option<String>,
+    /// Stable child node identifier being shaped through this attachment pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_node_id: Option<String>,
+    /// Display name of the child node being shaped through this attachment pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_node_name: Option<String>,
+    /// Stable parent node identifier for this attachment group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_node_id: Option<String>,
+    /// Display name of the parent node for this attachment group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_node_name: Option<String>,
+    /// Local management IP used for the probe, when configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_probe_ip: Option<String>,
+    /// Remote management IP used for the probe, when configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_probe_ip: Option<String>,
     /// Current runtime health status.
     #[serde(default)]
     pub status: TopologyAttachmentHealthStatus,

@@ -144,30 +144,14 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 Puede usar las siguientes entradas de override para reflejar su red con mayor precisión:
 - `Rate Override` en la página del árbol, guardado como overrides operatorios `AdjustSiteSpeed` en `lqos_overrides.json`
 - `Topology Override` en la página del árbol para nodos compatibles de UISP `full`, guardado en `lqos_overrides.json`
-- `uisp.route_overrides` en `lqos_overrides.json`
-- integrationUISProutes.csv solo como entrada heredada de compatibilidad
 - integrationUISPbandwidths.csv solo como entrada heredada de compatibilidad
 
 Las compilaciones UISP actuales auto-migran un `integrationUISPbandwidths.csv` heredado hacia overrides operatorios `AdjustSiteSpeed` en la siguiente ejecución de la integración cuando todavía no existen overrides de tasa del operador. Si ya existen, el CSV se ignora.
-Las compilaciones UISP actuales también auto-migran un `integrationUISProutes.csv` heredado hacia `uisp.route_overrides` en `lqos_overrides.json` en la siguiente ejecución de la integración cuando todavía no existen overrides de ruta en JSON. Si ya existen overrides de ruta en JSON, el CSV se ignora.
+Las entradas JSON heredadas `uisp.bandwidth_overrides` se ignoran. La ruta autoritativa para overrides de ancho de banda es `AdjustSiteSpeed` en `lqos_overrides.json`.
+Las compilaciones UISP actuales ignoran las entradas heredadas `uisp.route_overrides` en `lqos_overrides.json` y los archivos heredados `integrationUISProutes.csv`. Si existe cualquiera de los dos, LibreQoS registra una advertencia y usa la topología detectada más los overrides de Topology Manager.
 
 Las plantillas de los archivos heredados siguen disponibles en `/opt/libreqos/src`. Si no las encuentra allí, puede obtenerlas [aquí](https://github.com/LibreQoE/LibreQoS/tree/develop/src). Para cambios nuevos de ancho de banda, prefiera los overrides operatorios en `lqos_overrides.json`.
-
-#### UISP Route Overrides
-
-The default cost between nodes is 10.
-
-Say you have Site 1, Site 2, and Site 3.
-A backup path exists between Site 1 and Site 3, but is not the preferred path.
-Your preference is Site 1 > Site 2 > Site 3, but the integration by default connects Site 1 > Site 3 directly.
-
-To fix this, add a cost above the default for the path between Site 1 and Site 3.
-```
-Site 1, Site 3, 100
-```
-With this, data will flow Site 1 > Site 2 > Site 3.
-
-To make the change, perform a reload of the integration with ```sudo systemctl restart lqos_scheduler```.
+Para la intención de camino, use la selección de padre y la preferencia de attachments en Topology Manager. Ese es ahora el reemplazo soportado para los antiguos overrides de costo de ruta de UISP.
 
 ## Powercode Integration
 

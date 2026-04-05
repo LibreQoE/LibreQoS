@@ -514,6 +514,9 @@ pub enum BusResponse {
     /// local web GUI.
     RttHistogram(Vec<u32>),
 
+    /// Probe observations returned from the shared active probe provider.
+    ProbeObservations(Vec<lqos_probe::ProbeObservation>),
+
     /// A tuple of (mapped)(unknown) host counts.
     HostCounts((u32, u32)),
 

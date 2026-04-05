@@ -15,19 +15,6 @@ pub struct NodeTopologyOverrideQuery {
     pub node_name: String,
 }
 
-/// Update payload for persisting an operator topology override.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct NodeTopologyOverrideUpdate {
-    /// Stable node identifier from `network.json`.
-    pub node_id: String,
-    /// Display name of the selected node.
-    pub node_name: String,
-    /// Override behavior mode. Current WebUI support is pinned-parent only.
-    pub mode: TopologyParentOverrideMode,
-    /// Pinned parent node IDs. Current WebUI support requires exactly one ID.
-    pub parent_node_ids: Vec<String>,
-}
-
 /// Inspector/view-model data for tree topology overrides.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeTopologyOverrideData {
@@ -60,91 +47,6 @@ pub fn get_node_topology_override_data(
     login: LoginResult,
     query: NodeTopologyOverrideQuery,
 ) -> Result<NodeTopologyOverrideData, StatusCode> {
-    build_node_topology_override_data(login, query)
-}
-
-/// Save or replace the operator-owned topology override for a tree node.
-pub fn set_node_topology_override_data(
-    login: LoginResult,
-    update: NodeTopologyOverrideUpdate,
-) -> Result<NodeTopologyOverrideData, StatusCode> {
-    if login != LoginResult::Admin {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    validate_update_payload(&update)?;
-
-    let query = NodeTopologyOverrideQuery {
-        node_id: Some(update.node_id.clone()),
-        node_name: update.node_name.clone(),
-    };
-    if let Some(reason) = edit_disabled_reason(login, &query)? {
-        tracing::warn!(
-            node_name = %update.node_name,
-            node_id = %update.node_id,
-            "Rejected topology override save: {reason}"
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let candidates = candidate_metadata_for_node(&update.node_id)?;
-    let candidate_name_by_id: std::collections::HashMap<&str, &str> = candidates
-        .candidate_parents
-        .iter()
-        .map(|candidate| (candidate.node_id.as_str(), candidate.node_name.as_str()))
-        .collect();
-    let mut parent_nodes = Vec::new();
-    for parent_node_id in &update.parent_node_ids {
-        let Some(parent_name) = candidate_name_by_id.get(parent_node_id.as_str()) else {
-            return Err(StatusCode::BAD_REQUEST);
-        };
-        parent_nodes.push((parent_node_id.clone(), (*parent_name).to_string()));
-    }
-
-    let mut overrides = OverrideStore::load_layer(OverrideLayer::Operator)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let changed = overrides.set_topology_parent_override_return_changed(
-        update.node_id.clone(),
-        update.node_name.clone(),
-        update.mode,
-        parent_nodes,
-    );
-    if changed {
-        OverrideStore::save_layer(OverrideLayer::Operator, &overrides)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
-    build_node_topology_override_data(login, query)
-}
-
-/// Remove the operator-owned topology override for a tree node.
-pub fn clear_node_topology_override_data(
-    login: LoginResult,
-    query: NodeTopologyOverrideQuery,
-) -> Result<NodeTopologyOverrideData, StatusCode> {
-    if login != LoginResult::Admin {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    if let Some(reason) = edit_disabled_reason(login, &query)? {
-        tracing::warn!(
-            node_name = %query.node_name,
-            node_id = %query.node_id.clone().unwrap_or_default(),
-            "Rejected topology override clear: {reason}"
-        );
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let Some(node_id) = query.node_id.as_deref() else {
-        return Err(StatusCode::BAD_REQUEST);
-    };
-
-    let mut overrides = OverrideStore::load_layer(OverrideLayer::Operator)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let removed = overrides.remove_topology_parent_override_by_node_id_count(node_id);
-    if removed > 0 {
-        OverrideStore::save_layer(OverrideLayer::Operator, &overrides)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    }
-
     build_node_topology_override_data(login, query)
 }
 
@@ -313,81 +215,15 @@ fn edit_disabled_reason(
     }
 }
 
-fn validate_update_payload(update: &NodeTopologyOverrideUpdate) -> Result<(), StatusCode> {
-    if update.node_id.trim().is_empty() || update.node_name.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let mut seen = std::collections::HashSet::new();
-    let normalized_ids: Vec<&str> = update
-        .parent_node_ids
-        .iter()
-        .map(|id| id.trim())
-        .filter(|id| !id.is_empty())
-        .filter(|id| seen.insert((*id).to_string()))
-        .collect();
-
-    match update.mode {
-        TopologyParentOverrideMode::Pinned if normalized_ids.len() != 1 => {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-        TopologyParentOverrideMode::PreferredOrder => {
-            return Err(StatusCode::BAD_REQUEST);
-        }
-        _ => {}
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{NodeTopologyOverrideUpdate, validate_update_payload};
-    use axum::http::StatusCode;
-    use lqos_overrides::TopologyParentOverrideMode;
-
     #[test]
-    fn missing_node_id_is_rejected_for_writes() {
-        let update = NodeTopologyOverrideUpdate {
-            node_id: "".to_string(),
+    fn query_round_trips_basic_fields() {
+        let query = super::NodeTopologyOverrideQuery {
+            node_id: Some("uisp:site:site-t2".to_string()),
             node_name: "T2".to_string(),
-            mode: TopologyParentOverrideMode::Pinned,
-            parent_node_ids: vec!["uisp:site:site-t1".to_string()],
         };
-        assert_eq!(
-            validate_update_payload(&update),
-            Err(StatusCode::BAD_REQUEST)
-        );
-    }
-
-    #[test]
-    fn pinned_requires_exactly_one_parent() {
-        let update = NodeTopologyOverrideUpdate {
-            node_id: "uisp:site:site-t2".to_string(),
-            node_name: "T2".to_string(),
-            mode: TopologyParentOverrideMode::Pinned,
-            parent_node_ids: vec![
-                "uisp:site:site-t1".to_string(),
-                "uisp:site:site-t3".to_string(),
-            ],
-        };
-        assert_eq!(
-            validate_update_payload(&update),
-            Err(StatusCode::BAD_REQUEST)
-        );
-    }
-
-    #[test]
-    fn non_pinned_modes_are_rejected() {
-        let update = NodeTopologyOverrideUpdate {
-            node_id: "uisp:site:site-t2".to_string(),
-            node_name: "T2".to_string(),
-            mode: TopologyParentOverrideMode::PreferredOrder,
-            parent_node_ids: vec!["uisp:site:site-t1".to_string()],
-        };
-        assert_eq!(
-            validate_update_payload(&update),
-            Err(StatusCode::BAD_REQUEST)
-        );
+        assert_eq!(query.node_id.as_deref(), Some("uisp:site:site-t2"));
+        assert_eq!(query.node_name, "T2");
     }
 }

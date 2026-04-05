@@ -14,6 +14,7 @@ use axum::response::Redirect;
 use axum::routing::{get, post};
 use lqos_bus::BusRequest;
 use lqos_config::load_config;
+use lqos_probe::ProbeClient;
 use std::path::Path;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
@@ -28,6 +29,7 @@ pub async fn spawn_webserver(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
+    probe_client: ProbeClient,
 ) -> Result<()> {
     // Check that static content is available and set up the path
     let config = load_config()?;
@@ -73,6 +75,7 @@ pub async fn spawn_webserver(
                 bus_tx.clone(),
                 system_usage_tx.clone(),
                 control_tx.clone(),
+                probe_client.clone(),
                 shaper_tx.clone(),
             ),
         )

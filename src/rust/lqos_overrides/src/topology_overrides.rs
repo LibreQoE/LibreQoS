@@ -68,6 +68,21 @@ pub struct ManualAttachment {
     pub probe_enabled: bool,
 }
 
+/// One persisted attachment-scoped rate override beneath a legal `(child, parent)` pair.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AttachmentRateOverride {
+    /// Stable child node identifier.
+    pub child_node_id: String,
+    /// Stable parent node identifier.
+    pub parent_node_id: String,
+    /// Stable attachment identifier.
+    pub attachment_id: String,
+    /// Override download bandwidth in Mbps.
+    pub download_bandwidth_mbps: u64,
+    /// Override upload bandwidth in Mbps.
+    pub upload_bandwidth_mbps: u64,
+}
+
 /// One operator-defined manual attachment group beneath a legal `(child, parent)` pair.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ManualAttachmentGroup {
@@ -99,10 +114,13 @@ pub struct TopologyOverridesFile {
     /// Operator-defined attachment groups for legal canonical parent/child relationships.
     #[serde(default)]
     pub manual_attachment_groups: Vec<ManualAttachmentGroup>,
+    /// Attachment-scoped rate overrides beneath legal canonical parent/child relationships.
+    #[serde(default)]
+    pub attachment_rate_overrides: Vec<AttachmentRateOverride>,
 }
 
 fn default_schema_version() -> u32 {
-    2
+    3
 }
 
 impl Default for TopologyOverridesFile {
@@ -112,6 +130,7 @@ impl Default for TopologyOverridesFile {
             overrides: Vec::new(),
             attachment_probe_policies: Vec::new(),
             manual_attachment_groups: Vec::new(),
+            attachment_rate_overrides: Vec::new(),
         }
     }
 }
@@ -293,6 +312,92 @@ impl TopologyOverridesFile {
         before.saturating_sub(self.attachment_probe_policies.len())
     }
 
+    /// Returns the saved attachment rate override for `(child_node_id, parent_node_id,
+    /// attachment_id)`, if present.
+    pub fn find_attachment_rate_override(
+        &self,
+        child_node_id: &str,
+        parent_node_id: &str,
+        attachment_id: &str,
+    ) -> Option<&AttachmentRateOverride> {
+        self.attachment_rate_overrides.iter().find(|entry| {
+            entry.child_node_id == child_node_id
+                && entry.parent_node_id == parent_node_id
+                && entry.attachment_id == attachment_id
+        })
+    }
+
+    /// Adds or replaces an attachment-scoped rate override. Returns true if changed.
+    pub fn set_attachment_rate_override_return_changed(
+        &mut self,
+        child_node_id: String,
+        parent_node_id: String,
+        attachment_id: String,
+        download_bandwidth_mbps: u64,
+        upload_bandwidth_mbps: u64,
+    ) -> bool {
+        let normalized_child_node_id = child_node_id.trim().to_string();
+        let normalized_parent_node_id = parent_node_id.trim().to_string();
+        let normalized_attachment_id = attachment_id.trim().to_string();
+        if normalized_child_node_id.is_empty()
+            || normalized_parent_node_id.is_empty()
+            || normalized_attachment_id.is_empty()
+            || download_bandwidth_mbps == 0
+            || upload_bandwidth_mbps == 0
+        {
+            return false;
+        }
+
+        let desired = AttachmentRateOverride {
+            child_node_id: normalized_child_node_id.clone(),
+            parent_node_id: normalized_parent_node_id.clone(),
+            attachment_id: normalized_attachment_id.clone(),
+            download_bandwidth_mbps,
+            upload_bandwidth_mbps,
+        };
+
+        if self.find_attachment_rate_override(
+            &normalized_child_node_id,
+            &normalized_parent_node_id,
+            &normalized_attachment_id,
+        ) == Some(&desired)
+        {
+            return false;
+        }
+
+        self.attachment_rate_overrides.retain(|entry| {
+            !(entry.child_node_id == normalized_child_node_id
+                && entry.parent_node_id == normalized_parent_node_id
+                && entry.attachment_id == normalized_attachment_id)
+        });
+        self.attachment_rate_overrides.push(desired);
+        self.attachment_rate_overrides
+            .sort_unstable_by(|left, right| {
+                left.child_node_id
+                    .cmp(&right.child_node_id)
+                    .then(left.parent_node_id.cmp(&right.parent_node_id))
+                    .then(left.attachment_id.cmp(&right.attachment_id))
+            });
+        true
+    }
+
+    /// Removes any saved attachment rate override for `(child_node_id, parent_node_id,
+    /// attachment_id)`. Returns the number removed.
+    pub fn remove_attachment_rate_override_count(
+        &mut self,
+        child_node_id: &str,
+        parent_node_id: &str,
+        attachment_id: &str,
+    ) -> usize {
+        let before = self.attachment_rate_overrides.len();
+        self.attachment_rate_overrides.retain(|entry| {
+            !(entry.child_node_id == child_node_id
+                && entry.parent_node_id == parent_node_id
+                && entry.attachment_id == attachment_id)
+        });
+        before.saturating_sub(self.attachment_rate_overrides.len())
+    }
+
     /// Returns the saved manual attachment group for `(child_node_id, parent_node_id)`, if present.
     pub fn find_manual_attachment_group(
         &self,
@@ -338,11 +443,12 @@ impl TopologyOverridesFile {
                 && entry.parent_node_id == normalized_parent_node_id)
         });
         self.manual_attachment_groups.push(desired);
-        self.manual_attachment_groups.sort_unstable_by(|left, right| {
-            left.child_node_id
-                .cmp(&right.child_node_id)
-                .then(left.parent_node_id.cmp(&right.parent_node_id))
-        });
+        self.manual_attachment_groups
+            .sort_unstable_by(|left, right| {
+                left.child_node_id
+                    .cmp(&right.child_node_id)
+                    .then(left.parent_node_id.cmp(&right.parent_node_id))
+            });
         true
     }
 

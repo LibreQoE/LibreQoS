@@ -39,6 +39,32 @@ pub struct TopologyManagerProbePolicyUpdate {
     pub enabled: bool,
 }
 
+/// Update payload for one attachment-scoped rate override.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TopologyManagerAttachmentRateOverrideUpdate {
+    /// Stable child node identifier.
+    pub child_node_id: String,
+    /// Stable parent node identifier.
+    pub parent_node_id: String,
+    /// Stable attachment identifier.
+    pub attachment_id: String,
+    /// Override download bandwidth in Mbps.
+    pub download_bandwidth_mbps: u64,
+    /// Override upload bandwidth in Mbps.
+    pub upload_bandwidth_mbps: u64,
+}
+
+/// Clear payload for one attachment-scoped rate override.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TopologyManagerAttachmentRateOverrideClear {
+    /// Stable child node identifier.
+    pub child_node_id: String,
+    /// Stable parent node identifier.
+    pub parent_node_id: String,
+    /// Stable attachment identifier.
+    pub attachment_id: String,
+}
+
 /// One manual attachment definition submitted from the Topology Manager UI.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TopologyManagerManualAttachmentInput {
@@ -229,11 +255,11 @@ pub fn set_topology_manager_probe_policy(
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let overrides =
-        TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let overrides = TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
     let effective = compute_effective_state(config.as_ref(), &canonical, &overrides, &health);
-    let merged = merged_topology_state(config.as_ref(), &canonical, &overrides, &health, &effective);
+    let merged =
+        merged_topology_state(config.as_ref(), &canonical, &overrides, &health, &effective);
 
     let known_pair_ids = merged
         .nodes
@@ -253,6 +279,98 @@ pub fn set_topology_manager_probe_policy(
             .save()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
+    build_topology_manager_state(login)
+}
+
+/// Saves or replaces one attachment-scoped rate override.
+pub fn set_topology_manager_attachment_rate_override(
+    login: LoginResult,
+    update: TopologyManagerAttachmentRateOverrideUpdate,
+) -> Result<TopologyManagerStateData, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if update.child_node_id.trim().is_empty()
+        || update.parent_node_id.trim().is_empty()
+        || update.attachment_id.trim().is_empty()
+        || update.download_bandwidth_mbps == 0
+        || update.upload_bandwidth_mbps == 0
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let overrides = TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
+    let effective = compute_effective_state(config.as_ref(), &canonical, &overrides, &health);
+    let merged =
+        merged_topology_state(config.as_ref(), &canonical, &overrides, &health, &effective);
+
+    let child = merged
+        .find_node(update.child_node_id.trim())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let parent = child
+        .allowed_parents
+        .iter()
+        .find(|entry| entry.parent_node_id == update.parent_node_id.trim())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let option = parent
+        .attachment_options
+        .iter()
+        .find(|entry| entry.attachment_id == update.attachment_id.trim())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    if !option.can_override_rate || option.attachment_id == lqos_config::TOPOLOGY_ATTACHMENT_AUTO_ID
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut overrides = overrides;
+    let changed = overrides.set_attachment_rate_override_return_changed(
+        child.node_id.clone(),
+        parent.parent_node_id.clone(),
+        option.attachment_id.clone(),
+        update.download_bandwidth_mbps,
+        update.upload_bandwidth_mbps,
+    );
+    if changed {
+        overrides
+            .save()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
+    build_topology_manager_state(login)
+}
+
+/// Removes one attachment-scoped rate override.
+pub fn clear_topology_manager_attachment_rate_override(
+    login: LoginResult,
+    clear: TopologyManagerAttachmentRateOverrideClear,
+) -> Result<TopologyManagerStateData, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if clear.child_node_id.trim().is_empty()
+        || clear.parent_node_id.trim().is_empty()
+        || clear.attachment_id.trim().is_empty()
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let mut overrides =
+        TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let removed = overrides.remove_attachment_rate_override_count(
+        clear.child_node_id.trim(),
+        clear.parent_node_id.trim(),
+        clear.attachment_id.trim(),
+    );
+    if removed > 0 {
+        overrides
+            .save()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+
     build_topology_manager_state(login)
 }
 
@@ -280,6 +398,16 @@ pub fn set_topology_manager_manual_attachment_group(
     let attachments = validate_manual_attachments(&update)?;
     let mut overrides =
         TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let previous_attachment_ids = overrides
+        .find_manual_attachment_group(update.child_node_id.trim(), update.parent_node_id.trim())
+        .map(|group| {
+            group
+                .attachments
+                .iter()
+                .map(|attachment| attachment.attachment_id.clone())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default();
     if manual_attachment_ids_conflict(&overrides, &update, &attachments) {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -298,7 +426,23 @@ pub fn set_topology_manager_manual_attachment_group(
             attachment.probe_enabled,
         );
     }
-    if changed || policy_changed {
+    let current_attachment_ids = attachments
+        .iter()
+        .map(|attachment| attachment.attachment_id.as_str())
+        .collect::<HashSet<_>>();
+    let mut rate_override_removed = 0usize;
+    for previous_attachment_id in previous_attachment_ids {
+        if current_attachment_ids.contains(previous_attachment_id.as_str()) {
+            continue;
+        }
+        rate_override_removed =
+            rate_override_removed.saturating_add(overrides.remove_attachment_rate_override_count(
+                update.child_node_id.trim(),
+                update.parent_node_id.trim(),
+                &previous_attachment_id,
+            ));
+    }
+    if changed || policy_changed || rate_override_removed > 0 {
         overrides
             .save()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -337,11 +481,18 @@ pub fn clear_topology_manager_manual_attachment_group(
         clear.parent_node_id.trim(),
     );
     let mut policy_removed = 0usize;
+    let mut rate_override_removed = 0usize;
     for attachment_id in attachment_ids {
         policy_removed =
             policy_removed.saturating_add(overrides.remove_probe_policy_count(&attachment_id));
+        rate_override_removed =
+            rate_override_removed.saturating_add(overrides.remove_attachment_rate_override_count(
+                clear.child_node_id.trim(),
+                clear.parent_node_id.trim(),
+                &attachment_id,
+            ));
     }
-    if removed > 0 || policy_removed > 0 {
+    if removed > 0 || policy_removed > 0 || rate_override_removed > 0 {
         overrides
             .save()
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -415,6 +566,45 @@ fn build_topology_manager_state(
             (false, None, None, None, Vec::new(), Vec::new())
         };
 
+        for rate_override in overrides
+            .attachment_rate_overrides
+            .iter()
+            .filter(|entry| entry.child_node_id == node.node_id)
+        {
+            let Some(parent) = node
+                .allowed_parents
+                .iter()
+                .find(|entry| entry.parent_node_id == rate_override.parent_node_id)
+            else {
+                warnings.push(format!(
+                    "Saved attachment rate override is no longer valid because parent '{}' is unavailable.",
+                    rate_override.parent_node_id
+                ));
+                continue;
+            };
+            let Some(option) = parent
+                .attachment_options
+                .iter()
+                .find(|entry| entry.attachment_id == rate_override.attachment_id)
+            else {
+                warnings.push(format!(
+                    "Saved attachment rate override is no longer valid because attachment '{}' is unavailable.",
+                    rate_override.attachment_id
+                ));
+                continue;
+            };
+            if !option.can_override_rate {
+                warnings.push(format!(
+                    "Saved attachment rate override for '{}' is currently ignored: {}",
+                    option.attachment_name,
+                    option
+                        .rate_override_disabled_reason
+                        .clone()
+                        .unwrap_or_else(|| "rate overrides are unavailable".to_string())
+                ));
+            }
+        }
+
         nodes.push(TopologyManagerNodeData {
             node_id: node.node_id.clone(),
             node_name: node.node_name.clone(),
@@ -454,6 +644,18 @@ fn build_topology_manager_state(
                 entry.child_node_name
             )
         })
+        .chain(
+            overrides
+                .attachment_rate_overrides
+                .iter()
+                .filter(|entry| !runtime_ids.contains(entry.child_node_id.as_str()))
+                .map(|entry| {
+                    format!(
+                        "Saved attachment rate override for '{}' is not present in the current topology snapshot.",
+                        entry.child_node_id
+                    )
+                }),
+        )
         .collect::<Vec<_>>();
 
     Ok(TopologyManagerStateData {
@@ -558,9 +760,7 @@ fn manual_attachment_ids_conflict(
     overrides
         .manual_attachment_groups
         .iter()
-        .filter(|group| {
-            (group.child_node_id.as_str(), group.parent_node_id.as_str()) != group_key
-        })
+        .filter(|group| (group.child_node_id.as_str(), group.parent_node_id.as_str()) != group_key)
         .flat_map(|group| group.attachments.iter())
         .any(|attachment| submitted_ids.contains(attachment.attachment_id.as_str()))
 }

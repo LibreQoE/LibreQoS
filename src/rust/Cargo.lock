@@ -2040,6 +2040,7 @@ dependencies = [
  "allocative",
  "allocative_derive",
  "lqos_config",
+ "lqos_probe",
  "lqos_utils",
  "nix",
  "serde",
@@ -2108,6 +2109,20 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lqos_probe"
+version = "0.1.0"
+dependencies = [
+ "allocative",
+ "lqos_config",
+ "rand 0.8.5",
+ "serde",
+ "surge-ping",
+ "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2185,11 +2200,10 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "lqos_overrides",
+ "lqos_probe",
  "lqos_queue_tracker",
  "lqos_utils",
  "parking_lot",
- "rand 0.8.5",
- "surge-ping",
  "tokio",
  "tracing",
 ]
@@ -2219,12 +2233,11 @@ name = "lqos_topology"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "lqos_bus",
  "lqos_config",
  "lqos_overrides",
- "rand 0.8.5",
- "serde",
+ "lqos_probe",
  "serde_json",
- "surge-ping",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2279,6 +2292,7 @@ dependencies = [
  "lqos_config",
  "lqos_heimdall",
  "lqos_overrides",
+ "lqos_probe",
  "lqos_queue_tracker",
  "lqos_stormguard",
  "lqos_sys",
@@ -2299,7 +2313,6 @@ dependencies = [
  "signal-hook",
  "smallvec",
  "strum",
- "surge-ping",
  "sysinfo",
  "thiserror",
  "timerfd",

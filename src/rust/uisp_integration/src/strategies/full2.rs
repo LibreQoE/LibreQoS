@@ -19,12 +19,13 @@ use crate::strategies::full2::dot::save_dot_file;
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
-use crate::uisp_types::UispDevice;
+use crate::uisp_types::{UispAttachmentRateSource, UispDevice};
 use lqos_config::{
     CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
     TOPOLOGY_ATTACHMENT_AUTO_ID, TopologyAllowedParent, TopologyAttachmentOption,
-    TopologyEditorNode, TopologyEditorStateFile, TopologyParentCandidate,
-    TopologyParentCandidatesFile, TopologyParentCandidatesNode,
+    TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyEditorNode,
+    TopologyEditorStateFile, TopologyParentCandidate, TopologyParentCandidatesFile,
+    TopologyParentCandidatesNode,
 };
 use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile, TopologyParentOverrideMode};
 use petgraph::Directed;
@@ -213,11 +214,6 @@ pub async fn build_full_network_v2(
     );
     for ap_ref in to_remove.iter() {
         graph.remove_node(*ap_ref);
-    }
-
-    // Now look for point-to-point squash candidates (after client mapping)
-    if config.uisp_integration.enable_squashing.unwrap_or(false) {
-        find_point_to_point_squash_candidates(&mut graph, &aps_with_clients, &config);
     }
 
     // Visualizer
@@ -444,6 +440,7 @@ pub async fn build_full_network_v2(
                             &graph,
                             &grouped_allowed_parents,
                             &uisp_data.devices,
+                            &aps_with_clients,
                             &routing_overrides,
                         );
 
@@ -1151,14 +1148,48 @@ fn attachment_kind_for_candidate(graph: &GraphType, candidate: NodeIndex) -> &'s
     }
 }
 
+fn access_point_id(graph: &GraphType, node: NodeIndex) -> Option<&str> {
+    match &graph[node] {
+        GraphMapping::AccessPoint { id, .. } => Some(id.as_str()),
+        _ => None,
+    }
+}
+
+fn attachment_role_for_candidate(
+    graph: &GraphType,
+    candidate: NodeIndex,
+    peer_candidate: Option<NodeIndex>,
+    aps_with_clients: &HashSet<String>,
+) -> TopologyAttachmentRole {
+    if graph[candidate].network_json_id() == TOPOLOGY_ATTACHMENT_AUTO_ID {
+        return TopologyAttachmentRole::Unknown;
+    }
+    if attachment_kind_for_candidate(graph, candidate) == "site" {
+        return TopologyAttachmentRole::WiredUplink;
+    }
+
+    if peer_candidate
+        .and_then(|peer| access_point_id(graph, peer))
+        .is_some_and(|peer_id| aps_with_clients.contains(peer_id))
+    {
+        return TopologyAttachmentRole::PtmpUplink;
+    }
+
+    if peer_candidate.is_some() {
+        return TopologyAttachmentRole::PtpBackhaul;
+    }
+
+    TopologyAttachmentRole::WiredUplink
+}
+
 fn first_probe_ip_for_device(devices: &[UispDevice], device_id: &str) -> Option<String> {
     let device = devices.iter().find(|device| device.id == device_id)?;
     device
-        .ipv4
+        .probe_ipv4
         .iter()
         .min()
         .cloned()
-        .or_else(|| device.ipv6.iter().min().cloned())
+        .or_else(|| device.probe_ipv6.iter().min().cloned())
 }
 
 fn attachment_pair_id(left: &str, right: &str) -> String {
@@ -1169,27 +1200,101 @@ fn attachment_pair_id(left: &str, right: &str) -> String {
     }
 }
 
+struct AttachmentRateMetadata {
+    rate_source: TopologyAttachmentRateSource,
+    can_override_rate: bool,
+    rate_override_disabled_reason: Option<String>,
+    download_bandwidth_mbps: Option<u64>,
+    upload_bandwidth_mbps: Option<u64>,
+    transport_cap_mbps: Option<u64>,
+    transport_cap_reason: Option<String>,
+}
+
+fn rate_override_metadata_for_candidate(
+    graph: &GraphType,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+) -> AttachmentRateMetadata {
+    match &graph[candidate] {
+        GraphMapping::AccessPoint {
+            id,
+            download_mbps,
+            upload_mbps,
+            ..
+        } => {
+            let matched_device = devices.iter().find(|device| device.id == *id);
+            let rate_source = matched_device
+                .map(|device| match device.attachment_rate_source {
+                    UispAttachmentRateSource::DynamicIntegration
+                        if *download_mbps == device.download && *upload_mbps == device.upload =>
+                    {
+                        TopologyAttachmentRateSource::DynamicIntegration
+                    }
+                    _ => TopologyAttachmentRateSource::Static,
+                })
+                .unwrap_or(TopologyAttachmentRateSource::Unknown);
+            let (can_override_rate, disabled_reason) = if rate_source
+                == TopologyAttachmentRateSource::DynamicIntegration
+            {
+                (
+                    false,
+                    Some("Rates are driven by dynamic UISP radio capacity telemetry.".to_string()),
+                )
+            } else {
+                (true, None)
+            };
+            AttachmentRateMetadata {
+                rate_source,
+                can_override_rate,
+                rate_override_disabled_reason: disabled_reason,
+                download_bandwidth_mbps: Some(*download_mbps),
+                upload_bandwidth_mbps: Some(*upload_mbps),
+                transport_cap_mbps: matched_device.and_then(|device| device.transport_cap_mbps),
+                transport_cap_reason: matched_device
+                    .and_then(|device| device.transport_cap_reason.clone()),
+            }
+        }
+        _ => AttachmentRateMetadata {
+            rate_source: TopologyAttachmentRateSource::Unknown,
+            can_override_rate: false,
+            rate_override_disabled_reason: Some(
+                "This attachment does not expose attachment-scoped rate controls.".to_string(),
+            ),
+            download_bandwidth_mbps: None,
+            upload_bandwidth_mbps: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+        },
+    }
+}
+
 fn topology_attachment_option_for_candidate(
     graph: &GraphType,
     logical_parent: NodeIndex,
     candidate: NodeIndex,
     devices: &[UispDevice],
+    aps_with_clients: &HashSet<String>,
     route_overrides: &[RouteOverride],
 ) -> TopologyAttachmentOption {
     let attachment_id = graph[candidate].network_json_id();
     let attachment_name = graph[candidate].name();
     let attachment_kind = attachment_kind_for_candidate(graph, candidate).to_string();
-    let capacity_mbps = match &graph[candidate] {
-        GraphMapping::AccessPoint {
-            download_mbps,
-            upload_mbps,
-            ..
-        } => Some((*download_mbps).min(*upload_mbps)),
-        _ => None,
+    let attachment_rate_metadata = rate_override_metadata_for_candidate(graph, candidate, devices);
+    let rate_source = attachment_rate_metadata.rate_source;
+    let can_override_rate = attachment_rate_metadata.can_override_rate;
+    let rate_override_disabled_reason = attachment_rate_metadata.rate_override_disabled_reason;
+    let download_bandwidth_mbps = attachment_rate_metadata.download_bandwidth_mbps;
+    let upload_bandwidth_mbps = attachment_rate_metadata.upload_bandwidth_mbps;
+    let transport_cap_mbps = attachment_rate_metadata.transport_cap_mbps;
+    let transport_cap_reason = attachment_rate_metadata.transport_cap_reason;
+    let capacity_mbps = match (download_bandwidth_mbps, upload_bandwidth_mbps) {
+        (Some(download), Some(upload)) => Some(download.min(upload)),
+        (Some(download), None) => Some(download),
+        (None, Some(upload)) => Some(upload),
+        (None, None) => None,
     };
 
-    let route_from_parent =
-        astar_route(graph, logical_parent, candidate, devices, route_overrides);
+    let route_from_parent = astar_route(graph, logical_parent, candidate, devices, route_overrides);
     let peer_candidate = if route_from_parent.len() >= 2 {
         route_from_parent
             .get(route_from_parent.len().saturating_sub(2))
@@ -1201,6 +1306,8 @@ fn topology_attachment_option_for_candidate(
 
     let peer_attachment_id = peer_candidate.map(|node| graph[node].network_json_id());
     let peer_attachment_name = peer_candidate.map(|node| graph[node].name());
+    let attachment_role =
+        attachment_role_for_candidate(graph, candidate, peer_candidate, aps_with_clients);
     let local_probe_ip = match &graph[candidate] {
         GraphMapping::AccessPoint { id, .. } => first_probe_ip_for_device(devices, id),
         _ => None,
@@ -1220,10 +1327,19 @@ fn topology_attachment_option_for_candidate(
         attachment_id,
         attachment_name,
         attachment_kind,
+        attachment_role,
         pair_id,
         peer_attachment_id,
         peer_attachment_name,
         capacity_mbps,
+        download_bandwidth_mbps,
+        upload_bandwidth_mbps,
+        transport_cap_mbps,
+        transport_cap_reason,
+        rate_source,
+        can_override_rate,
+        rate_override_disabled_reason,
+        has_rate_override: false,
         local_probe_ip,
         remote_probe_ip,
         probe_enabled: false,
@@ -1239,6 +1355,7 @@ fn topology_allowed_parents_from_groups(
     graph: &GraphType,
     groups: &[TopologyAllowedParentGroup],
     devices: &[UispDevice],
+    aps_with_clients: &HashSet<String>,
     route_overrides: &[RouteOverride],
 ) -> Vec<TopologyAllowedParent> {
     groups
@@ -1248,10 +1365,19 @@ fn topology_allowed_parents_from_groups(
                 attachment_id: TOPOLOGY_ATTACHMENT_AUTO_ID.to_string(),
                 attachment_name: "Auto".to_string(),
                 attachment_kind: "auto".to_string(),
+                attachment_role: TopologyAttachmentRole::Unknown,
                 pair_id: None,
                 peer_attachment_id: None,
                 peer_attachment_name: None,
                 capacity_mbps: None,
+                download_bandwidth_mbps: None,
+                upload_bandwidth_mbps: None,
+                transport_cap_mbps: None,
+                transport_cap_reason: None,
+                rate_source: TopologyAttachmentRateSource::Unknown,
+                can_override_rate: false,
+                rate_override_disabled_reason: None,
+                has_rate_override: false,
                 local_probe_ip: None,
                 remote_probe_ip: None,
                 probe_enabled: false,
@@ -1276,6 +1402,7 @@ fn topology_allowed_parents_from_groups(
                             group.logical_parent,
                             candidate,
                             devices,
+                            aps_with_clients,
                             route_overrides,
                         )
                     }),
@@ -1486,6 +1613,7 @@ fn min_capacity_along_route(graph: &GraphType, path: &[NodeIndex]) -> u64 {
         .unwrap_or(0)
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 struct SquashCandidate {
     endpoint_a: NodeIndex,
@@ -1502,6 +1630,7 @@ struct SquashCandidate {
     endpoint_b_name: String,
 }
 
+#[cfg(test)]
 impl SquashCandidate {
     fn new(
         graph: &GraphType,
@@ -1582,6 +1711,7 @@ fn stable_node_key(graph: &GraphType, node: NodeIndex) -> (String, String) {
     (graph[node].network_json_id(), graph[node].name())
 }
 
+#[cfg(test)]
 fn sorted_unique_neighbors(graph: &GraphType, node: NodeIndex) -> Vec<NodeIndex> {
     let mut neighbors: Vec<NodeIndex> = graph
         .neighbors_directed(node, petgraph::Incoming)
@@ -1595,16 +1725,19 @@ fn sorted_unique_neighbors(graph: &GraphType, node: NodeIndex) -> Vec<NodeIndex>
 #[cfg(test)]
 mod topology_override_tests {
     use super::{
-        GraphType, TopologyAttachmentOverrideSelection, TopologyParentOverrideSelection,
-        is_upstream_parent_candidate,
-        logical_parent_for_candidate, resolve_attachment_parent_candidate,
-        resolve_parent_candidate, topology_allowed_parent_groups_for_node,
-        topology_allowed_parents_from_groups, topology_parent_candidates_for_node,
+        GraphType, TopologyAllowedParentGroup, TopologyAttachmentOverrideSelection,
+        TopologyParentOverrideSelection, UispDevice, first_probe_ip_for_device,
+        is_upstream_parent_candidate, logical_parent_for_candidate,
+        resolve_attachment_parent_candidate, resolve_parent_candidate,
+        topology_allowed_parent_groups_for_node, topology_allowed_parents_from_groups,
+        topology_parent_candidates_for_node,
     };
     use crate::strategies::full2::graph_mapping::GraphMapping;
     use crate::strategies::full2::link_mapping::LinkMapping;
+    use crate::uisp_types::UispAttachmentRateSource;
+    use lqos_config::TopologyAttachmentRole;
     use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     fn site(name: &str, id: &str) -> GraphMapping {
         GraphMapping::Site {
@@ -1810,20 +1943,25 @@ mod topology_override_tests {
             latitude: None,
             longitude: None,
         });
-        let parent_site = graph.add_node(site("7232 Rochester", "site-rochester"));
-        let child_site = graph.add_node(site("MRE", "site-mre"));
+        let parent_site = graph.add_node(site("Parent Site", "site-parent"));
+        let child_site = graph.add_node(site("Child Site", "site-child"));
         let parent_wave = graph.add_node(ap(
-            "WavePro-RochesterToMRE",
-            "device-roch-wave",
-            "7232 Rochester",
+            "Backhaul Wave Parent",
+            "device-parent-wave",
+            "Parent Site",
         ));
-        let child_wave = graph.add_node(ap("WavePro-MREToRochester", "device-mre-wave", "MRE"));
+        let child_wave =
+            graph.add_node(ap("Backhaul Wave Child", "device-child-wave", "Child Site"));
         let parent_4600 = graph.add_node(ap(
-            "4600C_ROCH_To_MRE",
-            "device-roch-4600",
-            "7232 Rochester",
+            "Backhaul AirFiber Parent",
+            "device-parent-airfiber",
+            "Parent Site",
         ));
-        let child_4600 = graph.add_node(ap("4600C_MRE_To_ROCH", "device-mre-4600", "MRE"));
+        let child_4600 = graph.add_node(ap(
+            "Backhaul AirFiber Child",
+            "device-child-airfiber",
+            "Child Site",
+        ));
 
         for (from, to) in [
             (root, parent_site),
@@ -1877,20 +2015,79 @@ mod topology_override_tests {
         assert_eq!(groups[0].logical_parent, parent_site);
         assert_eq!(groups[0].candidate_nodes, vec![child_4600, child_wave]);
 
-        let allowed = topology_allowed_parents_from_groups(&graph, &groups, &[], &[]);
+        let allowed =
+            topology_allowed_parents_from_groups(&graph, &groups, &[], &HashSet::new(), &[]);
         assert_eq!(allowed.len(), 1);
         assert_eq!(
             allowed[0].parent_node_id,
             graph[parent_site].network_json_id()
         );
-        assert_eq!(allowed[0].parent_node_name, "7232 Rochester");
+        assert_eq!(allowed[0].parent_node_name, "Parent Site");
         assert_eq!(
             allowed[0]
                 .attachment_options
                 .iter()
                 .map(|option| option.attachment_name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Auto", "4600C_MRE_To_ROCH", "WavePro-MREToRochester"]
+            vec!["Auto", "Backhaul AirFiber Child", "Backhaul Wave Child"]
+        );
+        assert!(
+            allowed[0]
+                .attachment_options
+                .iter()
+                .skip(1)
+                .all(|option| option.attachment_role == TopologyAttachmentRole::PtpBackhaul)
+        );
+    }
+
+    #[test]
+    fn ptmp_child_attachment_is_classified_as_ptmp_uplink() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let parent_site = graph.add_node(site("Parent Site", "site-parent"));
+        let child_site = graph.add_node(site("Child Site", "site-child"));
+        let parent_ap = graph.add_node(ap("Access AP", "device-parent-ap", "Parent Site"));
+        let child_cpe = graph.add_node(ap("Child CPE", "device-child-cpe", "Child Site"));
+
+        for (from, to) in [
+            (root, parent_site),
+            (parent_site, root),
+            (parent_site, parent_ap),
+            (parent_ap, parent_site),
+            (parent_ap, child_cpe),
+            (child_cpe, parent_ap),
+            (child_site, child_cpe),
+            (child_cpe, child_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        let groups = vec![TopologyAllowedParentGroup {
+            logical_parent: parent_site,
+            candidate_nodes: vec![child_cpe],
+        }];
+        let mut aps_with_clients = HashSet::new();
+        aps_with_clients.insert("device-parent-ap".to_string());
+
+        let allowed =
+            topology_allowed_parents_from_groups(&graph, &groups, &[], &aps_with_clients, &[]);
+        let attachment = allowed[0]
+            .attachment_options
+            .iter()
+            .find(|option| option.attachment_id == graph[child_cpe].network_json_id())
+            .expect("expected explicit child-side attachment");
+        assert_eq!(
+            attachment.attachment_role,
+            TopologyAttachmentRole::PtmpUplink
+        );
+        assert_eq!(
+            attachment.peer_attachment_name.as_deref(),
+            Some("Access AP")
         );
     }
 
@@ -1945,17 +2142,50 @@ mod topology_override_tests {
         let logical_parent = logical_parent_for_candidate(&graph, root, child_wave, &[], &[]);
         assert_eq!(logical_parent, parent_site);
     }
+
+    #[test]
+    fn probe_ip_selection_uses_unfiltered_management_ips_without_cidr() {
+        let devices = vec![UispDevice {
+            id: "device-mre-wave".to_string(),
+            name: "WavePro-MREToRochester".to_string(),
+            mac: String::new(),
+            role: Some("station".to_string()),
+            wireless_mode: Some("sta-ptp".to_string()),
+            site_id: "site-mre".to_string(),
+            raw_download: 1000,
+            raw_upload: 1000,
+            download: 1000,
+            upload: 1000,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            probe_ipv4: HashSet::from(["100.126.0.226".to_string()]),
+            probe_ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: UispAttachmentRateSource::Static,
+        }];
+
+        assert_eq!(
+            first_probe_ip_for_device(&devices, "device-mre-wave").as_deref(),
+            Some("100.126.0.226")
+        );
+    }
 }
 
+#[cfg(test)]
 fn total_degree(graph: &GraphType, node: NodeIndex) -> usize {
     graph.neighbors_directed(node, petgraph::Incoming).count()
         + graph.neighbors_directed(node, petgraph::Outgoing).count()
 }
 
+#[cfg(test)]
 fn is_relay_node(graph: &GraphType, node: NodeIndex) -> bool {
     total_degree(graph, node) == 4 && sorted_unique_neighbors(graph, node).len() == 2
 }
 
+#[cfg(test)]
 fn is_meaningful_endpoint(graph: &GraphType, node: NodeIndex) -> bool {
     let unique_neighbors = sorted_unique_neighbors(graph, node);
     !(total_degree(graph, node) == 4 && unique_neighbors.len() == 2)
@@ -1963,6 +2193,7 @@ fn is_meaningful_endpoint(graph: &GraphType, node: NodeIndex) -> bool {
         && !matches!(graph[node], GraphMapping::AccessPoint { .. })
 }
 
+#[cfg(test)]
 fn should_skip_squash(
     graph: &GraphType,
     config: &Arc<Config>,
@@ -1980,6 +2211,7 @@ fn should_skip_squash(
         .any(|name| do_not_squash.contains(&name))
 }
 
+#[cfg(test)]
 fn find_point_to_point_squash_candidates(
     graph: &mut GraphType,
     aps_with_clients: &HashSet<String>,
@@ -2005,6 +2237,7 @@ fn find_point_to_point_squash_candidates(
     perform_squashing(graph, &candidates);
 }
 
+#[cfg(test)]
 fn collect_point_to_point_squash_candidates(
     graph: &GraphType,
     aps_with_clients: &HashSet<String>,
@@ -2116,6 +2349,7 @@ fn collect_point_to_point_squash_candidates(
     candidates
 }
 
+#[cfg(test)]
 fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
     let mut nodes_to_remove = std::collections::HashSet::new();
 
@@ -2197,6 +2431,7 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
     );
 }
 
+#[cfg(test)]
 fn calculate_chain_capacity(graph: &GraphType, chain_nodes: &[NodeIndex]) -> (u64, u64) {
     let mut min_forward_capacity = u64::MAX;
     let mut min_reverse_capacity = u64::MAX;

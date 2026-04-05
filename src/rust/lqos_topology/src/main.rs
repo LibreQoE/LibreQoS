@@ -1,33 +1,41 @@
 use anyhow::{Context, Result};
+use lqos_bus::{BusRequest, BusResponse, bus_request};
 use lqos_config::{
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TopologyAttachmentEndpointStatus,
     TopologyAttachmentHealthEntry, TopologyAttachmentHealthStateFile,
     TopologyAttachmentHealthStatus, TopologyEditorStateFile, load_config,
     topology_effective_network_path,
 };
+use lqos_overrides::TopologyOverridesFile;
+use lqos_probe::{ProbeClass, ProbeRequest};
 use lqos_topology::{
     AttachmentProbeSpec, apply_effective_topology_to_network_json, compute_effective_state,
     is_health_state_fresh, merged_topology_state, probe_specs_from_state,
 };
-use lqos_overrides::TopologyOverridesFile;
-use rand::random;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::net::IpAddr;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use surge_ping::{Client, Config as PingConfig, ICMP, IcmpPacket, PingIdentifier, PingSequence};
-use tokio::sync::Semaphore;
 use tracing::{info, warn};
+
+const TOPOLOGY_PROBE_MAX_AGE_MS: u64 = 250;
 
 fn now_unix() -> Option<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()
         .map(|duration| duration.as_secs())
+}
+
+fn parse_probe_ip(raw: &str) -> Option<IpAddr> {
+    raw.trim()
+        .split('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<IpAddr>().ok())
 }
 
 fn atomic_write_json(path: &Path, value: &Value) -> Result<()> {
@@ -53,16 +61,19 @@ fn probe_unavailable_reason(local_ip: &str, remote_ip: &str) -> String {
     if remote.is_empty() {
         return "Probe unavailable: missing remote management IP".to_string();
     }
-    if local == remote {
+    if parse_probe_ip(local)
+        .zip(parse_probe_ip(remote))
+        .is_some_and(|(local, remote)| local == remote)
+    {
         return "Probe unavailable: local and remote probe IPs are identical".to_string();
     }
-    if local.parse::<IpAddr>().is_err() && remote.parse::<IpAddr>().is_err() {
+    if parse_probe_ip(local).is_none() && parse_probe_ip(remote).is_none() {
         return "Probe unavailable: local and remote probe IPs are invalid".to_string();
     }
-    if local.parse::<IpAddr>().is_err() {
+    if parse_probe_ip(local).is_none() {
         return "Probe unavailable: local management IP is invalid".to_string();
     }
-    if remote.parse::<IpAddr>().is_err() {
+    if parse_probe_ip(remote).is_none() {
         return "Probe unavailable: remote management IP is invalid".to_string();
     }
     "Probe unavailable".to_string()
@@ -71,7 +82,11 @@ fn probe_unavailable_reason(local_ip: &str, remote_ip: &str) -> String {
 fn load_canonical_network_json() -> Option<Value> {
     let config = load_config().ok()?;
     let base = Path::new(&config.lqos_directory);
-    let path = if config.long_term_stats.enable_insight_topology.unwrap_or(false) {
+    let path = if config
+        .long_term_stats
+        .enable_insight_topology
+        .unwrap_or(false)
+    {
         let insight = base.join("network.insight.json");
         if insight.exists() {
             insight
@@ -99,68 +114,69 @@ fn load_starting_health() -> TopologyAttachmentHealthStateFile {
     }
 }
 
-async fn ping_once(ip: IpAddr, timeout: Duration) -> bool {
-    let client = match ip {
-        IpAddr::V4(_) => Client::new(&PingConfig::default()),
-        IpAddr::V6(_) => Client::new(&PingConfig::builder().kind(ICMP::V6).build()),
-    };
-    let Ok(client) = client else {
-        return false;
-    };
-    let payload = [0_u8; 56];
-    let mut pinger = client.pinger(ip, PingIdentifier(random())).await;
-    pinger.timeout(timeout);
-    matches!(
-        pinger.ping(PingSequence(0), &payload).await,
-        Ok((IcmpPacket::V4(..), _)) | Ok((IcmpPacket::V6(..), _))
-    )
-}
-
 async fn probe_specs(
     specs: &[AttachmentProbeSpec],
     timeout: Duration,
-) -> HashMap<String, (bool, bool)> {
-    let semaphore = Arc::new(Semaphore::new(256));
-    let mut join_set = tokio::task::JoinSet::new();
+) -> Result<HashMap<String, (bool, bool)>> {
+    let mut probe_requests = Vec::new();
+    let mut probe_positions = Vec::new();
     for spec in specs {
-        let pair_id = spec.pair_id.clone();
-        let local_ip = spec.local_ip.clone();
-        let local_semaphore = semaphore.clone();
-        join_set.spawn(async move {
-            let _permit = local_semaphore.acquire_owned().await.ok();
-            let reachable = match local_ip.parse::<IpAddr>() {
-                Ok(ip) => ping_once(ip, timeout).await,
-                Err(_) => false,
-            };
-            (pair_id, 0_usize, reachable)
-        });
-
-        let pair_id = spec.pair_id.clone();
-        let remote_ip = spec.remote_ip.clone();
-        let remote_semaphore = semaphore.clone();
-        join_set.spawn(async move {
-            let _permit = remote_semaphore.acquire_owned().await.ok();
-            let reachable = match remote_ip.parse::<IpAddr>() {
-                Ok(ip) => ping_once(ip, timeout).await,
-                Err(_) => false,
-            };
-            (pair_id, 1_usize, reachable)
-        });
-    }
-
-    let mut results = HashMap::<String, (bool, bool)>::new();
-    while let Some(result) = join_set.join_next().await {
-        let Ok((pair_id, endpoint_index, reachable)) = result else {
-            continue;
-        };
-        let entry = results.entry(pair_id).or_insert((false, false));
-        if endpoint_index == 0 {
-            entry.0 = reachable;
-        } else {
-            entry.1 = reachable;
+        if let Some(ip) = parse_probe_ip(&spec.local_ip) {
+            probe_positions.push((spec.pair_id.clone(), 0_usize));
+            probe_requests.push(ProbeRequest::reachability(
+                ip.to_string(),
+                ProbeClass::TopologyAttachment,
+                timeout,
+            ));
+        }
+        if let Some(ip) = parse_probe_ip(&spec.remote_ip) {
+            probe_positions.push((spec.pair_id.clone(), 1_usize));
+            probe_requests.push(ProbeRequest::reachability(
+                ip.to_string(),
+                ProbeClass::TopologyAttachment,
+                timeout,
+            ));
         }
     }
-    results
+
+    if probe_requests.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let responses = bus_request(vec![BusRequest::ProbeBatch {
+        requests: probe_requests,
+        max_age_ms: TOPOLOGY_PROBE_MAX_AGE_MS,
+    }])
+    .await
+    .map_err(|err| anyhow::anyhow!("unable to query shared probe manager: {err}"))?;
+    let Some(response) = responses.into_iter().next() else {
+        return Err(anyhow::anyhow!(
+            "shared probe manager returned no bus response for topology batch"
+        ));
+    };
+
+    let mut results = HashMap::<String, (bool, bool)>::new();
+    match response {
+        BusResponse::ProbeObservations(observations) => {
+            for ((pair_id, endpoint_index), observation) in
+                probe_positions.into_iter().zip(observations)
+            {
+                let entry = results.entry(pair_id).or_insert((false, false));
+                if endpoint_index == 0 {
+                    entry.0 = observation.reachable;
+                } else {
+                    entry.1 = observation.reachable;
+                }
+            }
+            Ok(results)
+        }
+        BusResponse::Fail(message) => Err(anyhow::anyhow!(
+            "shared probe manager rejected topology batch: {message}"
+        )),
+        other => Err(anyhow::anyhow!(
+            "unexpected response from shared probe manager: {other:?}"
+        )),
+    }
 }
 
 fn build_health_entry(
@@ -170,14 +186,24 @@ fn build_health_entry(
     probe_result: Option<(bool, bool)>,
 ) -> TopologyAttachmentHealthEntry {
     let now = now_unix();
-    let probeable = spec.local_ip.parse::<IpAddr>().is_ok()
-        && spec.remote_ip.parse::<IpAddr>().is_ok()
-        && spec.local_ip != spec.remote_ip;
-    let mut entry = previous.cloned().unwrap_or_else(|| TopologyAttachmentHealthEntry {
-        attachment_pair_id: spec.pair_id.clone(),
-        ..TopologyAttachmentHealthEntry::default()
-    });
+    let probeable = parse_probe_ip(&spec.local_ip)
+        .zip(parse_probe_ip(&spec.remote_ip))
+        .is_some_and(|(local, remote)| local != remote);
+    let mut entry = previous
+        .cloned()
+        .unwrap_or_else(|| TopologyAttachmentHealthEntry {
+            attachment_pair_id: spec.pair_id.clone(),
+            ..TopologyAttachmentHealthEntry::default()
+        });
     entry.attachment_pair_id = spec.pair_id.clone();
+    entry.attachment_id = Some(spec.attachment_id.clone());
+    entry.attachment_name = Some(spec.attachment_name.clone());
+    entry.child_node_id = Some(spec.node_id.clone());
+    entry.child_node_name = Some(spec.node_name.clone());
+    entry.parent_node_id = Some(spec.parent_node_id.clone());
+    entry.parent_node_name = Some(spec.parent_node_name.clone());
+    entry.local_probe_ip = Some(spec.local_ip.clone());
+    entry.remote_probe_ip = Some(spec.remote_ip.clone());
     entry.enabled = spec.enabled;
     entry.probeable = probeable;
 
@@ -266,6 +292,38 @@ fn build_health_entry(
     entry
 }
 
+fn refresh_health_state(
+    config: &lqos_config::Config,
+    health_state: &mut TopologyAttachmentHealthStateFile,
+    specs: &[AttachmentProbeSpec],
+    probe_results: &HashMap<String, (bool, bool)>,
+) -> Result<()> {
+    let previous_by_pair = health_state
+        .attachments
+        .iter()
+        .map(|entry| (entry.attachment_pair_id.as_str(), entry))
+        .collect::<HashMap<_, _>>();
+    let mut new_entries = specs
+        .iter()
+        .map(|spec| {
+            build_health_entry(
+                config,
+                spec,
+                previous_by_pair.get(spec.pair_id.as_str()).copied(),
+                probe_results.get(&spec.pair_id).copied(),
+            )
+        })
+        .collect::<Vec<_>>();
+    new_entries
+        .sort_unstable_by(|left, right| left.attachment_pair_id.cmp(&right.attachment_pair_id));
+    health_state.schema_version = 1;
+    health_state.generated_unix = now_unix();
+    health_state.attachments = new_entries;
+    health_state
+        .save(config)
+        .context("Unable to save topology attachment health state")
+}
+
 async fn run_round(
     health_state: &mut TopologyAttachmentHealthStateFile,
     last_effective: &mut HashMap<String, Option<String>>,
@@ -276,53 +334,47 @@ async fn run_round(
     let overrides =
         TopologyOverridesFile::load().context("Unable to load topology overrides file")?;
 
-    let initial_effective = compute_effective_state(config.as_ref(), &canonical, &overrides, health_state);
-    let initial_ui_state =
-        merged_topology_state(config.as_ref(), &canonical, &overrides, health_state, &initial_effective);
+    let initial_effective =
+        compute_effective_state(config.as_ref(), &canonical, &overrides, health_state);
+    let initial_ui_state = merged_topology_state(
+        config.as_ref(),
+        &canonical,
+        &overrides,
+        health_state,
+        &initial_effective,
+    );
     let specs = probe_specs_from_state(&initial_ui_state, &overrides);
-    let probe_results = probe_specs(&specs, Duration::from_millis(750)).await;
-
-    let previous_by_pair = health_state
-        .attachments
-        .iter()
-        .map(|entry| (entry.attachment_pair_id.as_str(), entry))
-        .collect::<HashMap<_, _>>();
-    let mut new_entries = specs
-        .iter()
-        .map(|spec| {
-            build_health_entry(
-                config.as_ref(),
-                spec,
-                previous_by_pair.get(spec.pair_id.as_str()).copied(),
-                probe_results.get(&spec.pair_id).copied(),
-            )
-        })
-        .collect::<Vec<_>>();
-    new_entries.sort_unstable_by(|left, right| left.attachment_pair_id.cmp(&right.attachment_pair_id));
-    health_state.schema_version = 1;
-    health_state.generated_unix = now_unix();
-    health_state.attachments = new_entries;
-    health_state
-        .save(config.as_ref())
-        .context("Unable to save topology attachment health state")?;
+    match probe_specs(&specs, Duration::from_millis(750)).await {
+        Ok(probe_results) => {
+            refresh_health_state(config.as_ref(), health_state, &specs, &probe_results)?;
+        }
+        Err(err) => {
+            warn!("Topology probe round could not query shared probe manager: {err:#}");
+        }
+    }
 
     let effective = compute_effective_state(config.as_ref(), &canonical, &overrides, health_state);
     effective
         .save(config.as_ref())
         .context("Unable to save topology effective state")?;
-    let ui_state =
-        merged_topology_state(config.as_ref(), &canonical, &overrides, health_state, &effective);
+    let ui_state = merged_topology_state(
+        config.as_ref(),
+        &canonical,
+        &overrides,
+        health_state,
+        &effective,
+    );
 
     if let Some(canonical_network) = load_canonical_network_json() {
-        let effective_network =
-            apply_effective_topology_to_network_json(&canonical_network, &ui_state, &effective);
+        let effective_network = apply_effective_topology_to_network_json(
+            config.as_ref(),
+            &canonical_network,
+            &ui_state,
+            &effective,
+        );
         let effective_path = topology_effective_network_path(config.as_ref());
-        atomic_write_json(&effective_path, &effective_network).with_context(|| {
-            format!(
-                "Unable to save {}",
-                TOPOLOGY_EFFECTIVE_NETWORK_FILENAME
-            )
-        })?;
+        atomic_write_json(&effective_path, &effective_network)
+            .with_context(|| format!("Unable to save {}", TOPOLOGY_EFFECTIVE_NETWORK_FILENAME))?;
     }
 
     for node in &effective.nodes {

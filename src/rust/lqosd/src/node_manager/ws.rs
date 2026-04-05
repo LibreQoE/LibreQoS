@@ -13,8 +13,8 @@ use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
     ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
     node_rate_overrides, node_topology_overrides, packet_analysis, reload_libreqos, scheduler,
-    search, shaped_device_api, shaped_devices_page, topology_manager, unknown_ips, urgent,
-    warnings,
+    search, shaped_device_api, shaped_devices_page, topology_manager, topology_probes, unknown_ips,
+    urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -42,6 +42,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use lqos_bus::BusRequest;
+use lqos_probe::ProbeClient;
 use serde_cbor::Value as CborValue;
 use tokio::sync::mpsc::Sender;
 use tracing::{info, warn};
@@ -61,6 +62,7 @@ pub fn websocket_router(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
+    probe_client: ProbeClient,
     shaper_query: Sender<ShaperQueryCommand>,
 ) -> Router {
     let channels = PubSub::new();
@@ -79,6 +81,7 @@ pub fn websocket_router(
         .layer(Extension(channels))
         .layer(Extension(bus_tx.clone()))
         .layer(Extension(control_tx.clone()))
+        .layer(Extension(probe_client.clone()))
         .layer(Extension(shaper_query.clone()))
 }
 
@@ -91,6 +94,7 @@ async fn ws_handler(
     Extension(control_tx): Extension<
         tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
     >,
+    Extension(probe_client): Extension<ProbeClient>,
     Extension(shaper_query): Extension<Sender<ShaperQueryCommand>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
@@ -111,6 +115,7 @@ async fn ws_handler(
             channels,
             bus_tx,
             control_tx,
+            probe_client,
             shaper_query,
             browser_language,
         )
@@ -123,6 +128,7 @@ async fn handle_socket(
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
+    probe_client: ProbeClient,
     shaper_query: Sender<ShaperQueryCommand>,
     browser_language: Option<String>,
 ) {
@@ -159,8 +165,13 @@ async fn handle_socket(
         return;
     }
 
-    let mut private_state =
-        single_user_channels::PrivateState::new(tx.clone(), bus_tx, control_tx, browser_language);
+    let mut private_state = single_user_channels::PrivateState::new(
+        tx.clone(),
+        bus_tx,
+        control_tx,
+        probe_client,
+        browser_language,
+    );
     loop {
         tokio::select! {
             _ = &mut handshake_timeout, if !handshake_complete => {
@@ -1692,90 +1703,6 @@ async fn receive_channel_message(
                 }
             }
         }
-        WsRequest::SetNodeTopologyOverride { update } => {
-            let result = node_topology_overrides::set_node_topology_override_data(
-                *request_state.login,
-                update,
-            );
-            match result {
-                Ok(data) => {
-                    let response = WsResponse::SetNodeTopologyOverrideResult {
-                        ok: true,
-                        message: "Topology override saved".to_string(),
-                        data,
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Unauthorized".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::BAD_REQUEST) => {
-                    let response = WsResponse::Error {
-                        message: "Invalid topology override payload".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Error saving topology override".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-            }
-        }
-        WsRequest::ClearNodeTopologyOverride { query } => {
-            let result = node_topology_overrides::clear_node_topology_override_data(
-                *request_state.login,
-                query,
-            );
-            match result {
-                Ok(data) => {
-                    let response = WsResponse::ClearNodeTopologyOverrideResult {
-                        ok: true,
-                        message: "Topology override cleared".to_string(),
-                        data,
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::FORBIDDEN) => {
-                    let response = WsResponse::Error {
-                        message: "Unauthorized".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(StatusCode::BAD_REQUEST) => {
-                    let response = WsResponse::Error {
-                        message: "Invalid topology override request".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-                Err(_) => {
-                    let response = WsResponse::Error {
-                        message: "Error clearing topology override".to_string(),
-                    };
-                    if send_ws_response(&tx, response).await {
-                        return true;
-                    }
-                }
-            }
-        }
         WsRequest::GetTopologyManagerState => {
             match topology_manager::get_topology_manager_state(*request_state.login) {
                 Ok(data) => {
@@ -1795,6 +1722,32 @@ async fn receive_channel_message(
                 Err(_) => {
                     let response = WsResponse::Error {
                         message: "Unable to load topology manager state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::GetTopologyProbesState => {
+            match topology_probes::get_topology_probes_state(*request_state.login) {
+                Ok(data) => {
+                    let response = WsResponse::GetTopologyProbesState { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load topology probe state".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1915,6 +1868,90 @@ async fn receive_channel_message(
                 Err(_) => {
                     let response = WsResponse::Error {
                         message: "Unable to update topology manager probe policy".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerAttachmentRateOverride { update } => {
+            let result = topology_manager::set_topology_manager_attachment_rate_override(
+                *request_state.login,
+                update,
+            );
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerAttachmentRateOverrideResult {
+                        ok: true,
+                        message: "Attachment rate override saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid attachment rate override update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to save attachment rate override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearTopologyManagerAttachmentRateOverride { clear } => {
+            let result = topology_manager::clear_topology_manager_attachment_rate_override(
+                *request_state.login,
+                clear,
+            );
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearTopologyManagerAttachmentRateOverrideResult {
+                        ok: true,
+                        message: "Attachment rate override cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid attachment rate override clear request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear attachment rate override".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;

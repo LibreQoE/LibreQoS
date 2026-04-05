@@ -2680,7 +2680,11 @@ fn calculate_shaping_runtime_hash() -> PyResult<i64> {
     let effective_path = base_path.join("network.effective.json");
     let nj_path = if effective_path.exists() {
         effective_path
-    } else if config.long_term_stats.enable_insight_topology.unwrap_or(false) {
+    } else if config
+        .long_term_stats
+        .enable_insight_topology
+        .unwrap_or(false)
+    {
         let insight_path = base_path.join("network.insight.json");
         if insight_path.exists() {
             insight_path
@@ -2690,7 +2694,11 @@ fn calculate_shaping_runtime_hash() -> PyResult<i64> {
     } else {
         base_path.join("network.json")
     };
-    let sd_path = if config.long_term_stats.enable_insight_topology.unwrap_or(false) {
+    let sd_path = if config
+        .long_term_stats
+        .enable_insight_topology
+        .unwrap_or(false)
+    {
         let insight_path = base_path.join("ShapedDevices.insight.csv");
         if insight_path.exists() {
             insight_path

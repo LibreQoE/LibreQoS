@@ -99,6 +99,7 @@ impl NetworkJson {
             node_type: None,
             latitude: None,
             longitude: None,
+            active_attachment_name: None,
             heatmap: None,
             qoq_heatmap: None,
         }];
@@ -405,6 +406,10 @@ fn recurse_node(
             .map(|v| v.as_str().unwrap_or_default().to_string()),
         latitude: json_to_coordinate(json.get("latitude"), -90.0, 90.0),
         longitude: json_to_coordinate(json.get("longitude"), -180.0, 180.0),
+        active_attachment_name: json
+            .get("active_attachment_name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
         heatmap: None,
         qoq_heatmap: None,
     };
@@ -490,6 +495,7 @@ mod test {
             node_type: None,
             latitude: None,
             longitude: None,
+            active_attachment_name: None,
             heatmap: None,
             qoq_heatmap: None,
         }];
@@ -625,6 +631,35 @@ mod test {
         assert_eq!(ap.id.as_deref(), Some("uisp:device:456"));
         assert_eq!(site.clone_to_transit().id.as_deref(), Some("uisp:site:123"));
         assert_eq!(ap.clone_to_transit().id.as_deref(), Some("uisp:device:456"));
+    }
+
+    #[test]
+    fn parses_active_attachment_name_and_preserves_it_in_transport() {
+        let raw = serde_json::json!({
+            "Site_1": {
+                "id": "uisp:site:123",
+                "downloadBandwidthMbps": 500,
+                "uploadBandwidthMbps": 400,
+                "active_attachment_name": "4600C_ROCH_To_MRE",
+                "children": {}
+            }
+        });
+
+        let parsed = parse_network_json_from_value(raw);
+        let site = parsed
+            .nodes
+            .iter()
+            .find(|n| n.name == "Site_1")
+            .expect("Site_1 must be present");
+
+        assert_eq!(
+            site.active_attachment_name.as_deref(),
+            Some("4600C_ROCH_To_MRE")
+        );
+        assert_eq!(
+            site.clone_to_transit().active_attachment_name.as_deref(),
+            Some("4600C_ROCH_To_MRE")
+        );
     }
 
     #[test]

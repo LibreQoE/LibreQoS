@@ -214,6 +214,15 @@ pub enum BusRequest {
         parent: usize,
     },
 
+    /// Request a batch of active probe observations from the shared probe
+    /// provider owned by `lqosd`.
+    ProbeBatch {
+        /// Probe requests to execute or satisfy from cache.
+        requests: Vec<lqos_probe::ProbeRequest>,
+        /// Maximum acceptable observation age in milliseconds.
+        max_age_ms: u64,
+    },
+
     /// Request the full network tree
     GetFullNetworkMap,
 

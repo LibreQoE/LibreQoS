@@ -16,7 +16,6 @@ Canonical, task-oriented guidance lives in the per-integration pages linked from
     + [Burst](#burst)
     + [Configuration Example](#configuration-example)
     + [UISP Overrides](#uisp-overrides)
-      - [UISP Route Overrides](#uisp-route-overrides)
   * [WISPGate Integration](#wispgate-integration)
   * [Powercode Integration](#powercode-integration)
   * [Sonar Integration](#sonar-integration)
@@ -289,6 +288,7 @@ suspended_strategy = "none"
 airmax_capacity = 0.8  # Use 80% of reported AirMax capacity on new installs
 airmax_flexible_frame_download_ratio = 0.8  # Fallback split for AirMax flexible framing when UISP does not expose dlRatio
 ltu_capacity = 1.0      # Use 100% of reported LTU capacity on new installs
+infrastructure_transport_caps_enabled = true  # Automatically cap radio capacity to active/model Ethernet transport ceilings
 
 # Site Management
 exclude_sites = []  # Sites to exclude, e.g., ["Test_Site", "Lab_Site"]
@@ -303,8 +303,7 @@ ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
 always_overwrite_network_json = true  # Recommended for integration-driven deployments
 exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
 squash_sites = []  # Optional: sites to squash
-enable_squashing = false  # Optional: enable AP/single-entry squashing logic
-do_not_squash_sites = []  # Optional: never squash these sites
+do_not_squash_sites = []  # Optional: keep these site names unsquashed in the runtime/export tree
 ignore_calculated_capacity = false  # Optional: keep configured capacities even if calculated differs
 insecure_ssl = false  # Optional: ignore UISP TLS certificate validation
 ```
@@ -316,19 +315,23 @@ The following UISP options are available in current builds and WebUI (Node Manag
 - `exclude_sites`: list of site names to exclude from import.
 - `exception_cpes`: list of `cpe:parent` overrides for ambiguous parent assignment.
 - `squash_sites`: optional list of sites to squash in full strategy workflows.
-- `enable_squashing`: enables additional squashing behavior where supported.
-- `do_not_squash_sites`: explicit exclusions from squashing.
+- `do_not_squash_sites`: explicit site-name exclusions from runtime/export squashing.
 - `use_ptmp_as_parent`: prefer PtMP AP as parent for relevant topology paths.
 - `ignore_calculated_capacity`: prefer configured capacities instead of integration-calculated values.
 - `insecure_ssl`: disables TLS certificate verification for UISP API calls.
 - `airmax_flexible_frame_download_ratio`: when UISP reports aggregate AirMax AP capacity for flexible framing and the live `dlRatio` is absent, LibreQoS uses this fallback download share. `0.8` means 80/20 download/upload.
+
+Topology Manager attachment-health probes use UISP-reported management IPs for the selected attachment pair. Current builds no longer prune those probe IPs through shaping `allow_subnets`; the shaping address allowlist still applies to generated subscriber/device shaping data, but not to management-plane topology probe targets.
 
 Current builds scope this flexible-frame handling narrowly to devices where UISP reports `identification.type == "airMax"` and `identification.role == "ap"`. Those AirMax APs use `theoreticalTotalCapacity` only as a flexible-framing hint. The actual shaping rate comes from aggregate `totalCapacity` when UISP provides it, otherwise from the stronger directional capacity, and the split still prefers the live wireless `dlRatio` when UISP provides one.
 
 Recommended use:
 1. Keep `insecure_ssl = false` unless you have a known internal PKI/self-signed requirement.
 2. Use `exclude_sites` and `do_not_squash_sites` first for safer topology changes.
-3. Apply `squash_sites`/`enable_squashing` incrementally and validate queue placement after each change.
+3. UISP runtime/export squashing is always enabled after Topology Manager. Use `do_not_squash_sites` only when a specific site path must remain unsquashed.
+
+Legacy note:
+- Existing `enable_squashing` values in `/etc/lqos.conf` are ignored for backward compatibility.
 
 To test the UISP Integration, use
 
@@ -355,35 +358,17 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 You can also use the following override inputs to more accurately reflect your network:
 - `Rate Override` for node bandwidth changes stored as operator `AdjustSiteSpeed` entries in `lqos_overrides.json`
 - `Topology Override` for UISP `full` parent-selection corrections stored in `lqos_overrides.json`
-- `uisp.route_overrides` in `lqos_overrides.json`
-- integrationUISProutes.csv as a legacy compatibility input only
 - integrationUISPbandwidths.csv as a legacy compatibility input only
 
-Current builds apply `Topology Override` before final `network.json` / `ShapedDevices.csv` emission and give it precedence over legacy UISP route-cost overrides. Current WebUI support is `Pinned Parent` only, forcing one detected immediate upstream parent.
+Current builds apply `Topology Override` before final `network.json` / `ShapedDevices.csv` emission. Current WebUI support is `Pinned Parent` only, forcing one detected immediate upstream parent.
 
 Current UISP builds also auto-migrate a legacy `integrationUISPbandwidths.csv` into operator `AdjustSiteSpeed` overrides on the next integration run when no operator rate overrides exist yet. If operator rate overrides already exist, the CSV is ignored.
-Current UISP builds also auto-migrate a legacy `integrationUISProutes.csv` into `uisp.route_overrides` in `lqos_overrides.json` on the next integration run when no JSON route overrides exist yet. If JSON route overrides already exist, the CSV is ignored.
+Deprecated legacy `uisp.bandwidth_overrides` JSON entries are ignored. The authoritative bandwidth override path is operator `AdjustSiteSpeed` in `lqos_overrides.json`.
+Current UISP builds ignore legacy `uisp.route_overrides` entries in `lqos_overrides.json` and legacy `integrationUISProutes.csv` files. If either is present, LibreQoS logs a warning and uses detected topology plus Topology Manager overrides instead.
 
 Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src).
 
-#### UISP Route Overrides
-
-The default cost between nodes is typically 10. The integration creates a dot graph file `/opt/libreqos/src/graph.dot` which can be rendered using [Graphviz](https://dreampuf.github.io/GraphvizOnline/). This renders a map with the associated costs of all links.
-
-![image](https://github.com/user-attachments/assets/4edba4b5-c377-4659-8798-dfc40d50c859)
-
-Say you have Site 1, Site 2, and Site 3.
-A backup path exists between Site 1 and Site 3, but is not the preferred path.
-Your preference is Site 1 > Site 2 > Site 3, but the integration by default connects Site 1 > Site 3 directly.
-
-To fix this, add a cost above the default for the path between Site 1 and Site 3.
-```
-Site 1, Site 3, 100
-Site 3, Site 1, 100
-```
-With this, data will flow Site 1 > Site 2 > Site 3.
-
-To make the change, perform a reload of the integration with ```sudo systemctl restart lqos_scheduler```.
+For path intent, use Topology Manager parent selection and attachment preference. That is now the supported replacement for older UISP route-cost overrides.
 
 ## WISPGate Integration
 

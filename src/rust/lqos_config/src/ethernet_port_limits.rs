@@ -78,6 +78,23 @@ pub struct EthernetRateDecision {
     pub advisory: Option<CircuitEthernetMetadata>,
 }
 
+/// Converts a negotiated Ethernet line rate into a conservative usable cap in Mbps.
+///
+/// This function is pure: it has no side effects.
+pub fn usable_ethernet_cap_mbps(
+    policy: EthernetPortLimitPolicy,
+    negotiated_ethernet_mbps: u64,
+) -> Option<u64> {
+    if !policy.enabled || negotiated_ethernet_mbps == 0 {
+        return None;
+    }
+    let usable_cap = negotiated_ethernet_mbps as f32 * policy.multiplier;
+    if !(usable_cap.is_finite() && usable_cap > 0.0) {
+        return None;
+    }
+    Some(usable_cap.round() as u64)
+}
+
 /// Applies a shared Ethernet cap policy to one circuit using normalized device/interface observations.
 pub fn apply_ethernet_rate_cap<'a>(
     policy: EthernetPortLimitPolicy,
@@ -121,7 +138,18 @@ pub fn apply_ethernet_rate_cap<'a>(
         };
     };
 
-    let usable_cap = limiting_observation.negotiated_ethernet_mbps as f32 * policy.multiplier;
+    let Some(usable_cap) =
+        usable_ethernet_cap_mbps(policy, limiting_observation.negotiated_ethernet_mbps)
+    else {
+        return EthernetRateDecision {
+            download_min,
+            upload_min,
+            download_max,
+            upload_max,
+            advisory: None,
+        };
+    };
+    let usable_cap = usable_cap as f32;
     let applied_download_max = download_max.min(usable_cap);
     let applied_upload_max = upload_max.min(usable_cap);
     let applied_download_min = download_min.min(applied_download_max);
@@ -168,7 +196,7 @@ fn unique_device_ids(observations: &[&EthernetPortObservation]) -> Vec<String> {
 mod tests {
     use super::{
         DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
-        RequestedCircuitRates, apply_ethernet_rate_cap,
+        RequestedCircuitRates, apply_ethernet_rate_cap, usable_ethernet_cap_mbps,
     };
 
     fn observation(device_id: &str, speed: u64) -> EthernetPortObservation {
@@ -206,6 +234,14 @@ mod tests {
                 .advisory
                 .as_ref()
                 .is_some_and(|advisory| advisory.auto_capped)
+        );
+    }
+
+    #[test]
+    fn usable_cap_helper_applies_default_multiplier() {
+        assert_eq!(
+            usable_ethernet_cap_mbps(EthernetPortLimitPolicy::default(), 2500),
+            Some(2350)
         );
     }
 
