@@ -65,6 +65,7 @@ RUSTPROGS=(
   lqos_map_perf
   uisp_integration
   lqos_overrides
+  lqos_topology
 )
 
 ####################################################
@@ -108,7 +109,8 @@ cargo build --release \
   -p lqos_map_perf \
   -p uisp_integration \
   -p lqos_python \
-  -p lqos_overrides
+  -p lqos_overrides \
+  -p lqos_topology
 popd > /dev/null || exit
 
 # Create the post-installation file

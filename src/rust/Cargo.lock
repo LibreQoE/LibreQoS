@@ -2215,6 +2215,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_topology"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lqos_config",
+ "lqos_overrides",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "surge-ping",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lqos_utils"
 version = "0.1.0"
 dependencies = [
@@ -2266,6 +2282,7 @@ dependencies = [
  "lqos_queue_tracker",
  "lqos_stormguard",
  "lqos_sys",
+ "lqos_topology",
  "lqos_utils",
  "miniz_oxide",
  "native-tls",

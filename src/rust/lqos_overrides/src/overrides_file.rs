@@ -7,9 +7,7 @@ use anyhow::Result;
 use lqos_config::ShapedDevice;
 use serde::{Deserialize, Serialize};
 
-use crate::overrides_file::file_lock::FileLock;
-
-mod file_lock;
+use crate::file_lock::FileLock;
 
 const OPERATOR_OVERRIDES_FILE: &str = "lqos_overrides.json";
 const STORMGUARD_OVERRIDES_FILE: &str = "lqos_overrides.stormguard.json";

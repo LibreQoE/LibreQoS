@@ -7,7 +7,7 @@ use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::Config;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
 use uisp::{DataLink, Device, Site};
 
 pub(crate) struct UispData {
@@ -83,6 +83,9 @@ fn normalized_client_personal_name(name: &str) -> Option<String> {
 }
 
 fn normalize_client_site_names(sites: &mut [Site]) {
+    let mut normalized_count = 0usize;
+    let mut sample_names = Vec::new();
+
     for site in sites.iter_mut().filter(|site| site.is_client_site()) {
         let original_name = site.name_or_blank();
         let Some(normalized_name) = normalized_client_personal_name(&original_name) else {
@@ -96,12 +99,17 @@ fn normalize_client_site_names(sites: &mut [Site]) {
         if let Some(ident) = site.identification.as_mut() {
             ident.name = Some(normalized_name.clone());
         }
+        normalized_count += 1;
+        if sample_names.len() < 3 {
+            sample_names.push(format!("{original_name} -> {normalized_name}"));
+        }
+    }
 
-        warn!(
-            site_id = %site.id,
-            original = %original_name,
-            normalized = %normalized_name,
-            "Normalized UISP client site name from last-name-first format"
+    if normalized_count > 0 {
+        info!(
+            normalized_sites = normalized_count,
+            sample = ?sample_names,
+            "Normalized UISP client site names from last-name-first format"
         );
     }
 }

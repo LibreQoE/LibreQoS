@@ -28,6 +28,11 @@ use crate::node_manager::local_api::search::SearchResult;
 use crate::node_manager::local_api::shaped_devices_page::{
     ShapedDevicesPage, ShapedDevicesPageQuery,
 };
+use crate::node_manager::local_api::topology_manager::{
+    TopologyManagerClear, TopologyManagerManualAttachmentGroupClear,
+    TopologyManagerManualAttachmentGroupUpdate, TopologyManagerProbePolicyUpdate,
+    TopologyManagerStateData, TopologyManagerUpdate,
+};
 use crate::node_manager::local_api::tree_attached_circuits::{
     TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery,
 };
@@ -201,6 +206,22 @@ pub enum WsRequest {
     },
     ClearNodeTopologyOverride {
         query: NodeTopologyOverrideQuery,
+    },
+    GetTopologyManagerState,
+    SetTopologyManagerOverride {
+        update: TopologyManagerUpdate,
+    },
+    ClearTopologyManagerOverride {
+        clear: TopologyManagerClear,
+    },
+    SetTopologyManagerProbePolicy {
+        update: TopologyManagerProbePolicyUpdate,
+    },
+    SetTopologyManagerManualAttachmentGroup {
+        update: TopologyManagerManualAttachmentGroupUpdate,
+    },
+    ClearTopologyManagerManualAttachmentGroup {
+        clear: TopologyManagerManualAttachmentGroupClear,
     },
     ListNics,
     NetworkJson,
@@ -697,6 +718,34 @@ pub enum WsResponse {
         ok: bool,
         message: String,
         data: NodeTopologyOverrideData,
+    },
+    GetTopologyManagerState {
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerProbePolicyResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerManualAttachmentGroupResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerManualAttachmentGroupResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
     },
     GetUsers {
         data: Vec<WebUser>,

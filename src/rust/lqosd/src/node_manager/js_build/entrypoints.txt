@@ -4,6 +4,7 @@ login.js
 first-run.js
 shaped-devices.js
 tree.js
+topology_manager.js
 help.js
 unknown-ips.js
 circuit.js

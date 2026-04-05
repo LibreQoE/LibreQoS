@@ -2676,8 +2676,30 @@ fn calculate_shaping_runtime_hash() -> PyResult<i64> {
     let Ok(config) = lqos_config::load_config() else {
         return Ok(0);
     };
-    let nj_path = Path::new(&config.lqos_directory).join("network.json");
-    let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+    let base_path = Path::new(&config.lqos_directory);
+    let effective_path = base_path.join("network.effective.json");
+    let nj_path = if effective_path.exists() {
+        effective_path
+    } else if config.long_term_stats.enable_insight_topology.unwrap_or(false) {
+        let insight_path = base_path.join("network.insight.json");
+        if insight_path.exists() {
+            insight_path
+        } else {
+            base_path.join("network.json")
+        }
+    } else {
+        base_path.join("network.json")
+    };
+    let sd_path = if config.long_term_stats.enable_insight_topology.unwrap_or(false) {
+        let insight_path = base_path.join("ShapedDevices.insight.csv");
+        if insight_path.exists() {
+            insight_path
+        } else {
+            base_path.join("ShapedDevices.csv")
+        }
+    } else {
+        base_path.join("ShapedDevices.csv")
+    };
 
     let Ok(nj_as_string) = read_to_string(nj_path) else {
         return Ok(0);

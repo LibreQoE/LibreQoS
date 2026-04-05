@@ -105,6 +105,14 @@ ethernet_port_limits_enabled = true
 # Optional override. If omitted, LibreQoS uses a conservative default of 0.94.
 # ethernet_port_limit_multiplier = 0.94
 
+[integration_common.topology_attachment_health]
+enabled = true
+probe_interval_seconds = 1
+fail_after_missed = 5
+hold_down_seconds = 30
+clear_after_successes = 3
+refresh_debounce_seconds = 3
+
 [splynx_integration]
 enable_splynx = false
 api_key = ""

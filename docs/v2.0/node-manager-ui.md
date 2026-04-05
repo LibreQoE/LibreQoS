@@ -39,6 +39,22 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - The pinned-parent selector defaults to `Default upstream parent` when no override is set. Choosing that default leaves the node on the integration-selected parent.
 - On the synthetic `Root` node, topology override is shown as not applicable rather than as a generic missing-node-ID warning.
 
+### Topology Manager
+- Focused branch-reparenting editor for integration-backed topology state, intended primarily for branch/topology nodes rather than end-customer leaves.
+- The page places a full-width hierarchy summary comparison directly under the hero, then uses the main workspace for the focused move preview plus a details panel for legal parents and attachment/radio preferences.
+- Default selection prefers nodes with richer branch context, such as saved overrides, movable branch nodes, site-level objects, descendants, and multiple legal parent targets.
+- Search shows live matching suggestions and is biased toward exact or branch-relevant matches so operator queries land on the intended site/branch more reliably than simple alphabetical matching.
+- The page opens in inspect mode. Clicking nodes changes selection and lets the operator navigate upstream/downstream branch context in the preview; it does not change parentage.
+- Parent changes are gated behind an explicit `Start Move` step in the Details panel. In move mode, legal parent targets are highlighted in green and can be chosen from the target cards or by dragging the selected branch onto a highlighted target.
+- Attachment or radio preference edits for the current logical parent do not require move mode; when multiple explicit attachments are available, inspect mode exposes a lighter `Edit Attachment Preference` path in Details.
+- Attachment rows now surface runtime health directly in the page, including `Healthy`, `Suppressed`, `Probe Unavailable`, or `Probe Disabled` state, plus reason text, suppression hold-down timestamps, and per-pair probe enable/disable actions.
+- Operators can create, edit, or clear manual attachment groups from the Details panel for a legal child/parent pair. Manual groups define explicit parallel attachments, including ordered preference, capacity, management IPs, and probe opt-in, without hand-editing JSON.
+- The focused SVG graph auto-centers and stretches the selected branch context to use more of the available map area while keeping the view bounded to the current path, children, and legal move context instead of rendering the full network at once.
+- Child fanout on the right side of the focused preview is capped and biased toward branch-bearing or movable children; dead-end leaves are deprioritized or hidden when richer branch context is available.
+- When UISP exposes multiple parallel links between the same two sites, Topology Manager groups them under one logical parent target and exposes the concrete radios/devices as explicit attachment preferences.
+- When a chosen parent exposes only one valid explicit attachment option, the UI auto-saves that override immediately.
+- Saved topology overrides are stored as operator-owned intent in `topology_overrides.json`, separate from integration-generated runtime editor state.
+
 ### Site Map
 - Flat operational map of Sites and APs using imported node geodata.
 - Defaults to QoO coloring with an RTT toggle, while marker size reflects recent combined throughput.

@@ -52,7 +52,10 @@ impl NetworkJson {
     pub fn path() -> Result<PathBuf, NetworkJsonError> {
         let cfg = crate::load_config().map_err(|_| NetworkJsonError::ConfigLoadError)?;
         let base_path = Path::new(&cfg.lqos_directory);
-        let file_path = if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
+        let effective_path = base_path.join("network.effective.json");
+        let file_path = if effective_path.exists() {
+            effective_path
+        } else if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
             let tmp_path = base_path.join("network.insight.json");
             if tmp_path.exists() {
                 tmp_path

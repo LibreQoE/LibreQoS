@@ -16,9 +16,9 @@ pub struct NetJsonParent<'a> {
 fn export_name_candidates(base_name: &str, mapping: &GraphMapping, node_id: &str) -> Vec<String> {
     let kind_label = match mapping {
         GraphMapping::AccessPoint { .. } => "AP",
-        GraphMapping::Root { .. } | GraphMapping::Site { .. } | GraphMapping::GeneratedSite { .. } => {
-            "Site"
-        }
+        GraphMapping::Root { .. }
+        | GraphMapping::Site { .. }
+        | GraphMapping::GeneratedSite { .. } => "Site",
     };
     let short_id = node_id.rsplit(':').next().unwrap_or(node_id);
     let short_id = &short_id[..short_id.len().min(8)];
@@ -28,7 +28,9 @@ fn export_name_candidates(base_name: &str, mapping: &GraphMapping, node_id: &str
             format!("{base_name} [AP]"),
             format!("{base_name} [AP {short_id}]"),
         ],
-        GraphMapping::Root { .. } | GraphMapping::Site { .. } | GraphMapping::GeneratedSite { .. } => {
+        GraphMapping::Root { .. }
+        | GraphMapping::Site { .. }
+        | GraphMapping::GeneratedSite { .. } => {
             vec![
                 base_name.to_string(),
                 format!("{base_name} [Site]"),
@@ -309,7 +311,10 @@ mod tests {
 
         let export_names = assign_export_names([
             (root_mapping.network_json_id(), &root_mapping),
-            (trailer_site_mapping.network_json_id(), &trailer_site_mapping),
+            (
+                trailer_site_mapping.network_json_id(),
+                &trailer_site_mapping,
+            ),
             (trailer_ap_mapping.network_json_id(), &trailer_ap_mapping),
             (child_ap_mapping.network_json_id(), &child_ap_mapping),
         ]);
@@ -318,7 +323,10 @@ mod tests {
         let trailer_ap_id = trailer_ap_mapping.network_json_id();
         let child_ap_id = child_ap_mapping.network_json_id();
 
-        assert_eq!(export_names.get(&site_id).map(String::as_str), Some("TrailerCity"));
+        assert_eq!(
+            export_names.get(&site_id).map(String::as_str),
+            Some("TrailerCity")
+        );
         assert_eq!(
             export_names.get(&trailer_ap_id).map(String::as_str),
             Some("TrailerCity [AP]")

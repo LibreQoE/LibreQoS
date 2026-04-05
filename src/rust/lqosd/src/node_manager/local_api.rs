@@ -23,6 +23,7 @@ pub(crate) mod scheduler;
 pub(crate) mod search;
 pub(crate) mod shaped_device_api;
 pub(crate) mod shaped_devices_page;
+pub(crate) mod topology_manager;
 pub(crate) mod tree_attached_circuits;
 pub(crate) mod unknown_ips;
 pub(crate) mod urgent;

@@ -3,6 +3,7 @@ import datetime
 import csv
 import io
 import json
+import atexit
 import chardet
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
@@ -24,8 +25,11 @@ import os
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 shaping_runtime_hash = 0
+topology_runtime_process = None
+topology_runtime_missing_reported = False
 INTEGRATION_FAILURE_PREVIEW_LINES = 30
 INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
+TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
 
 
 def clear_scheduler_error():
@@ -663,21 +667,132 @@ def write_network_json(path: str, network: dict):
 
 
 def importAndShapeFullReload():
+    global shaping_runtime_hash
     importFromCRM()
+    ensure_topology_runtime_process(wait_for_outputs=True)
     if not enable_insight_topology():
         refreshShapers()
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
 
 
 def importAndShapePartialReload():
     global shaping_runtime_hash
 
     importFromCRM()
+    ensure_topology_runtime_process()
     # Rebuild when runtime shaping inputs change, including effective adaptive
     # circuit overrides that do not belong in source-of-truth files.
     new_hash = calculate_shaping_runtime_hash()
     if new_hash != shaping_runtime_hash:
         refreshShapers()
         shaping_runtime_hash = calculate_shaping_runtime_hash()
+
+
+def topology_runtime_binary_path():
+    return os.path.join(get_libreqos_directory(), "bin", "lqos_topology")
+
+
+def topology_runtime_output_paths():
+    base_dir = get_libreqos_directory()
+    return [
+        os.path.join(base_dir, "topology_attachment_health_state.json"),
+        os.path.join(base_dir, "topology_effective_state.json"),
+        os.path.join(base_dir, "network.effective.json"),
+    ]
+
+
+def clear_topology_runtime_outputs():
+    for path in topology_runtime_output_paths():
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            print(f"Failed to remove topology runtime artifact {path}: {e}")
+
+
+def stop_topology_runtime_process():
+    global topology_runtime_process
+    process = topology_runtime_process
+    topology_runtime_process = None
+    if process is None:
+        return
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=5)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def wait_for_topology_runtime_outputs(timeout_seconds=3.0):
+    deadline = time.monotonic() + timeout_seconds
+    required = topology_runtime_output_paths()[1:]
+    while time.monotonic() < deadline:
+        if all(os.path.isfile(path) for path in required):
+            return True
+        process = topology_runtime_process
+        if process is not None and process.poll() is not None:
+            return False
+        time.sleep(0.1)
+    return False
+
+
+def ensure_topology_runtime_process(wait_for_outputs=False):
+    global topology_runtime_process
+    global topology_runtime_missing_reported
+
+    binary = topology_runtime_binary_path()
+    if not os.path.isfile(binary):
+        if not topology_runtime_missing_reported:
+            print(f"Topology runtime helper is unavailable at {binary}. Rain suppression is disabled.")
+            topology_runtime_missing_reported = True
+        clear_topology_runtime_outputs()
+        topology_runtime_process = None
+        return False
+
+    topology_runtime_missing_reported = False
+
+    if topology_runtime_process is not None:
+        code = topology_runtime_process.poll()
+        if code is None:
+            if wait_for_outputs:
+                wait_for_topology_runtime_outputs()
+            return True
+        print(f"Topology runtime helper exited with code {code}. Restarting it.")
+        clear_topology_runtime_outputs()
+        topology_runtime_process = None
+
+    try:
+        topology_runtime_process = subprocess.Popen(
+            [binary],
+            cwd=get_libreqos_directory(),
+        )
+        print("Started topology runtime helper.")
+        if wait_for_outputs:
+            wait_for_topology_runtime_outputs()
+        return True
+    except Exception as e:
+        print(f"Failed to start topology runtime helper: {e}")
+        clear_topology_runtime_outputs()
+        topology_runtime_process = None
+        return False
+
+
+def topology_runtime_refresh_tick():
+    global shaping_runtime_hash
+
+    ensure_topology_runtime_process()
+    new_hash = calculate_shaping_runtime_hash()
+    if new_hash == 0 or new_hash == shaping_runtime_hash:
+        return
+
+    refreshShapers()
+    shaping_runtime_hash = calculate_shaping_runtime_hash()
 
 
 def not_dead_yet():
@@ -691,6 +806,7 @@ def ensure_bus_ready():
 
 if __name__ == '__main__':
     try:
+        atexit.register(stop_topology_runtime_process)
         ensure_bus_ready()
         importAndShapeFullReload()
         shaping_runtime_hash = calculate_shaping_runtime_hash()
@@ -698,10 +814,12 @@ if __name__ == '__main__':
         print("Starting scheduler with jobs:")
         print(f"- not_dead_yet every 1 minute")
         refresh_interval = queue_refresh_interval_mins()
+        print(f"- topology_runtime_refresh_tick every {TOPOLOGY_RUNTIME_REFRESH_SECONDS} seconds")
         print(f"- importAndShapePartialReload every {refresh_interval} minutes")
         
         not_dead_yet()
         ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
+        ads.add_job(topology_runtime_refresh_tick, 'interval', seconds=TOPOLOGY_RUNTIME_REFRESH_SECONDS, max_instances=1)
         ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
 
         print("Scheduler starting...")

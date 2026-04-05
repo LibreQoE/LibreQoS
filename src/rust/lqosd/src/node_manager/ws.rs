@@ -13,7 +13,8 @@ use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
     ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
     node_rate_overrides, node_topology_overrides, packet_analysis, reload_libreqos, scheduler,
-    search, shaped_device_api, shaped_devices_page, unknown_ips, urgent, warnings,
+    search, shaped_device_api, shaped_devices_page, topology_manager, unknown_ips, urgent,
+    warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -1768,6 +1769,236 @@ async fn receive_channel_message(
                 Err(_) => {
                     let response = WsResponse::Error {
                         message: "Error clearing topology override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::GetTopologyManagerState => {
+            match topology_manager::get_topology_manager_state(*request_state.login) {
+                Ok(data) => {
+                    let response = WsResponse::GetTopologyManagerState { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load topology manager state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerOverride { update } => {
+            let result =
+                topology_manager::set_topology_manager_override(*request_state.login, update);
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerOverrideResult {
+                        ok: true,
+                        message: "Topology move saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology manager update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to save topology move".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearTopologyManagerOverride { clear } => {
+            let result =
+                topology_manager::clear_topology_manager_override(*request_state.login, clear);
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearTopologyManagerOverrideResult {
+                        ok: true,
+                        message: "Topology move cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology manager clear request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear topology move".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerProbePolicy { update } => {
+            let result =
+                topology_manager::set_topology_manager_probe_policy(*request_state.login, update);
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerProbePolicyResult {
+                        ok: true,
+                        message: "Probe policy updated".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology manager probe policy update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to update topology manager probe policy".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerManualAttachmentGroup { update } => {
+            let result = topology_manager::set_topology_manager_manual_attachment_group(
+                *request_state.login,
+                update,
+            );
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerManualAttachmentGroupResult {
+                        ok: true,
+                        message: "Manual attachment group saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid manual attachment group update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to save manual attachment group".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearTopologyManagerManualAttachmentGroup { clear } => {
+            let result = topology_manager::clear_topology_manager_manual_attachment_group(
+                *request_state.login,
+                clear,
+            );
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearTopologyManagerManualAttachmentGroupResult {
+                        ok: true,
+                        message: "Manual attachment group cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid manual attachment group clear request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear manual attachment group".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;

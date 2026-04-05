@@ -22,9 +22,11 @@ use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_nam
 use crate::uisp_types::UispDevice;
 use lqos_config::{
     CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
-    TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
+    TOPOLOGY_ATTACHMENT_AUTO_ID, TopologyAllowedParent, TopologyAttachmentOption,
+    TopologyEditorNode, TopologyEditorStateFile, TopologyParentCandidate,
+    TopologyParentCandidatesFile, TopologyParentCandidatesNode,
 };
-use lqos_overrides::TopologyParentOverrideMode;
+use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile, TopologyParentOverrideMode};
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
@@ -40,6 +42,19 @@ type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Directed>;
 struct TopologyParentOverrideSelection {
     mode: TopologyParentOverrideMode,
     parent_node_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct TopologyAttachmentOverrideSelection {
+    parent_node_id: String,
+    mode: TopologyAttachmentMode,
+    attachment_preference_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct TopologyAllowedParentGroup {
+    logical_parent: NodeIndex,
+    candidate_nodes: Vec<NodeIndex>,
 }
 
 pub async fn build_full_network_v2(
@@ -74,6 +89,7 @@ pub async fn build_full_network_v2(
         crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
     let routing_overrides = crate::strategies::full::routes_override::get_route_overrides(&config)?;
     let topology_parent_overrides = load_topology_parent_overrides();
+    let topology_attachment_overrides = load_topology_attachment_overrides();
 
     // Create a new graph
     let mut graph = GraphType::new();
@@ -209,7 +225,8 @@ pub async fn build_full_network_v2(
     let _ = blackboard_blob("uisp-graph", vec![graph.clone()]).await;
 
     let export_names = assign_export_names(
-        graph.node_indices()
+        graph
+            .node_indices()
             .map(|node| (graph[node].network_json_id(), &graph[node])),
     );
     let root_node_id = graph[root_idx].network_json_id();
@@ -222,6 +239,7 @@ pub async fn build_full_network_v2(
     // Figure out the network.json layers
     let mut parents = HashMap::<String, NetJsonParent>::new();
     let mut topology_parent_candidates = Vec::<TopologyParentCandidatesNode>::new();
+    let mut topology_editor_nodes = Vec::<TopologyEditorNode>::new();
     for node in graph.node_indices() {
         if node == root_idx {
             continue;
@@ -282,13 +300,29 @@ pub async fn build_full_network_v2(
                         &uisp_data.devices,
                         &routing_overrides,
                     );
-                    let resolved_parent = resolve_parent_candidate(
+                    let grouped_allowed_parents = topology_allowed_parent_groups_for_node(
+                        &graph,
+                        root_idx,
+                        &candidate_parents,
+                        &uisp_data.devices,
+                        &routing_overrides,
+                    );
+                    let resolved_parent = resolve_attachment_parent_candidate(
                         &graph,
                         node,
                         native_parent,
-                        &candidate_parents,
-                        &topology_parent_overrides,
-                    );
+                        &grouped_allowed_parents,
+                        &topology_attachment_overrides,
+                    )
+                    .or_else(|| {
+                        resolve_parent_candidate(
+                            &graph,
+                            node,
+                            native_parent,
+                            &candidate_parents,
+                            &topology_parent_overrides,
+                        )
+                    });
 
                     if let Some(parent_node) = resolved_parent
                         && native_parent != Some(parent_node)
@@ -381,6 +415,22 @@ pub async fn build_full_network_v2(
                         } else {
                             None
                         };
+                        let logical_current_parent = resolved_parent
+                            .or(native_parent)
+                            .map(|candidate| {
+                                logical_parent_for_candidate(
+                                    &graph,
+                                    root_idx,
+                                    candidate,
+                                    &uisp_data.devices,
+                                    &routing_overrides,
+                                )
+                            })
+                            .filter(|candidate| is_real_topology_node(&graph, *candidate))
+                            .map(|candidate| TopologyParentCandidate {
+                                node_id: graph[candidate].network_json_id(),
+                                node_name: graph[candidate].name(),
+                            });
                         let candidate_parent_rows: Vec<TopologyParentCandidate> = candidate_parents
                             .iter()
                             .copied()
@@ -390,6 +440,12 @@ pub async fn build_full_network_v2(
                                 node_name: graph[candidate].name(),
                             })
                             .collect();
+                        let allowed_parents = topology_allowed_parents_from_groups(
+                            &graph,
+                            &grouped_allowed_parents,
+                            &uisp_data.devices,
+                            &routing_overrides,
+                        );
 
                         if is_real_topology_node(&graph, node) {
                             topology_parent_candidates.push(TopologyParentCandidatesNode {
@@ -402,6 +458,28 @@ pub async fn build_full_network_v2(
                                     .as_ref()
                                     .map(|candidate| candidate.node_name.clone()),
                                 candidate_parents: candidate_parent_rows,
+                            });
+                            topology_editor_nodes.push(TopologyEditorNode {
+                                node_id: graph[node].network_json_id(),
+                                node_name: name.to_owned(),
+                                current_parent_node_id: logical_current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_id.clone()),
+                                current_parent_node_name: logical_current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_name.clone()),
+                                current_attachment_id: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_id.clone()),
+                                current_attachment_name: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_name.clone()),
+                                can_move: !allowed_parents.is_empty(),
+                                allowed_parents,
+                                preferred_attachment_id: None,
+                                preferred_attachment_name: None,
+                                effective_attachment_id: None,
+                                effective_attachment_name: None,
                             });
                         }
                         parents.insert(
@@ -497,6 +575,19 @@ pub async fn build_full_network_v2(
     if let Err(err) = topology_candidates_file.save(&config) {
         warn!("Unable to write topology parent candidates snapshot: {err:?}");
     }
+    topology_editor_nodes.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
+    let topology_editor_state = TopologyEditorStateFile {
+        schema_version: 1,
+        source: "uisp/full2".to_string(),
+        generated_unix: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|duration| duration.as_secs()),
+        nodes: topology_editor_nodes,
+    };
+    if let Err(err) = topology_editor_state.save(&config) {
+        warn!("Unable to write topology editor state snapshot: {err:?}");
+    }
 
     // Shaped Devices
     let mut shaped_devices = Vec::new();
@@ -577,9 +668,7 @@ pub async fn build_full_network_v2(
                     } else {
                         warn!(
                             "AP device '{}' ({}) not found in parents HashMap, assigning to {}",
-                            ap_device.name,
-                            ap_device.id,
-                            orphans_node_name
+                            ap_device.name, ap_device.id, orphans_node_name
                         );
                         orphans_node_name.clone()
                     }
@@ -960,11 +1049,247 @@ fn load_topology_parent_overrides() -> HashMap<String, TopologyParentOverrideSel
         .collect()
 }
 
+fn load_topology_attachment_overrides() -> HashMap<String, TopologyAttachmentOverrideSelection> {
+    let Ok(overrides) = TopologyOverridesFile::load() else {
+        warn!("Unable to load topology manager overrides from topology_overrides.json");
+        return HashMap::new();
+    };
+
+    overrides
+        .overrides
+        .iter()
+        .map(|entry| {
+            (
+                entry.child_node_id.clone(),
+                TopologyAttachmentOverrideSelection {
+                    parent_node_id: entry.parent_node_id.clone(),
+                    mode: entry.mode,
+                    attachment_preference_ids: entry.attachment_preference_ids.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
 fn is_real_topology_node(graph: &GraphType, node: NodeIndex) -> bool {
     matches!(
         graph[node],
         GraphMapping::Root { .. } | GraphMapping::Site { .. } | GraphMapping::AccessPoint { .. }
     )
+}
+
+fn logical_parent_for_candidate(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> NodeIndex {
+    match &graph[candidate] {
+        GraphMapping::Root { .. } | GraphMapping::Site { .. } => candidate,
+        GraphMapping::GeneratedSite { .. } => candidate,
+        GraphMapping::AccessPoint { .. } => {
+            let path = astar_route(graph, root_idx, candidate, devices, route_overrides);
+            path.iter()
+                .rev()
+                .skip(1)
+                .copied()
+                .find(|node| {
+                    matches!(
+                        graph[*node],
+                        GraphMapping::Root { .. } | GraphMapping::Site { .. }
+                    )
+                })
+                .or_else(|| immediate_parent_from_route(&path))
+                .unwrap_or(candidate)
+        }
+    }
+}
+
+fn topology_allowed_parent_groups_for_node(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    candidate_parents: &[NodeIndex],
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Vec<TopologyAllowedParentGroup> {
+    let mut groups = Vec::<TopologyAllowedParentGroup>::new();
+
+    for candidate in candidate_parents
+        .iter()
+        .copied()
+        .filter(|candidate| is_real_topology_node(graph, *candidate))
+    {
+        let logical_parent =
+            logical_parent_for_candidate(graph, root_idx, candidate, devices, route_overrides);
+        if let Some(existing) = groups
+            .iter_mut()
+            .find(|group| group.logical_parent == logical_parent)
+        {
+            if !existing.candidate_nodes.contains(&candidate) {
+                existing.candidate_nodes.push(candidate);
+            }
+            continue;
+        }
+
+        groups.push(TopologyAllowedParentGroup {
+            logical_parent,
+            candidate_nodes: vec![candidate],
+        });
+    }
+
+    groups.sort_unstable_by_key(|group| stable_node_key(graph, group.logical_parent));
+    groups
+}
+
+fn attachment_kind_for_candidate(graph: &GraphType, candidate: NodeIndex) -> &'static str {
+    match &graph[candidate] {
+        GraphMapping::AccessPoint { .. } => "device",
+        GraphMapping::Root { .. }
+        | GraphMapping::Site { .. }
+        | GraphMapping::GeneratedSite { .. } => "site",
+    }
+}
+
+fn first_probe_ip_for_device(devices: &[UispDevice], device_id: &str) -> Option<String> {
+    let device = devices.iter().find(|device| device.id == device_id)?;
+    device
+        .ipv4
+        .iter()
+        .min()
+        .cloned()
+        .or_else(|| device.ipv6.iter().min().cloned())
+}
+
+fn attachment_pair_id(left: &str, right: &str) -> String {
+    if left <= right {
+        format!("{left}|{right}")
+    } else {
+        format!("{right}|{left}")
+    }
+}
+
+fn topology_attachment_option_for_candidate(
+    graph: &GraphType,
+    logical_parent: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> TopologyAttachmentOption {
+    let attachment_id = graph[candidate].network_json_id();
+    let attachment_name = graph[candidate].name();
+    let attachment_kind = attachment_kind_for_candidate(graph, candidate).to_string();
+    let capacity_mbps = match &graph[candidate] {
+        GraphMapping::AccessPoint {
+            download_mbps,
+            upload_mbps,
+            ..
+        } => Some((*download_mbps).min(*upload_mbps)),
+        _ => None,
+    };
+
+    let route_from_parent =
+        astar_route(graph, logical_parent, candidate, devices, route_overrides);
+    let peer_candidate = if route_from_parent.len() >= 2 {
+        route_from_parent
+            .get(route_from_parent.len().saturating_sub(2))
+            .copied()
+            .filter(|node| *node != logical_parent && *node != candidate)
+    } else {
+        None
+    };
+
+    let peer_attachment_id = peer_candidate.map(|node| graph[node].network_json_id());
+    let peer_attachment_name = peer_candidate.map(|node| graph[node].name());
+    let local_probe_ip = match &graph[candidate] {
+        GraphMapping::AccessPoint { id, .. } => first_probe_ip_for_device(devices, id),
+        _ => None,
+    };
+    let remote_probe_ip = match peer_candidate {
+        Some(node) => match &graph[node] {
+            GraphMapping::AccessPoint { id, .. } => first_probe_ip_for_device(devices, id),
+            _ => None,
+        },
+        None => None,
+    };
+    let pair_id = peer_attachment_id
+        .as_ref()
+        .map(|peer_id| attachment_pair_id(&attachment_id, peer_id));
+
+    TopologyAttachmentOption {
+        attachment_id,
+        attachment_name,
+        attachment_kind,
+        pair_id,
+        peer_attachment_id,
+        peer_attachment_name,
+        capacity_mbps,
+        local_probe_ip,
+        remote_probe_ip,
+        probe_enabled: false,
+        probeable: false,
+        health_status: lqos_config::TopologyAttachmentHealthStatus::Disabled,
+        health_reason: None,
+        suppressed_until_unix: None,
+        effective_selected: false,
+    }
+}
+
+fn topology_allowed_parents_from_groups(
+    graph: &GraphType,
+    groups: &[TopologyAllowedParentGroup],
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Vec<TopologyAllowedParent> {
+    groups
+        .iter()
+        .map(|group| {
+            let mut attachment_options = vec![TopologyAttachmentOption {
+                attachment_id: TOPOLOGY_ATTACHMENT_AUTO_ID.to_string(),
+                attachment_name: "Auto".to_string(),
+                attachment_kind: "auto".to_string(),
+                pair_id: None,
+                peer_attachment_id: None,
+                peer_attachment_name: None,
+                capacity_mbps: None,
+                local_probe_ip: None,
+                remote_probe_ip: None,
+                probe_enabled: false,
+                probeable: false,
+                health_status: lqos_config::TopologyAttachmentHealthStatus::Disabled,
+                health_reason: None,
+                suppressed_until_unix: None,
+                effective_selected: false,
+            }];
+
+            attachment_options.extend(
+                group
+                    .candidate_nodes
+                    .iter()
+                    .copied()
+                    .filter(|candidate| {
+                        matches!(graph[*candidate], GraphMapping::AccessPoint { .. })
+                    })
+                    .map(|candidate| {
+                        topology_attachment_option_for_candidate(
+                            graph,
+                            group.logical_parent,
+                            candidate,
+                            devices,
+                            route_overrides,
+                        )
+                    }),
+            );
+
+            TopologyAllowedParent {
+                parent_node_id: graph[group.logical_parent].network_json_id(),
+                parent_node_name: graph[group.logical_parent].name(),
+                attachment_options,
+                all_attachments_suppressed: false,
+                has_probe_unavailable_attachments: false,
+            }
+        })
+        .collect()
 }
 
 fn topology_parent_candidates_for_node(
@@ -978,7 +1303,14 @@ fn topology_parent_candidates_for_node(
         .neighbors_directed(node, petgraph::Incoming)
         .filter(|candidate| is_real_topology_node(graph, *candidate))
         .filter(|candidate| {
-            is_upstream_parent_candidate(graph, root_idx, node, *candidate, devices, route_overrides)
+            is_upstream_parent_candidate(
+                graph,
+                root_idx,
+                node,
+                *candidate,
+                devices,
+                route_overrides,
+            )
         })
         .collect();
     candidates.sort_unstable_by_key(|candidate| stable_node_key(graph, *candidate));
@@ -1060,6 +1392,49 @@ fn resolve_parent_candidate(
                 .or(native_parent)
                 .or_else(|| candidates.first().copied())
         }
+    }
+}
+
+fn resolve_attachment_parent_candidate(
+    graph: &GraphType,
+    node: NodeIndex,
+    native_parent: Option<NodeIndex>,
+    groups: &[TopologyAllowedParentGroup],
+    overrides: &HashMap<String, TopologyAttachmentOverrideSelection>,
+) -> Option<NodeIndex> {
+    let node_id = graph[node].network_json_id();
+    let override_entry = overrides.get(&node_id)?;
+
+    let Some(group) = groups.iter().find(|group| {
+        graph[group.logical_parent].network_json_id() == override_entry.parent_node_id
+    }) else {
+        warn!(
+            node = %graph[node].name(),
+            node_id = %node_id,
+            parent_node_id = %override_entry.parent_node_id,
+            "Topology manager override parent is stale; falling back to legacy/native selection"
+        );
+        return None;
+    };
+
+    let native_in_group =
+        native_parent.filter(|candidate| group.candidate_nodes.contains(candidate));
+    let first_candidate = group.candidate_nodes.first().copied();
+
+    match override_entry.mode {
+        TopologyAttachmentMode::Auto => native_in_group.or(first_candidate),
+        TopologyAttachmentMode::PreferredOrder => override_entry
+            .attachment_preference_ids
+            .iter()
+            .find_map(|attachment_id| {
+                group
+                    .candidate_nodes
+                    .iter()
+                    .copied()
+                    .find(|candidate| graph[*candidate].network_json_id() == *attachment_id)
+            })
+            .or(native_in_group)
+            .or(first_candidate),
     }
 }
 
@@ -1220,12 +1595,15 @@ fn sorted_unique_neighbors(graph: &GraphType, node: NodeIndex) -> Vec<NodeIndex>
 #[cfg(test)]
 mod topology_override_tests {
     use super::{
-        GraphType, TopologyParentOverrideSelection, is_upstream_parent_candidate,
-        resolve_parent_candidate, topology_parent_candidates_for_node,
+        GraphType, TopologyAttachmentOverrideSelection, TopologyParentOverrideSelection,
+        is_upstream_parent_candidate,
+        logical_parent_for_candidate, resolve_attachment_parent_candidate,
+        resolve_parent_candidate, topology_allowed_parent_groups_for_node,
+        topology_allowed_parents_from_groups, topology_parent_candidates_for_node,
     };
     use crate::strategies::full2::graph_mapping::GraphMapping;
     use crate::strategies::full2::link_mapping::LinkMapping;
-    use lqos_overrides::TopologyParentOverrideMode;
+    use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
     use std::collections::HashMap;
 
     fn site(name: &str, id: &str) -> GraphMapping {
@@ -1234,6 +1612,16 @@ mod topology_override_tests {
             id: id.to_string(),
             latitude: None,
             longitude: None,
+        }
+    }
+
+    fn ap(name: &str, id: &str, site_name: &str) -> GraphMapping {
+        GraphMapping::AccessPoint {
+            name: name.to_string(),
+            id: id.to_string(),
+            site_name: site_name.to_string(),
+            download_mbps: 1000,
+            upload_mbps: 1000,
         }
     }
 
@@ -1403,6 +1791,159 @@ mod topology_override_tests {
         let resolved =
             resolve_parent_candidate(&graph, target_site, native_parent, &candidates, &overrides);
         assert_eq!(resolved, Some(parent_site));
+    }
+
+    fn build_parallel_attachment_graph() -> (
+        GraphType,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+    ) {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let parent_site = graph.add_node(site("7232 Rochester", "site-rochester"));
+        let child_site = graph.add_node(site("MRE", "site-mre"));
+        let parent_wave = graph.add_node(ap(
+            "WavePro-RochesterToMRE",
+            "device-roch-wave",
+            "7232 Rochester",
+        ));
+        let child_wave = graph.add_node(ap("WavePro-MREToRochester", "device-mre-wave", "MRE"));
+        let parent_4600 = graph.add_node(ap(
+            "4600C_ROCH_To_MRE",
+            "device-roch-4600",
+            "7232 Rochester",
+        ));
+        let child_4600 = graph.add_node(ap("4600C_MRE_To_ROCH", "device-mre-4600", "MRE"));
+
+        for (from, to) in [
+            (root, parent_site),
+            (parent_site, root),
+            (parent_site, parent_wave),
+            (parent_wave, parent_site),
+            (parent_site, parent_4600),
+            (parent_4600, parent_site),
+            (parent_wave, child_wave),
+            (child_wave, parent_wave),
+            (parent_4600, child_4600),
+            (child_4600, parent_4600),
+            (child_site, child_wave),
+            (child_wave, child_site),
+            (child_site, child_4600),
+            (child_4600, child_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        (
+            graph,
+            root,
+            parent_site,
+            child_site,
+            parent_wave,
+            child_wave,
+            parent_4600,
+            child_4600,
+        )
+    }
+
+    #[test]
+    fn parallel_device_candidates_group_under_one_logical_parent() {
+        let (
+            graph,
+            root,
+            parent_site,
+            child_site,
+            _parent_wave,
+            child_wave,
+            _parent_4600,
+            child_4600,
+        ) = build_parallel_attachment_graph();
+
+        let candidates = topology_parent_candidates_for_node(&graph, root, child_site, &[], &[]);
+        assert_eq!(candidates, vec![child_4600, child_wave]);
+
+        let groups = topology_allowed_parent_groups_for_node(&graph, root, &candidates, &[], &[]);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].logical_parent, parent_site);
+        assert_eq!(groups[0].candidate_nodes, vec![child_4600, child_wave]);
+
+        let allowed = topology_allowed_parents_from_groups(&graph, &groups, &[], &[]);
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(
+            allowed[0].parent_node_id,
+            graph[parent_site].network_json_id()
+        );
+        assert_eq!(allowed[0].parent_node_name, "7232 Rochester");
+        assert_eq!(
+            allowed[0]
+                .attachment_options
+                .iter()
+                .map(|option| option.attachment_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Auto", "4600C_MRE_To_ROCH", "WavePro-MREToRochester"]
+        );
+    }
+
+    #[test]
+    fn topology_manager_attachment_override_picks_requested_parallel_path() {
+        let (
+            graph,
+            root,
+            parent_site,
+            child_site,
+            _parent_wave,
+            child_wave,
+            _parent_4600,
+            child_4600,
+        ) = build_parallel_attachment_graph();
+        let candidates = topology_parent_candidates_for_node(&graph, root, child_site, &[], &[]);
+        let groups = topology_allowed_parent_groups_for_node(&graph, root, &candidates, &[], &[]);
+        let native_parent = Some(child_wave);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            graph[child_site].network_json_id(),
+            TopologyAttachmentOverrideSelection {
+                parent_node_id: graph[parent_site].network_json_id(),
+                mode: TopologyAttachmentMode::PreferredOrder,
+                attachment_preference_ids: vec![graph[child_4600].network_json_id()],
+            },
+        );
+
+        let resolved = resolve_attachment_parent_candidate(
+            &graph,
+            child_site,
+            native_parent,
+            &groups,
+            &overrides,
+        );
+        assert_eq!(resolved, Some(child_4600));
+    }
+
+    #[test]
+    fn logical_parent_for_parallel_attachment_candidate_is_upstream_site() {
+        let (
+            graph,
+            root,
+            parent_site,
+            _child_site,
+            _parent_wave,
+            child_wave,
+            _parent_4600,
+            _child_4600,
+        ) = build_parallel_attachment_graph();
+
+        let logical_parent = logical_parent_for_candidate(&graph, root, child_wave, &[], &[]);
+        assert_eq!(logical_parent, parent_site);
     }
 }
 

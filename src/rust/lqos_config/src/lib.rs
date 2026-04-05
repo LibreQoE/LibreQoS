@@ -17,7 +17,9 @@ mod planner;
 mod program_control;
 mod qoo_profiles;
 mod shaped_devices;
+mod topology_editor_state;
 mod topology_parent_candidates;
+mod topology_runtime_state;
 
 pub use authentication::{AuthenticatedUser, UserRole, WebUser, WebUsers};
 pub use circuit_ethernet_metadata::{
@@ -52,9 +54,22 @@ pub use qoo_profiles::{
     list_qoo_profiles, load_qoo_profiles_file,
 };
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
+pub use topology_editor_state::{
+    TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
+    TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyEditorNode,
+    TopologyEditorStateError, TopologyEditorStateFile, topology_editor_state_path,
+};
 pub use topology_parent_candidates::{
     TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,
     TopologyParentCandidatesFile, TopologyParentCandidatesNode, topology_parent_candidates_path,
+};
+pub use topology_runtime_state::{
+    TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_EFFECTIVE_NETWORK_FILENAME,
+    TOPOLOGY_EFFECTIVE_STATE_FILENAME, TopologyAttachmentEndpointStatus,
+    TopologyAttachmentHealthEntry, TopologyAttachmentHealthStateFile,
+    TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
+    TopologyRuntimeStateError, topology_attachment_health_state_path,
+    topology_effective_network_path, topology_effective_state_path,
 };
 
 /// Used as a constant in determining buffer preallocation
