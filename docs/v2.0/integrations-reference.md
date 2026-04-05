@@ -342,6 +342,8 @@ If a network.json file exists, it will not be overwritten, unless you set ```alw
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
+If UISP exposes a site and an AP with the same visible name in the same topology, current builds keep the site name stable in `network.json` and disambiguate the AP name during export so the site branch is not dropped from the tree.
+
 To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
 Edit the file to set the value of `always_overwrite_network_json` to `true`.
 Then, run `sudo systemctl restart lqosd`.
@@ -353,12 +355,14 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 You can also use the following override inputs to more accurately reflect your network:
 - `Rate Override` for node bandwidth changes stored as operator `AdjustSiteSpeed` entries in `lqos_overrides.json`
 - `Topology Override` for UISP `full` parent-selection corrections stored in `lqos_overrides.json`
-- integrationUISProutes.csv
+- `uisp.route_overrides` in `lqos_overrides.json`
+- integrationUISProutes.csv as a legacy compatibility input only
 - integrationUISPbandwidths.csv as a legacy compatibility input only
 
 Current builds apply `Topology Override` before final `network.json` / `ShapedDevices.csv` emission and give it precedence over legacy UISP route-cost overrides. Current WebUI support is `Pinned Parent` only, forcing one detected immediate upstream parent.
 
 Current UISP builds also auto-migrate a legacy `integrationUISPbandwidths.csv` into operator `AdjustSiteSpeed` overrides on the next integration run when no operator rate overrides exist yet. If operator rate overrides already exist, the CSV is ignored.
+Current UISP builds also auto-migrate a legacy `integrationUISProutes.csv` into `uisp.route_overrides` in `lqos_overrides.json` on the next integration run when no JSON route overrides exist yet. If JSON route overrides already exist, the CSV is ignored.
 
 Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src).
 

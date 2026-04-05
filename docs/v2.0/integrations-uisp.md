@@ -179,6 +179,8 @@ If a `network.json` file exists, it is only overwritten when `always_overwrite_n
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
+If UISP exposes a site and an AP with the same visible name in the same topology, current builds keep the site name stable in `network.json` and disambiguate the AP name during export so the site branch is not dropped from the tree.
+
 When UISP client sites share the same name, LibreQoS now tries to disambiguate the generated circuit/site display names with a human-friendly suffix such as the first street-address segment, falling back to service name and then a short ID only when needed. Stable circuit identity still comes from the UISP site/service ID, not the display name.
 
 For integration-driven deployments, keep `always_overwrite_network_json = true` so topology stays aligned with UISP on each refresh cycle.
@@ -190,10 +192,12 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 You can also use the following override inputs to more accurately reflect your network:
 - Tree-page `Rate Override` edits, stored as operator `AdjustSiteSpeed` entries in `lqos_overrides.json`
 - Tree-page `Topology Override` edits for supported UISP `full` nodes, stored in `lqos_overrides.json`
-- integrationUISProutes.csv
+- `uisp.route_overrides` in `lqos_overrides.json`
+- integrationUISProutes.csv as a legacy compatibility input only
 - integrationUISPbandwidths.csv as a legacy compatibility input only
 
 Current UISP builds auto-migrate a legacy `integrationUISPbandwidths.csv` into operator `AdjustSiteSpeed` overrides on the next integration run when no operator rate overrides exist yet. If operator rate overrides already exist, the CSV is ignored and a warning is logged so there is only one active source of truth.
+Current UISP builds also auto-migrate a legacy `integrationUISProutes.csv` into `uisp.route_overrides` in `lqos_overrides.json` on the next integration run when no JSON route overrides exist yet. If JSON route overrides already exist, the CSV is ignored and a warning is logged.
 
 UISP `full` strategy builds also expose tree-page `Topology Override` editing for supported nodes. These overrides are stored in `lqos_overrides.json`, take precedence over legacy UISP route-cost files, and resolve before final `network.json` / `ShapedDevices.csv` emission. Current WebUI support is `Pinned Parent` only.
 

@@ -144,10 +144,12 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 Puede usar las siguientes entradas de override para reflejar su red con mayor precisión:
 - `Rate Override` en la página del árbol, guardado como overrides operatorios `AdjustSiteSpeed` en `lqos_overrides.json`
 - `Topology Override` en la página del árbol para nodos compatibles de UISP `full`, guardado en `lqos_overrides.json`
-- integrationUISProutes.csv
+- `uisp.route_overrides` en `lqos_overrides.json`
+- integrationUISProutes.csv solo como entrada heredada de compatibilidad
 - integrationUISPbandwidths.csv solo como entrada heredada de compatibilidad
 
 Las compilaciones UISP actuales auto-migran un `integrationUISPbandwidths.csv` heredado hacia overrides operatorios `AdjustSiteSpeed` en la siguiente ejecución de la integración cuando todavía no existen overrides de tasa del operador. Si ya existen, el CSV se ignora.
+Las compilaciones UISP actuales también auto-migran un `integrationUISProutes.csv` heredado hacia `uisp.route_overrides` en `lqos_overrides.json` en la siguiente ejecución de la integración cuando todavía no existen overrides de ruta en JSON. Si ya existen overrides de ruta en JSON, el CSV se ignora.
 
 Las plantillas de los archivos heredados siguen disponibles en `/opt/libreqos/src`. Si no las encuentra allí, puede obtenerlas [aquí](https://github.com/LibreQoE/LibreQoS/tree/develop/src). Para cambios nuevos de ancho de banda, prefiera los overrides operatorios en `lqos_overrides.json`.
 

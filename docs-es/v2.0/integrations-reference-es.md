@@ -339,6 +339,8 @@ Si ya existe un archivo network.json, no será sobrescrito a menos que configure
 
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración de UISP.
 
+Si UISP expone un sitio y un AP con el mismo nombre visible dentro de la misma topología, las compilaciones actuales conservan el nombre del sitio en `network.json` y diferencian el nombre exportado del AP para que la rama del sitio no desaparezca del árbol.
+
 Para asegurarse de que network.json siempre sea sobrescrito con la versión más reciente obtenida por la integración, edite el archivo `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor  `always_overwrite_network_json` a `true`.
 Luego ejecute: `sudo systemctl restart lqosd`.
 
@@ -349,12 +351,14 @@ Tiene la opción de ejecutar `uisp_integration` automáticamente al iniciar el e
 Puede usar las siguientes entradas de override para reflejar su red con mayor precisión:
 - `Rate Override` para cambios de ancho de banda a nivel de nodo guardados como entradas operatorias `AdjustSiteSpeed` en `lqos_overrides.json`
 - `Topology Override` para correcciones de selección de padre en UISP `full`, también guardadas en `lqos_overrides.json`
-- integrationUISProutes.csv
+- `uisp.route_overrides` en `lqos_overrides.json`
+- integrationUISProutes.csv solo como entrada heredada de compatibilidad
 - integrationUISPbandwidths.csv solo como entrada heredada de compatibilidad
 
 Las compilaciones actuales aplican `Topology Override` antes de generar `network.json` y `ShapedDevices.csv`, y le dan precedencia sobre los overrides heredados de costos de ruta de UISP. El soporte actual en WebUI es solo `Pinned Parent`, forzando un único padre inmediato detectado.
 
 Las compilaciones UISP actuales también auto-migran un `integrationUISPbandwidths.csv` heredado hacia overrides operatorios `AdjustSiteSpeed` en la siguiente ejecución de la integración cuando todavía no existen overrides de tasa del operador. Si ya existen, el CSV se ignora.
+Las compilaciones UISP actuales también auto-migran un `integrationUISProutes.csv` heredado hacia `uisp.route_overrides` en `lqos_overrides.json` en la siguiente ejecución de la integración cuando todavía no existen overrides de ruta en JSON. Si ya existen overrides de ruta en JSON, el CSV se ignora.
 
 Cada uno de los archivos mencionados arriba tienen plantillas, las cuales están disponibles en la carpeta `/opt/libreqos/src`. Si no los encuentra, puede obtenerlos [aquí](https://github.com/LibreQoE/LibreQoS/tree/develop/src). Para utilizarlos, copie el archivo (eliminando la parte `.template` del nombre) y edítelo con la información correspondiente.
 Para cambios nuevos de ancho de banda, prefiera los overrides operatorios en `lqos_overrides.json`. `integrationUISPbandwidths.csv` queda como una entrada heredada para migración única, no como el flujo preferido a largo plazo.
