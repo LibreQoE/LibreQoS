@@ -80,6 +80,18 @@ static __always_inline u_int8_t determine_effective_direction(int direction, __b
     }
 }
 
+// Determine the effective direction of an egress packet in on-a-stick mode.
+static __always_inline u_int8_t determine_egress_effective_direction_from_vlan(
+    __be16 internet_vlan,
+    __be16 current_vlan
+) {
+    if (current_vlan == internet_vlan) {
+        return 2;
+    } else {
+        return 1;
+    }
+}
+
 static __always_inline void apply_stick_offset_to_mapping(
     u_int8_t effective_direction,
     struct ip_hash_info *mapping
@@ -210,16 +222,18 @@ static __always_inline struct ip_hash_info tc_setup_lookup_key_and_tc_cpu(
         //bpf_debug("Current VLAN (TC): %d", dissector->current_vlan);
         //bpf_debug("Source: %x", dissector->src_ip.in6_u.u6_addr32[3]);
         //bpf_debug("Dest: %x", dissector->dst_ip.in6_u.u6_addr32[3]);
-        if (dissector->current_vlan == internet_vlan) {
+        *out_effective_direction = determine_egress_effective_direction_from_vlan(
+            internet_vlan,
+            dissector->current_vlan
+        );
+        if (*out_effective_direction == 2) {
             // Packet is going OUT to the Internet.
             // Therefore, it is UPLOAD.
             lookup_key->address = dissector->src_ip;
-            *out_effective_direction = 2;
         } else {
             // Packet is going OUT to the LAN.
             // Therefore, it is DOWNLOAD.
             lookup_key->address = dissector->dst_ip;
-            *out_effective_direction = 1;
         }
 
         // Regardless of effective direction, we look up the base mapping in the

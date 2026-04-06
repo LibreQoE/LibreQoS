@@ -17,6 +17,7 @@
 #include <linux/pkt_sched.h> /* TC_H_MAJ + TC_H_MIN */
 #include "common/debug.h"
 #include "common/dissector.h"
+#include "common/dissector_kprobe.h"
 #include "common/dissector_tc.h"
 #include "common/maximums.h"
 #include "common/throughput.h"
@@ -64,14 +65,6 @@ int direction = 255;
 // is global.
 int to_internet_ifindex = -1;
 int to_isp_ifindex = -1;
-
-struct net_device {
-    int ifindex;
-} __attribute__((preserve_access_index));
-
-struct sk_buff {
-    struct net_device *dev;
-} __attribute__((preserve_access_index));
 
 // Also configured during loading. For "on a stick" support,
 // these are mapped to the respective VLAN facing directions.
@@ -538,14 +531,54 @@ SEC("kprobe/dev_hard_start_xmit")
 int kprobe_xmit(struct pt_regs *ctx) {
     // Locate the skbuff
     struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
+    struct kprobe_dissector_t dissector = {0};
+    struct ip_hash_info ip_info = {0};
+    struct in6_addr host_key = {0};
+    __u8 effective_direction = 0;
 
     // If no SKB - bail out!
     if (!skb) return 0;
+
+    // Build a packet dissector. This mirrors the XDP path, but uses
+    // kprobe-safe kernel reads instead of direct packet access.
+    if (!kprobe_dissector_new(skb, &dissector)) return 0;
+    if (!kprobe_dissector_find_l3_offset(&dissector)) return 0;
+    if (!kprobe_dissector_find_ip_header(&dissector)) return 0;
 
     // Which interface called us?
     int ifindex = BPF_CORE_READ(skb, dev, ifindex);
     // If ifindex is not equal to EITHER to_internet or to_isp - not relevant, exit.
     if (ifindex != to_internet_ifindex && ifindex != to_isp_ifindex) return 0;
+
+    // Determine the effective direction
+    if (direction == 3) {
+        // VLAN determined - on a tick
+        __be16 current_vlan = 0;
+        if (!kprobe_find_current_vlan(&dissector, &current_vlan)) return 0;
+        effective_direction = determine_egress_effective_direction_from_vlan(
+            internet_vlan,
+            current_vlan
+        );
+    } else if (ifindex == to_internet_ifindex) {
+        effective_direction = 2;
+    } else {
+        effective_direction = 1;
+    }
+
+    track_flows_kprobe(&dissector, effective_direction, &ip_info);
+
+    // Host key used for throughput tracking (customer-side IP).
+    host_key = (effective_direction == 1) ? dissector.dst_ip : dissector.src_ip;
+
+    track_traffic_kprobe(
+        effective_direction,
+        &host_key,
+        dissector.skb_len,
+        ip_info.tc_handle,
+        ip_info.circuit_id,
+        ip_info.device_id,
+        &dissector
+    );
 
     return 0;
 }

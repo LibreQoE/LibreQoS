@@ -9,6 +9,8 @@
 #include "debug.h"
 
 // Counter for each host
+struct kprobe_dissector_t;
+
 struct host_counter {
     __u64 download_bytes;
     __u64 upload_bytes;
@@ -135,4 +137,24 @@ static __always_inline void track_traffic(
             bpf_debug("Failed to insert flow");
         }
     }
+}
+
+// Kprobe transmit accounting will populate "actual transmitted" fields here.
+// Stubbed for now until the map layout grows the additional counters.
+static __always_inline void track_traffic_kprobe(
+    int direction,
+    struct in6_addr * key,
+    __u32 size,
+    __u32 tc_handle,
+    __u64 circuit_id,
+    __u64 device_id,
+    struct kprobe_dissector_t *dissector
+) {
+    (void)direction;
+    (void)key;
+    (void)size;
+    (void)tc_handle;
+    (void)circuit_id;
+    (void)device_id;
+    (void)dissector;
 }

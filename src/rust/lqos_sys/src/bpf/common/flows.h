@@ -26,6 +26,8 @@
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+
+struct kprobe_dissector_t;
 #endif
 
 // Defines a TCP connection flow key
@@ -667,4 +669,19 @@ static __always_inline void track_flows(
     // configured stick offset. We do this after flow processing so we only
     // cache the base mapping inside flowbee.
     apply_stick_offset_to_mapping(direction, out_mapping);
+}
+
+// Kprobe transmit accounting will populate "actual transmitted" flow fields here.
+// Stubbed for now until the flow map layout grows the additional counters.
+static __always_inline void track_flows_kprobe(
+    struct kprobe_dissector_t *dissector,
+    u_int8_t direction,
+    struct ip_hash_info *out_mapping
+) {
+    (void)dissector;
+    (void)direction;
+    out_mapping->tc_handle = 0;
+    out_mapping->cpu = 0;
+    out_mapping->circuit_id = 0;
+    out_mapping->device_id = 0;
 }
