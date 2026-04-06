@@ -1493,8 +1493,8 @@ async fn circuit_snapshot_streaming(
                 && let Some(agg) = aggregates.get_mut(&id)
             {
                 // bytes_per_second -> later convert to bits
-                agg.bps_bytes += te.bytes_per_second;
-                agg.tcp_packets += te.tcp_packets;
+                agg.bps_bytes += te.enqueue_bytes_per_second;
+                agg.tcp_packets += te.enqueue_tcp_packets;
                 agg.tcp_retries += te.tcp_retransmits;
                 if let Some(rtt) = te.median_latency() {
                     agg.rtts.push(rtt);

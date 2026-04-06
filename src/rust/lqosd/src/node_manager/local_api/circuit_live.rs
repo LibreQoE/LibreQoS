@@ -15,7 +15,7 @@ pub struct CircuitMetricsQuery {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CircuitLiveMetrics {
     pub circuit_id: String,
-    pub bytes_per_second: DownUpOrder<u64>,
+    pub enqueue_bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub qoo: DownUpOrder<Option<f32>>,
     pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
@@ -39,7 +39,7 @@ pub fn circuit_live_metrics(query: &CircuitMetricsQuery) -> Vec<CircuitLiveMetri
                 .get(trimmed)
                 .map(|row| CircuitLiveMetrics {
                     circuit_id: row.circuit_id.clone(),
-                    bytes_per_second: row.bytes_per_second,
+                    enqueue_bytes_per_second: row.enqueue_bytes_per_second,
                     rtt_current_p50_nanos: row.rtt_current_p50_nanos,
                     qoo: row.qoo,
                     tcp_retransmit_sample: row.tcp_retransmit_sample,

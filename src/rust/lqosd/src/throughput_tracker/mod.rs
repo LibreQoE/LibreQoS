@@ -336,7 +336,7 @@ pub fn host_counters() -> BusResponse {
         .iter()
         .for_each(|(k, v)| {
             let ip = k.as_ip();
-            result.push((ip, v.bytes_per_second));
+            result.push((ip, v.enqueue_bytes_per_second));
         });
     BusResponse::HostCounters(result)
 }
@@ -370,12 +370,12 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
-                    te.packets_per_second,
+                    te.enqueue_bytes_per_second,
+                    te.enqueue_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.enqueue_tcp_packets),
                 )
             })
             .collect()
@@ -414,12 +414,12 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
-                    te.packets_per_second,
+                    te.enqueue_bytes_per_second,
+                    te.enqueue_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.enqueue_tcp_packets),
                 )
             })
             .collect()
@@ -567,12 +567,12 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
-                    te.packets_per_second,
+                    te.enqueue_bytes_per_second,
+                    te.enqueue_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.enqueue_tcp_packets),
                 )
             })
             .collect()
@@ -612,12 +612,12 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
-                    te.packets_per_second,
+                    te.enqueue_bytes_per_second,
+                    te.enqueue_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.enqueue_tcp_packets),
                 )
             })
             .collect()
@@ -670,12 +670,12 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
-                    te.packets_per_second,
+                    te.enqueue_bytes_per_second,
+                    te.enqueue_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
-                    down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
+                    down_up_retransmit_sample(te.tcp_retransmits, te.enqueue_tcp_packets),
                 )
             })
             .collect()
@@ -980,8 +980,8 @@ pub fn all_unknown_ips() -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes,
-                    te.packets,
+                    te.enqueue_bytes,
+                    te.enqueue_packets,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.most_recent_cycle,

@@ -280,11 +280,12 @@ pub(crate) fn submit_throughput_stats(
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
+            .filter(|(_k, h)| h.circuit_id.is_some() && h.enqueue_bytes_per_second.not_zero())
             .for_each(|(_k, h)| {
                 let mut crazy = false;
                 if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
-                    && (h.bytes_per_second.down > *dl || h.bytes_per_second.up > *ul)
+                    && (h.enqueue_bytes_per_second.down > *dl
+                        || h.enqueue_bytes_per_second.up > *ul)
                 {
                     crazy_values.insert(h.circuit_hash.unwrap_or(0));
                     crazy = true;
@@ -294,20 +295,20 @@ pub(crate) fn submit_throughput_stats(
                     return;
                 }
                 if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
-                    c.bytes += h.bytes_per_second;
-                    c.packets += h.packets_per_second;
-                    c.tcp_packets += h.tcp_packets;
-                    c.udp_packets += h.udp_packets;
-                    c.icmp_packets += h.icmp_packets;
+                    c.bytes += h.enqueue_bytes_per_second;
+                    c.packets += h.enqueue_packets_per_second;
+                    c.tcp_packets += h.enqueue_tcp_packets;
+                    c.udp_packets += h.enqueue_udp_packets;
+                    c.icmp_packets += h.enqueue_icmp_packets;
                 } else {
                     circuit_throughput.insert(
                         h.circuit_hash.unwrap_or(0),
                         CircuitThroughputTemp {
-                            bytes: h.bytes_per_second,
-                            packets: h.packets_per_second,
-                            tcp_packets: h.tcp_packets,
-                            udp_packets: h.udp_packets,
-                            icmp_packets: h.icmp_packets,
+                            bytes: h.enqueue_bytes_per_second,
+                            packets: h.enqueue_packets_per_second,
+                            tcp_packets: h.enqueue_tcp_packets,
+                            udp_packets: h.enqueue_udp_packets,
+                            icmp_packets: h.enqueue_icmp_packets,
                         },
                     );
                 }

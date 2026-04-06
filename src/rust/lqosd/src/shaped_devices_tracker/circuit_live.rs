@@ -20,7 +20,7 @@ pub struct CircuitLiveRollup {
     pub device_names: Vec<String>,
     pub ip_addrs: Vec<String>,
     pub plan_mbps: DownUpOrder<f32>,
-    pub bytes_per_second: DownUpOrder<u64>,
+    pub enqueue_bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub qoo: DownUpOrder<Option<f32>>,
     pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
@@ -41,10 +41,10 @@ struct CircuitAccumulator {
     device_names: FxHashSet<String>,
     ip_addrs: FxHashSet<String>,
     plan_mbps: DownUpOrder<f32>,
-    bytes_per_second: DownUpOrder<u64>,
+    enqueue_bytes_per_second: DownUpOrder<u64>,
     rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     qoo: DownUpOrder<Option<f32>>,
-    tcp_packets: DownUpOrder<u64>,
+    enqueue_tcp_packets: DownUpOrder<u64>,
     tcp_retransmits: DownUpOrder<u64>,
     last_seen_nanos: Option<u64>,
 }
@@ -138,10 +138,10 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
         entry.ip_addrs.insert(ip_to_string(ip_key.as_ip()));
         entry.plan_mbps.down = entry.plan_mbps.down.max(device.download_max_mbps.round());
         entry.plan_mbps.up = entry.plan_mbps.up.max(device.upload_max_mbps.round());
-        entry.bytes_per_second.down += data.bytes_per_second.down;
-        entry.bytes_per_second.up += data.bytes_per_second.up;
-        entry.tcp_packets.down += data.tcp_retransmit_packets.down;
-        entry.tcp_packets.up += data.tcp_retransmit_packets.up;
+        entry.enqueue_bytes_per_second.down += data.enqueue_bytes_per_second.down;
+        entry.enqueue_bytes_per_second.up += data.enqueue_bytes_per_second.up;
+        entry.enqueue_tcp_packets.down += data.tcp_retransmit_packets.down;
+        entry.enqueue_tcp_packets.up += data.tcp_retransmit_packets.up;
         entry.tcp_retransmits.down += data.tcp_retransmits.down;
         entry.tcp_retransmits.up += data.tcp_retransmits.up;
         entry.last_seen_nanos = Some(match entry.last_seen_nanos {
@@ -182,12 +182,12 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
                 device_names: sort_string_set(value.device_names),
                 ip_addrs: sort_string_set(value.ip_addrs),
                 plan_mbps: value.plan_mbps,
-                bytes_per_second: value.bytes_per_second,
+                enqueue_bytes_per_second: value.enqueue_bytes_per_second,
                 rtt_current_p50_nanos: value.rtt_current_p50_nanos,
                 qoo: value.qoo,
                 tcp_retransmit_sample: down_up_retransmit_sample(
                     value.tcp_retransmits,
-                    value.tcp_packets,
+                    value.enqueue_tcp_packets,
                 ),
                 last_seen_nanos: value.last_seen_nanos.unwrap_or(u64::MAX),
             },

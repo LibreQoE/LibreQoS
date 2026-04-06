@@ -199,8 +199,14 @@ impl ThroughputTracker {
                     continue;
                 };
 
-                let download_delta = entry.bytes.down.saturating_sub(entry.prev_bytes.down);
-                let upload_delta = entry.bytes.up.saturating_sub(entry.prev_bytes.up);
+                let download_delta = entry
+                    .enqueue_bytes
+                    .down
+                    .saturating_sub(entry.prev_enqueue_bytes.down);
+                let upload_delta = entry
+                    .enqueue_bytes
+                    .up
+                    .saturating_sub(entry.prev_enqueue_bytes.up);
                 total_download_bytes = total_download_bytes.saturating_add(download_delta);
                 total_upload_bytes = total_upload_bytes.saturating_add(upload_delta);
                 total_tcp_packets.down = total_tcp_packets
@@ -372,14 +378,17 @@ impl ThroughputTracker {
         let mut raw_data = self.raw_data.lock();
         raw_data.iter_mut().for_each(|(_k, v)| {
             if v.first_cycle < self_cycle {
-                v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
-                v.packets_per_second = v.packets.checked_sub_or_zero(v.prev_packets);
+                v.enqueue_bytes_per_second =
+                    v.enqueue_bytes.checked_sub_or_zero(v.prev_enqueue_bytes);
+                v.enqueue_packets_per_second = v
+                    .enqueue_packets
+                    .checked_sub_or_zero(v.prev_enqueue_packets);
             }
-            v.prev_bytes = v.bytes;
-            v.prev_packets = v.packets;
-            v.prev_tcp_packets = v.tcp_packets;
-            v.prev_udp_packets = v.udp_packets;
-            v.prev_icmp_packets = v.icmp_packets;
+            v.prev_enqueue_bytes = v.enqueue_bytes;
+            v.prev_enqueue_packets = v.enqueue_packets;
+            v.prev_enqueue_tcp_packets = v.enqueue_tcp_packets;
+            v.prev_enqueue_udp_packets = v.enqueue_udp_packets;
+            v.prev_enqueue_icmp_packets = v.enqueue_icmp_packets;
 
             // Roll out stale RTT data
             if self_cycle > RETIRE_AFTER_SECONDS
@@ -459,11 +468,11 @@ impl ThroughputTracker {
             let reduced = ReducedHostCounters::from_counters(counts);
             if let Some(entry) = raw_data.get_mut(xdp_ip) {
                 // Zero the counter, we have to do a per-CPU sum
-                entry.bytes = reduced.bytes;
-                entry.packets = reduced.packets;
-                entry.tcp_packets = reduced.tcp_packets;
-                entry.udp_packets = reduced.udp_packets;
-                entry.icmp_packets = reduced.icmp_packets;
+                entry.enqueue_bytes = reduced.bytes;
+                entry.enqueue_packets = reduced.packets;
+                entry.enqueue_tcp_packets = reduced.tcp_packets;
+                entry.enqueue_udp_packets = reduced.udp_packets;
+                entry.enqueue_icmp_packets = reduced.icmp_packets;
                 entry.last_seen = reduced.last_seen;
 
                 let hashes_changed = entry.circuit_hash != reduced.circuit_hash
@@ -483,7 +492,7 @@ impl ThroughputTracker {
                         net_json_calc.get_parents_for_circuit_id(&device.parent_node)
                     });
                 }
-                if entry.packets != entry.prev_packets {
+                if entry.enqueue_packets != entry.prev_enqueue_packets {
                     entry.most_recent_cycle = self_cycle;
                     // Call to Bakery Update for existing traffic
                     if let Some(circuit_hash) = entry.circuit_hash {
@@ -494,42 +503,54 @@ impl ThroughputTracker {
                         net_json_calc.add_throughput_cycle(
                             parents,
                             (
-                                entry.bytes.down.saturating_sub(entry.prev_bytes.down),
-                                entry.bytes.up.saturating_sub(entry.prev_bytes.up),
-                            ),
-                            (
-                                entry.packets.down.saturating_sub(entry.prev_packets.down),
-                                entry.packets.up.saturating_sub(entry.prev_packets.up),
-                            ),
-                            (
                                 entry
-                                    .tcp_packets
+                                    .enqueue_bytes
                                     .down
-                                    .saturating_sub(entry.prev_tcp_packets.down),
+                                    .saturating_sub(entry.prev_enqueue_bytes.down),
                                 entry
-                                    .tcp_packets
+                                    .enqueue_bytes
                                     .up
-                                    .saturating_sub(entry.prev_tcp_packets.up),
+                                    .saturating_sub(entry.prev_enqueue_bytes.up),
                             ),
                             (
                                 entry
-                                    .udp_packets
+                                    .enqueue_packets
                                     .down
-                                    .saturating_sub(entry.prev_udp_packets.down),
+                                    .saturating_sub(entry.prev_enqueue_packets.down),
                                 entry
-                                    .udp_packets
+                                    .enqueue_packets
                                     .up
-                                    .saturating_sub(entry.prev_udp_packets.up),
+                                    .saturating_sub(entry.prev_enqueue_packets.up),
                             ),
                             (
                                 entry
-                                    .icmp_packets
+                                    .enqueue_tcp_packets
                                     .down
-                                    .saturating_sub(entry.prev_icmp_packets.down),
+                                    .saturating_sub(entry.prev_enqueue_tcp_packets.down),
                                 entry
-                                    .icmp_packets
+                                    .enqueue_tcp_packets
                                     .up
-                                    .saturating_sub(entry.prev_icmp_packets.up),
+                                    .saturating_sub(entry.prev_enqueue_tcp_packets.up),
+                            ),
+                            (
+                                entry
+                                    .enqueue_udp_packets
+                                    .down
+                                    .saturating_sub(entry.prev_enqueue_udp_packets.down),
+                                entry
+                                    .enqueue_udp_packets
+                                    .up
+                                    .saturating_sub(entry.prev_enqueue_udp_packets.up),
+                            ),
+                            (
+                                entry
+                                    .enqueue_icmp_packets
+                                    .down
+                                    .saturating_sub(entry.prev_enqueue_icmp_packets.down),
+                                entry
+                                    .enqueue_icmp_packets
+                                    .up
+                                    .saturating_sub(entry.prev_enqueue_icmp_packets.up),
                             ),
                         );
                     }
@@ -571,18 +592,18 @@ impl ThroughputTracker {
                     ),
                     first_cycle: self_cycle,
                     most_recent_cycle: 0,
-                    bytes: reduced.bytes,
-                    packets: reduced.packets,
-                    prev_bytes: DownUpOrder::zeroed(),
-                    prev_packets: DownUpOrder::zeroed(),
-                    bytes_per_second: DownUpOrder::zeroed(),
-                    packets_per_second: DownUpOrder::zeroed(),
-                    tcp_packets: reduced.tcp_packets,
-                    udp_packets: reduced.udp_packets,
-                    icmp_packets: reduced.icmp_packets,
-                    prev_tcp_packets: DownUpOrder::zeroed(),
-                    prev_udp_packets: DownUpOrder::zeroed(),
-                    prev_icmp_packets: DownUpOrder::zeroed(),
+                    enqueue_bytes: reduced.bytes,
+                    enqueue_packets: reduced.packets,
+                    prev_enqueue_bytes: DownUpOrder::zeroed(),
+                    prev_enqueue_packets: DownUpOrder::zeroed(),
+                    enqueue_bytes_per_second: DownUpOrder::zeroed(),
+                    enqueue_packets_per_second: DownUpOrder::zeroed(),
+                    enqueue_tcp_packets: reduced.tcp_packets,
+                    enqueue_udp_packets: reduced.udp_packets,
+                    enqueue_icmp_packets: reduced.icmp_packets,
+                    prev_enqueue_tcp_packets: DownUpOrder::zeroed(),
+                    prev_enqueue_udp_packets: DownUpOrder::zeroed(),
+                    prev_enqueue_icmp_packets: DownUpOrder::zeroed(),
                     tc_handle: reduced.tc_handle,
                     rtt_buffer: RttBuffer::default(),
                     recent_rtt_data: [RttData::from_nanos(0); 60],
@@ -1066,16 +1087,34 @@ impl ThroughputTracker {
             })
             .map(|(_k, v)| {
                 (
-                    v.bytes.down.saturating_sub(v.prev_bytes.down),
-                    v.bytes.up.saturating_sub(v.prev_bytes.up),
-                    v.packets.down.saturating_sub(v.prev_packets.down),
-                    v.packets.up.saturating_sub(v.prev_packets.up),
-                    v.tcp_packets.down.saturating_sub(v.prev_tcp_packets.down),
-                    v.tcp_packets.up.saturating_sub(v.prev_tcp_packets.up),
-                    v.udp_packets.down.saturating_sub(v.prev_udp_packets.down),
-                    v.udp_packets.up.saturating_sub(v.prev_udp_packets.up),
-                    v.icmp_packets.down.saturating_sub(v.prev_icmp_packets.down),
-                    v.icmp_packets.up.saturating_sub(v.prev_icmp_packets.up),
+                    v.enqueue_bytes
+                        .down
+                        .saturating_sub(v.prev_enqueue_bytes.down),
+                    v.enqueue_bytes.up.saturating_sub(v.prev_enqueue_bytes.up),
+                    v.enqueue_packets
+                        .down
+                        .saturating_sub(v.prev_enqueue_packets.down),
+                    v.enqueue_packets
+                        .up
+                        .saturating_sub(v.prev_enqueue_packets.up),
+                    v.enqueue_tcp_packets
+                        .down
+                        .saturating_sub(v.prev_enqueue_tcp_packets.down),
+                    v.enqueue_tcp_packets
+                        .up
+                        .saturating_sub(v.prev_enqueue_tcp_packets.up),
+                    v.enqueue_udp_packets
+                        .down
+                        .saturating_sub(v.prev_enqueue_udp_packets.down),
+                    v.enqueue_udp_packets
+                        .up
+                        .saturating_sub(v.prev_enqueue_udp_packets.up),
+                    v.enqueue_icmp_packets
+                        .down
+                        .saturating_sub(v.prev_enqueue_icmp_packets.down),
+                    v.enqueue_icmp_packets
+                        .up
+                        .saturating_sub(v.prev_enqueue_icmp_packets.up),
                     v.tc_handle.as_u32() > 0,
                 )
             })

@@ -1684,8 +1684,8 @@ function renderAttachedCircuitsRows(rows) {
             tr.appendChild(ipCell);
 
             tr.appendChild(simpleRow(formatLastSeen(toNumber(circuit.last_seen_nanos, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.enqueue_bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.enqueue_bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
 
             if (toNumber(circuit.rtt_current_p50_nanos?.down, 0) > 0) {
                 tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.down, 0) / 1_000_000)));

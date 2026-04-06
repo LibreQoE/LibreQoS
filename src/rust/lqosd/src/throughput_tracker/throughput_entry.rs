@@ -12,18 +12,18 @@ pub(crate) struct ThroughputEntry {
     pub(crate) network_json_parents: Option<Vec<usize>>,
     pub(crate) first_cycle: u64,
     pub(crate) most_recent_cycle: u64,
-    pub(crate) bytes: DownUpOrder<u64>,        // 0 DL, 1 UL
-    pub(crate) packets: DownUpOrder<u64>,      // 0 DL, 1 UL
-    pub(crate) tcp_packets: DownUpOrder<u64>,  // 0 DL, 1 UL
-    pub(crate) udp_packets: DownUpOrder<u64>,  // 0 DL, 1 UL
-    pub(crate) icmp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
-    pub(crate) prev_bytes: DownUpOrder<u64>,   // Has to mirror
-    pub(crate) prev_packets: DownUpOrder<u64>,
-    pub(crate) prev_tcp_packets: DownUpOrder<u64>,
-    pub(crate) prev_udp_packets: DownUpOrder<u64>,
-    pub(crate) prev_icmp_packets: DownUpOrder<u64>,
-    pub(crate) bytes_per_second: DownUpOrder<u64>,
-    pub(crate) packets_per_second: DownUpOrder<u64>,
+    pub(crate) enqueue_bytes: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) enqueue_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) enqueue_tcp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) enqueue_udp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) enqueue_icmp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) prev_enqueue_bytes: DownUpOrder<u64>, // Has to mirror
+    pub(crate) prev_enqueue_packets: DownUpOrder<u64>,
+    pub(crate) prev_enqueue_tcp_packets: DownUpOrder<u64>,
+    pub(crate) prev_enqueue_udp_packets: DownUpOrder<u64>,
+    pub(crate) prev_enqueue_icmp_packets: DownUpOrder<u64>,
+    pub(crate) enqueue_bytes_per_second: DownUpOrder<u64>,
+    pub(crate) enqueue_packets_per_second: DownUpOrder<u64>,
     pub(crate) tc_handle: TcHandle,
     pub(crate) rtt_buffer: RttBuffer,
     pub(crate) recent_rtt_data: [RttData; 60],
@@ -42,7 +42,7 @@ impl ThroughputEntry {
     /// less than 1 Mb of data---they are usually long-polling.
     pub(crate) fn median_latency(&self) -> Option<f32> {
         // Reject sub 1Mb flows
-        if self.bytes.both_less_than(1_000_000) {
+        if self.enqueue_bytes.both_less_than(1_000_000) {
             return None;
         }
 

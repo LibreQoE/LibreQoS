@@ -1859,7 +1859,7 @@ fn run_tick(
                     cap_down: entry.cap_down,
                     cap_up: entry.cap_up,
                     bps: live_rollup
-                        .map(|rollup| rollup.bytes_per_second)
+                        .map(|rollup| rollup.enqueue_bytes_per_second)
                         .unwrap_or(DownUpOrder { down: 0, up: 0 }),
                     last_rtt_seen_nanos: rtt_snapshot
                         .get(&entry.circuit_hash)

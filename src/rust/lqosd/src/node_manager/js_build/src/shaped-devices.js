@@ -182,12 +182,12 @@ function applyCircuitUpdate(device) {
     updateMetricHtml(
         circuitId,
         "tpDown",
-        formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, toNumber(plan.down, 0)),
+        formatThroughput(toNumber(device.enqueue_bytes_per_second.down, 0) * 8, toNumber(plan.down, 0)),
     );
     updateMetricHtml(
         circuitId,
         "tpUp",
-        formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, toNumber(plan.up, 0)),
+        formatThroughput(toNumber(device.enqueue_bytes_per_second.up, 0) * 8, toNumber(plan.up, 0)),
     );
     updateMetricHtml(
         circuitId,

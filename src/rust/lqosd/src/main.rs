@@ -1106,7 +1106,7 @@ fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
         .for_each(|(_k, c)| {
             if let Some(circuit_id) = &c.circuit_id {
                 if let Some(accumulator) = circuits.get_mut(circuit_id) {
-                    accumulator.bytes += c.bytes_per_second;
+                    accumulator.bytes += c.enqueue_bytes_per_second;
                     if let Some(latency) = c.median_latency() {
                         accumulator.median_rtt = latency;
                     }
@@ -1114,7 +1114,7 @@ fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
                     circuits.insert(
                         circuit_id.clone(),
                         CircuitAccumulator {
-                            bytes: c.bytes_per_second,
+                            bytes: c.enqueue_bytes_per_second,
                             median_rtt: c.median_latency().unwrap_or(0.0),
                         },
                     );
