@@ -682,11 +682,12 @@ impl ThroughputTracker {
                 } else {
                     // We have a valid flow, so it needs to be tracked
                     if let Some(this_flow) = all_flows_lock.flow_data.get_mut(key) {
-                        let delta_bytes =
-                            data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
+                        let delta_bytes = data
+                            .bytes_enqueued
+                            .checked_sub_or_zero(this_flow.0.bytes_enqueued);
                         let delta_packets = data
-                            .packets_sent
-                            .checked_sub_or_zero(this_flow.0.packets_sent);
+                            .packets_enqueued
+                            .checked_sub_or_zero(this_flow.0.packets_enqueued);
                         let delta_retrans = data
                             .tcp_retransmits
                             .checked_sub_or_zero(this_flow.0.tcp_retransmits);
@@ -706,13 +707,13 @@ impl ThroughputTracker {
                             );
                         }
 
-                        //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
+                        //let change_since_last_time = data.bytes_enqueued.checked_sub_or_zero(this_flow.0.bytes_enqueued);
                         //this_flow.0.throughput_buffer.push(change_since_last_time);
                         //println!("{change_since_last_time:?}");
 
                         this_flow.0.set_last_seen(data.last_seen);
-                        this_flow.0.set_bytes_sent(data.bytes_sent);
-                        this_flow.0.set_packets_sent(data.packets_sent);
+                        this_flow.0.set_bytes_enqueued(data.bytes_enqueued);
+                        this_flow.0.set_packets_enqueued(data.packets_enqueued);
                         this_flow.0.set_rate_estimate_bps(data.rate_estimate_bps);
                         this_flow.0.set_tcp_retransmits(data.tcp_retransmits);
                         this_flow.0.set_end_status(data.end_status);
@@ -728,13 +729,13 @@ impl ThroughputTracker {
                             {
                                 let device_rtt =
                                     rtt_circuit_tracker.entry(key.local_ip).or_default();
-                                if data.bytes_sent.down >= MIN_QOO_FLOW_BYTES {
+                                if data.bytes_enqueued.down >= MIN_QOO_FLOW_BYTES {
                                     device_rtt.accumulate_direction(
                                         &rtt_buffer,
                                         FlowbeeEffectiveDirection::Download,
                                     );
                                 }
-                                if data.bytes_sent.up >= MIN_QOO_FLOW_BYTES {
+                                if data.bytes_enqueued.up >= MIN_QOO_FLOW_BYTES {
                                     device_rtt.accumulate_direction(
                                         &rtt_buffer,
                                         FlowbeeEffectiveDirection::Upload,
@@ -752,11 +753,11 @@ impl ThroughputTracker {
                         {
                             let loss_download = tcp_retransmit_loss_proxy(
                                 this_flow.0.tcp_retransmits.down as u64,
-                                this_flow.0.packets_sent.down,
+                                this_flow.0.packets_enqueued.down,
                             );
                             let loss_upload = tcp_retransmit_loss_proxy(
                                 this_flow.0.tcp_retransmits.up as u64,
-                                this_flow.0.packets_sent.up,
+                                this_flow.0.packets_enqueued.up,
                             );
                             let scores = compute_qoq_scores(
                                 profile.as_ref(),
@@ -765,10 +766,10 @@ impl ThroughputTracker {
                                 loss_upload,
                             );
                             let mut scores = scores;
-                            if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                            if data.bytes_enqueued.down < MIN_QOO_FLOW_BYTES {
                                 scores.download_total = QOQ_UNKNOWN;
                             }
-                            if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                            if data.bytes_enqueued.up < MIN_QOO_FLOW_BYTES {
                                 scores.upload_total = QOQ_UNKNOWN;
                             }
                             this_flow.0.set_qoq_scores(scores);
@@ -830,13 +831,13 @@ impl ThroughputTracker {
                                 {
                                     let device_rtt =
                                         rtt_circuit_tracker.entry(key.local_ip).or_default();
-                                    if data.bytes_sent.down >= MIN_QOO_FLOW_BYTES {
+                                    if data.bytes_enqueued.down >= MIN_QOO_FLOW_BYTES {
                                         device_rtt.accumulate_direction(
                                             &rtt_buffer,
                                             FlowbeeEffectiveDirection::Download,
                                         );
                                     }
-                                    if data.bytes_sent.up >= MIN_QOO_FLOW_BYTES {
+                                    if data.bytes_enqueued.up >= MIN_QOO_FLOW_BYTES {
                                         device_rtt.accumulate_direction(
                                             &rtt_buffer,
                                             FlowbeeEffectiveDirection::Upload,
@@ -857,11 +858,11 @@ impl ThroughputTracker {
                             {
                                 let loss_download = tcp_retransmit_loss_proxy(
                                     flow_summary.tcp_retransmits.down as u64,
-                                    flow_summary.packets_sent.down,
+                                    flow_summary.packets_enqueued.down,
                                 );
                                 let loss_upload = tcp_retransmit_loss_proxy(
                                     flow_summary.tcp_retransmits.up as u64,
-                                    flow_summary.packets_sent.up,
+                                    flow_summary.packets_enqueued.up,
                                 );
                                 let scores = compute_qoq_scores(
                                     profile.as_ref(),
@@ -870,10 +871,10 @@ impl ThroughputTracker {
                                     loss_upload,
                                 );
                                 let mut scores = scores;
-                                if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+                                if data.bytes_enqueued.down < MIN_QOO_FLOW_BYTES {
                                     scores.download_total = QOQ_UNKNOWN;
                                 }
-                                if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+                                if data.bytes_enqueued.up < MIN_QOO_FLOW_BYTES {
                                     scores.upload_total = QOQ_UNKNOWN;
                                 }
                                 flow_summary.set_qoq_scores(scores);
@@ -894,8 +895,8 @@ impl ThroughputTracker {
                                 );
                                 add_asn_sample(
                                     flow_analysis.asn_id.0,
-                                    data.bytes_sent,
-                                    data.packets_sent,
+                                    data.bytes_enqueued,
+                                    data.packets_enqueued,
                                     delta_retrans,
                                     flow_rtt,
                                 );

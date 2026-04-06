@@ -33,7 +33,7 @@ impl Netflow5 {
                 let mut last_sent = std::time::Instant::now();
                 while let Ok((key, (data, analysis))) = rx.recv() {
                     // Exclude one-way flows
-                    if (data.bytes_sent.sum()) == 0 {
+                    if (data.bytes_enqueued.sum()) == 0 {
                         continue;
                     }
 

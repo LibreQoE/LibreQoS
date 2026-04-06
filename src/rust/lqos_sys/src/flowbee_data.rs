@@ -43,10 +43,10 @@ pub struct FlowbeeData {
     pub start_time: u64,
     /// Time (nanos) when the connection was last seen
     pub last_seen: u64,
-    /// Bytes transmitted
-    pub bytes_sent: DownUpOrder<u64>,
-    /// Packets transmitted
-    pub packets_sent: DownUpOrder<u64>,
+    /// Bytes enqueued for transmission
+    pub bytes_enqueued: DownUpOrder<u64>,
+    /// Packets enqueued for transmission
+    pub packets_enqueued: DownUpOrder<u64>,
     /// Clock for the next rate estimate
     pub next_count_time: DownUpOrder<u64>,
     /// Clock for the previous rate estimate

@@ -1027,8 +1027,8 @@ pub fn dump_active_flows() -> BusResponse {
                 src_port: key.src_port,
                 dst_port: key.dst_port,
                 ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
-                bytes_sent: row.0.bytes_sent,
-                packets_sent: row.0.packets_sent,
+                bytes_sent: row.0.bytes_enqueued,
+                packets_sent: row.0.packets_enqueued,
                 rate_estimate_bps: row.0.rate_estimate_bps,
                 tcp_retransmits: row.0.tcp_retransmits,
                 end_status: row.0.end_status,
@@ -1081,15 +1081,15 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
         TopFlowType::Bytes => {
             table.sort_by(|a, b| {
-                let a_total = a.1.0.bytes_sent.sum();
-                let b_total = b.1.0.bytes_sent.sum();
+                let a_total = a.1.0.bytes_enqueued.sum();
+                let b_total = b.1.0.bytes_enqueued.sum();
                 b_total.cmp(&a_total)
             });
         }
         TopFlowType::Packets => {
             table.sort_by(|a, b| {
-                let a_total = a.1.0.packets_sent.sum();
-                let b_total = b.1.0.packets_sent.sum();
+                let a_total = a.1.0.packets_enqueued.sum();
+                let b_total = b.1.0.packets_enqueued.sum();
                 b_total.cmp(&a_total)
             });
         }
@@ -1147,8 +1147,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 src_port: ip.src_port,
                 dst_port: ip.dst_port,
                 ip_protocol: FlowbeeProtocol::from(ip.ip_protocol),
-                bytes_sent: flow.0.bytes_sent,
-                packets_sent: flow.0.packets_sent,
+                bytes_sent: flow.0.bytes_enqueued,
+                packets_sent: flow.0.packets_enqueued,
                 rate_estimate_bps: flow.0.rate_estimate_bps,
                 tcp_retransmits: flow.0.tcp_retransmits,
                 end_status: flow.0.end_status,
@@ -1220,8 +1220,8 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                     src_port: key.src_port,
                     dst_port: key.dst_port,
                     ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
-                    bytes_sent: row.0.bytes_sent,
-                    packets_sent: row.0.packets_sent,
+                    bytes_sent: row.0.bytes_enqueued,
+                    packets_sent: row.0.packets_enqueued,
                     rate_estimate_bps: row.0.rate_estimate_bps,
                     tcp_retransmits: row.0.tcp_retransmits,
                     end_status: row.0.end_status,

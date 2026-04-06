@@ -1596,8 +1596,8 @@ async fn circuit_snapshot_streaming(
                 ip_protocol: key.ip_protocol,
                 last_seen_nanos: now_nanos.saturating_sub(local.last_seen),
                 rate_bps: (local.rate_estimate_bps.down, local.rate_estimate_bps.up),
-                bytes_sent: (local.bytes_sent.down, local.bytes_sent.up),
-                packets_sent: (local.packets_sent.down, local.packets_sent.up),
+                bytes_sent: (local.bytes_enqueued.down, local.bytes_enqueued.up),
+                packets_sent: (local.packets_enqueued.down, local.packets_enqueued.up),
                 tcp_retransmits: (local.tcp_retransmits.down, local.tcp_retransmits.up),
                 rtt_ms,
             });

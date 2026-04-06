@@ -88,7 +88,7 @@ impl TimeBuffer {
                     lat,
                     lon,
                     geo.country,
-                    data.bytes_sent.down,
+                    data.bytes_enqueued.down,
                     data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32, // TODO: Fix this type
                 )
             })
@@ -115,7 +115,7 @@ impl TimeBuffer {
                     data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) as f32,
                     data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload) as f32,
                 ]; // TODO: Fix these types
-                (geo.country, data.bytes_sent, rtt, geo.flag)
+                (geo.country, data.bytes_enqueued, rtt, geo.flag)
             })
             .collect::<Vec<(String, DownUpOrder<u64>, [f32; 2], String)>>();
 
@@ -214,8 +214,8 @@ impl TimeBuffer {
             let (key, data, _analysis) = &v.data;
             if key.local_ip.is_v4() {
                 // It's V4
-                v4_bytes_sent.checked_add(data.bytes_sent);
-                v4_packets_sent.checked_add(data.packets_sent);
+                v4_bytes_sent.checked_add(data.bytes_enqueued);
+                v4_packets_sent.checked_add(data.packets_enqueued);
                 // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
                     v4_rtt[0]
@@ -227,8 +227,8 @@ impl TimeBuffer {
                 }
             } else {
                 // It's V6
-                v6_bytes_sent.checked_add(data.bytes_sent);
-                v6_packets_sent.checked_add(data.packets_sent);
+                v6_bytes_sent.checked_add(data.bytes_enqueued);
+                v6_packets_sent.checked_add(data.packets_enqueued);
                 // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
                     v6_rtt[0]
@@ -263,7 +263,7 @@ impl TimeBuffer {
             let (_key, data, analysis) = &v.data;
             let proto = analysis.protocol_analysis.to_string();
             let entry = results.entry(proto).or_insert(DownUpOrder::zeroed());
-            entry.checked_add(data.bytes_sent);
+            entry.checked_add(data.bytes_enqueued);
         });
 
         let mut results = results
@@ -468,7 +468,7 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
     let last_seen = boot_time_nanos_to_unix_now(data.last_seen).unwrap_or(0);
 
-    let one_way = data.bytes_sent.down == 0 || data.bytes_sent.up == 0;
+    let one_way = data.bytes_enqueued.down == 0 || data.bytes_enqueued.up == 0;
     let circuit_hash = data.circuit_hash.or_else(|| {
         crate::throughput_tracker::THROUGHPUT_TRACKER
             .raw_data
@@ -508,8 +508,8 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             protocol: key.ip_protocol,
             dst_port: key.dst_port,
             src_port: key.src_port,
-            bytes_down: data.bytes_sent.down,
-            bytes_up: data.bytes_sent.up,
+            bytes_down: data.bytes_enqueued.down,
+            bytes_up: data.bytes_enqueued.up,
             retransmit_times_down,
             retransmit_times_up,
             rtt: [
@@ -517,8 +517,8 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
                 data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
             ],
             circuit_hash: circuit_hash.unwrap_or(0),
-            packets_down: Some(data.packets_sent.down as i64),
-            packets_up: Some(data.packets_sent.up as i64),
+            packets_down: Some(data.packets_enqueued.down as i64),
+            packets_up: Some(data.packets_enqueued.up as i64),
         }) {
             debug!("Failed to send two-way flow to LTS2: {e:?}");
         }
@@ -544,7 +544,7 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             protocol: key.ip_protocol,
             dst_port: key.dst_port,
             src_port: key.src_port,
-            bytes: data.bytes_sent.sum(),
+            bytes: data.bytes_enqueued.sum(),
             circuit_hash: circuit_hash.unwrap_or(0),
         }) {
             debug!("Failed to send one-way flow to LTS2: {e:?}");

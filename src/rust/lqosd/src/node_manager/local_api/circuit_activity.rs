@@ -249,8 +249,8 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
             let geo = get_asn_name_and_country(key.remote_ip.as_ip());
             let display_rate = display_rate_bps(local, display_rate_ceiling);
             let current_rate = display_rate.down as u64 + display_rate.up as u64;
-            let packets_sent_down = local.packets_sent.down;
-            let packets_sent_up = local.packets_sent.up;
+            let packets_sent_down = local.packets_enqueued.down;
+            let packets_sent_up = local.packets_enqueued.up;
             let tcp_retransmits_down = local.tcp_retransmits.down;
             let tcp_retransmits_up = local.tcp_retransmits.up;
             let retransmit_down_pct = if tcp_retransmits_down > 0 && packets_sent_down > 0 {
@@ -276,8 +276,8 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
                 remote_ip: key.remote_ip.to_string(),
                 down_bps: display_rate.down,
                 up_bps: display_rate.up,
-                bytes_sent_down: local.bytes_sent.down,
-                bytes_sent_up: local.bytes_sent.up,
+                bytes_sent_down: local.bytes_enqueued.down,
+                bytes_sent_up: local.bytes_enqueued.up,
                 packets_sent_down,
                 packets_sent_up,
                 tcp_retransmits_down,

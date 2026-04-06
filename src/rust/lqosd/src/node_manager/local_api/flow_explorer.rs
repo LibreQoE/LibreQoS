@@ -116,7 +116,7 @@ fn all_flows_to_transport(
                 rtt: flow.1.get_rtt_array(),
                 retransmit_times_down,
                 retransmit_times_up,
-                total_bytes: flow.1.bytes_sent,
+                total_bytes: flow.1.bytes_enqueued,
                 protocol: flow.2.protocol_analysis.to_string(),
                 circuit_id,
                 circuit_name,

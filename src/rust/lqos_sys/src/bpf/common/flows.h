@@ -57,10 +57,10 @@ struct flow_data_t {
     __u64 start_time;
     // Time (nanos) when the connection was last seen
     __u64 last_seen;
-    // Bytes transmitted
-    __u64 bytes_sent[2];
-    // Packets transmitted
-    __u64 packets_sent[2];
+    // Bytes enqueued for transmission
+    __u64 bytes_enqueued[2];
+    // Packets enqueued for transmission
+    __u64 packets_enqueued[2];
     // Clock for the next rate estimate
     __u64 next_count_time[2];
     // Clock for the previous rate estimate
@@ -193,7 +193,7 @@ static __always_inline bool u32wrap_lt(
 
 // Update the flow data with the current packet's information.
 // * Update the timestamp of the last seen packet
-// * Update the bytes and packets sent
+// * Update the bytes and packets enqueued
 // * Update the rate estimate (if it is time to do so)
 static __always_inline void update_flow_rates(
     // The packet dissector from the previous step
@@ -206,17 +206,17 @@ static __always_inline void update_flow_rates(
     data->last_seen = dissector->now;
     data->end_status = 0; // Reset the end status
 
-    // Update bytes and packets sent
-    data->bytes_sent[rate_index] += dissector->skb_len;
-    data->packets_sent[rate_index]++;
+    // Update bytes and packets enqueued
+    data->bytes_enqueued[rate_index] += dissector->skb_len;
+    data->packets_enqueued[rate_index]++;
 
     if (dissector->now > data->next_count_time[rate_index]) {
         // Calculate the rate estimate
-        __u64 bits = (data->bytes_sent[rate_index] - data->next_count_bytes[rate_index])*8;
+        __u64 bits = (data->bytes_enqueued[rate_index] - data->next_count_bytes[rate_index])*8;
         __u64 time = dissector->now - data->last_count_time[rate_index]; // time in ns
         data->rate_estimate_bps[rate_index] = (bits * SECOND_IN_NANOS) / time; // nanobits per ns -> bits per second
         data->next_count_time[rate_index] = dissector->now + SECOND_IN_NANOS;
-        data->next_count_bytes[rate_index] = data->bytes_sent[rate_index];
+        data->next_count_bytes[rate_index] = data->bytes_enqueued[rate_index];
         data->last_count_time[rate_index] = dissector->now;
         //bpf_debug("[FLOWS] Rate Estimate: %llu", data->rate_estimate_bps[rate_index]);
     }

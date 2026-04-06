@@ -71,10 +71,10 @@ pub struct FlowbeeLocalData {
     pub start_time: u64,
     /// Time (nanos) when the connection was last seen
     pub last_seen: u64,
-    /// Bytes transmitted
-    pub bytes_sent: DownUpOrder<u64>,
-    /// Packets transmitted
-    pub packets_sent: DownUpOrder<u64>,
+    /// Bytes enqueued for transmission
+    pub bytes_enqueued: DownUpOrder<u64>,
+    /// Packets enqueued for transmission
+    pub packets_enqueued: DownUpOrder<u64>,
     /// Rate estimate
     pub rate_estimate_bps: DownUpOrder<u32>,
     /// Optional UI-oriented display rate. This is populated by specific
@@ -108,8 +108,8 @@ impl Serialize for FlowbeeLocalData {
         let mut state = serializer.serialize_struct("FlowbeeLocalData", 14)?;
         state.serialize_field("start_time", &self.start_time)?;
         state.serialize_field("last_seen", &self.last_seen)?;
-        state.serialize_field("bytes_sent", &self.bytes_sent)?;
-        state.serialize_field("packets_sent", &self.packets_sent)?;
+        state.serialize_field("bytes_sent", &self.bytes_enqueued)?;
+        state.serialize_field("packets_sent", &self.packets_enqueued)?;
         state.serialize_field("rate_estimate_bps", &self.rate_estimate_bps)?;
         if let Some(display_rate_bps) = &self.display_rate_bps {
             state.serialize_field("display_rate_bps", display_rate_bps)?;
@@ -136,8 +136,8 @@ impl FlowbeeLocalData {
         Self {
             start_time: data.start_time,
             last_seen: data.last_seen,
-            bytes_sent: data.bytes_sent,
-            packets_sent: data.packets_sent,
+            bytes_enqueued: data.bytes_enqueued,
+            packets_enqueued: data.packets_enqueued,
             rate_estimate_bps: data.rate_estimate_bps,
             display_rate_bps: None,
             tcp_retransmits: data.tcp_retransmits,
@@ -297,12 +297,12 @@ impl FlowbeeLocalData {
         self.last_seen = last_seen;
     }
 
-    pub fn set_bytes_sent(&mut self, bytes_sent: DownUpOrder<u64>) {
-        self.bytes_sent = bytes_sent;
+    pub fn set_bytes_enqueued(&mut self, bytes_enqueued: DownUpOrder<u64>) {
+        self.bytes_enqueued = bytes_enqueued;
     }
 
-    pub fn set_packets_sent(&mut self, packets_sent: DownUpOrder<u64>) {
-        self.packets_sent = packets_sent;
+    pub fn set_packets_enqueued(&mut self, packets_enqueued: DownUpOrder<u64>) {
+        self.packets_enqueued = packets_enqueued;
     }
 
     pub fn set_rate_estimate_bps(&mut self, rate_estimate_bps: DownUpOrder<u32>) {
