@@ -149,8 +149,6 @@ static __always_inline void track_traffic(
     }
 }
 
-// Kprobe transmit accounting will populate "actual transmitted" fields here.
-// Stubbed for now until the map layout grows the additional counters.
 static __always_inline void track_traffic_kprobe(
     int direction,
     struct in6_addr * key,
@@ -160,11 +158,42 @@ static __always_inline void track_traffic_kprobe(
     __u64 device_id,
     struct kprobe_dissector_t *dissector
 ) {
-    (void)direction;
-    (void)key;
-    (void)size;
-    (void)tc_handle;
-    (void)circuit_id;
-    (void)device_id;
-    (void)dissector;
+    // Only update existing host records. The XDP path owns creation.
+    struct host_counter *counter =
+        (struct host_counter *)bpf_map_lookup_elem(&map_traffic, key);
+    if (!counter) return;
+
+    counter->last_seen = dissector->now;
+    counter->tc_handle = tc_handle;
+    counter->circuit_id = circuit_id;
+    counter->device_id = device_id;
+    if (direction == 1) {
+        counter->xmit_download_packets += 1;
+        counter->xmit_download_bytes += size;
+        switch (dissector->ip_protocol) {
+            case IPPROTO_TCP:
+                counter->xmit_tcp_download_packets += 1;
+                break;
+            case IPPROTO_UDP:
+                counter->xmit_udp_download_packets += 1;
+                break;
+            case IPPROTO_ICMP:
+                counter->xmit_icmp_download_packets += 1;
+                break;
+        }
+    } else {
+        counter->xmit_upload_packets += 1;
+        counter->xmit_upload_bytes += size;
+        switch (dissector->ip_protocol) {
+            case IPPROTO_TCP:
+                counter->xmit_tcp_upload_packets += 1;
+                break;
+            case IPPROTO_UDP:
+                counter->xmit_udp_upload_packets += 1;
+                break;
+            case IPPROTO_ICMP:
+                counter->xmit_icmp_upload_packets += 1;
+                break;
+        }
+    }
 }
