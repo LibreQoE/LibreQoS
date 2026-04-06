@@ -80,7 +80,7 @@ impl SiteStateTracker {
                     round_trip_time_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
                     queue_download_mbps: site.current_download_mbps,
                     queue_upload_mbps: site.current_upload_mbps,
-                    current_throughput: (0.0, 0.0),
+                    xmit_throughput: (0.0, 0.0),
                     current_rtt_ms: None,
                     passive_rtt_ms: None,
                     active_ping_rtt_ms: None,
@@ -194,7 +194,7 @@ impl SiteStateTracker {
         all_nodes: Vec<(usize, NetworkJsonTransport)>,
     ) {
         for site in self.sites.values_mut() {
-            site.current_throughput = (0.0, 0.0);
+            site.xmit_throughput = (0.0, 0.0);
             site.clear_tick_rtt_state();
         }
 
@@ -204,20 +204,20 @@ impl SiteStateTracker {
             };
 
             // Record throughput (Mbps)
-            let down_mbps = (node_info.enqueue_throughput.0 as f64 * 8.0) / 1_000_000.0;
-            let up_mbps = (node_info.enqueue_throughput.1 as f64 * 8.0) / 1_000_000.0;
+            let down_mbps = (node_info.xmit_throughput.0 as f64 * 8.0) / 1_000_000.0;
+            let up_mbps = (node_info.xmit_throughput.1 as f64 * 8.0) / 1_000_000.0;
             target.throughput_down.add(down_mbps);
             target.throughput_up.add(up_mbps);
-            target.current_throughput = (down_mbps, up_mbps);
+            target.xmit_throughput = (down_mbps, up_mbps);
 
             // Retransmits (as a percentage of TCP packets)
-            let retransmits_down = if node_info.enqueue_tcp_packets.0 > 0 {
-                node_info.current_retransmits.0 as f64 / node_info.enqueue_tcp_packets.0 as f64
+            let retransmits_down = if node_info.xmit_tcp_packets.0 > 0 {
+                node_info.current_retransmits.0 as f64 / node_info.xmit_tcp_packets.0 as f64
             } else {
                 0.0
             };
-            let retransmits_up = if node_info.enqueue_tcp_packets.1 > 0 {
-                node_info.current_retransmits.1 as f64 / node_info.enqueue_tcp_packets.1 as f64
+            let retransmits_up = if node_info.xmit_tcp_packets.1 > 0 {
+                node_info.current_retransmits.1 as f64 / node_info.xmit_tcp_packets.1 as f64
             } else {
                 0.0
             };
@@ -367,7 +367,7 @@ impl SiteStateTracker {
                                 site.queue_download_mbps,
                                 site_config.min_download_mbps,
                                 site_config.max_download_mbps,
-                                site.current_throughput.0,
+                                site.xmit_throughput.0,
                                 site.throughput_down_moving_average.average(),
                                 site.retransmits_down.average(),
                                 site.retransmits_down_moving_average.average(),
@@ -376,7 +376,7 @@ impl SiteStateTracker {
                                 site.queue_upload_mbps,
                                 site_config.min_upload_mbps,
                                 site_config.max_upload_mbps,
-                                site.current_throughput.1,
+                                site.xmit_throughput.1,
                                 site.throughput_up_moving_average.average(),
                                 site.retransmits_up.average(),
                                 site.retransmits_up_moving_average.average(),
@@ -959,7 +959,7 @@ mod tests {
             round_trip_time_moving_average: RingBuffer::new(MOVING_AVERAGE_BUFFER_SIZE),
             queue_download_mbps: download,
             queue_upload_mbps: upload,
-            current_throughput: (0.0, 0.0),
+            xmit_throughput: (0.0, 0.0),
             current_rtt_ms: None,
             passive_rtt_ms: None,
             active_ping_rtt_ms: None,
@@ -1007,6 +1007,49 @@ mod tests {
         }
     }
 
+    fn test_node_transport(
+        name: &str,
+        enqueue_throughput: (u64, u64),
+        enqueue_tcp_packets: (u64, u64),
+        xmit_throughput: (u64, u64),
+        xmit_tcp_packets: (u64, u64),
+        current_retransmits: (u64, u64),
+    ) -> NetworkJsonTransport {
+        NetworkJsonTransport {
+            name: name.to_string(),
+            id: None,
+            is_virtual: false,
+            runtime_virtualized: false,
+            max_throughput: (0.0, 0.0),
+            configured_max_throughput: (0.0, 0.0),
+            effective_max_throughput: None,
+            enqueue_throughput,
+            enqueue_packets: (0, 0),
+            enqueue_tcp_packets,
+            enqueue_udp_packets: (0, 0),
+            enqueue_icmp_packets: (0, 0),
+            xmit_throughput,
+            xmit_packets: (0, 0),
+            xmit_tcp_packets,
+            xmit_udp_packets: (0, 0),
+            xmit_icmp_packets: (0, 0),
+            current_retransmits,
+            current_tcp_retransmit_packets: (0, 0),
+            current_marks: (0, 0),
+            current_drops: (0, 0),
+            rtts: Vec::new(),
+            qoo: (None, None),
+            parents: Vec::new(),
+            immediate_parent: None,
+            node_type: None,
+            latitude: None,
+            longitude: None,
+            subtree_site_count: 0,
+            subtree_circuit_count: 0,
+            subtree_device_count: 0,
+        }
+    }
+
     #[test]
     fn site_override_update_omits_baseline_rates() {
         let site = site_state(100, 50, 100, 50);
@@ -1049,10 +1092,60 @@ mod tests {
     }
 
     #[test]
+    fn read_new_tick_data_uses_xmit_counters() {
+        let mut cfg = test_config(StormguardStrategy::LegacyScore);
+        cfg.sites.insert(
+            "Site A".to_string(),
+            WatchingSite {
+                name: "Site A".to_string(),
+                max_download_mbps: 100,
+                max_upload_mbps: 100,
+                min_download_mbps: 10,
+                min_upload_mbps: 10,
+                dependent_nodes: Vec::new(),
+                current_download_mbps: 100,
+                current_upload_mbps: 100,
+            },
+        );
+
+        let mut tracker = SiteStateTracker::from_config(&cfg);
+        tracker.read_new_tick_data(
+            &cfg,
+            None,
+            false,
+            vec![(
+                1,
+                test_node_transport(
+                    "Site A",
+                    (2_500_000, 5_000_000),
+                    (1_000, 2_000),
+                    (1_250_000, 2_500_000),
+                    (100, 200),
+                    (5, 10),
+                ),
+            )],
+        );
+
+        let site = tracker.sites.get("Site A").expect("site should exist");
+        assert_eq!(site.xmit_throughput, (10.0, 20.0));
+
+        let down_retransmit = site
+            .retransmits_down
+            .average()
+            .expect("download retransmit sample");
+        let up_retransmit = site
+            .retransmits_up
+            .average()
+            .expect("upload retransmit sample");
+        assert!((down_retransmit - 0.05).abs() < 1e-9);
+        assert!((up_retransmit - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
     fn delay_probe_decreases_on_bufferbloat() {
         let cfg = test_config(StormguardStrategy::DelayProbe);
         let mut site = site_state(20, 20, 50, 50);
-        site.current_throughput = (10.0, 0.0);
+        site.xmit_throughput = (10.0, 0.0);
         site.current_rtt_ms = Some(800.0);
         site.rtt_baseline_ms = Some(600.0);
 
@@ -1071,7 +1164,7 @@ mod tests {
     fn delay_probe_increases_when_good_and_loaded() {
         let cfg = test_config(StormguardStrategy::DelayProbe);
         let mut site = site_state(10, 10, 50, 50);
-        site.current_throughput = (9.0, 0.0);
+        site.xmit_throughput = (9.0, 0.0);
         site.current_rtt_ms = Some(610.0);
         site.rtt_baseline_ms = Some(600.0);
         site.ticks_since_last_probe_download = 10;
@@ -1091,7 +1184,7 @@ mod tests {
     fn delay_probe_applies_rtt_logic_to_upload() {
         let cfg = test_config(StormguardStrategy::DelayProbe);
         let mut site = site_state(20, 20, 50, 50);
-        site.current_throughput = (0.0, 18.0);
+        site.xmit_throughput = (0.0, 18.0);
         site.current_rtt_ms = Some(900.0);
         site.rtt_baseline_ms = Some(600.0);
 

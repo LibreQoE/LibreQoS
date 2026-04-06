@@ -70,8 +70,8 @@ function fmtBps(bytesPerSecond) {
 function nodeUtilizationPercent(node) {
     const downMaxMbps = Math.max(0, toNumber(node?.effective_max_mbps?.[0], 0));
     const upMaxMbps = Math.max(0, toNumber(node?.effective_max_mbps?.[1], 0));
-    const downBps = Math.max(0, toNumber(node?.current_throughput_bps?.[0], 0) * 8);
-    const upBps = Math.max(0, toNumber(node?.current_throughput_bps?.[1], 0) * 8);
+    const downBps = Math.max(0, toNumber(node?.enqueue_throughput_bps?.[0], 0) * 8);
+    const upBps = Math.max(0, toNumber(node?.enqueue_throughput_bps?.[1], 0) * 8);
 
     const downUtilization = downMaxMbps > 0 ? (downBps / (downMaxMbps * 1_000_000)) * 100 : null;
     const upUtilization = upMaxMbps > 0 ? (upBps / (upMaxMbps * 1_000_000)) * 100 : null;
@@ -128,8 +128,8 @@ function topLevelNodesForCore(core) {
             if (circuitDelta !== 0) {
                 return circuitDelta;
             }
-            const throughputA = toNumber(a?.current_throughput_bps?.[0], 0) + toNumber(a?.current_throughput_bps?.[1], 0);
-            const throughputB = toNumber(b?.current_throughput_bps?.[0], 0) + toNumber(b?.current_throughput_bps?.[1], 0);
+            const throughputA = toNumber(a?.enqueue_throughput_bps?.[0], 0) + toNumber(a?.enqueue_throughput_bps?.[1], 0);
+            const throughputB = toNumber(b?.enqueue_throughput_bps?.[0], 0) + toNumber(b?.enqueue_throughput_bps?.[1], 0);
             if (throughputB !== throughputA) {
                 return throughputB - throughputA;
             }

@@ -448,24 +448,24 @@ pub enum BusResponse {
     /// and try later.
     NotReadyYet,
 
-    /// Current throughput for the overall system.
+    /// Current enqueue throughput plus selected transmitted counterparts for the overall system.
     CurrentThroughput {
-        /// In bps
+        /// Current enqueue throughput in bps.
         bits_per_second: DownUpOrder<u64>,
 
         /// Actually transmitted throughput in bps
         xmit_bits_per_second: DownUpOrder<u64>,
 
-        /// In pps
+        /// Current enqueue packets in pps.
         packets_per_second: DownUpOrder<u64>,
 
-        /// PPS TCP only
+        /// Current enqueue TCP packets in pps.
         tcp_packets_per_second: DownUpOrder<u64>,
 
-        /// PPS UDP only
+        /// Current enqueue UDP packets in pps.
         udp_packets_per_second: DownUpOrder<u64>,
 
-        /// PPS ICMP only
+        /// Current enqueue ICMP packets in pps.
         icmp_packets_per_second: DownUpOrder<u64>,
 
         /// How much of the response has been subject to the shaper?

@@ -74,19 +74,19 @@ pub(crate) fn submit_throughput_stats(
     }
 
     // Gather Global Stats
-    let packets_per_second = THROUGHPUT_TRACKER.enqueue_packets_per_second();
-    let tcp_packets_per_second = THROUGHPUT_TRACKER.enqueue_tcp_packets_per_second();
-    let udp_packets_per_second = THROUGHPUT_TRACKER.enqueue_udp_packets_per_second();
-    let icmp_packets_per_second = THROUGHPUT_TRACKER.enqueue_icmp_packets_per_second();
-    let bits_per_second = THROUGHPUT_TRACKER.enqueue_bits_per_second();
+    let xmit_packets_per_second = THROUGHPUT_TRACKER.xmit_packets_per_second();
+    let xmit_tcp_packets_per_second = THROUGHPUT_TRACKER.xmit_tcp_packets_per_second();
+    let xmit_udp_packets_per_second = THROUGHPUT_TRACKER.xmit_udp_packets_per_second();
+    let xmit_icmp_packets_per_second = THROUGHPUT_TRACKER.xmit_icmp_packets_per_second();
+    let xmit_bits_per_second = THROUGHPUT_TRACKER.xmit_bits_per_second();
 
     // Check that the stats haven't gone wonky and don't submit obviously bad data.
     if let Ok(config) = load_config() {
-        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
+        if xmit_bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
             debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
-        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
+        if xmit_bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
             debug!("Spike detected - not submitting LTS");
             return; // Do not submit these stats
         }
@@ -190,7 +190,7 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Send top-level throughput stats to LTS2
-        let bytes = THROUGHPUT_TRACKER.enqueue_bytes_per_second();
+        let xmit_bytes = THROUGHPUT_TRACKER.xmit_bytes_per_second();
         let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
         let mut min_rtt = None;
         let mut max_rtt = None;
@@ -203,18 +203,18 @@ pub(crate) fn submit_throughput_stats(
         let tcp_retransmits = min_max_median_tcp_retransmits();
         if crate::lts2_sys::total_throughput(crate::lts2_sys::shared_types::ShaperThroughput {
             tick: now,
-            bytes_per_second_down: scale_u64_by_f64(bytes.down, scale) as i64,
-            bytes_per_second_up: scale_u64_by_f64(bytes.up, scale) as i64,
+            bytes_per_second_down: scale_u64_by_f64(xmit_bytes.down, scale) as i64,
+            bytes_per_second_up: scale_u64_by_f64(xmit_bytes.up, scale) as i64,
             shaped_bytes_per_second_down: scale_u64_by_f64(shaped_bytes.down, scale) as i64,
             shaped_bytes_per_second_up: scale_u64_by_f64(shaped_bytes.up, scale) as i64,
-            packets_down: scale_u64_by_f64(packets_per_second.down, scale) as i64,
-            packets_up: scale_u64_by_f64(packets_per_second.up, scale) as i64,
-            tcp_packets_down: scale_u64_by_f64(tcp_packets_per_second.down, scale) as i64,
-            tcp_packets_up: scale_u64_by_f64(tcp_packets_per_second.up, scale) as i64,
-            udp_packets_down: scale_u64_by_f64(udp_packets_per_second.down, scale) as i64,
-            udp_packets_up: scale_u64_by_f64(udp_packets_per_second.up, scale) as i64,
-            icmp_packets_down: scale_u64_by_f64(icmp_packets_per_second.down, scale) as i64,
-            icmp_packets_up: scale_u64_by_f64(icmp_packets_per_second.up, scale) as i64,
+            packets_down: scale_u64_by_f64(xmit_packets_per_second.down, scale) as i64,
+            packets_up: scale_u64_by_f64(xmit_packets_per_second.up, scale) as i64,
+            tcp_packets_down: scale_u64_by_f64(xmit_tcp_packets_per_second.down, scale) as i64,
+            tcp_packets_up: scale_u64_by_f64(xmit_tcp_packets_per_second.up, scale) as i64,
+            udp_packets_down: scale_u64_by_f64(xmit_udp_packets_per_second.down, scale) as i64,
+            udp_packets_up: scale_u64_by_f64(xmit_udp_packets_per_second.up, scale) as i64,
+            icmp_packets_down: scale_u64_by_f64(xmit_icmp_packets_per_second.down, scale) as i64,
+            icmp_packets_up: scale_u64_by_f64(xmit_icmp_packets_per_second.up, scale) as i64,
             max_rtt,
             min_rtt,
             median_rtt,
@@ -268,12 +268,11 @@ pub(crate) fn submit_throughput_stats(
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| h.circuit_id.is_some() && h.enqueue_bytes_per_second.not_zero())
+            .filter(|(_k, h)| h.circuit_id.is_some() && h.xmit_bytes_per_second.not_zero())
             .for_each(|(_k, h)| {
                 let mut crazy = false;
                 if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
-                    && (h.enqueue_bytes_per_second.down > *dl
-                        || h.enqueue_bytes_per_second.up > *ul)
+                    && (h.xmit_bytes_per_second.down > *dl || h.xmit_bytes_per_second.up > *ul)
                 {
                     crazy_values.insert(h.circuit_hash.unwrap_or(0));
                     crazy = true;
@@ -283,20 +282,62 @@ pub(crate) fn submit_throughput_stats(
                     return;
                 }
                 if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
-                    c.bytes += h.enqueue_bytes_per_second;
-                    c.packets += h.enqueue_packets_per_second;
-                    c.tcp_packets += h.enqueue_tcp_packets;
-                    c.udp_packets += h.enqueue_udp_packets;
-                    c.icmp_packets += h.enqueue_icmp_packets;
+                    c.bytes += h.xmit_bytes_per_second;
+                    c.packets += h.xmit_packets_per_second;
+                    c.tcp_packets.down += h
+                        .xmit_tcp_packets
+                        .down
+                        .saturating_sub(h.prev_xmit_tcp_packets.down);
+                    c.tcp_packets.up += h
+                        .xmit_tcp_packets
+                        .up
+                        .saturating_sub(h.prev_xmit_tcp_packets.up);
+                    c.udp_packets.down += h
+                        .xmit_udp_packets
+                        .down
+                        .saturating_sub(h.prev_xmit_udp_packets.down);
+                    c.udp_packets.up += h
+                        .xmit_udp_packets
+                        .up
+                        .saturating_sub(h.prev_xmit_udp_packets.up);
+                    c.icmp_packets.down += h
+                        .xmit_icmp_packets
+                        .down
+                        .saturating_sub(h.prev_xmit_icmp_packets.down);
+                    c.icmp_packets.up += h
+                        .xmit_icmp_packets
+                        .up
+                        .saturating_sub(h.prev_xmit_icmp_packets.up);
                 } else {
                     circuit_throughput.insert(
                         h.circuit_hash.unwrap_or(0),
                         CircuitThroughputTemp {
-                            bytes: h.enqueue_bytes_per_second,
-                            packets: h.enqueue_packets_per_second,
-                            tcp_packets: h.enqueue_tcp_packets,
-                            udp_packets: h.enqueue_udp_packets,
-                            icmp_packets: h.enqueue_icmp_packets,
+                            bytes: h.xmit_bytes_per_second,
+                            packets: h.xmit_packets_per_second,
+                            tcp_packets: DownUpOrder::new(
+                                h.xmit_tcp_packets
+                                    .down
+                                    .saturating_sub(h.prev_xmit_tcp_packets.down),
+                                h.xmit_tcp_packets
+                                    .up
+                                    .saturating_sub(h.prev_xmit_tcp_packets.up),
+                            ),
+                            udp_packets: DownUpOrder::new(
+                                h.xmit_udp_packets
+                                    .down
+                                    .saturating_sub(h.prev_xmit_udp_packets.down),
+                                h.xmit_udp_packets
+                                    .up
+                                    .saturating_sub(h.prev_xmit_udp_packets.up),
+                            ),
+                            icmp_packets: DownUpOrder::new(
+                                h.xmit_icmp_packets
+                                    .down
+                                    .saturating_sub(h.prev_xmit_icmp_packets.down),
+                                h.xmit_icmp_packets
+                                    .up
+                                    .saturating_sub(h.prev_xmit_icmp_packets.up),
+                            ),
                         },
                     );
                 }
@@ -424,20 +465,20 @@ pub(crate) fn submit_throughput_stats(
         let mut site_cake_marks: Vec<crate::lts2_sys::shared_types::SiteCakeMarks> = Vec::new();
         tree.iter().for_each(|node| {
             let site_hash = hash_to_i64(&node.name);
-            if node.enqueue_throughput.not_zero() {
+            if node.xmit_throughput.not_zero() {
                 site_throughput.push(crate::lts2_sys::shared_types::SiteThroughput {
                     timestamp: now,
                     site_hash,
-                    download_bytes: scale_u64_by_f64(node.enqueue_throughput.down, scale),
-                    upload_bytes: scale_u64_by_f64(node.enqueue_throughput.up, scale),
-                    packets_down: scale_u64_by_f64(node.enqueue_packets.down, scale),
-                    packets_up: scale_u64_by_f64(node.enqueue_packets.up, scale),
-                    packets_tcp_down: scale_u64_by_f64(node.enqueue_tcp_packets.down, scale),
-                    packets_tcp_up: scale_u64_by_f64(node.enqueue_tcp_packets.up, scale),
-                    packets_udp_down: scale_u64_by_f64(node.enqueue_udp_packets.down, scale),
-                    packets_udp_up: scale_u64_by_f64(node.enqueue_udp_packets.up, scale),
-                    packets_icmp_down: scale_u64_by_f64(node.enqueue_icmp_packets.down, scale),
-                    packets_icmp_up: scale_u64_by_f64(node.enqueue_icmp_packets.up, scale),
+                    download_bytes: scale_u64_by_f64(node.xmit_throughput.down, scale),
+                    upload_bytes: scale_u64_by_f64(node.xmit_throughput.up, scale),
+                    packets_down: scale_u64_by_f64(node.xmit_packets.down, scale),
+                    packets_up: scale_u64_by_f64(node.xmit_packets.up, scale),
+                    packets_tcp_down: scale_u64_by_f64(node.xmit_tcp_packets.down, scale),
+                    packets_tcp_up: scale_u64_by_f64(node.xmit_tcp_packets.up, scale),
+                    packets_udp_down: scale_u64_by_f64(node.xmit_udp_packets.down, scale),
+                    packets_udp_up: scale_u64_by_f64(node.xmit_udp_packets.up, scale),
+                    packets_icmp_down: scale_u64_by_f64(node.xmit_icmp_packets.down, scale),
+                    packets_icmp_up: scale_u64_by_f64(node.xmit_icmp_packets.up, scale),
                 });
             }
             if node.current_tcp_retransmits.not_zero() {

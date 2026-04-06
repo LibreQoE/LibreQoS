@@ -412,7 +412,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
         BUS_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         responses.push(match req {
             BusRequest::Ping => BusResponse::Ack,
-            BusRequest::GetCurrentThroughput => throughput_tracker::current_throughput(),
+            BusRequest::GetCurrentThroughput => throughput_tracker::current_enqueue_throughput(),
             BusRequest::GetHostCounter => throughput_tracker::host_counters(),
             BusRequest::GetTopNDownloaders { start, end } => {
                 throughput_tracker::top_n(*start, *end)

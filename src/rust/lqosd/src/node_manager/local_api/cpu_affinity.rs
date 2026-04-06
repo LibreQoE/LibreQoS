@@ -120,8 +120,8 @@ pub struct CpuAffinityRuntimeNode {
     pub subtree_circuit_count: u32,
     /// Effective max throughput in Mbps for down/up from the live tree.
     pub effective_max_mbps: (f64, f64),
-    /// Current throughput in bytes per second, down/up.
-    pub current_throughput_bps: (u64, u64),
+    /// Current enqueue throughput in bytes per second, down/up.
+    pub enqueue_throughput_bps: (u64, u64),
 }
 
 #[derive(Debug, Default, Clone)]
@@ -968,7 +968,7 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
             subtree_node_count: subtree_node_counts.get(idx).copied().unwrap_or_default(),
             subtree_circuit_count: subtree_circuit_counts.get(idx).copied().unwrap_or_default(),
             effective_max_mbps: node.max_throughput,
-            current_throughput_bps: node.enqueue_throughput,
+            enqueue_throughput_bps: node.enqueue_throughput,
         });
     }
 
@@ -1039,8 +1039,8 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
         core.planned_weight_sum = planned.weight_sum;
         core.planned_max_mbps = planned.max_mbps;
         core.nodes.sort_by(|left, right| {
-            let left_tp = left.current_throughput_bps.0 + left.current_throughput_bps.1;
-            let right_tp = right.current_throughput_bps.0 + right.current_throughput_bps.1;
+            let left_tp = left.enqueue_throughput_bps.0 + left.enqueue_throughput_bps.1;
+            let right_tp = right.enqueue_throughput_bps.0 + right.enqueue_throughput_bps.1;
             right_tp
                 .cmp(&left_tp)
                 .then_with(|| left.name.cmp(&right.name))

@@ -307,7 +307,7 @@ fn throughput_task(
     }
 }
 
-pub fn current_throughput() -> BusResponse {
+pub fn current_enqueue_throughput() -> BusResponse {
     let (
         bits_per_second,
         xmit_bits_per_second,

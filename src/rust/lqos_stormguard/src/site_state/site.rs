@@ -18,7 +18,7 @@ pub struct SiteState {
     // Queue Bandwidth
     pub queue_download_mbps: u64,
     pub queue_upload_mbps: u64,
-    pub current_throughput: (f64, f64),
+    pub xmit_throughput: (f64, f64),
     /// Effective RTT used for DelayProbe/DelayProbeActive evaluation (may be blended).
     pub current_rtt_ms: Option<f64>,
     /// Most recent passive RTT sample (TCP-derived), if available.
@@ -344,7 +344,7 @@ impl SiteState {
                     self.queue_download_mbps,
                     self.config.min_download_mbps,
                     self.config.max_download_mbps,
-                    self.current_throughput.0,
+                    self.xmit_throughput.0,
                     &self.retransmits_down_moving_average,
                     &self.retransmits_down,
                 ),
@@ -352,7 +352,7 @@ impl SiteState {
                     self.queue_upload_mbps,
                     self.config.min_upload_mbps,
                     self.config.max_upload_mbps,
-                    self.current_throughput.1,
+                    self.xmit_throughput.1,
                     &self.retransmits_up_moving_average,
                     &self.retransmits_up,
                 ),
@@ -398,14 +398,14 @@ impl SiteState {
                 self.queue_download_mbps,
                 self.config.min_download_mbps,
                 self.config.max_download_mbps,
-                self.current_throughput.0,
+                self.xmit_throughput.0,
                 self.retransmits_down.average(),
             ),
             RecommendationDirection::Upload => (
                 self.queue_upload_mbps,
                 self.config.min_upload_mbps,
                 self.config.max_upload_mbps,
-                self.current_throughput.1,
+                self.xmit_throughput.1,
                 self.retransmits_up.average(),
             ),
         };

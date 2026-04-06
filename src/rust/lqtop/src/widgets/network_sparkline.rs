@@ -15,8 +15,8 @@ pub struct NetworkSparkline {
     bus_link: tokio::sync::mpsc::Sender<crate::bus::BusMessage>,
     rx: Receiver<BusResponse>,
     tx: Sender<BusResponse>,
-    throughput: StatsRingBuffer<CurrentThroughput, 200>,
-    current_throughput: CurrentThroughput,
+    enqueue_throughput_history: StatsRingBuffer<CurrentThroughput, 200>,
+    latest_enqueue_throughput: CurrentThroughput,
     render_size: Rect,
 }
 
@@ -48,12 +48,12 @@ impl TopWidget for NetworkSparkline {
                 ..
             } = msg
             {
-                self.throughput.push(CurrentThroughput {
+                self.enqueue_throughput_history.push(CurrentThroughput {
                     bits_per_second,
                     _packets_per_second: packets_per_second,
                     shaped_bits_per_second,
                 });
-                self.current_throughput = CurrentThroughput {
+                self.latest_enqueue_throughput = CurrentThroughput {
                     bits_per_second,
                     _packets_per_second: packets_per_second,
                     shaped_bits_per_second,
@@ -63,7 +63,7 @@ impl TopWidget for NetworkSparkline {
     }
 
     fn render_to_frame(&mut self, frame: &mut Frame) {
-        let mut raw_data = self.throughput.get_values_in_order();
+        let mut raw_data = self.enqueue_throughput_history.get_values_in_order();
         raw_data.reverse();
 
         let bps_down: Vec<(f64, f64)> = raw_data
@@ -92,8 +92,8 @@ impl TopWidget for NetworkSparkline {
 
         let title = format!(
             " [Throughput (Down: {} Up: {})]",
-            scale_bits(self.current_throughput.bits_per_second.down),
-            scale_bits(self.current_throughput.bits_per_second.up)
+            scale_bits(self.latest_enqueue_throughput.bits_per_second.down),
+            scale_bits(self.latest_enqueue_throughput.bits_per_second.up)
         );
 
         let block = Block::default()
@@ -161,9 +161,9 @@ impl NetworkSparkline {
             bus_link,
             rx,
             tx,
-            throughput: StatsRingBuffer::new(),
+            enqueue_throughput_history: StatsRingBuffer::new(),
             render_size: Rect::default(),
-            current_throughput: CurrentThroughput::default(),
+            latest_enqueue_throughput: CurrentThroughput::default(),
         }
     }
 }

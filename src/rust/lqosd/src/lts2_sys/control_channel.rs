@@ -1325,26 +1325,22 @@ async fn shaper_snapshot_streaming(
     request_id: u64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
-    // Mirror node_manager ticker throughput: fetch current throughput and send compact tuple data
-    use lqos_bus::BusResponse;
-
-    let resp = crate::throughput_tracker::current_throughput();
-    if let BusResponse::CurrentThroughput {
-        bits_per_second,
-        packets_per_second,
-        shaped_bits_per_second,
-        ..
-    } = resp
+    // Mirror node_manager ticker throughput with transmitted values.
+    let xmit_bits_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER.xmit_bits_per_second();
+    let xmit_packets_per_second =
+        crate::throughput_tracker::THROUGHPUT_TRACKER.xmit_packets_per_second();
+    let shaped_bits_per_second =
+        crate::throughput_tracker::THROUGHPUT_TRACKER.shaped_bits_per_second();
     {
         let message = messages::WsMessage::StreamingShaper {
             request_id,
             // Note: field names are historical; values are bits per second
-            bytes_down: bits_per_second.down,
-            bytes_up: bits_per_second.up,
+            bytes_down: xmit_bits_per_second.down,
+            bytes_up: xmit_bits_per_second.up,
             shaped_bytes_down: shaped_bits_per_second.down,
             shaped_bytes_up: shaped_bits_per_second.up,
-            packets_down: packets_per_second.down,
-            packets_up: packets_per_second.up,
+            packets_down: xmit_packets_per_second.down,
+            packets_up: xmit_packets_per_second.up,
         };
         let Ok((_, _, ws_bytes)) = message.to_bytes() else {
             error!("Failed to serialize StreamingShaper message");
@@ -1493,8 +1489,15 @@ async fn circuit_snapshot_streaming(
                 && let Some(agg) = aggregates.get_mut(&id)
             {
                 // bytes_per_second -> later convert to bits
-                agg.bps_bytes += te.enqueue_bytes_per_second;
-                agg.tcp_packets += te.enqueue_tcp_packets;
+                agg.bps_bytes += te.xmit_bytes_per_second;
+                agg.tcp_packets.down += te
+                    .xmit_tcp_packets
+                    .down
+                    .saturating_sub(te.prev_xmit_tcp_packets.down);
+                agg.tcp_packets.up += te
+                    .xmit_tcp_packets
+                    .up
+                    .saturating_sub(te.prev_xmit_tcp_packets.up);
                 agg.tcp_retries += te.tcp_retransmits;
                 if let Some(rtt) = te.median_latency() {
                     agg.rtts.push(rtt);
@@ -1642,15 +1645,15 @@ async fn tree_snapshot_streaming(
         name: String,
         max_throughput: (f64, f64),
         #[serde(rename = "current_throughput")]
-        enqueue_throughput: (u64, u64),
+        xmit_throughput: (u64, u64),
         #[serde(rename = "current_packets")]
-        enqueue_packets: (u64, u64),
+        xmit_packets: (u64, u64),
         #[serde(rename = "current_tcp_packets")]
-        enqueue_tcp_packets: (u64, u64),
+        xmit_tcp_packets: (u64, u64),
         #[serde(rename = "current_udp_packets")]
-        enqueue_udp_packets: (u64, u64),
+        xmit_udp_packets: (u64, u64),
         #[serde(rename = "current_icmp_packets")]
-        enqueue_icmp_packets: (u64, u64),
+        xmit_icmp_packets: (u64, u64),
         current_retransmits: (u64, u64),
         current_marks: (u64, u64),
         current_drops: (u64, u64),
@@ -1672,11 +1675,11 @@ async fn tree_snapshot_streaming(
             let mapped = LiveNetworkTransport {
                 name: t.name,
                 max_throughput: t.max_throughput,
-                enqueue_throughput: t.enqueue_throughput,
-                enqueue_packets: t.enqueue_packets,
-                enqueue_tcp_packets: t.enqueue_tcp_packets,
-                enqueue_udp_packets: t.enqueue_udp_packets,
-                enqueue_icmp_packets: t.enqueue_icmp_packets,
+                xmit_throughput: t.xmit_throughput,
+                xmit_packets: t.xmit_packets,
+                xmit_tcp_packets: t.xmit_tcp_packets,
+                xmit_udp_packets: t.xmit_udp_packets,
+                xmit_icmp_packets: t.xmit_icmp_packets,
                 current_retransmits: t.current_retransmits,
                 current_marks: t.current_marks,
                 current_drops: t.current_drops,

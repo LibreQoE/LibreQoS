@@ -1367,10 +1367,6 @@ impl ThroughputTracker {
             .to_bits_from_bytes()
     }
 
-    pub(crate) fn enqueue_bytes_per_second(&self) -> DownUpOrder<u64> {
-        self.enqueue_bytes_per_second.as_down_up()
-    }
-
     pub(crate) fn enqueue_packets_per_second(&self) -> DownUpOrder<u64> {
         self.enqueue_packets_per_second.as_down_up()
     }

@@ -462,7 +462,7 @@ struct PendingLinkVirtualizationDecision {
     target: LinkVirtualState,
     reason: String,
     subtree_nodes: usize,
-    current_subtree_throughput_mbps: f64,
+    enqueue_subtree_throughput_mbps: f64,
     explicit_allowlist: bool,
     is_top_level: bool,
     value_score: u64,
@@ -574,7 +574,7 @@ fn select_link_virtualization_candidates(
             }
 
             if !candidate.explicit_allowlist {
-                let required_subtree_nodes = if candidate.current_subtree_throughput_mbps
+                let required_subtree_nodes = if candidate.enqueue_subtree_throughput_mbps
                     < TREEGUARD_LOW_VALUE_THROUGHPUT_MBPS
                 {
                     TREEGUARD_MIN_AUTO_VIRTUALIZE_SUBTREE_NODES_LOW_THROUGHPUT
@@ -1500,7 +1500,7 @@ fn run_tick(
                     target,
                     reason,
                     subtree_nodes: subtree_node_counts[index],
-                    current_subtree_throughput_mbps: mbps_down.max(mbps_up),
+                    enqueue_subtree_throughput_mbps: mbps_down.max(mbps_up),
                     explicit_allowlist: allowlisted_nodes.contains(node_name),
                     is_top_level,
                     value_score: link_virtualization_value_score(
@@ -3291,7 +3291,7 @@ mod tests {
         node_index: usize,
         target: LinkVirtualState,
         subtree_nodes: usize,
-        current_subtree_throughput_mbps: f64,
+        enqueue_subtree_throughput_mbps: f64,
         explicit_allowlist: bool,
         is_top_level: bool,
         value_score: u64,
@@ -3302,7 +3302,7 @@ mod tests {
             target,
             reason: "test".to_string(),
             subtree_nodes,
-            current_subtree_throughput_mbps,
+            enqueue_subtree_throughput_mbps,
             explicit_allowlist,
             is_top_level,
             value_score,

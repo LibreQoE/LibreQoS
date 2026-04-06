@@ -13,7 +13,7 @@ pub struct UnknownIp {
     ip: String,
     last_seen_nanos: u64,
     total_bytes: DownUpOrder<u64>,
-    current_bytes: DownUpOrder<u64>,
+    enqueue_bytes_per_second: DownUpOrder<u64>,
 }
 
 pub fn get_unknown_ips() -> Vec<UnknownIp> {
@@ -65,7 +65,7 @@ pub fn get_unknown_ips() -> Vec<UnknownIp> {
             ip: k.as_ip().to_string(),
             last_seen_nanos: now.saturating_sub(d.last_seen),
             total_bytes: d.enqueue_bytes,
-            current_bytes: d.enqueue_bytes_per_second,
+            enqueue_bytes_per_second: d.enqueue_bytes_per_second,
         })
         // Remove any items that have not been seen in the last 5 minutes
         .filter(|u| u.last_seen_nanos < FIVE_MINUTES_IN_NANOS)
