@@ -1,8 +1,10 @@
 use crate::{
-    Config, TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidatesError,
-    TopologyParentCandidatesFile,
+    Config, TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyCanonicalStateFile,
+    TopologyParentCandidatesError, TopologyParentCandidatesFile,
 };
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -226,6 +228,16 @@ fn default_topology_editor_schema_version() -> u32 {
     1
 }
 
+fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), TopologyEditorStateError> {
+    let raw = serde_json::to_string_pretty(value)?;
+    let temp_path = path.with_extension("tmp");
+    let mut file = File::create(&temp_path)?;
+    file.write_all(raw.as_bytes())?;
+    file.sync_all()?;
+    std::fs::rename(&temp_path, path)?;
+    Ok(())
+}
+
 /// Returns the path of the topology editor runtime file.
 ///
 /// This function is pure: it has no side effects.
@@ -256,6 +268,11 @@ impl TopologyEditorStateFile {
             return Ok(state);
         }
 
+        let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config)?;
+        if !canonical.nodes.is_empty() {
+            return Ok(canonical.to_editor_state());
+        }
+
         let legacy = TopologyParentCandidatesFile::load(config)?;
         if legacy.nodes.is_empty() {
             return Ok(state);
@@ -263,14 +280,11 @@ impl TopologyEditorStateFile {
         Ok(Self::from_legacy_parent_candidates(&legacy))
     }
 
-    /// Saves the topology editor snapshot.
+    /// Saves the topology editor snapshot atomically.
     ///
     /// Side effects: writes `topology_editor_state.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyEditorStateError> {
-        let path = topology_editor_state_path(config);
-        let raw = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, raw.as_bytes())?;
-        Ok(())
+        atomic_write_json(&topology_editor_state_path(config), self)
     }
 
     /// Finds runtime editor metadata for `node_id`.

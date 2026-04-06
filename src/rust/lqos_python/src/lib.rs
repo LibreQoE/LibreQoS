@@ -4,8 +4,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 use lqos_bus::{
-    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, BusResponse, TcHandle,
-    UrgentSeverity, UrgentSource,
+    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, BusResponse,
+    SchedulerProgressReport, TcHandle, UrgentSeverity, UrgentSource,
 };
 use lqos_utils::hex_string::read_hex_string;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
@@ -978,6 +978,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_shaping_runtime_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_progress, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_output, m)?)?;
@@ -3188,6 +3189,36 @@ fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
 #[pyfunction]
 fn scheduler_output(_py: Python, output: String) -> PyResult<bool> {
     if let Ok(reply) = run_query(vec![BusRequest::SchedulerOutput(output)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Report structured scheduler progress for startup or long-running refresh phases.
+#[pyfunction]
+fn scheduler_progress(
+    _py: Python,
+    active: bool,
+    phase: String,
+    phase_label: String,
+    step_index: u32,
+    step_count: u32,
+    percent: u8,
+) -> PyResult<bool> {
+    let report = SchedulerProgressReport {
+        active,
+        phase,
+        phase_label,
+        step_index,
+        step_count,
+        percent,
+        updated_unix: None,
+    };
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerProgress(report)]) {
         for resp in reply.iter() {
             if let BusResponse::Ack = resp {
                 return Ok(true);

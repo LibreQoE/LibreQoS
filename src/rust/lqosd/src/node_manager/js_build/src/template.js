@@ -29,7 +29,6 @@ const SCHEDULER_STATUS_STARTING_GRACE_MS = 30000;
 let schedulerStatusPollTimer = null;
 let schedulerStatusRequestInFlight = false;
 let schedulerStatusFirstRequestedAt = null;
-let schedulerStatusHealthy = false;
 let cachedQueueModeConfig = null;
 
 function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
@@ -50,31 +49,84 @@ function listenOnceWithTimeout(eventName, timeoutMs, handler, onTimeout) {
     wsClient.on(eventName, wrapped);
 }
 
-function renderSchedulerStatus(container, state) {
+function clampSchedulerPercent(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function schedulerProgressPercent(progress) {
+    if (!progress) return 0;
+    if (progress.percent !== undefined && progress.percent !== null) {
+        return clampSchedulerPercent(progress.percent);
+    }
+    const stepCount = Number(progress.step_count);
+    const stepIndex = Number(progress.step_index);
+    if (!Number.isFinite(stepCount) || stepCount <= 0 || !Number.isFinite(stepIndex)) {
+        return 0;
+    }
+    const boundedStep = Math.max(1, Math.min(stepCount, stepIndex));
+    const completedSteps = progress.active ? boundedStep - 1 : boundedStep;
+    return clampSchedulerPercent((completedSteps / stepCount) * 100);
+}
+
+function schedulerProgressSummary(progress) {
+    if (!progress) return "";
+    const label = progress.phase_label || progress.phase || "Scheduler activity";
+    const percent = schedulerProgressPercent(progress);
+    const stepIndex = Number(progress.step_index);
+    const stepCount = Number(progress.step_count);
+    if (Number.isFinite(stepIndex) && Number.isFinite(stepCount) && stepCount > 0) {
+        return `${label} (${percent}%, step ${stepIndex}/${stepCount})`;
+    }
+    return `${label} (${percent}%)`;
+}
+
+function schedulerRingMarkup(progressPercent, tone, centerIcon) {
+    const percent = clampSchedulerPercent(progressPercent);
+    return `
+        <span class="lqos-scheduler-ring" aria-hidden="true">
+            <svg class="lqos-scheduler-ring-svg" viewBox="0 0 36 36" focusable="false">
+                <circle class="lqos-scheduler-ring-track" cx="18" cy="18" r="15.9155"></circle>
+                <circle class="lqos-scheduler-ring-value ${tone}" cx="18" cy="18" r="15.9155" pathLength="100" stroke-dasharray="${percent} 100"></circle>
+            </svg>
+            <span class="lqos-scheduler-ring-icon"><i class="fa ${centerIcon}"></i></span>
+        </span>`;
+}
+
+function renderSchedulerStatus(container, state, progress) {
     if (!container) return;
 
     let color = "text-secondary";
-    let icon = "fa-spinner fa-spin";
     let label = "Scheduler status is loading";
     const buttonText = "Scheduler";
+    let indicator = schedulerRingMarkup(12, "tone-loading", "fa-circle-notch fa-spin");
 
     if (state === "healthy") {
         color = "text-success";
-        icon = "fa-check-circle";
         label = "Scheduler is available";
+        indicator = schedulerRingMarkup(100, "tone-success", "fa-check");
+    } else if (state === "progress") {
+        color = "text-info";
+        label = schedulerProgressSummary(progress);
+        indicator = schedulerRingMarkup(
+            schedulerProgressPercent(progress),
+            "tone-progress",
+            "fa-arrows-rotate"
+        );
     } else if (state === "unavailable") {
         color = "text-warning";
-        icon = "fa-clock";
         label = "Scheduler is still unavailable";
+        indicator = schedulerRingMarkup(100, "tone-warning", "fa-clock");
     } else if (state === "error") {
         color = "text-danger";
-        icon = "fa-triangle-exclamation";
         label = "Scheduler has an internal error";
+        indicator = schedulerRingMarkup(100, "tone-danger", "fa-triangle-exclamation");
     }
 
     container.innerHTML = `
-        <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${color}" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
-            <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> ${escapeAttr(buttonText)}
+        <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${color} lqos-scheduler-link" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
+            ${indicator} <span>${escapeAttr(buttonText)}</span>
         </button>`;
 
     $("#schedulerStatus").off("click").on("click", "#schedulerStatusLink", (e) => {
@@ -97,56 +149,59 @@ function loadSchedulerStatus(force = false) {
     const container = document.getElementById('schedulerStatus');
     if (!container) return;
 
-    if (schedulerStatusHealthy && !force) {
-        return;
-    }
     if (schedulerStatusRequestInFlight) {
         return;
     }
 
     if (schedulerStatusFirstRequestedAt === null || force) {
         schedulerStatusFirstRequestedAt = Date.now();
-        schedulerStatusHealthy = false;
-        renderSchedulerStatus(container, "loading");
+        renderSchedulerStatus(container, "loading", null);
     }
 
     schedulerStatusRequestInFlight = true;
     listenOnceWithTimeout("SchedulerStatus", SCHEDULER_STATUS_TIMEOUT_MS, (msg) => {
         schedulerStatusRequestInFlight = false;
-        if (!msg || !msg.data) return;
+        if (!msg || !msg.data) {
+            renderSchedulerStatus(container, "unavailable", null);
+            scheduleNextSchedulerStatusPoll();
+            return;
+        }
         const data = msg.data;
         const hasError = !!(data.error && String(data.error).trim().length > 0);
         const isHealthy = !!data.available && !hasError;
+        const progress = data.progress || null;
+        const progressActive = !!(progress && progress.active);
         const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
 
         if (hasError) {
-            schedulerStatusHealthy = false;
-            renderSchedulerStatus(container, "error");
+            renderSchedulerStatus(container, "error", progress);
+            scheduleNextSchedulerStatusPoll();
+            return;
+        }
+
+        if (progressActive) {
+            renderSchedulerStatus(container, "progress", progress);
             scheduleNextSchedulerStatusPoll();
             return;
         }
 
         if (isHealthy) {
-            schedulerStatusHealthy = true;
-            renderSchedulerStatus(container, "healthy");
-            return;
-        }
-
-        schedulerStatusHealthy = false;
-        if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
-            renderSchedulerStatus(container, "loading");
+            renderSchedulerStatus(container, "healthy", progress);
         } else {
-            renderSchedulerStatus(container, "unavailable");
+            if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
+                renderSchedulerStatus(container, "loading", progress);
+            } else {
+                renderSchedulerStatus(container, "unavailable", progress);
+            }
         }
         scheduleNextSchedulerStatusPoll();
     }, () => {
         schedulerStatusRequestInFlight = false;
-        schedulerStatusHealthy = false;
         const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
         if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
-            renderSchedulerStatus(container, "loading");
+            renderSchedulerStatus(container, "loading", null);
         } else {
-            renderSchedulerStatus(container, "unavailable");
+            renderSchedulerStatus(container, "unavailable", null);
         }
         scheduleNextSchedulerStatusPoll();
     });
@@ -154,7 +209,6 @@ function loadSchedulerStatus(force = false) {
 }
 
 function restartSchedulerStatusPolling() {
-    schedulerStatusHealthy = false;
     schedulerStatusRequestInFlight = false;
     if (schedulerStatusPollTimer) {
         clearTimeout(schedulerStatusPollTimer);

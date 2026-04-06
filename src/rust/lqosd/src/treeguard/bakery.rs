@@ -7,7 +7,7 @@ use crossbeam_channel::Sender;
 use lqos_bakery::{
     BakeryCommands, BakeryRuntimeNodeBranchSnapshot, BakeryRuntimeNodeOperationSnapshot,
 };
-use lqos_config::ShapedDevice;
+use lqos_config::{NetworkJson, ShapedDevice};
 use lqos_queue_tracker::{QUEUE_STRUCTURE, QueueNode};
 use lqos_utils::hash_to_i64;
 
@@ -141,6 +141,45 @@ fn send_live_sqm_override(
     Ok(())
 }
 
+fn resolve_runtime_site_hash(node_name: &str) -> i64 {
+    resolve_runtime_site_hash_from_active_network_json(node_name)
+        .unwrap_or_else(|| hash_to_i64(node_name))
+}
+
+fn resolve_runtime_site_hash_from_active_network_json(node_name: &str) -> Option<i64> {
+    let path = NetworkJson::path().ok()?;
+    let raw = std::fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let root = json.as_object()?;
+    resolve_runtime_site_hash_in_map(node_name, root)
+}
+
+fn resolve_runtime_site_hash_in_map(
+    node_name: &str,
+    map: &serde_json::Map<String, serde_json::Value>,
+) -> Option<i64> {
+    for (key, value) in map {
+        let Some(node) = value.as_object() else {
+            continue;
+        };
+        if key == node_name {
+            let identity = node
+                .get("name")
+                .and_then(|value| value.as_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or(key);
+            return Some(hash_to_i64(identity));
+        }
+        if let Some(children) = node.get("children").and_then(|value| value.as_object())
+            && let Some(site_hash) = resolve_runtime_site_hash_in_map(node_name, children)
+        {
+            return Some(site_hash);
+        }
+    }
+
+    None
+}
+
 /// Submits a Bakery runtime-virtualization or restore intent for a single node without a full reload.
 ///
 /// This function has side effects: it sends a command to the Bakery thread.
@@ -155,7 +194,7 @@ pub(crate) fn submit_node_virtualization_live(
         return Err(TreeguardError::BakeryNotReady);
     };
 
-    let site_hash = hash_to_i64(node_name);
+    let site_hash = resolve_runtime_site_hash(node_name);
     sender
         .send(BakeryCommands::TreeGuardSetNodeVirtual {
             site_hash,
@@ -171,7 +210,7 @@ pub(crate) fn submit_node_virtualization_live(
 pub(crate) fn node_virtualization_operation_status(
     node_name: &str,
 ) -> Option<BakeryRuntimeNodeOperationSnapshot> {
-    let site_hash = hash_to_i64(node_name);
+    let site_hash = resolve_runtime_site_hash(node_name);
     lqos_bakery::bakery_runtime_node_operation_snapshot(site_hash)
 }
 
@@ -179,7 +218,7 @@ pub(crate) fn node_virtualization_operation_status(
 pub(crate) fn node_virtualization_branch_state(
     node_name: &str,
 ) -> Option<BakeryRuntimeNodeBranchSnapshot> {
-    let site_hash = hash_to_i64(node_name);
+    let site_hash = resolve_runtime_site_hash(node_name);
     lqos_bakery::bakery_runtime_node_branch_snapshot(site_hash)
 }
 
@@ -204,11 +243,13 @@ fn ip_list(devices: &[ShapedDevice]) -> String {
 #[cfg(test)]
 mod tests {
     use super::apply_circuit_sqm_override_live_with_sender_and_snapshot;
+    use super::resolve_runtime_site_hash_in_map;
     use crossbeam_channel::bounded;
     use lqos_bakery::BakeryCommands;
     use lqos_bus::TcHandle;
     use lqos_config::ShapedDevice;
     use lqos_queue_tracker::QueueNode;
+    use serde_json::json;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[test]
@@ -278,5 +319,30 @@ mod tests {
         assert_eq!(sqm_override, Some("cake/fq_codel".to_string()));
         assert_eq!(down_qdisc_handle, None);
         assert_eq!(up_qdisc_handle, None);
+    }
+
+    #[test]
+    fn runtime_site_hash_resolution_prefers_embedded_name_for_matching_key() {
+        let root = json!({
+            "Willows NOC": {
+                "name": "Willows NOC",
+                "children": {
+                    "e1-agg-s1.streamitnet.com [AP 7d5c3698]": {
+                        "name": "e1-agg-s1.streamitnet.com",
+                        "children": {}
+                    }
+                }
+            }
+        });
+        let map = root.as_object().expect("object");
+
+        let resolved =
+            resolve_runtime_site_hash_in_map("e1-agg-s1.streamitnet.com [AP 7d5c3698]", map)
+                .expect("site hash should resolve");
+
+        assert_eq!(
+            resolved,
+            lqos_utils::hash_to_i64("e1-agg-s1.streamitnet.com")
+        );
     }
 }

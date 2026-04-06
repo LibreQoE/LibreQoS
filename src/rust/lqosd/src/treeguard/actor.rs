@@ -334,6 +334,9 @@ fn structural_failure_reason_label(
         BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild => {
             "single promotable child"
         }
+        BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch => {
+            "nested runtime branch"
+        }
     }
 }
 
@@ -1124,9 +1127,19 @@ fn run_tick(
         let subtree_node_counts = build_subtree_node_counts(&parent_by_index);
         let direct_child_site_counts = direct_child_site_counts_by_node(nodes);
         let direct_circuit_counts = direct_circuit_counts_by_node(&shaped.devices);
-        let existing_virtualized_indices: FxHashSet<usize> = runtime_virtualized_nodes
+        let retained_runtime_branch_nodes: FxHashSet<String> =
+            lqos_bakery::bakery_runtime_node_branch_snapshots()
+                .into_iter()
+                .map(|snapshot| snapshot.site_name)
+                .collect();
+        let existing_virtualized_indices: FxHashSet<usize> = nodes
             .iter()
-            .filter_map(|node_name| reader.get_index_for_name(node_name))
+            .enumerate()
+            .filter_map(|(index, node)| {
+                (runtime_virtualized_nodes.contains(&node.name)
+                    || retained_runtime_branch_nodes.contains(&node.name))
+                .then_some(index)
+            })
             .collect();
 
         let mut enrolled_nodes: Vec<String> = if tg.links.all_nodes {

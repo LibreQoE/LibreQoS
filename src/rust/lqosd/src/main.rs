@@ -49,6 +49,7 @@ use lqos_queue_tracker::{
 };
 use lqos_sys::LibreQoSKernels;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
+use lqos_utils::unix_time::unix_now;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -817,6 +818,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild => {
                             "structural_ineligible_single_promotable_child".to_string()
                         }
+                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch => {
+                            "structural_ineligible_nested_runtime_branch".to_string()
+                        }
                     });
                     TreeGuardRuntimeNodeOperationSnapshot {
                     operation_id: snapshot.operation_id,
@@ -899,6 +903,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 tool_status::scheduler_output(Some(output.clone()));
                 BusResponse::Ack
             }
+            BusRequest::SchedulerProgress(progress) => {
+                let mut progress = progress.clone();
+                if progress.updated_unix.is_none() {
+                    progress.updated_unix = unix_now().ok();
+                }
+                tool_status::scheduler_progress(Some(progress));
+                BusResponse::Ack
+            }
             BusRequest::LogInfo(msg) => {
                 info!("BUS LOG: {}", msg);
                 BusResponse::Ack
@@ -906,7 +918,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::CheckSchedulerStatus => {
                 let running = tool_status::is_scheduler_available();
                 let error = tool_status::scheduler_error_message();
-                BusResponse::SchedulerStatus { running, error }
+                let progress = tool_status::scheduler_progress_state();
+                BusResponse::SchedulerStatus {
+                    running,
+                    error,
+                    progress,
+                }
             }
             BusRequest::SubmitUrgentIssue { source, severity, code, message, context, dedupe_key } => {
                 urgent::submit(*source, *severity, code.clone(), message.clone(), context.clone(), dedupe_key.clone());

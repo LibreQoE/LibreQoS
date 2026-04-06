@@ -1,23 +1,18 @@
 use anyhow::{Context, Result};
 use lqos_bus::{BusRequest, BusResponse, bus_request};
 use lqos_config::{
-    TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TopologyAttachmentEndpointStatus,
-    TopologyAttachmentHealthEntry, TopologyAttachmentHealthStateFile,
-    TopologyAttachmentHealthStatus, TopologyEditorStateFile, load_config,
-    topology_effective_network_path,
+    TopologyAttachmentEndpointStatus, TopologyAttachmentHealthEntry,
+    TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus, load_config,
 };
 use lqos_overrides::TopologyOverridesFile;
 use lqos_probe::{ProbeClass, ProbeRequest};
 use lqos_topology::{
-    AttachmentProbeSpec, apply_effective_topology_to_network_json, compute_effective_state,
-    is_health_state_fresh, merged_topology_state, probe_specs_from_state,
+    AttachmentProbeSpec, build_effective_topology_artifacts_from_canonical, is_health_state_fresh,
+    load_canonical_topology_state, prepare_runtime_topology_editor_state_from_canonical,
+    probe_specs_from_state, publish_effective_topology_artifacts,
 };
-use serde_json::Value;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
 use std::net::IpAddr;
-use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
@@ -36,16 +31,6 @@ fn parse_probe_ip(raw: &str) -> Option<IpAddr> {
         .next()
         .filter(|value| !value.is_empty())
         .and_then(|value| value.parse::<IpAddr>().ok())
-}
-
-fn atomic_write_json(path: &Path, value: &Value) -> Result<()> {
-    let raw = serde_json::to_string_pretty(value)?;
-    let temp_path = path.with_extension("tmp");
-    let mut file = File::create(&temp_path)?;
-    file.write_all(raw.as_bytes())?;
-    file.sync_all()?;
-    std::fs::rename(&temp_path, path)?;
-    Ok(())
 }
 
 fn probe_unavailable_reason(local_ip: &str, remote_ip: &str) -> String {
@@ -79,27 +64,6 @@ fn probe_unavailable_reason(local_ip: &str, remote_ip: &str) -> String {
     "Probe unavailable".to_string()
 }
 
-fn load_canonical_network_json() -> Option<Value> {
-    let config = load_config().ok()?;
-    let base = Path::new(&config.lqos_directory);
-    let path = if config
-        .long_term_stats
-        .enable_insight_topology
-        .unwrap_or(false)
-    {
-        let insight = base.join("network.insight.json");
-        if insight.exists() {
-            insight
-        } else {
-            base.join("network.json")
-        }
-    } else {
-        base.join("network.json")
-    };
-    let raw = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
-}
-
 fn load_starting_health() -> TopologyAttachmentHealthStateFile {
     let Ok(config) = load_config() else {
         return TopologyAttachmentHealthStateFile::default();
@@ -121,22 +85,31 @@ async fn probe_specs(
     let mut probe_requests = Vec::new();
     let mut probe_positions = Vec::new();
     for spec in specs {
-        if let Some(ip) = parse_probe_ip(&spec.local_ip) {
-            probe_positions.push((spec.pair_id.clone(), 0_usize));
-            probe_requests.push(ProbeRequest::reachability(
-                ip.to_string(),
-                ProbeClass::TopologyAttachment,
-                timeout,
-            ));
+        if !spec.enabled {
+            continue;
         }
-        if let Some(ip) = parse_probe_ip(&spec.remote_ip) {
-            probe_positions.push((spec.pair_id.clone(), 1_usize));
-            probe_requests.push(ProbeRequest::reachability(
-                ip.to_string(),
-                ProbeClass::TopologyAttachment,
-                timeout,
-            ));
+        let Some(local_ip) = parse_probe_ip(&spec.local_ip) else {
+            continue;
+        };
+        let Some(remote_ip) = parse_probe_ip(&spec.remote_ip) else {
+            continue;
+        };
+        if local_ip == remote_ip {
+            continue;
         }
+
+        probe_positions.push((spec.pair_id.clone(), 0_usize));
+        probe_requests.push(ProbeRequest::reachability(
+            local_ip.to_string(),
+            ProbeClass::TopologyAttachment,
+            timeout,
+        ));
+        probe_positions.push((spec.pair_id.clone(), 1_usize));
+        probe_requests.push(ProbeRequest::reachability(
+            remote_ip.to_string(),
+            ProbeClass::TopologyAttachment,
+            timeout,
+        ));
     }
 
     if probe_requests.is_empty() {
@@ -297,7 +270,7 @@ fn refresh_health_state(
     health_state: &mut TopologyAttachmentHealthStateFile,
     specs: &[AttachmentProbeSpec],
     probe_results: &HashMap<String, (bool, bool)>,
-) -> Result<()> {
+) -> Result<bool> {
     let previous_by_pair = health_state
         .attachments
         .iter()
@@ -316,68 +289,71 @@ fn refresh_health_state(
         .collect::<Vec<_>>();
     new_entries
         .sort_unstable_by(|left, right| left.attachment_pair_id.cmp(&right.attachment_pair_id));
-    health_state.schema_version = 1;
-    health_state.generated_unix = now_unix();
-    health_state.attachments = new_entries;
-    health_state
+    let mut next_state = health_state.clone();
+    next_state.schema_version = 1;
+    next_state.attachments = new_entries;
+
+    let mut previous_for_compare = health_state.clone();
+    previous_for_compare.generated_unix = None;
+    let mut next_for_compare = next_state.clone();
+    next_for_compare.generated_unix = None;
+    if previous_for_compare == next_for_compare {
+        return Ok(false);
+    }
+
+    next_state.generated_unix = now_unix();
+    next_state
         .save(config)
-        .context("Unable to save topology attachment health state")
+        .context("Unable to save topology attachment health state")?;
+    *health_state = next_state;
+    Ok(true)
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct RoundHints {
+    probes_enabled: bool,
 }
 
 async fn run_round(
     health_state: &mut TopologyAttachmentHealthStateFile,
     last_effective: &mut HashMap<String, Option<String>>,
-) -> Result<()> {
+) -> Result<RoundHints> {
     let config = load_config().context("Unable to load config for topology runtime")?;
-    let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
-        .context("Unable to load canonical topology editor state")?;
+    let canonical = load_canonical_topology_state(config.as_ref());
     let overrides =
         TopologyOverridesFile::load().context("Unable to load topology overrides file")?;
+    let prepared = prepare_runtime_topology_editor_state_from_canonical(&canonical, &overrides);
+    let specs = probe_specs_from_state(&prepared, &overrides);
+    let probes_enabled = specs.iter().any(|spec| spec.enabled);
+    if probes_enabled {
+        match probe_specs(&specs, Duration::from_millis(750)).await {
+            Ok(probe_results) => {
+                refresh_health_state(config.as_ref(), health_state, &specs, &probe_results)?;
+            }
+            Err(err) => {
+                warn!("Topology probe round could not query shared probe manager: {err:#}");
+            }
+        }
+    } else {
+        refresh_health_state(config.as_ref(), health_state, &specs, &HashMap::new())?;
+    }
 
-    let initial_effective =
-        compute_effective_state(config.as_ref(), &canonical, &overrides, health_state);
-    let initial_ui_state = merged_topology_state(
+    let artifacts = build_effective_topology_artifacts_from_canonical(
         config.as_ref(),
         &canonical,
         &overrides,
         health_state,
-        &initial_effective,
-    );
-    let specs = probe_specs_from_state(&initial_ui_state, &overrides);
-    match probe_specs(&specs, Duration::from_millis(750)).await {
-        Ok(probe_results) => {
-            refresh_health_state(config.as_ref(), health_state, &specs, &probe_results)?;
-        }
-        Err(err) => {
-            warn!("Topology probe round could not query shared probe manager: {err:#}");
-        }
-    }
+    )
+    .map_err(|errors| {
+        anyhow::anyhow!(
+            "Refusing to publish invalid effective topology: {}",
+            errors.join(" | ")
+        )
+    })?;
+    publish_effective_topology_artifacts(config.as_ref(), &artifacts)
+        .context("Unable to publish effective topology artifacts")?;
 
-    let effective = compute_effective_state(config.as_ref(), &canonical, &overrides, health_state);
-    effective
-        .save(config.as_ref())
-        .context("Unable to save topology effective state")?;
-    let ui_state = merged_topology_state(
-        config.as_ref(),
-        &canonical,
-        &overrides,
-        health_state,
-        &effective,
-    );
-
-    if let Some(canonical_network) = load_canonical_network_json() {
-        let effective_network = apply_effective_topology_to_network_json(
-            config.as_ref(),
-            &canonical_network,
-            &ui_state,
-            &effective,
-        );
-        let effective_path = topology_effective_network_path(config.as_ref());
-        atomic_write_json(&effective_path, &effective_network)
-            .with_context(|| format!("Unable to save {}", TOPOLOGY_EFFECTIVE_NETWORK_FILENAME))?;
-    }
-
-    for node in &effective.nodes {
+    for node in &artifacts.effective.nodes {
         let next = node.effective_attachment_id.clone();
         let previous = last_effective.insert(node.node_id.clone(), next.clone());
         if previous != Some(next.clone()) {
@@ -389,7 +365,7 @@ async fn run_round(
         }
     }
 
-    Ok(())
+    Ok(RoundHints { probes_enabled })
 }
 
 #[tokio::main]
@@ -400,18 +376,24 @@ async fn main() -> Result<()> {
     let mut last_effective = HashMap::<String, Option<String>>::new();
 
     loop {
-        if let Err(err) = run_round(&mut health_state, &mut last_effective).await {
-            warn!("Topology runtime round failed: {err:?}");
-        }
+        let round_hints = match run_round(&mut health_state, &mut last_effective).await {
+            Ok(hints) => hints,
+            Err(err) => {
+                warn!("Topology runtime round failed: {err:?}");
+                RoundHints::default()
+            }
+        };
 
         let sleep_seconds = load_config()
             .ok()
             .map(|config| {
-                config
-                    .integration_common
-                    .topology_attachment_health
-                    .probe_interval_seconds
-                    .max(1)
+                let health = &config.integration_common.topology_attachment_health;
+                let probe_interval = health.probe_interval_seconds.max(1);
+                if round_hints.probes_enabled {
+                    probe_interval
+                } else {
+                    probe_interval.max(health.refresh_debounce_seconds.max(5))
+                }
             })
             .unwrap_or(1);
         tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;

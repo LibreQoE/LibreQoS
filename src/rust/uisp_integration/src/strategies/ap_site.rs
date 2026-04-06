@@ -468,11 +468,11 @@ mod tests {
     #[test]
     fn ap_site_network_json_keeps_empty_shells_when_client_has_no_addresses() {
         let config = Config::default();
-        let uisp_data = UispData {
-            sites_raw: vec![],
-            devices_raw: vec![],
-            data_links_raw: vec![],
-            sites: vec![
+        let uisp_data = UispData::from_parts(
+            vec![],
+            vec![],
+            vec![],
+            vec![
                 UispSite {
                     id: "tower-site".to_string(),
                     name: "Tower Site".to_string(),
@@ -490,7 +490,7 @@ mod tests {
                     ..Default::default()
                 },
             ],
-            devices: vec![
+            vec![
                 UispDevice {
                     id: "ap-1".to_string(),
                     name: "AP 1".to_string(),
@@ -534,7 +534,7 @@ mod tests {
                     attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,
                 },
             ],
-        };
+        );
         let root = Layer {
             id: GraphMapping::Root,
             children: vec![Layer {

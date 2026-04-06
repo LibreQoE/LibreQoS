@@ -17,6 +17,7 @@ mod planner;
 mod program_control;
 mod qoo_profiles;
 mod shaped_devices;
+mod topology_canonical_state;
 mod topology_editor_state;
 mod topology_parent_candidates;
 mod topology_runtime_state;
@@ -54,6 +55,11 @@ pub use qoo_profiles::{
     list_qoo_profiles, load_qoo_profiles_file,
 };
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
+pub use topology_canonical_state::{
+    TOPOLOGY_CANONICAL_STATE_FILENAME, TopologyCanonicalIngressKind, TopologyCanonicalNode,
+    TopologyCanonicalRateInput, TopologyCanonicalRateInputSource, TopologyCanonicalStateError,
+    TopologyCanonicalStateFile, topology_canonical_state_path,
+};
 pub use topology_editor_state::{
     TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
     TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,

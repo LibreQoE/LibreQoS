@@ -45,6 +45,25 @@ pub enum UrgentSeverity {
     Warning,
 }
 
+/// Scheduler progress metadata for startup or long-running refresh phases.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
+pub struct SchedulerProgressReport {
+    /// Whether the scheduler is actively working through a known phase sequence.
+    pub active: bool,
+    /// Stable machine-readable phase key.
+    pub phase: String,
+    /// Human-readable phase label for UI display.
+    pub phase_label: String,
+    /// Current 1-based step index within the reported phase sequence.
+    pub step_index: u32,
+    /// Total number of steps in the reported phase sequence.
+    pub step_count: u32,
+    /// Coarse completion percentage in the range `0..=100`.
+    pub percent: u8,
+    /// Unix timestamp when the progress state was last updated, if known.
+    pub updated_unix: Option<u64>,
+}
+
 /// One or more `BusRequest` objects must be included in a `BusSession`
 /// request. Each `BusRequest` represents a single request for action
 /// or data.
@@ -458,6 +477,9 @@ pub enum BusRequest {
 
     /// Announce informational scheduler output
     SchedulerOutput(String),
+
+    /// Announce scheduler startup or refresh progress metadata.
+    SchedulerProgress(SchedulerProgressReport),
 
     /// Write an informational message to the lqosd logs
     LogInfo(String),

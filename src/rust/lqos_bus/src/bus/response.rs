@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
 
-use super::QueueStoreTransit;
+use super::{QueueStoreTransit, request::SchedulerProgressReport};
 use crate::{
     Circuit, IpMapping, IpStats, XdpPpingResult,
     ip_stats::{FlowbeeSummaryData, PacketHeader},
@@ -625,6 +625,8 @@ pub enum BusResponse {
         running: bool,
         /// Any error message from integrations
         error: Option<String>,
+        /// Current scheduler progress state, if one has been reported.
+        progress: Option<SchedulerProgressReport>,
     },
 
     /// List of urgent issues

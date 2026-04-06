@@ -386,6 +386,7 @@ Current runtime virtualization support is intentionally constrained.
 2. Top-level runtime virtualization uses a separate rebalance/promote path and only applies when Bakery can derive a deterministic split.
 3. Runtime operations may remain in `AppliedAwaitingCleanup` while deferred prune work completes.
 4. Runtime operations can become `Dirty`; repeated dirty subtree states escalate to `reload required` rather than attempting broad self-healing.
+5. Nested runtime virtualization inside an already-retained Bakery shadow branch is intentionally rejected in v1 rather than trying to stack shadow branches.
 
 Operator takeaway:
 

@@ -1591,6 +1591,16 @@ pub fn bakery_runtime_node_branch_snapshot(
         .cloned()
 }
 
+/// Returns every retained Bakery runtime branch-state snapshot currently tracked.
+pub fn bakery_runtime_node_branch_snapshots() -> Vec<BakeryRuntimeNodeBranchSnapshot> {
+    telemetry_state()
+        .read()
+        .runtime_branch_states_by_site
+        .values()
+        .cloned()
+        .collect()
+}
+
 /// Returns the current Bakery reload-required reason, if runtime drift has frozen incremental
 /// topology mutation.
 pub fn bakery_reload_required_reason() -> Option<String> {
@@ -5164,6 +5174,7 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
         site_hash,
         parent_class_id,
         up_parent_class_id,
+        class_minor,
         ..
     } = site
     else {
@@ -5180,6 +5191,18 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
     let Some((site_down_class, site_up_class)) = site_class_handles(site) else {
         return Some(format!("Site {} is not a valid AddSite command", site_hash));
     };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(down_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(up_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+    {
+        return Some(format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ));
+    }
 
     let (parent_down_major, _) = parent_class_id.get_major_minor();
     let (parent_up_major, _) = up_parent_class_id.get_major_minor();
@@ -5268,6 +5291,38 @@ impl RuntimeNodeEligibilityError {
             failure_reason: Some(failure_reason),
         }
     }
+}
+
+fn nested_runtime_shadow_branch_eligibility_error(
+    site: &BakeryCommands,
+) -> Option<RuntimeNodeEligibilityError> {
+    let BakeryCommands::AddSite {
+        site_hash,
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(down_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(up_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+    {
+        return None;
+    }
+
+    Some(RuntimeNodeEligibilityError::new(
+        format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ),
+        RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch,
+    ))
 }
 
 fn site_prune_commands(
@@ -9339,6 +9394,13 @@ fn handle_treeguard_set_node_virtual_live(
             }
 
             if let Some(reason) =
+                nested_runtime_shadow_branch_eligibility_error(target_site.as_ref())
+            {
+                failure_reason = reason.failure_reason;
+                return Err(reason.message);
+            }
+
+            if let Some(reason) =
                 site_runtime_virtualization_eligibility_error(target_site.as_ref())
             {
                 return Err(reason);
@@ -10949,6 +11011,18 @@ mod tests {
     fn site_runtime_virtualization_accepts_normal_same_queue_site() {
         let site = mk_add_site(77, 0x10020, 0x20020, 0x22);
         assert!(site_runtime_virtualization_eligibility_error(site.as_ref()).is_none());
+    }
+
+    #[test]
+    fn nested_runtime_shadow_branch_rejects_non_top_level_virtualization() {
+        let site = mk_add_site(77, 0x10003, 0x20003, 0x2001);
+        let reason = nested_runtime_shadow_branch_eligibility_error(site.as_ref())
+            .expect("runtime shadow site should be rejected");
+        assert!(reason.message.contains("retained runtime shadow branch"));
+        assert_eq!(
+            reason.failure_reason,
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch)
+        );
     }
 
     #[test]

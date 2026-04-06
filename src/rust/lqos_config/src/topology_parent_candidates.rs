@@ -1,5 +1,7 @@
 use crate::Config;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -62,6 +64,19 @@ pub fn topology_parent_candidates_path(config: &Config) -> PathBuf {
     Path::new(&config.lqos_directory).join(TOPOLOGY_PARENT_CANDIDATES_FILENAME)
 }
 
+fn atomic_write_json<T: Serialize>(
+    path: &Path,
+    value: &T,
+) -> Result<(), TopologyParentCandidatesError> {
+    let raw = serde_json::to_string_pretty(value)?;
+    let temp_path = path.with_extension("tmp");
+    let mut file = File::create(&temp_path)?;
+    file.write_all(raw.as_bytes())?;
+    file.sync_all()?;
+    std::fs::rename(&temp_path, path)?;
+    Ok(())
+}
+
 impl TopologyParentCandidatesFile {
     /// Loads the topology parent candidate snapshot if it exists.
     ///
@@ -75,14 +90,11 @@ impl TopologyParentCandidatesFile {
         Ok(serde_json::from_str(&raw)?)
     }
 
-    /// Saves the topology parent candidate snapshot.
+    /// Saves the topology parent candidate snapshot atomically.
     ///
     /// Side effects: writes `topology_parent_candidates.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyParentCandidatesError> {
-        let path = topology_parent_candidates_path(config);
-        let raw = serde_json::to_string_pretty(self)?;
-        std::fs::write(path, raw.as_bytes())?;
-        Ok(())
+        atomic_write_json(&topology_parent_candidates_path(config), self)
     }
 
     /// Finds candidate-parent metadata for `node_id`.

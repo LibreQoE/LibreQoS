@@ -139,6 +139,7 @@ If an integration subprocess fails, current builds keep the scheduler alive, pub
 ### Scheduler status in WebUI looks unhealthy
 
 Recent builds expose scheduler readiness/state in the WebUI (Node Manager).
+If the scheduler is still starting, the sidebar now reports the current startup phase and a coarse progress ring rather than only a spinner.
 
 If scheduler status appears down/stale:
 1. Verify both services:

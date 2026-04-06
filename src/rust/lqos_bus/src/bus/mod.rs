@@ -13,8 +13,8 @@ pub use client::{LibreqosBusClient, bus_request};
 pub use queue_data::*;
 pub use reply::BusReply;
 pub use request::{
-    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, TopFlowType, UrgentSeverity,
-    UrgentSource,
+    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, SchedulerProgressReport,
+    TopFlowType, UrgentSeverity, UrgentSource,
 };
 #[allow(unused_imports)]
 pub use response::{

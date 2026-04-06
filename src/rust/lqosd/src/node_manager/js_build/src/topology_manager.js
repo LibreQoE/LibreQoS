@@ -38,6 +38,7 @@ let proposedAttachmentIds = [];
 let lastFlash = null;
 let moveMode = false;
 let attachmentEditMode = false;
+let saveProposalInFlight = false;
 let manualAttachmentEditMode = false;
 let manualAttachmentDraftRows = [];
 let attachmentRateEditParentId = null;
@@ -188,7 +189,18 @@ function displayNameForNodeId(nodeId) {
     return topologyLabelById.get(nodeId)
         || topologyNodeById.get(nodeId)?.node_name
         || treeNodeById.get(nodeId)?.name
-        || nodeId;
+        || "Unknown node";
+}
+
+function treePageHrefForNodeId(nodeId) {
+    const normalizedId = (nodeId || "").trim();
+    if (!normalizedId || normalizedId === ROOT_NODE_ID) {
+        return null;
+    }
+    const params = new URLSearchParams();
+    params.set("parent", "0");
+    params.set("nodeId", normalizedId);
+    return `/tree.html?${params.toString()}`;
 }
 
 function indexTopologyState(data) {
@@ -200,6 +212,7 @@ function indexTopologyState(data) {
         topologyNodeById.set(node.node_id, node);
         rememberNodeLabel(node.node_id, node.node_name);
         rememberNodeLabel(node.current_parent_node_id, node.current_parent_node_name);
+        rememberNodeLabel(node.effective_parent_node_id, node.effective_parent_node_name);
         rememberNodeLabel(node.override_parent_node_id, node.override_parent_node_name);
         (node.allowed_parents || []).forEach((parent) => {
             rememberNodeLabel(parent.parent_node_id, parent.parent_node_name);
@@ -375,6 +388,8 @@ function synthesizeContextMeta(nodeId) {
             node_name: "Root",
             current_parent_node_id: null,
             current_parent_node_name: null,
+            effective_parent_node_id: null,
+            effective_parent_node_name: null,
             can_move: false,
             allowed_parents: [],
             has_override: false,
@@ -383,6 +398,7 @@ function synthesizeContextMeta(nodeId) {
             override_mode: "auto",
             override_attachment_preference_ids: [],
             override_attachment_preference_names: [],
+            override_live: false,
             warnings: [
                 "Root is available for map navigation, but it is context only and cannot be rehomed.",
             ],
@@ -398,6 +414,8 @@ function synthesizeContextMeta(nodeId) {
         node_name: displayNameForNodeId(nodeId),
         current_parent_node_id: parent?.id || null,
         current_parent_node_name: parent?.name || null,
+        effective_parent_node_id: parent?.id || null,
+        effective_parent_node_name: parent?.name || null,
         can_move: false,
         allowed_parents: [],
         has_override: false,
@@ -406,6 +424,7 @@ function synthesizeContextMeta(nodeId) {
         override_mode: "auto",
         override_attachment_preference_ids: [],
         override_attachment_preference_names: [],
+        override_live: false,
         warnings: [
             "This node is available for map navigation, but it is upstream context only and cannot be rehomed here.",
         ],
@@ -421,6 +440,8 @@ function synthesizeStandaloneContextMeta(nodeId) {
         node_name: displayNameForNodeId(nodeId),
         current_parent_node_id: ROOT_NODE_ID,
         current_parent_node_name: "Root",
+        effective_parent_node_id: ROOT_NODE_ID,
+        effective_parent_node_name: "Root",
         can_move: false,
         allowed_parents: [],
         has_override: false,
@@ -429,6 +450,7 @@ function synthesizeStandaloneContextMeta(nodeId) {
         override_mode: "auto",
         override_attachment_preference_ids: [],
         override_attachment_preference_names: [],
+        override_live: false,
         warnings: [
             "This upstream context node is available for navigation only. Topology Manager cannot rehome it here.",
         ],
@@ -457,6 +479,14 @@ function selectNodeFromMap(nodeId) {
 }
 
 function currentPathIds(nodeId) {
+    return pathIdsForNode(nodeId, "current_parent_node_id");
+}
+
+function effectivePathIds(nodeId) {
+    return pathIdsForNode(nodeId, "effective_parent_node_id");
+}
+
+function pathIdsForNode(nodeId, parentField) {
     const path = [];
     const seen = new Set();
     let cursor = nodeId;
@@ -464,7 +494,7 @@ function currentPathIds(nodeId) {
         seen.add(cursor);
         const node = topologyNodeById.get(cursor);
         path.unshift(cursor);
-        cursor = node?.current_parent_node_id || treeParentNodeId(cursor) || null;
+        cursor = node?.[parentField] || treeParentNodeId(cursor) || null;
     }
     if (path.length > 0 && path[0] !== ROOT_NODE_ID && !topologyNodeById.has(path[0]) && !treeNodeById.has(path[0])) {
         path.unshift(ROOT_NODE_ID);
@@ -1208,20 +1238,42 @@ function renderHierarchyPath(containerId, pathIds, options = {}) {
 }
 
 function renderHierarchyPanel() {
-    const currentIds = currentPathIds(selectedNodeId);
     const meta = selectedMeta();
-    const savedOverrideIds = meta?.has_override
+    const canonicalIds = currentPathIds(selectedNodeId);
+    const liveIds = effectivePathIds(selectedNodeId);
+    const savedIds = meta?.has_override
         ? proposedPathIds(selectedNodeId, meta.override_parent_node_id)
-        : currentIds;
-    const proposedIds = moveMode && proposedParentId
+        : liveIds;
+    const summaryIds = moveMode && proposedParentId
         ? proposedPathIds(selectedNodeId, proposedParentId)
-        : savedOverrideIds;
-    renderHierarchyPath("topologyManagerCurrentHierarchy", currentIds, {
+        : savedIds;
+    renderHierarchyPath("topologyManagerCanonicalHierarchy", canonicalIds, {
         highlightNodeId: selectedNodeId,
     });
-    renderHierarchyPath("topologyManagerProposedHierarchy", proposedIds, {
+    renderHierarchyPath("topologyManagerLiveHierarchy", liveIds, {
         highlightNodeId: selectedNodeId,
     });
+    renderHierarchyPath("topologyManagerSavedHierarchy", summaryIds, {
+        highlightNodeId: selectedNodeId,
+    });
+    const savedLabel = document.getElementById("topologyManagerSavedHierarchyLabel");
+    if (savedLabel) {
+        savedLabel.textContent = moveMode && proposedParentId
+            ? "Proposed"
+            : "Saved";
+    }
+    const details = document.getElementById("topologyManagerHierarchyMeta");
+    if (details) {
+        const rows = [];
+        if (meta?.effective_parent_node_id && meta.effective_parent_node_id !== meta.current_parent_node_id) {
+            rows.push("Canonical reflects the latest integration snapshot. Live reflects the runtime-effective topology used for shaping.");
+        }
+        if (meta?.has_override && !meta?.override_live) {
+            rows.push("Saved shows operator intent. It is not live until the runtime-effective topology matches it.");
+        }
+        details.className = rows.length > 0 ? "topology-manager-compact-note mt-2" : "d-none";
+        details.textContent = rows.join(" ");
+    }
 
     const badge = document.getElementById("topologyManagerPendingBadge");
     if (badge) {
@@ -1242,6 +1294,9 @@ function renderHierarchyPanel() {
         } else if (attachmentRateEditAttachmentId) {
             badge.className = "badge rounded-pill text-bg-info";
             badge.textContent = "Attachment Rate";
+        } else if (meta?.has_override && meta?.override_live) {
+            badge.className = "badge rounded-pill text-bg-success";
+            badge.textContent = "Live Override";
         } else if (meta?.has_override) {
             badge.className = "badge rounded-pill text-bg-info";
             badge.textContent = "Saved Override";
@@ -1250,9 +1305,6 @@ function renderHierarchyPanel() {
         }
     }
 
-    const details = document.getElementById("topologyManagerHierarchyMeta");
-    if (!details) return;
-    details.innerHTML = "";
 }
 
 function renderTargetCards(meta) {
@@ -1628,6 +1680,7 @@ function renderDetailsPanel() {
 
     clearSavedButton.disabled = !meta.has_override;
     const currentParent = meta.current_parent_node_name || "Root / none";
+    const effectiveParent = meta.effective_parent_node_name || currentParent;
     const legalParentCount = allowedParentsForSelected().length;
     const savedOverrideText = meta.has_override
         ? `${escapeHtml(meta.override_parent_node_name || "")}${meta.override_mode === "preferred_order" && meta.override_attachment_preference_names.length > 0 ? ` via ${escapeHtml(meta.override_attachment_preference_names.join(" → "))}` : meta.override_mode === "auto" ? " (Auto)" : ""}`
@@ -1635,7 +1688,7 @@ function renderDetailsPanel() {
     const attachmentParent = attachmentEditParentMeta(meta);
     const attachmentOptionCount = explicitAttachmentOptions(attachmentParent).length;
     const showAttachmentInspectEditor = !moveMode && attachmentEditMode && !!attachmentParent;
-    const saveDisabled = !proposalIsValid() || proposalMatchesSavedOverride(meta);
+    const saveDisabled = saveProposalInFlight || !proposalIsValid() || proposalMatchesSavedOverride(meta);
     const editingDisabled = !meta.can_move;
     const currentAttachment = meta.current_attachment_name || "Auto / integration default";
     const effectiveAttachment = meta.effective_attachment_name || "Auto / integration default";
@@ -1651,10 +1704,15 @@ function renderDetailsPanel() {
                         ? "Attachment rate override editing is active below."
                         : "Inspect mode only. Use Start Move to change parentage or Edit Attachment Preference to tune radios.";
     const branchSummaryPills = [
-        `<span class="topology-manager-summary-pill"><span>Parent</span><strong>${escapeHtml(currentParent)}</strong></span>`,
+        `<span class="topology-manager-summary-pill"><span>${meta.effective_parent_node_name ? "Live parent" : "Parent"}</span><strong>${escapeHtml(effectiveParent)}</strong></span>`,
         `<span class="topology-manager-summary-pill"><span>Descendants</span><strong>${descendantCount(meta.node_id)}</strong></span>`,
         `<span class="topology-manager-summary-pill"><span>Legal parents</span><strong>${legalParentCount}</strong></span>`,
     ];
+    if (meta.effective_parent_node_name && meta.effective_parent_node_name !== currentParent) {
+        branchSummaryPills.push(
+            `<span class="topology-manager-summary-pill"><span>Canonical parent</span><strong>${escapeHtml(currentParent)}</strong></span>`
+        );
+    }
     if (meta.has_override) {
         branchSummaryPills.push(
             `<span class="topology-manager-summary-pill"><span>Saved override</span><strong>${savedOverrideText}</strong></span>`
@@ -1677,30 +1735,34 @@ function renderDetailsPanel() {
             ? ` with ${attachmentOptionCount} available radio path${attachmentOptionCount === 1 ? "" : "s"}`
             : " with Auto / Default only"}`
         : "No explicit radio-path options are currently available for this branch.";
+    const branchTreeHref = treePageHrefForNodeId(meta.node_id);
+    const branchNameHtml = branchTreeHref
+        ? `<a class="fw-semibold fs-5 link-body-emphasis text-decoration-none" href="${escapeHtml(branchTreeHref)}">${escapeHtml(meta.node_name)}</a>`
+        : `<div class="fw-semibold fs-5">${escapeHtml(meta.node_name)}</div>`;
 
     let primaryActionsHtml = "";
     if (!editingDisabled) {
         if (moveMode) {
             primaryActionsHtml = `
                 <button class="btn btn-sm btn-primary" id="topologyManagerSave" type="button" ${saveDisabled ? "disabled" : ""}>
-                    <i class="fa fa-save"></i> Save Move
+                    <i class="fa ${saveProposalInFlight ? "fa-spinner fa-spin" : "fa-save"}"></i> ${saveProposalInFlight ? "Saving..." : "Save Move"}
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetInline" type="button">
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetInline" type="button" ${saveProposalInFlight ? "disabled" : ""}>
                     <i class="fa fa-rotate-left"></i> Reset
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerCancelMove" type="button">
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerCancelMove" type="button" ${saveProposalInFlight ? "disabled" : ""}>
                     <i class="fa fa-ban"></i> Cancel
                 </button>
             `;
         } else if (showAttachmentInspectEditor) {
             primaryActionsHtml = `
                 <button class="btn btn-sm btn-primary" id="topologyManagerSave" type="button" ${saveDisabled ? "disabled" : ""}>
-                    <i class="fa fa-save"></i> Save Preference
+                    <i class="fa ${saveProposalInFlight ? "fa-spinner fa-spin" : "fa-save"}"></i> ${saveProposalInFlight ? "Saving..." : "Save Preference"}
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetInline" type="button">
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetInline" type="button" ${saveProposalInFlight ? "disabled" : ""}>
                     <i class="fa fa-rotate-left"></i> Reset
                 </button>
-                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerCancelAttachmentEdit" type="button">
+                <button class="btn btn-sm btn-outline-secondary" id="topologyManagerCancelAttachmentEdit" type="button" ${saveProposalInFlight ? "disabled" : ""}>
                     <i class="fa fa-ban"></i> Cancel
                 </button>
             `;
@@ -1728,7 +1790,7 @@ function renderDetailsPanel() {
             <div class="topology-manager-section-header">
                 <div class="topology-manager-section-header-main">
                     <div class="small text-uppercase text-body-secondary">Branch</div>
-                    <div class="fw-semibold fs-5">${escapeHtml(meta.node_name)}</div>
+                    ${branchNameHtml}
                     <div class="small text-body-secondary">${escapeHtml(nodeKindLabel(meta.node_id))}</div>
                 </div>
                 <span class="badge ${meta.can_move ? "text-bg-info" : "text-bg-secondary"}">${meta.can_move ? "Movable" : "Read Only"}</span>
@@ -1761,13 +1823,6 @@ function renderDetailsPanel() {
                                     <div class="small text-uppercase text-body-secondary">Radio Paths</div>
                                     <div class="topology-manager-section-subtitle">${attachmentParentSummary}</div>
                                 </div>
-                                ${showInlineAttachmentEditButton
-                                    ? `
-                                        <button class="btn btn-sm btn-outline-primary" id="topologyManagerEditAttachmentPreference" type="button">
-                                            <i class="fa fa-tower-broadcast"></i> Edit Link Path
-                                        </button>
-                                    `
-                                    : ""}
                             </div>
                             <div class="topology-manager-kv-grid">
                                 <div class="topology-manager-kv-row"><span>Using now</span><strong>${escapeHtml(currentAttachment)}</strong></div>
@@ -2708,10 +2763,13 @@ async function setProposedParent(parentId, options = {}) {
 }
 
 async function saveProposal() {
-    if (!proposalIsValid() || !selectedNodeId || !proposedParentId) {
+    if (saveProposalInFlight || !proposalIsValid() || !selectedNodeId || !proposedParentId) {
         return;
     }
 
+    saveProposalInFlight = true;
+    renderEverything();
+    let warningsToRender = null;
     try {
         const response = await sendWsRequest("SetTopologyManagerOverrideResult", {
             SetTopologyManagerOverride: {
@@ -2729,13 +2787,16 @@ async function saveProposal() {
         manualAttachmentEditMode = false;
         manualAttachmentDraftRows = [];
         clearAttachmentRateEditState();
-        lastFlash = "Topology override saved. It will be applied on the next scheduler/integration run.";
+        lastFlash = "Topology override saved and published to the runtime-effective topology.";
         if (selectedNodeId && topologyNodeById.has(selectedNodeId)) {
             initializeProposalFromSaved(selectedMeta());
         }
-        renderEverything(response.data.global_warnings || []);
+        warningsToRender = response.data.global_warnings || [];
     } catch (error) {
-        showWarnings([error?.message || "Unable to save topology override."], null);
+        warningsToRender = [error?.message || "Unable to save topology override."];
+    } finally {
+        saveProposalInFlight = false;
+        renderEverything(warningsToRender);
     }
 }
 

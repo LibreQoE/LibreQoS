@@ -14,7 +14,7 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
+    scheduler_progress, overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
     overrides_network_adjustments_materialized, \
     scheduler_output, wait_for_bus_ready
 
@@ -30,6 +30,8 @@ topology_runtime_missing_reported = False
 INTEGRATION_FAILURE_PREVIEW_LINES = 30
 INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
 TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
+SCHEDULER_STARTUP_STEP_COUNT = 5
+SCHEDULER_REFRESH_STEP_COUNT = 4
 
 
 def clear_scheduler_error():
@@ -40,6 +42,30 @@ def clear_scheduler_error():
 def clear_scheduler_output():
     """Clear the scheduler output shown in the Web UI."""
     scheduler_output("")
+
+
+def _scheduler_progress_percent(step_index: int, step_count: int, *, active: bool) -> int:
+    if step_count <= 0:
+        return 0
+    bounded_step = max(1, min(int(step_index), int(step_count)))
+    completed_steps = bounded_step - 1 if active else bounded_step
+    return max(0, min(100, int(round((completed_steps / step_count) * 100))))
+
+
+def publish_scheduler_progress(active: bool, phase: str, phase_label: str, step_index: int, step_count: int, *, percent=None):
+    try:
+        resolved_percent = _scheduler_progress_percent(step_index, step_count, active=active) if percent is None else int(percent)
+        resolved_percent = max(0, min(100, resolved_percent))
+        scheduler_progress(
+            bool(active),
+            str(phase),
+            str(phase_label),
+            int(step_index),
+            int(step_count),
+            resolved_percent,
+        )
+    except Exception as e:
+        print(f"Failed to publish scheduler progress: {e}")
 
 
 def _integration_output_lines(output):
@@ -238,9 +264,25 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
         print(err)
         scheduler_error(err)
 
-def importFromCRM():
+def importFromCRM(
+    *,
+    integration_phase="running_integration",
+    integration_label="Running integration sync",
+    integration_step=2,
+    progress_step_count=SCHEDULER_STARTUP_STEP_COUNT,
+    overrides_phase="applying_overrides",
+    overrides_label="Applying overrides",
+    overrides_step=3,
+):
     clear_scheduler_error()
     clear_scheduler_output()
+    publish_scheduler_progress(
+        True,
+        integration_phase,
+        integration_label,
+        integration_step,
+        progress_step_count,
+    )
     # CRM Hooks
     if automatic_import_uisp():
         try:
@@ -282,6 +324,13 @@ def importFromCRM():
             scheduler_error(msg)
     # Handle lqos_overrides
     try:
+        publish_scheduler_progress(
+            True,
+            overrides_phase,
+            overrides_label,
+            overrides_step,
+            progress_step_count,
+        )
         apply_lqos_overrides()
     except Exception as e:
         scheduler_error(f"Failed to apply lqos_overrides: {e}")
@@ -531,10 +580,20 @@ def apply_lqos_overrides():
     # 3) Load, adjust, and optionally save network.json
     nj_path = network_json_path()
     network = load_network_json(nj_path)
-    net_changed = apply_network_adjustments(network)
+    try:
+        adjustments = overrides_network_adjustments_materialized()
+    except Exception as e:
+        print(f"Failed to read network adjustments: {e}")
+        adjustments = []
+    net_changed = apply_network_adjustments(network, adjustments)
     if net_changed:
         write_network_json(nj_path, network)
         print("Updated network.json with overrides")
+        canonical_path = topology_canonical_state_path()
+        canonical_state = load_topology_canonical_state(canonical_path)
+        if canonical_state and apply_network_adjustments_to_canonical_state(canonical_state, adjustments):
+            write_topology_canonical_state(canonical_path, canonical_state)
+            print("Updated topology_canonical_state.json with overrides")
 
 
 # --------------- Network JSON handling ---------------
@@ -558,7 +617,26 @@ def load_network_json(path: str):
             return {}
 
 
-def apply_network_adjustments(network: dict) -> bool:
+def topology_canonical_state_path() -> str:
+    return os.path.join(get_libreqos_directory(), "topology_canonical_state.json")
+
+
+def load_topology_canonical_state(path: str):
+    if not os.path.isfile(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        try:
+            return json.loads(f.read())
+        except Exception:
+            return None
+
+
+def write_topology_canonical_state(path: str, canonical_state: dict):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(json.dumps(canonical_state, indent=4))
+
+
+def apply_network_adjustments(network: dict, adjustments=None) -> bool:
     """Apply network adjustments from overrides to the network JSON structure.
 
     Currently supports: adjust_site_speed (preferring node_id, with legacy
@@ -573,11 +651,12 @@ def apply_network_adjustments(network: dict) -> bool:
     source of truth.
     Returns True if any changes were applied.
     """
-    try:
-        adjustments = overrides_network_adjustments_materialized()
-    except Exception as e:
-        print(f"Failed to read network adjustments: {e}")
-        return False
+    if adjustments is None:
+        try:
+            adjustments = overrides_network_adjustments_materialized()
+        except Exception as e:
+            print(f"Failed to read network adjustments: {e}")
+            return False
 
     if not adjustments:
         return False
@@ -661,6 +740,73 @@ def apply_network_adjustments(network: dict) -> bool:
     return net_changed
 
 
+def apply_network_adjustments_to_canonical_state(canonical_state: dict, adjustments) -> bool:
+    if not isinstance(canonical_state, dict):
+        return False
+
+    compatibility_network = canonical_state.get('compatibility_network_json')
+    nodes = canonical_state.get('nodes')
+    if not isinstance(compatibility_network, dict) or not isinstance(nodes, list):
+        return False
+
+    compatibility_changed = apply_network_adjustments(compatibility_network, adjustments)
+
+    def normalize_bandwidth_value(value):
+        numeric = float(value)
+        if numeric.is_integer():
+            return int(numeric)
+        return numeric
+
+    nodes_changed = False
+    for adj in adjustments:
+        adj_type = adj.get('type')
+        if adj_type == 'adjust_site_speed':
+            target_node_id = adj.get('node_id', None)
+            target_name = adj.get('site_name', '')
+            download = adj.get('download_bandwidth_mbps', None)
+            upload = adj.get('upload_bandwidth_mbps', None)
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                matches_target = False
+                if target_node_id:
+                    matches_target = node.get('node_id') == target_node_id
+                elif target_name:
+                    matches_target = node.get('node_name') == target_name
+                if not matches_target:
+                    continue
+                rate_input = node.get('rate_input')
+                if not isinstance(rate_input, dict):
+                    rate_input = {}
+                    node['rate_input'] = rate_input
+                if download is not None:
+                    normalized_download = normalize_bandwidth_value(download)
+                    rate_input['intrinsic_download_mbps'] = normalized_download
+                    rate_input['legacy_imported_download_mbps'] = normalized_download
+                    nodes_changed = True
+                if upload is not None:
+                    normalized_upload = normalize_bandwidth_value(upload)
+                    rate_input['intrinsic_upload_mbps'] = normalized_upload
+                    rate_input['legacy_imported_upload_mbps'] = normalized_upload
+                    nodes_changed = True
+                if download is not None or upload is not None:
+                    rate_input['source'] = 'compatibility_export'
+        elif adj_type == 'set_node_virtual':
+            target_name = adj.get('node_name', '')
+            virtual_val = adj.get('virtual', None)
+            if not target_name or virtual_val is None:
+                continue
+            normalized_virtual = bool(virtual_val)
+            for node in nodes:
+                if not isinstance(node, dict) or node.get('node_name') != target_name:
+                    continue
+                if bool(node.get('is_virtual', False)) != normalized_virtual:
+                    node['is_virtual'] = normalized_virtual
+                    nodes_changed = True
+
+    return compatibility_changed or nodes_changed
+
+
 def write_network_json(path: str, network: dict):
     with open(path, 'w', encoding='utf-8') as f:
         f.write(json.dumps(network, indent=4))
@@ -669,23 +815,39 @@ def write_network_json(path: str, network: dict):
 def importAndShapeFullReload():
     global shaping_runtime_hash
     importFromCRM()
+    publish_scheduler_progress(True, "starting_topology_runtime", "Starting topology runtime", 4, SCHEDULER_STARTUP_STEP_COUNT)
     ensure_topology_runtime_process(wait_for_outputs=True)
+    publish_scheduler_progress(True, "initial_shaping_reload", "Refreshing shaper state", 5, SCHEDULER_STARTUP_STEP_COUNT)
     if not enable_insight_topology():
         refreshShapers()
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
+    else:
         shaping_runtime_hash = calculate_shaping_runtime_hash()
 
 
 def importAndShapePartialReload():
     global shaping_runtime_hash
 
-    importFromCRM()
-    ensure_topology_runtime_process()
+    importFromCRM(
+        integration_phase="partial_integration",
+        integration_label="Running scheduled integration refresh",
+        integration_step=1,
+        progress_step_count=SCHEDULER_REFRESH_STEP_COUNT,
+        overrides_phase="partial_overrides",
+        overrides_label="Applying scheduled overrides",
+        overrides_step=2,
+    )
+    publish_scheduler_progress(True, "partial_topology_runtime", "Refreshing topology runtime", 3, SCHEDULER_REFRESH_STEP_COUNT)
+    ensure_topology_runtime_process(wait_for_outputs=True)
     # Rebuild when runtime shaping inputs change, including effective adaptive
     # circuit overrides that do not belong in source-of-truth files.
+    publish_scheduler_progress(True, "partial_runtime_hash", "Checking shaping inputs", 4, SCHEDULER_REFRESH_STEP_COUNT)
     new_hash = calculate_shaping_runtime_hash()
     if new_hash != shaping_runtime_hash:
+        publish_scheduler_progress(True, "partial_reload", "Applying incremental shaper refresh", 4, SCHEDULER_REFRESH_STEP_COUNT)
         refreshShapers()
         shaping_runtime_hash = calculate_shaping_runtime_hash()
+    publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
 
 
 def topology_runtime_binary_path():
@@ -699,6 +861,59 @@ def topology_runtime_output_paths():
         os.path.join(base_dir, "topology_effective_state.json"),
         os.path.join(base_dir, "network.effective.json"),
     ]
+
+
+def _load_json_field(path, field):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:
+        return None
+    value = data.get(field)
+    try:
+        return int(value) if value is not None else None
+    except Exception:
+        return None
+
+
+def _topology_runtime_freshness_target():
+    base_dir = get_libreqos_directory()
+    canonical_path = os.path.join(base_dir, "topology_canonical_state.json")
+    canonical_generated = _load_json_field(canonical_path, "generated_unix")
+    if canonical_generated is not None:
+        return ("generated_unix", canonical_generated)
+
+    editor_path = os.path.join(base_dir, "topology_editor_state.json")
+    editor_generated = _load_json_field(editor_path, "generated_unix")
+    if editor_generated is not None:
+        return ("generated_unix", editor_generated)
+
+    for path in (canonical_path, editor_path, os.path.join(base_dir, "network.json")):
+        if os.path.isfile(path):
+            return ("mtime", os.path.getmtime(path))
+    return (None, None)
+
+
+def _topology_runtime_outputs_are_fresh():
+    _, effective_state_path, effective_network_path = topology_runtime_output_paths()
+    if not (os.path.isfile(effective_state_path) and os.path.isfile(effective_network_path)):
+        return False
+
+    target_kind, target_value = _topology_runtime_freshness_target()
+    if target_kind is None:
+        return True
+
+    if target_kind == "generated_unix":
+        effective_canonical_generated = _load_json_field(effective_state_path, "canonical_generated_unix")
+        if effective_canonical_generated is not None:
+            return effective_canonical_generated >= target_value
+
+    try:
+        effective_state_mtime = os.path.getmtime(effective_state_path)
+        effective_network_mtime = os.path.getmtime(effective_network_path)
+    except OSError:
+        return False
+    return min(effective_state_mtime, effective_network_mtime) >= target_value
 
 
 def clear_topology_runtime_outputs():
@@ -729,11 +944,10 @@ def stop_topology_runtime_process():
             pass
 
 
-def wait_for_topology_runtime_outputs(timeout_seconds=3.0):
+def wait_for_topology_runtime_outputs(timeout_seconds=8.0):
     deadline = time.monotonic() + timeout_seconds
-    required = topology_runtime_output_paths()[1:]
     while time.monotonic() < deadline:
-        if all(os.path.isfile(path) for path in required):
+        if _topology_runtime_outputs_are_fresh():
             return True
         process = topology_runtime_process
         if process is not None and process.poll() is not None:
@@ -807,9 +1021,11 @@ def ensure_bus_ready():
 if __name__ == '__main__':
     try:
         atexit.register(stop_topology_runtime_process)
+        publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
         ensure_bus_ready()
         importAndShapeFullReload()
         shaping_runtime_hash = calculate_shaping_runtime_hash()
+        publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
 
         print("Starting scheduler with jobs:")
         print(f"- not_dead_yet every 1 minute")

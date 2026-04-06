@@ -1,13 +1,18 @@
 use crate::node_manager::auth::LoginResult;
 use axum::http::StatusCode;
 use lqos_config::{
-    TopologyAllowedParent, TopologyAttachmentHealthStateFile, TopologyEditorStateFile, load_config,
+    Config, TopologyAllowedParent, TopologyAttachmentHealthStateFile, TopologyCanonicalStateFile,
+    TopologyEditorStateFile, load_config,
 };
 use lqos_overrides::{ManualAttachment, TopologyAttachmentMode, TopologyOverridesFile};
-use lqos_topology::{compute_effective_state, merged_topology_state};
+use lqos_topology::{
+    build_effective_topology_artifacts_from_canonical, compute_effective_state,
+    merged_topology_state, publish_effective_topology_artifacts,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::IpAddr;
+use tracing::warn;
 
 /// Update payload for persisting one topology-manager branch move.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -119,6 +124,10 @@ pub struct TopologyManagerNodeData {
     pub current_attachment_id: Option<String>,
     /// Currently resolved concrete attachment label from the latest integration snapshot.
     pub current_attachment_name: Option<String>,
+    /// Currently effective logical parent node ID from the runtime-effective topology.
+    pub effective_parent_node_id: Option<String>,
+    /// Currently effective logical parent name from the runtime-effective topology.
+    pub effective_parent_node_name: Option<String>,
     /// Whether operators may move this node.
     pub can_move: bool,
     /// Valid parent targets and attachment choices for this node.
@@ -143,6 +152,8 @@ pub struct TopologyManagerNodeData {
     pub effective_attachment_id: Option<String>,
     /// Effective attachment label currently selected for runtime shaping.
     pub effective_attachment_name: Option<String>,
+    /// Whether the saved override is currently reflected in the runtime-effective topology.
+    pub override_live: bool,
     /// Non-fatal warnings about stale overrides.
     pub warnings: Vec<String>,
 }
@@ -169,6 +180,40 @@ pub fn get_topology_manager_state(
     build_topology_manager_state(login)
 }
 
+fn publish_candidate_overrides(
+    config: &Config,
+    health: &TopologyAttachmentHealthStateFile,
+    previous_overrides: &TopologyOverridesFile,
+    candidate_overrides: &TopologyOverridesFile,
+) -> Result<(), StatusCode> {
+    let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let artifacts = build_effective_topology_artifacts_from_canonical(
+        config,
+        &canonical,
+        candidate_overrides,
+        health,
+    )
+    .map_err(|errors| {
+        warn!(
+            "Rejecting topology manager update because the candidate effective topology is invalid: {}",
+            errors.join(" | ")
+        );
+        StatusCode::BAD_REQUEST
+    })?;
+
+    candidate_overrides
+        .save()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if publish_effective_topology_artifacts(config, &artifacts).is_err() {
+        let _ = previous_overrides.save();
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    Ok(())
+}
+
 /// Saves or replaces one topology-manager branch move.
 pub fn set_topology_manager_override(
     login: LoginResult,
@@ -179,9 +224,9 @@ pub fn set_topology_manager_override(
     }
 
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let state = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
+    let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let child = state
+    let child = canonical
         .find_node(update.child_node_id.trim())
         .ok_or(StatusCode::BAD_REQUEST)?;
     if !child.can_move {
@@ -195,10 +240,12 @@ pub fn set_topology_manager_override(
         .ok_or(StatusCode::BAD_REQUEST)?;
 
     let attachment_preferences = validate_attachment_preferences(&update, parent)?;
+    let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
 
-    let mut overrides =
+    let previous_overrides =
         TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let changed = overrides.set_override_return_changed(
+    let mut candidate_overrides = previous_overrides.clone();
+    let changed = candidate_overrides.set_override_return_changed(
         child.node_id.clone(),
         child.node_name.clone(),
         parent.parent_node_id.clone(),
@@ -207,12 +254,21 @@ pub fn set_topology_manager_override(
         attachment_preferences,
     );
     if changed {
-        overrides
-            .save()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        publish_candidate_overrides(
+            config.as_ref(),
+            &health,
+            &previous_overrides,
+            &candidate_overrides,
+        )?;
     }
 
-    build_topology_manager_state(login)
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &candidate_overrides,
+        &health,
+    ))
 }
 
 /// Removes one saved topology-manager branch move.
@@ -227,16 +283,31 @@ pub fn clear_topology_manager_override(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let mut overrides =
+    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
+    let previous_overrides =
         TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let removed = overrides.remove_override_by_child_node_id_count(clear.child_node_id.trim());
+    let mut candidate_overrides = previous_overrides.clone();
+    let removed =
+        candidate_overrides.remove_override_by_child_node_id_count(clear.child_node_id.trim());
     if removed > 0 {
-        overrides
-            .save()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        publish_candidate_overrides(
+            config.as_ref(),
+            &health,
+            &previous_overrides,
+            &candidate_overrides,
+        )?;
     }
 
-    build_topology_manager_state(login)
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &candidate_overrides,
+        &health,
+    ))
 }
 
 /// Saves or replaces one attachment-pair probe policy.
@@ -255,11 +326,18 @@ pub fn set_topology_manager_probe_policy(
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let overrides = TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let previous_overrides =
+        TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
-    let effective = compute_effective_state(config.as_ref(), &canonical, &overrides, &health);
-    let merged =
-        merged_topology_state(config.as_ref(), &canonical, &overrides, &health, &effective);
+    let effective =
+        compute_effective_state(config.as_ref(), &canonical, &previous_overrides, &health);
+    let merged = merged_topology_state(
+        config.as_ref(),
+        &canonical,
+        &previous_overrides,
+        &health,
+        &effective,
+    );
 
     let known_pair_ids = merged
         .nodes
@@ -272,14 +350,24 @@ pub fn set_topology_manager_probe_policy(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let mut overrides = overrides;
-    let changed = overrides.set_probe_policy_return_changed(pair_id.to_string(), update.enabled);
+    let mut candidate_overrides = previous_overrides.clone();
+    let changed =
+        candidate_overrides.set_probe_policy_return_changed(pair_id.to_string(), update.enabled);
     if changed {
-        overrides
-            .save()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        publish_candidate_overrides(
+            config.as_ref(),
+            &health,
+            &previous_overrides,
+            &candidate_overrides,
+        )?;
     }
-    build_topology_manager_state(login)
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &candidate_overrides,
+        &health,
+    ))
 }
 
 /// Saves or replaces one attachment-scoped rate override.
@@ -302,11 +390,18 @@ pub fn set_topology_manager_attachment_rate_override(
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let overrides = TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let previous_overrides =
+        TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
-    let effective = compute_effective_state(config.as_ref(), &canonical, &overrides, &health);
-    let merged =
-        merged_topology_state(config.as_ref(), &canonical, &overrides, &health, &effective);
+    let effective =
+        compute_effective_state(config.as_ref(), &canonical, &previous_overrides, &health);
+    let merged = merged_topology_state(
+        config.as_ref(),
+        &canonical,
+        &previous_overrides,
+        &health,
+        &effective,
+    );
 
     let child = merged
         .find_node(update.child_node_id.trim())
@@ -326,8 +421,8 @@ pub fn set_topology_manager_attachment_rate_override(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let mut overrides = overrides;
-    let changed = overrides.set_attachment_rate_override_return_changed(
+    let mut candidate_overrides = previous_overrides.clone();
+    let changed = candidate_overrides.set_attachment_rate_override_return_changed(
         child.node_id.clone(),
         parent.parent_node_id.clone(),
         option.attachment_id.clone(),
@@ -335,12 +430,21 @@ pub fn set_topology_manager_attachment_rate_override(
         update.upload_bandwidth_mbps,
     );
     if changed {
-        overrides
-            .save()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        publish_candidate_overrides(
+            config.as_ref(),
+            &health,
+            &previous_overrides,
+            &candidate_overrides,
+        )?;
     }
 
-    build_topology_manager_state(login)
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &candidate_overrides,
+        &health,
+    ))
 }
 
 /// Removes one attachment-scoped rate override.
@@ -358,20 +462,34 @@ pub fn clear_topology_manager_attachment_rate_override(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let mut overrides =
+    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
+    let previous_overrides =
         TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let removed = overrides.remove_attachment_rate_override_count(
+    let mut candidate_overrides = previous_overrides.clone();
+    let removed = candidate_overrides.remove_attachment_rate_override_count(
         clear.child_node_id.trim(),
         clear.parent_node_id.trim(),
         clear.attachment_id.trim(),
     );
     if removed > 0 {
-        overrides
-            .save()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        publish_candidate_overrides(
+            config.as_ref(),
+            &health,
+            &previous_overrides,
+            &candidate_overrides,
+        )?;
     }
 
-    build_topology_manager_state(login)
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &candidate_overrides,
+        &health,
+    ))
 }
 
 /// Saves or replaces one manual attachment group.
@@ -396,9 +514,10 @@ pub fn set_topology_manager_manual_attachment_group(
         .ok_or(StatusCode::BAD_REQUEST)?;
 
     let attachments = validate_manual_attachments(&update)?;
-    let mut overrides =
+    let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
+    let previous_overrides =
         TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let previous_attachment_ids = overrides
+    let previous_attachment_ids = previous_overrides
         .find_manual_attachment_group(update.child_node_id.trim(), update.parent_node_id.trim())
         .map(|group| {
             group
@@ -408,11 +527,12 @@ pub fn set_topology_manager_manual_attachment_group(
                 .collect::<HashSet<_>>()
         })
         .unwrap_or_default();
-    if manual_attachment_ids_conflict(&overrides, &update, &attachments) {
+    if manual_attachment_ids_conflict(&previous_overrides, &update, &attachments) {
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let changed = overrides.set_manual_attachment_group_return_changed(
+    let mut candidate_overrides = previous_overrides.clone();
+    let changed = candidate_overrides.set_manual_attachment_group_return_changed(
         child.node_id.clone(),
         child.node_name.clone(),
         parent.parent_node_id.clone(),
@@ -421,7 +541,7 @@ pub fn set_topology_manager_manual_attachment_group(
     );
     let mut policy_changed = false;
     for attachment in &attachments {
-        policy_changed |= overrides.set_probe_policy_return_changed(
+        policy_changed |= candidate_overrides.set_probe_policy_return_changed(
             attachment.attachment_id.clone(),
             attachment.probe_enabled,
         );
@@ -435,20 +555,30 @@ pub fn set_topology_manager_manual_attachment_group(
         if current_attachment_ids.contains(previous_attachment_id.as_str()) {
             continue;
         }
-        rate_override_removed =
-            rate_override_removed.saturating_add(overrides.remove_attachment_rate_override_count(
+        rate_override_removed = rate_override_removed.saturating_add(
+            candidate_overrides.remove_attachment_rate_override_count(
                 update.child_node_id.trim(),
                 update.parent_node_id.trim(),
                 &previous_attachment_id,
-            ));
+            ),
+        );
     }
     if changed || policy_changed || rate_override_removed > 0 {
-        overrides
-            .save()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        publish_candidate_overrides(
+            config.as_ref(),
+            &health,
+            &previous_overrides,
+            &candidate_overrides,
+        )?;
     }
 
-    build_topology_manager_state(login)
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &candidate_overrides,
+        &health,
+    ))
 }
 
 /// Removes one saved manual attachment group.
@@ -463,9 +593,13 @@ pub fn clear_topology_manager_manual_attachment_group(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let mut overrides =
+    let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let canonical = TopologyEditorStateFile::load_with_legacy_fallback(config.as_ref())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
+    let previous_overrides =
         TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let attachment_ids = overrides
+    let attachment_ids = previous_overrides
         .find_manual_attachment_group(clear.child_node_id.trim(), clear.parent_node_id.trim())
         .map(|group| {
             group
@@ -476,29 +610,40 @@ pub fn clear_topology_manager_manual_attachment_group(
         })
         .unwrap_or_default();
 
-    let removed = overrides.remove_manual_attachment_group_count(
+    let mut candidate_overrides = previous_overrides.clone();
+    let removed = candidate_overrides.remove_manual_attachment_group_count(
         clear.child_node_id.trim(),
         clear.parent_node_id.trim(),
     );
     let mut policy_removed = 0usize;
     let mut rate_override_removed = 0usize;
     for attachment_id in attachment_ids {
-        policy_removed =
-            policy_removed.saturating_add(overrides.remove_probe_policy_count(&attachment_id));
-        rate_override_removed =
-            rate_override_removed.saturating_add(overrides.remove_attachment_rate_override_count(
+        policy_removed = policy_removed
+            .saturating_add(candidate_overrides.remove_probe_policy_count(&attachment_id));
+        rate_override_removed = rate_override_removed.saturating_add(
+            candidate_overrides.remove_attachment_rate_override_count(
                 clear.child_node_id.trim(),
                 clear.parent_node_id.trim(),
                 &attachment_id,
-            ));
+            ),
+        );
     }
     if removed > 0 || policy_removed > 0 || rate_override_removed > 0 {
-        overrides
-            .save()
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        publish_candidate_overrides(
+            config.as_ref(),
+            &health,
+            &previous_overrides,
+            &candidate_overrides,
+        )?;
     }
 
-    build_topology_manager_state(login)
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &candidate_overrides,
+        &health,
+    ))
 }
 
 fn build_topology_manager_state(
@@ -509,13 +654,64 @@ fn build_topology_manager_state(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let overrides = TopologyOverridesFile::load().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let health = TopologyAttachmentHealthStateFile::load(config.as_ref()).unwrap_or_default();
-    let effective = compute_effective_state(config.as_ref(), &canonical, &overrides, &health);
-    let state = merged_topology_state(config.as_ref(), &canonical, &overrides, &health, &effective);
+    Ok(build_topology_manager_state_from_inputs(
+        login,
+        config.as_ref(),
+        &canonical,
+        &overrides,
+        &health,
+    ))
+}
+
+fn build_topology_manager_state_from_inputs(
+    login: LoginResult,
+    config: &Config,
+    canonical: &TopologyEditorStateFile,
+    overrides: &TopologyOverridesFile,
+    health: &TopologyAttachmentHealthStateFile,
+) -> TopologyManagerStateData {
+    let effective = compute_effective_state(config, canonical, overrides, health);
+    let state = merged_topology_state(config, canonical, overrides, health, &effective);
+    let effective_by_node_id = effective
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<std::collections::HashMap<_, _>>();
+    let node_name_by_id = state
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node.node_name.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
 
     let mut nodes = Vec::with_capacity(state.nodes.len());
     for node in &state.nodes {
         let saved_override = overrides.find_override(&node.node_id);
         let mut warnings = Vec::new();
+        let effective_node = effective_by_node_id.get(node.node_id.as_str()).copied();
+        let effective_parent_node_id = effective_node
+            .map(|entry| entry.logical_parent_node_id.trim())
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .or_else(|| node.current_parent_node_id.clone());
+        let effective_parent_node_name = effective_parent_node_id.as_deref().map(|parent_id| {
+            node_name_by_id
+                .get(parent_id)
+                .map(|name| (*name).to_string())
+                .or_else(|| {
+                    node.allowed_parents
+                        .iter()
+                        .find(|entry| entry.parent_node_id == parent_id)
+                        .map(|entry| entry.parent_node_name.clone())
+                })
+                .or_else(|| {
+                    if node.current_parent_node_id.as_deref() == Some(parent_id) {
+                        node.current_parent_node_name.clone()
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| parent_id.to_string())
+        });
 
         let (
             has_override,
@@ -605,6 +801,8 @@ fn build_topology_manager_state(
             }
         }
 
+        let override_live = has_override
+            && override_parent_node_id.as_deref() == effective_parent_node_id.as_deref();
         nodes.push(TopologyManagerNodeData {
             node_id: node.node_id.clone(),
             node_name: node.node_name.clone(),
@@ -624,6 +822,9 @@ fn build_topology_manager_state(
             preferred_attachment_name: node.preferred_attachment_name.clone(),
             effective_attachment_id: node.effective_attachment_id.clone(),
             effective_attachment_name: node.effective_attachment_name.clone(),
+            effective_parent_node_id: effective_parent_node_id.clone(),
+            effective_parent_node_name: effective_parent_node_name.clone(),
+            override_live,
             warnings,
         });
     }
@@ -658,13 +859,13 @@ fn build_topology_manager_state(
         )
         .collect::<Vec<_>>();
 
-    Ok(TopologyManagerStateData {
+    TopologyManagerStateData {
         writable: login == LoginResult::Admin,
         source: state.source,
         schema_version: state.schema_version,
         nodes,
         global_warnings,
-    })
+    }
 }
 
 fn validate_manual_attachments(
