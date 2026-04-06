@@ -78,6 +78,11 @@ struct ReducedHostCounters {
     tcp_packets: DownUpOrder<u64>,
     udp_packets: DownUpOrder<u64>,
     icmp_packets: DownUpOrder<u64>,
+    xmit_bytes: DownUpOrder<u64>,
+    xmit_packets: DownUpOrder<u64>,
+    xmit_tcp_packets: DownUpOrder<u64>,
+    xmit_udp_packets: DownUpOrder<u64>,
+    xmit_icmp_packets: DownUpOrder<u64>,
     last_seen: u64,
     tc_handle: TcHandle,
     circuit_hash: Option<i64>,
@@ -91,6 +96,11 @@ impl ReducedHostCounters {
         let mut tcp_packets = DownUpOrder::zeroed();
         let mut udp_packets = DownUpOrder::zeroed();
         let mut icmp_packets = DownUpOrder::zeroed();
+        let mut xmit_bytes = DownUpOrder::zeroed();
+        let mut xmit_packets = DownUpOrder::zeroed();
+        let mut xmit_tcp_packets = DownUpOrder::zeroed();
+        let mut xmit_udp_packets = DownUpOrder::zeroed();
+        let mut xmit_icmp_packets = DownUpOrder::zeroed();
         let mut last_seen = 0u64;
         let mut meta_last_seen = 0u64;
         let mut meta_tc_handle = 0u32;
@@ -108,6 +118,14 @@ impl ReducedHostCounters {
                 c.enqueue_icmp_download_packets,
                 c.enqueue_icmp_upload_packets,
             );
+            xmit_bytes.checked_add_direct(c.xmit_download_bytes, c.xmit_upload_bytes);
+            xmit_packets.checked_add_direct(c.xmit_download_packets, c.xmit_upload_packets);
+            xmit_tcp_packets
+                .checked_add_direct(c.xmit_tcp_download_packets, c.xmit_tcp_upload_packets);
+            xmit_udp_packets
+                .checked_add_direct(c.xmit_udp_download_packets, c.xmit_udp_upload_packets);
+            xmit_icmp_packets
+                .checked_add_direct(c.xmit_icmp_download_packets, c.xmit_icmp_upload_packets);
             last_seen = u64::max(last_seen, c.last_seen);
             if c.last_seen > meta_last_seen {
                 meta_last_seen = c.last_seen;
@@ -123,6 +141,11 @@ impl ReducedHostCounters {
             tcp_packets,
             udp_packets,
             icmp_packets,
+            xmit_bytes,
+            xmit_packets,
+            xmit_tcp_packets,
+            xmit_udp_packets,
+            xmit_icmp_packets,
             last_seen,
             tc_handle: TcHandle::from_u32(meta_tc_handle),
             circuit_hash: (meta_circuit_id != 0).then_some(meta_circuit_id as i64),
@@ -383,12 +406,19 @@ impl ThroughputTracker {
                 v.enqueue_packets_per_second = v
                     .enqueue_packets
                     .checked_sub_or_zero(v.prev_enqueue_packets);
+                v.xmit_bytes_per_second = v.xmit_bytes.checked_sub_or_zero(v.prev_xmit_bytes);
+                v.xmit_packets_per_second = v.xmit_packets.checked_sub_or_zero(v.prev_xmit_packets);
             }
             v.prev_enqueue_bytes = v.enqueue_bytes;
             v.prev_enqueue_packets = v.enqueue_packets;
             v.prev_enqueue_tcp_packets = v.enqueue_tcp_packets;
             v.prev_enqueue_udp_packets = v.enqueue_udp_packets;
             v.prev_enqueue_icmp_packets = v.enqueue_icmp_packets;
+            v.prev_xmit_bytes = v.xmit_bytes;
+            v.prev_xmit_packets = v.xmit_packets;
+            v.prev_xmit_tcp_packets = v.xmit_tcp_packets;
+            v.prev_xmit_udp_packets = v.xmit_udp_packets;
+            v.prev_xmit_icmp_packets = v.xmit_icmp_packets;
 
             // Roll out stale RTT data
             if self_cycle > RETIRE_AFTER_SECONDS
@@ -473,6 +503,11 @@ impl ThroughputTracker {
                 entry.enqueue_tcp_packets = reduced.tcp_packets;
                 entry.enqueue_udp_packets = reduced.udp_packets;
                 entry.enqueue_icmp_packets = reduced.icmp_packets;
+                entry.xmit_bytes = reduced.xmit_bytes;
+                entry.xmit_packets = reduced.xmit_packets;
+                entry.xmit_tcp_packets = reduced.xmit_tcp_packets;
+                entry.xmit_udp_packets = reduced.xmit_udp_packets;
+                entry.xmit_icmp_packets = reduced.xmit_icmp_packets;
                 entry.last_seen = reduced.last_seen;
 
                 let hashes_changed = entry.circuit_hash != reduced.circuit_hash
@@ -594,16 +629,28 @@ impl ThroughputTracker {
                     most_recent_cycle: 0,
                     enqueue_bytes: reduced.bytes,
                     enqueue_packets: reduced.packets,
-                    prev_enqueue_bytes: DownUpOrder::zeroed(),
-                    prev_enqueue_packets: DownUpOrder::zeroed(),
-                    enqueue_bytes_per_second: DownUpOrder::zeroed(),
-                    enqueue_packets_per_second: DownUpOrder::zeroed(),
                     enqueue_tcp_packets: reduced.tcp_packets,
                     enqueue_udp_packets: reduced.udp_packets,
                     enqueue_icmp_packets: reduced.icmp_packets,
+                    xmit_bytes: reduced.xmit_bytes,
+                    xmit_packets: reduced.xmit_packets,
+                    xmit_tcp_packets: reduced.xmit_tcp_packets,
+                    xmit_udp_packets: reduced.xmit_udp_packets,
+                    xmit_icmp_packets: reduced.xmit_icmp_packets,
+                    prev_enqueue_bytes: DownUpOrder::zeroed(),
+                    prev_enqueue_packets: DownUpOrder::zeroed(),
                     prev_enqueue_tcp_packets: DownUpOrder::zeroed(),
                     prev_enqueue_udp_packets: DownUpOrder::zeroed(),
                     prev_enqueue_icmp_packets: DownUpOrder::zeroed(),
+                    prev_xmit_bytes: DownUpOrder::zeroed(),
+                    prev_xmit_packets: DownUpOrder::zeroed(),
+                    prev_xmit_tcp_packets: DownUpOrder::zeroed(),
+                    prev_xmit_udp_packets: DownUpOrder::zeroed(),
+                    prev_xmit_icmp_packets: DownUpOrder::zeroed(),
+                    enqueue_bytes_per_second: DownUpOrder::zeroed(),
+                    enqueue_packets_per_second: DownUpOrder::zeroed(),
+                    xmit_bytes_per_second: DownUpOrder::zeroed(),
+                    xmit_packets_per_second: DownUpOrder::zeroed(),
                     tc_handle: reduced.tc_handle,
                     rtt_buffer: RttBuffer::default(),
                     recent_rtt_data: [RttData::from_nanos(0); 60],

@@ -17,13 +17,25 @@ pub(crate) struct ThroughputEntry {
     pub(crate) enqueue_tcp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
     pub(crate) enqueue_udp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
     pub(crate) enqueue_icmp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) xmit_bytes: DownUpOrder<u64>,    // 0 DL, 1 UL
+    pub(crate) xmit_packets: DownUpOrder<u64>,  // 0 DL, 1 UL
+    pub(crate) xmit_tcp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) xmit_udp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
+    pub(crate) xmit_icmp_packets: DownUpOrder<u64>, // 0 DL, 1 UL
     pub(crate) prev_enqueue_bytes: DownUpOrder<u64>, // Has to mirror
     pub(crate) prev_enqueue_packets: DownUpOrder<u64>,
     pub(crate) prev_enqueue_tcp_packets: DownUpOrder<u64>,
     pub(crate) prev_enqueue_udp_packets: DownUpOrder<u64>,
     pub(crate) prev_enqueue_icmp_packets: DownUpOrder<u64>,
+    pub(crate) prev_xmit_bytes: DownUpOrder<u64>, // Has to mirror
+    pub(crate) prev_xmit_packets: DownUpOrder<u64>,
+    pub(crate) prev_xmit_tcp_packets: DownUpOrder<u64>,
+    pub(crate) prev_xmit_udp_packets: DownUpOrder<u64>,
+    pub(crate) prev_xmit_icmp_packets: DownUpOrder<u64>,
     pub(crate) enqueue_bytes_per_second: DownUpOrder<u64>,
     pub(crate) enqueue_packets_per_second: DownUpOrder<u64>,
+    pub(crate) xmit_bytes_per_second: DownUpOrder<u64>,
+    pub(crate) xmit_packets_per_second: DownUpOrder<u64>,
     pub(crate) tc_handle: TcHandle,
     pub(crate) rtt_buffer: RttBuffer,
     pub(crate) recent_rtt_data: [RttData; 60],
