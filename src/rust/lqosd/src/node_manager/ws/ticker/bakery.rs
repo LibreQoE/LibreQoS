@@ -131,6 +131,7 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
                 applying_count: snapshot.runtime_operations.applying_count,
                 awaiting_cleanup_count: snapshot.runtime_operations.awaiting_cleanup_count,
                 failed_count: snapshot.runtime_operations.failed_count,
+                blocked_count: snapshot.runtime_operations.blocked_count,
                 dirty_count: snapshot.runtime_operations.dirty_count,
                 latest: snapshot.runtime_operations.latest.map(|entry| {
                     BakeryRuntimeOperationHeadlineData {

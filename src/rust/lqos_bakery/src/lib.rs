@@ -1089,8 +1089,10 @@ pub struct BakeryRuntimeOperationsSnapshot {
     pub applying_count: usize,
     /// Number of operations awaiting deferred cleanup.
     pub awaiting_cleanup_count: usize,
-    /// Number of failed operations that may be retried.
+    /// Number of failed operations that are not classified as structural blocks.
     pub failed_count: usize,
+    /// Number of operations blocked by structural runtime constraints until topology changes.
+    pub blocked_count: usize,
     /// Number of operations marked Dirty.
     pub dirty_count: usize,
     /// Most recently updated runtime operation, if any.
@@ -1333,6 +1335,7 @@ impl Default for BakeryTelemetryState {
                 applying_count: 0,
                 awaiting_cleanup_count: 0,
                 failed_count: 0,
+                blocked_count: 0,
                 dirty_count: 0,
                 latest: None,
             },
@@ -5685,6 +5688,7 @@ fn rebuild_runtime_operations_snapshot(
     let mut applying_count = 0usize;
     let mut awaiting_cleanup_count = 0usize;
     let mut failed_count = 0usize;
+    let mut blocked_count = 0usize;
     let mut dirty_count = 0usize;
 
     let latest = runtime_node_operations
@@ -5694,7 +5698,13 @@ fn rebuild_runtime_operations_snapshot(
             RuntimeNodeOperationStatus::Deferred => deferred_count += 1,
             RuntimeNodeOperationStatus::Applying => applying_count += 1,
             RuntimeNodeOperationStatus::AppliedAwaitingCleanup => awaiting_cleanup_count += 1,
-            RuntimeNodeOperationStatus::Failed => failed_count += 1,
+            RuntimeNodeOperationStatus::Failed => {
+                if operation.failure_reason.is_some() {
+                    blocked_count += 1;
+                } else {
+                    failed_count += 1;
+                }
+            }
             RuntimeNodeOperationStatus::Dirty => dirty_count += 1,
             RuntimeNodeOperationStatus::Completed => {}
         })
@@ -5717,6 +5727,7 @@ fn rebuild_runtime_operations_snapshot(
         applying_count,
         awaiting_cleanup_count,
         failed_count,
+        blocked_count,
         dirty_count,
         latest,
     }
@@ -11151,6 +11162,55 @@ mod tests {
                 .as_deref()
                 .unwrap_or_default()
                 .contains("one top-level TreeGuard runtime operation in flight")
+        );
+    }
+
+    #[test]
+    fn structural_runtime_failures_are_counted_as_blocked_not_failed() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let now = unix_now();
+        let mut retryable = RuntimeNodeOperation::new(
+            1,
+            20,
+            Some("retryable-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now,
+        );
+        retryable.update_status(
+            RuntimeNodeOperationStatus::Failed,
+            now,
+            Some("transient runtime failure".to_string()),
+            None,
+        );
+
+        let mut blocked = RuntimeNodeOperation::new(
+            2,
+            21,
+            Some("blocked-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now.saturating_add(1),
+        );
+        blocked.update_status_with_reason(
+            RuntimeNodeOperationStatus::Failed,
+            now.saturating_add(1),
+            Some("inside a retained runtime shadow branch".to_string()),
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch),
+            None,
+        );
+
+        let runtime_node_operations = HashMap::from([(20, retryable), (21, blocked)]);
+        let snapshot = rebuild_runtime_operations_snapshot(&runtime_node_operations);
+
+        assert_eq!(snapshot.failed_count, 1);
+        assert_eq!(snapshot.blocked_count, 1);
+        assert_eq!(
+            snapshot
+                .latest
+                .as_ref()
+                .and_then(|entry| entry.site_name.as_deref()),
+            Some("blocked-site")
         );
     }
 

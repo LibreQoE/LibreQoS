@@ -11,7 +11,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Bakery provides dedicated status for queue apply state, qdisc safety/preflight results, circuit live-change progress, and recent Bakery operations.
 - The Bakery and TreeGuard tabs present a high-level pipeline or control-loop summary ahead of the more detailed tables.
 - The Bakery `Pipeline` widget shows queue-control stages, apply state, verification state, and TC interval timing.
-- `Runtime Operations` summarizes TreeGuard/Bakery topology mutations, deferred cleanup work, failures, and subtrees waiting for a full reload.
+- `Runtime Operations` summarizes TreeGuard/Bakery topology mutations, deferred cleanup work, retryable failures, structurally blocked runtime operations, and subtrees waiting for a full reload.
 - `Recent Bakery Events` emphasizes grouped operations, with detailed event history available when deeper troubleshooting is needed.
 - `TreeGuard Activity` emphasizes grouped operations, including SQM change batches, with detailed event history available when deeper troubleshooting is needed.
 - `TreeGuard Control Loop` shows the current observe/evaluate/act state.

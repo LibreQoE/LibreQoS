@@ -468,6 +468,7 @@ pub struct BakeryRuntimeOperationsData {
     pub applying_count: usize,
     pub awaiting_cleanup_count: usize,
     pub failed_count: usize,
+    pub blocked_count: usize,
     pub dirty_count: usize,
     pub latest: Option<BakeryRuntimeOperationHeadlineData>,
 }
