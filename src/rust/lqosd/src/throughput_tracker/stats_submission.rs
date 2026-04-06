@@ -424,20 +424,20 @@ pub(crate) fn submit_throughput_stats(
         let mut site_cake_marks: Vec<crate::lts2_sys::shared_types::SiteCakeMarks> = Vec::new();
         tree.iter().for_each(|node| {
             let site_hash = hash_to_i64(&node.name);
-            if node.current_throughput.not_zero() {
+            if node.enqueue_throughput.not_zero() {
                 site_throughput.push(crate::lts2_sys::shared_types::SiteThroughput {
                     timestamp: now,
                     site_hash,
-                    download_bytes: scale_u64_by_f64(node.current_throughput.down, scale),
-                    upload_bytes: scale_u64_by_f64(node.current_throughput.up, scale),
-                    packets_down: scale_u64_by_f64(node.current_packets.down, scale),
-                    packets_up: scale_u64_by_f64(node.current_packets.up, scale),
-                    packets_tcp_down: scale_u64_by_f64(node.current_tcp_packets.down, scale),
-                    packets_tcp_up: scale_u64_by_f64(node.current_tcp_packets.up, scale),
-                    packets_udp_down: scale_u64_by_f64(node.current_udp_packets.down, scale),
-                    packets_udp_up: scale_u64_by_f64(node.current_udp_packets.up, scale),
-                    packets_icmp_down: scale_u64_by_f64(node.current_icmp_packets.down, scale),
-                    packets_icmp_up: scale_u64_by_f64(node.current_icmp_packets.up, scale),
+                    download_bytes: scale_u64_by_f64(node.enqueue_throughput.down, scale),
+                    upload_bytes: scale_u64_by_f64(node.enqueue_throughput.up, scale),
+                    packets_down: scale_u64_by_f64(node.enqueue_packets.down, scale),
+                    packets_up: scale_u64_by_f64(node.enqueue_packets.up, scale),
+                    packets_tcp_down: scale_u64_by_f64(node.enqueue_tcp_packets.down, scale),
+                    packets_tcp_up: scale_u64_by_f64(node.enqueue_tcp_packets.up, scale),
+                    packets_udp_down: scale_u64_by_f64(node.enqueue_udp_packets.down, scale),
+                    packets_udp_up: scale_u64_by_f64(node.enqueue_udp_packets.up, scale),
+                    packets_icmp_down: scale_u64_by_f64(node.enqueue_icmp_packets.down, scale),
+                    packets_icmp_up: scale_u64_by_f64(node.enqueue_icmp_packets.up, scale),
                 });
             }
             if node.current_tcp_retransmits.not_zero() {

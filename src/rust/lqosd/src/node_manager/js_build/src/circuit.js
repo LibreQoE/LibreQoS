@@ -153,7 +153,7 @@ function renderEthernetAdvisory(advisory) {
 
 function retransmitPacketsForNode(node, direction) {
     return toNumber(
-        node.current_tcp_retransmit_packets?.[direction] ?? node.current_tcp_packets?.[direction],
+        node.current_tcp_retransmit_packets?.[direction] ?? node.enqueue_tcp_packets?.[direction],
         0,
     );
 }
@@ -2177,8 +2177,8 @@ function onTreeEvent(msg) {
         let rttGraph = funnelGraphs[parent].rtt;
 
         tpGraph.update(
-            toNumber(myMessage.current_throughput[0], 0) * 8,
-            toNumber(myMessage.current_throughput[1], 0) * 8
+            toNumber(myMessage.enqueue_throughput[0], 0) * 8,
+            toNumber(myMessage.enqueue_throughput[1], 0) * 8
         );
         let rxmit = [0, 0];
         const packetsDown = retransmitPacketsForNode(myMessage, 0);

@@ -9,7 +9,7 @@ function effectiveMax(node) {
 
 function retransmitPacketsForNode(node, direction) {
     return toNumber(
-        node.current_tcp_retransmit_packets?.[direction] ?? node.current_tcp_packets?.[direction],
+        node.current_tcp_retransmit_packets?.[direction] ?? node.enqueue_tcp_packets?.[direction],
         0,
     );
 }
@@ -86,8 +86,8 @@ export class TopTreeSummary extends DashletBaseInsight {
                 nameCol.appendChild(link);
 
                 row.appendChild(nameCol);
-                const tpDown = toNumber(r[1].current_throughput[0], 0) * 8;
-                const tpUp = toNumber(r[1].current_throughput[1], 0) * 8;
+                const tpDown = toNumber(r[1].enqueue_throughput[0], 0) * 8;
+                const tpUp = toNumber(r[1].enqueue_throughput[1], 0) * 8;
                 const maxThroughput = effectiveMax(r[1]);
                 row.appendChild(simpleRowHtml(formatThroughput(tpDown, maxThroughput[0])));
                 row.appendChild(simpleRowHtml(formatThroughput(tpUp, maxThroughput[1])));

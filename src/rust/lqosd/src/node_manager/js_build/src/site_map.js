@@ -41,7 +41,7 @@ const FIXTURE_NETWORK_TREE = [
         latitude: 39.0997,
         longitude: -92.2196,
         configured_max_throughput: [2000, 800],
-        current_throughput: [20000000, 4000000],
+        enqueue_throughput: [20000000, 4000000],
         qoo: [96.5, 97.2],
         rtts: [18.4, 22.1],
     }],
@@ -53,7 +53,7 @@ const FIXTURE_NETWORK_TREE = [
         latitude: 39.2564,
         longitude: -92.1842,
         configured_max_throughput: [1500, 400],
-        current_throughput: [80000000, 12000000],
+        enqueue_throughput: [80000000, 12000000],
         qoo: [88.0, 84.0],
         rtts: [35.0, 41.0],
     }],
@@ -65,7 +65,7 @@ const FIXTURE_NETWORK_TREE = [
         latitude: 39.0482,
         longitude: -91.9631,
         configured_max_throughput: [500, 100],
-        current_throughput: [6000000, 1000000],
+        enqueue_throughput: [6000000, 1000000],
         qoo: [62.0, 70.0],
         rtts: [120.0, 165.0],
     }],
@@ -77,7 +77,7 @@ const FIXTURE_NETWORK_TREE = [
         latitude: 39.3689,
         longitude: -92.4509,
         configured_max_throughput: [100, 20],
-        current_throughput: [1200000, 240000],
+        enqueue_throughput: [1200000, 240000],
         qoo: [41.0, 52.0],
         rtts: [55.0, 60.0],
     }],
@@ -87,7 +87,7 @@ const FIXTURE_NETWORK_TREE = [
         type: "Site",
         immediate_parent: 0,
         configured_max_throughput: [50, 10],
-        current_throughput: [0, 0],
+        enqueue_throughput: [0, 0],
         qoo: [null, null],
         rtts: [],
     }],
@@ -98,7 +98,7 @@ const FIXTURE_NETWORK_TREE = [
         immediate_parent: 1,
         latitude: 39.2753,
         longitude: -92.2116,
-        current_throughput: [15000000, 2000000],
+        enqueue_throughput: [15000000, 2000000],
         qoo: [92.0, 90.0],
         rtts: [28.0, 33.0],
     }],
@@ -107,7 +107,7 @@ const FIXTURE_NETWORK_TREE = [
         name: "NORTH AP 2",
         type: "AP",
         immediate_parent: 1,
-        current_throughput: [10000000, 1000000],
+        enqueue_throughput: [10000000, 1000000],
         qoo: [null, 80.0],
         rtts: [25.0, 29.0],
     }],
@@ -118,7 +118,7 @@ const FIXTURE_NETWORK_TREE = [
         immediate_parent: 2,
         latitude: 39.0349,
         longitude: -91.9387,
-        current_throughput: [3000000, 400000],
+        enqueue_throughput: [3000000, 400000],
         qoo: [55.0, 60.0],
         rtts: [180.0, 220.0],
     }],
@@ -1196,8 +1196,8 @@ class SiteMapPage {
 
                 target.latestIndex = index;
                 target.latestNode = node;
-                target.throughputDown += toNumber(node.current_throughput?.[0], 0) * 8;
-                target.throughputUp += toNumber(node.current_throughput?.[1], 0) * 8;
+                target.throughputDown += toNumber(node.enqueue_throughput?.[0], 0) * 8;
+                target.throughputUp += toNumber(node.enqueue_throughput?.[1], 0) * 8;
                 target.throughputSamples += 1;
 
                 const qooDown = node.qoo?.[0];

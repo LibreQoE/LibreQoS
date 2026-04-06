@@ -17,10 +17,16 @@ pub struct NetworkTreeLiteNode {
     pub runtime_virtualized: bool,
     /// Configured maximum throughput in Mbps.
     pub max_throughput: (f64, f64),
-    /// Current throughput in bytes per second.
-    pub current_throughput: (u64, u64),
-    /// Current TCP packets.
-    pub current_tcp_packets: (u64, u64),
+    /// Current enqueue throughput in bytes per second.
+    pub enqueue_throughput: (u64, u64),
+    /// Current enqueue TCP packets.
+    pub enqueue_tcp_packets: (u64, u64),
+    /// Current transmitted throughput in bytes per second.
+    #[serde(default)]
+    pub xmit_throughput: (u64, u64),
+    /// Current transmitted TCP packets.
+    #[serde(default)]
+    pub xmit_tcp_packets: (u64, u64),
     /// TCP packets paired with the current retransmit counts.
     #[serde(default)]
     pub current_tcp_retransmit_packets: (u64, u64),

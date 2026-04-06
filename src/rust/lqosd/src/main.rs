@@ -1157,8 +1157,8 @@ fn tree_capacity_data() -> Vec<lqos_bus::NodeCapacity> {
         .enumerate()
         .map(|(id, node)| {
             let node = crate::shaped_devices_tracker::node_to_transport(node);
-            let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
-            let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
+            let down = node.enqueue_throughput.0 as f64 * 8.0 / 1_000_000.0;
+            let up = node.enqueue_throughput.1 as f64 * 8.0 / 1_000_000.0;
             let effective_max = node.effective_max_throughput.unwrap_or(node.max_throughput);
             let max_down = effective_max.0;
             let max_up = effective_max.1;
@@ -1209,7 +1209,7 @@ fn tree_summary_l2_data() -> Vec<(usize, Vec<(usize, lqos_config::NetworkJsonTra
             for (c_idx, c_node) in nodes.iter().enumerate() {
                 if c_node.immediate_parent == Some(p_idx) {
                     let t = crate::shaped_devices_tracker::node_to_transport(c_node);
-                    let total = t.current_throughput.0 + t.current_throughput.1;
+                    let total = t.enqueue_throughput.0 + t.enqueue_throughput.1;
                     candidates.push((p_idx, c_idx, t, total));
                 }
             }

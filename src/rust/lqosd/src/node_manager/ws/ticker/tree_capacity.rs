@@ -19,8 +19,8 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
             .enumerate()
             .map(|(id, node)| {
                 let node = node_to_transport(node);
-                let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
-                let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
+                let down = node.enqueue_throughput.0 as f64 * 8.0 / 1_000_000.0;
+                let up = node.enqueue_throughput.1 as f64 * 8.0 / 1_000_000.0;
                 let effective_max = node.effective_max_throughput.unwrap_or(node.max_throughput);
                 let max_down = effective_max.0;
                 let max_up = effective_max.1;

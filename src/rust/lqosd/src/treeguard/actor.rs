@@ -1272,8 +1272,8 @@ fn run_tick(
                 continue;
             }
 
-            let bytes_down = node.current_throughput.get_down() as f64;
-            let bytes_up = node.current_throughput.get_up() as f64;
+            let bytes_down = node.enqueue_throughput.get_down() as f64;
+            let bytes_up = node.enqueue_throughput.get_up() as f64;
             let mbps_down = (bytes_down * 8.0) / 1_000_000.0;
             let mbps_up = (bytes_up * 8.0) / 1_000_000.0;
             let util_down_pct = (mbps_down / cap_down) * 100.0;

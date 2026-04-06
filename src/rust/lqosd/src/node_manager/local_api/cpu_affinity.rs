@@ -968,7 +968,7 @@ pub fn cpu_affinity_runtime_snapshot_data() -> CpuAffinityRuntimeSnapshot {
             subtree_node_count: subtree_node_counts.get(idx).copied().unwrap_or_default(),
             subtree_circuit_count: subtree_circuit_counts.get(idx).copied().unwrap_or_default(),
             effective_max_mbps: node.max_throughput,
-            current_throughput_bps: node.current_throughput,
+            current_throughput_bps: node.enqueue_throughput,
         });
     }
 
@@ -1350,8 +1350,10 @@ mod tests {
             is_virtual: false,
             runtime_virtualized,
             max_throughput: (0.0, 0.0),
-            current_throughput: (0, 0),
-            current_tcp_packets: (0, 0),
+            enqueue_throughput: (0, 0),
+            enqueue_tcp_packets: (0, 0),
+            xmit_throughput: (0, 0),
+            xmit_tcp_packets: (0, 0),
             current_tcp_retransmit_packets: (0, 0),
             current_retransmits: (0, 0),
             rtts: Vec::new(),

@@ -334,13 +334,21 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
         is_virtual: node.virtual_node,
         runtime_virtualized: is_runtime_virtualized_node(&node.name),
         max_throughput: node.max_throughput,
-        current_throughput: (
-            node.current_throughput.get_down(),
-            node.current_throughput.get_up(),
+        enqueue_throughput: (
+            node.enqueue_throughput.get_down(),
+            node.enqueue_throughput.get_up(),
         ),
-        current_tcp_packets: (
-            node.current_tcp_packets.get_down(),
-            node.current_tcp_packets.get_up(),
+        enqueue_tcp_packets: (
+            node.enqueue_tcp_packets.get_down(),
+            node.enqueue_tcp_packets.get_up(),
+        ),
+        xmit_throughput: (
+            node.xmit_throughput.get_down(),
+            node.xmit_throughput.get_up(),
+        ),
+        xmit_tcp_packets: (
+            node.xmit_tcp_packets.get_down(),
+            node.xmit_tcp_packets.get_up(),
         ),
         current_tcp_retransmit_packets: (
             node.current_tcp_retransmit_packets.get_down(),
@@ -405,8 +413,8 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
         nodes.remove(0);
         // Sort by total bandwidth (up + down) descending
         nodes.sort_by(|a, b| {
-            let total_a = a.1.current_throughput.0 + a.1.current_throughput.1;
-            let total_b = b.1.current_throughput.0 + b.1.current_throughput.1;
+            let total_a = a.1.enqueue_throughput.0 + a.1.enqueue_throughput.1;
+            let total_b = b.1.enqueue_throughput.0 + b.1.enqueue_throughput.1;
             total_b.cmp(&total_a)
         });
         // Summarize everything after n_queues
@@ -417,24 +425,39 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
             let mut other_tcp_retransmit_packets = (0, 0);
             let mut other_udp_packets = (0, 0);
             let mut other_icmp_packets = (0, 0);
-            let mut other_xmit = (0, 0);
+            let mut other_xmit_bw = (0, 0);
+            let mut other_xmit_packets = (0, 0);
+            let mut other_xmit_tcp_packets = (0, 0);
+            let mut other_xmit_udp_packets = (0, 0);
+            let mut other_xmit_icmp_packets = (0, 0);
+            let mut other_retransmits = (0, 0);
             let mut other_marks = (0, 0);
             let mut other_drops = (0, 0);
             nodes.drain(n_queues..).for_each(|n| {
-                other_bw.0 += n.1.current_throughput.0;
-                other_bw.1 += n.1.current_throughput.1;
-                other_packets.0 += n.1.current_packets.0;
-                other_packets.1 += n.1.current_packets.1;
-                other_tcp_packets.0 += n.1.current_tcp_packets.0;
-                other_tcp_packets.1 += n.1.current_tcp_packets.1;
+                other_bw.0 += n.1.enqueue_throughput.0;
+                other_bw.1 += n.1.enqueue_throughput.1;
+                other_packets.0 += n.1.enqueue_packets.0;
+                other_packets.1 += n.1.enqueue_packets.1;
+                other_tcp_packets.0 += n.1.enqueue_tcp_packets.0;
+                other_tcp_packets.1 += n.1.enqueue_tcp_packets.1;
                 other_tcp_retransmit_packets.0 += n.1.current_tcp_retransmit_packets.0;
                 other_tcp_retransmit_packets.1 += n.1.current_tcp_retransmit_packets.1;
-                other_udp_packets.0 += n.1.current_udp_packets.0;
-                other_udp_packets.1 += n.1.current_udp_packets.1;
-                other_icmp_packets.0 += n.1.current_icmp_packets.0;
-                other_icmp_packets.1 += n.1.current_icmp_packets.1;
-                other_xmit.0 += n.1.current_retransmits.0;
-                other_xmit.1 += n.1.current_retransmits.1;
+                other_udp_packets.0 += n.1.enqueue_udp_packets.0;
+                other_udp_packets.1 += n.1.enqueue_udp_packets.1;
+                other_icmp_packets.0 += n.1.enqueue_icmp_packets.0;
+                other_icmp_packets.1 += n.1.enqueue_icmp_packets.1;
+                other_xmit_bw.0 += n.1.xmit_throughput.0;
+                other_xmit_bw.1 += n.1.xmit_throughput.1;
+                other_xmit_packets.0 += n.1.xmit_packets.0;
+                other_xmit_packets.1 += n.1.xmit_packets.1;
+                other_xmit_tcp_packets.0 += n.1.xmit_tcp_packets.0;
+                other_xmit_tcp_packets.1 += n.1.xmit_tcp_packets.1;
+                other_xmit_udp_packets.0 += n.1.xmit_udp_packets.0;
+                other_xmit_udp_packets.1 += n.1.xmit_udp_packets.1;
+                other_xmit_icmp_packets.0 += n.1.xmit_icmp_packets.0;
+                other_xmit_icmp_packets.1 += n.1.xmit_icmp_packets.1;
+                other_retransmits.0 += n.1.current_retransmits.0;
+                other_retransmits.1 += n.1.current_retransmits.1;
                 other_marks.0 += n.1.current_marks.0;
                 other_marks.1 += n.1.current_marks.1;
                 other_drops.0 += n.1.current_drops.0;
@@ -451,13 +474,18 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     max_throughput: (0.0, 0.0),
                     configured_max_throughput: (0.0, 0.0),
                     effective_max_throughput: None,
-                    current_throughput: other_bw,
-                    current_packets: other_packets,
-                    current_tcp_packets: other_tcp_packets,
+                    enqueue_throughput: other_bw,
+                    enqueue_packets: other_packets,
+                    enqueue_tcp_packets: other_tcp_packets,
                     current_tcp_retransmit_packets: other_tcp_retransmit_packets,
-                    current_udp_packets: other_udp_packets,
-                    current_icmp_packets: other_icmp_packets,
-                    current_retransmits: other_xmit,
+                    enqueue_udp_packets: other_udp_packets,
+                    enqueue_icmp_packets: other_icmp_packets,
+                    xmit_throughput: other_xmit_bw,
+                    xmit_packets: other_xmit_packets,
+                    xmit_tcp_packets: other_xmit_tcp_packets,
+                    xmit_udp_packets: other_xmit_udp_packets,
+                    xmit_icmp_packets: other_xmit_icmp_packets,
+                    current_retransmits: other_retransmits,
                     current_marks: other_marks,
                     current_drops: other_drops,
                     rtts: Vec::new(),

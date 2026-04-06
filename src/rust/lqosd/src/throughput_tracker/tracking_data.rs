@@ -550,7 +550,7 @@ impl ThroughputTracker {
                     }
 
                     if let Some(parents) = &entry.network_json_parents {
-                        net_json_calc.add_throughput_cycle(
+                        net_json_calc.add_enqueue_throughput_cycle(
                             parents,
                             (
                                 entry
@@ -604,6 +604,58 @@ impl ThroughputTracker {
                             ),
                         );
                     }
+                }
+                if xmit_changed && let Some(parents) = &entry.network_json_parents {
+                    net_json_calc.add_xmit_throughput_cycle(
+                        parents,
+                        (
+                            entry
+                                .xmit_bytes
+                                .down
+                                .saturating_sub(entry.prev_xmit_bytes.down),
+                            entry.xmit_bytes.up.saturating_sub(entry.prev_xmit_bytes.up),
+                        ),
+                        (
+                            entry
+                                .xmit_packets
+                                .down
+                                .saturating_sub(entry.prev_xmit_packets.down),
+                            entry
+                                .xmit_packets
+                                .up
+                                .saturating_sub(entry.prev_xmit_packets.up),
+                        ),
+                        (
+                            entry
+                                .xmit_tcp_packets
+                                .down
+                                .saturating_sub(entry.prev_xmit_tcp_packets.down),
+                            entry
+                                .xmit_tcp_packets
+                                .up
+                                .saturating_sub(entry.prev_xmit_tcp_packets.up),
+                        ),
+                        (
+                            entry
+                                .xmit_udp_packets
+                                .down
+                                .saturating_sub(entry.prev_xmit_udp_packets.down),
+                            entry
+                                .xmit_udp_packets
+                                .up
+                                .saturating_sub(entry.prev_xmit_udp_packets.up),
+                        ),
+                        (
+                            entry
+                                .xmit_icmp_packets
+                                .down
+                                .saturating_sub(entry.prev_xmit_icmp_packets.down),
+                            entry
+                                .xmit_icmp_packets
+                                .up
+                                .saturating_sub(entry.prev_xmit_icmp_packets.up),
+                        ),
+                    );
                 }
             } else {
                 let circuit_hash = reduced.circuit_hash;

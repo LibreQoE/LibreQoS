@@ -49,7 +49,7 @@ const NODE_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator override. Will be a
 
 function retransmitPacketsForNode(node, direction) {
     return toNumber(
-        node.current_tcp_retransmit_packets?.[direction] ?? node.current_tcp_packets?.[direction],
+        node.current_tcp_retransmit_packets?.[direction] ?? node.enqueue_tcp_packets?.[direction],
         0,
     );
 }
@@ -1119,8 +1119,8 @@ function updateTreeGauges(node) {
     ensureTreeGauges();
     const gaugeMax = nodeSnapshotGaugeMax(node);
     treeBitsGauge.update(
-        toNumber(node.current_throughput?.[0], 0) * 8,
-        toNumber(node.current_throughput?.[1], 0) * 8,
+        toNumber(node.enqueue_throughput?.[0], 0) * 8,
+        toNumber(node.enqueue_throughput?.[1], 0) * 8,
         gaugeMax[0],
         gaugeMax[1],
     );
@@ -1248,8 +1248,8 @@ function fillHeader(node) {
     $("#parentEffectiveU").text(effectiveUp);
     $("#parentConfiguredD").text(configuredDown).removeClass("lqos-limit-secondary is-match").addClass(matchClassDown);
     $("#parentConfiguredU").text(configuredUp).removeClass("lqos-limit-secondary is-match").addClass(matchClassUp);
-    $("#parentTpD").html(formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effective[0]));
-    $("#parentTpU").html(formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effective[1]));
+    $("#parentTpD").html(formatThroughput(toNumber(node.enqueue_throughput[0], 0) * 8, effective[0]));
+    $("#parentTpU").html(formatThroughput(toNumber(node.enqueue_throughput[1], 0) * 8, effective[1]));
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
     $("#parentQooD").html(formatQooScore(node.qoo ? node.qoo[0] : null));
@@ -1373,14 +1373,14 @@ function buildRow(i, depth=0) {
     col.id = "down-" + nodeId;
     col.classList.add("small");
     col.style.width = "5%";
-    col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effectiveMax(node)[0]);
+    col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[0], 0) * 8, effectiveMax(node)[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "up-" + nodeId;
     col.classList.add("small");
     col.style.width = "5%";
-    col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effectiveMax(node)[1]);
+    col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[1], 0) * 8, effectiveMax(node)[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
@@ -1441,7 +1441,7 @@ function buildRow(i, depth=0) {
     col.id = "ecn-down-" + nodeId;
     col.style.width = "6%";
     if (node.current_marks[0] !== undefined) {
-        col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.current_packets[0]);
+        col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.enqueue_packets[0]);
     } else {
         col.textContent = "-";
     }
@@ -1451,7 +1451,7 @@ function buildRow(i, depth=0) {
     col.id = "ecn-up-" + nodeId;
     col.style.width = "6%";
     if (node.current_marks[1] !== undefined) {
-        col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.current_packets[1]);
+        col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.enqueue_packets[1]);
     } else {
         col.textContent = "-";
     }
@@ -1461,7 +1461,7 @@ function buildRow(i, depth=0) {
     col.id = "drops-down-" + nodeId;
     col.style.width = "6%";
     if (node.current_drops[0] !== undefined) {
-        col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.current_packets[0]);
+        col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.enqueue_packets[0]);
     } else {
         col.textContent = "-";
     }
@@ -1471,7 +1471,7 @@ function buildRow(i, depth=0) {
     col.id = "drops-up-" + nodeId;
     //col.style.width = "6%";
     if (node.current_drops[1] !== undefined) {
-        col.innerHTML = formatCakeStat(node.current_drops[1], node.current_packets[1]);
+        col.innerHTML = formatCakeStat(node.current_drops[1], node.enqueue_packets[1]);
     } else {
         col.textContent = "-";
     }
@@ -1516,11 +1516,11 @@ function treeUpdate(msg) {
 
         col = document.getElementById("down-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.current_throughput[0], 0) * 8, effectiveMax(node)[0]);
+            col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[0], 0) * 8, effectiveMax(node)[0]);
         }
         col = document.getElementById("up-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.current_throughput[1], 0) * 8, effectiveMax(node)[1]);
+            col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[1], 0) * 8, effectiveMax(node)[1]);
         }
         col = document.getElementById("rtt-down-" + nodeId);
         if (col !== null) {
@@ -1567,7 +1567,7 @@ function treeUpdate(msg) {
         col = document.getElementById("ecn-down-" + nodeId);
         if (col !== null) {
             if (node.current_marks[0] !== undefined) {
-                col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.current_packets[0]);
+                col.innerHTML = formatCakeStatPercent(node.current_marks[0], node.enqueue_packets[0]);
             } else {
                 col.textContent = "-";
             }
@@ -1575,7 +1575,7 @@ function treeUpdate(msg) {
         col = document.getElementById("ecn-up-" + nodeId);
         if (col !== null) {
             if (node.current_marks[1] !== undefined) {
-                col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.current_packets[1]);
+                col.innerHTML = formatCakeStatPercent(node.current_marks[1], node.enqueue_packets[1]);
             } else {
                 col.textContent = "-";
             }
@@ -1583,7 +1583,7 @@ function treeUpdate(msg) {
         col = document.getElementById("drops-down-" + nodeId);
         if (col !== null) {
             if (node.current_drops[0] !== undefined) {
-                col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.current_packets[0]);
+                col.innerHTML = formatCakeStatPercent(node.current_drops[0], node.enqueue_packets[0]);
             } else {
                 col.textContent = "-";
             }
@@ -1591,7 +1591,7 @@ function treeUpdate(msg) {
         col = document.getElementById("drops-up-" + nodeId);
         if (col !== null) {
             if (node.current_drops[1] !== undefined) {
-                col.innerHTML = formatCakeStatPercent(node.current_drops[1], node.current_packets[1]);
+                col.innerHTML = formatCakeStatPercent(node.current_drops[1], node.enqueue_packets[1]);
             } else {
                 col.textContent = "-";
             }

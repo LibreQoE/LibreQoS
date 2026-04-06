@@ -182,7 +182,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                 continue;
             }
 
-            const downBytesPerSec = toNumber(head[i][1].current_throughput?.[0], 0);
+            const downBytesPerSec = toNumber(head[i][1].enqueue_throughput?.[0], 0);
             const downBitsPerSec = downBytesPerSec * 8;
             const maxBitsPerSec = toNumber(head[i][1].max_throughput?.[0], 0) * 1_000_000;
             const percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
@@ -244,7 +244,7 @@ class AllTreeSankeyGraph extends GenericRingBuffer {
                         `${data[immediateParent][1].name}\u0000${data[i][1].name}`,
                     );
                     if (link !== undefined) {
-                        link.value += toNumber(data[i][1].current_throughput?.[0], 0) * 8;
+                        link.value += toNumber(data[i][1].enqueue_throughput?.[0], 0) * 8;
                         link.n++;
                     }
                 }

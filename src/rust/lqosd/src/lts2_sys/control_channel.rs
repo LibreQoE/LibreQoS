@@ -1641,11 +1641,16 @@ async fn tree_snapshot_streaming(
     struct LiveNetworkTransport {
         name: String,
         max_throughput: (f64, f64),
-        current_throughput: (u64, u64),
-        current_packets: (u64, u64),
-        current_tcp_packets: (u64, u64),
-        current_udp_packets: (u64, u64),
-        current_icmp_packets: (u64, u64),
+        #[serde(rename = "current_throughput")]
+        enqueue_throughput: (u64, u64),
+        #[serde(rename = "current_packets")]
+        enqueue_packets: (u64, u64),
+        #[serde(rename = "current_tcp_packets")]
+        enqueue_tcp_packets: (u64, u64),
+        #[serde(rename = "current_udp_packets")]
+        enqueue_udp_packets: (u64, u64),
+        #[serde(rename = "current_icmp_packets")]
+        enqueue_icmp_packets: (u64, u64),
         current_retransmits: (u64, u64),
         current_marks: (u64, u64),
         current_drops: (u64, u64),
@@ -1667,11 +1672,11 @@ async fn tree_snapshot_streaming(
             let mapped = LiveNetworkTransport {
                 name: t.name,
                 max_throughput: t.max_throughput,
-                current_throughput: t.current_throughput,
-                current_packets: t.current_packets,
-                current_tcp_packets: t.current_tcp_packets,
-                current_udp_packets: t.current_udp_packets,
-                current_icmp_packets: t.current_icmp_packets,
+                enqueue_throughput: t.enqueue_throughput,
+                enqueue_packets: t.enqueue_packets,
+                enqueue_tcp_packets: t.enqueue_tcp_packets,
+                enqueue_udp_packets: t.enqueue_udp_packets,
+                enqueue_icmp_packets: t.enqueue_icmp_packets,
                 current_retransmits: t.current_retransmits,
                 current_marks: t.current_marks,
                 current_drops: t.current_drops,

@@ -25,16 +25,31 @@ pub struct NetworkJsonTransport {
     /// Effective max throughput after parent inheritance, when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_max_throughput: Option<(f64, f64)>,
-    /// Current node throughput
-    pub current_throughput: (u64, u64),
-    /// Current node packets
-    pub current_packets: (u64, u64),
-    /// Current TCP packets
-    pub current_tcp_packets: (u64, u64),
-    /// Current UDP packets
-    pub current_udp_packets: (u64, u64),
-    /// Current ICMP packets
-    pub current_icmp_packets: (u64, u64),
+    /// Current enqueue throughput
+    pub enqueue_throughput: (u64, u64),
+    /// Current enqueue packets
+    pub enqueue_packets: (u64, u64),
+    /// Current enqueue TCP packets
+    pub enqueue_tcp_packets: (u64, u64),
+    /// Current enqueue UDP packets
+    pub enqueue_udp_packets: (u64, u64),
+    /// Current enqueue ICMP packets
+    pub enqueue_icmp_packets: (u64, u64),
+    /// Current transmitted throughput
+    #[serde(default)]
+    pub xmit_throughput: (u64, u64),
+    /// Current transmitted packets
+    #[serde(default)]
+    pub xmit_packets: (u64, u64),
+    /// Current transmitted TCP packets
+    #[serde(default)]
+    pub xmit_tcp_packets: (u64, u64),
+    /// Current transmitted UDP packets
+    #[serde(default)]
+    pub xmit_udp_packets: (u64, u64),
+    /// Current transmitted ICMP packets
+    #[serde(default)]
+    pub xmit_icmp_packets: (u64, u64),
     /// Current count of TCP retransmits
     pub current_retransmits: (u64, u64),
     /// TCP packets paired with current retransmit counts.

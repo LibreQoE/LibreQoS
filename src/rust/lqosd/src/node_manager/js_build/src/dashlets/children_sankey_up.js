@@ -6,7 +6,7 @@ import {isRedacted} from "../helpers/redact";
 function retransmitPacketsForNode(node, direction) {
     return Number(
         node?.current_tcp_retransmit_packets?.[direction]
-        ?? node?.current_tcp_packets?.[direction]
+        ?? node?.enqueue_tcp_packets?.[direction]
         ?? 0,
     );
 }
@@ -130,7 +130,7 @@ export class ShaperChildrenUp extends BaseDashlet {
 
             let parentSum = 0;
             for (const [, c] of children) {
-                const v = Number((c.current_throughput?.[1]||0));
+                const v = Number((c.enqueue_throughput?.[1]||0));
                 if (v <= 0) continue;
                 parentSum += v;
                 hasData = hasData || v > 0.5;
@@ -175,7 +175,7 @@ export class ShaperChildrenUp extends BaseDashlet {
         let rows = (msg.data || []).slice(1).map(r => {
             const m = r[1] || {};
             const name = m.name || String(r[0]);
-            const up = Number((m.current_throughput||[0,0])[1]||0);
+            const up = Number((m.enqueue_throughput||[0,0])[1]||0);
             const rxmitPackets = retransmitPacketsForNode(m, 1);
             const rxmit = rxmitPackets > 0
                 ? ( (m.current_retransmits?.[1]||0) / Math.max(1, rxmitPackets) ) * 100.0

@@ -23,20 +23,35 @@ pub struct NetworkJsonNode {
     /// The maximum throughput allowed per `network.json` for this node
     pub max_throughput: (f64, f64), // In mbps
 
-    /// Current throughput (in bytes/second) at this node
-    pub current_throughput: DownUpOrder<u64>, // In bytes
+    /// Enqueued throughput (in bytes/second) at this node
+    pub enqueue_throughput: DownUpOrder<u64>, // In bytes
 
-    /// Current Packets
-    pub current_packets: DownUpOrder<u64>,
+    /// Enqueued packets
+    pub enqueue_packets: DownUpOrder<u64>,
 
-    /// Current TCP Packets
-    pub current_tcp_packets: DownUpOrder<u64>,
+    /// Enqueued TCP packets
+    pub enqueue_tcp_packets: DownUpOrder<u64>,
 
-    /// Current UDP Packets
-    pub current_udp_packets: DownUpOrder<u64>,
+    /// Enqueued UDP packets
+    pub enqueue_udp_packets: DownUpOrder<u64>,
 
-    /// Current ICMP Packets
-    pub current_icmp_packets: DownUpOrder<u64>,
+    /// Enqueued ICMP packets
+    pub enqueue_icmp_packets: DownUpOrder<u64>,
+
+    /// Actually transmitted throughput (in bytes/second) at this node
+    pub xmit_throughput: DownUpOrder<u64>,
+
+    /// Actually transmitted packets
+    pub xmit_packets: DownUpOrder<u64>,
+
+    /// Actually transmitted TCP packets
+    pub xmit_tcp_packets: DownUpOrder<u64>,
+
+    /// Actually transmitted UDP packets
+    pub xmit_udp_packets: DownUpOrder<u64>,
+
+    /// Actually transmitted ICMP packets
+    pub xmit_icmp_packets: DownUpOrder<u64>,
 
     /// Current TCP Retransmits
     pub current_tcp_retransmits: DownUpOrder<u64>, // In retries
@@ -114,25 +129,42 @@ impl NetworkJsonNode {
             max_throughput: self.max_throughput,
             configured_max_throughput: self.max_throughput,
             effective_max_throughput: None,
-            current_throughput: (
-                self.current_throughput.get_down(),
-                self.current_throughput.get_up(),
+            enqueue_throughput: (
+                self.enqueue_throughput.get_down(),
+                self.enqueue_throughput.get_up(),
             ),
-            current_packets: (
-                self.current_packets.get_down(),
-                self.current_packets.get_up(),
+            enqueue_packets: (
+                self.enqueue_packets.get_down(),
+                self.enqueue_packets.get_up(),
             ),
-            current_tcp_packets: (
-                self.current_tcp_packets.get_down(),
-                self.current_tcp_packets.get_up(),
+            enqueue_tcp_packets: (
+                self.enqueue_tcp_packets.get_down(),
+                self.enqueue_tcp_packets.get_up(),
             ),
-            current_udp_packets: (
-                self.current_udp_packets.get_down(),
-                self.current_udp_packets.get_up(),
+            enqueue_udp_packets: (
+                self.enqueue_udp_packets.get_down(),
+                self.enqueue_udp_packets.get_up(),
             ),
-            current_icmp_packets: (
-                self.current_icmp_packets.get_down(),
-                self.current_icmp_packets.get_up(),
+            enqueue_icmp_packets: (
+                self.enqueue_icmp_packets.get_down(),
+                self.enqueue_icmp_packets.get_up(),
+            ),
+            xmit_throughput: (
+                self.xmit_throughput.get_down(),
+                self.xmit_throughput.get_up(),
+            ),
+            xmit_packets: (self.xmit_packets.get_down(), self.xmit_packets.get_up()),
+            xmit_tcp_packets: (
+                self.xmit_tcp_packets.get_down(),
+                self.xmit_tcp_packets.get_up(),
+            ),
+            xmit_udp_packets: (
+                self.xmit_udp_packets.get_down(),
+                self.xmit_udp_packets.get_up(),
+            ),
+            xmit_icmp_packets: (
+                self.xmit_icmp_packets.get_down(),
+                self.xmit_icmp_packets.get_up(),
             ),
             current_retransmits: (
                 self.current_tcp_retransmits.get_down(),

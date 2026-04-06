@@ -204,20 +204,20 @@ impl SiteStateTracker {
             };
 
             // Record throughput (Mbps)
-            let down_mbps = (node_info.current_throughput.0 as f64 * 8.0) / 1_000_000.0;
-            let up_mbps = (node_info.current_throughput.1 as f64 * 8.0) / 1_000_000.0;
+            let down_mbps = (node_info.enqueue_throughput.0 as f64 * 8.0) / 1_000_000.0;
+            let up_mbps = (node_info.enqueue_throughput.1 as f64 * 8.0) / 1_000_000.0;
             target.throughput_down.add(down_mbps);
             target.throughput_up.add(up_mbps);
             target.current_throughput = (down_mbps, up_mbps);
 
             // Retransmits (as a percentage of TCP packets)
-            let retransmits_down = if node_info.current_tcp_packets.0 > 0 {
-                node_info.current_retransmits.0 as f64 / node_info.current_tcp_packets.0 as f64
+            let retransmits_down = if node_info.enqueue_tcp_packets.0 > 0 {
+                node_info.current_retransmits.0 as f64 / node_info.enqueue_tcp_packets.0 as f64
             } else {
                 0.0
             };
-            let retransmits_up = if node_info.current_tcp_packets.1 > 0 {
-                node_info.current_retransmits.1 as f64 / node_info.current_tcp_packets.1 as f64
+            let retransmits_up = if node_info.enqueue_tcp_packets.1 > 0 {
+                node_info.current_retransmits.1 as f64 / node_info.enqueue_tcp_packets.1 as f64
             } else {
                 0.0
             };

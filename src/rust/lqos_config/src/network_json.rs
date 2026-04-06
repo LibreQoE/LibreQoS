@@ -81,11 +81,16 @@ impl NetworkJson {
             id: None,
             virtual_node: false,
             max_throughput: (0.0, 0.0),
-            current_throughput: DownUpOrder::zeroed(),
-            current_packets: DownUpOrder::zeroed(),
-            current_tcp_packets: DownUpOrder::zeroed(),
-            current_udp_packets: DownUpOrder::zeroed(),
-            current_icmp_packets: DownUpOrder::zeroed(),
+            enqueue_throughput: DownUpOrder::zeroed(),
+            enqueue_packets: DownUpOrder::zeroed(),
+            enqueue_tcp_packets: DownUpOrder::zeroed(),
+            enqueue_udp_packets: DownUpOrder::zeroed(),
+            enqueue_icmp_packets: DownUpOrder::zeroed(),
+            xmit_throughput: DownUpOrder::zeroed(),
+            xmit_packets: DownUpOrder::zeroed(),
+            xmit_tcp_packets: DownUpOrder::zeroed(),
+            xmit_udp_packets: DownUpOrder::zeroed(),
+            xmit_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
             current_tcp_retransmit_packets: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
@@ -164,11 +169,16 @@ impl NetworkJson {
     pub fn zero_throughput_and_rtt(&mut self) {
         //log::warn!("Locking network tree for throughput cycle");
         self.nodes.iter_mut().for_each(|n| {
-            n.current_throughput.set_to_zero();
-            n.current_packets.set_to_zero();
-            n.current_tcp_packets.set_to_zero();
-            n.current_udp_packets.set_to_zero();
-            n.current_icmp_packets.set_to_zero();
+            n.enqueue_throughput.set_to_zero();
+            n.enqueue_packets.set_to_zero();
+            n.enqueue_tcp_packets.set_to_zero();
+            n.enqueue_udp_packets.set_to_zero();
+            n.enqueue_icmp_packets.set_to_zero();
+            n.xmit_throughput.set_to_zero();
+            n.xmit_packets.set_to_zero();
+            n.xmit_tcp_packets.set_to_zero();
+            n.xmit_udp_packets.set_to_zero();
+            n.xmit_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
             n.current_tcp_retransmit_packets.set_to_zero();
             n.rtt_buffer.clear();
@@ -180,7 +190,7 @@ impl NetworkJson {
     /// Add throughput numbers to node entries. Note that this does *not* require
     /// mutable access due to atomics and interior mutability - so it is safe to use
     /// a read lock.
-    pub fn add_throughput_cycle(
+    pub fn add_enqueue_throughput_cycle(
         &mut self,
         targets: &[usize],
         bytes: (u64, u64),
@@ -192,11 +202,34 @@ impl NetworkJson {
         for idx in targets {
             // Safety first: use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
-                node.current_throughput.checked_add_tuple(bytes);
-                node.current_packets.checked_add_tuple(packets);
-                node.current_tcp_packets.checked_add_tuple(tcp);
-                node.current_udp_packets.checked_add_tuple(udp);
-                node.current_icmp_packets.checked_add_tuple(icmp);
+                node.enqueue_throughput.checked_add_tuple(bytes);
+                node.enqueue_packets.checked_add_tuple(packets);
+                node.enqueue_tcp_packets.checked_add_tuple(tcp);
+                node.enqueue_udp_packets.checked_add_tuple(udp);
+                node.enqueue_icmp_packets.checked_add_tuple(icmp);
+            } else {
+                warn!("No network tree entry for index {idx}");
+            }
+        }
+    }
+
+    /// Add actual transmitted throughput numbers to node entries.
+    pub fn add_xmit_throughput_cycle(
+        &mut self,
+        targets: &[usize],
+        bytes: (u64, u64),
+        packets: (u64, u64),
+        tcp: (u64, u64),
+        udp: (u64, u64),
+        icmp: (u64, u64),
+    ) {
+        for idx in targets {
+            if let Some(node) = self.nodes.get_mut(*idx) {
+                node.xmit_throughput.checked_add_tuple(bytes);
+                node.xmit_packets.checked_add_tuple(packets);
+                node.xmit_tcp_packets.checked_add_tuple(tcp);
+                node.xmit_udp_packets.checked_add_tuple(udp);
+                node.xmit_icmp_packets.checked_add_tuple(icmp);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -265,10 +298,10 @@ impl NetworkJson {
 
         for node in self.nodes.iter_mut() {
             let download_util =
-                utilization_percent_bytes(node.current_throughput.down, node.max_throughput.0)
+                utilization_percent_bytes(node.enqueue_throughput.down, node.max_throughput.0)
                     .unwrap_or(0.0);
             let upload_util =
-                utilization_percent_bytes(node.current_throughput.up, node.max_throughput.1)
+                utilization_percent_bytes(node.enqueue_throughput.up, node.max_throughput.1)
                     .unwrap_or(0.0);
             let rtt_p50_down = node
                 .rtt_buffer
@@ -384,11 +417,16 @@ fn recurse_node(
             json_to_mbps(json.get("downloadBandwidthMbps")),
             json_to_mbps(json.get("uploadBandwidthMbps")),
         ),
-        current_throughput: DownUpOrder::zeroed(),
-        current_packets: DownUpOrder::zeroed(),
-        current_tcp_packets: DownUpOrder::zeroed(),
-        current_udp_packets: DownUpOrder::zeroed(),
-        current_icmp_packets: DownUpOrder::zeroed(),
+        enqueue_throughput: DownUpOrder::zeroed(),
+        enqueue_packets: DownUpOrder::zeroed(),
+        enqueue_tcp_packets: DownUpOrder::zeroed(),
+        enqueue_udp_packets: DownUpOrder::zeroed(),
+        enqueue_icmp_packets: DownUpOrder::zeroed(),
+        xmit_throughput: DownUpOrder::zeroed(),
+        xmit_packets: DownUpOrder::zeroed(),
+        xmit_tcp_packets: DownUpOrder::zeroed(),
+        xmit_udp_packets: DownUpOrder::zeroed(),
+        xmit_icmp_packets: DownUpOrder::zeroed(),
         current_tcp_retransmits: DownUpOrder::zeroed(),
         current_tcp_retransmit_packets: DownUpOrder::zeroed(),
         current_drops: DownUpOrder::zeroed(),
@@ -472,11 +510,16 @@ mod test {
             id: None,
             virtual_node: false,
             max_throughput: (0.0, 0.0),
-            current_throughput: DownUpOrder::zeroed(),
-            current_packets: DownUpOrder::zeroed(),
-            current_tcp_packets: DownUpOrder::zeroed(),
-            current_udp_packets: DownUpOrder::zeroed(),
-            current_icmp_packets: DownUpOrder::zeroed(),
+            enqueue_throughput: DownUpOrder::zeroed(),
+            enqueue_packets: DownUpOrder::zeroed(),
+            enqueue_tcp_packets: DownUpOrder::zeroed(),
+            enqueue_udp_packets: DownUpOrder::zeroed(),
+            enqueue_icmp_packets: DownUpOrder::zeroed(),
+            xmit_throughput: DownUpOrder::zeroed(),
+            xmit_packets: DownUpOrder::zeroed(),
+            xmit_tcp_packets: DownUpOrder::zeroed(),
+            xmit_udp_packets: DownUpOrder::zeroed(),
+            xmit_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
             current_tcp_retransmit_packets: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),

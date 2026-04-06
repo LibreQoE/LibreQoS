@@ -160,7 +160,7 @@ export class TopTreeSankey extends BaseDashlet {
                 // Compute Root->Parent value as sum of included child totals (down + up)
                 let parentSum = 0;
                 // Compute link color from parent's capacity percent (as before)
-                const downBitsPerSec = toNumber(p.current_throughput[0], 0) * 8;
+                const downBitsPerSec = toNumber(p.enqueue_throughput[0], 0) * 8;
                 const parentMax = effectiveMax(p);
                 const maxBitsPerSec = toNumber(parentMax[0], 0) * 1_000_000;
                 const percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
@@ -171,8 +171,8 @@ export class TopTreeSankey extends BaseDashlet {
                 for (const [, child] of children) {
                     const cName = child.name;
                     const cTotal =
-                        toNumber(child.current_throughput?.[0], 0) +
-                        toNumber(child.current_throughput?.[1], 0);
+                        toNumber(child.enqueue_throughput?.[0], 0) +
+                        toNumber(child.enqueue_throughput?.[1], 0);
                     if (cTotal <= 0) continue;
                     parentSum += cTotal;
 
@@ -183,7 +183,7 @@ export class TopTreeSankey extends BaseDashlet {
                     nodes.push({ name: cName, label: cLabel, ...cStyle });
 
                     // Link color for child can use child's capacity percent
-                    const cDownBitsPerSec = toNumber(child.current_throughput?.[0], 0) * 8;
+                    const cDownBitsPerSec = toNumber(child.enqueue_throughput?.[0], 0) * 8;
                     const childMax = effectiveMax(child);
                     const cMaxBitsPerSec = toNumber(childMax[0], 0) * 1_000_000;
                     const cPercent = Math.min(100, cMaxBitsPerSec > 0 ? (cDownBitsPerSec / cMaxBitsPerSec) * 100 : 0);
@@ -218,7 +218,7 @@ export class TopTreeSankey extends BaseDashlet {
             if (redact) label.fontFamily = "Illegible";
 
             let name = r[1].name;
-            const downBitsPerSec = toNumber(r[1].current_throughput[0], 0) * 8;
+            const downBitsPerSec = toNumber(r[1].enqueue_throughput[0], 0) * 8;
             const maxBitsPerSec = toNumber(effectiveMax(r[1])[0], 0) * 1_000_000;
             let percent = Math.min(100, maxBitsPerSec > 0 ? (downBitsPerSec / maxBitsPerSec) * 100 : 0);
             let capacityColor = isColorBlindMode()
@@ -237,7 +237,7 @@ export class TopTreeSankey extends BaseDashlet {
                 links.push({
                     source: "Root",
                     target: r[1].name,
-                    value: toNumber(r[1].current_throughput[0], 0) + toNumber(r[1].current_throughput[1], 0),
+                    value: toNumber(r[1].enqueue_throughput[0], 0) + toNumber(r[1].enqueue_throughput[1], 0),
                     lineStyle: { color: capacityColor },
                 });
             }
