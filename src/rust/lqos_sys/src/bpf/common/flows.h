@@ -166,25 +166,43 @@ static __always_inline void init_flow_data(
 
 // Construct a flow_key_t structure from a dissector_t. This represents the
 // unique key for a flow in the flowbee map.
-static __always_inline struct flow_key_t build_flow_key(
-    struct dissector_t *dissector, // The packet dissector from the previous step
-    u_int8_t direction // The direction of the packet (1 = to internet, 2 = to local network)
+static __always_inline struct flow_key_t build_flow_key_common(
+    struct in6_addr src_ip,
+    struct in6_addr dst_ip,
+    __u16 src_port,
+    __u16 dst_port,
+    __u8 ip_protocol,
+    u_int8_t direction
 ) {
-    __u16 src_port = direction == FROM_INTERNET ? bpf_htons(dissector->src_port) : bpf_htons(dissector->dst_port);
-    __u16 dst_port = direction == FROM_INTERNET ? bpf_htons(dissector->dst_port) : bpf_htons(dissector->src_port);
-    struct in6_addr src = direction == FROM_INTERNET ? dissector->src_ip : dissector->dst_ip;
-    struct in6_addr dst = direction == FROM_INTERNET ? dissector->dst_ip : dissector->src_ip;
+    __u16 key_src_port = direction == FROM_INTERNET ? bpf_htons(src_port) : bpf_htons(dst_port);
+    __u16 key_dst_port = direction == FROM_INTERNET ? bpf_htons(dst_port) : bpf_htons(src_port);
+    struct in6_addr key_src_ip = direction == FROM_INTERNET ? src_ip : dst_ip;
+    struct in6_addr key_dst_ip = direction == FROM_INTERNET ? dst_ip : src_ip;
 
     return (struct flow_key_t) {
-        .src = src,
-        .dst = dst,
-        .src_port = src_port,
-        .dst_port = dst_port,
-        .protocol = dissector->ip_protocol,
+        .src = key_src_ip,
+        .dst = key_dst_ip,
+        .src_port = key_src_port,
+        .dst_port = key_dst_port,
+        .protocol = ip_protocol,
         .pad = 0,
         .pad1 = 0,
         .pad2 = 0
     };
+}
+
+static __always_inline struct flow_key_t build_flow_key(
+    struct dissector_t *dissector, // The packet dissector from the previous step
+    u_int8_t direction // The direction of the packet (1 = to internet, 2 = to local network)
+) {
+    return build_flow_key_common(
+        dissector->src_ip,
+        dissector->dst_ip,
+        dissector->src_port,
+        dissector->dst_port,
+        dissector->ip_protocol,
+        direction
+    );
 }
 
 // Checks if a < b considering u32 wraparound (logic from RFC 7323 Section 5.2)
@@ -682,10 +700,39 @@ static __always_inline void track_flows_kprobe(
     u_int8_t direction,
     struct ip_hash_info *out_mapping
 ) {
-    (void)dissector;
-    (void)direction;
     out_mapping->tc_handle = 0;
     out_mapping->cpu = 0;
     out_mapping->circuit_id = 0;
     out_mapping->device_id = 0;
+
+    if (
+        dissector->ip_protocol != IPPROTO_TCP &&
+        dissector->ip_protocol != IPPROTO_UDP &&
+        dissector->ip_protocol != IPPROTO_ICMP
+    ) {
+        return;
+    }
+
+    struct flow_key_t key = build_flow_key_common(
+        dissector->src_ip,
+        dissector->dst_ip,
+        dissector->src_port,
+        dissector->dst_port,
+        dissector->ip_protocol,
+        direction
+    );
+    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
+    if (!data) {
+        return;
+    }
+
+    out_mapping->tc_handle = data->tc_handle;
+    out_mapping->cpu = data->cpu;
+    out_mapping->circuit_id = data->circuit_hash;
+    out_mapping->device_id = data->device_hash;
+    apply_stick_offset_to_mapping(direction, out_mapping);
+
+    u_int8_t rate_index = direction == TO_INTERNET ? 1 : 0;
+    data->bytes_xmit[rate_index] += dissector->skb_len;
+    data->packets_xmit[rate_index]++;
 }
