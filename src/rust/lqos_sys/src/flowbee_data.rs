@@ -47,10 +47,6 @@ pub struct FlowbeeData {
     pub bytes_enqueued: DownUpOrder<u64>,
     /// Packets enqueued for transmission
     pub packets_enqueued: DownUpOrder<u64>,
-    /// Bytes actually transmitted
-    pub bytes_xmit: DownUpOrder<u64>,
-    /// Packets actually transmitted
-    pub packets_xmit: DownUpOrder<u64>,
     /// Clock for the next rate estimate
     pub next_count_time: DownUpOrder<u64>,
     /// Clock for the previous rate estimate
@@ -99,4 +95,4 @@ pub struct FlowbeeData {
 const _: [(); 40] = [(); core::mem::size_of::<FlowbeeKey>()];
 const _: [(); 24] = [(); core::mem::size_of::<TsvalRecordBuffer>()];
 const _: [(); 48] = [(); core::mem::size_of::<DownUpOrder<TsvalRecordBuffer>>()];
-const _: [(); 272] = [(); core::mem::size_of::<FlowbeeData>()];
+const _: [(); 240] = [(); core::mem::size_of::<FlowbeeData>()];
