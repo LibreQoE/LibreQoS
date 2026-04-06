@@ -61,6 +61,10 @@ struct flow_data_t {
     __u64 bytes_enqueued[2];
     // Packets enqueued for transmission
     __u64 packets_enqueued[2];
+    // Bytes actually transmitted
+    __u64 bytes_xmit[2];
+    // Packets actually transmitted
+    __u64 packets_xmit[2];
     // Clock for the next rate estimate
     __u64 next_count_time[2];
     // Clock for the previous rate estimate
