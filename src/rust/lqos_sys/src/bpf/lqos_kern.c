@@ -503,7 +503,7 @@ int throughput_reader(struct bpf_iter__bpf_map_elem *ctx)
         bpf_seq_write(seq, content, sizeof(struct host_counter));
     }
 
-    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->download_bytes, counter->upload_bytes);
+    //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->enqueue_download_bytes, counter->enqueue_upload_bytes);
     return 0;
 }
 

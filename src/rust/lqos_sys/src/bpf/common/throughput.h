@@ -12,16 +12,16 @@
 struct kprobe_dissector_t;
 
 struct host_counter {
-    __u64 download_bytes;
-    __u64 upload_bytes;
-    __u64 download_packets;
-    __u64 upload_packets;
-    __u64 tcp_download_packets;
-    __u64 tcp_upload_packets;
-    __u64 udp_download_packets;
-    __u64 udp_upload_packets;
-    __u64 icmp_download_packets;
-    __u64 icmp_upload_packets;
+    __u64 enqueue_download_bytes;
+    __u64 enqueue_upload_bytes;
+    __u64 enqueue_download_packets;
+    __u64 enqueue_upload_packets;
+    __u64 enqueue_tcp_download_packets;
+    __u64 enqueue_tcp_upload_packets;
+    __u64 enqueue_udp_download_packets;
+    __u64 enqueue_udp_upload_packets;
+    __u64 enqueue_icmp_download_packets;
+    __u64 enqueue_icmp_upload_packets;
     __u32 tc_handle;
     __u64 circuit_id;
     __u64 device_id;
@@ -66,32 +66,32 @@ static __always_inline void track_traffic(
         counter->device_id = device_id;
         if (direction == 1) {
             // Download
-            counter->download_packets += 1;
-            counter->download_bytes += size;
+            counter->enqueue_download_packets += 1;
+            counter->enqueue_download_bytes += size;
             switch (dissector->ip_protocol) {
                 case IPPROTO_TCP:
-                    counter->tcp_download_packets += 1;
+                    counter->enqueue_tcp_download_packets += 1;
                     break;
                 case IPPROTO_UDP:
-                    counter->udp_download_packets += 1;
+                    counter->enqueue_udp_download_packets += 1;
                     break;
                 case IPPROTO_ICMP:
-                    counter->icmp_download_packets += 1;
+                    counter->enqueue_icmp_download_packets += 1;
                     break;
             }
         } else {
             // Upload
-            counter->upload_packets += 1;
-            counter->upload_bytes += size;
+            counter->enqueue_upload_packets += 1;
+            counter->enqueue_upload_bytes += size;
             switch (dissector->ip_protocol) {
                 case IPPROTO_TCP:
-                    counter->tcp_upload_packets += 1;
+                    counter->enqueue_tcp_upload_packets += 1;
                     break;
                 case IPPROTO_UDP:
-                    counter->udp_upload_packets += 1;
+                    counter->enqueue_udp_upload_packets += 1;
                     break;
                 case IPPROTO_ICMP:
-                    counter->icmp_upload_packets += 1;
+                    counter->enqueue_icmp_upload_packets += 1;
                     break;
             }
         }
@@ -105,31 +105,31 @@ static __always_inline void track_traffic(
         new_host->device_id = device_id;
         new_host->last_seen = dissector->now;
         if (direction == 1) {
-            new_host->download_packets = 1;
-            new_host->download_bytes = size;
+            new_host->enqueue_download_packets = 1;
+            new_host->enqueue_download_bytes = size;
             switch (dissector->ip_protocol) {
                 case IPPROTO_TCP:
-                    new_host->tcp_download_packets = 1;
+                    new_host->enqueue_tcp_download_packets = 1;
                     break;
                 case IPPROTO_UDP:
-                    new_host->udp_download_packets = 1;
+                    new_host->enqueue_udp_download_packets = 1;
                     break;
                 case IPPROTO_ICMP:
-                    new_host->icmp_download_packets = 1;
+                    new_host->enqueue_icmp_download_packets = 1;
                     break;
             }
         } else {
-            new_host->upload_packets = 1;
-            new_host->upload_bytes = size;
+            new_host->enqueue_upload_packets = 1;
+            new_host->enqueue_upload_bytes = size;
             switch (dissector->ip_protocol) {
                 case IPPROTO_TCP:
-                    new_host->tcp_upload_packets = 1;
+                    new_host->enqueue_tcp_upload_packets = 1;
                     break;
                 case IPPROTO_UDP:
-                    new_host->udp_upload_packets = 1;
+                    new_host->enqueue_udp_upload_packets = 1;
                     break;
                 case IPPROTO_ICMP:
-                    new_host->icmp_upload_packets = 1;
+                    new_host->enqueue_icmp_upload_packets = 1;
                     break;
             }
         }

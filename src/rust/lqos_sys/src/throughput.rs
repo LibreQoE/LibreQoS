@@ -5,35 +5,35 @@ use zerocopy::FromBytes;
 #[repr(C)]
 #[derive(Debug, Clone, Default, FromBytes)]
 pub struct HostCounter {
-    /// Download bytes counter (keeps incrementing)
-    pub download_bytes: u64,
+    /// Enqueued download bytes counter (keeps incrementing)
+    pub enqueue_download_bytes: u64,
 
-    /// Upload bytes counter (keeps incrementing)
-    pub upload_bytes: u64,
+    /// Enqueued upload bytes counter (keeps incrementing)
+    pub enqueue_upload_bytes: u64,
 
-    /// Download packets counter (keeps incrementing)
-    pub download_packets: u64,
+    /// Enqueued download packets counter (keeps incrementing)
+    pub enqueue_download_packets: u64,
 
-    /// Upload packets counter (keeps incrementing)
-    pub upload_packets: u64,
+    /// Enqueued upload packets counter (keeps incrementing)
+    pub enqueue_upload_packets: u64,
 
-    /// TCP packets downloaded
-    pub tcp_download_packets: u64,
+    /// Enqueued TCP packets downloaded
+    pub enqueue_tcp_download_packets: u64,
 
-    /// TCP packets uploaded
-    pub tcp_upload_packets: u64,
+    /// Enqueued TCP packets uploaded
+    pub enqueue_tcp_upload_packets: u64,
 
-    /// UDP packets downloaded
-    pub udp_download_packets: u64,
+    /// Enqueued UDP packets downloaded
+    pub enqueue_udp_download_packets: u64,
 
-    /// UDP packets uploaded
-    pub udp_upload_packets: u64,
+    /// Enqueued UDP packets uploaded
+    pub enqueue_udp_upload_packets: u64,
 
-    /// ICMP packets downloaded
-    pub icmp_download_packets: u64,
+    /// Enqueued ICMP packets downloaded
+    pub enqueue_icmp_download_packets: u64,
 
-    /// ICMP packets uploaded
-    pub icmp_upload_packets: u64,
+    /// Enqueued ICMP packets uploaded
+    pub enqueue_icmp_upload_packets: u64,
 
     /// Mapped TC handle, 0 if there isn't one.
     pub tc_handle: u32,

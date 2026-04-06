@@ -98,11 +98,16 @@ impl ReducedHostCounters {
         let mut meta_device_id = 0u64;
 
         for c in counts {
-            bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
-            packets.checked_add_direct(c.download_packets, c.upload_packets);
-            tcp_packets.checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
-            udp_packets.checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
-            icmp_packets.checked_add_direct(c.icmp_download_packets, c.icmp_upload_packets);
+            bytes.checked_add_direct(c.enqueue_download_bytes, c.enqueue_upload_bytes);
+            packets.checked_add_direct(c.enqueue_download_packets, c.enqueue_upload_packets);
+            tcp_packets
+                .checked_add_direct(c.enqueue_tcp_download_packets, c.enqueue_tcp_upload_packets);
+            udp_packets
+                .checked_add_direct(c.enqueue_udp_download_packets, c.enqueue_udp_upload_packets);
+            icmp_packets.checked_add_direct(
+                c.enqueue_icmp_download_packets,
+                c.enqueue_icmp_upload_packets,
+            );
             last_seen = u64::max(last_seen, c.last_seen);
             if c.last_seen > meta_last_seen {
                 meta_last_seen = c.last_seen;
