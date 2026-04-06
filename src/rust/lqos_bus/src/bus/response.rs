@@ -453,6 +453,9 @@ pub enum BusResponse {
         /// In bps
         bits_per_second: DownUpOrder<u64>,
 
+        /// Actually transmitted throughput in bps
+        xmit_bits_per_second: DownUpOrder<u64>,
+
         /// In pps
         packets_per_second: DownUpOrder<u64>,
 

@@ -308,9 +308,18 @@ fn throughput_task(
 }
 
 pub fn current_throughput() -> BusResponse {
-    let (bits_per_second, packets_per_second, shaped_bits_per_second, tcp_pps, udp_pps, icmp_pps) = {
+    let (
+        bits_per_second,
+        xmit_bits_per_second,
+        packets_per_second,
+        shaped_bits_per_second,
+        tcp_pps,
+        udp_pps,
+        icmp_pps,
+    ) = {
         (
             THROUGHPUT_TRACKER.enqueue_bits_per_second(),
+            THROUGHPUT_TRACKER.xmit_bits_per_second(),
             THROUGHPUT_TRACKER.enqueue_packets_per_second(),
             THROUGHPUT_TRACKER.shaped_bits_per_second(),
             THROUGHPUT_TRACKER.enqueue_tcp_packets_per_second(),
@@ -320,6 +329,7 @@ pub fn current_throughput() -> BusResponse {
     };
     BusResponse::CurrentThroughput {
         bits_per_second,
+        xmit_bits_per_second,
         packets_per_second,
         shaped_bits_per_second,
         tcp_packets_per_second: tcp_pps,

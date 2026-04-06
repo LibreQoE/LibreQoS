@@ -32,6 +32,7 @@ async fn get_data(client: &mut BusClient, n_rows: u16) -> Result<DataResult> {
         bits_per_second,
         packets_per_second,
         shaped_bits_per_second: _,
+        ..
       } => {
         let tuple = (
           bits_per_second.0,

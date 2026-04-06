@@ -196,4 +196,14 @@ static __always_inline void track_traffic_kprobe(
                 break;
         }
     }
+
+    // Debug: check that we are applying the data
+    #ifdef VERBOSE
+    bpf_debug(
+        "(KPROBE-XMIT) dir:%d size:%u proto:%d",
+        direction,
+        size,
+        dissector->ip_protocol
+    );
+    #endif
 }

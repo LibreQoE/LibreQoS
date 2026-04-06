@@ -45,7 +45,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
     }
 
     tooltip() {
-        return "<h5>" + this.periodLabel() + " Throughput</h5><p>Mapped (AQM controlled and limited) and Unmapped (not found in your Shaped Devices file) traffic over " + this.periodDescription() + ".</p>"
+        return "<h5>" + this.periodLabel() + " Throughput</h5><p>Mapped (AQM controlled and limited), Unmapped (not found in your Shaped Devices file), and Actual Traffic over " + this.periodDescription() + ".</p>"
     }
 
     subscribeTo() {
@@ -99,7 +99,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
 
     onMessage(msg) {
         if (msg.event === "Throughput" && window.timePeriods.activePeriod === "Live") {
-            this.#applyLiveSample(msg.data.shaped_bps, msg.data.bps);
+            this.#applyLiveSample(msg.data.shaped_bps, msg.data.bps, msg.data.xmit_bps);
 
             this.counter++;
             if (this.counter > 120) {
@@ -117,6 +117,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
         this.backgroundSamples.push({
             shaped: msg.data.shaped_bps,
             unshaped: msg.data.bps,
+            actual: msg.data.xmit_bps,
         });
         if (this.backgroundSamples.length > LIVE_SAMPLE_LIMIT) {
             this.backgroundSamples.shift();
@@ -130,7 +131,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
         }
         for (let i = 0; i < this.backgroundSamples.length; i++) {
             const sample = this.backgroundSamples[i];
-            this.#applyLiveSample(sample.shaped, sample.unshaped);
+            this.#applyLiveSample(sample.shaped, sample.unshaped, sample.actual);
         }
         this.backgroundSamples = [];
         return true;
@@ -204,10 +205,10 @@ export class ThroughputRingDash extends DashletBaseInsight{
         }
     }
 
-    #applyLiveSample(shaped, unshaped) {
-        this.graph.update(shaped, unshaped);
+    #applyLiveSample(shaped, unshaped, actual) {
+        this.graph.update(shaped, unshaped, actual);
         if (this.zoomGraph) {
-            this.zoomGraph.update(shaped, unshaped);
+            this.zoomGraph.update(shaped, unshaped, actual);
         }
     }
 }

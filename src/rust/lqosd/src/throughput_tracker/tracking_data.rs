@@ -538,8 +538,12 @@ impl ThroughputTracker {
                         net_json_calc.get_parents_for_circuit_id(&device.parent_node)
                     });
                 }
-                if entry.enqueue_packets != entry.prev_enqueue_packets {
+                let enqueue_changed = entry.enqueue_packets != entry.prev_enqueue_packets;
+                let xmit_changed = entry.xmit_packets != entry.prev_xmit_packets;
+                if enqueue_changed || xmit_changed {
                     entry.most_recent_cycle = self_cycle;
+                }
+                if enqueue_changed {
                     // Call to Bakery Update for existing traffic
                     if let Some(circuit_hash) = entry.circuit_hash {
                         changed_circuits.insert(circuit_hash);

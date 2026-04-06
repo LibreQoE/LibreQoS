@@ -316,6 +316,7 @@ pub struct QooProfilesSummary {
 #[derive(Debug, Serialize)]
 pub struct ThroughputData {
     pub bps: DownUpOrder<u64>,
+    pub xmit_bps: DownUpOrder<u64>,
     pub pps: DownUpOrder<u64>,
     pub tcp_pps: DownUpOrder<u64>,
     pub udp_pps: DownUpOrder<u64>,

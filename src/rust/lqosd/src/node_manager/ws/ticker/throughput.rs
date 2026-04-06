@@ -34,6 +34,7 @@ pub async fn throughput(
     for reply in replies.responses.into_iter() {
         if let BusResponse::CurrentThroughput {
             bits_per_second,
+            xmit_bits_per_second,
             packets_per_second,
             tcp_packets_per_second,
             udp_packets_per_second,
@@ -53,6 +54,7 @@ pub async fn throughput(
             let bps = WsResponse::Throughput {
                 data: ThroughputData {
                     bps: bits_per_second,
+                    xmit_bps: xmit_bits_per_second,
                     pps: packets_per_second,
                     tcp_pps: tcp_packets_per_second,
                     udp_pps: udp_packets_per_second,

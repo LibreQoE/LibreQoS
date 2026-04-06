@@ -40,6 +40,12 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                     itemStyle: {
                         color: window.graphPalette[1]
                     }
+                }, {
+                    name: "Actual Traffic",
+                    icon: 'circle',
+                    itemStyle: {
+                        color: window.graphPalette[2]
+                    }
                 }
             ],
             textStyle: {
@@ -94,6 +100,28 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 },
                 symbol: 'none',
             },
+            {
+                name: 'actual0',
+                data: [],
+                type: 'line',
+                lineStyle: {
+                    color: window.graphPalette[2],
+                    type: 'dashed',
+                    width: 2,
+                },
+                symbol: 'none',
+            },
+            {
+                name: 'Actual Traffic',
+                data: [],
+                type: 'line',
+                lineStyle: {
+                    color: window.graphPalette[2],
+                    type: 'dashed',
+                    width: 2,
+                },
+                symbol: 'none',
+            },
         ];
 
         // Add axisPointer and tooltip with time display
@@ -114,6 +142,9 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
                 const ts = this.ringbuffer.getTimestamp(idx);
                 let s = `<div><b>Time:</b> ${formatTime(ts)}</div>`;
                 for (const p of params) {
+                    if (p.seriesName.endsWith("0")) {
+                        continue;
+                    }
                     s += `<div><span style="display:inline-block;margin-right:5px;border-radius:10px;width:9px;height:9px;background-color:${p.color};"></span>${p.seriesName}: <b>${scaleNumber(Math.abs(p.value))}</b></div>`;
                 }
                 return s;
@@ -126,25 +157,30 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
         super.onThemeChange();
         this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
         this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
+        this.option.legend.data[2].itemStyle.color = window.graphPalette[2];
         this.option.series[0].lineStyle.color = window.graphPalette[0];
         this.option.series[0].areaStyle.color = window.graphPalette[0];
         this.option.series[1].lineStyle.color = window.graphPalette[0];
         this.option.series[1].areaStyle.color = window.graphPalette[0];
         this.option.series[2].lineStyle.color = window.graphPalette[1];
         this.option.series[3].lineStyle.color = window.graphPalette[1];
+        this.option.series[4].lineStyle.color = window.graphPalette[2];
+        this.option.series[5].lineStyle.color = window.graphPalette[2];
 
         this.chart.setOption(this.option);
     }
 
-    update(shaped, unshaped) {
+    update(shaped, unshaped, actual) {
         this.chart.hideLoading();
-        this.ringbuffer.push(shaped, unshaped, Date.now());
+        this.ringbuffer.push(shaped, unshaped, actual, Date.now());
 
         let data = this.ringbuffer.series();
         this.option.series[0].data = data[0];
         this.option.series[1].data = data[1];
         this.option.series[2].data = data[2];
         this.option.series[3].data = data[3];
+        this.option.series[4].data = data[4];
+        this.option.series[5].data = data[5];
 
         this.chart.setOption(this.option);
     }
@@ -155,20 +191,23 @@ class RingBuffer {
         this.size = size;
         let data = [];
         for (let i=0; i<size; i++) {
-            data.push([0, 0, 0, 0, 0]); // Add timestamp as 5th element
+            data.push([0, 0, 0, 0, 0, 0, 0]); // Last element is timestamp
         }
         this.head = 0;
         this.data = data;
     }
 
-    push(shaped, unshaped, timestamp) {
+    push(shaped, unshaped, actual, timestamp) {
         const shapedPair = normalizeDownUpOrder(shaped, 0);
         const unshapedPair = normalizeDownUpOrder(unshaped, 0);
+        const actualPair = normalizeDownUpOrder(actual, 0);
         this.data[this.head][1] = shapedPair.down;
         this.data[this.head][0] = 0.0 - shapedPair.up;
         this.data[this.head][2] = unshapedPair.down;
         this.data[this.head][3] = 0.0 - unshapedPair.up;
-        this.data[this.head][4] = timestamp || Date.now();
+        this.data[this.head][4] = 0.0 - actualPair.up;
+        this.data[this.head][5] = actualPair.down;
+        this.data[this.head][6] = timestamp || Date.now();
         this.head += 1;
         this.head %= this.size;
     }
@@ -177,20 +216,20 @@ class RingBuffer {
         // idx is the logical index in the chart (0 = oldest)
         // Map to physical index in ring buffer
         let physical = (this.head + idx) % this.size;
-        return this.data[physical][4];
+        return this.data[physical][6];
     }
 
     series() {
         let result = [
-            [], [], [], []
+            [], [], [], [], [], []
         ];
         for (let i=this.head; i<this.size; i++) {
-            for (let j=0; j<4; j++) {
+            for (let j=0; j<6; j++) {
                 result[j].push(this.data[i][j]);
             }
         }
         for (let i=0; i<this.head; i++) {
-            for (let j=0; j<4; j++) {
+            for (let j=0; j<6; j++) {
                 result[j].push(this.data[i][j]);
             }
         }
