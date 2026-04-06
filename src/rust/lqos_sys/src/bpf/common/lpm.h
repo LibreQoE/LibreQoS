@@ -113,6 +113,70 @@ static __always_inline void apply_stick_offset_to_mapping(
     mapping->tc_handle += stick_offset << 16;
 }
 
+// Looks up shaping metadata for a customer-side host IP. This is useful in
+// contexts such as the transmit kprobe where we already know the effective
+// direction and host-side address, and want to avoid the heavier flowbee path.
+static __always_inline struct ip_hash_info lookup_mapping_for_host(
+    const struct in6_addr *host_key,
+    u_int8_t effective_direction
+)
+{
+    struct ip_hash_info out = {0};
+    struct ip_hash_key lookup_key = {
+        .prefixlen = 128,
+        .address = *host_key,
+    };
+    struct ip_hash_info *ip_info = NULL;
+
+#ifdef USE_HOTCACHE
+    ip_info = bpf_map_lookup_elem(
+        &ip_to_cpu_and_tc_hotcache,
+        host_key
+    );
+    if (ip_info) {
+        if (ip_info->cpu != NEGATIVE_HIT) {
+            out = *ip_info;
+            apply_stick_offset_to_mapping(effective_direction, &out);
+        }
+        return out;
+    }
+#endif
+
+    ip_info = bpf_map_lookup_elem(
+        &map_ip_to_cpu_and_tc,
+        &lookup_key
+    );
+    if (ip_info) {
+        out = *ip_info;
+#ifdef USE_HOTCACHE
+        bpf_map_update_elem(
+            &ip_to_cpu_and_tc_hotcache,
+            host_key,
+            ip_info,
+            BPF_NOEXIST
+        );
+#endif
+    } else {
+#ifdef USE_HOTCACHE
+        struct ip_hash_info negative_hit = {
+            .cpu = NEGATIVE_HIT,
+            .tc_handle = NEGATIVE_HIT,
+            .circuit_id = 0,
+            .device_id = 0,
+        };
+        bpf_map_update_elem(
+            &ip_to_cpu_and_tc_hotcache,
+            host_key,
+            &negative_hit,
+            BPF_NOEXIST
+        );
+#endif
+    }
+
+    apply_stick_offset_to_mapping(effective_direction, &out);
+    return out;
+}
+
 // Performs an LPM lookup for an `ip_hash.h` encoded address, taking
 // into account redirection and "on a stick" setup.
 static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(

@@ -9,6 +9,15 @@ int lqos_kern_load(struct lqos_kern * skel) {
     return lqos_kern__load(skel);
 }
 
+void destroy_kernel(struct lqos_kern * skel) {
+    lqos_kern__destroy(skel);
+}
+
+int set_xmit_kprobe_autoload(struct lqos_kern *obj, bool autoload)
+{
+    return bpf_program__set_autoload(obj->progs.kprobe_xmit, autoload);
+}
+
 extern __u64 max_tracker_ips() {
 	return MAX_TRACKED_IPS;
 }

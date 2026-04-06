@@ -532,8 +532,8 @@ int kprobe_xmit(struct pt_regs *ctx) {
     // Locate the skbuff
     struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
     struct kprobe_dissector_t dissector = {0};
-    struct ip_hash_info ip_info = {0};
-    struct in6_addr host_key = {0};
+    struct ip_hash_info ip_info;
+    struct in6_addr *host_key = NULL;
     __u8 effective_direction = 0;
 
     // If no SKB - bail out!
@@ -565,14 +565,13 @@ int kprobe_xmit(struct pt_regs *ctx) {
         effective_direction = 1;
     }
 
-    track_flows_kprobe(&dissector, effective_direction, &ip_info);
-
     // Host key used for throughput tracking (customer-side IP).
-    host_key = (effective_direction == 1) ? dissector.dst_ip : dissector.src_ip;
+    host_key = (effective_direction == 1) ? &dissector.dst_ip : &dissector.src_ip;
+    ip_info = lookup_mapping_for_host(host_key, effective_direction);
 
     track_traffic_kprobe(
         effective_direction,
-        &host_key,
+        host_key,
         dissector.skb_len,
         ip_info.tc_handle,
         ip_info.circuit_id,

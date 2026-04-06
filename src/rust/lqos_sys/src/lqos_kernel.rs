@@ -265,6 +265,12 @@ unsafe fn open_kernel() -> Result<*mut bpf::lqos_kern> {
     }
 }
 
+unsafe fn destroy_kernel(skeleton: *mut bpf::lqos_kern) {
+    if !skeleton.is_null() {
+        unsafe { bpf::destroy_kernel(skeleton) };
+    }
+}
+
 unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
     let error = unsafe { bpf::lqos_kern_load(skeleton) };
     if error != 0 {
@@ -273,6 +279,45 @@ unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+unsafe fn set_xmit_kprobe_autoload(skeleton: *mut bpf::lqos_kern, autoload: bool) -> Result<()> {
+    let error = unsafe { bpf::set_xmit_kprobe_autoload(skeleton, autoload) };
+    if error != 0 {
+        Err(Error::msg(format!(
+            "Unable to set xmit kprobe autoload to {autoload} ({error})"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+unsafe fn configure_kernel_skeleton(
+    skeleton: *mut bpf::lqos_kern,
+    to_internet_ifindex: i32,
+    to_isp_ifindex: i32,
+    direction: &InterfaceDirection,
+    load_xmit_kprobe: bool,
+) -> Result<()> {
+    unsafe {
+        (*(*skeleton).rodata).NUM_CPUS = libbpf_num_possible_cpus();
+        (*(*skeleton).data).direction = match direction {
+            InterfaceDirection::Internet => 1,
+            InterfaceDirection::IspNetwork => 2,
+            InterfaceDirection::OnAStick(..) => 3,
+        };
+        (*(*skeleton).data).to_internet_ifindex = to_internet_ifindex;
+        (*(*skeleton).data).to_isp_ifindex = to_isp_ifindex;
+        if let InterfaceDirection::OnAStick(internet, isp, stick_offset) = direction {
+            (*(*skeleton).bss).internet_vlan = internet.to_be();
+            (*(*skeleton).bss).isp_vlan = isp.to_be();
+            (*(*skeleton).bss).stick_offset = *stick_offset;
+        }
+    }
+    if !load_xmit_kprobe {
+        unsafe { set_xmit_kprobe_autoload(skeleton, false)? };
+    }
+    Ok(())
 }
 
 #[derive(PartialEq, Eq)]
@@ -322,23 +367,37 @@ pub fn attach_xdp_and_tc_to_interface(
     let interface_index = interface_name_to_index(interface_name)?;
     set_strict_mode()?;
     let skeleton = unsafe {
-        let skeleton = open_kernel()?;
-        (*(*skeleton).rodata).NUM_CPUS = libbpf_num_possible_cpus();
-        (*(*skeleton).data).direction = match direction {
-            InterfaceDirection::Internet => 1,
-            InterfaceDirection::IspNetwork => 2,
-            InterfaceDirection::OnAStick(..) => 3,
-        };
-        (*(*skeleton).data).to_internet_ifindex = to_internet_ifindex;
-        (*(*skeleton).data).to_isp_ifindex = to_isp_ifindex;
-        if let InterfaceDirection::OnAStick(internet, isp, stick_offset) = direction {
-            (*(*skeleton).bss).internet_vlan = internet.to_be();
-            (*(*skeleton).bss).isp_vlan = isp.to_be();
-            (*(*skeleton).bss).stick_offset = stick_offset;
-        }
         // Ensure no lingering XDP programs before loading/attaching
         let _ = unload_xdp_from_interface(interface_name);
-        load_kernel(skeleton)?;
+        let mut skeleton = open_kernel()?;
+        configure_kernel_skeleton(
+            skeleton,
+            to_internet_ifindex,
+            to_isp_ifindex,
+            &direction,
+            attach_xmit_kprobe,
+        )?;
+        if let Err(error) = load_kernel(skeleton) {
+            if attach_xmit_kprobe {
+                warn!(
+                    "Failed to load XDP/TC with transmitted-packet kprobe enabled on {}: {}. Retrying without xmit kprobe support.",
+                    interface_name, error
+                );
+                destroy_kernel(skeleton);
+                skeleton = open_kernel()?;
+                configure_kernel_skeleton(
+                    skeleton,
+                    to_internet_ifindex,
+                    to_isp_ifindex,
+                    &direction,
+                    false,
+                )?;
+                load_kernel(skeleton)?;
+            } else {
+                destroy_kernel(skeleton);
+                return Err(error);
+            }
+        }
         let prog_fd = bpf::bpf_program__fd((*skeleton).progs.xdp_prog);
         attach_xdp_best_available(interface_index, prog_fd, interface_name)?;
         skeleton

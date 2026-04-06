@@ -28,12 +28,8 @@ struct sk_buff {
 struct kprobe_dissector_t {
     struct sk_buff *skb;
     unsigned char *start;
-    unsigned char *end;
-    struct ethhdr ethernet_header;
     struct in6_addr src_ip;
     struct in6_addr dst_ip;
-    struct iphdr ipv4_header;
-    struct ipv6hdr ipv6_header;
     __u64 now;
     __u32 skb_len;
     __u32 l4offset;
@@ -42,74 +38,8 @@ struct kprobe_dissector_t {
     __be16 current_vlan;
     __u16 src_port;
     __u16 dst_port;
-    __u16 window;
-    __u32 tsval;
-    __u32 tsecr;
-    __u32 sequence;
     __u8 ip_protocol;
-    __u8 tos;
-    __u8 tcp_flags;
 };
-
-static __always_inline int kprobe_parse_tcp_ts(
-    struct kprobe_dissector_t *dissector,
-    struct tcphdr *tcph
-)
-{
-    int len = tcph->doff << 2;
-    __u32 opt_offset = dissector->l4offset + sizeof(struct tcphdr);
-    __u32 opt_end = dissector->l4offset + len;
-    __u8 i;
-
-    if (len <= sizeof(struct tcphdr) || opt_end > dissector->skb_len) {
-        return -1;
-    }
-
-#pragma unroll
-    for (i = 0; i < MAX_TCP_OPTIONS; i++) {
-        __u8 opt = 0;
-        __u8 opt_size = 0;
-        if (opt_offset + 1 > opt_end) {
-            return -1;
-        }
-        if (bpf_probe_read_kernel(&opt, sizeof(opt), dissector->start + opt_offset) < 0) {
-            return -1;
-        }
-        if (opt == 0) {
-            return -1;
-        }
-        if (opt == 1) {
-            opt_offset++;
-            continue;
-        }
-
-        if (opt_offset + 2 > opt_end) {
-            return -1;
-        }
-        if (bpf_probe_read_kernel(&opt_size, sizeof(opt_size), dissector->start + opt_offset + 1) < 0) {
-            return -1;
-        }
-        if (opt_size < 2) {
-            return -1;
-        }
-
-        if (opt == 8 && opt_size == 10) {
-            __u32 ts_data[2] = {0};
-            if (opt_offset + 10 > opt_end) {
-                return -1;
-            }
-            if (bpf_probe_read_kernel(&ts_data, sizeof(ts_data), dissector->start + opt_offset + 2) < 0) {
-                return -1;
-            }
-            dissector->tsval = bpf_ntohl(ts_data[0]);
-            dissector->tsecr = bpf_ntohl(ts_data[1]);
-            return 0;
-        }
-
-        opt_offset += opt_size;
-    }
-    return -1;
-}
 
 static __always_inline void kprobe_snoop(struct kprobe_dissector_t *dissector)
 {
@@ -125,17 +55,6 @@ static __always_inline void kprobe_snoop(struct kprobe_dissector_t *dissector)
         }
         dissector->src_port = hdr.source;
         dissector->dst_port = hdr.dest;
-        dissector->window = hdr.window;
-        dissector->sequence = hdr.seq;
-        if (hdr.fin) dissector->tcp_flags |= DIS_TCP_FIN;
-        if (hdr.syn) dissector->tcp_flags |= DIS_TCP_SYN;
-        if (hdr.rst) dissector->tcp_flags |= DIS_TCP_RST;
-        if (hdr.psh) dissector->tcp_flags |= DIS_TCP_PSH;
-        if (hdr.ack) dissector->tcp_flags |= DIS_TCP_ACK;
-        if (hdr.urg) dissector->tcp_flags |= DIS_TCP_URG;
-        if (hdr.ece) dissector->tcp_flags |= DIS_TCP_ECE;
-        if (hdr.cwr) dissector->tcp_flags |= DIS_TCP_CWR;
-        kprobe_parse_tcp_ts(dissector, &hdr);
     } break;
     case IPPROTO_UDP:
     {
@@ -174,18 +93,10 @@ static __always_inline bool kprobe_dissector_new(
     dissector->skb = skb;
     dissector->start = BPF_CORE_READ(skb, data);
     dissector->skb_len = BPF_CORE_READ(skb, len);
-    dissector->end = dissector->start + dissector->skb_len;
     dissector->current_vlan = bpf_htons(BPF_CORE_READ(skb, vlan_tci));
     dissector->now = bpf_ktime_get_boot_ns();
 
     if (!dissector->start || dissector->skb_len < sizeof(struct ethhdr)) {
-        return false;
-    }
-    if (bpf_probe_read_kernel(
-            &dissector->ethernet_header,
-            sizeof(dissector->ethernet_header),
-            dissector->start
-        ) < 0) {
         return false;
     }
 
@@ -209,7 +120,11 @@ static __always_inline bool kprobe_dissector_find_l3_offset(
 )
 {
     __u32 offset = sizeof(struct ethhdr);
-    __u16 eth_type = bpf_ntohs(dissector->ethernet_header.h_proto);
+    struct ethhdr ethernet_header = {0};
+    if (bpf_probe_read_kernel(&ethernet_header, sizeof(ethernet_header), dissector->start) < 0) {
+        return false;
+    }
+    __u16 eth_type = bpf_ntohs(ethernet_header.h_proto);
 
     if (eth_type == ETH_P_IP || eth_type == ETH_P_IPV6) {
         dissector->eth_type = eth_type;
@@ -313,41 +228,41 @@ static __always_inline bool kprobe_dissector_find_ip_header(
     switch (dissector->eth_type) {
     case ETH_P_IP:
     {
+        struct iphdr ipv4_header = {0};
         if (dissector->l3offset + sizeof(struct iphdr) > dissector->skb_len) {
             return false;
         }
         if (bpf_probe_read_kernel(
-                &dissector->ipv4_header,
-                sizeof(dissector->ipv4_header),
+                &ipv4_header,
+                sizeof(ipv4_header),
                 dissector->start + dissector->l3offset
             ) < 0) {
             return false;
         }
-        encode_ipv4(dissector->ipv4_header.saddr, &dissector->src_ip);
-        encode_ipv4(dissector->ipv4_header.daddr, &dissector->dst_ip);
-        dissector->ip_protocol = dissector->ipv4_header.protocol;
-        dissector->tos = dissector->ipv4_header.tos;
-        dissector->l4offset = dissector->l3offset + (dissector->ipv4_header.ihl * 4);
+        encode_ipv4(ipv4_header.saddr, &dissector->src_ip);
+        encode_ipv4(ipv4_header.daddr, &dissector->dst_ip);
+        dissector->ip_protocol = ipv4_header.protocol;
+        dissector->l4offset = dissector->l3offset + (ipv4_header.ihl * 4);
         kprobe_snoop(dissector);
         return true;
     }
     break;
     case ETH_P_IPV6:
     {
+        struct ipv6hdr ipv6_header = {0};
         if (dissector->l3offset + sizeof(struct ipv6hdr) > dissector->skb_len) {
             return false;
         }
         if (bpf_probe_read_kernel(
-                &dissector->ipv6_header,
-                sizeof(dissector->ipv6_header),
+                &ipv6_header,
+                sizeof(ipv6_header),
                 dissector->start + dissector->l3offset
             ) < 0) {
             return false;
         }
-        encode_ipv6(&dissector->ipv6_header.saddr, &dissector->src_ip);
-        encode_ipv6(&dissector->ipv6_header.daddr, &dissector->dst_ip);
-        dissector->ip_protocol = dissector->ipv6_header.nexthdr;
-        dissector->tos = dissector->ipv6_header.flow_lbl[0];
+        encode_ipv6(&ipv6_header.saddr, &dissector->src_ip);
+        encode_ipv6(&ipv6_header.daddr, &dissector->dst_ip);
+        dissector->ip_protocol = ipv6_header.nexthdr;
         dissector->l4offset = dissector->l3offset + sizeof(struct ipv6hdr);
         kprobe_snoop(dissector);
         return true;

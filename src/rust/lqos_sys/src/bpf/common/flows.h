@@ -26,8 +26,6 @@
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
-
-struct kprobe_dissector_t;
 #endif
 
 // Defines a TCP connection flow key
@@ -691,48 +689,4 @@ static __always_inline void track_flows(
     // configured stick offset. We do this after flow processing so we only
     // cache the base mapping inside flowbee.
     apply_stick_offset_to_mapping(direction, out_mapping);
-}
-
-// Kprobe transmit accounting will populate "actual transmitted" flow fields here.
-// Stubbed for now until the flow map layout grows the additional counters.
-static __always_inline void track_flows_kprobe(
-    struct kprobe_dissector_t *dissector,
-    u_int8_t direction,
-    struct ip_hash_info *out_mapping
-) {
-    out_mapping->tc_handle = 0;
-    out_mapping->cpu = 0;
-    out_mapping->circuit_id = 0;
-    out_mapping->device_id = 0;
-
-    if (
-        dissector->ip_protocol != IPPROTO_TCP &&
-        dissector->ip_protocol != IPPROTO_UDP &&
-        dissector->ip_protocol != IPPROTO_ICMP
-    ) {
-        return;
-    }
-
-    struct flow_key_t key = build_flow_key_common(
-        dissector->src_ip,
-        dissector->dst_ip,
-        dissector->src_port,
-        dissector->dst_port,
-        dissector->ip_protocol,
-        direction
-    );
-    struct flow_data_t *data = bpf_map_lookup_elem(&flowbee, &key);
-    if (!data) {
-        return;
-    }
-
-    out_mapping->tc_handle = data->tc_handle;
-    out_mapping->cpu = data->cpu;
-    out_mapping->circuit_id = data->circuit_hash;
-    out_mapping->device_id = data->device_hash;
-    apply_stick_offset_to_mapping(direction, out_mapping);
-
-    u_int8_t rate_index = direction == TO_INTERNET ? 1 : 0;
-    data->bytes_xmit[rate_index] += dissector->skb_len;
-    data->packets_xmit[rate_index]++;
 }
