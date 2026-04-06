@@ -253,7 +253,7 @@ static __always_inline void update_flow_metadata(
     data->mapping_epoch = mapping_epoch;
 }
 
-static __always_inline __u32 get_current_ip_mapping_epoch() {
+static __noinline __u32 get_current_ip_mapping_epoch() {
     __u32 zero = 0;
     __u32 *epoch = bpf_map_lookup_elem(&ip_mapping_epoch, &zero);
     if (epoch) {
@@ -329,7 +329,7 @@ static __always_inline void process_udp(
 // Store the most recent sequence and ack numbers, and detect retransmissions.
 // This will also trigger on duplicate packets, and out-of-order - but those
 // are both an indication that you have issues anyway. So that's ok by me!
-static __always_inline void detect_retries(
+static __noinline void detect_retries(
     struct dissector_t *dissector,
     u_int8_t rate_index,
     struct flow_data_t *data
@@ -349,7 +349,7 @@ static __always_inline void detect_retries(
     // Store the sequence and ack numbers for the next packet
 }
 
-static __always_inline int get_tcp_segment_size(
+static __noinline int get_tcp_segment_size(
     struct dissector_t *dissector
 ) {
     struct tcphdr *tcph;
@@ -369,7 +369,7 @@ static __always_inline int get_tcp_segment_size(
 // Add a TSval <-> timestamp mapping to buf.
 // Will overwrite outdated (timed out) entries.
 // Will return 0 on success, or -1 if there was no free slot in buf.
-static __always_inline int record_tsval(
+static __noinline int record_tsval(
     struct tsval_record_buffer_t *buf,
     __u64 time,
     __u32 tsval
@@ -394,7 +394,7 @@ static __always_inline int record_tsval(
 // Will clear any outdated entries, as well as the entry it matches in buf
 // On success, return the time the matched TSval was recorded.
 // Return 0 if no matching entry was found.
-static __always_inline __u64 match_and_clear_recorded_tsval(
+static __noinline __u64 match_and_clear_recorded_tsval(
     struct tsval_record_buffer_t *buf,
     __u32 tsval
 ) {
@@ -427,7 +427,7 @@ static __always_inline __u64 match_and_clear_recorded_tsval(
 // the time since the original TSval was sent. The approach is based on Kathleen
 // Nichols' pping (https://pollere.net/pping.html), but modified to store
 // TSvals as part of the flow state (the data argument).
-static __always_inline void infer_tcp_rtt(
+static __noinline void infer_tcp_rtt(
     struct dissector_t *dissector,
     struct flow_key_t *key,
     struct flow_data_t *data,
@@ -586,7 +586,7 @@ static __always_inline void process_tcp(
 
 // Note that this duplicates a lot of what we do for "snoop" - we're hoping
 // to replace both it and the old RTT system.
-static __always_inline void track_flows(
+static __noinline void track_flows(
     struct dissector_t *dissector, // The packet dissector from the previous step
     u_int8_t direction, // The direction of the packet (1 = to internet, 2 = to local network)
     struct ip_hash_info *out_mapping

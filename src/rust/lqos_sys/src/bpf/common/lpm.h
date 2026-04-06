@@ -179,7 +179,7 @@ static __always_inline struct ip_hash_info lookup_mapping_for_host(
 
 // Performs an LPM lookup for an `ip_hash.h` encoded address, taking
 // into account redirection and "on a stick" setup.
-static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
+static __noinline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
     // This must have been pre-calculated by `determine_effective_direction`.
     u_int8_t direction,
     // Pointer to the "lookup key", which should contain the IP address
