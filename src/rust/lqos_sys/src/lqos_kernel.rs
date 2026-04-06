@@ -282,12 +282,20 @@ pub enum InterfaceDirection {
     OnAStick(u16, u16, u32),
 }
 
+pub(crate) struct AttachedPrograms {
+    pub(crate) skeleton: *mut lqos_kern,
+    pub(crate) kprobe_link: *mut bpf::bpf_link,
+}
+
 pub fn attach_xdp_and_tc_to_interface(
     interface_name: &str,
+    to_internet_ifindex: i32,
+    to_isp_ifindex: i32,
+    attach_xmit_kprobe: bool,
     direction: InterfaceDirection,
     heimdall_event_handler: bpf::ring_buffer_sample_fn,
     flowbee_event_handler: bpf::ring_buffer_sample_fn,
-) -> Result<*mut lqos_kern> {
+) -> Result<AttachedPrograms> {
     check_root()?;
     // If ABI changes were made to pinned maps, ensure we do not silently reuse
     // incompatible versions that truncate struct values.
@@ -303,6 +311,8 @@ pub fn attach_xdp_and_tc_to_interface(
             InterfaceDirection::IspNetwork => 2,
             InterfaceDirection::OnAStick(..) => 3,
         };
+        (*(*skeleton).data).to_internet_ifindex = to_internet_ifindex;
+        (*(*skeleton).data).to_isp_ifindex = to_isp_ifindex;
         if let InterfaceDirection::OnAStick(internet, isp, stick_offset) = direction {
             (*(*skeleton).bss).internet_vlan = internet.to_be();
             (*(*skeleton).bss).isp_vlan = isp.to_be();
@@ -314,6 +324,15 @@ pub fn attach_xdp_and_tc_to_interface(
         let prog_fd = bpf::bpf_program__fd((*skeleton).progs.xdp_prog);
         attach_xdp_best_available(interface_index, prog_fd, interface_name)?;
         skeleton
+    };
+    let kprobe_link = if attach_xmit_kprobe {
+        let link = unsafe { bpf::attach_xmit_kprobe(skeleton) };
+        if link.is_null() {
+            return Err(Error::msg("Unable to attach kprobe to dev_hard_start_xmit"));
+        }
+        link
+    } else {
+        std::ptr::null_mut()
     };
 
     // Configure CPU Maps
@@ -477,7 +496,10 @@ pub fn attach_xdp_and_tc_to_interface(
         }
     }
 
-    Ok(skeleton)
+    Ok(AttachedPrograms {
+        skeleton,
+        kprobe_link,
+    })
 }
 
 /// Safety: Direct calls to C functions

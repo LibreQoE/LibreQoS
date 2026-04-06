@@ -1,8 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 // Minimal XDP program that passes all packets.
 // Used to verify XDP functionality.
+#ifndef __TARGET_ARCH_x86
+#define __TARGET_ARCH_x86 1
+#endif
+
 #include <linux/bpf.h>
+#include <linux/ptrace.h>
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
+#include <bpf/bpf_tracing.h>
 #include <linux/in6.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
@@ -50,6 +57,21 @@
 // 3 (use VLAN mode, we're running on a stick)
 // If it stays at 255, we have a configuration error.
 int direction = 255;
+
+// Constant passed in during to load, containing
+// either -1 (none) or the ifindex of the interface
+// in each direction. Required because the kbprobe
+// is global.
+int to_internet_ifindex = -1;
+int to_isp_ifindex = -1;
+
+struct net_device {
+    int ifindex;
+} __attribute__((preserve_access_index));
+
+struct sk_buff {
+    struct net_device *dev;
+} __attribute__((preserve_access_index));
 
 // Also configured during loading. For "on a stick" support,
 // these are mapped to the respective VLAN facing directions.
@@ -508,6 +530,24 @@ int flow_reader(struct bpf_iter__bpf_map_elem *ctx)
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
     bpf_seq_write(seq, ip, sizeof(struct flow_key_t));
     bpf_seq_write(seq, counter, sizeof(struct flow_data_t));
+    return 0;
+}
+
+/* Runs at packet transmit */
+SEC("kprobe/dev_hard_start_xmit")
+int kprobe_xmit(struct pt_regs *ctx) {
+    struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
+    int ifindex;
+    int tracked_if = to_internet_ifindex;
+
+    if (!skb) return 0;
+    ifindex = BPF_CORE_READ(skb, dev, ifindex);
+
+    if (ifindex != tracked_if) {
+        tracked_if = to_isp_ifindex;
+        if (tracked_if < 0 || ifindex != tracked_if) return 0;
+    }
+
     return 0;
 }
 
