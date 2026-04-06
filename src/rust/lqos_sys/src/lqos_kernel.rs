@@ -282,6 +282,24 @@ pub enum InterfaceDirection {
     OnAStick(u16, u16, u32),
 }
 
+fn warn_if_tx_segmentation_offloads_enabled() {
+    let Ok(config) = lqos_config::load_config() else {
+        warn!(
+            "Unable to load config before attaching xmit kprobe; TX rates may be measured incorrectly if GSO/TSO offloads remain enabled."
+        );
+        return;
+    };
+    let disabled_offloads = &config.tuning.disable_offload;
+    let gso_disabled = disabled_offloads.iter().any(|feature| feature == "gso");
+    let tso_disabled = disabled_offloads.iter().any(|feature| feature == "tso");
+    if !gso_disabled || !tso_disabled {
+        warn!(
+            "Attaching xmit kprobe while TX segmentation offloads are not fully disabled (gso_disabled={}, tso_disabled={}); actual transmission rates may be measured incorrectly.",
+            gso_disabled, tso_disabled
+        );
+    }
+}
+
 pub(crate) struct AttachedPrograms {
     pub(crate) skeleton: *mut lqos_kern,
     pub(crate) kprobe_link: *mut bpf::bpf_link,
@@ -326,6 +344,7 @@ pub fn attach_xdp_and_tc_to_interface(
         skeleton
     };
     let kprobe_link = if attach_xmit_kprobe {
+        warn_if_tx_segmentation_offloads_enabled();
         let link = unsafe { bpf::attach_xmit_kprobe(skeleton) };
         if link.is_null() {
             return Err(Error::msg("Unable to attach kprobe to dev_hard_start_xmit"));

@@ -536,17 +536,16 @@ int flow_reader(struct bpf_iter__bpf_map_elem *ctx)
 /* Runs at packet transmit */
 SEC("kprobe/dev_hard_start_xmit")
 int kprobe_xmit(struct pt_regs *ctx) {
+    // Locate the skbuff
     struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
-    int ifindex;
-    int tracked_if = to_internet_ifindex;
 
+    // If no SKB - bail out!
     if (!skb) return 0;
-    ifindex = BPF_CORE_READ(skb, dev, ifindex);
 
-    if (ifindex != tracked_if) {
-        tracked_if = to_isp_ifindex;
-        if (tracked_if < 0 || ifindex != tracked_if) return 0;
-    }
+    // Which interface called us?
+    int ifindex = BPF_CORE_READ(skb, dev, ifindex);
+    // If ifindex is not equal to EITHER to_internet or to_isp - not relevant, exit.
+    if (ifindex != to_internet_ifindex && ifindex != to_isp_ifindex) return 0;
 
     return 0;
 }
