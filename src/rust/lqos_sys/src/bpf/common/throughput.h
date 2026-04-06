@@ -22,6 +22,16 @@ struct host_counter {
     __u64 enqueue_udp_upload_packets;
     __u64 enqueue_icmp_download_packets;
     __u64 enqueue_icmp_upload_packets;
+    __u64 xmit_download_bytes;
+    __u64 xmit_upload_bytes;
+    __u64 xmit_download_packets;
+    __u64 xmit_upload_packets;
+    __u64 xmit_tcp_download_packets;
+    __u64 xmit_tcp_upload_packets;
+    __u64 xmit_udp_download_packets;
+    __u64 xmit_udp_upload_packets;
+    __u64 xmit_icmp_download_packets;
+    __u64 xmit_icmp_upload_packets;
     __u32 tc_handle;
     __u64 circuit_id;
     __u64 device_id;

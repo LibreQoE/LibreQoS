@@ -35,6 +35,36 @@ pub struct HostCounter {
     /// Enqueued ICMP packets uploaded
     pub enqueue_icmp_upload_packets: u64,
 
+    /// Actually transmitted download bytes counter (keeps incrementing)
+    pub xmit_download_bytes: u64,
+
+    /// Actually transmitted upload bytes counter (keeps incrementing)
+    pub xmit_upload_bytes: u64,
+
+    /// Actually transmitted download packets counter (keeps incrementing)
+    pub xmit_download_packets: u64,
+
+    /// Actually transmitted upload packets counter (keeps incrementing)
+    pub xmit_upload_packets: u64,
+
+    /// Actually transmitted TCP packets downloaded
+    pub xmit_tcp_download_packets: u64,
+
+    /// Actually transmitted TCP packets uploaded
+    pub xmit_tcp_upload_packets: u64,
+
+    /// Actually transmitted UDP packets downloaded
+    pub xmit_udp_download_packets: u64,
+
+    /// Actually transmitted UDP packets uploaded
+    pub xmit_udp_upload_packets: u64,
+
+    /// Actually transmitted ICMP packets downloaded
+    pub xmit_icmp_download_packets: u64,
+
+    /// Actually transmitted ICMP packets uploaded
+    pub xmit_icmp_upload_packets: u64,
+
     /// Mapped TC handle, 0 if there isn't one.
     pub tc_handle: u32,
 
@@ -62,6 +92,6 @@ mod test {
 
     #[test]
     fn host_counter_size() {
-        assert_eq!(std::mem::size_of::<HostCounter>(), 112);
+        assert_eq!(std::mem::size_of::<HostCounter>(), 192);
     }
 }
