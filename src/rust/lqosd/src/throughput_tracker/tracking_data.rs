@@ -52,11 +52,16 @@ pub(crate) struct FlowApplyContext<'a> {
 pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
     pub(crate) raw_data: Mutex<HashMap<XdpIpAddress, ThroughputEntry>>,
-    pub(crate) bytes_per_second: AtomicDownUp,
-    pub(crate) packets_per_second: AtomicDownUp,
-    pub(crate) tcp_packets_per_second: AtomicDownUp,
-    pub(crate) udp_packets_per_second: AtomicDownUp,
-    pub(crate) icmp_packets_per_second: AtomicDownUp,
+    pub(crate) enqueue_bytes_per_second: AtomicDownUp,
+    pub(crate) enqueue_packets_per_second: AtomicDownUp,
+    pub(crate) enqueue_tcp_packets_per_second: AtomicDownUp,
+    pub(crate) enqueue_udp_packets_per_second: AtomicDownUp,
+    pub(crate) enqueue_icmp_packets_per_second: AtomicDownUp,
+    pub(crate) xmit_bytes_per_second: AtomicDownUp,
+    pub(crate) xmit_packets_per_second: AtomicDownUp,
+    pub(crate) xmit_tcp_packets_per_second: AtomicDownUp,
+    pub(crate) xmit_udp_packets_per_second: AtomicDownUp,
+    pub(crate) xmit_icmp_packets_per_second: AtomicDownUp,
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
     pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
     pub(crate) circuit_qoq_heatmaps: Mutex<FxHashMap<i64, TemporalQoqHeatmap>>,
@@ -164,11 +169,16 @@ impl ThroughputTracker {
         Self {
             cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
             raw_data: Mutex::default(),
-            bytes_per_second: AtomicDownUp::zeroed(),
-            packets_per_second: AtomicDownUp::zeroed(),
-            tcp_packets_per_second: AtomicDownUp::zeroed(),
-            udp_packets_per_second: AtomicDownUp::zeroed(),
-            icmp_packets_per_second: AtomicDownUp::zeroed(),
+            enqueue_bytes_per_second: AtomicDownUp::zeroed(),
+            enqueue_packets_per_second: AtomicDownUp::zeroed(),
+            enqueue_tcp_packets_per_second: AtomicDownUp::zeroed(),
+            enqueue_udp_packets_per_second: AtomicDownUp::zeroed(),
+            enqueue_icmp_packets_per_second: AtomicDownUp::zeroed(),
+            xmit_bytes_per_second: AtomicDownUp::zeroed(),
+            xmit_packets_per_second: AtomicDownUp::zeroed(),
+            xmit_tcp_packets_per_second: AtomicDownUp::zeroed(),
+            xmit_udp_packets_per_second: AtomicDownUp::zeroed(),
+            xmit_icmp_packets_per_second: AtomicDownUp::zeroed(),
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
             circuit_heatmaps: Mutex::default(),
             circuit_qoq_heatmaps: Mutex::default(),
@@ -1126,11 +1136,16 @@ impl ThroughputTracker {
 
     pub(crate) fn update_totals(&self) {
         let current_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-        self.bytes_per_second.set_to_zero();
-        self.packets_per_second.set_to_zero();
-        self.tcp_packets_per_second.set_to_zero();
-        self.udp_packets_per_second.set_to_zero();
-        self.icmp_packets_per_second.set_to_zero();
+        self.enqueue_bytes_per_second.set_to_zero();
+        self.enqueue_packets_per_second.set_to_zero();
+        self.enqueue_tcp_packets_per_second.set_to_zero();
+        self.enqueue_udp_packets_per_second.set_to_zero();
+        self.enqueue_icmp_packets_per_second.set_to_zero();
+        self.xmit_bytes_per_second.set_to_zero();
+        self.xmit_packets_per_second.set_to_zero();
+        self.xmit_tcp_packets_per_second.set_to_zero();
+        self.xmit_udp_packets_per_second.set_to_zero();
+        self.xmit_icmp_packets_per_second.set_to_zero();
         self.shaped_bytes_per_second.set_to_zero();
         let raw_data = self.raw_data.lock();
         raw_data
@@ -1168,41 +1183,83 @@ impl ThroughputTracker {
                     v.enqueue_icmp_packets
                         .up
                         .saturating_sub(v.prev_enqueue_icmp_packets.up),
+                    v.xmit_bytes.down.saturating_sub(v.prev_xmit_bytes.down),
+                    v.xmit_bytes.up.saturating_sub(v.prev_xmit_bytes.up),
+                    v.xmit_packets.down.saturating_sub(v.prev_xmit_packets.down),
+                    v.xmit_packets.up.saturating_sub(v.prev_xmit_packets.up),
+                    v.xmit_tcp_packets
+                        .down
+                        .saturating_sub(v.prev_xmit_tcp_packets.down),
+                    v.xmit_tcp_packets
+                        .up
+                        .saturating_sub(v.prev_xmit_tcp_packets.up),
+                    v.xmit_udp_packets
+                        .down
+                        .saturating_sub(v.prev_xmit_udp_packets.down),
+                    v.xmit_udp_packets
+                        .up
+                        .saturating_sub(v.prev_xmit_udp_packets.up),
+                    v.xmit_icmp_packets
+                        .down
+                        .saturating_sub(v.prev_xmit_icmp_packets.down),
+                    v.xmit_icmp_packets
+                        .up
+                        .saturating_sub(v.prev_xmit_icmp_packets.up),
                     v.tc_handle.as_u32() > 0,
                 )
             })
             .for_each(
                 |(
-                    bytes_down,
-                    bytes_up,
-                    packets_down,
-                    packets_up,
-                    tcp_down,
-                    tcp_up,
-                    udp_down,
-                    udp_up,
-                    icmp_down,
-                    icmp_up,
+                    enqueue_bytes_down,
+                    enqueue_bytes_up,
+                    enqueue_packets_down,
+                    enqueue_packets_up,
+                    enqueue_tcp_down,
+                    enqueue_tcp_up,
+                    enqueue_udp_down,
+                    enqueue_udp_up,
+                    enqueue_icmp_down,
+                    enqueue_icmp_up,
+                    xmit_bytes_down,
+                    xmit_bytes_up,
+                    xmit_packets_down,
+                    xmit_packets_up,
+                    xmit_tcp_down,
+                    xmit_tcp_up,
+                    xmit_udp_down,
+                    xmit_udp_up,
+                    xmit_icmp_down,
+                    xmit_icmp_up,
                     shaped,
                 )| {
-                    self.bytes_per_second
-                        .checked_add_tuple((bytes_down, bytes_up));
-                    self.packets_per_second
-                        .checked_add_tuple((packets_down, packets_up));
-                    self.tcp_packets_per_second
-                        .checked_add_tuple((tcp_down, tcp_up));
-                    self.udp_packets_per_second
-                        .checked_add_tuple((udp_down, udp_up));
-                    self.icmp_packets_per_second
-                        .checked_add_tuple((icmp_down, icmp_up));
+                    self.enqueue_bytes_per_second
+                        .checked_add_tuple((enqueue_bytes_down, enqueue_bytes_up));
+                    self.enqueue_packets_per_second
+                        .checked_add_tuple((enqueue_packets_down, enqueue_packets_up));
+                    self.enqueue_tcp_packets_per_second
+                        .checked_add_tuple((enqueue_tcp_down, enqueue_tcp_up));
+                    self.enqueue_udp_packets_per_second
+                        .checked_add_tuple((enqueue_udp_down, enqueue_udp_up));
+                    self.enqueue_icmp_packets_per_second
+                        .checked_add_tuple((enqueue_icmp_down, enqueue_icmp_up));
+                    self.xmit_bytes_per_second
+                        .checked_add_tuple((xmit_bytes_down, xmit_bytes_up));
+                    self.xmit_packets_per_second
+                        .checked_add_tuple((xmit_packets_down, xmit_packets_up));
+                    self.xmit_tcp_packets_per_second
+                        .checked_add_tuple((xmit_tcp_down, xmit_tcp_up));
+                    self.xmit_udp_packets_per_second
+                        .checked_add_tuple((xmit_udp_down, xmit_udp_up));
+                    self.xmit_icmp_packets_per_second
+                        .checked_add_tuple((xmit_icmp_down, xmit_icmp_up));
                     if shaped {
                         self.shaped_bytes_per_second
-                            .checked_add_tuple((bytes_down, bytes_up));
+                            .checked_add_tuple((enqueue_bytes_down, enqueue_bytes_up));
                     }
                 },
             );
 
-        let current = self.bits_per_second();
+        let current = self.enqueue_bits_per_second();
         if current.both_less_than(100000000000) {
             let prev_max = (HIGH_WATERMARK.get_down(), HIGH_WATERMARK.get_up());
             if current.down > prev_max.0 {
@@ -1242,8 +1299,10 @@ impl ThroughputTracker {
         }
     }
 
-    pub(crate) fn bits_per_second(&self) -> DownUpOrder<u64> {
-        self.bytes_per_second.as_down_up().to_bits_from_bytes()
+    pub(crate) fn enqueue_bits_per_second(&self) -> DownUpOrder<u64> {
+        self.enqueue_bytes_per_second
+            .as_down_up()
+            .to_bits_from_bytes()
     }
 
     pub(crate) fn shaped_bits_per_second(&self) -> DownUpOrder<u64> {
@@ -1252,20 +1311,54 @@ impl ThroughputTracker {
             .to_bits_from_bytes()
     }
 
-    pub(crate) fn packets_per_second(&self) -> DownUpOrder<u64> {
-        self.packets_per_second.as_down_up()
+    pub(crate) fn enqueue_bytes_per_second(&self) -> DownUpOrder<u64> {
+        self.enqueue_bytes_per_second.as_down_up()
     }
 
-    pub(crate) fn tcp_packets_per_second(&self) -> DownUpOrder<u64> {
-        self.tcp_packets_per_second.as_down_up()
+    pub(crate) fn enqueue_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.enqueue_packets_per_second.as_down_up()
     }
 
-    pub(crate) fn udp_packets_per_second(&self) -> DownUpOrder<u64> {
-        self.udp_packets_per_second.as_down_up()
+    pub(crate) fn enqueue_tcp_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.enqueue_tcp_packets_per_second.as_down_up()
     }
 
-    pub(crate) fn icmp_packets_per_second(&self) -> DownUpOrder<u64> {
-        self.icmp_packets_per_second.as_down_up()
+    pub(crate) fn enqueue_udp_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.enqueue_udp_packets_per_second.as_down_up()
+    }
+
+    pub(crate) fn enqueue_icmp_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.enqueue_icmp_packets_per_second.as_down_up()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn xmit_bits_per_second(&self) -> DownUpOrder<u64> {
+        self.xmit_bytes_per_second.as_down_up().to_bits_from_bytes()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn xmit_bytes_per_second(&self) -> DownUpOrder<u64> {
+        self.xmit_bytes_per_second.as_down_up()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn xmit_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.xmit_packets_per_second.as_down_up()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn xmit_tcp_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.xmit_tcp_packets_per_second.as_down_up()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn xmit_udp_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.xmit_udp_packets_per_second.as_down_up()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn xmit_icmp_packets_per_second(&self) -> DownUpOrder<u64> {
+        self.xmit_icmp_packets_per_second.as_down_up()
     }
 
     #[allow(dead_code)]

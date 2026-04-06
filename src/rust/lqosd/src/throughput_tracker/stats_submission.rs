@@ -74,23 +74,11 @@ pub(crate) fn submit_throughput_stats(
     }
 
     // Gather Global Stats
-    let packets_per_second = (
-        THROUGHPUT_TRACKER.packets_per_second.get_down(),
-        THROUGHPUT_TRACKER.packets_per_second.get_up(),
-    );
-    let tcp_packets_per_second = (
-        THROUGHPUT_TRACKER.tcp_packets_per_second.get_down(),
-        THROUGHPUT_TRACKER.tcp_packets_per_second.get_up(),
-    );
-    let udp_packets_per_second = (
-        THROUGHPUT_TRACKER.udp_packets_per_second.get_down(),
-        THROUGHPUT_TRACKER.udp_packets_per_second.get_up(),
-    );
-    let icmp_packets_per_second = (
-        THROUGHPUT_TRACKER.icmp_packets_per_second.get_down(),
-        THROUGHPUT_TRACKER.icmp_packets_per_second.get_up(),
-    );
-    let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
+    let packets_per_second = THROUGHPUT_TRACKER.enqueue_packets_per_second();
+    let tcp_packets_per_second = THROUGHPUT_TRACKER.enqueue_tcp_packets_per_second();
+    let udp_packets_per_second = THROUGHPUT_TRACKER.enqueue_udp_packets_per_second();
+    let icmp_packets_per_second = THROUGHPUT_TRACKER.enqueue_icmp_packets_per_second();
+    let bits_per_second = THROUGHPUT_TRACKER.enqueue_bits_per_second();
 
     // Check that the stats haven't gone wonky and don't submit obviously bad data.
     if let Ok(config) = load_config() {
@@ -202,7 +190,7 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Send top-level throughput stats to LTS2
-        let bytes = THROUGHPUT_TRACKER.bytes_per_second.as_down_up();
+        let bytes = THROUGHPUT_TRACKER.enqueue_bytes_per_second();
         let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
         let mut min_rtt = None;
         let mut max_rtt = None;
@@ -219,14 +207,14 @@ pub(crate) fn submit_throughput_stats(
             bytes_per_second_up: scale_u64_by_f64(bytes.up, scale) as i64,
             shaped_bytes_per_second_down: scale_u64_by_f64(shaped_bytes.down, scale) as i64,
             shaped_bytes_per_second_up: scale_u64_by_f64(shaped_bytes.up, scale) as i64,
-            packets_down: scale_u64_by_f64(packets_per_second.0, scale) as i64,
-            packets_up: scale_u64_by_f64(packets_per_second.1, scale) as i64,
-            tcp_packets_down: scale_u64_by_f64(tcp_packets_per_second.0, scale) as i64,
-            tcp_packets_up: scale_u64_by_f64(tcp_packets_per_second.1, scale) as i64,
-            udp_packets_down: scale_u64_by_f64(udp_packets_per_second.0, scale) as i64,
-            udp_packets_up: scale_u64_by_f64(udp_packets_per_second.1, scale) as i64,
-            icmp_packets_down: scale_u64_by_f64(icmp_packets_per_second.0, scale) as i64,
-            icmp_packets_up: scale_u64_by_f64(icmp_packets_per_second.1, scale) as i64,
+            packets_down: scale_u64_by_f64(packets_per_second.down, scale) as i64,
+            packets_up: scale_u64_by_f64(packets_per_second.up, scale) as i64,
+            tcp_packets_down: scale_u64_by_f64(tcp_packets_per_second.down, scale) as i64,
+            tcp_packets_up: scale_u64_by_f64(tcp_packets_per_second.up, scale) as i64,
+            udp_packets_down: scale_u64_by_f64(udp_packets_per_second.down, scale) as i64,
+            udp_packets_up: scale_u64_by_f64(udp_packets_per_second.up, scale) as i64,
+            icmp_packets_down: scale_u64_by_f64(icmp_packets_per_second.down, scale) as i64,
+            icmp_packets_up: scale_u64_by_f64(icmp_packets_per_second.up, scale) as i64,
             max_rtt,
             min_rtt,
             median_rtt,

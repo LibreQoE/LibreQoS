@@ -310,12 +310,12 @@ fn throughput_task(
 pub fn current_throughput() -> BusResponse {
     let (bits_per_second, packets_per_second, shaped_bits_per_second, tcp_pps, udp_pps, icmp_pps) = {
         (
-            THROUGHPUT_TRACKER.bits_per_second(),
-            THROUGHPUT_TRACKER.packets_per_second(),
+            THROUGHPUT_TRACKER.enqueue_bits_per_second(),
+            THROUGHPUT_TRACKER.enqueue_packets_per_second(),
             THROUGHPUT_TRACKER.shaped_bits_per_second(),
-            THROUGHPUT_TRACKER.tcp_packets_per_second(),
-            THROUGHPUT_TRACKER.udp_packets_per_second(),
-            THROUGHPUT_TRACKER.icmp_packets_per_second(),
+            THROUGHPUT_TRACKER.enqueue_tcp_packets_per_second(),
+            THROUGHPUT_TRACKER.enqueue_udp_packets_per_second(),
+            THROUGHPUT_TRACKER.enqueue_icmp_packets_per_second(),
         )
     };
     BusResponse::CurrentThroughput {
@@ -814,7 +814,7 @@ pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
 
-    let total_tcp = THROUGHPUT_TRACKER.tcp_packets_per_second();
+    let total_tcp = THROUGHPUT_TRACKER.enqueue_tcp_packets_per_second();
     let mut total = TcpRetransmitTotal {
         up: 0,
         down: 0,
