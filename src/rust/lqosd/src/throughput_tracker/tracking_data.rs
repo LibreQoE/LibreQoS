@@ -73,11 +73,11 @@ struct CircuitHeatmapAggregate {
 }
 
 struct ReducedHostCounters {
-    bytes: DownUpOrder<u64>,
-    packets: DownUpOrder<u64>,
-    tcp_packets: DownUpOrder<u64>,
-    udp_packets: DownUpOrder<u64>,
-    icmp_packets: DownUpOrder<u64>,
+    enqueue_bytes: DownUpOrder<u64>,
+    enqueue_packets: DownUpOrder<u64>,
+    enqueue_tcp_packets: DownUpOrder<u64>,
+    enqueue_udp_packets: DownUpOrder<u64>,
+    enqueue_icmp_packets: DownUpOrder<u64>,
     xmit_bytes: DownUpOrder<u64>,
     xmit_packets: DownUpOrder<u64>,
     xmit_tcp_packets: DownUpOrder<u64>,
@@ -91,11 +91,11 @@ struct ReducedHostCounters {
 
 impl ReducedHostCounters {
     fn from_counters(counts: &[lqos_sys::HostCounter]) -> Self {
-        let mut bytes = DownUpOrder::zeroed();
-        let mut packets = DownUpOrder::zeroed();
-        let mut tcp_packets = DownUpOrder::zeroed();
-        let mut udp_packets = DownUpOrder::zeroed();
-        let mut icmp_packets = DownUpOrder::zeroed();
+        let mut enqueue_bytes = DownUpOrder::zeroed();
+        let mut enqueue_packets = DownUpOrder::zeroed();
+        let mut enqueue_tcp_packets = DownUpOrder::zeroed();
+        let mut enqueue_udp_packets = DownUpOrder::zeroed();
+        let mut enqueue_icmp_packets = DownUpOrder::zeroed();
         let mut xmit_bytes = DownUpOrder::zeroed();
         let mut xmit_packets = DownUpOrder::zeroed();
         let mut xmit_tcp_packets = DownUpOrder::zeroed();
@@ -108,13 +108,14 @@ impl ReducedHostCounters {
         let mut meta_device_id = 0u64;
 
         for c in counts {
-            bytes.checked_add_direct(c.enqueue_download_bytes, c.enqueue_upload_bytes);
-            packets.checked_add_direct(c.enqueue_download_packets, c.enqueue_upload_packets);
-            tcp_packets
+            enqueue_bytes.checked_add_direct(c.enqueue_download_bytes, c.enqueue_upload_bytes);
+            enqueue_packets
+                .checked_add_direct(c.enqueue_download_packets, c.enqueue_upload_packets);
+            enqueue_tcp_packets
                 .checked_add_direct(c.enqueue_tcp_download_packets, c.enqueue_tcp_upload_packets);
-            udp_packets
+            enqueue_udp_packets
                 .checked_add_direct(c.enqueue_udp_download_packets, c.enqueue_udp_upload_packets);
-            icmp_packets.checked_add_direct(
+            enqueue_icmp_packets.checked_add_direct(
                 c.enqueue_icmp_download_packets,
                 c.enqueue_icmp_upload_packets,
             );
@@ -136,11 +137,11 @@ impl ReducedHostCounters {
         }
 
         Self {
-            bytes,
-            packets,
-            tcp_packets,
-            udp_packets,
-            icmp_packets,
+            enqueue_bytes,
+            enqueue_packets,
+            enqueue_tcp_packets,
+            enqueue_udp_packets,
+            enqueue_icmp_packets,
             xmit_bytes,
             xmit_packets,
             xmit_tcp_packets,
@@ -498,11 +499,11 @@ impl ThroughputTracker {
             let reduced = ReducedHostCounters::from_counters(counts);
             if let Some(entry) = raw_data.get_mut(xdp_ip) {
                 // Zero the counter, we have to do a per-CPU sum
-                entry.enqueue_bytes = reduced.bytes;
-                entry.enqueue_packets = reduced.packets;
-                entry.enqueue_tcp_packets = reduced.tcp_packets;
-                entry.enqueue_udp_packets = reduced.udp_packets;
-                entry.enqueue_icmp_packets = reduced.icmp_packets;
+                entry.enqueue_bytes = reduced.enqueue_bytes;
+                entry.enqueue_packets = reduced.enqueue_packets;
+                entry.enqueue_tcp_packets = reduced.enqueue_tcp_packets;
+                entry.enqueue_udp_packets = reduced.enqueue_udp_packets;
+                entry.enqueue_icmp_packets = reduced.enqueue_icmp_packets;
                 entry.xmit_bytes = reduced.xmit_bytes;
                 entry.xmit_packets = reduced.xmit_packets;
                 entry.xmit_tcp_packets = reduced.xmit_tcp_packets;
@@ -605,7 +606,12 @@ impl ThroughputTracker {
 
                     if config.queues.lazy_threshold_bytes.is_some() {
                         let threshold = config.queues.lazy_threshold_bytes.unwrap_or(0);
-                        if reduced.bytes.down.saturating_add(reduced.bytes.up) < threshold {
+                        if reduced
+                            .enqueue_bytes
+                            .down
+                            .saturating_add(reduced.enqueue_bytes.up)
+                            < threshold
+                        {
                             add = false;
                         }
                     }
@@ -627,11 +633,11 @@ impl ThroughputTracker {
                     ),
                     first_cycle: self_cycle,
                     most_recent_cycle: 0,
-                    enqueue_bytes: reduced.bytes,
-                    enqueue_packets: reduced.packets,
-                    enqueue_tcp_packets: reduced.tcp_packets,
-                    enqueue_udp_packets: reduced.udp_packets,
-                    enqueue_icmp_packets: reduced.icmp_packets,
+                    enqueue_bytes: reduced.enqueue_bytes,
+                    enqueue_packets: reduced.enqueue_packets,
+                    enqueue_tcp_packets: reduced.enqueue_tcp_packets,
+                    enqueue_udp_packets: reduced.enqueue_udp_packets,
+                    enqueue_icmp_packets: reduced.enqueue_icmp_packets,
                     xmit_bytes: reduced.xmit_bytes,
                     xmit_packets: reduced.xmit_packets,
                     xmit_tcp_packets: reduced.xmit_tcp_packets,
