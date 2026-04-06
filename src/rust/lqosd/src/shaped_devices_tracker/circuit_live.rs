@@ -21,6 +21,8 @@ pub struct CircuitLiveRollup {
     pub ip_addrs: Vec<String>,
     pub plan_mbps: DownUpOrder<f32>,
     pub enqueue_bytes_per_second: DownUpOrder<u64>,
+    #[serde(default)]
+    pub xmit_bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub qoo: DownUpOrder<Option<f32>>,
     pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
@@ -42,6 +44,7 @@ struct CircuitAccumulator {
     ip_addrs: FxHashSet<String>,
     plan_mbps: DownUpOrder<f32>,
     enqueue_bytes_per_second: DownUpOrder<u64>,
+    xmit_bytes_per_second: DownUpOrder<u64>,
     rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     qoo: DownUpOrder<Option<f32>>,
     enqueue_tcp_packets: DownUpOrder<u64>,
@@ -140,6 +143,8 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
         entry.plan_mbps.up = entry.plan_mbps.up.max(device.upload_max_mbps.round());
         entry.enqueue_bytes_per_second.down += data.enqueue_bytes_per_second.down;
         entry.enqueue_bytes_per_second.up += data.enqueue_bytes_per_second.up;
+        entry.xmit_bytes_per_second.down += data.xmit_bytes_per_second.down;
+        entry.xmit_bytes_per_second.up += data.xmit_bytes_per_second.up;
         entry.enqueue_tcp_packets.down += data.tcp_retransmit_packets.down;
         entry.enqueue_tcp_packets.up += data.tcp_retransmit_packets.up;
         entry.tcp_retransmits.down += data.tcp_retransmits.down;
@@ -183,6 +188,7 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
                 ip_addrs: sort_string_set(value.ip_addrs),
                 plan_mbps: value.plan_mbps,
                 enqueue_bytes_per_second: value.enqueue_bytes_per_second,
+                xmit_bytes_per_second: value.xmit_bytes_per_second,
                 rtt_current_p50_nanos: value.rtt_current_p50_nanos,
                 qoo: value.qoo,
                 tcp_retransmit_sample: down_up_retransmit_sample(

@@ -1,4 +1,11 @@
-import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} from "../helpers/builders";
+import {
+    clearDashDiv,
+    simpleRow,
+    simpleRowHtml,
+    theading,
+    topNDisplayBitsPerSecond,
+    TopNTableFromMsgData,
+} from "../helpers/builders";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";
@@ -55,7 +62,7 @@ export class Top10Downloaders extends DashletBaseInsight {
 
             msg.data.forEach((r) => {
                 let key = r.circuit_id;
-                this.timeCache.addOrUpdate(key, r, r.bits_per_second.down);
+                this.timeCache.addOrUpdate(key, r, topNDisplayBitsPerSecond(r).down);
             });
             this.timeCache.tick();
 

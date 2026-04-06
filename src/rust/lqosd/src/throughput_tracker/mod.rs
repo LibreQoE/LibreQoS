@@ -360,6 +360,8 @@ type TopList = (
     XdpIpAddress,
     DownUpOrder<u64>,
     DownUpOrder<u64>,
+    DownUpOrder<u64>,
+    DownUpOrder<u64>,
     f32,
     TcHandle,
     String,
@@ -382,6 +384,8 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
                     *k,
                     te.enqueue_bytes_per_second,
                     te.enqueue_packets_per_second,
+                    te.xmit_bytes_per_second,
+                    te.xmit_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
@@ -390,17 +394,29 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.1.down.cmp(&a.1.down));
+    full_list.sort_by(|a, b| b.3.down.cmp(&a.3.down));
     let result = full_list
         .iter()
         //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
-            |(ip, bytes, packets, median_rtt, tc_handle, circuit_id, tcp_retransmits)| IpStats {
+            |(
+                ip,
+                enqueue_bytes,
+                enqueue_packets,
+                xmit_bytes,
+                xmit_packets,
+                median_rtt,
+                tc_handle,
+                circuit_id,
+                tcp_retransmits,
+            )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: bytes.to_bits_from_bytes(),
-                packets_per_second: *packets,
+                bits_per_second: enqueue_bytes.to_bits_from_bytes(),
+                packets_per_second: *enqueue_packets,
+                xmit_bits_per_second: xmit_bytes.to_bits_from_bytes(),
+                xmit_packets_per_second: *xmit_packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmit_sample: *tcp_retransmits,
@@ -426,6 +442,8 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
                     *k,
                     te.enqueue_bytes_per_second,
                     te.enqueue_packets_per_second,
+                    te.xmit_bytes_per_second,
+                    te.xmit_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
@@ -434,17 +452,29 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.1.up.cmp(&a.1.up));
+    full_list.sort_by(|a, b| b.3.up.cmp(&a.3.up));
     let result = full_list
         .iter()
         //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
-            |(ip, bytes, packets, median_rtt, tc_handle, circuit_id, tcp_retransmits)| IpStats {
+            |(
+                ip,
+                enqueue_bytes,
+                enqueue_packets,
+                xmit_bytes,
+                xmit_packets,
+                median_rtt,
+                tc_handle,
+                circuit_id,
+                tcp_retransmits,
+            )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: bytes.to_bits_from_bytes(),
-                packets_per_second: *packets,
+                bits_per_second: enqueue_bytes.to_bits_from_bytes(),
+                packets_per_second: *enqueue_packets,
+                xmit_bits_per_second: xmit_bytes.to_bits_from_bytes(),
+                xmit_packets_per_second: *xmit_packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmit_sample: *tcp_retransmits,
@@ -579,6 +609,8 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
                     *k,
                     te.enqueue_bytes_per_second,
                     te.enqueue_packets_per_second,
+                    te.xmit_bytes_per_second,
+                    te.xmit_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
@@ -587,17 +619,29 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.3.total_cmp(&a.3));
+    full_list.sort_by(|a, b| b.5.total_cmp(&a.5));
     let result = full_list
         .iter()
         //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
-            |(ip, bytes, packets, median_rtt, tc_handle, circuit_id, tcp_retransmits)| IpStats {
+            |(
+                ip,
+                enqueue_bytes,
+                enqueue_packets,
+                xmit_bytes,
+                xmit_packets,
+                median_rtt,
+                tc_handle,
+                circuit_id,
+                tcp_retransmits,
+            )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: bytes.to_bits_from_bytes(),
-                packets_per_second: *packets,
+                bits_per_second: enqueue_bytes.to_bits_from_bytes(),
+                packets_per_second: *enqueue_packets,
+                xmit_bits_per_second: xmit_bytes.to_bits_from_bytes(),
+                xmit_packets_per_second: *xmit_packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmit_sample: *tcp_retransmits,
@@ -624,6 +668,8 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
                     *k,
                     te.enqueue_bytes_per_second,
                     te.enqueue_packets_per_second,
+                    te.xmit_bytes_per_second,
+                    te.xmit_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
@@ -635,10 +681,10 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
     // Use a total order for floating-point comparison to avoid panics
     // when NaN/Inf are present and ensure comparator transitivity.
     full_list.sort_by(|a, b| {
-        let total_a = a.6.down.fraction().map(|f| f.get()).unwrap_or(0.0)
-            + a.6.up.fraction().map(|f| f.get()).unwrap_or(0.0);
-        let total_b = b.6.down.fraction().map(|f| f.get()).unwrap_or(0.0)
-            + b.6.up.fraction().map(|f| f.get()).unwrap_or(0.0);
+        let total_a = a.8.down.fraction().map(|f| f.get()).unwrap_or(0.0)
+            + a.8.up.fraction().map(|f| f.get()).unwrap_or(0.0);
+        let total_b = b.8.down.fraction().map(|f| f.get()).unwrap_or(0.0)
+            + b.8.up.fraction().map(|f| f.get()).unwrap_or(0.0);
         total_b.total_cmp(&total_a)
     });
     let result = full_list
@@ -646,11 +692,23 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
         //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
-            |(ip, bytes, packets, median_rtt, tc_handle, circuit_id, tcp_retransmits)| IpStats {
+            |(
+                ip,
+                enqueue_bytes,
+                enqueue_packets,
+                xmit_bytes,
+                xmit_packets,
+                median_rtt,
+                tc_handle,
+                circuit_id,
+                tcp_retransmits,
+            )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: bytes.to_bits_from_bytes(),
-                packets_per_second: *packets,
+                bits_per_second: enqueue_bytes.to_bits_from_bytes(),
+                packets_per_second: *enqueue_packets,
+                xmit_bits_per_second: xmit_bytes.to_bits_from_bytes(),
+                xmit_packets_per_second: *xmit_packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmit_sample: *tcp_retransmits,
@@ -682,6 +740,8 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
                     *k,
                     te.enqueue_bytes_per_second,
                     te.enqueue_packets_per_second,
+                    te.xmit_bytes_per_second,
+                    te.xmit_packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
@@ -690,18 +750,30 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.3.total_cmp(&a.3));
+    full_list.sort_by(|a, b| b.5.total_cmp(&a.5));
     full_list.reverse();
     let result = full_list
         .iter()
         //.skip(start as usize)
         .take((end as usize) - (start as usize))
         .map(
-            |(ip, bytes, packets, median_rtt, tc_handle, circuit_id, tcp_retransmits)| IpStats {
+            |(
+                ip,
+                enqueue_bytes,
+                enqueue_packets,
+                xmit_bytes,
+                xmit_packets,
+                median_rtt,
+                tc_handle,
+                circuit_id,
+                tcp_retransmits,
+            )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: circuit_id.clone(),
-                bits_per_second: bytes.to_bits_from_bytes(),
-                packets_per_second: *packets,
+                bits_per_second: enqueue_bytes.to_bits_from_bytes(),
+                packets_per_second: *enqueue_packets,
+                xmit_bits_per_second: xmit_bytes.to_bits_from_bytes(),
+                xmit_packets_per_second: *xmit_packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmit_sample: *tcp_retransmits,
@@ -948,6 +1020,8 @@ type FullList = (
     XdpIpAddress,
     DownUpOrder<u64>,
     DownUpOrder<u64>,
+    DownUpOrder<u64>,
+    DownUpOrder<u64>,
     f32,
     TcHandle,
     u64,
@@ -992,6 +1066,8 @@ pub fn all_unknown_ips() -> BusResponse {
                     *k,
                     te.enqueue_bytes,
                     te.enqueue_packets,
+                    te.xmit_bytes,
+                    te.xmit_packets,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
                     te.most_recent_cycle,
@@ -999,15 +1075,26 @@ pub fn all_unknown_ips() -> BusResponse {
             })
             .collect()
     };
-    full_list.sort_by(|a, b| b.5.cmp(&a.5));
+    full_list.sort_by(|a, b| b.7.cmp(&a.7));
     let result = full_list
         .iter()
         .map(
-            |(ip, bytes, packets, median_rtt, tc_handle, _last_seen)| IpStats {
+            |(
+                ip,
+                enqueue_bytes,
+                enqueue_packets,
+                xmit_bytes,
+                xmit_packets,
+                median_rtt,
+                tc_handle,
+                _last_seen,
+            )| IpStats {
                 ip_address: ip.as_ip().to_string(),
                 circuit_id: String::new(),
-                bits_per_second: bytes.to_bits_from_bytes(),
-                packets_per_second: *packets,
+                bits_per_second: enqueue_bytes.to_bits_from_bytes(),
+                packets_per_second: *enqueue_packets,
+                xmit_bits_per_second: xmit_bytes.to_bits_from_bytes(),
+                xmit_packets_per_second: *xmit_packets,
                 median_tcp_rtt: *median_rtt,
                 tc_handle: *tc_handle,
                 tcp_retransmit_sample: DownUpOrder::new(

@@ -20,6 +20,8 @@ const TRAFFIC_FLOW_HIDE_THRESHOLD_BPS: u32 = 1_048_576;
 pub struct CircuitSummaryData {
     pub circuit_id: String,
     pub enqueue_bytes_per_second: DownUpOrder<u64>,
+    #[serde(default)]
+    pub xmit_bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
     pub qoo_score: Option<f32>,

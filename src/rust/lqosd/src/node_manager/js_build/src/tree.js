@@ -54,6 +54,14 @@ function retransmitPacketsForNode(node, direction) {
     );
 }
 
+function nodeDisplayThroughput(node) {
+    return node?.xmit_throughput || node?.enqueue_throughput || [0, 0];
+}
+
+function attachedCircuitDisplayBytesPerSecond(circuit) {
+    return circuit?.xmit_bytes_per_second || circuit?.enqueue_bytes_per_second;
+}
+
 const listenOnce = (eventName, handler) => {
     const wrapped = (msg) => {
         wsClient.off(eventName, wrapped);
@@ -1118,9 +1126,10 @@ function updateTreeGauges(node) {
     }
     ensureTreeGauges();
     const gaugeMax = nodeSnapshotGaugeMax(node);
+    const displayThroughput = nodeDisplayThroughput(node);
     treeBitsGauge.update(
-        toNumber(node.enqueue_throughput?.[0], 0) * 8,
-        toNumber(node.enqueue_throughput?.[1], 0) * 8,
+        toNumber(displayThroughput?.[0], 0) * 8,
+        toNumber(displayThroughput?.[1], 0) * 8,
         gaugeMax[0],
         gaugeMax[1],
     );
@@ -1248,8 +1257,9 @@ function fillHeader(node) {
     $("#parentEffectiveU").text(effectiveUp);
     $("#parentConfiguredD").text(configuredDown).removeClass("lqos-limit-secondary is-match").addClass(matchClassDown);
     $("#parentConfiguredU").text(configuredUp).removeClass("lqos-limit-secondary is-match").addClass(matchClassUp);
-    $("#parentTpD").html(formatThroughput(toNumber(node.enqueue_throughput[0], 0) * 8, effective[0]));
-    $("#parentTpU").html(formatThroughput(toNumber(node.enqueue_throughput[1], 0) * 8, effective[1]));
+    const displayThroughput = nodeDisplayThroughput(node);
+    $("#parentTpD").html(formatThroughput(toNumber(displayThroughput[0], 0) * 8, effective[0]));
+    $("#parentTpU").html(formatThroughput(toNumber(displayThroughput[1], 0) * 8, effective[1]));
     $("#parentRttD").html(formatRtt(node.rtts[0]));
     $("#parentRttU").html(formatRtt(node.rtts[1]));
     $("#parentQooD").html(formatQooScore(node.qoo ? node.qoo[0] : null));
@@ -1373,14 +1383,14 @@ function buildRow(i, depth=0) {
     col.id = "down-" + nodeId;
     col.classList.add("small");
     col.style.width = "5%";
-    col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[0], 0) * 8, effectiveMax(node)[0]);
+    col.innerHTML = formatThroughput(toNumber(nodeDisplayThroughput(node)[0], 0) * 8, effectiveMax(node)[0]);
     row.appendChild(col);
 
     col = document.createElement("td");
     col.id = "up-" + nodeId;
     col.classList.add("small");
     col.style.width = "5%";
-    col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[1], 0) * 8, effectiveMax(node)[1]);
+    col.innerHTML = formatThroughput(toNumber(nodeDisplayThroughput(node)[1], 0) * 8, effectiveMax(node)[1]);
     row.appendChild(col);
 
     col = document.createElement("td");
@@ -1516,11 +1526,11 @@ function treeUpdate(msg) {
 
         col = document.getElementById("down-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[0], 0) * 8, effectiveMax(node)[0]);
+            col.innerHTML = formatThroughput(toNumber(nodeDisplayThroughput(node)[0], 0) * 8, effectiveMax(node)[0]);
         }
         col = document.getElementById("up-" + nodeId);
         if (col !== null) {
-            col.innerHTML = formatThroughput(toNumber(node.enqueue_throughput[1], 0) * 8, effectiveMax(node)[1]);
+            col.innerHTML = formatThroughput(toNumber(nodeDisplayThroughput(node)[1], 0) * 8, effectiveMax(node)[1]);
         }
         col = document.getElementById("rtt-down-" + nodeId);
         if (col !== null) {
@@ -1684,8 +1694,9 @@ function renderAttachedCircuitsRows(rows) {
             tr.appendChild(ipCell);
 
             tr.appendChild(simpleRow(formatLastSeen(toNumber(circuit.last_seen_nanos, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.enqueue_bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.enqueue_bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
+            const displayBytesPerSecond = attachedCircuitDisplayBytesPerSecond(circuit);
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(displayBytesPerSecond?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
+            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(displayBytesPerSecond?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
 
             if (toNumber(circuit.rtt_current_p50_nanos?.down, 0) > 0) {
                 tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.down, 0) / 1_000_000)));

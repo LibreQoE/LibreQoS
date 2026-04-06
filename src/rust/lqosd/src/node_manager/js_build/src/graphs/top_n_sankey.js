@@ -7,6 +7,7 @@ import {
 import {isColorBlindMode} from "../helpers/colorblind";
 import {colorByRttMs} from "../helpers/color_scales";
 import {toNumber} from "../lq_js_common/helpers/scaling";
+import {topNDisplayBitsPerSecond} from "../helpers/builders";
 /**
  * Viridis color scale interpolation (0-1 input).
  * Returns hex color string.
@@ -82,7 +83,11 @@ export class TopNSankey extends DashboardGraph {
 
             let name = r.ip_address;
             // Choose the correct direction for value and capacity coloring
-            const bps = toNumber(this.upload ? r.bits_per_second.up : r.bits_per_second.down, 0);
+            const displayBitsPerSecond = topNDisplayBitsPerSecond(r);
+            const bps = toNumber(
+                this.upload ? displayBitsPerSecond.up : displayBitsPerSecond.down,
+                0
+            );
             const planMbps = toNumber(this.upload ? r.plan.up : r.plan.down, 0);
             // Convert bits/s to MB/s (decimal) and Mbps plan to MB/s for a comparable ratio
             const bytes = bps / 8;

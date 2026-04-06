@@ -123,6 +123,10 @@ export function topNTableHeader() {
     return th;
 }
 
+export function topNDisplayBitsPerSecond(row) {
+    return row.xmit_bits_per_second || row.bits_per_second;
+}
+
 function formatPlanValue(value) {
     // Format plan value to max 3 decimal places, removing trailing zeros
     let formatted = parseFloat(value).toFixed(3);
@@ -157,12 +161,14 @@ export function topNTableRow(r) {
     shaped.innerText = formatPlanValue(r.plan.down) + " / " + formatPlanValue(r.plan.up);
     row.append(shaped);
 
+    const displayBitsPerSecond = topNDisplayBitsPerSecond(r);
+
     let dl = document.createElement("td");
-    dl.innerHTML = formatThroughput(r.bits_per_second.down, r.plan.down);
+    dl.innerHTML = formatThroughput(displayBitsPerSecond.down, r.plan.down);
     row.append(dl);
 
     let ul = document.createElement("td");
-    ul.innerHTML = formatThroughput(r.bits_per_second.up, r.plan.up);
+    ul.innerHTML = formatThroughput(displayBitsPerSecond.up, r.plan.up);
     row.append(ul);
 
     let rtt = document.createElement("td");

@@ -17,12 +17,21 @@ pub struct IpStats {
     /// The host's mapped circuit ID
     pub circuit_id: String,
 
-    /// The current bits-per-second passing through this host.
+    /// The current enqueue-backed bits-per-second passing through this host.
     pub bits_per_second: DownUpOrder<u64>,
 
-    /// The current packets-per-second passing through this host. Tuple
-    /// 0 is download, tuple 1 is upload.
+    /// The current enqueue-backed packets-per-second passing through this host.
+    /// Tuple 0 is download, tuple 1 is upload.
     pub packets_per_second: DownUpOrder<u64>,
+
+    /// The current transmitted bits-per-second passing through this host.
+    #[serde(default)]
+    pub xmit_bits_per_second: DownUpOrder<u64>,
+
+    /// The current transmitted packets-per-second passing through this host.
+    /// Tuple 0 is download, tuple 1 is upload.
+    #[serde(default)]
+    pub xmit_packets_per_second: DownUpOrder<u64>,
 
     /// Median TCP round-trip-time for this host at the current time.
     pub median_tcp_rtt: f32,
@@ -205,8 +214,11 @@ pub struct FlowbeeSummaryData {
 pub struct Circuit {
     /// The IP address of the host.
     pub ip: IpAddr,
-    /// Current bytes-per-second passing through this host.
+    /// Current enqueue-backed bytes-per-second passing through this host.
     pub bytes_per_second: DownUpOrder<u64>,
+    /// Current transmitted bytes-per-second passing through this host.
+    #[serde(default)]
+    pub xmit_bytes_per_second: DownUpOrder<u64>,
     /// Median latency for this host at the current time.
     pub median_latency: Option<f32>,
     /// Current RTT p50 (nanoseconds), per direction.

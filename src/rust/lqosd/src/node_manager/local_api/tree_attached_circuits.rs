@@ -59,6 +59,8 @@ pub struct TreeAttachedCircuitRow {
     pub ip_addrs: Vec<String>,
     pub plan_mbps: DownUpOrder<f32>,
     pub enqueue_bytes_per_second: DownUpOrder<u64>,
+    #[serde(default)]
+    pub xmit_bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub qoo: DownUpOrder<Option<f32>>,
     pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
@@ -155,6 +157,7 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
                 ip_addrs: row.ip_addrs.clone(),
                 plan_mbps: row.plan_mbps,
                 enqueue_bytes_per_second: row.enqueue_bytes_per_second,
+                xmit_bytes_per_second: row.xmit_bytes_per_second,
                 rtt_current_p50_nanos: row.rtt_current_p50_nanos,
                 qoo: row.qoo,
                 tcp_retransmit_sample: row.tcp_retransmit_sample,
@@ -190,14 +193,14 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
             .cmp(&right.last_seen_nanos)
             .then_with(|| left.circuit_name.cmp(&right.circuit_name)),
         TreeAttachedCircuitsSort::ThroughputDown => left
-            .enqueue_bytes_per_second
+            .xmit_bytes_per_second
             .down
-            .cmp(&right.enqueue_bytes_per_second.down)
+            .cmp(&right.xmit_bytes_per_second.down)
             .then_with(|| left.circuit_name.cmp(&right.circuit_name)),
         TreeAttachedCircuitsSort::ThroughputUp => left
-            .enqueue_bytes_per_second
+            .xmit_bytes_per_second
             .up
-            .cmp(&right.enqueue_bytes_per_second.up)
+            .cmp(&right.xmit_bytes_per_second.up)
             .then_with(|| left.circuit_name.cmp(&right.circuit_name)),
     });
     if descending {

@@ -58,6 +58,8 @@ function getWaveformTheme(direction = "down") {
             throughputAreaTop: hexToRgba(throughputColor, 0.48),
             throughputAreaMid: hexToRgba(throughputColor, 0.28),
             throughputAreaBottom: "rgba(9, 20, 31, 0.03)",
+            xmitLine: "#ffd166",
+            xmitGlow: "rgba(255, 209, 102, 0.34)",
             rttLine: "#b7a5ff",
             rttGlow: "rgba(183, 165, 255, 0.32)",
             rttAreaTop: "rgba(183, 165, 255, 0.18)",
@@ -83,6 +85,8 @@ function getWaveformTheme(direction = "down") {
         throughputAreaTop: hexToRgba(throughputColor, 0.24),
         throughputAreaMid: hexToRgba(throughputColor, 0.13),
         throughputAreaBottom: "rgba(255, 255, 255, 0.02)",
+        xmitLine: "#c17b00",
+        xmitGlow: "rgba(193, 123, 0, 0.18)",
         rttLine: "#6f63cf",
         rttGlow: "rgba(111, 99, 207, 0.2)",
         rttAreaTop: "rgba(111, 99, 207, 0.1)",
@@ -198,8 +202,8 @@ function scalarSeriesData(samples, valueKey, windowStart, windowEnd) {
     return points;
 }
 
-function ceilingSeriesData(samples, direction, windowStart, windowEnd) {
-    const throughputData = directionalSeriesData(samples, direction, "throughputBps", windowStart, windowEnd);
+function ceilingSeriesData(samples, direction, throughputKey, windowStart, windowEnd) {
+    const throughputData = directionalSeriesData(samples, direction, throughputKey, windowStart, windowEnd);
     const ceilingData = directionalSeriesData(samples, direction, "ceilingBps", windowStart, windowEnd);
 
     const pointCount = Math.min(throughputData.length, ceilingData.length);
@@ -426,7 +430,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
             ],
             series: [
                 {
-                    name: "Throughput",
+                    name: "Enqueued",
                     type: "line",
                     xAxisIndex: 0,
                     yAxisIndex: 0,
@@ -445,6 +449,23 @@ export class QueuingActivityWaveform extends DashboardGraph {
                             { offset: 0.45, color: this.colors.throughputAreaMid },
                             { offset: 1, color: this.colors.throughputAreaBottom },
                         ]),
+                    },
+                    data: [],
+                },
+                {
+                    name: "Transmitted",
+                    type: "line",
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    showSymbol: false,
+                    smooth: false,
+                    connectNulls: false,
+                    step: "start",
+                    lineStyle: {
+                        width: 2.2,
+                        color: this.colors.xmitLine,
+                        shadowBlur: 8,
+                        shadowColor: this.colors.xmitGlow,
                     },
                     data: [],
                 },
@@ -561,19 +582,21 @@ export class QueuingActivityWaveform extends DashboardGraph {
             { offset: 0.45, color: this.colors.throughputAreaMid },
             { offset: 1, color: this.colors.throughputAreaBottom },
         ]);
-        this.option.series[1].lineStyle.color = this.colors.ceilingInactive;
-        this.option.series[1].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
-        this.option.series[2].lineStyle.color = this.colors.ceilingActive;
-        this.option.series[2].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
+        this.option.series[1].lineStyle.color = this.colors.xmitLine;
+        this.option.series[1].lineStyle.shadowColor = this.colors.xmitGlow;
+        this.option.series[2].lineStyle.color = this.colors.ceilingInactive;
+        this.option.series[2].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
         this.option.series[3].lineStyle.color = this.colors.ceilingActive;
         this.option.series[3].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
-        this.option.series[4].lineStyle.color = this.colors.rttLine;
-        this.option.series[4].lineStyle.shadowColor = this.colors.rttGlow;
-        this.option.series[4].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        this.option.series[4].lineStyle.color = this.colors.ceilingActive;
+        this.option.series[4].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
+        this.option.series[5].lineStyle.color = this.colors.rttLine;
+        this.option.series[5].lineStyle.shadowColor = this.colors.rttGlow;
+        this.option.series[5].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: this.colors.rttAreaTop },
             { offset: 1, color: this.colors.rttAreaBottom },
         ]);
-        this.option.series[4].markArea.data = rttMarkAreas(
+        this.option.series[5].markArea.data = rttMarkAreas(
             this.colors,
             this.rttThresholds,
             this.option.yAxis[1].max || this.rttThresholds.red_ms,
@@ -625,10 +648,10 @@ export class QueuingActivityWaveform extends DashboardGraph {
     setRttThresholds(rawThresholds) {
         this.rttThresholds = normalizeRttThresholds(rawThresholds);
         this.option.yAxis[1].max = this.rttThresholds.red_ms;
-        this.option.series[4].markArea.data = rttMarkAreas(this.colors, this.rttThresholds, this.rttThresholds.red_ms);
+        this.option.series[5].markArea.data = rttMarkAreas(this.colors, this.rttThresholds, this.rttThresholds.red_ms);
         this.chart.setOption({
             yAxis: [{}, { max: this.rttThresholds.red_ms }],
-            series: [{}, {}, {}, {}, { markArea: { data: this.option.series[4].markArea.data } }],
+            series: [{}, {}, {}, {}, {}, { markArea: { data: this.option.series[5].markArea.data } }],
         });
         this.render();
     }
@@ -636,9 +659,13 @@ export class QueuingActivityWaveform extends DashboardGraph {
     pushSample(sample) {
         const normalized = {
             timestamp: this.quantizeTimestamp(sample.timestamp || Date.now()),
-            throughputBps: {
-                down: toNumber(sample.throughputBps?.down, 0),
-                up: toNumber(sample.throughputBps?.up, 0),
+            enqueueThroughputBps: {
+                down: toNumber(sample.enqueueThroughputBps?.down, 0),
+                up: toNumber(sample.enqueueThroughputBps?.up, 0),
+            },
+            xmitThroughputBps: {
+                down: toNumber(sample.xmitThroughputBps?.down, 0),
+                up: toNumber(sample.xmitThroughputBps?.up, 0),
             },
             ceilingBps: {
                 down: toNumber(sample.ceilingBps?.down, 0),
@@ -691,7 +718,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                 atCeiling: false,
             };
         }
-        const throughputBps = toNumber(latest.throughputBps[this.direction], 0);
+        const throughputBps = toNumber(latest.xmitThroughputBps[this.direction], 0);
         const ceilingBps = toNumber(latest.ceilingBps[this.direction], 0);
         return {
             latestTimestamp: latest.timestamp,
@@ -708,10 +735,17 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.renderNow = Date.now();
         const displayNow = this.renderNow - DISPLAY_LAG_MS;
         const windowStart = displayNow - WINDOW_MS;
-        const throughputData = directionalSeriesData(
+        const enqueueData = directionalSeriesData(
             this.samples,
             this.direction,
-            "throughputBps",
+            "enqueueThroughputBps",
+            windowStart,
+            displayNow,
+        );
+        const xmitData = directionalSeriesData(
+            this.samples,
+            this.direction,
+            "xmitThroughputBps",
             windowStart,
             displayNow,
         );
@@ -727,6 +761,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
         const ceilingSeries = ceilingSeriesData(
             this.samples,
             this.direction,
+            "xmitThroughputBps",
             windowStart,
             displayNow,
         );
@@ -761,8 +796,12 @@ export class QueuingActivityWaveform extends DashboardGraph {
             ],
             series: [
                 {
-                    name: "Throughput",
-                    data: throughputData,
+                    name: "Enqueued",
+                    data: enqueueData,
+                },
+                {
+                    name: "Transmitted",
+                    data: xmitData,
                 },
                 {
                     name: "Ceiling Base",
