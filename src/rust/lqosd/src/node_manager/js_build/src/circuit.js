@@ -371,6 +371,10 @@ function pushQueuingActivitySample() {
             down: currentDirectionValue(latestCircuitSummary?.bytes_per_second, "down", 0) * 8,
             up: currentDirectionValue(latestCircuitSummary?.bytes_per_second, "up", 0) * 8,
         },
+        actualThroughputBps: {
+            down: currentDirectionValue(latestCircuitSummary?.actual_bytes_per_second, "down", 0) * 8,
+            up: currentDirectionValue(latestCircuitSummary?.actual_bytes_per_second, "up", 0) * 8,
+        },
         ceilingBps: {
             down: currentDirectionValue(plan, "down", 0) * 1_000_000.0,
             up: currentDirectionValue(plan, "up", 0) * 1_000_000.0,
@@ -1072,16 +1076,16 @@ function applyCircuitSummary(summary) {
     }
     if (speedometer) {
         speedometer.update(
-            currentDirectionValue(summary?.bytes_per_second, "down", 0) * 8,
-            currentDirectionValue(summary?.bytes_per_second, "up", 0) * 8,
+            currentDirectionValue(summary?.actual_bytes_per_second, "down", 0) * 8,
+            currentDirectionValue(summary?.actual_bytes_per_second, "up", 0) * 8,
             currentDirectionValue(plan, "down", 0),
             currentDirectionValue(plan, "up", 0)
         );
     }
     if (totalThroughput) {
         totalThroughput.update(
-            currentDirectionValue(summary?.bytes_per_second, "down", 0) * 8,
-            currentDirectionValue(summary?.bytes_per_second, "up", 0) * 8
+            currentDirectionValue(summary?.actual_bytes_per_second, "down", 0) * 8,
+            currentDirectionValue(summary?.actual_bytes_per_second, "up", 0) * 8
         );
     }
     if (totalRetransmits) {
@@ -1106,8 +1110,8 @@ function applyDeviceLiveData(devices) {
         const throughputGraph = deviceGraphs["throughputGraph_" + device.device_id];
         if (throughputGraph !== undefined) {
             throughputGraph.update(
-                toNumber(device.bytes_per_second?.down, 0) * 8,
-                toNumber(device.bytes_per_second?.up, 0) * 8
+                toNumber(device.actual_bytes_per_second?.down, 0) * 8,
+                toNumber(device.actual_bytes_per_second?.up, 0) * 8
             );
         }
 
@@ -1812,14 +1816,14 @@ function fillLiveDevices(devices) {
 
         if (throughputDown !== null) {
             throughputDown.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second?.down, 0) * 8,
+                toNumber(device.actual_bytes_per_second?.down, 0) * 8,
                 toNumber(device.plan?.down, 0)
             );
         }
 
         if (throughputUp !== null) {
             throughputUp.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second?.up, 0) * 8,
+                toNumber(device.actual_bytes_per_second?.up, 0) * 8,
                 toNumber(device.plan?.up, 0)
             );
         }

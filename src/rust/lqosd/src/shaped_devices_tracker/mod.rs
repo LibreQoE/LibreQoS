@@ -560,6 +560,7 @@ pub fn get_all_circuits() -> BusResponse {
                 Circuit {
                     ip: k.as_ip(),
                     bytes_per_second: v.bytes_per_second,
+                    actual_bytes_per_second: v.actual_bytes_per_second,
                     median_latency: v.median_latency(),
                     rtt_current_p50_nanos: DownUpOrder {
                         down: v
@@ -678,6 +679,7 @@ pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
                 Some(Circuit {
                     ip: k.as_ip(),
                     bytes_per_second: v.bytes_per_second,
+                    actual_bytes_per_second: v.actual_bytes_per_second,
                     median_latency: v.median_latency(),
                     rtt_current_p50_nanos: DownUpOrder {
                         down: v
