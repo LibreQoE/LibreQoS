@@ -71,6 +71,8 @@ struct net_device {
 
 struct sk_buff {
     struct net_device *dev;
+    __u16 vlan_tci;
+    unsigned char *data;
 } __attribute__((preserve_access_index));
 
 // Also configured during loading. For "on a stick" support,
@@ -534,6 +536,7 @@ int flow_reader(struct bpf_iter__bpf_map_elem *ctx)
 }
 
 /* Runs at packet transmit */
+#include "common/kprobe_helper.h"
 SEC("kprobe/dev_hard_start_xmit")
 int kprobe_xmit(struct pt_regs *ctx) {
     // Locate the skbuff
@@ -546,6 +549,16 @@ int kprobe_xmit(struct pt_regs *ctx) {
     int ifindex = BPF_CORE_READ(skb, dev, ifindex);
     // If ifindex is not equal to EITHER to_internet or to_isp - not relevant, exit.
     if (ifindex != to_internet_ifindex && ifindex != to_isp_ifindex) return 0;
+
+    __u8 effective_direction = kprobe_determine_effective_direction(
+        skb,
+        ifindex,
+        to_internet_ifindex,
+        to_isp_ifindex,
+        internet_vlan
+    );
+    // Keep the computation (used by subsequent xmit accounting work).
+    if (effective_direction == 0) return 0;
 
     return 0;
 }
