@@ -139,6 +139,17 @@ def _load_json_dict(path):
     return {}
 
 
+def loaded_network_is_flat(network):
+    """Evaluate flat-network mode from one in-memory topology snapshot.
+
+    refreshShapers() should make all topology decisions from the same loaded
+    network tree. Re-reading the preferred network path mid-run can observe a
+    different runtime-effective snapshot and produce internally inconsistent
+    queue builds.
+    """
+    return not isinstance(network, dict) or len(network) == 0
+
+
 def load_planner_state(state_path=None, planner_module=None):
     if state_path is None:
         state_path = get_planner_state_path()
@@ -829,11 +840,7 @@ def refreshShapers():
 
         # Flat networks ({}) don't require ParentNode entries. Treat every circuit as
         # unparented so they can be distributed across generated parent nodes / CPUs.
-        flat_network = (len(network) == 0)
-        try:
-            flat_network = flat_network or is_network_flat()
-        except Exception:
-            pass
+        flat_network = loaded_network_is_flat(network)
 
         # Virtual Nodes (logical-only): build a physical shaping topology that skips them,
         # while leaving ShapedDevices.csv (and monitoring) unchanged.
@@ -1264,7 +1271,7 @@ def refreshShapers():
             return keys
 
         # If we're in binpacking mode, we need to sort the network structure a bit
-        if use_bin_packing_to_balance_cpu() and not is_network_flat():
+        if use_bin_packing_to_balance_cpu() and not flat_network:
             # Binpacking is an Insight feature; if Insight is not enabled/licensed, fall back to
             # deterministic round-robin placement so "virtual node promotion" can still spread
             # the physical tree across CPUs.
