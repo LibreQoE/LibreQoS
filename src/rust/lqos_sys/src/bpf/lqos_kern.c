@@ -72,6 +72,7 @@ struct net_device {
 struct sk_buff {
     struct net_device *dev;
     __u16 vlan_tci;
+    __u32 len;
     unsigned char *data;
 } __attribute__((preserve_access_index));
 
@@ -559,6 +560,15 @@ int kprobe_xmit(struct pt_regs *ctx) {
     );
     // Keep the computation (used by subsequent xmit accounting work).
     if (effective_direction == 0) return 0;
+
+    struct in6_addr host_key = {0};
+    if (!kprobe_build_host_key(skb, effective_direction, &host_key)) return 0;
+
+    __u32 bytes = BPF_CORE_READ(skb, len);
+    if (!bytes) return 0;
+
+    // Only update existing host entries; the XDP/TC path owns insertion.
+    kprobe_track_actual_bytes(effective_direction, &host_key, bytes);
 
     return 0;
 }
