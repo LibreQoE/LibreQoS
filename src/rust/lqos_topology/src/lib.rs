@@ -1126,6 +1126,56 @@ fn remove_node_by_id(map: &mut Map<String, Value>, target_id: &str) -> Option<(S
     None
 }
 
+fn find_node_by_id<'a>(map: &'a Map<String, Value>, target_id: &str) -> Option<&'a Value> {
+    for value in map.values() {
+        let Some(node) = value.as_object() else {
+            continue;
+        };
+        if node
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id == target_id)
+        {
+            return Some(value);
+        }
+        if let Some(children) = node.get("children").and_then(Value::as_object)
+            && let Some(found) = find_node_by_id(children, target_id)
+        {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn find_parent_id_of_node(
+    map: &Map<String, Value>,
+    target_id: &str,
+    current_parent_id: Option<&str>,
+) -> Option<Option<String>> {
+    for value in map.values() {
+        let Some(node) = value.as_object() else {
+            continue;
+        };
+        if node
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id == target_id)
+        {
+            return Some(current_parent_id.map(ToOwned::to_owned));
+        }
+        if let Some(children) = node.get("children").and_then(Value::as_object)
+            && let Some(found) = find_parent_id_of_node(
+                children,
+                target_id,
+                node.get("id").and_then(Value::as_str),
+            )
+        {
+            return Some(found);
+        }
+    }
+    None
+}
+
 fn value_subtree_contains_id(value: &Value, target_id: &str) -> bool {
     let Some(node) = value.as_object() else {
         return false;
@@ -2344,15 +2394,23 @@ pub fn apply_effective_topology_to_network_json(
         else {
             continue;
         };
+        let current_anchor_attachment = find_node_by_id(&out, &ui_node.node_id)
+            .map(|node_value| attachment_anchor_for_reparent(node_value, target_attachment))
+            .unwrap_or_else(|| target_attachment.clone());
+        let already_anchored = find_parent_id_of_node(&out, &ui_node.node_id, None)
+            .flatten()
+            .as_deref()
+            == Some(current_anchor_attachment.attachment_id.as_str());
         if ui_node.current_parent_node_id.as_deref()
             == Some(effective_node.logical_parent_node_id.as_str())
             && ui_node.current_attachment_id.as_deref()
                 == effective_node.effective_attachment_id.as_deref()
+            && already_anchored
         {
             ensure_attachment_node_exists(
                 &mut out,
                 &selected_parent.parent_node_id,
-                target_attachment,
+                &current_anchor_attachment,
             );
             continue;
         }
@@ -2990,47 +3048,47 @@ mod tests {
         let mut config = Config::default();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
-            "Matt Koehn": {
+            "Site Alpha": {
                 "children": {
-                    "Matt-Hoodoo-60": {
+                    "Alpha-Beta-60": {
                         "children": {},
                         "downloadBandwidthMbps": 940,
-                        "id": "matt-hoodoo-60",
-                        "name": "Matt-Hoodoo-60",
-                        "parent_site": "Matt Koehn",
+                        "id": "alpha-beta-60",
+                        "name": "Alpha-Beta-60",
+                        "parent_site": "Site Alpha",
                         "type": "AP",
                         "uploadBandwidthMbps": 940
                     }
                 },
                 "downloadBandwidthMbps": 1000,
-                "id": "matt-site",
-                "name": "Matt Koehn",
+                "id": "site-alpha",
+                "name": "Site Alpha",
                 "type": "Site",
                 "uploadBandwidthMbps": 1000
             },
-            "Hoodoo Hill": {
+            "Site Beta": {
                 "children": {
-                    "Hoodoo - Matt 60": {
+                    "Beta - Alpha 60": {
                         "children": {},
                         "downloadBandwidthMbps": 940,
-                        "id": "hoodoo-matt-60",
-                        "name": "Hoodoo - Matt 60",
-                        "parent_site": "Hoodoo Hill",
+                        "id": "beta-alpha-60",
+                        "name": "Beta - Alpha 60",
+                        "parent_site": "Site Beta",
                         "type": "AP",
                         "uploadBandwidthMbps": 940
                     }
                 },
                 "downloadBandwidthMbps": 1000,
-                "id": "hoodoo-site",
-                "name": "Hoodoo Hill",
+                "id": "site-beta",
+                "name": "Site Beta",
                 "type": "Site",
                 "uploadBandwidthMbps": 1000
             }
         });
 
-        let mut move_attachment = sample_attachment_option("hoodoo-matt-60", "Hoodoo - Matt 60");
-        move_attachment.peer_attachment_id = Some("matt-hoodoo-60".to_string());
-        move_attachment.peer_attachment_name = Some("Matt-Hoodoo-60".to_string());
+        let mut move_attachment = sample_attachment_option("beta-alpha-60", "Beta - Alpha 60");
+        move_attachment.peer_attachment_id = Some("alpha-beta-60".to_string());
+        move_attachment.peer_attachment_name = Some("Alpha-Beta-60".to_string());
         move_attachment.download_bandwidth_mbps = Some(940);
         move_attachment.upload_bandwidth_mbps = Some(940);
         move_attachment.capacity_mbps = Some(940);
@@ -3043,16 +3101,16 @@ mod tests {
                 source: "uisp/full2".to_string(),
                 generated_unix: None,
                 nodes: vec![TopologyEditorNode {
-                    node_id: "hoodoo-site".to_string(),
-                    node_name: "Hoodoo Hill".to_string(),
-                    current_parent_node_id: Some("matt-site".to_string()),
-                    current_parent_node_name: Some("Matt Koehn".to_string()),
-                    current_attachment_id: Some("hoodoo-matt-60".to_string()),
-                    current_attachment_name: Some("Hoodoo - Matt 60".to_string()),
+                    node_id: "site-beta".to_string(),
+                    node_name: "Site Beta".to_string(),
+                    current_parent_node_id: Some("site-alpha".to_string()),
+                    current_parent_node_name: Some("Site Alpha".to_string()),
+                    current_attachment_id: Some("beta-alpha-60".to_string()),
+                    current_attachment_name: Some("Beta - Alpha 60".to_string()),
                     can_move: true,
                     allowed_parents: vec![TopologyAllowedParent {
-                        parent_node_id: "matt-site".to_string(),
-                        parent_node_name: "Matt Koehn".to_string(),
+                        parent_node_id: "site-alpha".to_string(),
+                        parent_node_name: "Site Alpha".to_string(),
                         attachment_options: vec![move_attachment],
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
@@ -3069,14 +3127,14 @@ mod tests {
                 canonical_generated_unix: None,
                 health_generated_unix: None,
                 nodes: vec![TopologyEffectiveNodeState {
-                    node_id: "hoodoo-site".to_string(),
-                    logical_parent_node_id: "matt-site".to_string(),
-                    preferred_attachment_id: Some("hoodoo-matt-60".to_string()),
-                    effective_attachment_id: Some("hoodoo-matt-60".to_string()),
+                    node_id: "site-beta".to_string(),
+                    logical_parent_node_id: "site-alpha".to_string(),
+                    preferred_attachment_id: Some("beta-alpha-60".to_string()),
+                    effective_attachment_id: Some("beta-alpha-60".to_string()),
                     fallback_reason: None,
                     all_attachments_suppressed: false,
                     attachments: vec![TopologyEffectiveAttachmentState {
-                        attachment_id: "hoodoo-matt-60".to_string(),
+                        attachment_id: "beta-alpha-60".to_string(),
                         health_status: TopologyAttachmentHealthStatus::Healthy,
                         health_reason: None,
                         suppressed_until_unix: None,
@@ -3088,24 +3146,24 @@ mod tests {
             },
         );
 
-        assert!(moved.get("Hoodoo Hill").is_none());
-        let matt_children = moved["Matt Koehn"]["children"]
+        assert!(moved.get("Site Beta").is_none());
+        let matt_children = moved["Site Alpha"]["children"]
             .as_object()
-            .expect("Matt Koehn should keep children");
-        let hoodoo = matt_children
-            .get("Hoodoo Hill")
+            .expect("Site Alpha should keep children");
+        let beta_site = matt_children
+            .get("Site Beta")
             .and_then(Value::as_object)
-            .expect("Hoodoo Hill should remain visible under Matt Koehn after squashing");
-        assert_eq!(hoodoo["id"].as_str(), Some("hoodoo-site"));
-        assert_eq!(hoodoo["parent_site"].as_str(), Some("Matt Koehn"));
+            .expect("Site Beta should remain visible under Site Alpha after squashing");
+        assert_eq!(beta_site["id"].as_str(), Some("site-beta"));
+        assert_eq!(beta_site["parent_site"].as_str(), Some("Site Alpha"));
         assert_eq!(
-            hoodoo["active_attachment_name"].as_str(),
-            Some("Matt-Hoodoo-60")
+            beta_site["active_attachment_name"].as_str(),
+            Some("Alpha-Beta-60")
         );
-        let hoodoo_children = hoodoo["children"]
+        let beta_children = beta_site["children"]
             .as_object()
-            .expect("Hoodoo Hill subtree should keep its children");
-        assert!(hoodoo_children.get("Hoodoo - Matt 60").is_some());
+            .expect("Site Beta subtree should keep its children");
+        assert!(beta_children.get("Beta - Alpha 60").is_some());
     }
 
     #[test]
@@ -3114,50 +3172,50 @@ mod tests {
         config.uisp_integration.enable_uisp = true;
 
         let canonical_network = json!({
-            "Matt Koehn": {
+            "Site Alpha": {
                 "children": {
-                    "Matt-Hoodoo-60": {
+                    "Alpha-Beta-60": {
                         "children": {},
                         "downloadBandwidthMbps": 940,
-                        "id": "matt-hoodoo-60",
-                        "name": "Matt-Hoodoo-60",
-                        "parent_site": "Matt Koehn",
+                        "id": "alpha-beta-60",
+                        "name": "Alpha-Beta-60",
+                        "parent_site": "Site Alpha",
                         "type": "AP",
                         "uploadBandwidthMbps": 940
                     }
                 },
                 "downloadBandwidthMbps": 1000,
-                "id": "matt-site",
-                "name": "Matt Koehn",
+                "id": "site-alpha",
+                "name": "Site Alpha",
                 "type": "Site",
                 "uploadBandwidthMbps": 1000
             },
-            "Hoodoo Hill": {
+            "Site Beta": {
                 "children": {
-                    "Hoodoo - Matt 60": {
+                    "Beta - Alpha 60": {
                         "children": {},
                         "downloadBandwidthMbps": 940,
-                        "id": "hoodoo-matt-60",
-                        "name": "Hoodoo - Matt 60",
-                        "parent_site": "Hoodoo Hill",
+                        "id": "beta-alpha-60",
+                        "name": "Beta - Alpha 60",
+                        "parent_site": "Site Beta",
                         "type": "AP",
                         "uploadBandwidthMbps": 940
                     }
                 },
                 "downloadBandwidthMbps": 1000,
-                "id": "hoodoo-site",
-                "name": "Hoodoo Hill",
+                "id": "site-beta",
+                "name": "Site Beta",
                 "type": "Site",
                 "uploadBandwidthMbps": 1000
             }
         });
 
-        let mut hoodoo_matt_option = sample_attachment_option("hoodoo-matt-60", "Hoodoo - Matt 60");
-        hoodoo_matt_option.peer_attachment_id = Some("matt-hoodoo-60".to_string());
-        hoodoo_matt_option.peer_attachment_name = Some("Matt-Hoodoo-60".to_string());
-        hoodoo_matt_option.download_bandwidth_mbps = Some(940);
-        hoodoo_matt_option.upload_bandwidth_mbps = Some(940);
-        hoodoo_matt_option.capacity_mbps = Some(940);
+        let mut beta_alpha_option = sample_attachment_option("beta-alpha-60", "Beta - Alpha 60");
+        beta_alpha_option.peer_attachment_id = Some("alpha-beta-60".to_string());
+        beta_alpha_option.peer_attachment_name = Some("Alpha-Beta-60".to_string());
+        beta_alpha_option.download_bandwidth_mbps = Some(940);
+        beta_alpha_option.upload_bandwidth_mbps = Some(940);
+        beta_alpha_option.capacity_mbps = Some(940);
 
         let canonical = TopologyEditorStateFile {
             schema_version: 1,
@@ -3165,17 +3223,17 @@ mod tests {
             generated_unix: None,
             nodes: vec![
                 TopologyEditorNode {
-                    node_id: "hoodoo-site".to_string(),
-                    node_name: "Hoodoo Hill".to_string(),
-                    current_parent_node_id: Some("willows-site".to_string()),
-                    current_parent_node_name: Some("Willows Tower (GT)".to_string()),
-                    current_attachment_id: Some("hoodoo-willows-60".to_string()),
-                    current_attachment_name: Some("Hoodoo - Willows 60".to_string()),
+                    node_id: "site-beta".to_string(),
+                    node_name: "Site Beta".to_string(),
+                    current_parent_node_id: Some("site-gamma".to_string()),
+                    current_parent_node_name: Some("Site Gamma".to_string()),
+                    current_attachment_id: Some("beta-gamma-60".to_string()),
+                    current_attachment_name: Some("Beta - Gamma 60".to_string()),
                     can_move: true,
                     allowed_parents: vec![TopologyAllowedParent {
-                        parent_node_id: "matt-site".to_string(),
-                        parent_node_name: "Matt Koehn".to_string(),
-                        attachment_options: vec![hoodoo_matt_option.clone()],
+                        parent_node_id: "site-alpha".to_string(),
+                        parent_node_name: "Site Alpha".to_string(),
+                        attachment_options: vec![beta_alpha_option.clone()],
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
@@ -3185,16 +3243,16 @@ mod tests {
                     effective_attachment_name: None,
                 },
                 TopologyEditorNode {
-                    node_id: "hoodoo-matt-60".to_string(),
-                    node_name: "Hoodoo - Matt 60".to_string(),
-                    current_parent_node_id: Some("hoodoo-site".to_string()),
-                    current_parent_node_name: Some("Hoodoo Hill".to_string()),
+                    node_id: "beta-alpha-60".to_string(),
+                    node_name: "Beta - Alpha 60".to_string(),
+                    current_parent_node_id: Some("site-beta".to_string()),
+                    current_parent_node_name: Some("Site Beta".to_string()),
                     current_attachment_id: None,
                     current_attachment_name: None,
                     can_move: true,
                     allowed_parents: vec![TopologyAllowedParent {
-                        parent_node_id: "hoodoo-site".to_string(),
-                        parent_node_name: "Hoodoo Hill".to_string(),
+                        parent_node_id: "site-beta".to_string(),
+                        parent_node_name: "Site Beta".to_string(),
                         attachment_options: vec![],
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
@@ -3205,24 +3263,24 @@ mod tests {
                     effective_attachment_name: None,
                 },
                 TopologyEditorNode {
-                    node_id: "hoodoo-matt-60".to_string(),
-                    node_name: "Hoodoo - Matt 60".to_string(),
-                    current_parent_node_id: Some("hoodoo-site".to_string()),
-                    current_parent_node_name: Some("Hoodoo Hill".to_string()),
+                    node_id: "beta-alpha-60".to_string(),
+                    node_name: "Beta - Alpha 60".to_string(),
+                    current_parent_node_id: Some("site-beta".to_string()),
+                    current_parent_node_name: Some("Site Beta".to_string()),
                     current_attachment_id: None,
                     current_attachment_name: None,
                     can_move: true,
                     allowed_parents: vec![
                         TopologyAllowedParent {
-                            parent_node_id: "matt-site".to_string(),
-                            parent_node_name: "Matt Koehn".to_string(),
-                            attachment_options: vec![hoodoo_matt_option.clone()],
+                            parent_node_id: "site-alpha".to_string(),
+                            parent_node_name: "Site Alpha".to_string(),
+                            attachment_options: vec![beta_alpha_option.clone()],
                             all_attachments_suppressed: false,
                             has_probe_unavailable_attachments: false,
                         },
                         TopologyAllowedParent {
-                            parent_node_id: "hoodoo-site".to_string(),
-                            parent_node_name: "Hoodoo Hill".to_string(),
+                            parent_node_id: "site-beta".to_string(),
+                            parent_node_name: "Site Beta".to_string(),
                             attachment_options: vec![],
                             all_attachments_suppressed: false,
                             has_probe_unavailable_attachments: false,
@@ -3238,10 +3296,10 @@ mod tests {
 
         let mut overrides = TopologyOverridesFile::default();
         overrides.set_override_return_changed(
-            "hoodoo-site".to_string(),
-            "Hoodoo Hill".to_string(),
-            "matt-site".to_string(),
-            "Matt Koehn".to_string(),
+            "site-beta".to_string(),
+            "Site Beta".to_string(),
+            "site-alpha".to_string(),
+            "Site Alpha".to_string(),
             TopologyAttachmentMode::Auto,
             Vec::new(),
         );
@@ -3260,17 +3318,17 @@ mod tests {
                 .effective
                 .nodes
                 .iter()
-                .filter(|node| node.node_id == "hoodoo-matt-60")
+                .filter(|node| node.node_id == "beta-alpha-60")
                 .count(),
             1
         );
         let moved = artifacts
             .effective_network
             .expect("effective network should be published");
-        let matt_children = moved["Matt Koehn"]["children"]
+        let matt_children = moved["Site Alpha"]["children"]
             .as_object()
             .expect("Matt should keep children");
-        assert!(matt_children.get("Hoodoo Hill").is_some());
+        assert!(matt_children.get("Site Beta").is_some());
     }
 
     #[test]
@@ -3280,12 +3338,12 @@ mod tests {
             source: "uisp/full2".to_string(),
             generated_unix: None,
             nodes: vec![TopologyEditorNode {
-                node_id: "uisp:site:hoodoo-site".to_string(),
-                node_name: "Hoodoo Hill".to_string(),
-                current_parent_node_id: Some("uisp:site:matt-site".to_string()),
-                current_parent_node_name: Some("Matt Koehn".to_string()),
-                current_attachment_id: Some("hoodoo-matt-60".to_string()),
-                current_attachment_name: Some("Hoodoo - Matt 60".to_string()),
+                node_id: "uisp:site:site-beta".to_string(),
+                node_name: "Site Beta".to_string(),
+                current_parent_node_id: Some("uisp:site:site-alpha".to_string()),
+                current_parent_node_name: Some("Site Alpha".to_string()),
+                current_attachment_id: Some("beta-alpha-60".to_string()),
+                current_attachment_name: Some("Beta - Alpha 60".to_string()),
                 can_move: true,
                 allowed_parents: vec![],
                 preferred_attachment_id: None,
@@ -3300,27 +3358,27 @@ mod tests {
             canonical_generated_unix: None,
             health_generated_unix: None,
             nodes: vec![TopologyEffectiveNodeState {
-                node_id: "uisp:site:hoodoo-site".to_string(),
-                logical_parent_node_id: "uisp:site:matt-site".to_string(),
-                preferred_attachment_id: Some("hoodoo-matt-60".to_string()),
-                effective_attachment_id: Some("hoodoo-matt-60".to_string()),
+                node_id: "uisp:site:site-beta".to_string(),
+                logical_parent_node_id: "uisp:site:site-alpha".to_string(),
+                preferred_attachment_id: Some("beta-alpha-60".to_string()),
+                effective_attachment_id: Some("beta-alpha-60".to_string()),
                 fallback_reason: None,
                 all_attachments_suppressed: false,
                 attachments: vec![],
             }],
         };
         let exported = json!({
-            "Matt Koehn": {
+            "Site Alpha": {
                 "children": {},
-                "id": "uisp:site:matt-site",
-                "name": "Matt Koehn",
+                "id": "uisp:site:site-alpha",
+                "name": "Site Alpha",
                 "type": "Site"
             }
         });
 
         let errors = validate_effective_topology_network(&ui_state, &effective, &exported)
             .expect_err("missing site should fail validation");
-        assert!(errors.iter().any(|error| error.contains("Hoodoo Hill")));
+        assert!(errors.iter().any(|error| error.contains("Site Beta")));
     }
 
     #[test]
@@ -3413,19 +3471,19 @@ mod tests {
             source: "uisp/full2".to_string(),
             generated_unix: None,
             nodes: vec![TopologyEditorNode {
-                node_id: "uisp:site:hoodoo-site".to_string(),
-                node_name: "Hoodoo Hill".to_string(),
-                current_parent_node_id: Some("uisp:site:matt-site".to_string()),
-                current_parent_node_name: Some("Matt Koehn".to_string()),
-                current_attachment_id: Some("matt-hoodoo-60".to_string()),
-                current_attachment_name: Some("Matt-Hoodoo-60".to_string()),
+                node_id: "uisp:site:site-beta".to_string(),
+                node_name: "Site Beta".to_string(),
+                current_parent_node_id: Some("uisp:site:site-alpha".to_string()),
+                current_parent_node_name: Some("Site Alpha".to_string()),
+                current_attachment_id: Some("alpha-beta-60".to_string()),
+                current_attachment_name: Some("Alpha-Beta-60".to_string()),
                 can_move: true,
                 allowed_parents: vec![TopologyAllowedParent {
-                    parent_node_id: "uisp:site:matt-site".to_string(),
-                    parent_node_name: "Matt Koehn".to_string(),
+                    parent_node_id: "uisp:site:site-alpha".to_string(),
+                    parent_node_name: "Site Alpha".to_string(),
                     attachment_options: vec![sample_attachment_option(
-                        "matt-hoodoo-60",
-                        "Matt-Hoodoo-60",
+                        "alpha-beta-60",
+                        "Alpha-Beta-60",
                     )],
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
@@ -3442,27 +3500,27 @@ mod tests {
             canonical_generated_unix: None,
             health_generated_unix: None,
             nodes: vec![TopologyEffectiveNodeState {
-                node_id: "uisp:site:hoodoo-site".to_string(),
-                logical_parent_node_id: "uisp:site:matt-site".to_string(),
-                preferred_attachment_id: Some("matt-hoodoo-60".to_string()),
-                effective_attachment_id: Some("hoodoo-matt-60".to_string()),
+                node_id: "uisp:site:site-beta".to_string(),
+                logical_parent_node_id: "uisp:site:site-alpha".to_string(),
+                preferred_attachment_id: Some("alpha-beta-60".to_string()),
+                effective_attachment_id: Some("beta-alpha-60".to_string()),
                 fallback_reason: None,
                 all_attachments_suppressed: false,
                 attachments: vec![],
             }],
         };
         let exported = json!({
-            "Matt Koehn": {
+            "Site Alpha": {
                 "children": {
-                    "Hoodoo Hill": {
+                    "Site Beta": {
                         "children": {},
-                        "id": "uisp:site:hoodoo-site",
-                        "name": "Hoodoo Hill",
+                        "id": "uisp:site:site-beta",
+                        "name": "Site Beta",
                         "type": "Site"
                     }
                 },
-                "id": "uisp:site:matt-site",
-                "name": "Matt Koehn",
+                "id": "uisp:site:site-alpha",
+                "name": "Site Alpha",
                 "type": "Site"
             }
         });
@@ -3486,17 +3544,17 @@ mod tests {
             source: "uisp/full2".to_string(),
             generated_unix: None,
             nodes: vec![TopologyEditorNode {
-                node_id: "uisp:site:hoodoo-site".to_string(),
-                node_name: "Hoodoo Hill".to_string(),
-                current_parent_node_id: Some("uisp:site:willows-site".to_string()),
-                current_parent_node_name: Some("Willows Tower (GT)".to_string()),
-                current_attachment_id: Some("uisp:device:hoodoo-willows".to_string()),
-                current_attachment_name: Some("Hoodoo - Willows MLO6".to_string()),
+                node_id: "uisp:site:site-beta".to_string(),
+                node_name: "Site Beta".to_string(),
+                current_parent_node_id: Some("uisp:site:site-gamma".to_string()),
+                current_parent_node_name: Some("Site Gamma".to_string()),
+                current_attachment_id: Some("uisp:device:device-beta-gamma".to_string()),
+                current_attachment_name: Some("Beta - Gamma MLO6".to_string()),
                 can_move: true,
                 allowed_parents: vec![
                     TopologyAllowedParent {
-                        parent_node_id: "uisp:site:matt-site".to_string(),
-                        parent_node_name: "Matt Koehn".to_string(),
+                        parent_node_id: "uisp:site:site-alpha".to_string(),
+                        parent_node_name: "Site Alpha".to_string(),
                         attachment_options: vec![
                             TopologyAttachmentOption {
                                 attachment_id: "auto".to_string(),
@@ -3525,13 +3583,13 @@ mod tests {
                                 effective_selected: false,
                             },
                             TopologyAttachmentOption {
-                                attachment_id: "uisp:device:hoodoo-matt".to_string(),
-                                attachment_name: "Hoodoo - Matt 60".to_string(),
+                                attachment_id: "uisp:device:device-beta-alpha".to_string(),
+                                attachment_name: "Beta - Alpha 60".to_string(),
                                 attachment_kind: "device".to_string(),
                                 attachment_role: TopologyAttachmentRole::PtpBackhaul,
                                 pair_id: None,
-                                peer_attachment_id: Some("uisp:device:matt-hoodoo".to_string()),
-                                peer_attachment_name: Some("Matt-Hoodoo-60".to_string()),
+                                peer_attachment_id: Some("uisp:device:device-alpha-beta".to_string()),
+                                peer_attachment_name: Some("Alpha-Beta-60".to_string()),
                                 capacity_mbps: Some(940),
                                 download_bandwidth_mbps: Some(940),
                                 upload_bandwidth_mbps: Some(940),
@@ -3555,8 +3613,8 @@ mod tests {
                         has_probe_unavailable_attachments: false,
                     },
                     TopologyAllowedParent {
-                        parent_node_id: "uisp:site:willows-site".to_string(),
-                        parent_node_name: "Willows Tower (GT)".to_string(),
+                        parent_node_id: "uisp:site:site-gamma".to_string(),
+                        parent_node_name: "Site Gamma".to_string(),
                         attachment_options: vec![
                             TopologyAttachmentOption {
                                 attachment_id: "auto".to_string(),
@@ -3585,13 +3643,13 @@ mod tests {
                                 effective_selected: false,
                             },
                             TopologyAttachmentOption {
-                                attachment_id: "uisp:device:hoodoo-willows".to_string(),
-                                attachment_name: "Hoodoo - Willows MLO6".to_string(),
+                                attachment_id: "uisp:device:device-beta-gamma".to_string(),
+                                attachment_name: "Beta - Gamma MLO6".to_string(),
                                 attachment_kind: "device".to_string(),
                                 attachment_role: TopologyAttachmentRole::PtpBackhaul,
                                 pair_id: None,
-                                peer_attachment_id: Some("uisp:device:willows-hoodoo".to_string()),
-                                peer_attachment_name: Some("Willows - Hoodoo MLO6".to_string()),
+                                peer_attachment_id: Some("uisp:device:device-gamma-beta".to_string()),
+                                peer_attachment_name: Some("Gamma - Beta MLO6".to_string()),
                                 capacity_mbps: Some(230),
                                 download_bandwidth_mbps: Some(230),
                                 upload_bandwidth_mbps: Some(230),
@@ -3623,10 +3681,10 @@ mod tests {
         };
         let mut overrides = TopologyOverridesFile::default();
         overrides.set_override_return_changed(
-            "uisp:site:hoodoo-site".to_string(),
-            "Hoodoo Hill".to_string(),
-            "uisp:site:matt-site".to_string(),
-            "Matt Koehn".to_string(),
+            "uisp:site:site-beta".to_string(),
+            "Site Beta".to_string(),
+            "uisp:site:site-alpha".to_string(),
+            "Site Alpha".to_string(),
             TopologyAttachmentMode::Auto,
             Vec::new(),
         );
@@ -3640,17 +3698,17 @@ mod tests {
         let node = effective
             .nodes
             .iter()
-            .find(|node| node.node_id == "uisp:site:hoodoo-site")
-            .expect("expected Hoodoo Hill effective state");
+            .find(|node| node.node_id == "uisp:site:site-beta")
+            .expect("expected Site Beta effective state");
 
-        assert_eq!(node.logical_parent_node_id, "uisp:site:matt-site");
+        assert_eq!(node.logical_parent_node_id, "uisp:site:site-alpha");
         assert_eq!(
             node.effective_attachment_id.as_deref(),
-            Some("uisp:device:hoodoo-matt")
+            Some("uisp:device:device-beta-alpha")
         );
         assert_ne!(
             node.effective_attachment_id.as_deref(),
-            Some("uisp:device:hoodoo-willows")
+            Some("uisp:device:device-beta-gamma")
         );
     }
 }

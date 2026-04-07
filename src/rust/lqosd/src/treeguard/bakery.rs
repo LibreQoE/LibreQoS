@@ -324,8 +324,8 @@ mod tests {
     #[test]
     fn runtime_site_hash_resolution_prefers_embedded_name_for_matching_key() {
         let root = json!({
-            "Willows NOC": {
-                "name": "Willows NOC",
+            "Core NOC": {
+                "name": "Core NOC",
                 "children": {
                     "e1-agg-s1.streamitnet.com [AP 7d5c3698]": {
                         "name": "e1-agg-s1.streamitnet.com",

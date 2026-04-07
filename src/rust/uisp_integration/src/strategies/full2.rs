@@ -2395,71 +2395,71 @@ mod topology_override_tests {
     fn sibling_site_linked_by_local_attachment_is_legal_parent() {
         let mut graph = GraphType::new();
         let root = graph.add_node(GraphMapping::Root {
-            name: "Willows Tower (GT)".to_string(),
+            name: "Site Gamma".to_string(),
             id: "site-root".to_string(),
             latitude: None,
             longitude: None,
         });
-        let hoodoo_site = graph.add_node(site("Hoodoo Hill", "site-hoodoo"));
-        let matt_site = graph.add_node(site("Matt Koehn", "site-matt"));
-        let willows_to_hoodoo = graph.add_node(ap(
-            "Willows - Hoodoo MLO6",
-            "device-willows-hoodoo",
-            "Willows Tower (GT)",
+        let beta_site = graph.add_node(site("Site Beta", "site-beta"));
+        let alpha_site = graph.add_node(site("Site Alpha", "site-alpha"));
+        let gamma_to_beta = graph.add_node(ap(
+            "Gamma - Beta MLO6",
+            "device-gamma-beta",
+            "Site Gamma",
         ));
-        let hoodoo_to_willows = graph.add_node(ap(
-            "Hoodoo - Willows MLO6",
-            "device-hoodoo-willows",
-            "Hoodoo Hill",
+        let beta_to_gamma = graph.add_node(ap(
+            "Beta - Gamma MLO6",
+            "device-beta-gamma",
+            "Site Beta",
         ));
-        let willows_to_matt = graph.add_node(ap(
-            "Willows-Matt Koehn",
-            "device-willows-matt",
-            "Willows Tower (GT)",
+        let gamma_to_alpha = graph.add_node(ap(
+            "Gamma-Alpha",
+            "device-gamma-alpha",
+            "Site Gamma",
         ));
-        let matt_to_willows = graph.add_node(ap(
-            "Matt Koehn-Willows",
-            "device-matt-willows",
-            "Matt Koehn",
+        let alpha_to_gamma = graph.add_node(ap(
+            "Alpha-Gamma",
+            "device-alpha-gamma",
+            "Site Alpha",
         ));
-        let hoodoo_to_matt = graph.add_node(ap(
-            "Hoodoo - Matt MLO5",
-            "device-hoodoo-matt",
-            "Hoodoo Hill",
+        let beta_to_alpha = graph.add_node(ap(
+            "Beta - Alpha MLO5",
+            "device-beta-alpha",
+            "Site Beta",
         ));
-        let matt_to_hoodoo =
-            graph.add_node(ap("Matt - Hoodoo MLO5", "device-matt-hoodoo", "Matt Koehn"));
+        let alpha_to_beta =
+            graph.add_node(ap("Alpha - Beta MLO5", "device-alpha-beta", "Site Alpha"));
 
         for (from, to) in [
-            (root, willows_to_hoodoo),
-            (willows_to_hoodoo, root),
-            (willows_to_hoodoo, hoodoo_to_willows),
-            (hoodoo_to_willows, willows_to_hoodoo),
-            (hoodoo_site, hoodoo_to_willows),
-            (hoodoo_to_willows, hoodoo_site),
-            (root, willows_to_matt),
-            (willows_to_matt, root),
-            (willows_to_matt, matt_to_willows),
-            (matt_to_willows, willows_to_matt),
-            (matt_site, matt_to_willows),
-            (matt_to_willows, matt_site),
-            (hoodoo_site, hoodoo_to_matt),
-            (hoodoo_to_matt, hoodoo_site),
-            (hoodoo_to_matt, matt_to_hoodoo),
-            (matt_to_hoodoo, hoodoo_to_matt),
-            (matt_site, matt_to_hoodoo),
-            (matt_to_hoodoo, matt_site),
+            (root, gamma_to_beta),
+            (gamma_to_beta, root),
+            (gamma_to_beta, beta_to_gamma),
+            (beta_to_gamma, gamma_to_beta),
+            (beta_site, beta_to_gamma),
+            (beta_to_gamma, beta_site),
+            (root, gamma_to_alpha),
+            (gamma_to_alpha, root),
+            (gamma_to_alpha, alpha_to_gamma),
+            (alpha_to_gamma, gamma_to_alpha),
+            (alpha_site, alpha_to_gamma),
+            (alpha_to_gamma, alpha_site),
+            (beta_site, beta_to_alpha),
+            (beta_to_alpha, beta_site),
+            (beta_to_alpha, alpha_to_beta),
+            (alpha_to_beta, beta_to_alpha),
+            (alpha_site, alpha_to_beta),
+            (alpha_to_beta, alpha_site),
         ] {
             graph.add_edge(from, to, LinkMapping::ethernet(1_000));
         }
 
-        let candidates = topology_parent_candidates_for_node(&graph, root, hoodoo_site, &[], &[]);
-        assert_eq!(candidates, vec![hoodoo_to_matt, hoodoo_to_willows]);
+        let candidates = topology_parent_candidates_for_node(&graph, root, beta_site, &[], &[]);
+        assert_eq!(candidates, vec![beta_to_alpha, beta_to_gamma]);
         assert!(is_upstream_parent_candidate(
             &graph,
             root,
-            hoodoo_site,
-            hoodoo_to_matt,
+            beta_site,
+            beta_to_alpha,
             &[],
             &[],
         ));
@@ -2467,16 +2467,16 @@ mod topology_override_tests {
         let groups = topology_allowed_parent_groups_for_node(
             &graph,
             root,
-            hoodoo_site,
+            beta_site,
             &candidates,
             &[],
             &[],
         );
         assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].logical_parent, matt_site);
-        assert_eq!(groups[0].candidate_nodes, vec![hoodoo_to_matt]);
+        assert_eq!(groups[0].logical_parent, alpha_site);
+        assert_eq!(groups[0].candidate_nodes, vec![beta_to_alpha]);
         assert_eq!(groups[1].logical_parent, root);
-        assert_eq!(groups[1].candidate_nodes, vec![hoodoo_to_willows]);
+        assert_eq!(groups[1].candidate_nodes, vec![beta_to_gamma]);
 
         let allowed =
             topology_allowed_parents_from_groups(&graph, &groups, &[], &HashSet::new(), &[]);
@@ -2485,19 +2485,19 @@ mod topology_override_tests {
                 .iter()
                 .map(|parent| parent.parent_node_name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Matt Koehn", "Willows Tower (GT)"]
+            vec!["Site Alpha", "Site Gamma"]
         );
-        let matt_parent = allowed
+        let alpha_parent = allowed
             .iter()
-            .find(|parent| parent.parent_node_name == "Matt Koehn")
-            .expect("expected Matt Koehn as a legal parent");
+            .find(|parent| parent.parent_node_name == "Site Alpha")
+            .expect("expected Site Alpha as a legal parent");
         assert_eq!(
-            matt_parent
+            alpha_parent
                 .attachment_options
                 .iter()
                 .map(|option| option.attachment_name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Auto", "Hoodoo - Matt MLO5"]
+            vec!["Auto", "Beta - Alpha MLO5"]
         );
     }
 
@@ -2505,66 +2505,66 @@ mod topology_override_tests {
     fn export_override_anchors_under_peer_attachment_for_child_owned_candidate() {
         let mut graph = GraphType::new();
         let root = graph.add_node(GraphMapping::Root {
-            name: "Willows Tower (GT)".to_string(),
+            name: "Site Gamma".to_string(),
             id: "site-root".to_string(),
             latitude: None,
             longitude: None,
         });
-        let hoodoo_site = graph.add_node(site("Hoodoo Hill", "site-hoodoo"));
-        let matt_site = graph.add_node(site("Matt Koehn", "site-matt"));
-        let willows_to_matt = graph.add_node(ap(
-            "Willows-Matt Koehn",
-            "device-willows-matt",
-            "Willows Tower (GT)",
+        let beta_site = graph.add_node(site("Site Beta", "site-beta"));
+        let alpha_site = graph.add_node(site("Site Alpha", "site-alpha"));
+        let gamma_to_alpha = graph.add_node(ap(
+            "Gamma-Alpha",
+            "device-gamma-alpha",
+            "Site Gamma",
         ));
-        let matt_to_willows = graph.add_node(ap(
-            "Matt Koehn-Willows",
-            "device-matt-willows",
-            "Matt Koehn",
+        let alpha_to_gamma = graph.add_node(ap(
+            "Alpha-Gamma",
+            "device-alpha-gamma",
+            "Site Alpha",
         ));
-        let hoodoo_to_matt =
-            graph.add_node(ap("Hoodoo - Matt 60", "device-hoodoo-matt", "Hoodoo Hill"));
-        let matt_to_hoodoo =
-            graph.add_node(ap("Matt-Hoodoo-60", "device-matt-hoodoo", "Matt Koehn"));
+        let beta_to_alpha =
+            graph.add_node(ap("Beta - Alpha 60", "device-beta-alpha", "Site Beta"));
+        let alpha_to_beta =
+            graph.add_node(ap("Alpha-Beta-60", "device-alpha-beta", "Site Alpha"));
 
         for (from, to) in [
-            (root, willows_to_matt),
-            (willows_to_matt, root),
-            (willows_to_matt, matt_to_willows),
-            (matt_to_willows, willows_to_matt),
-            (matt_site, matt_to_willows),
-            (matt_to_willows, matt_site),
-            (hoodoo_site, hoodoo_to_matt),
-            (hoodoo_to_matt, hoodoo_site),
-            (hoodoo_to_matt, matt_to_hoodoo),
-            (matt_to_hoodoo, hoodoo_to_matt),
-            (matt_site, matt_to_hoodoo),
-            (matt_to_hoodoo, matt_site),
+            (root, gamma_to_alpha),
+            (gamma_to_alpha, root),
+            (gamma_to_alpha, alpha_to_gamma),
+            (alpha_to_gamma, gamma_to_alpha),
+            (alpha_site, alpha_to_gamma),
+            (alpha_to_gamma, alpha_site),
+            (beta_site, beta_to_alpha),
+            (beta_to_alpha, beta_site),
+            (beta_to_alpha, alpha_to_beta),
+            (alpha_to_beta, beta_to_alpha),
+            (alpha_site, alpha_to_beta),
+            (alpha_to_beta, alpha_site),
         ] {
             graph.add_edge(from, to, LinkMapping::ethernet(1_000));
         }
 
         let (route_from_root, _) =
-            build_constrained_route(&graph, root, hoodoo_site, hoodoo_to_matt, &[], &[])
+            build_constrained_route(&graph, root, beta_site, beta_to_alpha, &[], &[])
                 .expect("expected constrained route for override export");
         assert_eq!(
             immediate_parent_from_route(&route_from_root),
-            Some(hoodoo_to_matt)
+            Some(beta_to_alpha)
         );
 
         let logical_parent =
-            logical_parent_for_candidate(&graph, root, hoodoo_site, hoodoo_to_matt, &[], &[]);
-        assert_eq!(logical_parent, matt_site);
+            logical_parent_for_candidate(&graph, root, beta_site, beta_to_alpha, &[], &[]);
+        assert_eq!(logical_parent, alpha_site);
         assert_eq!(
             export_parent_anchor_for_override(
                 &graph,
-                hoodoo_site,
+                beta_site,
                 logical_parent,
-                hoodoo_to_matt,
+                beta_to_alpha,
                 &[],
                 &[],
             ),
-            matt_to_hoodoo
+            alpha_to_beta
         );
     }
 
