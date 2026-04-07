@@ -310,9 +310,9 @@ fn throughput_task(
 pub fn current_throughput() -> BusResponse {
     let (bits_per_second, packets_per_second, shaped_bits_per_second, tcp_pps, udp_pps, icmp_pps) = {
         (
-            THROUGHPUT_TRACKER.bits_per_second(),
+            THROUGHPUT_TRACKER.actual_bits_per_second(),
             THROUGHPUT_TRACKER.packets_per_second(),
-            THROUGHPUT_TRACKER.shaped_bits_per_second(),
+            THROUGHPUT_TRACKER.shaped_actual_bits_per_second(),
             THROUGHPUT_TRACKER.tcp_packets_per_second(),
             THROUGHPUT_TRACKER.udp_packets_per_second(),
             THROUGHPUT_TRACKER.icmp_packets_per_second(),
@@ -370,7 +370,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
+                    te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
@@ -414,7 +414,7 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
+                    te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
@@ -567,7 +567,7 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
+                    te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
@@ -612,7 +612,7 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
+                    te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
@@ -670,7 +670,7 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             .map(|(k, te)| {
                 (
                     *k,
-                    te.bytes_per_second,
+                    te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,

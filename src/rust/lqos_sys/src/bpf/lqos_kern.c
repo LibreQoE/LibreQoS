@@ -1,8 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 // Minimal XDP program that passes all packets.
 // Used to verify XDP functionality.
+#ifndef __TARGET_ARCH_x86
+#define __TARGET_ARCH_x86 1
+#endif
+
 #include <linux/bpf.h>
+#include <linux/ptrace.h>
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
+#include <bpf/bpf_tracing.h>
 #include <linux/in6.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
@@ -50,6 +57,24 @@
 // 3 (use VLAN mode, we're running on a stick)
 // If it stays at 255, we have a configuration error.
 int direction = 255;
+
+// Constant passed in during to load, containing
+// either -1 (none) or the ifindex of the interface
+// in each direction. Required because the kbprobe
+// is global.
+int to_internet_ifindex = -1;
+int to_isp_ifindex = -1;
+
+struct net_device {
+    int ifindex;
+} __attribute__((preserve_access_index));
+
+struct sk_buff {
+    struct net_device *dev;
+    __u16 vlan_tci;
+    __u32 len;
+    unsigned char *data;
+} __attribute__((preserve_access_index));
 
 // Also configured during loading. For "on a stick" support,
 // these are mapped to the respective VLAN facing directions.
@@ -508,6 +533,43 @@ int flow_reader(struct bpf_iter__bpf_map_elem *ctx)
     //BPF_SEQ_PRINTF(seq, "%d %d\n", counter->next_entry, counter->rtt[0]);
     bpf_seq_write(seq, ip, sizeof(struct flow_key_t));
     bpf_seq_write(seq, counter, sizeof(struct flow_data_t));
+    return 0;
+}
+
+/* Runs at packet transmit */
+#include "common/kprobe_helper.h"
+SEC("kprobe/dev_hard_start_xmit")
+int kprobe_xmit(struct pt_regs *ctx) {
+    // Locate the skbuff
+    struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
+
+    // If no SKB - bail out!
+    if (!skb) return 0;
+
+    // Which interface called us?
+    int ifindex = BPF_CORE_READ(skb, dev, ifindex);
+    // If ifindex is not equal to EITHER to_internet or to_isp - not relevant, exit.
+    if (ifindex != to_internet_ifindex && ifindex != to_isp_ifindex) return 0;
+
+    __u8 effective_direction = kprobe_determine_effective_direction(
+        skb,
+        ifindex,
+        to_internet_ifindex,
+        to_isp_ifindex,
+        internet_vlan
+    );
+    // Keep the computation (used by subsequent xmit accounting work).
+    if (effective_direction == 0) return 0;
+
+    struct in6_addr host_key = {0};
+    if (!kprobe_build_host_key(skb, effective_direction, &host_key)) return 0;
+
+    __u32 bytes = BPF_CORE_READ(skb, len);
+    if (!bytes) return 0;
+
+    // Only update existing host entries; the XDP/TC path owns insertion.
+    kprobe_track_actual_bytes(effective_direction, &host_key, bytes);
+
     return 0;
 }
 

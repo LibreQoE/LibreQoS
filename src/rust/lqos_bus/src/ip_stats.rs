@@ -207,6 +207,9 @@ pub struct Circuit {
     pub ip: IpAddr,
     /// Current bytes-per-second passing through this host.
     pub bytes_per_second: DownUpOrder<u64>,
+    /// Current bytes-per-second actually transmitted for this host.
+    #[serde(default)]
+    pub actual_bytes_per_second: DownUpOrder<u64>,
     /// Median latency for this host at the current time.
     pub median_latency: Option<f32>,
     /// Current RTT p50 (nanoseconds), per direction.

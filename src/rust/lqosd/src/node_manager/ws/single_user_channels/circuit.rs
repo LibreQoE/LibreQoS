@@ -90,6 +90,14 @@ fn summarize_circuit_devices(circuit: &str, devices: &[Circuit]) -> CircuitSumma
             acc
         });
 
+    let actual_bytes_per_second = devices
+        .iter()
+        .fold(DownUpOrder::default(), |mut acc, device| {
+            acc.down += device.actual_bytes_per_second.down;
+            acc.up += device.actual_bytes_per_second.up;
+            acc
+        });
+
     let tcp_retransmit_sample = down_up_retransmit_sample(
         DownUpOrder {
             down: devices
@@ -133,6 +141,7 @@ fn summarize_circuit_devices(circuit: &str, devices: &[Circuit]) -> CircuitSumma
     CircuitSummaryData {
         circuit_id: circuit.to_string(),
         bytes_per_second,
+        actual_bytes_per_second,
         rtt_current_p50_nanos,
         tcp_retransmit_sample,
         qoo_score: qoo_score_for_circuit(circuit),

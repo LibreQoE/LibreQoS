@@ -247,6 +247,32 @@ out:
 	return err;
 }
 
+struct bpf_link *attach_xmit_kprobe(struct lqos_kern *obj)
+{
+	struct bpf_link *link;
+	long err;
+
+	link = bpf_program__attach_kprobe(obj->progs.kprobe_xmit, false, "dev_hard_start_xmit");
+	err = libbpf_get_error(link);
+	if (err) {
+		const char *msg = "unknown";
+		if (err < 0) {
+			msg = strerror((int)-err);
+		}
+		fprintf(stderr, "bpf_program__attach_kprobe() fails (%ld: %s)\n", err, msg);
+		return NULL;
+	}
+
+	return link;
+}
+
+void destroy_bpf_link(struct bpf_link *link)
+{
+	if (link != NULL) {
+		bpf_link__destroy(link);
+	}
+}
+
 // Iterator code
 #include <stdio.h>
 #include <unistd.h>

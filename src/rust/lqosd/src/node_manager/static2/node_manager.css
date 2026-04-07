@@ -556,6 +556,10 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     background: #32d3bd;
     box-shadow: 0 0 10px rgba(50, 211, 189, 0.24);
 }
+.lqos-circuit-activity-legend-dot.is-throughput-actual {
+    background: #fddd60;
+    box-shadow: 0 0 10px rgba(253, 221, 96, 0.22);
+}
 .lqos-circuit-activity-legend-dot.is-qoo {
     background: #8fb0ff;
     box-shadow: 0 0 10px rgba(143, 176, 255, 0.22);
@@ -635,6 +639,10 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
 [data-bs-theme="light"] .lqos-circuit-activity-legend-dot.is-throughput {
     background: #129a87;
     box-shadow: 0 0 10px rgba(18, 154, 135, 0.16);
+}
+[data-bs-theme="light"] .lqos-circuit-activity-legend-dot.is-throughput-actual {
+    background: #d7ab82;
+    box-shadow: 0 0 10px rgba(215, 171, 130, 0.14);
 }
 [data-bs-theme="light"] .lqos-circuit-activity-legend-dot.is-qoo {
     background: #4f79d9;
