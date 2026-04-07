@@ -90,7 +90,7 @@ pub(crate) fn submit_throughput_stats(
         THROUGHPUT_TRACKER.icmp_packets_per_second.get_down(),
         THROUGHPUT_TRACKER.icmp_packets_per_second.get_up(),
     );
-    let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
+    let bits_per_second = THROUGHPUT_TRACKER.actual_bits_per_second();
 
     // Check that the stats haven't gone wonky and don't submit obviously bad data.
     if let Ok(config) = load_config() {
@@ -202,8 +202,10 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Send top-level throughput stats to LTS2
-        let bytes = THROUGHPUT_TRACKER.bytes_per_second.as_down_up();
-        let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
+        let bytes = THROUGHPUT_TRACKER.actual_bytes_per_second.as_down_up();
+        let shaped_bytes = THROUGHPUT_TRACKER
+            .shaped_actual_bytes_per_second
+            .as_down_up();
         let mut min_rtt = None;
         let mut max_rtt = None;
         let mut median_rtt = None;
@@ -280,11 +282,11 @@ pub(crate) fn submit_throughput_stats(
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
+            .filter(|(_k, h)| h.circuit_id.is_some() && h.actual_bytes_per_second.not_zero())
             .for_each(|(_k, h)| {
                 let mut crazy = false;
                 if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
-                    && (h.bytes_per_second.down > *dl || h.bytes_per_second.up > *ul)
+                    && (h.actual_bytes_per_second.down > *dl || h.actual_bytes_per_second.up > *ul)
                 {
                     crazy_values.insert(h.circuit_hash.unwrap_or(0));
                     crazy = true;
@@ -294,7 +296,7 @@ pub(crate) fn submit_throughput_stats(
                     return;
                 }
                 if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
-                    c.bytes += h.bytes_per_second;
+                    c.bytes += h.actual_bytes_per_second;
                     c.packets += h.packets_per_second;
                     c.tcp_packets += h.tcp_packets;
                     c.udp_packets += h.udp_packets;
@@ -303,7 +305,7 @@ pub(crate) fn submit_throughput_stats(
                     circuit_throughput.insert(
                         h.circuit_hash.unwrap_or(0),
                         CircuitThroughputTemp {
-                            bytes: h.bytes_per_second,
+                            bytes: h.actual_bytes_per_second,
                             packets: h.packets_per_second,
                             tcp_packets: h.tcp_packets,
                             udp_packets: h.udp_packets,

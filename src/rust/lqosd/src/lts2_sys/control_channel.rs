@@ -1325,20 +1325,18 @@ async fn shaper_snapshot_streaming(
     request_id: u64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
-    // Mirror node_manager ticker throughput: fetch current throughput and send compact tuple data
-    use lqos_bus::BusResponse;
-
-    let resp = crate::throughput_tracker::current_throughput();
-    if let BusResponse::CurrentThroughput {
-        bits_per_second,
-        packets_per_second,
-        shaped_bits_per_second,
-        ..
-    } = resp
+    // Mirror node_manager ticker throughput: send compact tuple data.
+    // Note: field names are historical; values are bits per second.
     {
+        let bits_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER.actual_bits_per_second();
+        let shaped_bits_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .shaped_actual_bits_per_second();
+        let packets_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .packets_per_second
+            .as_down_up();
+
         let message = messages::WsMessage::StreamingShaper {
             request_id,
-            // Note: field names are historical; values are bits per second
             bytes_down: bits_per_second.down,
             bytes_up: bits_per_second.up,
             shaped_bytes_down: shaped_bits_per_second.down,

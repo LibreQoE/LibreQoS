@@ -502,8 +502,14 @@ impl ThroughputTracker {
                         net_json_calc.add_throughput_cycle(
                             parents,
                             (
-                                entry.bytes.down.saturating_sub(entry.prev_bytes.down),
-                                entry.bytes.up.saturating_sub(entry.prev_bytes.up),
+                                entry
+                                    .actual_bytes
+                                    .down
+                                    .saturating_sub(entry.prev_actual_bytes.down),
+                                entry
+                                    .actual_bytes
+                                    .up
+                                    .saturating_sub(entry.prev_actual_bytes.up),
                             ),
                             (
                                 entry.packets.down.saturating_sub(entry.prev_packets.down),
