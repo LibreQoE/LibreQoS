@@ -60,7 +60,7 @@ struct heimdall_event {
     __u8 dump[PACKET_OCTET_SIZE];
 };
 
-static __always_inline __u8 get_heimdall_mode()
+static __noinline __u8 get_heimdall_mode()
 {
     __u32 index = 0;
     struct heimdall_config_t *cfg = (struct heimdall_config_t *)bpf_map_lookup_elem(&heimdall_config, &index);
@@ -77,7 +77,7 @@ static __always_inline __u8 get_heimdall_mode()
     }
 }
 
-static __always_inline bool is_heimdall_watching(struct dissector_t *dissector, int effective_direction)
+static __noinline bool is_heimdall_watching(struct dissector_t *dissector, int effective_direction)
 {
     if (effective_direction == 2) {
         __u32 * watching = (__u32 *)bpf_map_lookup_elem(&heimdall_watching, &dissector->src_ip);
@@ -93,7 +93,7 @@ static __always_inline bool is_heimdall_watching(struct dissector_t *dissector, 
     return false;
 }
 
-static __always_inline void update_heimdall(struct dissector_t *dissector, __u32 size, __u8 mode)
+static __noinline void update_heimdall(struct dissector_t *dissector, __u32 size, __u8 mode)
 {
     if (mode == 2) {
         struct heimdall_event event = {0};

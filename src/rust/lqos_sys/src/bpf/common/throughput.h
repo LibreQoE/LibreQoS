@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include "maximums.h"
 #include "debug.h"
+#include "lpm.h"
 
 // Counter for each host
 struct kprobe_dissector_t;
@@ -57,23 +58,21 @@ struct {
     __type(value, struct host_counter);
 } map_traffic_scratch SEC(".maps");
 
-static __always_inline void track_traffic(
+static __noinline void track_traffic(
     int direction, 
     struct in6_addr * key, 
-    __u32 size, 
-    __u32 tc_handle,
-    __u64 circuit_id,
-    __u64 device_id,
+    struct ip_hash_info *mapping,
     struct dissector_t * dissector
 ) {
+    __u32 size = dissector->skb_len;
     // Count the bits. It's per-CPU, so we can't be interrupted - no sync required
     struct host_counter * counter = 
         (struct host_counter *)bpf_map_lookup_elem(&map_traffic, key);
     if (counter) {
         counter->last_seen = dissector->now;
-        counter->tc_handle = tc_handle;
-        counter->circuit_id = circuit_id;
-        counter->device_id = device_id;
+        counter->tc_handle = mapping->tc_handle;
+        counter->circuit_id = mapping->circuit_id;
+        counter->device_id = mapping->device_id;
         if (direction == 1) {
             // Download
             counter->enqueue_download_packets += 1;
@@ -110,9 +109,9 @@ static __always_inline void track_traffic(
         struct host_counter *new_host = bpf_map_lookup_elem(&map_traffic_scratch, &zero);
         if (!new_host) return;
         __builtin_memset(new_host, 0, sizeof(*new_host));
-        new_host->tc_handle = tc_handle;
-        new_host->circuit_id = circuit_id;
-        new_host->device_id = device_id;
+        new_host->tc_handle = mapping->tc_handle;
+        new_host->circuit_id = mapping->circuit_id;
+        new_host->device_id = mapping->device_id;
         new_host->last_seen = dissector->now;
         if (direction == 1) {
             new_host->enqueue_download_packets = 1;
@@ -149,24 +148,22 @@ static __always_inline void track_traffic(
     }
 }
 
-static __always_inline void track_traffic_kprobe(
+static __noinline void track_traffic_kprobe(
     int direction,
     struct in6_addr * key,
-    __u32 size,
-    __u32 tc_handle,
-    __u64 circuit_id,
-    __u64 device_id,
+    struct ip_hash_info *mapping,
     struct kprobe_dissector_t *dissector
 ) {
+    __u32 size = dissector->skb_len;
     // Only update existing host records. The XDP path owns creation.
     struct host_counter *counter =
         (struct host_counter *)bpf_map_lookup_elem(&map_traffic, key);
     if (!counter) return;
 
     counter->last_seen = dissector->now;
-    counter->tc_handle = tc_handle;
-    counter->circuit_id = circuit_id;
-    counter->device_id = device_id;
+    counter->tc_handle = mapping->tc_handle;
+    counter->circuit_id = mapping->circuit_id;
+    counter->device_id = mapping->device_id;
     if (direction == 1) {
         counter->xmit_download_packets += 1;
         counter->xmit_download_bytes += size;

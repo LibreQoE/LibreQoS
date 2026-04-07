@@ -155,8 +155,6 @@ int xdp_prog(struct xdp_md *ctx)
     // Find the desired TC handle and CPU target
     __u32 tc_handle = ip_info.tc_handle;
     __u32 cpu = ip_info.cpu;
-    __u64 circuit_id = ip_info.circuit_id;
-    __u64 device_id = ip_info.device_id;
 
     // Host key used for throughput tracking (customer-side IP).
     struct in6_addr host_key = (effective_direction == 1) ? dissector.dst_ip : dissector.src_ip;
@@ -165,10 +163,7 @@ int xdp_prog(struct xdp_md *ctx)
     track_traffic(
         effective_direction, 
         &host_key, 
-        ctx->data_end - ctx->data, // end - data = length
-        tc_handle,
-        circuit_id,
-        device_id,
+        &ip_info,
         &dissector
     );
 
@@ -589,10 +584,7 @@ int kprobe_xmit(struct pt_regs *ctx) {
     track_traffic_kprobe(
         effective_direction,
         host_key,
-        dissector.skb_len,
-        ip_info.tc_handle,
-        ip_info.circuit_id,
-        ip_info.device_id,
+        &ip_info,
         &dissector
     );
 
