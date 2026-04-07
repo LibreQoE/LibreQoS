@@ -454,7 +454,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     data: [],
                 },
                 {
-                    name: "Transmitted",
+                    name: "Throughput",
                     type: "line",
                     xAxisIndex: 0,
                     yAxisIndex: 0,
@@ -804,7 +804,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     data: throughputData,
                 },
                 {
-                    name: "Transmitted",
+                    name: "Throughput",
                     data: actualThroughputData,
                     lineStyle: {
                         color: this.colors.actualThroughputLine,

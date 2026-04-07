@@ -203,8 +203,14 @@ impl ThroughputTracker {
                     continue;
                 };
 
-                let download_delta = entry.bytes.down.saturating_sub(entry.prev_bytes.down);
-                let upload_delta = entry.bytes.up.saturating_sub(entry.prev_bytes.up);
+                let download_delta = entry
+                    .actual_bytes
+                    .down
+                    .saturating_sub(entry.prev_actual_bytes.down);
+                let upload_delta = entry
+                    .actual_bytes
+                    .up
+                    .saturating_sub(entry.prev_actual_bytes.up);
                 total_download_bytes = total_download_bytes.saturating_add(download_delta);
                 total_upload_bytes = total_upload_bytes.saturating_add(upload_delta);
                 total_tcp_packets.down = total_tcp_packets
@@ -1187,6 +1193,7 @@ impl ThroughputTracker {
         self.actual_bytes_per_second.as_down_up().to_bits_from_bytes()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn shaped_bits_per_second(&self) -> DownUpOrder<u64> {
         self.shaped_bytes_per_second
             .as_down_up()
