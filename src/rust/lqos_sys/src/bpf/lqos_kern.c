@@ -533,6 +533,7 @@ int kprobe_xmit(struct pt_regs *ctx) {
     struct sk_buff *skb = (struct sk_buff *)PT_REGS_PARM1(ctx);
     struct kprobe_dissector_t dissector = {0};
     struct ip_hash_info ip_info;
+    struct flow_data_t *flow_data = NULL;
     struct in6_addr *host_key = NULL;
     __u8 effective_direction = 0;
 
@@ -568,6 +569,22 @@ int kprobe_xmit(struct pt_regs *ctx) {
     // Host key used for throughput tracking (customer-side IP).
     host_key = (effective_direction == 1) ? &dissector.dst_ip : &dissector.src_ip;
     ip_info = lookup_mapping_for_host(host_key, effective_direction);
+
+    if (dissector.ip_protocol == IPPROTO_TCP) {
+        struct flow_key_t key = build_flow_key_common(
+            dissector.src_ip,
+            dissector.dst_ip,
+            dissector.src_port,
+            dissector.dst_port,
+            dissector.ip_protocol,
+            effective_direction
+        );
+        flow_data = bpf_map_lookup_elem(&flowbee, &key);
+        if (flow_data) {
+            __u8 rate_index = effective_direction == TO_INTERNET ? 1 : 0;
+            detect_retries_common(bpf_ntohl(dissector.sequence), rate_index, flow_data);
+        }
+    }
 
     track_traffic_kprobe(
         effective_direction,

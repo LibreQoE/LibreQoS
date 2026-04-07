@@ -329,12 +329,11 @@ static __always_inline void process_udp(
 // Store the most recent sequence and ack numbers, and detect retransmissions.
 // This will also trigger on duplicate packets, and out-of-order - but those
 // are both an indication that you have issues anyway. So that's ok by me!
-static __noinline void detect_retries(
-    struct dissector_t *dissector,
+static __always_inline void detect_retries_common(
+    __u32 sequence,
     u_int8_t rate_index,
     struct flow_data_t *data
 ) {
-    __u32 sequence = bpf_ntohl(dissector->sequence);
     if (
         data->last_sequence[rate_index] != 0 && // We have a previous sequence number
         u32wrap_lt(sequence, data->last_sequence[rate_index]) // sequence number regression
@@ -550,9 +549,9 @@ static __always_inline void process_tcp(
 
         // Update the flow data with the current packet's information
         update_flow_rates(dissector, rate_index, new_data);
-        // Sequence and Acknowledgement numbers
-        detect_retries(dissector, rate_index, new_data);
-        // Check TCP timestamps and attempt to calculate RTT
+        // Check TCP timestamps and attempt to calculate RTT. Retransmit
+        // detection runs in the transmit kprobe so it only sees actually
+        // transmitted packets.
         infer_tcp_rtt(dissector, key, new_data, rate_index, other_rate_index);
         // Has the connection ended?
         if (BITCHECK(DIS_TCP_FIN)) {
@@ -570,10 +569,8 @@ static __always_inline void process_tcp(
     // Update the flow data with the current packet's information
     update_flow_rates(dissector, rate_index, data);
 
-    // Sequence and Acknowledgement numbers
-    detect_retries(dissector, rate_index, data);
-
-    // Check TCP timestamps and attempt to calculate RTT
+    // Check TCP timestamps and attempt to calculate RTT. Retransmit detection
+    // runs in the transmit kprobe so it only sees actually transmitted packets.
     infer_tcp_rtt(dissector, key, data, rate_index, other_rate_index);
 
     // Has the connection ended?

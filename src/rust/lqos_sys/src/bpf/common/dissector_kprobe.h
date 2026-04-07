@@ -38,6 +38,7 @@ struct kprobe_dissector_t {
     __be16 current_vlan;
     __u16 src_port;
     __u16 dst_port;
+    __u32 sequence;
     __u8 ip_protocol;
 };
 
@@ -55,6 +56,7 @@ static __always_inline void kprobe_snoop(struct kprobe_dissector_t *dissector)
         }
         dissector->src_port = hdr.source;
         dissector->dst_port = hdr.dest;
+        dissector->sequence = hdr.seq;
     } break;
     case IPPROTO_UDP:
     {
