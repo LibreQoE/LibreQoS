@@ -145,7 +145,7 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
     }
 
     tooltip() {
-        return "<h5>Live Topology Changes</h5><p>Shows human-readable TreeGuard and Bakery runtime changes, including queued requests, active virtualization work, deferred cleanup, failures, and whether incremental topology changes are currently frozen.</p>";
+        return "<h5>Live Topology Changes</h5><p>Shows human-readable TreeGuard and Bakery runtime changes, including queued requests, active virtualization work, deferred cleanup, retryable failures, structural blocks, and whether incremental topology changes are currently frozen.</p>";
     }
 
     subscribeTo() {
@@ -199,6 +199,7 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
         const applying = runtime?.applyingCount || 0;
         const cleanup = runtime?.awaitingCleanupCount || 0;
         const failed = runtime?.failedCount || 0;
+        const blocked = runtime?.blockedCount || 0;
         const dirty = runtime?.dirtyCount || 0;
         const latest = runtime?.latest || null;
 
@@ -209,6 +210,7 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
             statCard("Deferred", compactCount(deferred), deferred > 0 ? "text-warning" : "text-body"),
             statCard("Cleanup", compactCount(cleanup), cleanup > 0 ? "text-warning" : "text-body"),
             statCard("Failed", compactCount(failed), failed > 0 ? "text-danger" : "text-body"),
+            statCard("Blocked", compactCount(blocked), blocked > 0 ? "text-warning" : "text-body"),
             statCard("Dirty", compactCount(dirty), dirty > 0 ? "text-danger" : "text-body"),
         ].forEach((card) => {
             card.style.minWidth = "calc(50% - 0.25rem)";
@@ -226,7 +228,7 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
             this.badgeWrap.appendChild(
                 mkBadge(latest.status, statusBadgeClass(latest.status), latest?.lastError || latestActionLabel(latest)),
             );
-        } else if (!status?.reloadRequired && applying + cleanup + failed + dirty + deferred + submitted === 0) {
+        } else if (!status?.reloadRequired && applying + cleanup + failed + blocked + dirty + deferred + submitted === 0) {
             this.badgeWrap.appendChild(mkBadge("Idle", "bg-light text-secondary border"));
         }
 
@@ -260,6 +262,8 @@ export class BakeryChangeMixDashlet extends BaseDashlet {
             this.footerEl.textContent = status.reloadRequiredReason;
         } else if (dirty > 0) {
             this.footerEl.textContent = `${compactCount(dirty)} runtime subtree operations are marked dirty.`;
+        } else if (blocked > 0) {
+            this.footerEl.textContent = `${compactCount(blocked)} runtime operations are structurally blocked and will retry only after the relevant topology changes.`;
         } else if (failed > 0) {
             this.footerEl.textContent = `${compactCount(failed)} runtime operations failed and may need operator attention or a full reload.`;
         } else if (deferred > 0) {

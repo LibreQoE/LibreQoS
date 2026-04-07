@@ -19,12 +19,22 @@ use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::node_manager::local_api::node_rate_overrides::{
     NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
 };
+use crate::node_manager::local_api::node_topology_overrides::{
+    NodeTopologyOverrideData, NodeTopologyOverrideQuery,
+};
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
 use crate::node_manager::local_api::shaped_devices_page::{
     ShapedDevicesPage, ShapedDevicesPageQuery,
 };
+use crate::node_manager::local_api::topology_manager::{
+    TopologyManagerAttachmentRateOverrideClear, TopologyManagerAttachmentRateOverrideUpdate,
+    TopologyManagerClear, TopologyManagerManualAttachmentGroupClear,
+    TopologyManagerManualAttachmentGroupUpdate, TopologyManagerProbePolicyUpdate,
+    TopologyManagerStateData, TopologyManagerUpdate,
+};
+use crate::node_manager::local_api::topology_probes::TopologyProbesStateData;
 use crate::node_manager::local_api::tree_attached_circuits::{
     TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery,
 };
@@ -189,6 +199,32 @@ pub enum WsRequest {
     },
     ClearNodeRateOverride {
         query: NodeRateOverrideQuery,
+    },
+    GetNodeTopologyOverride {
+        query: NodeTopologyOverrideQuery,
+    },
+    GetTopologyManagerState,
+    GetTopologyProbesState,
+    SetTopologyManagerOverride {
+        update: TopologyManagerUpdate,
+    },
+    ClearTopologyManagerOverride {
+        clear: TopologyManagerClear,
+    },
+    SetTopologyManagerProbePolicy {
+        update: TopologyManagerProbePolicyUpdate,
+    },
+    SetTopologyManagerAttachmentRateOverride {
+        update: TopologyManagerAttachmentRateOverrideUpdate,
+    },
+    ClearTopologyManagerAttachmentRateOverride {
+        clear: TopologyManagerAttachmentRateOverrideClear,
+    },
+    SetTopologyManagerManualAttachmentGroup {
+        update: TopologyManagerManualAttachmentGroupUpdate,
+    },
+    ClearTopologyManagerManualAttachmentGroup {
+        clear: TopologyManagerManualAttachmentGroupClear,
     },
     ListNics,
     NetworkJson,
@@ -432,6 +468,7 @@ pub struct BakeryRuntimeOperationsData {
     pub applying_count: usize,
     pub awaiting_cleanup_count: usize,
     pub failed_count: usize,
+    pub blocked_count: usize,
     pub dirty_count: usize,
     pub latest: Option<BakeryRuntimeOperationHeadlineData>,
 }
@@ -672,6 +709,50 @@ pub enum WsResponse {
         ok: bool,
         message: String,
         data: NodeRateOverrideData,
+    },
+    GetNodeTopologyOverride {
+        data: NodeTopologyOverrideData,
+    },
+    GetTopologyManagerState {
+        data: TopologyManagerStateData,
+    },
+    GetTopologyProbesState {
+        data: TopologyProbesStateData,
+    },
+    SetTopologyManagerOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerProbePolicyResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerAttachmentRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerAttachmentRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerManualAttachmentGroupResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerManualAttachmentGroupResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
     },
     GetUsers {
         data: Vec<WebUser>,

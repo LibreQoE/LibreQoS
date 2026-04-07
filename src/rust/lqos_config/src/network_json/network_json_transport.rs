@@ -64,6 +64,10 @@ pub struct NetworkJsonTransport {
     /// Optional node longitude from network.json metadata.
     #[serde(default)]
     pub longitude: Option<f32>,
+    /// Selected attachment name carried in `network.effective.json` metadata when runtime
+    /// squashing collapses attachment nodes into a site-centric tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_attachment_name: Option<String>,
     /// Total number of descendant site-tree nodes below this node.
     ///
     /// This excludes the node itself. For the synthetic root node, this is the

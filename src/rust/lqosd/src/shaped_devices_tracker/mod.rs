@@ -467,6 +467,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     node_type: None,
                     latitude: None,
                     longitude: None,
+                    active_attachment_name: None,
                     subtree_site_count: 0,
                     subtree_circuit_count: 0,
                     subtree_device_count: 0,

@@ -34,6 +34,7 @@ flowchart LR
 - Actions:
   - On start: Run a full setup of queues
     - Current builds wait briefly for `lqosd` to finish binding the local bus before the first scheduler run.
+    - Current builds also wait for fresh runtime-effective topology outputs that match the just-imported canonical topology, rather than accepting any stale pre-existing `network.effective.json`.
   - Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.
     - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
     - The minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
@@ -118,6 +119,7 @@ WebUI (Node Manager) includes an urgent issue channel for high-priority events (
 WebUI (Node Manager) includes scheduler status visibility for operator awareness.
 
 - Use scheduler status as a quick health signal for recurring refresh jobs.
+- During startup and scheduled refresh phases, the sidebar indicator reports coarse progress and the current scheduler phase instead of showing a blind spinner.
 - If scheduler is not healthy, validate `lqosd` and `lqos_scheduler` service state first.
 - Confirm details with:
   - `journalctl -u lqos_scheduler --since "30 minutes ago"`

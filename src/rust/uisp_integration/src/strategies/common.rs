@@ -7,7 +7,8 @@ use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::Config;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tracing::warn;
+use std::time::Instant;
+use tracing::{info, warn};
 use uisp::{DataLink, Device, Site};
 
 pub(crate) struct UispData {
@@ -16,7 +17,13 @@ pub(crate) struct UispData {
     pub data_links_raw: Vec<DataLink>,
     pub sites: Vec<UispSite>,
     pub devices: Vec<UispDevice>,
-    //pub data_links: Vec<UispDataLink>,
+    raw_device_index_by_id: HashMap<String, usize>,
+    raw_device_indices_by_site_id: HashMap<String, Vec<usize>>,
+    parsed_device_index_by_id: HashMap<String, usize>,
+    parsed_device_indices_by_site_id: HashMap<String, Vec<usize>>,
+    site_index_by_id: HashMap<String, usize>,
+    data_link_indices_by_device_id: HashMap<String, Vec<usize>>,
+    data_link_indices_by_site_id: HashMap<String, Vec<usize>>,
 }
 
 fn short_address_segment(site: &Site) -> Option<String> {
@@ -40,6 +47,78 @@ fn service_name(site: &Site) -> Option<String> {
 
 fn short_site_id(site: &Site) -> String {
     site.id.chars().take(8).collect()
+}
+
+fn looks_like_business_name_part(part: &str) -> bool {
+    let normalized = part.trim().trim_end_matches('.').to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "llc"
+            | "inc"
+            | "corp"
+            | "corporation"
+            | "co"
+            | "company"
+            | "ltd"
+            | "pllc"
+            | "llp"
+            | "lp"
+            | "pc"
+            | "plc"
+    )
+}
+
+fn normalized_client_personal_name(name: &str) -> Option<String> {
+    let mut parts = name.split(',');
+    let last_name = parts.next()?.trim();
+    let first_name = parts.next()?.trim();
+    if parts.next().is_some() || last_name.is_empty() || first_name.is_empty() {
+        return None;
+    }
+
+    if last_name.chars().any(|c| c.is_ascii_digit())
+        || first_name.chars().any(|c| c.is_ascii_digit())
+    {
+        return None;
+    }
+
+    if looks_like_business_name_part(last_name) || looks_like_business_name_part(first_name) {
+        return None;
+    }
+
+    Some(format!("{first_name} {last_name}"))
+}
+
+fn normalize_client_site_names(sites: &mut [Site]) {
+    let mut normalized_count = 0usize;
+    let mut sample_names = Vec::new();
+
+    for site in sites.iter_mut().filter(|site| site.is_client_site()) {
+        let original_name = site.name_or_blank();
+        let Some(normalized_name) = normalized_client_personal_name(&original_name) else {
+            continue;
+        };
+
+        if normalized_name == original_name {
+            continue;
+        }
+
+        if let Some(ident) = site.identification.as_mut() {
+            ident.name = Some(normalized_name.clone());
+        }
+        normalized_count += 1;
+        if sample_names.len() < 3 {
+            sample_names.push(format!("{original_name} -> {normalized_name}"));
+        }
+    }
+
+    if normalized_count > 0 {
+        info!(
+            normalized_sites = normalized_count,
+            sample = ?sample_names,
+            "Normalized UISP client site names from last-name-first format"
+        );
+    }
 }
 
 fn disambiguation_candidates(site: &Site, base_name: &str) -> Vec<String> {
@@ -115,13 +194,97 @@ pub(crate) fn dedup_site_names(sites: &mut [Site]) {
 }
 
 impl UispData {
+    pub(crate) fn from_parts(
+        sites_raw: Vec<Site>,
+        devices_raw: Vec<Device>,
+        data_links_raw: Vec<DataLink>,
+        sites: Vec<UispSite>,
+        devices: Vec<UispDevice>,
+    ) -> Self {
+        let mut raw_device_index_by_id = HashMap::new();
+        let mut raw_device_indices_by_site_id = HashMap::<String, Vec<usize>>::new();
+        for (index, device) in devices_raw.iter().enumerate() {
+            raw_device_index_by_id.insert(device.identification.id.clone(), index);
+            if let Some(site_id) = device.get_site_id() {
+                raw_device_indices_by_site_id
+                    .entry(site_id.to_string())
+                    .or_default()
+                    .push(index);
+            }
+        }
+
+        let mut parsed_device_index_by_id = HashMap::new();
+        let mut parsed_device_indices_by_site_id = HashMap::<String, Vec<usize>>::new();
+        for (index, device) in devices.iter().enumerate() {
+            parsed_device_index_by_id.insert(device.id.clone(), index);
+            parsed_device_indices_by_site_id
+                .entry(device.site_id.clone())
+                .or_default()
+                .push(index);
+        }
+
+        let site_index_by_id = sites
+            .iter()
+            .enumerate()
+            .map(|(index, site)| (site.id.clone(), index))
+            .collect::<HashMap<_, _>>();
+
+        let mut data_link_indices_by_device_id = HashMap::<String, Vec<usize>>::new();
+        let mut data_link_indices_by_site_id = HashMap::<String, Vec<usize>>::new();
+        for (index, link) in data_links_raw.iter().enumerate() {
+            if let Some(device) = link.from.device.as_ref() {
+                data_link_indices_by_device_id
+                    .entry(device.identification.id.clone())
+                    .or_default()
+                    .push(index);
+            }
+            if let Some(device) = link.to.device.as_ref() {
+                data_link_indices_by_device_id
+                    .entry(device.identification.id.clone())
+                    .or_default()
+                    .push(index);
+            }
+            if let Some(site) = link.from.site.as_ref() {
+                data_link_indices_by_site_id
+                    .entry(site.identification.id.clone())
+                    .or_default()
+                    .push(index);
+            }
+            if let Some(site) = link.to.site.as_ref() {
+                data_link_indices_by_site_id
+                    .entry(site.identification.id.clone())
+                    .or_default()
+                    .push(index);
+            }
+        }
+
+        Self {
+            sites_raw,
+            devices_raw,
+            data_links_raw,
+            sites,
+            devices,
+            raw_device_index_by_id,
+            raw_device_indices_by_site_id,
+            parsed_device_index_by_id,
+            parsed_device_indices_by_site_id,
+            site_index_by_id,
+            data_link_indices_by_device_id,
+            data_link_indices_by_site_id,
+        }
+    }
+
     pub(crate) async fn fetch_uisp_data(
         config: Arc<Config>,
         ip_ranges: IpRanges,
     ) -> std::result::Result<Self, UispIntegrationError> {
+        let fetch_started = Instant::now();
         // Obtain the UISP data and transform it into easier to work with types
         let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) =
             load_uisp_data(config.clone()).await?;
+
+        // Normalize endpoint/customer names before deduplication and downstream parsing.
+        normalize_client_site_names(&mut sites_raw);
 
         // Deduplicate site names so downstream graph building has unique keys
         dedup_site_names(&mut sites_raw);
@@ -151,14 +314,22 @@ impl UispData {
             ipv4_to_v6,
         );
 
-        Ok(UispData {
+        info!(
+            sites = sites.len(),
+            devices = devices.len(),
+            raw_devices = devices_raw.len(),
+            data_links = data_links_raw.len(),
+            elapsed_ms = fetch_started.elapsed().as_millis(),
+            "Fetched and indexed UISP datasets"
+        );
+
+        Ok(Self::from_parts(
             sites_raw,
             devices_raw,
             data_links_raw,
             sites,
             devices,
-            //data_links: _data_links,
-        })
+        ))
     }
 
     pub fn find_client_sites(&self) -> Vec<&UispSite> {
@@ -169,16 +340,39 @@ impl UispData {
     }
 
     pub fn find_devices_in_site(&self, site_id: &str) -> Vec<&Device> {
-        self.devices_raw
-            .iter()
-            .filter(|d| d.get_site_id().unwrap_or_default() == site_id)
+        self.raw_device_indices_by_site_id
+            .get(site_id)
+            .into_iter()
+            .flat_map(|indices| indices.iter())
+            .filter_map(|index| self.devices_raw.get(*index))
             .collect()
     }
 
     pub fn find_device_by_id(&self, device_id: &str) -> Option<&Device> {
-        self.devices_raw
-            .iter()
-            .find(|d| d.identification.id == device_id)
+        self.raw_device_index_by_id
+            .get(device_id)
+            .and_then(|index| self.devices_raw.get(*index))
+    }
+
+    pub fn find_parsed_device_by_id(&self, device_id: &str) -> Option<&UispDevice> {
+        self.parsed_device_index_by_id
+            .get(device_id)
+            .and_then(|index| self.devices.get(*index))
+    }
+
+    pub fn find_site_by_id(&self, site_id: &str) -> Option<&UispSite> {
+        self.site_index_by_id
+            .get(site_id)
+            .and_then(|index| self.sites.get(*index))
+    }
+
+    pub fn find_parsed_devices_in_site(&self, site_id: &str) -> Vec<&UispDevice> {
+        self.parsed_device_indices_by_site_id
+            .get(site_id)
+            .into_iter()
+            .flat_map(|indices| indices.iter())
+            .filter_map(|index| self.devices.get(*index))
+            .collect()
     }
 
     pub fn find_device_by_name(&self, device_name: &str) -> Option<&Device> {
@@ -188,6 +382,8 @@ impl UispData {
     }
 
     pub fn map_clients_to_aps(&self) -> HashMap<String, Vec<String>> {
+        let started = Instant::now();
+        let client_site_count = self.find_client_sites().len();
         let mut mappings: HashMap<String, HashSet<String>> = HashMap::new();
         for client in self.find_client_sites() {
             let mut found = false;
@@ -215,7 +411,13 @@ impl UispData {
 
                 // Look for data links with this device
                 if !found {
-                    for link in self.data_links_raw.iter() {
+                    for link in self
+                        .data_link_indices_by_device_id
+                        .get(&device.identification.id)
+                        .into_iter()
+                        .flat_map(|indices| indices.iter())
+                        .filter_map(|index| self.data_links_raw.get(*index))
+                    {
                         // Check the FROM side
                         if let Some(from_device) = &link.from.device
                             && from_device.identification.id == device.identification.id
@@ -244,7 +446,13 @@ impl UispData {
 
             // If we still haven't found anything, let's try data links to the client site as a whole
             if !found {
-                for link in self.data_links_raw.iter() {
+                for link in self
+                    .data_link_indices_by_site_id
+                    .get(&client.id)
+                    .into_iter()
+                    .flat_map(|indices| indices.iter())
+                    .filter_map(|index| self.data_links_raw.get(*index))
+                {
                     if let Some(from_site) = &link.from.site
                         && from_site.identification.id == client.id
                         && let Some(to_device) = &link.to.device
@@ -278,20 +486,27 @@ impl UispData {
                 }
             }
         }
-        mappings
+        let mappings = mappings
             .into_iter()
             .map(|(ap, sites)| {
                 let mut sites_vec: Vec<_> = sites.into_iter().collect();
                 sites_vec.sort();
                 (ap, sites_vec)
             })
-            .collect()
+            .collect::<HashMap<_, _>>();
+        info!(
+            client_sites = client_site_count,
+            mapped_parents = mappings.len(),
+            elapsed_ms = started.elapsed().as_millis(),
+            "Mapped UISP client sites to upstream APs"
+        );
+        mappings
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::dedup_site_names;
+    use super::{dedup_site_names, normalize_client_site_names};
     use serde_json::json;
     use uisp::Site;
 
@@ -377,5 +592,37 @@ mod tests {
 
         assert_eq!(sites[0].name_or_blank(), "Acme (abcd1234)");
         assert_eq!(sites[1].name_or_blank(), "Acme (efgh5678)");
+    }
+
+    #[test]
+    fn client_site_names_reorder_last_first_to_first_last() {
+        let mut sites = vec![mk_site("site-1", "Rubio, Jorge", None, None)];
+
+        normalize_client_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Jorge Rubio");
+    }
+
+    #[test]
+    fn client_site_names_leave_business_suffix_names_unchanged() {
+        let mut sites = vec![mk_site("site-1", "Acme, LLC", None, None)];
+
+        normalize_client_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Acme, LLC");
+    }
+
+    #[test]
+    fn normalize_client_site_names_skips_non_client_sites() {
+        let mut site = mk_site("site-1", "Rubio, Jorge", None, None);
+        site.identification
+            .as_mut()
+            .expect("site must have identification")
+            .site_type = Some("site".to_string());
+        let mut sites = vec![site];
+
+        normalize_client_site_names(&mut sites);
+
+        assert_eq!(sites[0].name_or_blank(), "Rubio, Jorge");
     }
 }

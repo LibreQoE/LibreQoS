@@ -22,6 +22,7 @@ mod visp_integration;
 mod wispgate;
 
 pub use bridge::*;
+pub use integration_common::IntegrationConfig;
 pub use long_term_stats::LongTermStats;
 pub use queues::{LazyQueueMode, QueueMode};
 pub use stormguard::{StormguardConfig, StormguardStrategy};

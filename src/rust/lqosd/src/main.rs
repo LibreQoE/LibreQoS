@@ -11,6 +11,7 @@ mod lqos_daht_test;
 pub mod lts2_sys;
 mod node_manager;
 mod preflight_checks;
+mod probe_provider;
 mod program_control;
 mod remote_commands;
 mod rtt_exclusions;
@@ -48,6 +49,7 @@ use lqos_queue_tracker::{
 };
 use lqos_sys::LibreQoSKernels;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
+use lqos_utils::unix_time::unix_now;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
@@ -324,6 +326,11 @@ fn main() -> Result<()> {
                     }
                 });
 
+                let probe_client =
+                    lqos_probe::ProbeManager::spawn(lqos_probe::ProbeManagerConfig::default());
+                let probe_client_for_stormguard = probe_client.clone();
+                probe_provider::install_probe_client(probe_client.clone());
+
                 tokio::spawn(async move {
                     match lts2_sys::control_channel::start_control_channel(control_channel).await {
                         Ok(_) => info!("Insight control channel started successfully"),
@@ -333,6 +340,7 @@ fn main() -> Result<()> {
                     match lqos_stormguard::start_stormguard(
                         bakery_sender_for_async,
                         shaped_devices_tracker::full_network_map_snapshot,
+                        probe_client_for_stormguard,
                     )
                     .await
                     {
@@ -350,11 +358,13 @@ fn main() -> Result<()> {
                 let webserver_disabled = config.disable_webserver.unwrap_or(false);
                 if !webserver_disabled {
                     let control_tx_for_webserver = control_tx_for_webserver.clone();
+                    let probe_client_for_webserver = probe_client.clone();
                     tokio::spawn(async move {
                         if let Err(e) = node_manager::spawn_webserver(
                             bus_tx,
                             system_usage_tx,
                             control_tx_for_webserver,
+                            probe_client_for_webserver,
                         )
                         .await
                         {
@@ -490,6 +500,16 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::ListIpFlow => list_mapped_ips(),
             BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
             BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
+            BusRequest::ProbeBatch {
+                requests,
+                max_age_ms,
+            } => match probe_provider::probe_batch_blocking(
+                requests.clone(),
+                Duration::from_millis(*max_age_ms),
+            ) {
+                Ok(observations) => BusResponse::ProbeObservations(observations),
+                Err(err) => BusResponse::Fail(err),
+            },
             BusRequest::HostCounts => throughput_tracker::host_counts(),
             BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
             BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
@@ -798,6 +818,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild => {
                             "structural_ineligible_single_promotable_child".to_string()
                         }
+                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch => {
+                            "structural_ineligible_nested_runtime_branch".to_string()
+                        }
                     });
                     TreeGuardRuntimeNodeOperationSnapshot {
                     operation_id: snapshot.operation_id,
@@ -880,6 +903,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 tool_status::scheduler_output(Some(output.clone()));
                 BusResponse::Ack
             }
+            BusRequest::SchedulerProgress(progress) => {
+                let mut progress = progress.clone();
+                if progress.updated_unix.is_none() {
+                    progress.updated_unix = unix_now().ok();
+                }
+                tool_status::scheduler_progress(Some(progress));
+                BusResponse::Ack
+            }
             BusRequest::LogInfo(msg) => {
                 info!("BUS LOG: {}", msg);
                 BusResponse::Ack
@@ -887,7 +918,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::CheckSchedulerStatus => {
                 let running = tool_status::is_scheduler_available();
                 let error = tool_status::scheduler_error_message();
-                BusResponse::SchedulerStatus { running, error }
+                let progress = tool_status::scheduler_progress_state();
+                BusResponse::SchedulerStatus {
+                    running,
+                    error,
+                    progress,
+                }
             }
             BusRequest::SubmitUrgentIssue { source, severity, code, message, context, dedupe_key } => {
                 urgent::submit(*source, *severity, code.clone(), message.clone(), context.clone(), dedupe_key.clone());

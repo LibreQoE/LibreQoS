@@ -1089,8 +1089,10 @@ pub struct BakeryRuntimeOperationsSnapshot {
     pub applying_count: usize,
     /// Number of operations awaiting deferred cleanup.
     pub awaiting_cleanup_count: usize,
-    /// Number of failed operations that may be retried.
+    /// Number of failed operations that are not classified as structural blocks.
     pub failed_count: usize,
+    /// Number of operations blocked by structural runtime constraints until topology changes.
+    pub blocked_count: usize,
     /// Number of operations marked Dirty.
     pub dirty_count: usize,
     /// Most recently updated runtime operation, if any.
@@ -1333,6 +1335,7 @@ impl Default for BakeryTelemetryState {
                 applying_count: 0,
                 awaiting_cleanup_count: 0,
                 failed_count: 0,
+                blocked_count: 0,
                 dirty_count: 0,
                 latest: None,
             },
@@ -1589,6 +1592,16 @@ pub fn bakery_runtime_node_branch_snapshot(
         .runtime_branch_states_by_site
         .get(&site_hash)
         .cloned()
+}
+
+/// Returns every retained Bakery runtime branch-state snapshot currently tracked.
+pub fn bakery_runtime_node_branch_snapshots() -> Vec<BakeryRuntimeNodeBranchSnapshot> {
+    telemetry_state()
+        .read()
+        .runtime_branch_states_by_site
+        .values()
+        .cloned()
+        .collect()
 }
 
 /// Returns the current Bakery reload-required reason, if runtime drift has frozen incremental
@@ -5164,6 +5177,7 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
         site_hash,
         parent_class_id,
         up_parent_class_id,
+        class_minor,
         ..
     } = site
     else {
@@ -5180,6 +5194,18 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
     let Some((site_down_class, site_up_class)) = site_class_handles(site) else {
         return Some(format!("Site {} is not a valid AddSite command", site_hash));
     };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(down_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(up_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+    {
+        return Some(format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ));
+    }
 
     let (parent_down_major, _) = parent_class_id.get_major_minor();
     let (parent_up_major, _) = up_parent_class_id.get_major_minor();
@@ -5268,6 +5294,38 @@ impl RuntimeNodeEligibilityError {
             failure_reason: Some(failure_reason),
         }
     }
+}
+
+fn nested_runtime_shadow_branch_eligibility_error(
+    site: &BakeryCommands,
+) -> Option<RuntimeNodeEligibilityError> {
+    let BakeryCommands::AddSite {
+        site_hash,
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(down_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(up_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+    {
+        return None;
+    }
+
+    Some(RuntimeNodeEligibilityError::new(
+        format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ),
+        RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch,
+    ))
 }
 
 fn site_prune_commands(
@@ -5630,6 +5688,7 @@ fn rebuild_runtime_operations_snapshot(
     let mut applying_count = 0usize;
     let mut awaiting_cleanup_count = 0usize;
     let mut failed_count = 0usize;
+    let mut blocked_count = 0usize;
     let mut dirty_count = 0usize;
 
     let latest = runtime_node_operations
@@ -5639,7 +5698,13 @@ fn rebuild_runtime_operations_snapshot(
             RuntimeNodeOperationStatus::Deferred => deferred_count += 1,
             RuntimeNodeOperationStatus::Applying => applying_count += 1,
             RuntimeNodeOperationStatus::AppliedAwaitingCleanup => awaiting_cleanup_count += 1,
-            RuntimeNodeOperationStatus::Failed => failed_count += 1,
+            RuntimeNodeOperationStatus::Failed => {
+                if operation.failure_reason.is_some() {
+                    blocked_count += 1;
+                } else {
+                    failed_count += 1;
+                }
+            }
             RuntimeNodeOperationStatus::Dirty => dirty_count += 1,
             RuntimeNodeOperationStatus::Completed => {}
         })
@@ -5662,6 +5727,7 @@ fn rebuild_runtime_operations_snapshot(
         applying_count,
         awaiting_cleanup_count,
         failed_count,
+        blocked_count,
         dirty_count,
         latest,
     }
@@ -9339,6 +9405,13 @@ fn handle_treeguard_set_node_virtual_live(
             }
 
             if let Some(reason) =
+                nested_runtime_shadow_branch_eligibility_error(target_site.as_ref())
+            {
+                failure_reason = reason.failure_reason;
+                return Err(reason.message);
+            }
+
+            if let Some(reason) =
                 site_runtime_virtualization_eligibility_error(target_site.as_ref())
             {
                 return Err(reason);
@@ -10952,6 +11025,18 @@ mod tests {
     }
 
     #[test]
+    fn nested_runtime_shadow_branch_rejects_non_top_level_virtualization() {
+        let site = mk_add_site(77, 0x10003, 0x20003, 0x2001);
+        let reason = nested_runtime_shadow_branch_eligibility_error(site.as_ref())
+            .expect("runtime shadow site should be rejected");
+        assert!(reason.message.contains("retained runtime shadow branch"));
+        assert_eq!(
+            reason.failure_reason,
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch)
+        );
+    }
+
+    #[test]
     fn site_runtime_virtualization_rejects_non_site_commands() {
         let circuit = mk_add_circuit(77, "192.0.2.77/32");
         let reason = site_runtime_virtualization_eligibility_error(circuit.as_ref())
@@ -11077,6 +11162,55 @@ mod tests {
                 .as_deref()
                 .unwrap_or_default()
                 .contains("one top-level TreeGuard runtime operation in flight")
+        );
+    }
+
+    #[test]
+    fn structural_runtime_failures_are_counted_as_blocked_not_failed() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let now = unix_now();
+        let mut retryable = RuntimeNodeOperation::new(
+            1,
+            20,
+            Some("retryable-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now,
+        );
+        retryable.update_status(
+            RuntimeNodeOperationStatus::Failed,
+            now,
+            Some("transient runtime failure".to_string()),
+            None,
+        );
+
+        let mut blocked = RuntimeNodeOperation::new(
+            2,
+            21,
+            Some("blocked-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now.saturating_add(1),
+        );
+        blocked.update_status_with_reason(
+            RuntimeNodeOperationStatus::Failed,
+            now.saturating_add(1),
+            Some("inside a retained runtime shadow branch".to_string()),
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch),
+            None,
+        );
+
+        let runtime_node_operations = HashMap::from([(20, retryable), (21, blocked)]);
+        let snapshot = rebuild_runtime_operations_snapshot(&runtime_node_operations);
+
+        assert_eq!(snapshot.failed_count, 1);
+        assert_eq!(snapshot.blocked_count, 1);
+        assert_eq!(
+            snapshot
+                .latest
+                .as_ref()
+                .and_then(|entry| entry.site_name.as_deref()),
+            Some("blocked-site")
         );
     }
 

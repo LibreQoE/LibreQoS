@@ -1,7 +1,10 @@
 use serde::Serialize;
 
+use lqos_bus::SchedulerProgressReport;
+
 use crate::tool_status::{
     is_scheduler_available, scheduler_error_message, scheduler_output_message,
+    scheduler_progress_state,
 };
 
 // Remove ANSI escape sequences (basic CSI/OSC handling) for browser display
@@ -64,6 +67,7 @@ fn strip_ansi(input: &str) -> String {
 pub struct SchedulerStatus {
     pub available: bool,
     pub error: Option<String>,
+    pub progress: Option<SchedulerProgressReport>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -71,6 +75,7 @@ pub struct SchedulerDetails {
     pub available: bool,
     pub error: Option<String>,
     pub output: Option<String>,
+    pub progress: Option<SchedulerProgressReport>,
     pub details: String,
 }
 
@@ -99,7 +104,12 @@ fn scheduler_output() -> Option<String> {
 pub fn scheduler_status_data() -> SchedulerStatus {
     let available = is_scheduler_available();
     let error = scheduler_error();
-    SchedulerStatus { available, error }
+    let progress = scheduler_progress_state();
+    SchedulerStatus {
+        available,
+        error,
+        progress,
+    }
 }
 
 pub fn scheduler_details_data() -> SchedulerDetails {
@@ -107,6 +117,26 @@ pub fn scheduler_details_data() -> SchedulerDetails {
     let output = scheduler_output();
     let mut body = String::new();
     body.push_str(&format!("Scheduler available: {}\n\n", status.available));
+    match status.progress.as_ref() {
+        Some(progress) => {
+            body.push_str("Current progress:\n");
+            body.push_str(&format!(
+                "- Active: {}\n- Phase: {}\n- Step: {}/{}\n- Percent: {}%\n",
+                progress.active,
+                progress.phase_label,
+                progress.step_index,
+                progress.step_count,
+                progress.percent
+            ));
+            if let Some(updated_unix) = progress.updated_unix {
+                body.push_str(&format!("- Updated Unix: {}\n", updated_unix));
+            }
+            body.push('\n');
+        }
+        None => {
+            body.push_str("No scheduler progress reported.\n\n");
+        }
+    }
     match status.error.as_ref() {
         Some(err) => {
             body.push_str("Reported error:\n");
@@ -134,6 +164,7 @@ pub fn scheduler_details_data() -> SchedulerDetails {
         available: status.available,
         error: status.error,
         output,
+        progress: status.progress,
         details: body,
     }
 }

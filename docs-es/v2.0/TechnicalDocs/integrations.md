@@ -86,13 +86,17 @@ strategy = "full"
 # * "slow" - limit suspended customers to 0.1 Mbps
 suspended_strategy = "none"
 
-# UISP's reported AP capacities for AirMax can be a bit optimistic. For AirMax APs, we limit
-# to 65% of what UISP claims an AP's capacity is, by default. This is adjustable.
-airmax_capacity = 0.65
+# UISP's reported AP capacities for AirMax can be a bit optimistic. For new installs, we limit
+# to 80% of what UISP claims an AP's capacity is, by default. This is adjustable.
+airmax_capacity = 0.8
 
-# UISP's reported AP capacities for LTU are more accurate, but to be safe we adjust to 95%
+# When UISP reports only aggregate AirMax AP capacity for flexible framing and does not expose
+# the live downlink ratio, use this fallback split. 0.8 means 80/20 download/upload.
+airmax_flexible_frame_download_ratio = 0.8
+
+# UISP's reported AP capacities for LTU are more accurate, and new installs now default to 100%
 # of those capacities. This is adjustable.
-ltu_capacity = 0.95
+ltu_capacity = 1.0
 
 # If you want to exclude sites in UISP from appearing in your LibreQoS network.json, simply
 # include them here. For example, exclude_sites = ["Site_1", "Site_2"]
@@ -137,32 +141,17 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 
 ### UISP Overrides
 
-You can also modify the the following files to more accurately reflect your network:
-- integrationUISPbandwidths.csv
-- integrationUISProutes.csv
+Puede usar las siguientes entradas de override para reflejar su red con mayor precisión:
+- `Rate Override` en la página del árbol, guardado como overrides operatorios `AdjustSiteSpeed` en `lqos_overrides.json`
+- `Topology Override` en la página del árbol para nodos compatibles de UISP `full`, guardado en `lqos_overrides.json`
+- integrationUISPbandwidths.csv solo como entrada heredada de compatibilidad
 
-Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src). To utilize the template, copy the file (removing the `.template` part of the filename) and set the appropriate information inside each file.
-For example, if you want to change the set bandwidth for a site, you would do:
-```
-sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
-```
-And edit the CSV using LibreOffice or your preferred CSV editor.
+Las compilaciones UISP actuales auto-migran un `integrationUISPbandwidths.csv` heredado hacia overrides operatorios `AdjustSiteSpeed` en la siguiente ejecución de la integración cuando todavía no existen overrides de tasa del operador. Si ya existen, el CSV se ignora.
+Las entradas JSON heredadas `uisp.bandwidth_overrides` se ignoran. La ruta autoritativa para overrides de ancho de banda es `AdjustSiteSpeed` en `lqos_overrides.json`.
+Las compilaciones UISP actuales ignoran las entradas heredadas `uisp.route_overrides` en `lqos_overrides.json` y los archivos heredados `integrationUISProutes.csv`. Si existe cualquiera de los dos, LibreQoS registra una advertencia y usa la topología detectada más los overrides de Topology Manager.
 
-#### UISP Route Overrides
-
-The default cost between nodes is 10.
-
-Say you have Site 1, Site 2, and Site 3.
-A backup path exists between Site 1 and Site 3, but is not the preferred path.
-Your preference is Site 1 > Site 2 > Site 3, but the integration by default connects Site 1 > Site 3 directly.
-
-To fix this, add a cost above the default for the path between Site 1 and Site 3.
-```
-Site 1, Site 3, 100
-```
-With this, data will flow Site 1 > Site 2 > Site 3.
-
-To make the change, perform a reload of the integration with ```sudo systemctl restart lqos_scheduler```.
+Las plantillas de los archivos heredados siguen disponibles en `/opt/libreqos/src`. Si no las encuentra allí, puede obtenerlas [aquí](https://github.com/LibreQoE/LibreQoS/tree/develop/src). Para cambios nuevos de ancho de banda, prefiera los overrides operatorios en `lqos_overrides.json`.
+Para la intención de camino, use la selección de padre y la preferencia de attachments en Topology Manager. Ese es ahora el reemplazo soportado para los antiguos overrides de costo de ruta de UISP.
 
 ## Powercode Integration
 

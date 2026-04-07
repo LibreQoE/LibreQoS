@@ -23,6 +23,15 @@ function validateConfig() {
         alert("Client Bandwidth Multiplier must be a number greater than 0");
         return false;
     }
+
+    const ethernetMultiplierRaw = document.getElementById("ethernetPortLimitMultiplier").value.trim();
+    if (ethernetMultiplierRaw.length > 0) {
+        const ethernetMultiplier = parseFloat(ethernetMultiplierRaw);
+        if (isNaN(ethernetMultiplier) || ethernetMultiplier <= 0 || ethernetMultiplier > 1) {
+            alert("Ethernet Port Limit Multiplier must be a number greater than 0 and less than or equal to 1");
+            return false;
+        }
+    }
     
     return true;
 }
@@ -44,7 +53,16 @@ function updateConfig() {
         client_bandwidth_multiplier: (() => {
             const value = parseFloat(document.getElementById("clientBandwidthMultiplier").value);
             return value === 1.0 ? null : value; // Store as null for default to save space
-        })()
+        })(),
+        ethernet_port_limits_enabled: document.getElementById("ethernetPortLimitsEnabled").checked,
+        ethernet_port_limit_multiplier: (() => {
+            const raw = document.getElementById("ethernetPortLimitMultiplier").value.trim();
+            if (!raw.length) {
+                return null;
+            }
+            const value = parseFloat(raw);
+            return value === 0.94 ? null : value;
+        })(),
     };
 }
 
@@ -74,6 +92,10 @@ loadConfig(() => {
         document.getElementById("promoteToRoot").value = promoteRoot;
         document.getElementById("clientBandwidthMultiplier").value = 
             (integration.client_bandwidth_multiplier ?? 1.0).toFixed(1);
+        document.getElementById("ethernetPortLimitsEnabled").checked =
+            integration.ethernet_port_limits_enabled ?? true;
+        document.getElementById("ethernetPortLimitMultiplier").value =
+            (integration.ethernet_port_limit_multiplier ?? 0.94).toFixed(2);
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

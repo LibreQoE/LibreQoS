@@ -46,6 +46,9 @@ pub enum RuntimeNodeOperationFailureReason {
     StructuralIneligibleNoPromotableChildren,
     /// The node has only one promotable direct child, so v1 flattening has no deterministic split.
     StructuralIneligibleSinglePromotableChild,
+    /// The node already lives inside a retained runtime shadow branch, so nested virtualization is
+    /// not supported by the v1 runtime mutation model.
+    StructuralIneligibleNestedRuntimeBranch,
 }
 
 /// Snapshot of a Bakery-tracked TreeGuard runtime node operation.

@@ -221,6 +221,25 @@ impl Config {
                 );
             }
         }
+        if let Some(multiplier) = self.integration_common.ethernet_port_limit_multiplier
+            && (!multiplier.is_finite() || multiplier <= 0.0 || multiplier > 1.0)
+        {
+            return Err(
+                "integration_common.ethernet_port_limit_multiplier must satisfy 0 < value <= 1"
+                    .to_string(),
+            );
+        }
+        let airmax_flexible_frame_download_ratio =
+            self.uisp_integration.airmax_flexible_frame_download_ratio;
+        if !airmax_flexible_frame_download_ratio.is_finite()
+            || airmax_flexible_frame_download_ratio <= 0.0
+            || airmax_flexible_frame_download_ratio >= 1.0
+        {
+            return Err(
+                "uisp_integration.airmax_flexible_frame_download_ratio must satisfy 0 < value < 1"
+                    .to_string(),
+            );
+        }
         // Validate that default_sqm is not empty to prevent incomplete TC commands
         if self.queues.default_sqm.trim().is_empty() {
             return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());

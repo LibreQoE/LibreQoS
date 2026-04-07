@@ -4,7 +4,9 @@ use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisorie
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
@@ -28,6 +30,7 @@ pub async fn build_ap_site_network(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
 
     // Find trouble-spots!
     let _trouble = find_troublesome_sites(&uisp_data).await.map_err(|e| {
@@ -60,6 +63,7 @@ pub async fn build_ap_site_network(
         &mut shaped_devices,
         &mut ethernet_advisories,
         &config,
+        ethernet_policy,
     );
 
     let network_path = Path::new(&config.lqos_directory).join("network.json");
@@ -178,6 +182,7 @@ impl Layer {
         shaped_devices: &mut Vec<ShapedDevice>,
         ethernet_advisories: &mut Vec<CircuitEthernetMetadata>,
         config: &Config,
+        ethernet_policy: EthernetPortLimitPolicy,
     ) -> serde_json::Map<String, serde_json::Value> {
         let mut children = serde_json::Map::new();
         let parent_name = match &self.id {
@@ -198,6 +203,7 @@ impl Layer {
                                 shaped_devices,
                                 ethernet_advisories,
                                 config,
+                                ethernet_policy,
                             )
                             .into(),
                     );
@@ -209,6 +215,7 @@ impl Layer {
                         shaped_devices,
                         ethernet_advisories,
                         config,
+                        ethernet_policy,
                     );
                 }
                 _ => {}
@@ -309,13 +316,16 @@ impl Layer {
                             (0.1, 0.1, 0.1, 0.1)
                         };
                         let ethernet_decision = apply_ethernet_rate_cap(
+                            ethernet_policy,
                             &site.id,
                             &site.name,
                             devices.iter().copied(),
-                            requested.0,
-                            requested.2,
-                            requested.1,
-                            requested.3,
+                            RequestedCircuitRates {
+                                download_min: requested.0,
+                                upload_min: requested.2,
+                                download_max: requested.1,
+                                upload_max: requested.3,
+                            },
                         );
                         if let Some(advisory) = ethernet_decision.advisory.clone() {
                             ethernet_advisories.push(advisory);
@@ -383,112 +393,6 @@ pub(crate) async fn find_troublesome_sites(data: &UispData) -> anyhow::Result<Tr
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::strategies::common::UispData;
-    use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
-    use std::collections::HashSet;
-
-    #[test]
-    fn ap_site_network_json_keeps_empty_shells_when_client_has_no_addresses() {
-        let config = Config::default();
-        let uisp_data = UispData {
-            sites_raw: vec![],
-            devices_raw: vec![],
-            data_links_raw: vec![],
-            sites: vec![
-                UispSite {
-                    id: "tower-site".to_string(),
-                    name: "Tower Site".to_string(),
-                    site_type: UispSiteType::Site,
-                    max_down_mbps: 1000,
-                    max_up_mbps: 1000,
-                    ..Default::default()
-                },
-                UispSite {
-                    id: "client-site".to_string(),
-                    name: "Client Site".to_string(),
-                    site_type: UispSiteType::Client,
-                    max_down_mbps: 100,
-                    max_up_mbps: 50,
-                    ..Default::default()
-                },
-            ],
-            devices: vec![
-                UispDevice {
-                    id: "ap-1".to_string(),
-                    name: "AP 1".to_string(),
-                    mac: "".to_string(),
-                    role: None,
-                    wireless_mode: None,
-                    site_id: "tower-site".to_string(),
-                    download: 500,
-                    upload: 500,
-                    ipv4: HashSet::from(["192.0.2.1/32".to_string()]),
-                    ipv6: HashSet::new(),
-                    negotiated_ethernet_mbps: None,
-                    negotiated_ethernet_interface: None,
-                },
-                UispDevice {
-                    id: "cpe-1".to_string(),
-                    name: "CPE 1".to_string(),
-                    mac: "".to_string(),
-                    role: None,
-                    wireless_mode: None,
-                    site_id: "client-site".to_string(),
-                    download: 100,
-                    upload: 50,
-                    ipv4: HashSet::new(),
-                    ipv6: HashSet::new(),
-                    negotiated_ethernet_mbps: None,
-                    negotiated_ethernet_interface: None,
-                },
-            ],
-        };
-        let root = Layer {
-            id: GraphMapping::Root,
-            children: vec![Layer {
-                id: GraphMapping::SiteByName("Tower Site".to_string()),
-                children: vec![Layer {
-                    id: GraphMapping::AccessPointByName("AP 1".to_string()),
-                    children: vec![Layer {
-                        id: GraphMapping::ClientById("client-site".to_string()),
-                        children: vec![],
-                    }],
-                }],
-            }],
-        };
-
-        let mut shaped_devices = Vec::new();
-        let mut ethernet_advisories = Vec::new();
-        let network_json = root.walk_children(
-            None,
-            &uisp_data,
-            &mut shaped_devices,
-            &mut ethernet_advisories,
-            &config,
-        );
-
-        assert!(shaped_devices.is_empty());
-        let tower_site = network_json
-            .get("Tower Site")
-            .and_then(|v| v.as_object())
-            .unwrap();
-        let site_children = tower_site
-            .get("children")
-            .and_then(|v| v.as_object())
-            .unwrap();
-        assert!(site_children.contains_key("AP 1"));
-        let ap = site_children
-            .get("AP 1")
-            .and_then(|v| v.as_object())
-            .unwrap();
-        let ap_children = ap.get("children").and_then(|v| v.as_object()).unwrap();
-        assert!(ap_children.is_empty());
-    }
-}
-
 fn find_clients_with_multiple_entry_points(data: &UispData) -> anyhow::Result<HashSet<String>> {
     let mut result = HashSet::new();
     for client in data.find_client_sites() {
@@ -552,4 +456,125 @@ fn find_clients_linked_from_other_clients(data: &UispData) -> anyhow::Result<Has
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::strategies::common::UispData;
+    use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
+    use std::collections::HashSet;
+
+    #[test]
+    fn ap_site_network_json_keeps_empty_shells_when_client_has_no_addresses() {
+        let config = Config::default();
+        let uisp_data = UispData::from_parts(
+            vec![],
+            vec![],
+            vec![],
+            vec![
+                UispSite {
+                    id: "tower-site".to_string(),
+                    name: "Tower Site".to_string(),
+                    site_type: UispSiteType::Site,
+                    max_down_mbps: 1000,
+                    max_up_mbps: 1000,
+                    ..Default::default()
+                },
+                UispSite {
+                    id: "client-site".to_string(),
+                    name: "Client Site".to_string(),
+                    site_type: UispSiteType::Client,
+                    max_down_mbps: 100,
+                    max_up_mbps: 50,
+                    ..Default::default()
+                },
+            ],
+            vec![
+                UispDevice {
+                    id: "ap-1".to_string(),
+                    name: "AP 1".to_string(),
+                    mac: "".to_string(),
+                    role: None,
+                    wireless_mode: None,
+                    site_id: "tower-site".to_string(),
+                    raw_download: 500,
+                    raw_upload: 500,
+                    download: 500,
+                    upload: 500,
+                    ipv4: HashSet::from(["192.0.2.1/32".to_string()]),
+                    ipv6: HashSet::new(),
+                    probe_ipv4: HashSet::new(),
+                    probe_ipv6: HashSet::new(),
+                    negotiated_ethernet_mbps: None,
+                    negotiated_ethernet_interface: None,
+                    transport_cap_mbps: None,
+                    transport_cap_reason: None,
+                    attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,
+                },
+                UispDevice {
+                    id: "cpe-1".to_string(),
+                    name: "CPE 1".to_string(),
+                    mac: "".to_string(),
+                    role: None,
+                    wireless_mode: None,
+                    site_id: "client-site".to_string(),
+                    raw_download: 100,
+                    raw_upload: 50,
+                    download: 100,
+                    upload: 50,
+                    ipv4: HashSet::new(),
+                    ipv6: HashSet::new(),
+                    probe_ipv4: HashSet::new(),
+                    probe_ipv6: HashSet::new(),
+                    negotiated_ethernet_mbps: None,
+                    negotiated_ethernet_interface: None,
+                    transport_cap_mbps: None,
+                    transport_cap_reason: None,
+                    attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,
+                },
+            ],
+        );
+        let root = Layer {
+            id: GraphMapping::Root,
+            children: vec![Layer {
+                id: GraphMapping::SiteByName("Tower Site".to_string()),
+                children: vec![Layer {
+                    id: GraphMapping::AccessPointByName("AP 1".to_string()),
+                    children: vec![Layer {
+                        id: GraphMapping::ClientById("client-site".to_string()),
+                        children: vec![],
+                    }],
+                }],
+            }],
+        };
+
+        let mut shaped_devices = Vec::new();
+        let mut ethernet_advisories = Vec::new();
+        let network_json = root.walk_children(
+            None,
+            &uisp_data,
+            &mut shaped_devices,
+            &mut ethernet_advisories,
+            &config,
+            EthernetPortLimitPolicy::default(),
+        );
+
+        assert!(shaped_devices.is_empty());
+        let tower_site = network_json
+            .get("Tower Site")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        let site_children = tower_site
+            .get("children")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert!(site_children.contains_key("AP 1"));
+        let ap = site_children
+            .get("AP 1")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        let ap_children = ap.get("children").and_then(|v| v.as_object()).unwrap();
+        assert!(ap_children.is_empty());
+    }
 }

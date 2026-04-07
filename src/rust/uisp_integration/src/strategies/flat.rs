@@ -4,7 +4,9 @@ use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisorie
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::dedup_site_names;
 use crate::uisp_types::UispDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs;
@@ -39,6 +41,7 @@ pub async fn build_flat_network(
     config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
     // Load the devices from UISP
     let (devices, json_devices) = uisp::load_all_devices_with_interfaces(config.clone())
         .await
@@ -180,13 +183,16 @@ pub async fn build_flat_network(
                 .filter(|device| device.site_id == site.id && device.has_address())
                 .collect();
             let ethernet_decision = apply_ethernet_rate_cap(
+                ethernet_policy,
                 &site.id,
                 &site.name_or_blank(),
                 site_devices.iter(),
-                requested.0,
-                requested.1,
-                requested.2,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.1,
+                    download_max: requested.2,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);

@@ -25,12 +25,39 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Vista jerárquica de nodos/circuitos desde la perspectiva del shaper.
 - Útil para identificar cuellos de botella y patrones de utilización padre/hijo.
 - Las páginas de detalle del árbol muestran una ruta tipo breadcrumb, conteos de rama e indicadores de estado para el nodo seleccionado.
-- `Node Details` resume el tipo de nodo seleccionado, el tamaño de la rama, las velocidades configuradas y la velocidad efectiva.
+- `Node Details` resume las velocidades configuradas del nodo seleccionado, el estado de overrides y la velocidad efectiva.
 - `Node Snapshot` ofrece un resumen visual rápido del throughput y el QoO del nodo seleccionado.
 - Los circuitos adjuntos se muestran en una tabla dedicada para el nodo seleccionado.
 - La columna de IP de circuitos adjuntos mantiene las filas compactas mostrando una dirección inline y colapsando las adicionales como `+X`, mientras la lista completa sigue disponible al pasar el cursor.
 - Los circuitos adjuntos limitados por Ethernet pueden mostrar insignias `10M`, `100M` o `1G` junto al valor de `Plan (Mbps)`; al pasar el cursor se explica el auto-cap y al hacer clic en la insignia se abre la página dedicada de revisión Ethernet.
-- Los administradores pueden guardar o limpiar valores de `Operator Override` cuando el nodo admite overrides a nivel de nodo. Los usuarios de solo lectura y los nodos no compatibles siguen mostrando los valores actuales sin controles de edición.
+- Los administradores pueden guardar o limpiar valores de `Rate Override` cuando el nodo admite overrides a nivel de nodo. Los usuarios de solo lectura y los nodos no compatibles siguen mostrando los valores actuales sin controles de edición.
+- Las ediciones de tasa desde la página del árbol escriben overrides operativos `AdjustSiteSpeed` en `lqos_overrides.json`.
+- En compilaciones UISP `full`, un `integrationUISPbandwidths.csv` heredado se auto-migra a esos overrides en la siguiente ejecución de la integración cuando todavía no existen overrides operativos de tasa; en caso contrario, el CSV se ignora.
+- Las ediciones de tasa desde la página del árbol requieren sesión de administrador, un `node_id` estable y un nodo no generado. Los nodos generados/sintéticos de la integración permanecen en solo lectura en este editor.
+- La página del árbol mantiene `Node Details` como una tarjeta compacta de resumen y coloca los editores de override como filas compactas directamente debajo de la tabla de detalles.
+- La página del árbol ahora muestra el estado de `Topology Override` solo en modo lectura. Los cambios de padre y adjunto se movieron a `Topology`, y el panel de detalles del árbol enlaza directamente a Topology Manager para el nodo seleccionado.
+- Los saltos de adjuntos seleccionados en runtime se colapsan fuera de la jerarquía principal del árbol. Cuando un sitio usa actualmente un backhaul o radio path específico, `Node Details` lo muestra como metadato `Active Attachment` en el sitio en lugar de exponer ese adjunto como un nodo propio del árbol.
+- Los adjuntos alternativos inactivos de backhaul PtP/cableado también se eliminan del árbol runtime. `tree.html` muestra solo la ruta efectiva; los alternativos inactivos quedan visibles en Topology Manager y no como nodos runtime independientes.
+- En el nodo sintético `Root`, el topology override se sigue mostrando como no aplicable en lugar de una advertencia genérica por falta de `node_id`.
+- El panel derecho de Details en Topology ahora usa un resumen compacto de rama más una sola sección centrada en adjuntos, de modo que `Current Attachment Preference`, `Attachment Health` y la ruta de `Edit Attachment Preference` quedan juntos en lugar de repetir el mismo estado en varias tarjetas.
+- Para nodos con múltiples radio paths, el panel Details ahora prioriza la decisión de adjunto antes que el movimiento de rama: las tarjetas resaltan `Using Now` y `Preferred` directamente, mientras `Start Move` queda visualmente degradado hasta que el operador realmente quiera reubicar la rama.
+- Mientras la página está abierta, Topology Manager sigue auto-refrescando el estado en segundo plano para mostrar cambios de health o suppress sin recargar manualmente, pero ahora difiere ese refresh cuando el operador está escribiendo en campos editables del panel Details para no robar foco ni cursor a mitad de una edición.
+- La selección actual también se refleja en la URL, de modo que recargar o compartir el enlace reabre Topology Manager en el mismo nodo cuando ese nodo sigue existiendo. Si la página se abre sin `node_id`, ahora arranca por defecto en la vista sintética `Root` antes de volver al selector jerarquizado.
+- En Move Preview, la ascendencia profunda hacia la izquierda ahora se compacta en un stub después de los dos nodos upstream más cercanos, para que las cadenas largas no aplasten el lado izquierdo del mapa. El breadcrumb completo sigue visible en el resumen de jerarquía superior.
+- Cuando UISP aporta adjuntos/radios explícitos, los destinos automáticos de sondeo de topología salen de las IPs de gestión que UISP reporta para ese par. Estas IPs de sondeo ya no están limitadas por `allow_subnets` de shaping; se tratan como datos del plano de gestión y no como direcciones de clientes para shaping.
+- La sección `Attachment Health` también puede guardar overrides de tasa por adjunto cuando ese adjunto es editable. Estos overrides son direccionales (`download` / `upload`), viven en `topology_overrides.json` y solo afectan la ruta concreta `(nodo hijo, nodo padre, adjunto)`, no todo el nodo.
+- Las filas de adjuntos UISP también clasifican el rol de alimentación, como `PtP Backhaul`, `PtMP Uplink` o `Wired Uplink`, para que el operador distinga un backhaul real de una ruta de acceso/uplink sin deducirlo por el nombre del AP.
+- El archivo único de depuración runtime para probes de topología es `topology_attachment_health_state.json`. Ahora incluye el `pair_id` del probe más el nombre/ID del adjunto, los nombres/IDs de nodo hijo y padre, las IPs local/remota configuradas para probe, el estado `enabled`/`probeable`, la alcanzabilidad reciente por endpoint y los contadores/razones actuales de health o suppress. El panel Details enlaza directamente a esta depuración desde `Attachment Health`.
+- Los adjuntos UISP cuya capacidad viene de telemetría dinámica de radio siguen en solo lectura para este editor. Los adjuntos estáticos, los casos black-box/fallback y los grupos manuales sí pueden mostrar controles de `Attachment Rate`.
+- Cuando UISP limita automáticamente un adjunto porque los puertos Ethernet activos o conocidos no pueden transportar la capacidad bruta reportada por el radio, `Attachment Health` muestra esa razón inline para que el operador vea por qué un radio de 2G o 2.7G exportó una tasa efectiva menor en topología.
+- `tree.html` solo compacta adjuntos UISP efectivos cuando el rol del adjunto es realmente de tipo backhaul (`PtP Backhaul` o `Wired Uplink`). Los APs PtMP de acceso/uplink permanecen visibles en el árbol runtime.
+
+### Topology Probes
+- Página de depuración en solo lectura para troubleshooting de probes de topología a nivel global, enlazada desde Topology Manager en lugar de figurar como un destino principal de la barra lateral.
+- Carga desde el snapshot runtime único `topology_attachment_health_state.json`.
+- Por defecto muestra solo probes habilitados, con filtros para cambiar a todos o solo deshabilitados cuando se necesite troubleshooting.
+- Usa el mismo estilo denso de panel/configuración que otras páginas operativas de inventario, con una pequeña franja de resumen de estado encima de la tabla.
+- Cada fila muestra nodo hijo, nodo padre, adjunto, IPs de probe, estado runtime de health/suppress, alcanzabilidad por endpoint y un enlace directo de vuelta a Topology Manager.
 
 ### Site Map
 - Mapa operativo plano de sitios y APs usando geodatos importados de nodos.

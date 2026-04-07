@@ -31,7 +31,7 @@ enum Commands {
         #[command(subcommand)]
         command: NetworkAdjustmentsCommand,
     },
-    /// Manage UISP integration overrides (bandwidth, routes)
+    /// Manage legacy UISP compatibility override entries
     Uisp {
         #[command(subcommand)]
         command: UispCommand,
@@ -114,7 +114,7 @@ enum NetworkAdjustmentsCommand {
 
 #[derive(Subcommand, Debug)]
 enum UispCommand {
-    /// Set per-site bandwidth override
+    /// Add a deprecated UISP bandwidth override entry (ignored by current UISP builds)
     BandwidthSet {
         #[arg(long)]
         site_name: String,
@@ -123,14 +123,14 @@ enum UispCommand {
         #[arg(long)]
         up: f32,
     },
-    /// Remove a per-site bandwidth override
+    /// Remove a deprecated UISP bandwidth override entry
     BandwidthRemove {
         #[arg(long)]
         site_name: String,
     },
-    /// List bandwidth overrides
+    /// List deprecated UISP bandwidth override entries
     BandwidthList,
-    /// Add a route override
+    /// Add a deprecated UISP route override entry (ignored by current UISP builds)
     RouteAdd {
         #[arg(long)]
         from_site: String,
@@ -139,12 +139,12 @@ enum UispCommand {
         #[arg(long)]
         cost: u32,
     },
-    /// Remove a route override by index
+    /// Remove a deprecated UISP route override entry by index
     RouteRemoveIndex {
         #[arg(long)]
         index: usize,
     },
-    /// List route overrides
+    /// List deprecated UISP route override entries
     RouteList,
 }
 
@@ -471,18 +471,25 @@ fn main() -> Result<()> {
             } => {
                 overrides.set_uisp_bandwidth_override(site_name, down, up);
                 overrides.save()?;
-                println!("Set UISP bandwidth override; overrides saved.");
+                println!(
+                    "Added deprecated UISP bandwidth override entry; overrides saved. Current UISP builds ignore these entries and use AdjustSiteSpeed overrides instead."
+                );
             }
             UispCommand::BandwidthRemove { site_name } => {
                 let removed = overrides.remove_uisp_bandwidth_override(&site_name);
                 if removed {
                     overrides.save()?;
-                    println!("Removed UISP bandwidth override for {site_name}; overrides saved.");
+                    println!(
+                        "Removed deprecated UISP bandwidth override for {site_name}; overrides saved."
+                    );
                 } else {
                     println!("No UISP bandwidth override found for {site_name}.");
                 }
             }
             UispCommand::BandwidthList => {
+                println!(
+                    "Deprecated UISP bandwidth override entries. Current UISP builds ignore these entries and use AdjustSiteSpeed overrides instead."
+                );
                 if let Some(uisp) = overrides.uisp() {
                     println!(
                         "{}",
@@ -499,18 +506,25 @@ fn main() -> Result<()> {
             } => {
                 overrides.add_uisp_route_override(from_site, to_site, cost);
                 overrides.save()?;
-                println!("Added UISP route override; overrides saved.");
+                println!(
+                    "Added deprecated UISP route override entry; overrides saved. Current UISP builds ignore these overrides."
+                );
             }
             UispCommand::RouteRemoveIndex { index } => {
                 let removed = overrides.remove_uisp_route_by_index(index);
                 if removed {
                     overrides.save()?;
-                    println!("Removed UISP route override at index {index}; overrides saved.");
+                    println!(
+                        "Removed deprecated UISP route override at index {index}; overrides saved."
+                    );
                 } else {
                     println!("No UISP route override at index {index}.");
                 }
             }
             UispCommand::RouteList => {
+                println!(
+                    "Deprecated UISP route override entries. Current UISP builds ignore these overrides."
+                );
                 if let Some(uisp) = overrides.uisp() {
                     println!("{}", serde_json::to_string_pretty(&uisp.route_overrides)?);
                 } else {

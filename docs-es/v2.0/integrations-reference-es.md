@@ -16,7 +16,6 @@ La guía canónica y orientada a tareas está en las páginas por integración e
     + [Burst](#burst)
     + [Ejemplo de Configuración](#ejemplo-de-configuración)
     + [Sobrescrituras de UISP](#sobrescrituras-de-uisp)
-      - [Sobrescrituras de Rutas UISP](#sobrescrituras-de-rutas-uisp)
   * [Integración con WISPGate](#integración-con-wispgate)
   * [Integración con Powercode](#integración-con-powercode)
   * [Integración con Sonar](#integración-con-sonar)
@@ -283,8 +282,10 @@ suspended_strategy = "none"
 
 # Ajustes de Capacidad
 # Las capacidades de AP reportadas por UISP pueden ser optimistas
-airmax_capacity = 0.65  # Usar 65% de la capacidad reportada de AirMax
-ltu_capacity = 0.95     # Usar 95% de la capacidad reportada de LTU
+airmax_capacity = 0.8  # Usar 80% de la capacidad reportada de AirMax en instalaciones nuevas
+airmax_flexible_frame_download_ratio = 0.8  # Reparto de respaldo para flexible framing de AirMax cuando UISP no expone dlRatio
+ltu_capacity = 1.0      # Usar 100% de la capacidad reportada de LTU en instalaciones nuevas
+infrastructure_transport_caps_enabled = true  # Limitar automáticamente la capacidad del radio al techo activo/conocido de los puertos Ethernet
 
 # Gestión de Sitios
 exclude_sites = []  # Sitios a excluir, ej: ["Sitio_Prueba", "Sitio_Lab"]
@@ -299,8 +300,7 @@ ipv6_with_mikrotik = false  # Habilitar si usa DHCPv6 con MikroTik
 always_overwrite_network_json = true  # Recomendado para despliegues guiados por integración
 exception_cpes = []  # Excepciones de CPE en formato ["cpe:parent"]
 squash_sites = []  # Opcional: sitios a compactar
-enable_squashing = false  # Opcional: habilita lógica adicional de compactación
-do_not_squash_sites = []  # Opcional: sitios excluidos de compactación
+do_not_squash_sites = []  # Opcional: nombres de sitios que deben permanecer sin compactar en runtime/exportación
 ignore_calculated_capacity = false  # Opcional: prioriza capacidad configurada sobre la calculada
 insecure_ssl = false  # Opcional: ignora validación TLS del API UISP
 ```
@@ -312,17 +312,24 @@ Las compilaciones actuales también incluyen estas opciones en los editores de c
 - `exclude_sites`: lista de sitios a excluir de la importación.
 - `exception_cpes`: sobrescrituras `cpe:parent` para asignación ambigua.
 - `squash_sites`: lista opcional de sitios a compactar en flujos `full`.
-- `enable_squashing`: habilita compactación adicional donde aplique.
-- `do_not_squash_sites`: exclusiones explícitas de compactación.
+- `do_not_squash_sites`: exclusiones explícitas por nombre de sitio para la compactación de runtime/exportación.
 - `use_ptmp_as_parent`: prioriza AP PtMP como padre en rutas relevantes.
 - `ignore_calculated_capacity`: usa capacidades configuradas en lugar de calculadas.
 - `insecure_ssl`: deshabilita validación de certificados TLS para UISP.
+- `airmax_flexible_frame_download_ratio`: cuando UISP reporta capacidad agregada de un AP AirMax con flexible framing y no entrega `dlRatio`, LibreQoS usa esta proporción de descarga como respaldo. `0.8` significa 80/20 descarga/subida.
+
+Los sondeos de salud de adjuntos en Topology Manager usan las IPs de gestión reportadas por UISP para el par de adjuntos seleccionado. Las compilaciones actuales ya no filtran esas IPs de sondeo mediante `allow_subnets` de shaping; la lista permitida de direcciones de shaping sigue aplicándose a los datos generados de shaping de suscriptores/dispositivos, pero no a los destinos de sondeo de topología del plano de gestión.
+
+Las versiones actuales limitan este manejo de flexible framing a equipos donde UISP reporta `identification.type == "airMax"` y `identification.role == "ap"`. En esos AP AirMax, `theoreticalTotalCapacity` se usa solo como pista de flexible framing. La velocidad real de shaping sale de `totalCapacity` cuando UISP lo entrega, o de la capacidad direccional más fuerte cuando no lo hace, y la división sigue prefiriendo `dlRatio` cuando UISP lo reporta.
 
 Uso recomendado:
 
 1. Mantenga `insecure_ssl = false` salvo necesidad interna clara (PKI/self-signed).
 2. Use primero `exclude_sites` y `do_not_squash_sites` para cambios más seguros.
-3. Aplique `squash_sites`/`enable_squashing` de forma incremental y valide colocación de colas tras cada cambio.
+3. La compactación UISP de runtime/exportación siempre está habilitada después de Topology Manager. Use `do_not_squash_sites` solo cuando un camino concreto de sitio deba permanecer sin compactar.
+
+Nota heredada:
+- Los valores existentes de `enable_squashing` en `/etc/lqos.conf` se ignoran por compatibilidad hacia atrás.
 
 Para probar la integración con UISP, ejecute:
 
@@ -335,6 +342,8 @@ Si ya existe un archivo network.json, no será sobrescrito a menos que configure
 
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración de UISP.
 
+Si UISP expone un sitio y un AP con el mismo nombre visible dentro de la misma topología, las compilaciones actuales conservan el nombre del sitio en `network.json` y diferencian el nombre exportado del AP para que la rama del sitio no desaparezca del árbol.
+
 Para asegurarse de que network.json siempre sea sobrescrito con la versión más reciente obtenida por la integración, edite el archivo `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor  `always_overwrite_network_json` a `true`.
 Luego ejecute: `sudo systemctl restart lqosd`.
 
@@ -342,36 +351,21 @@ Tiene la opción de ejecutar `uisp_integration` automáticamente al iniciar el e
 
 ### Sobrescrituras de UISP
 
-También puede modificar los siguientes archivos para reflejar su red con mayor precisión:
-- integrationUISPbandwidths.csv
-- integrationUISProutes.csv
+Puede usar las siguientes entradas de override para reflejar su red con mayor precisión:
+- `Rate Override` para cambios de ancho de banda a nivel de nodo guardados como entradas operatorias `AdjustSiteSpeed` en `lqos_overrides.json`
+- `Topology Override` para correcciones de selección de padre en UISP `full`, también guardadas en `lqos_overrides.json`
+- integrationUISPbandwidths.csv solo como entrada heredada de compatibilidad
+
+Las compilaciones actuales aplican `Topology Override` antes de generar `network.json` y `ShapedDevices.csv`. El soporte actual en WebUI es solo `Pinned Parent`, forzando un único padre inmediato detectado.
+
+Las compilaciones UISP actuales también auto-migran un `integrationUISPbandwidths.csv` heredado hacia overrides operatorios `AdjustSiteSpeed` en la siguiente ejecución de la integración cuando todavía no existen overrides de tasa del operador. Si ya existen, el CSV se ignora.
+Las entradas JSON heredadas `uisp.bandwidth_overrides` se ignoran. La ruta autoritativa para overrides de ancho de banda es `AdjustSiteSpeed` en `lqos_overrides.json`.
+Las compilaciones UISP actuales ignoran las entradas heredadas `uisp.route_overrides` en `lqos_overrides.json` y los archivos heredados `integrationUISProutes.csv`. Si existe cualquiera de los dos, LibreQoS registra una advertencia y usa la topología detectada más los overrides de Topology Manager.
 
 Cada uno de los archivos mencionados arriba tienen plantillas, las cuales están disponibles en la carpeta `/opt/libreqos/src`. Si no los encuentra, puede obtenerlos [aquí](https://github.com/LibreQoE/LibreQoS/tree/develop/src). Para utilizarlos, copie el archivo (eliminando la parte `.template` del nombre) y edítelo con la información correspondiente.
-Por ejemplo, si desea cambiar el bando de ancha de un sitio, ejecutaría:
-```
-sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
-```
-Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
+Para cambios nuevos de ancho de banda, use los overrides operatorios en `lqos_overrides.json`. `integrationUISPbandwidths.csv` queda como una entrada heredada para migración única hacia `AdjustSiteSpeed`, no como el flujo preferido a largo plazo.
 
-#### Sobrescrituras de Rutas UISP
-
-El costo predeterminado entre nodos suele ser 10. La integración genera un archivo de gráfico en formato dot: `/opt/libreqos/src/graph.dot` el cuál puede visualizarse con [Graphviz](https://dreampuf.github.io/GraphvizOnline/). Esto genera un mapa con los costos de todos los enlaces.
-
-![image](https://github.com/user-attachments/assets/4edba4b5-c377-4659-8798-dfc40d50c859)
-
-Ejemplo:
-Tiene Sitio 1, Sitio 2 y Sitio 3.
-Existe un camino de respaldo entre Sitio 1 y Sitio 3, pero no es el preferido.
-El camino preferido debería ser: Sitio 1 > Sitio 2 > Sitio 3, pero la integración conecta directamente Sitio 1 > Sitio 3 por predeterminado.
-
-Para solucionar esto, agregue un costo mayor al predeterminado entre Sitio 1 y Sitio 3:
-```
-Site 1, Site 3, 100
-Site 3, Site 1, 100
-```
-De esta forma, el tráfico seguirá el camino: Sitio 1 > Sitio 2 > Sitio 3.
-
-Para aplicar el cambio, reinicie la integración ejecutando: ```sudo systemctl restart lqos_scheduler```.
+Para la intención de camino, use la selección de padre y la preferencia de attachments en Topology Manager. Ese es ahora el reemplazo soportado para los antiguos overrides de costo de ruta de UISP.
 
 ## Integración con WISPGate
 Primero, configure los parámetros relevantes de WISPGate en `/etc/lqos.conf`.

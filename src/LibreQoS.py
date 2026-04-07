@@ -106,6 +106,10 @@ def get_shaped_devices_path():
 
 def get_network_json_path():
     base_dir = get_libreqos_directory()
+    effective_path = os.path.join(base_dir, "network.effective.json")
+
+    if os.path.exists(effective_path):
+        return effective_path
 
     if enable_insight_topology():
         insight_path = os.path.join(base_dir, "network.insight.json")
@@ -133,6 +137,17 @@ def _load_json_dict(path):
     except Exception:
         pass
     return {}
+
+
+def loaded_network_is_flat(network):
+    """Evaluate flat-network mode from one in-memory topology snapshot.
+
+    refreshShapers() should make all topology decisions from the same loaded
+    network tree. Re-reading the preferred network path mid-run can observe a
+    different runtime-effective snapshot and produce internally inconsistent
+    queue builds.
+    """
+    return not isinstance(network, dict) or len(network) == 0
 
 
 def load_planner_state(state_path=None, planner_module=None):
@@ -789,8 +804,8 @@ def refreshShapers():
     safeToRunRefresh = False
     print("Validating input files '" + shapedDevicesFile + "' and '" + networkJSONfile + "'")
     if (validateNetworkAndDevices() == True):
-        shutil.copyfile('ShapedDevices.csv', 'lastGoodConfig.csv')
-        shutil.copyfile('network.json', 'lastGoodConfig.json')
+        shutil.copyfile(shapedDevicesFile, 'lastGoodConfig.csv')
+        shutil.copyfile(networkJSONfile, 'lastGoodConfig.json')
         print("Backed up good config as lastGoodConfig.csv and lastGoodConfig.json")
         safeToRunRefresh = True
     else:
@@ -825,11 +840,7 @@ def refreshShapers():
 
         # Flat networks ({}) don't require ParentNode entries. Treat every circuit as
         # unparented so they can be distributed across generated parent nodes / CPUs.
-        flat_network = (len(network) == 0)
-        try:
-            flat_network = flat_network or is_network_flat()
-        except Exception:
-            pass
+        flat_network = loaded_network_is_flat(network)
 
         # Virtual Nodes (logical-only): build a physical shaping topology that skips them,
         # while leaving ShapedDevices.csv (and monitoring) unchanged.
@@ -1260,7 +1271,7 @@ def refreshShapers():
             return keys
 
         # If we're in binpacking mode, we need to sort the network structure a bit
-        if use_bin_packing_to_balance_cpu() and not is_network_flat():
+        if use_bin_packing_to_balance_cpu() and not flat_network:
             # Binpacking is an Insight feature; if Insight is not enabled/licensed, fall back to
             # deterministic round-robin placement so "virtual node promotion" can still spread
             # the physical tree across CPUs.
@@ -2208,8 +2219,8 @@ def refreshShapersUpdateOnly():
 
 
     # Files
-    shapedDevicesFile = 'ShapedDevices.csv'
-    networkJSONfile = 'network.json'
+    shapedDevicesFile = get_shaped_devices_path()
+    networkJSONfile = get_network_json_path()
 
 
     # Check validation
@@ -2226,14 +2237,14 @@ def refreshShapersUpdateOnly():
         if os.path.isfile('lastGoodConfig.json'):
             with open('lastGoodConfig.json', 'r') as j:
                 originalNetwork = json.loads(j.read())
-            with open('network.json', 'r') as j:
+            with open(networkJSONfile, 'r') as j:
                 newestNetwork = json.loads(j.read())
             ddiff = DeepDiff(originalNetwork, newestNetwork, ignore_order=True)
             if ddiff != {}:
                 networkChanged = True
 
         # Check for changes to ShapedDevices.csv
-        newlyUpdatedSubscriberCircuits,	newlyUpdatedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits('ShapedDevices.csv')
+        newlyUpdatedSubscriberCircuits,	newlyUpdatedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
         lastLoadedSubscriberCircuits, lastLoadedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits('ShapedDevices.lastLoaded.csv')
 
         newlyUpdatedSubscriberCircuitsByID = {}
@@ -2268,10 +2279,10 @@ def refreshShapersUpdateOnly():
 
 
         if devicesChanged or networkChanged:
-            print('Observed changes to ShapedDevices.csv or network.json. Applying full reload now')
+            print('Observed changes to runtime shaping inputs. Applying full reload now')
             refreshShapers()
         else:
-            print('Observed no changes to ShapedDevices.csv or network.json. Leaving queues as is.')
+            print('Observed no changes to runtime shaping inputs. Leaving queues as is.')
 
         # Done
         print("refreshShapersUpdateOnly completed on " + datetime.now().strftime("%d/%m/%Y %H:%M:%S"))

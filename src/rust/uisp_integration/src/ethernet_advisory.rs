@@ -1,38 +1,35 @@
 use crate::errors::UispIntegrationError;
 use crate::uisp_types::UispDevice;
-use lqos_config::{CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, Config};
+use lqos_config::{
+    CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, Config, EthernetPortLimitPolicy,
+    EthernetPortObservation, EthernetRateDecision, RequestedCircuitRates,
+    apply_ethernet_rate_cap as apply_shared_ethernet_rate_cap,
+};
 use std::path::Path;
 use tracing::error;
 
-const ETH_PORT_HEADROOM_FACTOR_SUB_GIG: f32 = 0.95;
-
-/// Requested and applied circuit rates after negotiated-Ethernet evaluation.
-#[derive(Clone, Debug, PartialEq)]
-pub struct EthernetRateDecision {
-    /// Minimum download after any cap was applied.
-    pub download_min: f32,
-    /// Minimum upload after any cap was applied.
-    pub upload_min: f32,
-    /// Maximum download after any cap was applied.
-    pub download_max: f32,
-    /// Maximum upload after any cap was applied.
-    pub upload_max: f32,
-    /// Optional UI advisory for the affected circuit.
-    pub advisory: Option<CircuitEthernetMetadata>,
-}
-
 /// Applies a negotiated-Ethernet cap to a circuit and returns the adjusted rates plus advisory.
 pub fn apply_ethernet_rate_cap<'a>(
+    policy: EthernetPortLimitPolicy,
     circuit_id: &str,
     circuit_name: &str,
     devices: impl IntoIterator<Item = &'a UispDevice>,
-    download_min: f32,
-    upload_min: f32,
-    download_max: f32,
-    upload_max: f32,
+    requested_rates: RequestedCircuitRates,
 ) -> EthernetRateDecision {
+    let observations = build_ethernet_port_observations(devices);
+    apply_shared_ethernet_rate_cap(
+        policy,
+        circuit_id,
+        circuit_name,
+        observations.iter(),
+        requested_rates,
+    )
+}
+
+fn build_ethernet_port_observations<'a>(
+    devices: impl IntoIterator<Item = &'a UispDevice>,
+) -> Vec<EthernetPortObservation> {
     let devices: Vec<&UispDevice> = devices.into_iter().collect();
-    let related_device_ids = devices.iter().map(|device| device.id.clone()).collect();
     let candidate_devices: Vec<&UispDevice> = {
         let station_devices: Vec<&UispDevice> = devices
             .iter()
@@ -49,61 +46,19 @@ pub fn apply_ethernet_rate_cap<'a>(
                 .collect()
         }
     };
-    let mut limiting_device: Option<&UispDevice> = None;
-    for device in &candidate_devices {
-        let Some(speed_mbps) = device.negotiated_ethernet_mbps else {
-            continue;
-        };
-        if limiting_device
-            .as_ref()
-            .is_none_or(|current| speed_mbps < current.negotiated_ethernet_mbps.unwrap_or(u64::MAX))
-        {
-            limiting_device = Some(device);
-        }
-    }
 
-    let Some(limiting_device) = limiting_device else {
-        return EthernetRateDecision {
-            download_min,
-            upload_min,
-            download_max,
-            upload_max,
-            advisory: None,
-        };
-    };
-
-    let usable_cap = ethernet_usable_cap_mbps(
-        limiting_device
-            .negotiated_ethernet_mbps
-            .expect("limiting device must have ethernet speed"),
-    );
-    let applied_download_max = download_max.min(usable_cap);
-    let applied_upload_max = upload_max.min(usable_cap);
-    let applied_download_min = download_min.min(applied_download_max);
-    let applied_upload_min = upload_min.min(applied_upload_max);
-    let auto_capped = applied_download_max < download_max || applied_upload_max < upload_max;
-
-    EthernetRateDecision {
-        download_min: applied_download_min,
-        upload_min: applied_upload_min,
-        download_max: applied_download_max,
-        upload_max: applied_upload_max,
-        advisory: Some(CircuitEthernetMetadata {
-            circuit_id: circuit_id.to_string(),
-            circuit_name: circuit_name.to_string(),
-            device_ids: related_device_ids,
-            source: "uisp".to_string(),
-            negotiated_ethernet_mbps: limiting_device.negotiated_ethernet_mbps.unwrap_or_default(),
-            requested_download_mbps: download_max,
-            requested_upload_mbps: upload_max,
-            applied_download_mbps: applied_download_max,
-            applied_upload_mbps: applied_upload_max,
-            auto_capped,
-            limiting_device_id: Some(limiting_device.id.clone()),
-            limiting_device_name: Some(limiting_device.name.clone()),
-            limiting_interface_name: limiting_device.negotiated_ethernet_interface.clone(),
-        }),
-    }
+    candidate_devices
+        .into_iter()
+        .filter_map(|device| {
+            Some(EthernetPortObservation {
+                source: "uisp".to_string(),
+                device_id: Some(device.id.clone()),
+                device_name: Some(device.name.clone()),
+                interface_name: device.negotiated_ethernet_interface.clone(),
+                negotiated_ethernet_mbps: device.negotiated_ethernet_mbps?,
+            })
+        })
+        .collect()
 }
 
 /// Persists circuit Ethernet advisories alongside other generated runtime files.
@@ -130,20 +85,14 @@ pub fn write_ethernet_advisories(
     Ok(())
 }
 
-fn ethernet_usable_cap_mbps(negotiated_mbps: u64) -> f32 {
-    match negotiated_mbps {
-        0..=999 => negotiated_mbps as f32 * ETH_PORT_HEADROOM_FACTOR_SUB_GIG,
-        1000..=2499 => negotiated_mbps.saturating_sub(5) as f32,
-        2500..=9999 => negotiated_mbps.saturating_sub(10) as f32,
-        _ => negotiated_mbps.saturating_sub(50) as f32,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{apply_ethernet_rate_cap, write_ethernet_advisories};
     use crate::uisp_types::UispDevice;
-    use lqos_config::{CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadataFile, Config};
+    use lqos_config::{
+        CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadataFile, Config,
+        EthernetPortLimitPolicy, RequestedCircuitRates,
+    };
     use std::collections::HashSet;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -163,17 +112,25 @@ mod tests {
             role: role.map(str::to_string),
             wireless_mode: wireless_mode.map(str::to_string),
             site_id: "site-1".to_string(),
+            raw_download: 1000,
+            raw_upload: 1000,
             download: 1000,
             upload: 1000,
             ipv4: HashSet::new(),
             ipv6: HashSet::new(),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: speed,
             negotiated_ethernet_interface: iface.map(str::to_string),
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,
         }
     }
 
     #[test]
     fn ethernet_cap_uses_lowest_detected_port_speed() {
+        let policy = EthernetPortLimitPolicy::default();
         let fast = sample_device(
             "dev-fast",
             "Fast",
@@ -192,17 +149,20 @@ mod tests {
         );
 
         let decision = apply_ethernet_rate_cap(
+            policy,
             "circuit-1",
             "Circuit 1",
             [&fast, &slow],
-            25.0,
-            25.0,
-            300.0,
-            300.0,
+            RequestedCircuitRates {
+                download_min: 25.0,
+                upload_min: 25.0,
+                download_max: 300.0,
+                upload_max: 300.0,
+            },
         );
 
-        assert_eq!(decision.download_max, 95.0);
-        assert_eq!(decision.upload_max, 95.0);
+        assert_eq!(decision.download_max, 94.0);
+        assert_eq!(decision.upload_max, 94.0);
         assert_eq!(decision.download_min, 25.0);
         assert_eq!(decision.upload_min, 25.0);
         let advisory = decision.advisory.expect("advisory should exist");
@@ -213,6 +173,7 @@ mod tests {
 
     #[test]
     fn ethernet_cap_preserves_lower_upload_plan() {
+        let policy = EthernetPortLimitPolicy::default();
         let slow = sample_device(
             "dev-slow",
             "Slow",
@@ -222,41 +183,30 @@ mod tests {
             Some("sta-ptmp"),
         );
 
-        let decision =
-            apply_ethernet_rate_cap("circuit-1", "Circuit 1", [&slow], 10.0, 10.0, 300.0, 50.0);
+        let decision = apply_ethernet_rate_cap(
+            policy,
+            "circuit-1",
+            "Circuit 1",
+            [&slow],
+            RequestedCircuitRates {
+                download_min: 10.0,
+                upload_min: 10.0,
+                download_max: 300.0,
+                upload_max: 50.0,
+            },
+        );
 
-        assert_eq!(decision.download_max, 95.0);
+        assert_eq!(decision.download_max, 94.0);
         assert_eq!(decision.upload_max, 50.0);
         let advisory = decision.advisory.expect("advisory should exist");
         assert!(advisory.auto_capped);
-        assert_eq!(advisory.applied_download_mbps, 95.0);
+        assert_eq!(advisory.applied_download_mbps, 94.0);
         assert_eq!(advisory.applied_upload_mbps, 50.0);
     }
 
     #[test]
-    fn gigabit_ports_use_small_fixed_margin() {
-        let gig = sample_device(
-            "dev-gig",
-            "Gig",
-            Some(1000),
-            Some("eth0"),
-            Some("station"),
-            Some("sta-ptmp"),
-        );
-
-        let decision =
-            apply_ethernet_rate_cap("circuit-1", "Circuit 1", [&gig], 100.0, 100.0, 995.0, 995.0);
-
-        assert_eq!(decision.download_max, 995.0);
-        assert_eq!(decision.upload_max, 995.0);
-        let advisory = decision.advisory.expect("advisory should exist");
-        assert!(!advisory.auto_capped);
-        assert_eq!(advisory.applied_download_mbps, 995.0);
-        assert_eq!(advisory.applied_upload_mbps, 995.0);
-    }
-
-    #[test]
-    fn gigabit_ports_cap_above_line_rate_to_995() {
+    fn gigabit_ports_use_shared_94_percent_default() {
+        let policy = EthernetPortLimitPolicy::default();
         let gig = sample_device(
             "dev-gig",
             "Gig",
@@ -267,25 +217,65 @@ mod tests {
         );
 
         let decision = apply_ethernet_rate_cap(
+            policy,
             "circuit-1",
             "Circuit 1",
             [&gig],
-            100.0,
-            100.0,
-            5000.0,
-            5000.0,
+            RequestedCircuitRates {
+                download_min: 100.0,
+                upload_min: 100.0,
+                download_max: 995.0,
+                upload_max: 995.0,
+            },
         );
 
-        assert_eq!(decision.download_max, 995.0);
-        assert_eq!(decision.upload_max, 995.0);
+        assert_eq!(decision.download_max, 940.0);
+        assert_eq!(decision.upload_max, 940.0);
         let advisory = decision.advisory.expect("advisory should exist");
         assert!(advisory.auto_capped);
-        assert_eq!(advisory.applied_download_mbps, 995.0);
-        assert_eq!(advisory.applied_upload_mbps, 995.0);
+        assert_eq!(advisory.applied_download_mbps, 940.0);
+        assert_eq!(advisory.applied_upload_mbps, 940.0);
+    }
+
+    #[test]
+    fn operator_override_can_cap_gigabit_to_custom_multiplier() {
+        let policy = EthernetPortLimitPolicy {
+            enabled: true,
+            multiplier: 0.9,
+        };
+        let gig = sample_device(
+            "dev-gig",
+            "Gig",
+            Some(1000),
+            Some("eth0"),
+            Some("station"),
+            Some("sta-ptmp"),
+        );
+
+        let decision = apply_ethernet_rate_cap(
+            policy,
+            "circuit-1",
+            "Circuit 1",
+            [&gig],
+            RequestedCircuitRates {
+                download_min: 100.0,
+                upload_min: 100.0,
+                download_max: 5000.0,
+                upload_max: 5000.0,
+            },
+        );
+
+        assert_eq!(decision.download_max, 900.0);
+        assert_eq!(decision.upload_max, 900.0);
+        let advisory = decision.advisory.expect("advisory should exist");
+        assert!(advisory.auto_capped);
+        assert_eq!(advisory.applied_download_mbps, 900.0);
+        assert_eq!(advisory.applied_upload_mbps, 900.0);
     }
 
     #[test]
     fn station_devices_win_over_router_devices() {
+        let policy = EthernetPortLimitPolicy::default();
         let station = sample_device(
             "dev-station",
             "Station",
@@ -304,13 +294,16 @@ mod tests {
         );
 
         let decision = apply_ethernet_rate_cap(
+            policy,
             "circuit-1",
             "Circuit 1",
             [&station, &router],
-            10.0,
-            10.0,
-            115.0,
-            22.0,
+            RequestedCircuitRates {
+                download_min: 10.0,
+                upload_min: 10.0,
+                download_max: 115.0,
+                upload_max: 22.0,
+            },
         );
 
         assert_eq!(decision.download_max, 115.0);
@@ -323,6 +316,7 @@ mod tests {
 
     #[test]
     fn router_only_devices_do_not_drive_ethernet_cap() {
+        let policy = EthernetPortLimitPolicy::default();
         let router = sample_device(
             "dev-router",
             "Router",
@@ -332,8 +326,18 @@ mod tests {
             None,
         );
 
-        let decision =
-            apply_ethernet_rate_cap("circuit-1", "Circuit 1", [&router], 10.0, 10.0, 115.0, 22.0);
+        let decision = apply_ethernet_rate_cap(
+            policy,
+            "circuit-1",
+            "Circuit 1",
+            [&router],
+            RequestedCircuitRates {
+                download_min: 10.0,
+                upload_min: 10.0,
+                download_max: 115.0,
+                upload_max: 22.0,
+            },
+        );
 
         assert_eq!(decision.download_max, 115.0);
         assert_eq!(decision.upload_max, 22.0);
@@ -342,6 +346,7 @@ mod tests {
 
     #[test]
     fn writer_persists_only_auto_capped_advisories() {
+        let policy = EthernetPortLimitPolicy::default();
         let auto_capped = sample_device(
             "dev-100m",
             "Hundred",
@@ -360,24 +365,30 @@ mod tests {
         );
 
         let capped = apply_ethernet_rate_cap(
+            policy,
             "circuit-capped",
             "Capped Circuit",
             [&auto_capped],
-            10.0,
-            10.0,
-            115.0,
-            22.0,
+            RequestedCircuitRates {
+                download_min: 10.0,
+                upload_min: 10.0,
+                download_max: 115.0,
+                upload_max: 22.0,
+            },
         )
         .advisory
         .expect("auto-capped advisory should exist");
         let observed = apply_ethernet_rate_cap(
+            policy,
             "circuit-observed",
             "Observed Circuit",
             [&observed_only],
-            100.0,
-            100.0,
-            995.0,
-            995.0,
+            RequestedCircuitRates {
+                download_min: 100.0,
+                upload_min: 100.0,
+                download_max: 900.0,
+                upload_max: 900.0,
+            },
         )
         .advisory
         .expect("observed advisory should exist");

@@ -32,6 +32,8 @@ pub(super) fn static_routes() -> Result<Router> {
         "index.html",
         "shaped_devices.html",
         "tree.html",
+        "topology_manager.html",
+        "topology_probes.html",
         "help.html",
         "unknown_ips.html",
         "circuit.html",

@@ -48,3 +48,5 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 
 - [Referencia detallada de Splynx](integrations-reference-es.md#integración-con-splynx)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
+
+Las versiones actuales también exponen una política compartida de margen para puertos Ethernet en `Configuration -> Integrations -> Integration Defaults`. Las integraciones que pueden aportar la velocidad Ethernet negociada hacia el suscriptor usan un multiplicador conservador por defecto de `0.94`, salvo que el operador lo sobrescriba.

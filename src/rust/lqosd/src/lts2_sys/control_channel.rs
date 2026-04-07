@@ -12,6 +12,7 @@ use tungstenite::Message;
 
 use crate::lts2_sys::license_grant;
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
+use lqos_probe::ProbeClass;
 
 mod messages;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
@@ -1418,30 +1419,20 @@ async fn circuit_snapshot_streaming(
 
     // Helper: run one ping with 1s timeout; respects disable_icmp_ping
     async fn one_ping(ip: std::net::IpAddr) -> Option<f32> {
-        let Ok(cfg) = lqos_config::load_config() else {
-            return None;
-        };
-        if cfg.disable_icmp_ping.unwrap_or(false) {
-            return None;
-        }
-        use rand::random;
-        use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
-        let client = match ip {
-            std::net::IpAddr::V4(_) => Client::new(&Config::default()),
-            std::net::IpAddr::V6(_) => Client::new(&Config::builder().kind(ICMP::V6).build()),
-        };
-        if client.is_err() {
-            return None;
-        }
-        let client = client.ok()?;
-        let payload = [0; 56];
-        let mut pinger = client.pinger(ip, PingIdentifier(random())).await;
-        pinger.timeout(Duration::from_secs(1));
-        match pinger.ping(PingSequence(0), &payload).await {
-            Ok((IcmpPacket::V4(..), dur)) | Ok((IcmpPacket::V6(..), dur)) => {
-                Some(dur.as_secs_f32() * 1000.0)
+        match crate::probe_provider::probe_round_trip_time(
+            ip.to_string(),
+            ProbeClass::Diagnostic,
+            Duration::from_secs(1),
+            Duration::from_millis(250),
+        )
+        .await
+        {
+            Ok(observation) if observation.reachable => observation.rtt_ms.map(|rtt| rtt as f32),
+            Ok(_) => None,
+            Err(err) => {
+                debug!("Unable to sample shared RTT probe for {ip}: {err}");
+                None
             }
-            _ => None,
         }
     }
 

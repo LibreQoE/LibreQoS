@@ -12,6 +12,7 @@
 use lqos_bakery::BakeryCommands;
 use lqos_bus::StormguardDebugEntry;
 use lqos_config::NetworkJsonTransport;
+use lqos_probe::ProbeClient;
 use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
 use std::time::Duration;
@@ -38,6 +39,7 @@ pub static STORMGUARD_DEBUG: Mutex<Vec<StormguardDebugEntry>> = Mutex::new(Vec::
 pub async fn start_stormguard(
     bakery: crossbeam_channel::Sender<BakeryCommands>,
     network_map_provider: fn() -> Vec<(usize, NetworkJsonTransport)>,
+    probe_client: ProbeClient,
 ) -> anyhow::Result<()> {
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -47,7 +49,7 @@ pub async fn start_stormguard(
     let mut config: Option<config::StormguardConfig> = None;
     let mut log_sender: Option<std::sync::mpsc::Sender<datalog::LogCommand>> = None;
     let mut site_state_tracker: Option<site_state::SiteStateTracker> = None;
-    let mut active_ping = active_ping::ActivePingManager::new();
+    let mut active_ping = active_ping::ActivePingManager::new(probe_client);
 
     // Main Cycle - use tokio interval instead of blocking TimerFd
     let mut interval = tokio::time::interval(Duration::from_secs(1));

@@ -45,7 +45,7 @@
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Promotion and Scaling</h6>
-                        <div class="lqos-config-section-subtitle">Promote selected circuits to the root and adjust imported subscriber bandwidth values before shaping.</div>
+                        <div class="lqos-config-section-subtitle">Promote selected circuits to the root, adjust imported subscriber bandwidth values, and apply shared Ethernet-port headroom policy before shaping.</div>
 
                         <div class="mb-3">
                             <label for="promoteToRoot" class="form-label">Promote to Root Nodes</label>
@@ -57,6 +57,18 @@
                             <label for="clientBandwidthMultiplier" class="form-label">Client Bandwidth Multiplier</label>
                             <input type="number" class="form-control" id="clientBandwidthMultiplier" step="0.1" min="0.1" value="1.0">
                             <div class="form-text">Multiplier applied to client bandwidth values. <code>1.0</code> means no adjustment.</div>
+                        </div>
+
+                        <div class="mt-3 mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="ethernetPortLimitsEnabled">
+                            <label class="form-check-label" for="ethernetPortLimitsEnabled">Enable Ethernet Port Limits</label>
+                            <div class="form-text">Apply negotiated Ethernet port headroom when an integration can detect subscriber-facing port speed.</div>
+                        </div>
+
+                        <div class="mb-0">
+                            <label for="ethernetPortLimitMultiplier" class="form-label">Ethernet Port Limit Multiplier</label>
+                            <input type="number" class="form-control" id="ethernetPortLimitMultiplier" step="0.01" min="0.01" max="1.0" value="0.94">
+                            <div class="form-text">Shared headroom multiplier applied to negotiated Ethernet rates. Leave at <code>0.94</code> for the default conservative payload-safe cap.</div>
                         </div>
                     </div>
                 </div>

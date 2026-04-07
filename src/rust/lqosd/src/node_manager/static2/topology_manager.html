@@ -1,0 +1,526 @@
+<style>
+    .topology-manager-shell {
+        min-height: calc(100vh - 10rem);
+    }
+
+    #topologyManagerWarnings:empty {
+        display: none;
+    }
+
+    .topology-manager-panel {
+        border: 1px solid rgba(128, 128, 128, 0.18);
+        border-radius: 1.15rem;
+        background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+        box-shadow: 0 0.8rem 1.6rem rgba(0, 0, 0, 0.08);
+    }
+
+    .topology-manager-map-shell {
+        min-height: clamp(30rem, 60vh, 44rem);
+        overflow: hidden;
+        position: relative;
+    }
+
+    .topology-manager-header-meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.35rem 1rem;
+        text-align: right;
+    }
+
+    .topology-manager-summary-strip {
+        display: grid;
+        gap: 0.55rem;
+    }
+
+    .topology-manager-summary-row {
+        display: grid;
+        grid-template-columns: 5.25rem minmax(0, 1fr);
+        align-items: start;
+        gap: 0.65rem;
+    }
+
+    .topology-manager-summary-label {
+        padding-top: 0.2rem;
+    }
+
+    .topology-manager-map-toolbar-title {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        min-width: 0;
+    }
+
+    .topology-manager-map-toolbar-subtitle {
+        font-size: 0.8rem;
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-manager-details-header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .topology-manager-primary-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+
+    .topology-manager-mode-inline {
+        display: flex;
+        flex: 1 1 18rem;
+        justify-content: flex-end;
+        min-width: 14rem;
+    }
+
+    .topology-manager-mode-inline:empty {
+        display: none;
+    }
+
+    .topology-manager-inline-note {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.32rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(128, 128, 128, 0.22);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--bs-secondary-color);
+        font-size: 0.78rem;
+        line-height: 1.2;
+    }
+
+    .topology-manager-inline-note i {
+        opacity: 0.78;
+    }
+
+    .topology-manager-section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        padding: 0.8rem 0.9rem;
+        border-radius: 0.95rem;
+        border: 1px solid rgba(128, 128, 128, 0.18);
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .topology-manager-kv-grid {
+        display: grid;
+        gap: 0.3rem;
+    }
+
+    .topology-manager-kv-row {
+        display: grid;
+        grid-template-columns: 7rem minmax(0, 1fr);
+        gap: 0.55rem;
+        align-items: start;
+        font-size: 0.83rem;
+        line-height: 1.35;
+    }
+
+    .topology-manager-kv-row span:first-child {
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-manager-summary-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    .topology-manager-summary-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.6rem;
+        border-radius: 999px;
+        border: 1px solid rgba(128, 128, 128, 0.22);
+        background: rgba(255, 255, 255, 0.04);
+        font-size: 0.77rem;
+        line-height: 1.2;
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-manager-summary-pill strong {
+        color: var(--bs-body-color);
+        font-weight: 600;
+    }
+
+    .topology-manager-section-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.55rem;
+    }
+
+    .topology-manager-section-header-main {
+        display: flex;
+        flex-direction: column;
+        gap: 0.18rem;
+        min-width: 0;
+    }
+
+    .topology-manager-section-subtitle {
+        font-size: 0.78rem;
+        line-height: 1.35;
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-manager-compact-note {
+        font-size: 0.79rem;
+        line-height: 1.35;
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-manager-attachment-meta {
+        margin-top: 0.2rem;
+        font-size: 0.78rem;
+        color: var(--bs-secondary-color);
+        line-height: 1.3;
+    }
+
+    .topology-manager-attachment-row-active {
+        border-color: rgba(59, 130, 246, 0.45);
+        background: rgba(59, 130, 246, 0.08);
+        box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.18);
+    }
+
+    .topology-manager-attachment-row-preferred {
+        border-color: rgba(22, 163, 74, 0.38);
+        box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.12);
+    }
+
+    .topology-manager-attachment-status-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem 0.65rem;
+        font-size: 0.78rem;
+        line-height: 1.3;
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-manager-attachment-note {
+        font-size: 0.77rem;
+        line-height: 1.35;
+        color: var(--bs-secondary-color);
+    }
+
+    @media (max-width: 991.98px) {
+        .topology-manager-summary-row {
+            grid-template-columns: 1fr;
+        }
+
+        .topology-manager-summary-label {
+            padding-top: 0;
+        }
+
+        .topology-manager-header-meta {
+            justify-content: flex-start;
+            text-align: left;
+        }
+
+        .topology-manager-mode-inline {
+            justify-content: flex-start;
+            min-width: 0;
+        }
+    }
+
+    .topology-manager-map-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.55rem;
+        justify-content: space-between;
+    }
+
+    .topology-manager-map-toolbar-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    .topology-manager-map-toolbar-button-group {
+        display: inline-flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .topology-manager-map-hint {
+        font-size: 0.76rem;
+        color: var(--bs-secondary-color);
+        white-space: nowrap;
+    }
+
+    .topology-manager-search-shell {
+        position: relative;
+        min-width: 15rem;
+    }
+
+    .topology-manager-search-suggestions {
+        position: absolute;
+        top: calc(100% + 0.35rem);
+        left: 0;
+        right: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        padding: 0.35rem;
+        border-radius: 0.9rem;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        background: rgba(20, 24, 32, 0.96);
+        box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.22);
+    }
+
+    .topology-manager-search-suggestion {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        border-radius: 0.7rem;
+        padding: 0.55rem 0.7rem;
+    }
+
+    .topology-manager-map {
+        min-height: clamp(24rem, 52vh, 36rem);
+        width: 100%;
+        border-radius: 1rem;
+        background:
+            radial-gradient(circle at top left, rgba(72, 132, 255, 0.12), transparent 24rem),
+            radial-gradient(circle at bottom right, rgba(22, 163, 74, 0.10), transparent 28rem),
+            linear-gradient(180deg, rgba(16, 24, 40, 0.35), rgba(16, 24, 40, 0.12));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .topology-manager-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        font-size: 0.85rem;
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-manager-legend-dot {
+        display: inline-block;
+        width: 0.75rem;
+        height: 0.75rem;
+        border-radius: 999px;
+        margin-right: 0.35rem;
+        vertical-align: middle;
+    }
+
+    .topology-manager-path {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.3rem;
+        min-height: 1.8rem;
+    }
+
+    .topology-manager-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.28rem 0.58rem;
+        border-radius: 999px;
+        border: 1px solid rgba(128, 128, 128, 0.24);
+        background: rgba(255, 255, 255, 0.05);
+        font-size: 0.82rem;
+        line-height: 1;
+    }
+
+    .topology-manager-path-sep {
+        color: var(--bs-secondary-color);
+        opacity: 0.75;
+        font-size: 0.72rem;
+    }
+
+    .topology-manager-target-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+        gap: 0.8rem;
+    }
+
+    .topology-manager-target-card {
+        border-radius: 1rem;
+        border: 1px solid rgba(128, 128, 128, 0.22);
+        background: rgba(255, 255, 255, 0.04);
+        padding: 0.75rem 0.85rem;
+        transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .topology-manager-target-card:hover {
+        transform: translateY(-1px);
+        border-color: rgba(59, 130, 246, 0.5);
+        background: rgba(59, 130, 246, 0.08);
+    }
+
+    .topology-manager-target-card.active {
+        border-color: rgba(245, 158, 11, 0.75);
+        background: rgba(245, 158, 11, 0.12);
+        box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.24);
+    }
+
+    .topology-manager-target-card.current {
+        border-color: rgba(59, 130, 246, 0.55);
+        background: rgba(59, 130, 246, 0.08);
+    }
+
+    .topology-manager-rank-list .list-group-item {
+        border-radius: 0.85rem;
+        margin-bottom: 0.35rem;
+        border: 1px solid rgba(128, 128, 128, 0.18);
+        padding: 0.7rem 0.8rem;
+    }
+
+    .topology-manager-attachment-row {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .topology-manager-manual-row {
+        border-radius: 1rem;
+        border: 1px solid rgba(128, 128, 128, 0.18);
+        background: rgba(255, 255, 255, 0.03);
+        padding: 0.8rem;
+    }
+
+    .topology-manager-empty {
+        min-height: 12rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: var(--bs-secondary-color);
+    }
+
+    .topology-map-node {
+        cursor: pointer;
+    }
+
+    .topology-map-node text {
+        font-size: 12px;
+        font-weight: 600;
+        pointer-events: none;
+    }
+
+    .topology-map-node-label-muted {
+        font-size: 10px;
+        opacity: 0.78;
+        font-weight: 500;
+    }
+</style>
+
+<div class="topology-manager-shell d-flex flex-column gap-3">
+    <div class="lqos-tree-hero">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div class="lqos-tree-kicker mb-0"><i class="fa fa-diagram-project"></i> Topology Manager</div>
+            <div class="topology-manager-header-meta">
+                <div id="topologyManagerSummary" class="small text-body-secondary lqos-tree-hero-status"></div>
+                <div id="topologyManagerSource" class="small text-body-secondary lqos-tree-context-meta"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="topology-manager-panel p-2 p-lg-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+            <div>
+                <h6 class="mb-0"><i class="fa fa-sitemap"></i> Hierarchy Summary</h6>
+            </div>
+            <span id="topologyManagerPendingBadge" class="badge rounded-pill text-bg-warning d-none">Pending</span>
+        </div>
+
+        <div class="topology-manager-summary-strip">
+            <div class="topology-manager-summary-row">
+                <div id="topologyManagerCanonicalHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label">Canonical</div>
+                <div id="topologyManagerCanonicalHierarchy" class="topology-manager-path"></div>
+            </div>
+
+            <div class="topology-manager-summary-row">
+                <div id="topologyManagerLiveHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label">Live</div>
+                <div id="topologyManagerLiveHierarchy" class="topology-manager-path"></div>
+            </div>
+
+            <div class="topology-manager-summary-row">
+                <div id="topologyManagerSavedHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label">Saved</div>
+                <div id="topologyManagerSavedHierarchy" class="topology-manager-path"></div>
+            </div>
+        </div>
+
+        <div id="topologyManagerHierarchyMeta" class="d-none"></div>
+    </div>
+
+    <div class="row gx-3 align-items-stretch flex-fill">
+        <div class="col-xl-8">
+            <div class="topology-manager-panel topology-manager-map-shell p-2 p-lg-3 h-100">
+                <div class="topology-manager-map-toolbar mb-2">
+                    <div class="topology-manager-map-toolbar-title">
+                        <h6 class="mb-0"><i class="fa fa-share-alt"></i> Move Preview</h6>
+                        <div class="topology-manager-map-toolbar-subtitle">Focused branch context and move preview.</div>
+                    </div>
+                    <div class="topology-manager-map-toolbar-actions">
+                        <div class="topology-manager-search-shell">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="fa fa-search"></i></span>
+                                <input class="form-control" id="topologyManagerNodeSearch" type="search" placeholder="Find a branch or parent..." autocomplete="off">
+                            </div>
+                            <div id="topologyManagerSearchSuggestions" class="topology-manager-search-suggestions d-none"></div>
+                        </div>
+                        <div id="topologyManagerModeBanner" class="topology-manager-mode-inline"></div>
+                        <div class="topology-manager-map-toolbar-button-group">
+                            <button class="btn btn-sm btn-outline-secondary" id="topologyManagerFitMap" type="button">
+                                <i class="fa fa-expand"></i> Fit View
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="topologyManagerResetProposal" type="button">
+                                <i class="fa fa-rotate-left"></i> Reset Proposal
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="topology-manager-map mb-2">
+                    <svg id="topologyManagerMap" width="100%" height="100%" viewBox="0 0 1200 820" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Topology map"></svg>
+                </div>
+
+                <div class="topology-manager-legend">
+                    <span><span class="topology-manager-legend-dot" style="background:#93c5fd;"></span>Selected branch</span>
+                    <span><span class="topology-manager-legend-dot" style="background:#3b82f6;"></span>Current hierarchy path</span>
+                    <span><span class="topology-manager-legend-dot" style="background:#16a34a;"></span>Valid parent target</span>
+                    <span><span class="topology-manager-legend-dot" style="background:#f59e0b;"></span>Proposed rehome target</span>
+                    <span><span class="topology-manager-legend-dot" style="background:#f97316;"></span>Saved override</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-4 mt-3 mt-xl-0">
+            <div class="topology-manager-panel p-2 p-lg-3 h-100">
+                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-2">
+                    <div>
+                        <h6 class="mb-0"><i class="fa fa-sliders"></i> Details</h6>
+                        <div class="small text-body-secondary">Current branch summary and attachment controls.</div>
+                    </div>
+                    <div class="topology-manager-details-header-actions">
+                        <div id="topologyManagerPrimaryActions" class="topology-manager-primary-actions"></div>
+                        <button class="btn btn-sm btn-outline-secondary" id="topologyManagerClearSaved" type="button" disabled>
+                            <i class="fa fa-eraser"></i> Clear Saved
+                        </button>
+                    </div>
+                </div>
+
+                <div id="topologyManagerWarnings"></div>
+                <div id="topologyManagerDetails" class="d-flex flex-column gap-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="topology_manager.js%CACHEBUSTERS%&tm=20260405-rainy-v1"></script>
