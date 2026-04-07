@@ -53,11 +53,13 @@ pub struct ThroughputTracker {
     pub(crate) cycle: AtomicU64,
     pub(crate) raw_data: Mutex<HashMap<XdpIpAddress, ThroughputEntry>>,
     pub(crate) bytes_per_second: AtomicDownUp,
+    pub(crate) actual_bytes_per_second: AtomicDownUp,
     pub(crate) packets_per_second: AtomicDownUp,
     pub(crate) tcp_packets_per_second: AtomicDownUp,
     pub(crate) udp_packets_per_second: AtomicDownUp,
     pub(crate) icmp_packets_per_second: AtomicDownUp,
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
+    pub(crate) shaped_actual_bytes_per_second: AtomicDownUp,
     pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
     pub(crate) circuit_qoq_heatmaps: Mutex<FxHashMap<i64, TemporalQoqHeatmap>>,
     pub(crate) global_heatmap: Mutex<TemporalHeatmap>,
@@ -74,6 +76,7 @@ struct CircuitHeatmapAggregate {
 
 struct ReducedHostCounters {
     bytes: DownUpOrder<u64>,
+    actual_bytes: DownUpOrder<u64>,
     packets: DownUpOrder<u64>,
     tcp_packets: DownUpOrder<u64>,
     udp_packets: DownUpOrder<u64>,
@@ -87,6 +90,7 @@ struct ReducedHostCounters {
 impl ReducedHostCounters {
     fn from_counters(counts: &[lqos_sys::HostCounter]) -> Self {
         let mut bytes = DownUpOrder::zeroed();
+        let mut actual_bytes = DownUpOrder::zeroed();
         let mut packets = DownUpOrder::zeroed();
         let mut tcp_packets = DownUpOrder::zeroed();
         let mut udp_packets = DownUpOrder::zeroed();
@@ -99,6 +103,8 @@ impl ReducedHostCounters {
 
         for c in counts {
             bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
+            actual_bytes
+                .checked_add_direct(c.actual_download_bytes, c.actual_upload_bytes);
             packets.checked_add_direct(c.download_packets, c.upload_packets);
             tcp_packets.checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
             udp_packets.checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
@@ -114,6 +120,7 @@ impl ReducedHostCounters {
 
         Self {
             bytes,
+            actual_bytes,
             packets,
             tcp_packets,
             udp_packets,
@@ -136,11 +143,13 @@ impl ThroughputTracker {
             cycle: AtomicU64::new(RETIRE_AFTER_SECONDS),
             raw_data: Mutex::default(),
             bytes_per_second: AtomicDownUp::zeroed(),
+            actual_bytes_per_second: AtomicDownUp::zeroed(),
             packets_per_second: AtomicDownUp::zeroed(),
             tcp_packets_per_second: AtomicDownUp::zeroed(),
             udp_packets_per_second: AtomicDownUp::zeroed(),
             icmp_packets_per_second: AtomicDownUp::zeroed(),
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
+            shaped_actual_bytes_per_second: AtomicDownUp::zeroed(),
             circuit_heatmaps: Mutex::default(),
             circuit_qoq_heatmaps: Mutex::default(),
             global_heatmap: Mutex::new(TemporalHeatmap::new()),
@@ -368,9 +377,12 @@ impl ThroughputTracker {
         raw_data.iter_mut().for_each(|(_k, v)| {
             if v.first_cycle < self_cycle {
                 v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
+                v.actual_bytes_per_second =
+                    v.actual_bytes.checked_sub_or_zero(v.prev_actual_bytes);
                 v.packets_per_second = v.packets.checked_sub_or_zero(v.prev_packets);
             }
             v.prev_bytes = v.bytes;
+            v.prev_actual_bytes = v.actual_bytes;
             v.prev_packets = v.packets;
             v.prev_tcp_packets = v.tcp_packets;
             v.prev_udp_packets = v.udp_packets;
@@ -455,6 +467,7 @@ impl ThroughputTracker {
             if let Some(entry) = raw_data.get_mut(xdp_ip) {
                 // Zero the counter, we have to do a per-CPU sum
                 entry.bytes = reduced.bytes;
+                entry.actual_bytes = reduced.actual_bytes;
                 entry.packets = reduced.packets;
                 entry.tcp_packets = reduced.tcp_packets;
                 entry.udp_packets = reduced.udp_packets;
@@ -567,10 +580,13 @@ impl ThroughputTracker {
                     first_cycle: self_cycle,
                     most_recent_cycle: 0,
                     bytes: reduced.bytes,
+                    actual_bytes: reduced.actual_bytes,
                     packets: reduced.packets,
                     prev_bytes: DownUpOrder::zeroed(),
+                    prev_actual_bytes: DownUpOrder::zeroed(),
                     prev_packets: DownUpOrder::zeroed(),
                     bytes_per_second: DownUpOrder::zeroed(),
+                    actual_bytes_per_second: DownUpOrder::zeroed(),
                     packets_per_second: DownUpOrder::zeroed(),
                     tcp_packets: reduced.tcp_packets,
                     udp_packets: reduced.udp_packets,
@@ -1047,11 +1063,13 @@ impl ThroughputTracker {
     pub(crate) fn update_totals(&self) {
         let current_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         self.bytes_per_second.set_to_zero();
+        self.actual_bytes_per_second.set_to_zero();
         self.packets_per_second.set_to_zero();
         self.tcp_packets_per_second.set_to_zero();
         self.udp_packets_per_second.set_to_zero();
         self.icmp_packets_per_second.set_to_zero();
         self.shaped_bytes_per_second.set_to_zero();
+        self.shaped_actual_bytes_per_second.set_to_zero();
         let raw_data = self.raw_data.lock();
         raw_data
             .iter()
@@ -1062,6 +1080,10 @@ impl ThroughputTracker {
                 (
                     v.bytes.down.saturating_sub(v.prev_bytes.down),
                     v.bytes.up.saturating_sub(v.prev_bytes.up),
+                    v.actual_bytes
+                        .down
+                        .saturating_sub(v.prev_actual_bytes.down),
+                    v.actual_bytes.up.saturating_sub(v.prev_actual_bytes.up),
                     v.packets.down.saturating_sub(v.prev_packets.down),
                     v.packets.up.saturating_sub(v.prev_packets.up),
                     v.tcp_packets.down.saturating_sub(v.prev_tcp_packets.down),
@@ -1077,6 +1099,8 @@ impl ThroughputTracker {
                 |(
                     bytes_down,
                     bytes_up,
+                    actual_bytes_down,
+                    actual_bytes_up,
                     packets_down,
                     packets_up,
                     tcp_down,
@@ -1089,6 +1113,8 @@ impl ThroughputTracker {
                 )| {
                     self.bytes_per_second
                         .checked_add_tuple((bytes_down, bytes_up));
+                    self.actual_bytes_per_second
+                        .checked_add_tuple((actual_bytes_down, actual_bytes_up));
                     self.packets_per_second
                         .checked_add_tuple((packets_down, packets_up));
                     self.tcp_packets_per_second
@@ -1100,6 +1126,8 @@ impl ThroughputTracker {
                     if shaped {
                         self.shaped_bytes_per_second
                             .checked_add_tuple((bytes_down, bytes_up));
+                        self.shaped_actual_bytes_per_second
+                            .checked_add_tuple((actual_bytes_down, actual_bytes_up));
                     }
                 },
             );
@@ -1148,8 +1176,20 @@ impl ThroughputTracker {
         self.bytes_per_second.as_down_up().to_bits_from_bytes()
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn actual_bits_per_second(&self) -> DownUpOrder<u64> {
+        self.actual_bytes_per_second.as_down_up().to_bits_from_bytes()
+    }
+
     pub(crate) fn shaped_bits_per_second(&self) -> DownUpOrder<u64> {
         self.shaped_bytes_per_second
+            .as_down_up()
+            .to_bits_from_bytes()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn shaped_actual_bits_per_second(&self) -> DownUpOrder<u64> {
+        self.shaped_actual_bytes_per_second
             .as_down_up()
             .to_bits_from_bytes()
     }
