@@ -491,6 +491,27 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     BusResponse::NodeNames(result)
 }
 
+pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
+    let trimmed = parent_node.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let reader = NETWORK_JSON.read();
+    let nodes = reader.get_nodes_when_ready();
+
+    if nodes.iter().any(|node| node.name == trimmed) {
+        return Some(trimmed.to_string());
+    }
+
+    nodes.iter().find_map(|node| {
+        node.active_attachment_name
+            .as_deref()
+            .filter(|alias| alias.trim() == trimmed)
+            .map(|_| node.name.clone())
+    })
+}
+
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
     let reader = NETWORK_JSON.read();
     if let Some(index) = reader.get_index_for_name(circuit_id) {
@@ -553,7 +574,10 @@ pub fn get_all_circuits() -> BusResponse {
                     circuit_name = Some(device.circuit_name.clone());
                     device_id = Some(device.device_id.clone());
                     device_name = Some(device.device_name.clone());
-                    parent_node = Some(device.parent_node.clone());
+                    parent_node = Some(
+                        resolve_parent_node_alias(&device.parent_node)
+                            .unwrap_or_else(|| device.parent_node.clone()),
+                    );
                     plan.down = device.download_max_mbps.round();
                     plan.up = device.upload_max_mbps.round();
                 }

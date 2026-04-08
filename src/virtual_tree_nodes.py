@@ -91,3 +91,37 @@ def build_physical_network(logical_network):
 
     return physical
 
+
+def collect_physical_parent_node_aliases(network):
+    """
+    Returns a mapping of acceptable parent-node aliases to the physical node key
+    that exists in the shaping tree.
+
+    This lets shaping-time code resolve attachment-style names that may survive
+    in `ShapedDevices.csv` even after the physical tree is flattened or promoted.
+    """
+    aliases = {}
+
+    def recurse(level):
+        if not isinstance(level, dict):
+            return
+
+        for key, node in level.items():
+            if not isinstance(key, str) or not isinstance(node, dict):
+                continue
+
+            candidates = [key, node.get("name"), node.get("active_attachment_name")]
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+                alias = str(candidate).strip()
+                if not alias:
+                    continue
+                aliases.setdefault(alias, key)
+
+            children = node.get("children")
+            if isinstance(children, dict):
+                recurse(children)
+
+    recurse(network)
+    return aliases

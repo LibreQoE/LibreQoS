@@ -24,6 +24,7 @@ from deepdiff import DeepDiff
 from virtual_tree_nodes import (
     build_logical_to_physical_node_map,
     build_physical_network,
+    collect_physical_parent_node_aliases,
     is_virtual_node,
 )
 from shaping_skip_report import (
@@ -1209,6 +1210,23 @@ def refreshShapers():
                                     newDict[node]['children'] = flattened
             return newDict
         network = flattenA(network, 1)
+
+        # After flattening, some attachment-style names may only survive as
+        # metadata on the physical node that now owns that branch.
+        parent_node_aliases = collect_physical_parent_node_aliases(network)
+        for circuit in subscriberCircuits:
+            parent_node = str(circuit.get('ParentNode', '') or '').strip()
+            if not parent_node or parent_node == 'none':
+                continue
+            resolved_parent = parent_node_aliases.get(parent_node)
+            if resolved_parent and resolved_parent != parent_node:
+                logging.info(
+                    "Resolved circuit parent alias '%s' to physical queue node '%s' for circuit '%s'",
+                    parent_node,
+                    resolved_parent,
+                    circuit.get('circuitID', ''),
+                )
+                circuit['ParentNode'] = resolved_parent
 
         # Group circuits by parent node. Reduces runtime for section below this one.
         circuits_by_parent_node = {}
