@@ -52,6 +52,7 @@ let funnelParents = [];
 let funnelParentSignature = [];
 let funnelInitialized = false;
 let funnelParentNodeName = null;
+let funnelParentNodeId = null;
 let excludeRttToggle = null;
 let excludeRttLastValue = false;
 let excludeRttBusy = false;
@@ -539,9 +540,62 @@ function arrayEquals(a, b) {
     return true;
 }
 
+function normalizeNodeName(value) {
+    return (value ?? "")
+        .toString()
+        .trim()
+        .replace(/\s+/g, " ")
+        .toLowerCase();
+}
+
+function resolveCircuitParentNode(payload, circuits) {
+    const backendParent = payload?.parent_node;
+    const backendName = backendParent?.name?.trim?.() || "";
+    if (backendName) {
+        return {
+            id: backendParent?.id || null,
+            name: backendName,
+        };
+    }
+
+    if (!Array.isArray(circuits)) {
+        return null;
+    }
+
+    const firstUsableParent = circuits.find((device) => normalizeNodeName(device?.parent_node).length > 0);
+    const fallbackName = firstUsableParent?.parent_node?.trim() || "";
+    if (!fallbackName) {
+        return null;
+    }
+
+    return {
+        id: null,
+        name: fallbackName,
+    };
+}
+
 function resolveFunnelState(msg, parentNode) {
     const data = msg && msg.data ? msg.data : [];
-    const namedEntry = data.find((node) => node[1] && node[1].name === parentNode);
+    const normalizedParentNodeId = normalizeNodeName(parentNode?.id);
+    const normalizedParentNodeName = normalizeNodeName(parentNode?.name);
+    if (!normalizedParentNodeId && !normalizedParentNodeName) {
+        return null;
+    }
+
+    const namedEntry = data.find((node) => {
+        const details = node[1];
+        if (!details) {
+            return false;
+        }
+        const nodeId = normalizeNodeName(details.id);
+        if (normalizedParentNodeId && nodeId === normalizedParentNodeId) {
+            return true;
+        }
+        if (normalizedParentNodeName && details.name === parentNode?.name) {
+            return true;
+        }
+        return normalizedParentNodeName && normalizeNodeName(details.name) === normalizedParentNodeName;
+    });
     if (!namedEntry) {
         return null;
     }
@@ -2161,7 +2215,8 @@ function initialDevices(circuits) {
 }
 
 function initialFunnel(parentNode) {
-    funnelParentNodeName = parentNode;
+    funnelParentNodeName = parentNode?.name || null;
+    funnelParentNodeId = parentNode?.id || null;
     listenOnce("NetworkTreeLite", (msg) => {
         renderFunnel(resolveFunnelState(msg, parentNode));
         if (funnelSubscription) {
@@ -2173,11 +2228,14 @@ function initialFunnel(parentNode) {
 }
 
 function onTreeEvent(msg) {
-    if (msg.event !== "NetworkTreeLite" || !funnelParentNodeName) {
+    if (msg.event !== "NetworkTreeLite" || (!funnelParentNodeName && !funnelParentNodeId)) {
         return;
     }
 
-    const state = resolveFunnelState(msg, funnelParentNodeName);
+    const state = resolveFunnelState(msg, {
+        id: funnelParentNodeId,
+        name: funnelParentNodeName,
+    });
     const nextParents = state ? state.parentIndexes : [];
     const nextSignature = state ? state.parentSignature : [];
     const shouldRebuild =
@@ -2343,10 +2401,11 @@ function loadInitial() {
         const circuits = payload.devices || [];
         const advisory = payload.ethernet_advisory || null;
         let circuit = circuits[0];
+        const parentNode = resolveCircuitParentNode(payload, circuits);
         circuitConfigDevices = circuits;
         $("#circuitName").text(circuit.circuit_name);
         $("#circuitName").attr("title", circuit.circuit_name || "");
-        applyParentNodeLink(circuit.parent_node);
+        applyParentNodeLink(parentNode?.name || "");
         $("#bwMax").text(formatPlanSpeedPair(circuit.download_max_mbps, circuit.upload_max_mbps));
         $("#bwMin").text(formatPlanSpeedPair(circuit.download_min_mbps, circuit.upload_min_mbps));
         renderEthernetAdvisory(advisory);
@@ -2362,7 +2421,7 @@ function loadInitial() {
         qooGauge = new QooScoreGauge("qooGauge");
         totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
         totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
-        initTabLifecycle(circuit.parent_node);
+        initTabLifecycle(parentNode);
         updateQueuingActivityCards();
 
         connectCircuitSummaryChannel();
@@ -2394,6 +2453,9 @@ function cleanupCircuitPage() {
         funnelSubscription.dispose();
         funnelSubscription = null;
     }
+    funnelInitialized = false;
+    funnelParentNodeName = null;
+    funnelParentNodeId = null;
     if (queuingActivityGraph) {
         queuingActivityGraph.dispose();
         queuingActivityGraph = null;

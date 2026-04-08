@@ -491,7 +491,18 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     BusResponse::NodeNames(result)
 }
 
-pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
+/// Canonical parent-node metadata resolved from `network.json`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedParentNode {
+    /// Canonical node name from `network.json`.
+    pub name: String,
+    /// Optional stable node identifier from `network.json` metadata.
+    pub id: Option<String>,
+}
+
+/// Resolve a shaped-device parent node or active attachment alias into canonical `network.json`
+/// parent metadata.
+pub fn resolve_parent_node(parent_node: &str) -> Option<ResolvedParentNode> {
     let trimmed = parent_node.trim();
     if trimmed.is_empty() {
         return None;
@@ -500,16 +511,26 @@ pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
     let reader = NETWORK_JSON.read();
     let nodes = reader.get_nodes_when_ready();
 
-    if nodes.iter().any(|node| node.name == trimmed) {
-        return Some(trimmed.to_string());
+    if let Some(node) = nodes.iter().find(|node| node.name == trimmed) {
+        return Some(ResolvedParentNode {
+            name: node.name.clone(),
+            id: node.id.clone(),
+        });
     }
 
     nodes.iter().find_map(|node| {
         node.active_attachment_name
             .as_deref()
             .filter(|alias| alias.trim() == trimmed)
-            .map(|_| node.name.clone())
+            .map(|_| ResolvedParentNode {
+                name: node.name.clone(),
+                id: node.id.clone(),
+            })
     })
+}
+
+pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
+    resolve_parent_node(parent_node).map(|resolved| resolved.name)
 }
 
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
