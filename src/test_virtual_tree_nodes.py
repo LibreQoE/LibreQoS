@@ -3,6 +3,7 @@ import unittest
 from virtual_tree_nodes import (
     build_logical_to_physical_node_map,
     build_physical_network,
+    collect_physical_parent_node_aliases,
     is_virtual_node,
 )
 
@@ -74,6 +75,24 @@ class TestVirtualTreeNodes(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             build_physical_network(logical)
+
+    def test_collect_physical_parent_node_aliases_includes_active_attachment_name(self):
+        physical = {
+            "Hoodoo Hill": {
+                "children": {
+                    "Thunderhill Core": {
+                        "name": "Thunderhill Core",
+                        "active_attachment_name": "Thunderhill-Hoodoo",
+                        "children": {},
+                    }
+                }
+            }
+        }
+
+        aliases = collect_physical_parent_node_aliases(physical)
+
+        self.assertEqual(aliases["Thunderhill Core"], "Thunderhill Core")
+        self.assertEqual(aliases["Thunderhill-Hoodoo"], "Thunderhill Core")
 
 
 if __name__ == "__main__":

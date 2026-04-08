@@ -1,4 +1,5 @@
 use crate::node_manager::local_api::ethernet_caps::ethernet_advisory_for_circuit;
+use crate::shaped_devices_tracker::resolve_parent_node_alias;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_config::{CircuitEthernetMetadata, ShapedDevice};
 use serde::{Deserialize, Serialize};
@@ -31,6 +32,12 @@ pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
         .iter()
         .filter(|d| d.circuit_id.to_lowercase().trim() == safe_id)
         .cloned()
+        .map(|mut device| {
+            if let Some(resolved_parent) = resolve_parent_node_alias(&device.parent_node) {
+                device.parent_node = resolved_parent;
+            }
+            device
+        })
         .collect();
 
     if devices.is_empty() {
