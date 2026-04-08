@@ -342,7 +342,6 @@ function updateQueuingActivityCards() {
     const rttEl = document.getElementById("queuingActivityRtt");
     const flowsEl = document.getElementById("queuingActivityFlows");
     const utilizationEl = document.getElementById("queuingActivityUtilization");
-    const ceilingLegendEl = document.getElementById("queuingActivityLegendCeiling");
     if (!throughputEl || !rttEl || !flowsEl || !utilizationEl) {
         return;
     }
@@ -354,9 +353,6 @@ function updateQueuingActivityCards() {
     flowsEl.textContent = String(snapshot.activeFlows);
     utilizationEl.textContent = `${snapshot.utilizationPercent.toFixed(0)}%`;
     utilizationEl.classList.toggle("is-active", snapshot.atCeiling);
-    if (ceilingLegendEl) {
-        ceilingLegendEl.classList.toggle("is-active", snapshot.atCeiling);
-    }
 }
 
 function pushQueuingActivitySample() {

@@ -571,10 +571,6 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     background: rgba(255, 255, 255, 0.32);
     box-shadow: 0 0 8px rgba(255, 255, 255, 0.12);
 }
-.lqos-circuit-activity-legend-dot.is-ceiling.is-active {
-    background: #ffffff;
-    box-shadow: 0 0 14px rgba(255, 255, 255, 0.34);
-}
 .lqos-circuit-activity-toggle {
     align-self: center;
     border-radius: 999px;
