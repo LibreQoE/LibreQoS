@@ -42,10 +42,24 @@ function throughputPaletteColor(direction, fallback) {
     return window.graphPalette?.[paletteIndex] || fallback;
 }
 
+function maskedEnqueuedSeriesData(enqueuedData, throughputData) {
+    const pointCount = Math.min(enqueuedData.length, throughputData.length);
+    const points = [];
+    for (let i = 0; i < pointCount; i++) {
+        const timestamp = enqueuedData[i]?.[0] ?? throughputData[i]?.[0];
+        const enqueuedValue = toNumber(enqueuedData[i]?.[1], 0);
+        const throughputValue = toNumber(throughputData[i]?.[1], 0);
+        points.push([
+            timestamp,
+            enqueuedValue > throughputValue ? enqueuedValue : null,
+        ]);
+    }
+    return points;
+}
+
 function getWaveformTheme(direction = "down") {
     const isDark = document.documentElement.getAttribute("data-bs-theme") !== "light";
-    const throughputColor = throughputPaletteColor(direction, isDark ? "#4992ff" : "#d87c7c");
-    const actualThroughputColor = window.graphPalette?.[2] || (isDark ? "#fddd60" : "#d7ab82");
+    const throughputColor = throughputPaletteColor(direction, direction === "up" ? "#32d3bd" : "#4992ff");
 
     if (isDark) {
         return {
@@ -54,13 +68,13 @@ function getWaveformTheme(direction = "down") {
             axisLine: "rgba(216, 226, 244, 0.28)",
             axisTick: "rgba(216, 226, 244, 0.2)",
             splitLine: "rgba(216, 226, 244, 0.045)",
+            enqueuedLine: throughputColor,
+            enqueuedGlow: "transparent",
             throughputLine: throughputColor,
-            throughputGlow: hexToRgba(throughputColor, 0.34),
-            throughputAreaTop: hexToRgba(throughputColor, 0.48),
-            throughputAreaMid: hexToRgba(throughputColor, 0.28),
+            throughputGlow: hexToRgba(throughputColor, 0.26),
+            throughputAreaTop: hexToRgba(throughputColor, 0.36),
+            throughputAreaMid: hexToRgba(throughputColor, 0.2),
             throughputAreaBottom: "rgba(9, 20, 31, 0.03)",
-            actualThroughputLine: actualThroughputColor,
-            actualThroughputGlow: hexToRgba(actualThroughputColor, 0.26),
             rttLine: "#b7a5ff",
             rttGlow: "rgba(183, 165, 255, 0.32)",
             rttAreaTop: "rgba(183, 165, 255, 0.18)",
@@ -81,13 +95,13 @@ function getWaveformTheme(direction = "down") {
         axisLine: "rgba(77, 94, 118, 0.28)",
         axisTick: "rgba(77, 94, 118, 0.18)",
         splitLine: "rgba(77, 94, 118, 0.08)",
+        enqueuedLine: throughputColor,
+        enqueuedGlow: "transparent",
         throughputLine: throughputColor,
-        throughputGlow: hexToRgba(throughputColor, 0.2),
+        throughputGlow: hexToRgba(throughputColor, 0.16),
         throughputAreaTop: hexToRgba(throughputColor, 0.24),
         throughputAreaMid: hexToRgba(throughputColor, 0.13),
         throughputAreaBottom: "rgba(255, 255, 255, 0.02)",
-        actualThroughputLine: actualThroughputColor,
-        actualThroughputGlow: hexToRgba(actualThroughputColor, 0.16),
         rttLine: "#6f63cf",
         rttGlow: "rgba(111, 99, 207, 0.2)",
         rttAreaTop: "rgba(111, 99, 207, 0.1)",
@@ -439,6 +453,24 @@ export class QueuingActivityWaveform extends DashboardGraph {
                     smooth: false,
                     step: "start",
                     lineStyle: {
+                        width: 2.1,
+                        type: "dotted",
+                        color: this.colors.enqueuedLine,
+                        shadowBlur: 0,
+                        shadowColor: this.colors.enqueuedGlow,
+                    },
+                    data: [],
+                    z: 3,
+                },
+                {
+                    name: "Throughput",
+                    type: "line",
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    showSymbol: false,
+                    smooth: false,
+                    step: "start",
+                    lineStyle: {
                         width: 2.4,
                         color: this.colors.throughputLine,
                         shadowBlur: 10,
@@ -450,26 +482,6 @@ export class QueuingActivityWaveform extends DashboardGraph {
                             { offset: 0.45, color: this.colors.throughputAreaMid },
                             { offset: 1, color: this.colors.throughputAreaBottom },
                         ]),
-                    },
-                    data: [],
-                },
-                {
-                    name: "Throughput",
-                    type: "line",
-                    xAxisIndex: 0,
-                    yAxisIndex: 0,
-                    showSymbol: false,
-                    smooth: false,
-                    step: "start",
-                    lineStyle: {
-                        width: 2.0,
-                        type: "dashed",
-                        color: this.colors.actualThroughputLine,
-                        shadowBlur: 10,
-                        shadowColor: this.colors.actualThroughputGlow,
-                    },
-                    itemStyle: {
-                        opacity: 1,
                     },
                     data: [],
                     z: 5,
@@ -580,15 +592,15 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.option.yAxis[1].axisTick.lineStyle.color = this.colors.axisTick;
         this.option.yAxis[1].splitLine.lineStyle.color = this.colors.splitLine;
         this.option.yAxis[1].axisLabel.color = this.colors.axisText;
-        this.option.series[0].lineStyle.color = this.colors.throughputLine;
-        this.option.series[0].lineStyle.shadowColor = this.colors.throughputGlow;
-        this.option.series[0].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        this.option.series[0].lineStyle.color = this.colors.enqueuedLine;
+        this.option.series[0].lineStyle.shadowColor = this.colors.enqueuedGlow;
+        this.option.series[1].lineStyle.color = this.colors.throughputLine;
+        this.option.series[1].lineStyle.shadowColor = this.colors.throughputGlow;
+        this.option.series[1].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: this.colors.throughputAreaTop },
             { offset: 0.45, color: this.colors.throughputAreaMid },
             { offset: 1, color: this.colors.throughputAreaBottom },
         ]);
-        this.option.series[1].lineStyle.color = this.colors.actualThroughputLine;
-        this.option.series[1].lineStyle.shadowColor = this.colors.actualThroughputGlow;
         this.option.series[2].lineStyle.color = this.colors.ceilingInactive;
         this.option.series[2].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
         this.option.series[3].lineStyle.color = this.colors.ceilingActive;
@@ -754,6 +766,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
             windowStart,
             displayNow,
         );
+        const enqueuedOverlayData = maskedEnqueuedSeriesData(throughputData, actualThroughputData);
         const rttData = directionalSeriesData(
             this.samples,
             this.direction,
@@ -801,14 +814,14 @@ export class QueuingActivityWaveform extends DashboardGraph {
             series: [
                 {
                     name: "Enqueued",
-                    data: throughputData,
+                    data: enqueuedOverlayData,
                 },
                 {
                     name: "Throughput",
                     data: actualThroughputData,
                     lineStyle: {
-                        color: this.colors.actualThroughputLine,
-                        shadowColor: this.colors.actualThroughputGlow,
+                        color: this.colors.throughputLine,
+                        shadowColor: this.colors.throughputGlow,
                     },
                 },
                 {

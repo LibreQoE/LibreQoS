@@ -387,11 +387,31 @@ function pushQueuingActivitySample() {
     updateQueuingActivityCards();
 }
 
+function queuingActivityDirectionColor(direction = queuingActivityDirection) {
+    const normalized = direction === "up" ? "up" : "down";
+    const fallback = normalized === "up" ? "#32d3bd" : "#4992ff";
+    const paletteIndex = normalized === "up" ? 1 : 0;
+    return window.graphPalette?.[paletteIndex] || fallback;
+}
+
+function updateQueuingActivityLegend() {
+    const legendColor = queuingActivityDirectionColor();
+    const enqueuedLegendEl = document.getElementById("queuingActivityLegendEnqueued");
+    const throughputLegendEl = document.getElementById("queuingActivityLegendThroughput");
+    if (enqueuedLegendEl) {
+        enqueuedLegendEl.style.color = legendColor;
+    }
+    if (throughputLegendEl) {
+        throughputLegendEl.style.color = legendColor;
+    }
+}
+
 function applyQueuingDirection(direction) {
     queuingActivityDirection = direction === "up" ? "up" : "down";
     if (queuingActivityGraph) {
         queuingActivityGraph.setDirection(queuingActivityDirection);
     }
+    updateQueuingActivityLegend();
     updateQueuingActivityCards();
 }
 
