@@ -175,6 +175,8 @@ LibreQoS currently uses `queue_mode` in the `[queues]` section to control whethe
 - `queue_mode = "shape"`: normal shaping mode
 - `queue_mode = "observe"`: remove the subscriber shaping tree for a true baseline while keeping the root MQ in place
 
+Switching from `shape` to `observe` cancels any in-flight Bakery live queue-migration verification so the Observe transition does not surface stale queue-tree cleanup as Bakery errors. IP mapping and per-circuit traffic attribution continue to work in Observe mode.
+
 The older `monitor_only` setting is retained as a compatibility alias in some configs and serialized output, but `queue_mode` is the current operator-facing setting and documentation term.
 
 If you plan to use the built-in UISP, Splynx, or Netzur integrations, you do not need to create a network.json file quite yet.

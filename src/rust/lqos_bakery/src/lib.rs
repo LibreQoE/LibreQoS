@@ -1457,6 +1457,33 @@ fn mark_reload_required(summary: String) {
     }
 }
 
+fn is_live_migration_reload_required_reason(reason: &str) -> bool {
+    reason.starts_with("Bakery live-move ") || reason.starts_with("Bakery live migration ")
+}
+
+fn cancel_pending_migrations_for_observe_mode(
+    migrations: &mut HashMap<i64, Migration>,
+    reason: &str,
+) -> usize {
+    let canceled = migrations.len();
+    if canceled > 0 {
+        let summary = format!("Bakery canceled {canceled} pending live migration(s): {reason}");
+        info!("{summary}");
+        push_bakery_event("live_migrations_canceled", "info", summary);
+        migrations.clear();
+    }
+
+    if let Some(reload_reason) = bakery_reload_required_reason()
+        && is_live_migration_reload_required_reason(&reload_reason)
+    {
+        clear_reload_required(
+            "Observe mode canceled pending Bakery live-migration verification state; incremental live-move reload requirements were cleared.",
+        );
+    }
+
+    canceled
+}
+
 fn clear_reload_required(summary: &str) {
     let mut should_emit = false;
     {
@@ -3342,6 +3369,14 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
         runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
     ) {
+        if config.queues.queue_mode.is_observe() {
+            cancel_pending_migrations_for_observe_mode(
+                migrations,
+                "queue_mode is observe; the shaping tree is not live.",
+            );
+            return;
+        }
+
         let mut advanced = 0usize;
         let mut to_remove = Vec::new();
         let mut effective_state_changed = false;
@@ -4055,10 +4090,20 @@ fn handle_commit_batch(
     let effective_new_batch =
         apply_runtime_virtualization_overlay(raw_batch.clone(), virtualized_sites);
     let resolved_mq_layout = current_mq_layout(&raw_batch, &config, mq_layout);
+    let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
+    let shaping_tree_active = SHAPING_TREE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+    let desired_tree_active = desired_shaping_tree_active(&config);
 
     let mapped_limit = resolve_mapped_circuit_limit();
     let effective_limit = mapped_limit.effective_limit;
     let limit_label = format_mapped_limit(effective_limit);
+
+    if shaping_tree_active && !desired_tree_active {
+        cancel_pending_migrations_for_observe_mode(
+            migrations,
+            "queue mode transitioned to observe; a full reload will rebuild the retained root MQ without the shaping tree.",
+        );
+    }
 
     if let Some(reason) = bakery_reload_required_reason() {
         let summary = format!(
@@ -4102,9 +4147,6 @@ fn handle_commit_batch(
         return;
     }
 
-    let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
-    let shaping_tree_active = SHAPING_TREE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
-    let desired_tree_active = desired_shaping_tree_active(&config);
     if !has_mq_been_setup {
         push_bakery_event(
             "baseline_rebuild_required",
@@ -13062,6 +13104,105 @@ mod tests {
         assert!(advanced);
         assert_eq!(migration.stage, MigrationStage::VerifyFinalReady);
         assert!(bakery_reload_required_reason().is_none());
+    }
+
+    fn sample_test_migration(hash: i64) -> Migration {
+        Migration {
+            circuit_hash: hash,
+            circuit_name: Some(format!("circuit-{hash}")),
+            site_name: Some(format!("site-{hash}")),
+            old_class_major: 0x1,
+            old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
+            parent_class_id: TcHandle::from_u32(0x10034),
+            up_parent_class_id: TcHandle::from_u32(0x20034),
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            old_down_min: 1.0,
+            old_down_max: 10.0,
+            old_up_min: 1.0,
+            old_up_max: 10.0,
+            new_down_min: 1.0,
+            new_down_max: 20.0,
+            new_up_min: 1.0,
+            new_up_max: 20.0,
+            old_minor: 0x21,
+            shadow_minor: 0x2000,
+            final_minor: 0x35,
+            ips: vec![format!("192.0.2.{hash}/32")],
+            sqm_override: None,
+            desired_cmd: mk_test_circuit(
+                hash,
+                0x10034,
+                0x20034,
+                0x35,
+                0x1,
+                0x2,
+                &format!("192.0.2.{hash}/32"),
+            ),
+            stage: MigrationStage::VerifyFinalReady,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
+        }
+    }
+
+    #[test]
+    fn observe_transition_cancels_pending_live_migrations_and_clears_live_migration_reload_state() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+        clear_reload_required(
+            "reset before observe_transition_cancels_pending_live_migrations_and_clears_live_migration_reload_state",
+        );
+
+        let mut migrations = HashMap::from([(9007, sample_test_migration(9007))]);
+        mark_reload_required(
+            "Bakery live-move final verification did not find the expected final class/qdisc for circuit 9007: observed missing. A full reload is now required before further incremental topology mutations."
+                .to_string(),
+        );
+
+        let canceled = cancel_pending_migrations_for_observe_mode(
+            &mut migrations,
+            "queue mode transitioned to observe; the shaping tree is no longer live.",
+        );
+
+        assert_eq!(canceled, 1);
+        assert!(migrations.is_empty());
+        assert!(bakery_reload_required_reason().is_none());
+        assert!(bakery_activity_snapshot().iter().any(|entry| {
+            entry.event == "live_migrations_canceled"
+                && entry.summary.contains("pending live migration")
+        }));
+    }
+
+    #[test]
+    fn observe_transition_preserves_non_migration_reload_required_state() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+        clear_reload_required(
+            "reset before observe_transition_preserves_non_migration_reload_required_state",
+        );
+
+        let unrelated_reason = "Bakery full reload triggered because site speed live-change enqueue failed: synthetic failure.";
+        let mut migrations = HashMap::from([(9008, sample_test_migration(9008))]);
+        mark_reload_required(unrelated_reason.to_string());
+
+        let canceled = cancel_pending_migrations_for_observe_mode(
+            &mut migrations,
+            "queue mode transitioned to observe; the shaping tree is no longer live.",
+        );
+
+        assert_eq!(canceled, 1);
+        assert!(migrations.is_empty());
+        assert_eq!(
+            bakery_reload_required_reason().as_deref(),
+            Some(unrelated_reason)
+        );
+        clear_reload_required(
+            "reset after observe_transition_preserves_non_migration_reload_required_state",
+        );
     }
 
     #[test]
