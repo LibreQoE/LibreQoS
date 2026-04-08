@@ -11,7 +11,7 @@ use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
 use crate::strategies::full::routes_override::RouteOverride;
-use crate::strategies::full::shaped_devices_writer::ShapedDevice;
+use crate::strategies::full::shaped_devices_writer::{ShapedDevice, write_circuit_anchors};
 use crate::strategies::full2::directionality::{
     build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
 };
@@ -21,7 +21,7 @@ use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
 use crate::uisp_types::{UispAttachmentRateSource, UispDevice};
 use lqos_config::{
-    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+    CircuitAnchor, CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
     TOPOLOGY_ATTACHMENT_AUTO_ID, TopologyAllowedParent, TopologyAttachmentOption,
     TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
     TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
@@ -76,6 +76,21 @@ fn atomic_write_string(path: &Path, raw: &str) -> std::io::Result<()> {
 
 fn debug_graph_output_enabled() -> bool {
     env::var_os("LIBREQOS_UISP_DEBUG_GRAPH").is_some()
+}
+
+fn anchor_for_site_ap(
+    site_id: &str,
+    site_name: &str,
+    ap_device: &UispDevice,
+    parents: &HashMap<String, NetJsonParent<'_>>,
+) -> Option<CircuitAnchor> {
+    let ap_node_id = format!("uisp:device:{}", ap_device.id);
+    parents.contains_key(&ap_node_id).then(|| CircuitAnchor {
+        circuit_id: site_id.to_owned(),
+        circuit_name: Some(site_name.to_owned()),
+        anchor_node_id: ap_node_id,
+        anchor_node_name: Some(ap_device.name.to_owned()),
+    })
 }
 
 pub async fn build_full_network_v2(
@@ -577,7 +592,9 @@ pub async fn build_full_network_v2(
     // Shaped Devices
     let shaped_devices_started = Instant::now();
     let mut shaped_devices = Vec::new();
+    let mut circuit_anchors = Vec::<CircuitAnchor>::new();
     let mut seen_pairs = HashSet::new();
+    let mut seen_circuits = HashSet::new();
     let mut processed_site_pairs = 0usize;
     let mut shaped_device_count = 0usize;
     let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
@@ -642,6 +659,17 @@ pub async fn build_full_network_v2(
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);
             }
+            if !site_devices.is_empty() && seen_circuits.insert(site.id.clone()) {
+                if let Some(anchor) = anchor_for_site_ap(&site.id, &site.name, ap_device, &parents)
+                {
+                    circuit_anchors.push(anchor);
+                } else {
+                    debug!(
+                        "Skipping circuit anchor for '{}' because AP '{}' ({}) is not present in topology; circuit will resolve from ingress parent data.",
+                        site.name, ap_device.name, ap_device.id
+                    );
+                }
+            }
             for device in uisp_data.find_parsed_devices_in_site(site_id) {
                 if !device.has_address() {
                     continue;
@@ -659,6 +687,13 @@ pub async fn build_full_network_v2(
                         orphans_node_name.clone()
                     }
                 };
+                let parent_node_id = {
+                    let ap_node_id = format!("uisp:device:{}", ap_device.id);
+                    parents
+                        .get(&ap_node_id)
+                        .map(|parent| parent.node_id.clone())
+                        .unwrap_or_default()
+                };
 
                 let key = (site.id.clone(), device.id.clone());
                 if !seen_pairs.insert(key) {
@@ -671,6 +706,8 @@ pub async fn build_full_network_v2(
                     device_id: device.id.to_owned(),
                     device_name: device.name.to_owned(),
                     parent_node: parent_node.clone(),
+                    parent_node_id,
+                    anchor_node_id: String::new(),
                     mac: device.mac.to_owned(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
@@ -707,6 +744,7 @@ pub async fn build_full_network_v2(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_circuit_anchors(&config, "uisp/full2", &circuit_anchors)?;
     write_ethernet_advisories(&config, &ethernet_advisories)?;
     info!(
         shaped_devices = shaped_devices.len(),
@@ -2402,31 +2440,14 @@ mod topology_override_tests {
         });
         let beta_site = graph.add_node(site("Site Beta", "site-beta"));
         let alpha_site = graph.add_node(site("Site Alpha", "site-alpha"));
-        let gamma_to_beta = graph.add_node(ap(
-            "Gamma - Beta MLO6",
-            "device-gamma-beta",
-            "Site Gamma",
-        ));
-        let beta_to_gamma = graph.add_node(ap(
-            "Beta - Gamma MLO6",
-            "device-beta-gamma",
-            "Site Beta",
-        ));
-        let gamma_to_alpha = graph.add_node(ap(
-            "Gamma-Alpha",
-            "device-gamma-alpha",
-            "Site Gamma",
-        ));
-        let alpha_to_gamma = graph.add_node(ap(
-            "Alpha-Gamma",
-            "device-alpha-gamma",
-            "Site Alpha",
-        ));
-        let beta_to_alpha = graph.add_node(ap(
-            "Beta - Alpha MLO5",
-            "device-beta-alpha",
-            "Site Beta",
-        ));
+        let gamma_to_beta =
+            graph.add_node(ap("Gamma - Beta MLO6", "device-gamma-beta", "Site Gamma"));
+        let beta_to_gamma =
+            graph.add_node(ap("Beta - Gamma MLO6", "device-beta-gamma", "Site Beta"));
+        let gamma_to_alpha = graph.add_node(ap("Gamma-Alpha", "device-gamma-alpha", "Site Gamma"));
+        let alpha_to_gamma = graph.add_node(ap("Alpha-Gamma", "device-alpha-gamma", "Site Alpha"));
+        let beta_to_alpha =
+            graph.add_node(ap("Beta - Alpha MLO5", "device-beta-alpha", "Site Beta"));
         let alpha_to_beta =
             graph.add_node(ap("Alpha - Beta MLO5", "device-alpha-beta", "Site Alpha"));
 
@@ -2464,14 +2485,8 @@ mod topology_override_tests {
             &[],
         ));
 
-        let groups = topology_allowed_parent_groups_for_node(
-            &graph,
-            root,
-            beta_site,
-            &candidates,
-            &[],
-            &[],
-        );
+        let groups =
+            topology_allowed_parent_groups_for_node(&graph, root, beta_site, &candidates, &[], &[]);
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].logical_parent, alpha_site);
         assert_eq!(groups[0].candidate_nodes, vec![beta_to_alpha]);
@@ -2512,20 +2527,10 @@ mod topology_override_tests {
         });
         let beta_site = graph.add_node(site("Site Beta", "site-beta"));
         let alpha_site = graph.add_node(site("Site Alpha", "site-alpha"));
-        let gamma_to_alpha = graph.add_node(ap(
-            "Gamma-Alpha",
-            "device-gamma-alpha",
-            "Site Gamma",
-        ));
-        let alpha_to_gamma = graph.add_node(ap(
-            "Alpha-Gamma",
-            "device-alpha-gamma",
-            "Site Alpha",
-        ));
-        let beta_to_alpha =
-            graph.add_node(ap("Beta - Alpha 60", "device-beta-alpha", "Site Beta"));
-        let alpha_to_beta =
-            graph.add_node(ap("Alpha-Beta-60", "device-alpha-beta", "Site Alpha"));
+        let gamma_to_alpha = graph.add_node(ap("Gamma-Alpha", "device-gamma-alpha", "Site Gamma"));
+        let alpha_to_gamma = graph.add_node(ap("Alpha-Gamma", "device-alpha-gamma", "Site Alpha"));
+        let beta_to_alpha = graph.add_node(ap("Beta - Alpha 60", "device-beta-alpha", "Site Beta"));
+        let alpha_to_beta = graph.add_node(ap("Alpha-Beta-60", "device-alpha-beta", "Site Alpha"));
 
         for (from, to) in [
             (root, gamma_to_alpha),
@@ -2897,6 +2902,31 @@ fn calculate_chain_capacity(graph: &GraphType, chain_nodes: &[NodeIndex]) -> (u6
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
+    fn test_uisp_device(id: &str, name: &str) -> UispDevice {
+        UispDevice {
+            id: id.to_string(),
+            name: name.to_string(),
+            mac: String::new(),
+            role: None,
+            wireless_mode: None,
+            site_id: String::new(),
+            raw_download: 0,
+            raw_upload: 0,
+            download: 0,
+            upload: 0,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: UispAttachmentRateSource::Static,
+        }
+    }
 
     fn add_site(graph: &mut GraphType, name: &str, id: &str) -> NodeIndex {
         graph.add_node(GraphMapping::Site {
@@ -3051,5 +3081,44 @@ mod tests {
         assert!(graph_a.find_edge(right_a, left_a).is_some());
         assert!(graph_b.find_edge(left_b, right_b).is_some());
         assert!(graph_b.find_edge(right_b, left_b).is_some());
+    }
+
+    #[test]
+    fn full2_skips_orphaned_circuit_anchor_when_ap_is_not_in_topology() {
+        let device = test_uisp_device("device-missing", "Missing AP");
+        let parents = HashMap::<String, NetJsonParent<'_>>::new();
+
+        let anchor = anchor_for_site_ap("circuit-1", "Circuit 1", &device, &parents);
+
+        assert!(anchor.is_none());
+    }
+
+    #[test]
+    fn full2_emits_circuit_anchor_when_ap_exists_in_topology() {
+        let mut graph = GraphType::new();
+        let ap = add_ap(&mut graph, "Present AP", "device-present", "Present Site");
+        let mapping = &graph[ap];
+        let mut parents = HashMap::<String, NetJsonParent<'_>>::new();
+        let node_id = mapping.network_json_id();
+        parents.insert(
+            node_id.clone(),
+            NetJsonParent {
+                node_id: node_id.clone(),
+                node_name: mapping.name(),
+                export_name: mapping.name(),
+                parent_id: None,
+                parent_name: "Parent".to_string(),
+                mapping,
+                download: 1000,
+                upload: 1000,
+            },
+        );
+        let device = test_uisp_device("device-present", "Present AP");
+
+        let anchor = anchor_for_site_ap("circuit-1", "Circuit 1", &device, &parents)
+            .expect("expected anchor to be emitted");
+
+        assert_eq!(anchor.anchor_node_id, "uisp:device:device-present");
+        assert_eq!(anchor.anchor_node_name.as_deref(), Some("Present AP"));
     }
 }

@@ -68,6 +68,21 @@ def publish_scheduler_progress(active: bool, phase: str, phase_label: str, step_
         print(f"Failed to publish scheduler progress: {e}")
 
 
+def report_scheduler_runtime_failure(context: str, exc: Exception, *, startup: bool = False):
+    message = f"{context}: {exc}"
+    print(message)
+    scheduler_error(message)
+    if startup:
+        publish_scheduler_progress(
+            False,
+            "degraded",
+            "Scheduler running with topology/runtime error",
+            SCHEDULER_STARTUP_STEP_COUNT,
+            SCHEDULER_STARTUP_STEP_COUNT,
+            percent=100,
+        )
+
+
 def _integration_output_lines(output):
     normalized = (output or "").replace("\r\n", "\n").strip()
     if not normalized:
@@ -345,6 +360,8 @@ SHAPED_DEVICES_HEADER = [
     "Device ID",
     "Device Name",
     "Parent Node",
+    "Parent Node ID",
+    "Anchor Node ID",
     "MAC",
     "IPv4",
     "IPv6",
@@ -359,6 +376,66 @@ SHAPED_DEVICES_HEADER_WITH_SQM = [
     *SHAPED_DEVICES_HEADER,
     "sqm",
 ]
+
+
+def normalize_shaped_devices_header(header_value):
+    return ''.join(ch for ch in str(header_value).lower() if ch.isalnum())
+
+
+def shaped_devices_header_index_map(header):
+    legacy = {
+        'circuit_id': 0,
+        'circuit_name': 1,
+        'device_id': 2,
+        'device_name': 3,
+        'parent_node': 4,
+        'mac': 5,
+        'ipv4': 6,
+        'ipv6': 7,
+        'download_min': 8,
+        'upload_min': 9,
+        'download_max': 10,
+        'upload_max': 11,
+        'comment': 12,
+        'sqm': 13,
+    }
+    aliases = {
+        'circuit_id': {'circuitid', 'circuit_id'},
+        'circuit_name': {'circuitname', 'circuit_name'},
+        'device_id': {'deviceid', 'device_id'},
+        'device_name': {'devicename', 'device_name'},
+        'parent_node': {'parentnode', 'parent_node'},
+        'parent_node_id': {'parentnodeid', 'parent_node_id'},
+        'anchor_node_id': {'anchornodeid', 'anchor_node_id', 'id'},
+        'mac': {'mac'},
+        'ipv4': {'ipv4'},
+        'ipv6': {'ipv6'},
+        'download_min': {'downloadminmbps', 'downloadmin', 'download_min_mbps'},
+        'upload_min': {'uploadminmbps', 'uploadmin', 'upload_min_mbps'},
+        'download_max': {'downloadmaxmbps', 'downloadmax', 'download_max_mbps'},
+        'upload_max': {'uploadmaxmbps', 'uploadmax', 'upload_max_mbps'},
+        'comment': {'comment'},
+        'sqm': {'sqm'},
+    }
+    layout = dict(legacy)
+    layout['parent_node_id'] = None
+    layout['anchor_node_id'] = None
+    for idx, name in enumerate(header or []):
+        normalized = normalize_shaped_devices_header(name)
+        for field, names in aliases.items():
+            if normalized in names:
+                layout[field] = idx
+                break
+    return layout
+
+
+def set_row_value_by_header(row, header_map, field, value):
+    index = header_map.get(field)
+    if index is None:
+        return
+    while len(row) <= index:
+        row.append('')
+    row[index] = value
 
 
 def shaped_devices_csv_path() -> str:
@@ -405,31 +482,34 @@ def read_shaped_devices_csv(path: str):
         return header, data_rows
 
 
-def override_devices_to_rows(devices, include_sqm=False):
+def override_devices_to_rows(devices, header, include_sqm=False):
     """Convert override device dicts to CSV rows, preserving the existing CSV shape by default."""
     rows = []
+    header_map = shaped_devices_header_index_map(header)
+    row_len = max(len(header), len(SHAPED_DEVICES_HEADER_WITH_SQM if include_sqm else SHAPED_DEVICES_HEADER))
     for d in devices:
         ipv4s = d.get('ipv4s', [])
         ipv6s = d.get('ipv6s', [])
         sqm = d.get('sqm', '') or d.get('sqm_override', '')
         sqm = sqm or ""
-        row = [
-            d.get('circuitID', ''),
-            d.get('circuitName', ''),
-            d.get('deviceID', ''),
-            d.get('deviceName', ''),
-            d.get('ParentNode', ''),
-            d.get('mac', ''),
-            ','.join(ipv4s),
-            ','.join(ipv6s),
-            str(d.get('minDownload', '')),
-            str(d.get('minUpload', '')),
-            str(d.get('maxDownload', '')),
-            str(d.get('maxUpload', '')),
-            d.get('comment', ''),
-        ]
+        row = [''] * row_len
+        set_row_value_by_header(row, header_map, 'circuit_id', d.get('circuitID', ''))
+        set_row_value_by_header(row, header_map, 'circuit_name', d.get('circuitName', ''))
+        set_row_value_by_header(row, header_map, 'device_id', d.get('deviceID', ''))
+        set_row_value_by_header(row, header_map, 'device_name', d.get('deviceName', ''))
+        set_row_value_by_header(row, header_map, 'parent_node', d.get('ParentNode', ''))
+        set_row_value_by_header(row, header_map, 'parent_node_id', d.get('ParentNodeID', ''))
+        set_row_value_by_header(row, header_map, 'anchor_node_id', d.get('AnchorNodeID', ''))
+        set_row_value_by_header(row, header_map, 'mac', d.get('mac', ''))
+        set_row_value_by_header(row, header_map, 'ipv4', ','.join(ipv4s))
+        set_row_value_by_header(row, header_map, 'ipv6', ','.join(ipv6s))
+        set_row_value_by_header(row, header_map, 'download_min', str(d.get('minDownload', '')))
+        set_row_value_by_header(row, header_map, 'upload_min', str(d.get('minUpload', '')))
+        set_row_value_by_header(row, header_map, 'download_max', str(d.get('maxDownload', '')))
+        set_row_value_by_header(row, header_map, 'upload_max', str(d.get('maxUpload', '')))
+        set_row_value_by_header(row, header_map, 'comment', d.get('comment', ''))
         if include_sqm:
-            row.append(str(sqm))
+            set_row_value_by_header(row, header_map, 'sqm', str(sqm))
         rows.append(row)
     return rows
 
@@ -463,7 +543,9 @@ def write_shaped_devices_csv(path: str, header, rows):
 
 
 def header_has_sqm(header):
-    return len(header) > 13 and header[13].strip().lower() == "sqm"
+    return shaped_devices_header_index_map(header).get('sqm') is not None and any(
+        normalize_shaped_devices_header(value) == 'sqm' for value in (header or [])
+    )
 
 
 def operator_requires_sqm_column(devices, adjustments):
@@ -504,8 +586,9 @@ def apply_lqos_overrides():
             if len(row) < len(header):
                 row.extend([""] * (len(header) - len(row)))
 
-    override_rows = override_devices_to_rows(extra or [], include_sqm=need_sqm_column)
+    override_rows = override_devices_to_rows(extra or [], header, include_sqm=need_sqm_column)
     merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
+    header_map = shaped_devices_header_index_map(header)
 
     def set_if_some(value_opt, current_str):
         if value_opt is None:
@@ -568,8 +651,10 @@ def apply_lqos_overrides():
                 cid = adj.get('circuit_id', '')
                 parent_node = adj.get('parent_node', '')
                 for r in merged_rows:
-                    if len(r) >= 5 and r[0] == cid:
-                        r[4] = parent_node
+                    circuit_id_idx = header_map.get('circuit_id', 0)
+                    if len(r) > circuit_id_idx and r[circuit_id_idx] == cid:
+                        set_row_value_by_header(r, header_map, 'parent_node', parent_node)
+                        set_row_value_by_header(r, header_map, 'parent_node_id', '')
                         changed = True
 
     if changed:
@@ -845,7 +930,11 @@ def importAndShapePartialReload():
     new_hash = calculate_shaping_runtime_hash()
     if new_hash != shaping_runtime_hash:
         publish_scheduler_progress(True, "partial_reload", "Applying incremental shaper refresh", 4, SCHEDULER_REFRESH_STEP_COUNT)
-        refreshShapers()
+        try:
+            refreshShapers()
+        except Exception as e:
+            report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
+            return
         shaping_runtime_hash = calculate_shaping_runtime_hash()
     publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
 
@@ -860,6 +949,7 @@ def topology_runtime_output_paths():
         os.path.join(base_dir, "topology_attachment_health_state.json"),
         os.path.join(base_dir, "topology_effective_state.json"),
         os.path.join(base_dir, "network.effective.json"),
+        os.path.join(base_dir, "shaping_inputs.json"),
     ]
 
 
@@ -895,8 +985,12 @@ def _topology_runtime_freshness_target():
 
 
 def _topology_runtime_outputs_are_fresh():
-    _, effective_state_path, effective_network_path = topology_runtime_output_paths()
-    if not (os.path.isfile(effective_state_path) and os.path.isfile(effective_network_path)):
+    _, effective_state_path, effective_network_path, shaping_inputs_path = topology_runtime_output_paths()
+    if not (
+        os.path.isfile(effective_state_path)
+        and os.path.isfile(effective_network_path)
+        and os.path.isfile(shaping_inputs_path)
+    ):
         return False
 
     target_kind, target_value = _topology_runtime_freshness_target()
@@ -911,9 +1005,16 @@ def _topology_runtime_outputs_are_fresh():
     try:
         effective_state_mtime = os.path.getmtime(effective_state_path)
         effective_network_mtime = os.path.getmtime(effective_network_path)
+        shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
     except OSError:
         return False
-    return min(effective_state_mtime, effective_network_mtime) >= target_value
+    shaped_devices_path = os.path.join(get_libreqos_directory(), "ShapedDevices.csv")
+    circuit_anchors_path = os.path.join(get_libreqos_directory(), "circuit_anchors.json")
+    if os.path.isfile(shaped_devices_path) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_path):
+        return False
+    if os.path.isfile(circuit_anchors_path) and shaping_inputs_mtime < os.path.getmtime(circuit_anchors_path):
+        return False
+    return min(effective_state_mtime, effective_network_mtime, shaping_inputs_mtime) >= target_value
 
 
 def clear_topology_runtime_outputs():
@@ -1005,7 +1106,11 @@ def topology_runtime_refresh_tick():
     if new_hash == 0 or new_hash == shaping_runtime_hash:
         return
 
-    refreshShapers()
+    try:
+        refreshShapers()
+    except Exception as e:
+        report_scheduler_runtime_failure("Topology runtime refresh failed", e)
+        return
     shaping_runtime_hash = calculate_shaping_runtime_hash()
 
 
@@ -1018,28 +1123,40 @@ def ensure_bus_ready():
     """Wait briefly for lqosd to finish binding the local bus socket."""
     wait_for_bus_ready(5000)
 
-if __name__ == '__main__':
+def run_scheduler_main():
+    global shaping_runtime_hash
+
+    atexit.register(stop_topology_runtime_process)
+    publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
+    ensure_bus_ready()
     try:
-        atexit.register(stop_topology_runtime_process)
-        publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
-        ensure_bus_ready()
         importAndShapeFullReload()
         shaping_runtime_hash = calculate_shaping_runtime_hash()
         publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
+    except Exception as e:
+        report_scheduler_runtime_failure("Scheduler startup shaping refresh failed", e, startup=True)
+        import traceback
+        traceback.print_exc()
+        shaping_runtime_hash = 0
 
-        print("Starting scheduler with jobs:")
-        print(f"- not_dead_yet every 1 minute")
-        refresh_interval = queue_refresh_interval_mins()
-        print(f"- topology_runtime_refresh_tick every {TOPOLOGY_RUNTIME_REFRESH_SECONDS} seconds")
-        print(f"- importAndShapePartialReload every {refresh_interval} minutes")
-        
-        not_dead_yet()
-        ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
-        ads.add_job(topology_runtime_refresh_tick, 'interval', seconds=TOPOLOGY_RUNTIME_REFRESH_SECONDS, max_instances=1)
-        ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
+    print("Starting scheduler with jobs:")
+    print(f"- not_dead_yet every 1 minute")
+    refresh_interval = queue_refresh_interval_mins()
+    print(f"- topology_runtime_refresh_tick every {TOPOLOGY_RUNTIME_REFRESH_SECONDS} seconds")
+    print(f"- importAndShapePartialReload every {refresh_interval} minutes")
 
-        print("Scheduler starting...")
-        ads.start()
+    not_dead_yet()
+    ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
+    ads.add_job(topology_runtime_refresh_tick, 'interval', seconds=TOPOLOGY_RUNTIME_REFRESH_SECONDS, max_instances=1)
+    ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
+
+    print("Scheduler starting...")
+    ads.start()
+
+
+if __name__ == '__main__':
+    try:
+        run_scheduler_main()
     except Exception as e:
         print(f"Error starting scheduler: {e}")
         import traceback

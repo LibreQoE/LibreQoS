@@ -1,6 +1,7 @@
 use crate::node_manager::local_api::ethernet_caps::ethernet_advisory_for_circuit;
-use crate::shaped_devices_tracker::resolve_parent_node;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::shaped_devices_tracker::{
+    SHAPED_DEVICES, effective_parent_for_circuit, resolve_parent_node_reference,
+};
 use lqos_config::{CircuitEthernetMetadata, ShapedDevice};
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +40,9 @@ fn canonical_parent_node(devices: &mut [ShapedDevice]) -> Option<CircuitParentNo
     let mut resolved_parent = None;
 
     for device in devices.iter_mut() {
-        let Some(resolved) = resolve_parent_node(&device.parent_node) else {
+        let Some(resolved) =
+            resolve_parent_node_reference(&device.parent_node, device.parent_node_id.as_deref())
+        else {
             continue;
         };
         if resolved_parent.is_none() {
@@ -49,9 +52,23 @@ fn canonical_parent_node(devices: &mut [ShapedDevice]) -> Option<CircuitParentNo
             });
         }
         device.parent_node = resolved.name;
+        device.parent_node_id = resolved.id;
     }
 
     resolved_parent
+}
+
+fn circuit_parent_node(
+    circuit_id: &str,
+    devices: &mut [ShapedDevice],
+) -> Option<CircuitParentNode> {
+    let canonical_parent = canonical_parent_node(devices);
+    effective_parent_for_circuit(circuit_id)
+        .map(|parent| CircuitParentNode {
+            name: parent.name,
+            id: parent.id,
+        })
+        .or(canonical_parent)
 }
 
 pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
@@ -67,7 +84,7 @@ pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
     if devices.is_empty() {
         None
     } else {
-        let parent_node = canonical_parent_node(&mut devices);
+        let parent_node = circuit_parent_node(&safe_id, &mut devices);
         let ethernet_advisory = load_ethernet_advisory(&safe_id, &devices);
         Some(CircuitByIdData {
             devices,

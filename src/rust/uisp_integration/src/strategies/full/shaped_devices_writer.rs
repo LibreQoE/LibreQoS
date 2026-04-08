@@ -2,10 +2,13 @@ use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::{
-    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+    CircuitAnchor, CircuitAnchorsFile, CircuitEthernetMetadata, Config, EthernetPortLimitPolicy,
+    RequestedCircuitRates,
 };
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{error, info};
 
 /// Represents a shaped device in the ShapedDevices.csv file.
@@ -17,6 +20,8 @@ pub struct ShapedDevice {
     pub device_id: String,
     pub device_name: String,
     pub parent_node: String,
+    pub parent_node_id: String,
+    pub anchor_node_id: String,
     pub mac: String,
     pub ipv4: String,
     pub ipv6: String,
@@ -27,8 +32,46 @@ pub struct ShapedDevice {
     pub comment: String,
 }
 
+fn now_unix() -> Option<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs())
+}
+
+/// Writes `circuit_anchors.json` for built-in UISP integrations.
+pub(crate) fn write_circuit_anchors(
+    config: &Config,
+    source: &str,
+    anchors: &[CircuitAnchor],
+) -> Result<(), UispIntegrationError> {
+    let mut deduped = HashMap::<String, CircuitAnchor>::new();
+    for anchor in anchors {
+        if anchor.anchor_node_id.trim().is_empty() {
+            continue;
+        }
+        deduped
+            .entry(anchor.circuit_id.clone())
+            .or_insert_with(|| anchor.clone());
+    }
+    let mut anchors = deduped.into_values().collect::<Vec<_>>();
+    anchors.sort_unstable_by(|left, right| left.circuit_id.cmp(&right.circuit_id));
+    let payload = CircuitAnchorsFile {
+        schema_version: 1,
+        source: source.to_string(),
+        generated_unix: now_unix(),
+        anchors,
+    };
+    payload.save(config).map_err(|e| {
+        error!("Unable to write circuit_anchors.json");
+        error!("{e:?}");
+        UispIntegrationError::WriteCircuitAnchors
+    })
+}
+
 struct ShapedDeviceOutputs<'a> {
     shaped_devices: &'a mut Vec<ShapedDevice>,
+    circuit_anchors: &'a mut Vec<CircuitAnchor>,
     ethernet_advisories: &'a mut Vec<CircuitEthernetMetadata>,
 }
 
@@ -36,6 +79,25 @@ struct TraverseContext<'a> {
     config: &'a Config,
     root_idx: usize,
     ethernet_policy: EthernetPortLimitPolicy,
+}
+
+pub(crate) fn generic_site_node_id(site: &UispSite) -> String {
+    if site.site_type == UispSiteType::ClientWithChildren {
+        let mut slug = String::with_capacity(site.name.len());
+        let mut last_was_dash = false;
+        for ch in site.name.chars() {
+            if ch.is_ascii_alphanumeric() {
+                slug.push(ch.to_ascii_lowercase());
+                last_was_dash = false;
+            } else if !last_was_dash {
+                slug.push('-');
+                last_was_dash = true;
+            }
+        }
+        format!("libreqos:generated:uisp:site:{}", slug.trim_matches('-'))
+    } else {
+        format!("uisp:site:{}", site.id)
+    }
 }
 
 /// Writes the ShapedDevices.csv file for UISP
@@ -54,11 +116,13 @@ pub fn write_shaped_devices(
     let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut shaped_devices = Vec::new();
+    let mut circuit_anchors = Vec::new();
     let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
 
     // Traverse
     let mut outputs = ShapedDeviceOutputs {
         shaped_devices: &mut shaped_devices,
+        circuit_anchors: &mut circuit_anchors,
         ethernet_advisories: &mut ethernet_advisories,
     };
     let context = TraverseContext {
@@ -82,6 +146,7 @@ pub fn write_shaped_devices(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_circuit_anchors(config, "uisp/full", &circuit_anchors)?;
     write_ethernet_advisories(config, &ethernet_advisories)?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 
@@ -99,6 +164,18 @@ fn traverse(
     if !sites[idx].device_indices.is_empty() {
         // We have devices!
         if sites[idx].site_type == UispSiteType::Client {
+            let has_shapable_device = sites[idx]
+                .device_indices
+                .iter()
+                .copied()
+                .filter_map(|device_idx| devices.get(device_idx))
+                .any(UispDevice::has_address);
+            let circuit_anchor = CircuitAnchor {
+                circuit_id: sites[idx].id.clone(),
+                circuit_name: Some(sites[idx].name.clone()),
+                anchor_node_id: generic_site_node_id(&sites[idx]),
+                anchor_node_name: Some(sites[idx].name.clone()),
+            };
             let site_devices: Vec<&UispDevice> = sites[idx]
                 .device_indices
                 .iter()
@@ -145,6 +222,9 @@ fn traverse(
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 outputs.ethernet_advisories.push(advisory);
             }
+            if has_shapable_device {
+                outputs.circuit_anchors.push(circuit_anchor);
+            }
 
             // Add as normal clients
             for device in sites[idx].device_indices.iter() {
@@ -156,6 +236,10 @@ fn traverse(
                         device_id: device.id.clone(),
                         device_name: device.name.clone(),
                         parent_node: sites[sites[idx].selected_parent.unwrap()].name.clone(),
+                        parent_node_id: generic_site_node_id(
+                            &sites[sites[idx].selected_parent.unwrap()],
+                        ),
+                        anchor_node_id: String::new(),
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
@@ -169,6 +253,18 @@ fn traverse(
                 }
             }
         } else {
+            let has_shapable_device = sites[idx]
+                .device_indices
+                .iter()
+                .copied()
+                .filter_map(|device_idx| devices.get(device_idx))
+                .any(UispDevice::has_address);
+            let infrastructure_anchor = (idx != context.root_idx).then(|| CircuitAnchor {
+                circuit_id: format!("{}-inf", sites[idx].id),
+                circuit_name: Some(format!("{} Infrastructure", sites[idx].name)),
+                anchor_node_id: generic_site_node_id(&sites[idx]),
+                anchor_node_name: Some(sites[idx].name.clone()),
+            });
             // It's an infrastructure node
             for device in sites[idx].device_indices.iter() {
                 let device = &devices[*device];
@@ -198,6 +294,12 @@ fn traverse(
                         device_id: device.id.clone(),
                         device_name: device.name.clone(),
                         parent_node,
+                        parent_node_id: if idx != context.root_idx {
+                            generic_site_node_id(&sites[idx])
+                        } else {
+                            String::new()
+                        },
+                        anchor_node_id: String::new(),
                         mac: device.mac.clone(),
                         ipv4: device.ipv4_list(),
                         ipv6: device.ipv6_list(),
@@ -209,6 +311,9 @@ fn traverse(
                     };
                     outputs.shaped_devices.push(sd);
                 }
+            }
+            if has_shapable_device && let Some(anchor) = infrastructure_anchor {
+                outputs.circuit_anchors.push(anchor);
             }
         }
     }
@@ -240,6 +345,8 @@ mod tests {
                 device_id: "device-001".to_string(),
                 device_name: "CPE-001".to_string(),
                 parent_node: "Tower-A".to_string(),
+                parent_node_id: "uisp:site:tower-a".to_string(),
+                anchor_node_id: "uisp:site:test-001".to_string(),
                 mac: "00:11:22:33:44:55".to_string(),
                 ipv4: "192.168.1.100".to_string(),
                 ipv6: "".to_string(),
@@ -255,6 +362,8 @@ mod tests {
                 device_id: "device-002".to_string(),
                 device_name: "CPE-002".to_string(),
                 parent_node: "Tower-B".to_string(),
+                parent_node_id: "uisp:site:tower-b".to_string(),
+                anchor_node_id: "uisp:site:test-002".to_string(),
                 mac: "00:11:22:33:44:66".to_string(),
                 ipv4: "192.168.1.101".to_string(),
                 ipv6: "2001:db8::1".to_string(),
@@ -270,6 +379,8 @@ mod tests {
                 device_id: "device-003".to_string(),
                 device_name: "AP-003".to_string(),
                 parent_node: "Root".to_string(),
+                parent_node_id: "".to_string(),
+                anchor_node_id: "uisp:site:test-003".to_string(),
                 mac: "00:11:22:33:44:77".to_string(),
                 ipv4: "10.0.1.1".to_string(),
                 ipv6: "".to_string(),
@@ -420,9 +531,11 @@ mod tests {
         }];
 
         let mut shaped_devices = Vec::new();
+        let mut circuit_anchors = Vec::new();
         let mut ethernet_advisories = Vec::new();
         let mut outputs = ShapedDeviceOutputs {
             shaped_devices: &mut shaped_devices,
+            circuit_anchors: &mut circuit_anchors,
             ethernet_advisories: &mut ethernet_advisories,
         };
 

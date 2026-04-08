@@ -229,6 +229,8 @@ impl AddArgs {
             device_id: self.device_id,
             device_name: self.device_name,
             parent_node: self.parent_node,
+            parent_node_id: None,
+            anchor_node_id: None,
             mac: self.mac,
             ipv4,
             ipv6,

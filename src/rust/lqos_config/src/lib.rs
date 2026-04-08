@@ -8,6 +8,7 @@
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 pub mod authentication;
+mod circuit_anchors;
 mod circuit_ethernet_metadata;
 mod cpu_topology;
 mod etc;
@@ -23,6 +24,10 @@ mod topology_parent_candidates;
 mod topology_runtime_state;
 
 pub use authentication::{AuthenticatedUser, UserRole, WebUser, WebUsers};
+pub use circuit_anchors::{
+    CIRCUIT_ANCHORS_FILENAME, CircuitAnchor, CircuitAnchorsError, CircuitAnchorsFile,
+    circuit_anchors_path,
+};
 pub use circuit_ethernet_metadata::{
     CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
 };
@@ -72,11 +77,13 @@ pub use topology_parent_candidates::{
 };
 pub use topology_runtime_state::{
     TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_EFFECTIVE_NETWORK_FILENAME,
-    TOPOLOGY_EFFECTIVE_STATE_FILENAME, TopologyAttachmentEndpointStatus,
-    TopologyAttachmentHealthEntry, TopologyAttachmentHealthStateFile,
-    TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
-    TopologyRuntimeStateError, topology_attachment_health_state_path,
-    topology_effective_network_path, topology_effective_state_path,
+    TOPOLOGY_EFFECTIVE_STATE_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
+    TopologyAttachmentEndpointStatus, TopologyAttachmentHealthEntry,
+    TopologyAttachmentHealthStateFile, TopologyEffectiveAttachmentState,
+    TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStateError,
+    TopologyShapingCircuitInput, TopologyShapingDeviceInput, TopologyShapingInputsFile,
+    TopologyShapingResolutionSource, topology_attachment_health_state_path,
+    topology_effective_network_path, topology_effective_state_path, topology_shaping_inputs_path,
 };
 
 /// Used as a constant in determining buffer preallocation

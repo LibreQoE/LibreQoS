@@ -167,9 +167,13 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
     let mut finalized: FxHashMap<String, CircuitLiveRollup> = FxHashMap::default();
     let mut circuit_ids_by_parent_node: FxHashMap<String, Vec<String>> = FxHashMap::default();
     for (circuit_id, value) in by_circuit_id {
-        if !value.parent_node.trim().is_empty() {
+        let parent_node = super::effective_parent_for_circuit(&circuit_id)
+            .map(|parent| parent.name)
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(value.parent_node);
+        if !parent_node.trim().is_empty() {
             circuit_ids_by_parent_node
-                .entry(value.parent_node.clone())
+                .entry(parent_node.clone())
                 .or_default()
                 .push(circuit_id.clone());
         }
@@ -178,7 +182,7 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
             CircuitLiveRollup {
                 circuit_id,
                 circuit_name: value.circuit_name,
-                parent_node: value.parent_node,
+                parent_node,
                 device_names: sort_string_set(value.device_names),
                 ip_addrs: sort_string_set(value.ip_addrs),
                 plan_mbps: value.plan_mbps,

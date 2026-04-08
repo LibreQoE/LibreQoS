@@ -188,13 +188,15 @@ fn canonical_rate_input_from_network_snapshot(
             .download_bandwidth_mbps
             .or(attachment.capacity_mbps)
         {
-            explicit_download = Some(explicit_download.map_or(download, |current: u64| current.max(download)));
+            explicit_download =
+                Some(explicit_download.map_or(download, |current: u64| current.max(download)));
         }
         if let Some(upload) = attachment
             .upload_bandwidth_mbps
             .or(attachment.capacity_mbps)
         {
-            explicit_upload = Some(explicit_upload.map_or(upload, |current: u64| current.max(upload)));
+            explicit_upload =
+                Some(explicit_upload.map_or(upload, |current: u64| current.max(upload)));
         }
     }
 
@@ -256,7 +258,10 @@ fn build_network_node_index(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string(),
-            is_virtual: node.get("virtual").and_then(Value::as_bool).unwrap_or(false),
+            is_virtual: node
+                .get("virtual")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             download_mbps: read_u64_field(node, "downloadBandwidthMbps"),
             upload_mbps: read_u64_field(node, "uploadBandwidthMbps"),
         };
@@ -275,7 +280,9 @@ fn network_node_snapshot_for_editor_node<'a>(
     by_id: &'a HashMap<String, NetworkNodeSnapshot>,
     by_name: &'a HashMap<String, NetworkNodeSnapshot>,
 ) -> Option<&'a NetworkNodeSnapshot> {
-    by_id.get(&node.node_id).or_else(|| by_name.get(&node.node_name))
+    by_id
+        .get(&node.node_id)
+        .or_else(|| by_name.get(&node.node_name))
 }
 
 fn legacy_id_for_name(name: &str) -> String {
@@ -313,30 +320,37 @@ fn import_legacy_network_children(
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let is_virtual = node.get("virtual").and_then(Value::as_bool).unwrap_or(false);
+        let is_virtual = node
+            .get("virtual")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let download = read_u64_field(node, "downloadBandwidthMbps");
         let upload = read_u64_field(node, "uploadBandwidthMbps");
 
-        let (current_parent_node_id, current_parent_node_name, current_attachment_id, current_attachment_name) =
-            if node_kind.eq_ignore_ascii_case("site") {
-                let logical = logical_parent.clone();
-                let attachment = attachment_context.clone().or_else(|| logical.clone());
-                (
-                    logical.as_ref().map(|entry| entry.0.clone()),
-                    logical.as_ref().map(|entry| entry.1.clone()),
-                    attachment.as_ref().map(|entry| entry.0.clone()),
-                    attachment.as_ref().map(|entry| entry.1.clone()),
-                )
-            } else {
-                let parent = logical_parent.clone();
-                let attachment = attachment_context.clone().or_else(|| parent.clone());
-                (
-                    parent.as_ref().map(|entry| entry.0.clone()),
-                    parent.as_ref().map(|entry| entry.1.clone()),
-                    attachment.as_ref().map(|entry| entry.0.clone()),
-                    attachment.as_ref().map(|entry| entry.1.clone()),
-                )
-            };
+        let (
+            current_parent_node_id,
+            current_parent_node_name,
+            current_attachment_id,
+            current_attachment_name,
+        ) = if node_kind.eq_ignore_ascii_case("site") {
+            let logical = logical_parent.clone();
+            let attachment = attachment_context.clone().or_else(|| logical.clone());
+            (
+                logical.as_ref().map(|entry| entry.0.clone()),
+                logical.as_ref().map(|entry| entry.1.clone()),
+                attachment.as_ref().map(|entry| entry.0.clone()),
+                attachment.as_ref().map(|entry| entry.1.clone()),
+            )
+        } else {
+            let parent = logical_parent.clone();
+            let attachment = attachment_context.clone().or_else(|| parent.clone());
+            (
+                parent.as_ref().map(|entry| entry.0.clone()),
+                parent.as_ref().map(|entry| entry.1.clone()),
+                attachment.as_ref().map(|entry| entry.0.clone()),
+                attachment.as_ref().map(|entry| entry.1.clone()),
+            )
+        };
 
         out.push(TopologyCanonicalNode {
             node_id: node_id.clone(),
@@ -638,7 +652,9 @@ mod tests {
             &compatibility_network,
             TopologyCanonicalIngressKind::NativeIntegration,
         );
-        let node = canonical.find_node("child-site").expect("expected canonical node");
+        let node = canonical
+            .find_node("child-site")
+            .expect("expected canonical node");
         assert_eq!(node.rate_input.intrinsic_download_mbps, Some(350));
         assert_eq!(node.rate_input.intrinsic_upload_mbps, Some(275));
         assert_eq!(node.rate_input.legacy_imported_download_mbps, Some(900));
@@ -672,8 +688,13 @@ mod tests {
             }
         }));
 
-        assert_eq!(canonical.ingress_kind, TopologyCanonicalIngressKind::LegacyNetworkJson);
-        let child = canonical.find_node("child-site").expect("expected child site");
+        assert_eq!(
+            canonical.ingress_kind,
+            TopologyCanonicalIngressKind::LegacyNetworkJson
+        );
+        let child = canonical
+            .find_node("child-site")
+            .expect("expected child site");
         assert!(!child.can_move);
         assert!(child.allowed_parents.is_empty());
         assert_eq!(child.current_parent_node_id.as_deref(), Some("parent-site"));
@@ -719,14 +740,11 @@ mod tests {
             .find(|node| node.node_name == "Child Site")
             .expect("expected child site");
 
+        assert_eq!(parent.node_id, legacy_id_for_name("Parent Site"));
+        assert_eq!(child.node_id, legacy_id_for_name("Child Site"));
         assert_eq!(
-            parent.node_id,
-            legacy_id_for_name("Parent Site")
+            child.current_parent_node_id.as_deref(),
+            Some(parent.node_id.as_str())
         );
-        assert_eq!(
-            child.node_id,
-            legacy_id_for_name("Child Site")
-        );
-        assert_eq!(child.current_parent_node_id.as_deref(), Some(parent.node_id.as_str()));
     }
 }

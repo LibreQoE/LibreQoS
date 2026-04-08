@@ -103,8 +103,7 @@ impl ReducedHostCounters {
 
         for c in counts {
             bytes.checked_add_direct(c.download_bytes, c.upload_bytes);
-            actual_bytes
-                .checked_add_direct(c.actual_download_bytes, c.actual_upload_bytes);
+            actual_bytes.checked_add_direct(c.actual_download_bytes, c.actual_upload_bytes);
             packets.checked_add_direct(c.download_packets, c.upload_packets);
             tcp_packets.checked_add_direct(c.tcp_download_packets, c.tcp_upload_packets);
             udp_packets.checked_add_direct(c.udp_download_packets, c.udp_upload_packets);
@@ -383,8 +382,7 @@ impl ThroughputTracker {
         raw_data.iter_mut().for_each(|(_k, v)| {
             if v.first_cycle < self_cycle {
                 v.bytes_per_second = v.bytes.checked_sub_or_zero(v.prev_bytes);
-                v.actual_bytes_per_second =
-                    v.actual_bytes.checked_sub_or_zero(v.prev_actual_bytes);
+                v.actual_bytes_per_second = v.actual_bytes.checked_sub_or_zero(v.prev_actual_bytes);
                 v.packets_per_second = v.packets.checked_sub_or_zero(v.prev_packets);
             }
             v.prev_bytes = v.bytes;
@@ -1092,9 +1090,7 @@ impl ThroughputTracker {
                 (
                     v.bytes.down.saturating_sub(v.prev_bytes.down),
                     v.bytes.up.saturating_sub(v.prev_bytes.up),
-                    v.actual_bytes
-                        .down
-                        .saturating_sub(v.prev_actual_bytes.down),
+                    v.actual_bytes.down.saturating_sub(v.prev_actual_bytes.down),
                     v.actual_bytes.up.saturating_sub(v.prev_actual_bytes.up),
                     v.packets.down.saturating_sub(v.prev_packets.down),
                     v.packets.up.saturating_sub(v.prev_packets.up),
@@ -1190,7 +1186,9 @@ impl ThroughputTracker {
 
     #[allow(dead_code)]
     pub(crate) fn actual_bits_per_second(&self) -> DownUpOrder<u64> {
-        self.actual_bytes_per_second.as_down_up().to_bits_from_bytes()
+        self.actual_bytes_per_second
+            .as_down_up()
+            .to_bits_from_bytes()
     }
 
     #[allow(dead_code)]

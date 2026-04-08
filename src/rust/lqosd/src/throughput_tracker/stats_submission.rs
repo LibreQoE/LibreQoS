@@ -598,11 +598,12 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
         .comment(Some(b'#'))
         .trim(csv::Trim::All)
         .from_path(sd_path)?;
+    let headers = reader.headers()?.clone();
     let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
 
     for result in reader.records() {
         if let Ok(result) = result {
-            let device = ShapedDevice::from_csv(&result)?;
+            let device = ShapedDevice::from_csv(&result, Some(&headers))?;
             devices.push(device);
         } else {
             anyhow::bail!("Error reading ShapedDevices.csv");

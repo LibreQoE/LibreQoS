@@ -3,9 +3,9 @@ use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
-use crate::strategies::full::shaped_devices_writer::ShapedDevice;
+use crate::strategies::full::shaped_devices_writer::{ShapedDevice, write_circuit_anchors};
 use lqos_config::{
-    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+    CircuitAnchor, CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
 };
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
@@ -95,6 +95,22 @@ pub(crate) fn write_shaped_devices(
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut seen_pairs = HashSet::new();
     shaped_devices.retain(|sd| seen_pairs.insert((sd.circuit_id.clone(), sd.device_id.clone())));
+    let mut seen_circuits = HashSet::new();
+    let circuit_anchors = shaped_devices
+        .iter()
+        .filter_map(|sd| {
+            let anchor_node_id = sd.parent_node_id.trim();
+            if anchor_node_id.is_empty() || !seen_circuits.insert(sd.circuit_id.clone()) {
+                return None;
+            }
+            Some(CircuitAnchor {
+                circuit_id: sd.circuit_id.clone(),
+                circuit_name: Some(sd.circuit_name.clone()),
+                anchor_node_id: anchor_node_id.to_string(),
+                anchor_node_name: Some(sd.parent_node.clone()),
+            })
+        })
+        .collect::<Vec<_>>();
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
         .from_path(file_path)
@@ -108,6 +124,7 @@ pub(crate) fn write_shaped_devices(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_circuit_anchors(config.as_ref(), "uisp/ap_site", &circuit_anchors)?;
     write_ethernet_advisories(config, ethernet_advisories)?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
     Ok(())
@@ -172,6 +189,16 @@ pub(crate) fn get_ap_layer(ap_mappings: &HashMap<String, Vec<String>>) -> HashMa
 pub(crate) struct Layer {
     pub(crate) id: GraphMapping,
     pub(crate) children: Vec<Layer>,
+}
+
+fn parent_node_id_by_name(uisp_data: &UispData, name: &str) -> String {
+    if let Some(device) = uisp_data.devices.iter().find(|device| device.name == name) {
+        return format!("uisp:device:{}", device.id);
+    }
+    if let Some(site) = uisp_data.sites.iter().find(|site| site.name == name) {
+        return format!("uisp:site:{}", site.id);
+    }
+    String::new()
 }
 
 impl Layer {
@@ -337,6 +364,8 @@ impl Layer {
                                 device_id: device.id.clone(),
                                 device_name: device.name.clone(),
                                 parent_node: parent.to_owned(),
+                                parent_node_id: parent_node_id_by_name(uisp_data, parent),
+                                anchor_node_id: String::new(),
                                 mac: device.mac.clone(),
                                 ipv4: device.ipv4_list(),
                                 ipv6: device.ipv6_list(),

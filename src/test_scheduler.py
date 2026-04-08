@@ -33,6 +33,7 @@ def install_scheduler_stubs():
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
     lqlib.scheduler_output = Mock()
+    lqlib.scheduler_progress = Mock()
     lqlib.wait_for_bus_ready = Mock(return_value=True)
     lqlib.overrides_persistent_devices_effective = lambda: []
     lqlib.overrides_persistent_devices_materialized = lambda: []
@@ -236,6 +237,54 @@ class TestSchedulerErrorReporting(unittest.TestCase):
             [(( "",),), (("uisp info\n",),)],
         )
 
+    def test_run_scheduler_main_stays_alive_on_startup_refresh_failure(self):
+        fake_ads = Mock()
+
+        with patch.object(scheduler, "ads", fake_ads):
+            with patch.object(scheduler, "ensure_bus_ready"):
+                with patch.object(
+                    scheduler,
+                    "importAndShapeFullReload",
+                    side_effect=RuntimeError("runtime contract failed"),
+                ):
+                    with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                        with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                            with patch.object(scheduler.atexit, "register"):
+                                with patch.object(scheduler, "not_dead_yet"):
+                                    with patch("traceback.print_exc"):
+                                        with patch("builtins.print"):
+                                            scheduler.run_scheduler_main()
+
+        self.assertEqual(scheduler.shaping_runtime_hash, 0)
+        mock_scheduler_error.assert_called_once_with(
+            "Scheduler startup shaping refresh failed: runtime contract failed"
+        )
+        self.assertTrue(
+            any(
+                call.args[:3] == (
+                    False,
+                    "degraded",
+                    "Scheduler running with topology/runtime error",
+                )
+                for call in mock_progress.call_args_list
+            )
+        )
+        self.assertEqual(fake_ads.add_job.call_count, 3)
+        fake_ads.start.assert_called_once()
+
+    def test_topology_runtime_refresh_tick_reports_refresh_failure(self):
+        with patch.object(scheduler, "ensure_topology_runtime_process"):
+            with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=5):
+                with patch.object(scheduler, "refreshShapers", side_effect=RuntimeError("bad runtime")):
+                    with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                        with patch("builtins.print"):
+                            scheduler.shaping_runtime_hash = 0
+                            scheduler.topology_runtime_refresh_tick()
+
+        mock_scheduler_error.assert_called_once_with(
+            "Topology runtime refresh failed: bad runtime"
+        )
+
 
 class TestSchedulerOverrideMerge(unittest.TestCase):
     def test_merge_rows_replaces_matching_device_id(self):
@@ -291,6 +340,108 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         self.assertEqual(written_rows[0][10], "330")
         self.assertEqual(written_rows[0][11], "330")
         self.assertEqual(written_rows[0][13], "fq_codel/fq_codel")
+
+    def test_apply_lqos_overrides_reparent_clears_parent_node_id_when_present(self):
+        header = [
+            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node",
+            "Parent Node ID", "MAC", "IPv4", "IPv6", "Download Min Mbps",
+            "Upload Min Mbps", "Download Max Mbps", "Upload Max Mbps", "Comment",
+        ]
+        rows = [[
+            "93", "Name", "splynx_service_93", "Name", "AP",
+            "uisp:device:ap-1", "MAC", "1.1.1.1", "",
+            "1", "1", "330", "330", "",
+        ]]
+
+        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):  # nosec B108
+            with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
+                with patch.object(scheduler, "overrides_persistent_devices_materialized", return_value=[]):
+                    with patch.object(
+                        scheduler,
+                        "overrides_circuit_adjustments_materialized",
+                        return_value=[{
+                            "type": "reparent_circuit",
+                            "circuit_id": "93",
+                            "parent_node": "AP-Updated",
+                        }],
+                    ):
+                        with patch.object(scheduler, "write_shaped_devices_csv") as mock_write:
+                            scheduler.apply_lqos_overrides()
+
+        written_rows = mock_write.call_args.args[2]
+        self.assertEqual(written_rows[0][4], "AP-Updated")
+        self.assertEqual(written_rows[0][5], "")
+
+    def test_override_devices_to_rows_preserves_anchor_node_id(self):
+        header = [
+            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node",
+            "Parent Node ID", "Anchor Node ID", "MAC", "IPv4", "IPv6",
+            "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps", "Upload Max Mbps",
+            "Comment", "SQM",
+        ]
+        rows = scheduler.override_devices_to_rows(
+            [{
+                "circuitID": "93",
+                "circuitName": "Name",
+                "deviceID": "device-93",
+                "deviceName": "Name",
+                "ParentNode": "AP",
+                "ParentNodeID": "uisp:device:ap-1",
+                "AnchorNodeID": "uisp:site:site-93",
+                "mac": "MAC",
+                "ipv4s": ["1.1.1.1"],
+                "ipv6s": [],
+                "minDownload": 1,
+                "minUpload": 1,
+                "maxDownload": 330,
+                "maxUpload": 330,
+                "comment": "",
+                "sqm": "fq_codel/fq_codel",
+            }],
+            header,
+            include_sqm=True,
+        )
+
+        self.assertEqual(rows[0][6], "uisp:site:site-93")
+        self.assertEqual(rows[0][15], "fq_codel/fq_codel")
+
+    def test_override_devices_to_rows_preserves_diy_id_header_alias(self):
+        header = [
+            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node",
+            "Parent Node ID", "id", "MAC", "IPv4", "IPv6",
+            "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps", "Upload Max Mbps",
+            "Comment",
+        ]
+        rows = scheduler.override_devices_to_rows(
+            [{
+                "circuitID": "93",
+                "circuitName": "Name",
+                "deviceID": "device-93",
+                "deviceName": "Name",
+                "ParentNode": "AP",
+                "ParentNodeID": "uisp:device:ap-1",
+                "AnchorNodeID": "uisp:site:site-93",
+                "mac": "MAC",
+                "ipv4s": ["1.1.1.1"],
+                "ipv6s": [],
+                "minDownload": 1,
+                "minUpload": 1,
+                "maxDownload": 330,
+                "maxUpload": 330,
+                "comment": "",
+            }],
+            header,
+            include_sqm=False,
+        )
+
+        self.assertEqual(rows[0][6], "uisp:site:site-93")
+
+    def test_topology_runtime_output_paths_include_shaping_inputs(self):
+        # Test-only fake install root.
+        with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
+            paths = scheduler.topology_runtime_output_paths()
+
+        self.assertIn("/tmp/libreqos/shaping_inputs.json", paths)  # nosec B108
 
     def test_apply_network_adjustments_uses_materialized_adjustments(self):
         network = {

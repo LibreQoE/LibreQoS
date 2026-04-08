@@ -243,6 +243,7 @@ fn main() -> Result<()> {
     spawn_queue_structure_monitor()?;
     shaped_devices_tracker::shaped_devices_watcher()?;
     shaped_devices_tracker::network_json_watcher()?;
+    shaped_devices_tracker::shaping_inputs_watcher()?;
     let system_usage_tx = system_stats::start_system_stats()?;
     throughput_tracker::spawn_throughput_monitor(
         flow_tx,

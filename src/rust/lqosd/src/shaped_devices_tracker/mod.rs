@@ -4,7 +4,10 @@ use anyhow::Result;
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
-use lqos_config::{ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice};
+use lqos_config::{
+    ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice,
+    TopologyShapingInputsFile, load_config, topology_shaping_inputs_path,
+};
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::hash_to_i64;
@@ -98,6 +101,14 @@ pub static CIRCUIT_LIVE_SNAPSHOT: Lazy<ArcSwap<CircuitLiveSnapshot>> =
     Lazy::new(|| ArcSwap::new(Arc::new(CircuitLiveSnapshot::default())));
 pub static CIRCUIT_LIVE_LAST_REFRESH_SECS: AtomicU64 = AtomicU64::new(0);
 pub static CIRCUIT_LIVE_REFRESH_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+pub static EFFECTIVE_CIRCUIT_PARENTS: Lazy<ArcSwap<FxHashMap<String, RuntimeCircuitParent>>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeCircuitParent {
+    pub name: String,
+    pub id: Option<String>,
+}
 
 pub(crate) fn invalidate_circuit_live_snapshot() {
     CIRCUIT_LIVE_LAST_REFRESH_SECS.store(0, std::sync::atomic::Ordering::Release);
@@ -105,6 +116,102 @@ pub(crate) fn invalidate_circuit_live_snapshot() {
 
 pub(crate) fn invalidate_executive_cache_snapshot() {
     crate::node_manager::invalidate_executive_cache_snapshot();
+}
+
+fn normalize_circuit_id_key(circuit_id: &str) -> Option<String> {
+    let trimmed = circuit_id.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_ascii_lowercase())
+    }
+}
+
+fn optional_trimmed_string(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn build_effective_circuit_parent_map(
+    shaping_inputs: &TopologyShapingInputsFile,
+) -> FxHashMap<String, RuntimeCircuitParent> {
+    let mut by_circuit_id = FxHashMap::default();
+    by_circuit_id.reserve(shaping_inputs.circuits.len());
+    for circuit in &shaping_inputs.circuits {
+        let Some(circuit_key) = normalize_circuit_id_key(&circuit.circuit_id) else {
+            continue;
+        };
+        let Some(parent_name) = optional_trimmed_string(&circuit.effective_parent_node_name) else {
+            continue;
+        };
+        by_circuit_id
+            .entry(circuit_key)
+            .or_insert_with(|| RuntimeCircuitParent {
+                name: parent_name,
+                id: optional_trimmed_string(&circuit.effective_parent_node_id),
+            });
+    }
+    by_circuit_id
+}
+
+fn publish_shaping_inputs(shaping_inputs: TopologyShapingInputsFile) {
+    let effective_parents = build_effective_circuit_parent_map(&shaping_inputs);
+    EFFECTIVE_CIRCUIT_PARENTS.store(Arc::new(effective_parents));
+    invalidate_circuit_live_snapshot();
+    invalidate_executive_cache_snapshot();
+}
+
+fn load_shaping_inputs() {
+    let Ok(config) = load_config() else {
+        warn!("Unable to load LibreQoS config while loading shaping_inputs.json");
+        return;
+    };
+    match TopologyShapingInputsFile::load(config.as_ref()) {
+        Ok(shaping_inputs) => publish_shaping_inputs(shaping_inputs),
+        Err(err) => {
+            warn!("Unable to load shaping_inputs.json: {err}");
+        }
+    }
+}
+
+pub fn shaping_inputs_watcher() -> Result<()> {
+    std::thread::Builder::new()
+        .name("Shaping Inputs Watcher".to_string())
+        .spawn(|| {
+            debug!("Watching for shaping_inputs.json changes");
+            if let Err(e) = watch_for_shaping_inputs_changing() {
+                error!("Error watching for shaping_inputs.json changes: {:?}", e);
+            }
+        })?;
+    Ok(())
+}
+
+fn watch_for_shaping_inputs_changing() -> Result<()> {
+    let Ok(config) = load_config() else {
+        error!("Unable to load LibreQoS config to watch shaping_inputs.json");
+        return Err(anyhow::Error::msg(
+            "Unable to load LibreQoS config for shaping_inputs.json",
+        ));
+    };
+    let watch_path = topology_shaping_inputs_path(config.as_ref());
+
+    let mut watcher = FileWatcher::new("shaping_inputs.json", watch_path);
+    watcher.set_file_exists_callback(load_shaping_inputs);
+    watcher.set_file_created_callback(load_shaping_inputs);
+    watcher.set_file_changed_callback(load_shaping_inputs);
+    loop {
+        let result = watcher.watch();
+        info!("shaping_inputs.json watcher returned: {result:?}");
+    }
+}
+
+pub fn effective_parent_for_circuit(circuit_id: &str) -> Option<RuntimeCircuitParent> {
+    let circuit_key = normalize_circuit_id_key(circuit_id)?;
+    EFFECTIVE_CIRCUIT_PARENTS.load().get(&circuit_key).cloned()
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -500,16 +607,31 @@ pub struct ResolvedParentNode {
     pub id: Option<String>,
 }
 
-/// Resolve a shaped-device parent node or active attachment alias into canonical `network.json`
-/// parent metadata.
-pub fn resolve_parent_node(parent_node: &str) -> Option<ResolvedParentNode> {
+/// Resolve a shaped-device parent reference into canonical `network.json`
+/// parent metadata, preferring a stable node ID when one is available.
+pub fn resolve_parent_node_reference(
+    parent_node: &str,
+    parent_node_id: Option<&str>,
+) -> Option<ResolvedParentNode> {
+    let trimmed_id = parent_node_id.map(str::trim).filter(|id| !id.is_empty());
     let trimmed = parent_node.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty() && trimmed_id.is_none() {
         return None;
     }
 
     let reader = NETWORK_JSON.read();
     let nodes = reader.get_nodes_when_ready();
+
+    if let Some(parent_node_id) = trimmed_id
+        && let Some(node) = nodes
+            .iter()
+            .find(|node| node.id.as_deref() == Some(parent_node_id))
+    {
+        return Some(ResolvedParentNode {
+            name: node.name.clone(),
+            id: node.id.clone(),
+        });
+    }
 
     if let Some(node) = nodes.iter().find(|node| node.name == trimmed) {
         return Some(ResolvedParentNode {
@@ -527,6 +649,12 @@ pub fn resolve_parent_node(parent_node: &str) -> Option<ResolvedParentNode> {
                 id: node.id.clone(),
             })
     })
+}
+
+/// Resolve a shaped-device parent node or active attachment alias into canonical `network.json`
+/// parent metadata.
+pub fn resolve_parent_node(parent_node: &str) -> Option<ResolvedParentNode> {
+    resolve_parent_node_reference(parent_node, None)
 }
 
 pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
@@ -596,7 +724,9 @@ pub fn get_all_circuits() -> BusResponse {
                     device_id = Some(device.device_id.clone());
                     device_name = Some(device.device_name.clone());
                     parent_node = Some(
-                        resolve_parent_node_alias(&device.parent_node)
+                        effective_parent_for_circuit(&device.circuit_id)
+                            .map(|parent| parent.name)
+                            .or_else(|| resolve_parent_node_alias(&device.parent_node))
                             .unwrap_or_else(|| device.parent_node.clone()),
                     );
                     plan.down = device.download_max_mbps.round();
@@ -716,7 +846,12 @@ pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
                     circuit_name = Some(device.circuit_name.clone());
                     device_id = Some(device.device_id.clone());
                     device_name = Some(device.device_name.clone());
-                    parent_node = Some(device.parent_node.clone());
+                    parent_node = Some(
+                        effective_parent_for_circuit(&device.circuit_id)
+                            .map(|parent| parent.name)
+                            .or_else(|| resolve_parent_node_alias(&device.parent_node))
+                            .unwrap_or_else(|| device.parent_node.clone()),
+                    );
                     plan.down = device.download_max_mbps.round();
                     plan.up = device.upload_max_mbps.round();
                 }
@@ -788,5 +923,47 @@ pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
         BusResponse::CircuitData(data)
     } else {
         BusResponse::CircuitData(Vec::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lqos_config::{TopologyShapingCircuitInput, TopologyShapingInputsFile};
+
+    #[test]
+    fn effective_circuit_parent_map_uses_effective_parent_fields() {
+        let shaping_inputs = TopologyShapingInputsFile {
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "Circuit-100".to_string(),
+                effective_parent_node_name: "Live Parent".to_string(),
+                effective_parent_node_id: "node-100".to_string(),
+                ..TopologyShapingCircuitInput::default()
+            }],
+            ..TopologyShapingInputsFile::default()
+        };
+
+        let map = build_effective_circuit_parent_map(&shaping_inputs);
+        let parent = map
+            .get("circuit-100")
+            .expect("expected normalized circuit id entry");
+        assert_eq!(parent.name, "Live Parent");
+        assert_eq!(parent.id.as_deref(), Some("node-100"));
+    }
+
+    #[test]
+    fn effective_circuit_parent_map_skips_empty_parent_names() {
+        let shaping_inputs = TopologyShapingInputsFile {
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "Circuit-200".to_string(),
+                effective_parent_node_name: "   ".to_string(),
+                effective_parent_node_id: "node-200".to_string(),
+                ..TopologyShapingCircuitInput::default()
+            }],
+            ..TopologyShapingInputsFile::default()
+        };
+
+        let map = build_effective_circuit_parent_map(&shaping_inputs);
+        assert!(map.is_empty());
     }
 }

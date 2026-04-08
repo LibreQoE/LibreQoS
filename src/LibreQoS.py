@@ -25,6 +25,7 @@ from virtual_tree_nodes import (
     build_logical_to_physical_node_map,
     build_physical_network,
     collect_physical_parent_node_aliases,
+    collect_physical_parent_node_ids,
     is_virtual_node,
 )
 from shaping_skip_report import (
@@ -42,6 +43,8 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     on_a_stick, get_tree_weights, get_weights, is_network_flat, get_libreqos_directory, enable_insight_topology, \
     is_insight_enabled, scheduler_error, xdp_ip_mapping_capacity, \
     overrides_circuit_adjustments_effective, \
+    automatic_import_uisp, automatic_import_splynx, automatic_import_powercode, automatic_import_sonar, \
+    automatic_import_wispgate, automatic_import_netzur, automatic_import_visp, \
     plan_top_level_cpu_bins, \
     plan_class_identities, \
     fast_queues_fq_codel, \
@@ -121,6 +124,14 @@ def get_network_json_path():
     return os.path.join(base_dir, "network.json")
 
 
+def get_shaping_inputs_path():
+    return os.path.join(get_libreqos_directory(), "shaping_inputs.json")
+
+
+def get_circuit_anchors_path():
+    return os.path.join(get_libreqos_directory(), "circuit_anchors.json")
+
+
 def get_planner_state_path():
     return os.path.join(get_libreqos_directory(), "planner_state.json")
 
@@ -149,6 +160,197 @@ def loaded_network_is_flat(network):
     queue builds.
     """
     return not isinstance(network, dict) or len(network) == 0
+
+
+def _normalize_shaped_devices_header(header_value):
+    return ''.join(ch for ch in str(header_value).lower() if ch.isalnum())
+
+
+_SHAPED_DEVICES_LEGACY_LAYOUT = {
+    'circuitID': 0,
+    'circuitName': 1,
+    'deviceID': 2,
+    'deviceName': 3,
+    'ParentNode': 4,
+    'mac': 5,
+    'ipv4_input': 6,
+    'ipv6_input': 7,
+    'downloadMin': 8,
+    'uploadMin': 9,
+    'downloadMax': 10,
+    'uploadMax': 11,
+    'comment': 12,
+    'sqm': 13,
+}
+
+_SHAPED_DEVICES_HEADER_ALIASES = {
+    'circuitID': {'circuitid'},
+    'circuitName': {'circuitname'},
+    'deviceID': {'deviceid'},
+    'deviceName': {'devicename'},
+    'ParentNode': {'parentnode'},
+    'ParentNodeID': {'parentnodeid'},
+    'AnchorNodeID': {'anchornodeid', 'id'},
+    'mac': {'mac'},
+    'ipv4_input': {'ipv4'},
+    'ipv6_input': {'ipv6'},
+    'downloadMin': {'downloadmin', 'downloadminmbps'},
+    'uploadMin': {'uploadmin', 'uploadminmbps'},
+    'downloadMax': {'downloadmax', 'downloadmaxmbps'},
+    'uploadMax': {'uploadmax', 'uploadmaxmbps'},
+    'comment': {'comment'},
+    'sqm': {'sqm'},
+}
+
+
+def _build_shaped_devices_layout(header_row):
+    layout = dict(_SHAPED_DEVICES_LEGACY_LAYOUT)
+    layout['ParentNodeID'] = None
+    layout['AnchorNodeID'] = None
+    for idx, header in enumerate(header_row):
+        normalized = _normalize_shaped_devices_header(header)
+        for field, aliases in _SHAPED_DEVICES_HEADER_ALIASES.items():
+            if normalized in aliases:
+                layout[field] = idx
+                break
+    return layout
+
+
+def _shaped_devices_row_value(row, layout, field):
+    idx = layout.get(field)
+    if idx is None or idx >= len(row):
+        return ''
+    return row[idx]
+
+
+def _resolve_effective_parent_node(circuit, parent_node_ids, parent_node_aliases):
+    parent_node_id = str(circuit.get('ParentNodeID', '') or '').strip()
+    if parent_node_id:
+        resolved_parent = parent_node_ids.get(parent_node_id)
+        if resolved_parent:
+            return resolved_parent, parent_node_id
+
+    parent_node = str(circuit.get('ParentNode', '') or '').strip()
+    if not parent_node or parent_node == 'none':
+        return parent_node, ''
+
+    resolved_parent = parent_node_aliases.get(parent_node)
+    if resolved_parent:
+        resolved_parent_id = ''
+        for node_id, node_name in parent_node_ids.items():
+            if node_name == resolved_parent:
+                resolved_parent_id = node_id
+                break
+        return resolved_parent, resolved_parent_id
+
+    return parent_node, parent_node_id
+
+
+def _shaping_inputs_are_fresh(shaping_inputs_path, shaped_devices_file, network_json_file, circuit_anchors_file=None):
+    if not os.path.isfile(shaping_inputs_path):
+        return False
+    try:
+        shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
+        if os.path.isfile(shaped_devices_file) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_file):
+            return False
+        if os.path.isfile(network_json_file) and shaping_inputs_mtime < os.path.getmtime(network_json_file):
+            return False
+        if circuit_anchors_file and os.path.isfile(circuit_anchors_file) and shaping_inputs_mtime < os.path.getmtime(circuit_anchors_file):
+            return False
+        return True
+    except OSError:
+        return False
+
+
+def loadSubscriberCircuitsFromShapingInputs(shapingInputsPath):
+    payload = _load_json_dict(shapingInputsPath)
+    circuits = payload.get('circuits', [])
+    if not isinstance(circuits, list):
+        raise ValueError(f"Invalid shaping_inputs.json at {shapingInputsPath}: circuits must be a list")
+
+    subscriberCircuits = []
+    dictForCircuitsWithoutParentNodes = {}
+    counterForCircuitsWithoutParentNodes = 0
+    warnings_from_file = payload.get('warnings', [])
+    if isinstance(warnings_from_file, list):
+        for warning_text in warnings_from_file:
+            if isinstance(warning_text, str) and warning_text.strip():
+                warnings.warn(f"shaping_inputs.json: {warning_text}", stacklevel=2)
+
+    for circuit in circuits:
+        if not isinstance(circuit, dict):
+            continue
+        circuitID = str(circuit.get('circuit_id', '') or '').strip()
+        if circuitID == '':
+            raise ValueError("Missing circuit_id in shaping_inputs.json")
+        parent_node = str(circuit.get('effective_parent_node_name', '') or '').strip()
+        parent_node_id = str(circuit.get('effective_parent_node_id', '') or '').strip()
+        logical_parent_node = str(circuit.get('logical_parent_node_name', '') or '').strip()
+        logical_parent_node_id = str(circuit.get('logical_parent_node_id', '') or '').strip()
+        anchor_node_id = str(circuit.get('anchor_node_id', '') or '').strip()
+        devices = []
+        for device in circuit.get('devices', []):
+            if not isinstance(device, dict):
+                continue
+            devices.append(
+                {
+                    "deviceID": str(device.get('device_id', '') or '').strip(),
+                    "deviceName": str(device.get('device_name', '') or '').strip(),
+                    "mac": str(device.get('mac', '') or '').strip(),
+                    "ipv4s": [str(entry).strip() for entry in device.get('ipv4', []) if str(entry).strip() != ''],
+                    "ipv6s": [str(entry).strip() for entry in device.get('ipv6', []) if str(entry).strip() != ''],
+                    "comment": str(device.get('comment', '') or ''),
+                }
+            )
+        thisCircuit = {
+            "circuitID": circuitID,
+            "circuitName": str(circuit.get('circuit_name', '') or ''),
+            "ParentNode": parent_node if parent_node != '' else 'none',
+            "ParentNodeID": parent_node_id,
+            "AnchorNodeID": anchor_node_id,
+            "devices": devices,
+            "minDownload": float(circuit.get('download_min_mbps', 0.0) or 0.0),
+            "minUpload": float(circuit.get('upload_min_mbps', 0.0) or 0.0),
+            "maxDownload": float(circuit.get('download_max_mbps', 0.0) or 0.0),
+            "maxUpload": float(circuit.get('upload_max_mbps', 0.0) or 0.0),
+            "classid": '',
+            "comment": str(circuit.get('comment', '') or ''),
+            "logicalParentNode": logical_parent_node if logical_parent_node != '' else (parent_node if parent_node != '' else 'none'),
+            "logicalParentNodeID": logical_parent_node_id,
+            "effectiveAttachmentID": str(circuit.get('effective_attachment_id', '') or '').strip(),
+            "effectiveAttachmentName": str(circuit.get('effective_attachment_name', '') or '').strip(),
+            "parentResolutionSource": str(circuit.get('resolution_source', '') or '').strip(),
+            "parentResolvedByShapingInputs": True,
+        }
+        sqm_override = normalize_sqm_override_token(str(circuit.get('sqm_override', '') or ''))
+        if sqm_override != '':
+            thisCircuit['sqm'] = sqm_override
+        if thisCircuit['ParentNode'] == 'none':
+            thisCircuit['idForCircuitsWithoutParentNodes'] = counterForCircuitsWithoutParentNodes
+            dictForCircuitsWithoutParentNodes[counterForCircuitsWithoutParentNodes] = (
+                thisCircuit['maxDownload'] + thisCircuit['maxUpload']
+            )
+            counterForCircuitsWithoutParentNodes += 1
+        subscriberCircuits.append(thisCircuit)
+
+    return subscriberCircuits, dictForCircuitsWithoutParentNodes
+
+
+def loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile):
+    shaping_inputs_path = get_shaping_inputs_path()
+    circuit_anchors_path = get_circuit_anchors_path()
+    if _shaping_inputs_are_fresh(shaping_inputs_path, shapedDevicesFile, networkJSONfile, circuit_anchors_path):
+        try:
+            subscriberCircuits, dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsFromShapingInputs(shaping_inputs_path)
+            print("Loaded shaping inputs from " + shaping_inputs_path)
+            return subscriberCircuits, dictForCircuitsWithoutParentNodes
+        except Exception as e:
+            raise RefreshFailure(
+                f"Unable to load required shaping_inputs.json at {shaping_inputs_path}: {e}"
+            ) from e
+    raise RefreshFailure(
+        "Missing or stale shaping_inputs.json. Run topology runtime before shaping."
+    )
 
 
 def load_planner_state(state_path=None, planner_module=None):
@@ -470,6 +672,7 @@ def validateNetworkAndDevices():
     with io.StringIO(text_content) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         header_consumed = False
+        layout = None
         seenTheseIPsAlready = set()
         for row in csv_reader:
             if not row:
@@ -478,9 +681,23 @@ def validateNetworkAndDevices():
                 continue
             if not header_consumed:
                 header_consumed = True
+                layout = _build_shaped_devices_layout(row)
                 continue
-            # Accept optional 14th column 'sqm' but ignore here (validation focuses on core fields)
-            circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
+            # Accept optional Anchor Node ID / Parent Node ID columns and trailing
+            # 'sqm' override columns while validating the core shaping inputs.
+            circuitID = _shaped_devices_row_value(row, layout, 'circuitID')
+            circuitName = _shaped_devices_row_value(row, layout, 'circuitName')
+            deviceID = _shaped_devices_row_value(row, layout, 'deviceID')
+            deviceName = _shaped_devices_row_value(row, layout, 'deviceName')
+            ParentNode = _shaped_devices_row_value(row, layout, 'ParentNode')
+            mac = _shaped_devices_row_value(row, layout, 'mac')
+            ipv4_input = _shaped_devices_row_value(row, layout, 'ipv4_input')
+            ipv6_input = _shaped_devices_row_value(row, layout, 'ipv6_input')
+            downloadMin = _shaped_devices_row_value(row, layout, 'downloadMin')
+            uploadMin = _shaped_devices_row_value(row, layout, 'uploadMin')
+            downloadMax = _shaped_devices_row_value(row, layout, 'downloadMax')
+            uploadMax = _shaped_devices_row_value(row, layout, 'uploadMax')
+            comment = _shaped_devices_row_value(row, layout, 'comment')
             # Must have circuitID, it's a unique identifier required for stateful changes to queue structure
             if circuitID == '':
                 warnings.warn("No Circuit ID provided in ShapedDevices.csv at row " + str(rowNum), stacklevel=2)
@@ -598,6 +815,7 @@ def loadSubscriberCircuits(shapedDevicesFile):
     with open(shapedDevicesFile) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         header_consumed = False
+        layout = None
         for row in csv_reader:
             if not row:
                 continue
@@ -605,12 +823,16 @@ def loadSubscriberCircuits(shapedDevicesFile):
                 continue
             if not header_consumed:
                 header_consumed = True
+                layout = _build_shaped_devices_layout(row)
                 continue
             # Optional per-circuit SQM override in last column
             sqm_override_token = ''
-            if len(row) > 13:
+            if layout is not None:
+                raw_token = _shaped_devices_row_value(row, layout, 'sqm')
+            else:
+                raw_token = ''
+            if raw_token != '':
                 # Normalize: lowercase, trim, collapse spaces around '/'
-                raw_token = row[13]
                 token = raw_token.strip().lower()
                 if '/' in token:
                     parts = token.split('/', 1)
@@ -618,7 +840,21 @@ def loadSubscriberCircuits(shapedDevicesFile):
                     right = parts[1].strip()
                     token = left + '/' + right
                 sqm_override_token = token
-            circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[0:13]
+            circuitID = _shaped_devices_row_value(row, layout, 'circuitID')
+            circuitName = _shaped_devices_row_value(row, layout, 'circuitName')
+            deviceID = _shaped_devices_row_value(row, layout, 'deviceID')
+            deviceName = _shaped_devices_row_value(row, layout, 'deviceName')
+            ParentNode = _shaped_devices_row_value(row, layout, 'ParentNode')
+            ParentNodeID = _shaped_devices_row_value(row, layout, 'ParentNodeID')
+            AnchorNodeID = _shaped_devices_row_value(row, layout, 'AnchorNodeID')
+            mac = _shaped_devices_row_value(row, layout, 'mac')
+            ipv4_input = _shaped_devices_row_value(row, layout, 'ipv4_input')
+            ipv6_input = _shaped_devices_row_value(row, layout, 'ipv6_input')
+            downloadMin = _shaped_devices_row_value(row, layout, 'downloadMin')
+            uploadMin = _shaped_devices_row_value(row, layout, 'uploadMin')
+            downloadMax = _shaped_devices_row_value(row, layout, 'downloadMax')
+            uploadMax = _shaped_devices_row_value(row, layout, 'uploadMax')
+            comment = _shaped_devices_row_value(row, layout, 'comment')
             ipv4_subnets_and_hosts = []
             # Each entry in ShapedDevices.csv can have multiple IPv4s or IPv6s separated by commas. Split them up and parse each
             if ipv4_input != "":
@@ -647,6 +883,20 @@ def loadSubscriberCircuits(shapedDevicesFile):
                         if circuit['ParentNode'] != ParentNode:
                             errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node from other devices of circuit ID #" + circuitID
                             raise ValueError(errorMessageString)
+                        existing_parent_node_id = str(circuit.get('ParentNodeID', '') or '').strip()
+                        candidate_parent_node_id = str(ParentNodeID or '').strip()
+                        if existing_parent_node_id and candidate_parent_node_id and existing_parent_node_id != candidate_parent_node_id:
+                            errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Parent Node ID from other devices of circuit ID #" + circuitID
+                            raise ValueError(errorMessageString)
+                        if not existing_parent_node_id and candidate_parent_node_id:
+                            circuit['ParentNodeID'] = candidate_parent_node_id
+                        existing_anchor_node_id = str(circuit.get('AnchorNodeID', '') or '').strip()
+                        candidate_anchor_node_id = str(AnchorNodeID or '').strip()
+                        if existing_anchor_node_id and candidate_anchor_node_id and existing_anchor_node_id != candidate_anchor_node_id:
+                            errorMessageString = "Device " + deviceName + " with deviceID " + deviceID + " had different Anchor Node ID from other devices of circuit ID #" + circuitID
+                            raise ValueError(errorMessageString)
+                        if not existing_anchor_node_id and candidate_anchor_node_id:
+                            circuit['AnchorNodeID'] = candidate_anchor_node_id
                     if ((circuit['minDownload'] != float(downloadMin))
                         or (circuit['minUpload'] != float(uploadMin))
                         or (circuit['maxDownload'] != float(downloadMax))
@@ -689,6 +939,8 @@ def loadSubscriberCircuits(shapedDevicesFile):
                       "circuitID": circuitID,
                       "circuitName": circuitName,
                       "ParentNode": ParentNode,
+                      "ParentNodeID": str(ParentNodeID or '').strip(),
+                      "AnchorNodeID": str(AnchorNodeID or '').strip(),
                       "devices": deviceListForCircuit,
                       "minDownload": float(downloadMin),
                       "minUpload": float(uploadMin),
@@ -822,7 +1074,7 @@ def refreshShapers():
     if safeToRunRefresh == True:
 
         # Load Subscriber Circuits & Devices
-        subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
+        subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile)
         runtime_override_count = apply_effective_runtime_circuit_overrides(subscriberCircuits)
         if runtime_override_count > 0:
             print(
@@ -833,7 +1085,10 @@ def refreshShapers():
 
         # Preserve the logical parent (as configured in ShapedDevices.csv) before any shaping-time rewrites.
         for circuit in subscriberCircuits:
-            circuit['logicalParentNode'] = circuit.get('ParentNode')
+            if 'logicalParentNode' not in circuit:
+                circuit['logicalParentNode'] = circuit.get('ParentNode')
+            if 'logicalParentNodeID' not in circuit:
+                circuit['logicalParentNodeID'] = circuit.get('ParentNodeID', '')
 
         # Load network hierarchy
         with open(networkJSONfile, 'r') as j:
@@ -877,6 +1132,8 @@ def refreshShapers():
                             stacklevel=2,
                         )
                         circuit['ParentNode'] = 'none'
+                        circuit['ParentNodeID'] = ''
+                        circuit['effectiveParentNodeID'] = ''
                     else:
                         circuit['ParentNode'] = physical_parent
 
@@ -895,6 +1152,8 @@ def refreshShapers():
             for circuit in subscriberCircuits:
                 if circuit.get('ParentNode') != 'none':
                     circuit['ParentNode'] = 'none'
+                    circuit['ParentNodeID'] = ''
+                    circuit['effectiveParentNodeID'] = ''
                 if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' not in circuit:
                     try:
                         weight = float(circuit.get('maxDownload', 0)) + float(circuit.get('maxUpload', 0))
@@ -1062,6 +1321,8 @@ def refreshShapers():
                     item_key = str(item_id)
                     if item_key in assignments:
                         circuit['ParentNode'] = assignments[item_key]
+                        circuit['ParentNodeID'] = ''
+                        circuit['effectiveParentNodeID'] = ''
 
             # Update and save state
             if bin_planner is not None and isinstance(state, dict):
@@ -1088,6 +1349,8 @@ def refreshShapers():
             for circuit in subscriberCircuits:
                 if circuit['ParentNode'] == 'none':
                     circuit['ParentNode'] = generatedPNs[genPNcounter]
+                    circuit['ParentNodeID'] = ''
+                    circuit['effectiveParentNodeID'] = ''
                     genPNcounter += 1
                     if genPNcounter >= queuesAvailable:
                         genPNcounter = 0
@@ -1213,20 +1476,41 @@ def refreshShapers():
 
         # After flattening, some attachment-style names may only survive as
         # metadata on the physical node that now owns that branch.
+        parent_node_ids = collect_physical_parent_node_ids(network)
         parent_node_aliases = collect_physical_parent_node_aliases(network)
         for circuit in subscriberCircuits:
+            if circuit.get('parentResolvedByShapingInputs') == True:
+                continue
             parent_node = str(circuit.get('ParentNode', '') or '').strip()
             if not parent_node or parent_node == 'none':
                 continue
-            resolved_parent = parent_node_aliases.get(parent_node)
+            resolved_parent, resolved_parent_id = _resolve_effective_parent_node(
+                circuit,
+                parent_node_ids,
+                parent_node_aliases,
+            )
+            if resolved_parent_id:
+                circuit['effectiveParentNodeID'] = resolved_parent_id
             if resolved_parent and resolved_parent != parent_node:
                 logging.info(
-                    "Resolved circuit parent alias '%s' to physical queue node '%s' for circuit '%s'",
+                    "Resolved circuit parent reference '%s' (%s) to physical queue node '%s' for circuit '%s'",
                     parent_node,
+                    str(circuit.get('ParentNodeID', '') or '').strip(),
                     resolved_parent,
                     circuit.get('circuitID', ''),
                 )
                 circuit['ParentNode'] = resolved_parent
+            elif resolved_parent_id and str(circuit.get('ParentNodeID', '') or '').strip() != resolved_parent_id:
+                logging.info(
+                    "Resolved circuit parent ID '%s' to physical queue node '%s' for circuit '%s'",
+                    str(circuit.get('ParentNodeID', '') or '').strip(),
+                    resolved_parent,
+                    circuit.get('circuitID', ''),
+                )
+                circuit['ParentNode'] = resolved_parent
+                circuit['ParentNodeID'] = resolved_parent_id
+            elif resolved_parent_id:
+                circuit['ParentNodeID'] = resolved_parent_id
 
         # Group circuits by parent node. Reduces runtime for section below this one.
         circuits_by_parent_node = {}
@@ -1689,7 +1973,10 @@ def refreshShapers():
                             "circuitID": circuit['circuitID'],
                             "circuitName": circuit['circuitName'],
                             "ParentNode": circuit['ParentNode'],
+                            "ParentNodeID": circuit.get('ParentNodeID', ''),
                             "logicalParentNode": circuit.get('logicalParentNode', circuit['ParentNode']),
+                            "logicalParentNodeID": circuit.get('logicalParentNodeID', circuit.get('ParentNodeID', '')),
+                            "effectiveParentNodeID": circuit.get('effectiveParentNodeID', circuit.get('ParentNodeID', '')),
                             "devices": circuit['devices'],
                             "classid": flowIDstring,
                             "up_classid": upFlowIDstring,
@@ -2288,6 +2575,8 @@ def refreshShapersUpdateOnly():
                 if newlyUpdatedSubscriberCircuitsByID[circuitID]['devices'] != lastLoadedSubscriberCircuitsByID[circuitID]['devices']:
                     devicesChanged = True
                 if newlyUpdatedSubscriberCircuitsByID[circuitID]['ParentNode'] != lastLoadedSubscriberCircuitsByID[circuitID]['ParentNode']:
+                    devicesChanged = True
+                if newlyUpdatedSubscriberCircuitsByID[circuitID].get('ParentNodeID', '') != lastLoadedSubscriberCircuitsByID[circuitID].get('ParentNodeID', ''):
                     devicesChanged = True
             else:
                 devicesChanged = True

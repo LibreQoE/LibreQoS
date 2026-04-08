@@ -179,6 +179,8 @@ src/network.large.json
 /src/topology_overrides.json
 /src/topology_parent_candidates.json
 /src/topology_canonical_state.json
+/src/circuit_anchors.json
+/src/shaping_inputs.json
 
 # Migrated integration compatibility artifacts
 /src/integrationUISPbandwidths.csv.migrated-*

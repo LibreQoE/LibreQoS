@@ -4,6 +4,7 @@ from virtual_tree_nodes import (
     build_logical_to_physical_node_map,
     build_physical_network,
     collect_physical_parent_node_aliases,
+    collect_physical_parent_node_ids,
     is_virtual_node,
 )
 
@@ -93,6 +94,26 @@ class TestVirtualTreeNodes(unittest.TestCase):
 
         self.assertEqual(aliases["Thunderhill Core"], "Thunderhill Core")
         self.assertEqual(aliases["Thunderhill-Hoodoo"], "Thunderhill Core")
+
+    def test_collect_physical_parent_node_ids_includes_network_json_id(self):
+        physical = {
+            "Hoodoo Hill": {
+                "children": {
+                    "Thunderhill Core": {
+                        "id": "uisp:device:245a86b7-203d-41cf-9c57-e3ff82079d44",
+                        "name": "Thunderhill Core",
+                        "children": {},
+                    }
+                }
+            }
+        }
+
+        node_ids = collect_physical_parent_node_ids(physical)
+
+        self.assertEqual(
+            node_ids["uisp:device:245a86b7-203d-41cf-9c57-e3ff82079d44"],
+            "Thunderhill Core",
+        )
 
 
 if __name__ == "__main__":

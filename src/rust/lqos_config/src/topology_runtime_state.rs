@@ -14,6 +14,9 @@ pub const TOPOLOGY_EFFECTIVE_STATE_FILENAME: &str = "topology_effective_state.js
 /// Runtime filename carrying the effective network tree for shaping/export.
 pub const TOPOLOGY_EFFECTIVE_NETWORK_FILENAME: &str = "network.effective.json";
 
+/// Runtime filename carrying shaping-ready circuit inputs resolved from topology runtime.
+pub const TOPOLOGY_SHAPING_INPUTS_FILENAME: &str = "shaping_inputs.json";
+
 /// Errors returned while reading or writing topology runtime snapshots.
 #[derive(Debug, Error)]
 pub enum TopologyRuntimeStateError {
@@ -180,6 +183,113 @@ pub struct TopologyEffectiveStateFile {
     pub nodes: Vec<TopologyEffectiveNodeState>,
 }
 
+/// Source used to resolve one circuit's shaping parent.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyShapingResolutionSource {
+    /// Runtime topology resolved the effective parent from `circuit_anchors.json`
+    /// or a compatible anchor input.
+    #[default]
+    TopologyAnchor,
+    /// Legacy `ParentNode`/`ParentNodeID` was used because no anchor was available.
+    LegacyParent,
+}
+
+/// One shaped device row carried into `shaping_inputs.json`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TopologyShapingDeviceInput {
+    /// Stable device identifier.
+    pub device_id: String,
+    /// Human-readable device name.
+    pub device_name: String,
+    /// Device MAC address when known.
+    pub mac: String,
+    /// All IPv4 addresses/subnets associated with the device.
+    #[serde(default)]
+    pub ipv4: Vec<String>,
+    /// All IPv6 addresses/subnets associated with the device.
+    #[serde(default)]
+    pub ipv6: Vec<String>,
+    /// Free-form operator/integration comment.
+    #[serde(default)]
+    pub comment: String,
+}
+
+/// One shaping-ready circuit compiled from `ShapedDevices.csv` plus effective topology.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+pub struct TopologyShapingCircuitInput {
+    /// Stable circuit identifier.
+    pub circuit_id: String,
+    /// Human-readable circuit name.
+    pub circuit_name: String,
+    /// Stable topology node identifier the circuit attaches beneath, when provided
+    /// by the integration/operator input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_node_id: Option<String>,
+    /// Human-readable topology anchor node name, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_node_name: Option<String>,
+    /// Legacy logical parent name from `ShapedDevices.csv`, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logical_parent_node_name: Option<String>,
+    /// Legacy logical parent node identifier from `ShapedDevices.csv`, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logical_parent_node_id: Option<String>,
+    /// Runtime-effective parent node name used for shaping.
+    pub effective_parent_node_name: String,
+    /// Runtime-effective parent node identifier used for shaping.
+    pub effective_parent_node_id: String,
+    /// Runtime-effective attachment identifier, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_attachment_id: Option<String>,
+    /// Runtime-effective attachment label, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_attachment_name: Option<String>,
+    /// How the effective parent was resolved.
+    #[serde(default)]
+    pub resolution_source: TopologyShapingResolutionSource,
+    /// Guaranteed minimum download rate in Mbps.
+    pub download_min_mbps: f32,
+    /// Guaranteed minimum upload rate in Mbps.
+    pub upload_min_mbps: f32,
+    /// Maximum download rate in Mbps.
+    pub download_max_mbps: f32,
+    /// Maximum upload rate in Mbps.
+    pub upload_max_mbps: f32,
+    /// Free-form operator/integration comment.
+    #[serde(default)]
+    pub comment: String,
+    /// Optional per-circuit SQM override token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sqm_override: Option<String>,
+    /// Device rows belonging to this circuit.
+    #[serde(default)]
+    pub devices: Vec<TopologyShapingDeviceInput>,
+}
+
+/// Full runtime shaping-input snapshot consumed by `LibreQoS.py`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+pub struct TopologyShapingInputsFile {
+    /// Schema version for compatibility checks.
+    #[serde(default = "default_runtime_schema_version")]
+    pub schema_version: u32,
+    /// Unix timestamp when the file was generated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_unix: Option<u64>,
+    /// Generation timestamp of the canonical topology used as input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_generated_unix: Option<u64>,
+    /// Generation timestamp of the effective topology used as input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_generated_unix: Option<u64>,
+    /// Non-fatal generation warnings.
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    /// Shaping-ready circuits.
+    #[serde(default)]
+    pub circuits: Vec<TopologyShapingCircuitInput>,
+}
+
 fn default_runtime_schema_version() -> u32 {
     1
 }
@@ -210,6 +320,11 @@ pub fn topology_effective_state_path(config: &Config) -> PathBuf {
 /// Returns the path of the effective runtime network tree file.
 pub fn topology_effective_network_path(config: &Config) -> PathBuf {
     Path::new(&config.lqos_directory).join(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME)
+}
+
+/// Returns the path of the runtime shaping-input snapshot file.
+pub fn topology_shaping_inputs_path(config: &Config) -> PathBuf {
+    Path::new(&config.lqos_directory).join(TOPOLOGY_SHAPING_INPUTS_FILENAME)
 }
 
 impl TopologyAttachmentHealthStateFile {
@@ -243,5 +358,22 @@ impl TopologyEffectiveStateFile {
     /// Saves the effective topology state file atomically.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
         atomic_write_json(&topology_effective_state_path(config), self)
+    }
+}
+
+impl TopologyShapingInputsFile {
+    /// Loads the runtime shaping-input snapshot if it exists.
+    pub fn load(config: &Config) -> Result<Self, TopologyRuntimeStateError> {
+        let path = topology_shaping_inputs_path(config);
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let raw = std::fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&raw)?)
+    }
+
+    /// Saves the runtime shaping-input snapshot.
+    pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
+        atomic_write_json(&topology_shaping_inputs_path(config), self)
     }
 }

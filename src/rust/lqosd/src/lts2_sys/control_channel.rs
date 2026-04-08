@@ -1329,9 +1329,10 @@ async fn shaper_snapshot_streaming(
     // Mirror node_manager ticker throughput: send compact tuple data.
     // Note: field names are historical; values are bits per second.
     {
-        let bits_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER.actual_bits_per_second();
-        let shaped_bits_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER
-            .shaped_actual_bits_per_second();
+        let bits_per_second =
+            crate::throughput_tracker::THROUGHPUT_TRACKER.actual_bits_per_second();
+        let shaped_bits_per_second =
+            crate::throughput_tracker::THROUGHPUT_TRACKER.shaped_actual_bits_per_second();
         let packets_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER
             .packets_per_second
             .as_down_up();

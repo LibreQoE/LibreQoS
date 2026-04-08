@@ -1322,7 +1322,7 @@ fn wait_for_bus_ready(timeout_ms: u64) -> PyResult<bool> {
 
 /// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv
 /// The dictionary keys mirror the normalized loader used in LibreQoS.py:
-/// circuitID, circuitName, deviceID, deviceName, ParentNode, mac,
+/// circuitID, circuitName, deviceID, deviceName, ParentNode, ParentNodeID, mac,
 /// ipv4s (list[str]), ipv6s (list[str]), minDownload, minUpload, maxDownload,
 /// maxUpload, comment, sqm.
 #[pyfunction]
@@ -1351,6 +1351,14 @@ fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
         d.set_item("deviceID", dev.device_id.clone())?;
         d.set_item("deviceName", dev.device_name.clone())?;
         d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item(
+            "ParentNodeID",
+            dev.parent_node_id.clone().unwrap_or_default(),
+        )?;
+        d.set_item(
+            "AnchorNodeID",
+            dev.anchor_node_id.clone().unwrap_or_default(),
+        )?;
         d.set_item("mac", dev.mac.clone())?;
         d.set_item("ipv4s", ipv4s)?;
         d.set_item("ipv6s", ipv6s)?;
@@ -1409,6 +1417,14 @@ fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObje
         d.set_item("deviceID", dev.device_id.clone())?;
         d.set_item("deviceName", dev.device_name.clone())?;
         d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item(
+            "ParentNodeID",
+            dev.parent_node_id.clone().unwrap_or_default(),
+        )?;
+        d.set_item(
+            "AnchorNodeID",
+            dev.anchor_node_id.clone().unwrap_or_default(),
+        )?;
         d.set_item("mac", dev.mac.clone())?;
         d.set_item("ipv4s", ipv4s)?;
         d.set_item("ipv6s", ipv6s)?;
@@ -1462,6 +1478,14 @@ fn overrides_persistent_devices_materialized(py: Python<'_>) -> PyResult<Vec<PyO
         d.set_item("deviceID", dev.device_id.clone())?;
         d.set_item("deviceName", dev.device_name.clone())?;
         d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item(
+            "ParentNodeID",
+            dev.parent_node_id.clone().unwrap_or_default(),
+        )?;
+        d.set_item(
+            "AnchorNodeID",
+            dev.anchor_node_id.clone().unwrap_or_default(),
+        )?;
         d.set_item("mac", dev.mac.clone())?;
         d.set_item("ipv4s", ipv4s)?;
         d.set_item("ipv6s", ipv6s)?;
