@@ -162,6 +162,8 @@ ls -lh /opt/libreqos/src/topology_effective_state.json /opt/libreqos/src/network
 journalctl -u lqos_scheduler --since "30 minutes ago"
 ```
 
+If Insight shows sites buried under AP/backhaul chains or only a narrow subset of sites loads cleanly, check whether the host is on a build before the separate Insight logical-topology export. Current builds submit an Insight-only logical-parent tree derived from canonical topology state, while `compatibility_network_json` remains reserved for local compatibility and `network.effective.json` generation.
+
 If an integration subprocess fails, current builds keep the scheduler alive, publish a shortened output preview to the scheduler status/error surfaces, and save the full captured output to a timestamped file under `/tmp` such as `lqos_scheduler_uisp_integration_YYYYMMDD_HHMMSS.log`.
 
 ### Scheduler status in WebUI looks unhealthy

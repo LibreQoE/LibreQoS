@@ -43,6 +43,9 @@ flowchart LR
 ### lqos_topology runtime contract
 
 - `lqos_topology` continuously builds runtime-effective topology artifacts from current source inputs and attachment health.
+- Current builds keep two distinct topology views:
+  - `compatibility_network_json` remains the local compatibility tree used as the base for `network.effective.json`
+  - Insight topology submission derives a separate logical-parent tree from canonical topology state so sites are grouped by logical site hierarchy rather than immediate attachment hops
 - After a successful publish, it writes `/opt/libreqos/src/topology_runtime_status.json` with:
   - `source_generation`
   - `ready`
