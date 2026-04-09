@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use lqos_bus::{BusRequest, BusResponse, bus_request};
 use lqos_config::{
     TopologyAttachmentEndpointStatus, TopologyAttachmentHealthEntry,
-    TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus, load_config,
+    TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus,
+    compute_topology_source_generation, load_config,
 };
 use lqos_overrides::TopologyOverridesFile;
 use lqos_probe::{ProbeClass, ProbeRequest};
@@ -10,6 +11,7 @@ use lqos_topology::{
     AttachmentProbeSpec, build_effective_topology_artifacts_from_canonical, is_health_state_fresh,
     load_canonical_topology_state, prepare_runtime_topology_editor_state_from_canonical,
     probe_specs_from_state, publish_effective_topology_artifacts,
+    publish_topology_runtime_error_status,
 };
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -319,6 +321,8 @@ async fn run_round(
     last_effective: &mut HashMap<String, Option<String>>,
 ) -> Result<RoundHints> {
     let config = load_config().context("Unable to load config for topology runtime")?;
+    let source_generation = compute_topology_source_generation(config.as_ref())
+        .context("Unable to compute topology source generation")?;
     let canonical = load_canonical_topology_state(config.as_ref());
     let overrides =
         TopologyOverridesFile::load().context("Unable to load topology overrides file")?;
@@ -350,8 +354,20 @@ async fn run_round(
             errors.join(" | ")
         )
     })?;
-    publish_effective_topology_artifacts(config.as_ref(), &artifacts)
-        .context("Unable to publish effective topology artifacts")?;
+    if let Err(err) =
+        publish_effective_topology_artifacts(config.as_ref(), &artifacts, &source_generation)
+            .context("Unable to publish effective topology artifacts")
+    {
+        let formatted = format!("{err:#}");
+        if let Err(status_err) =
+            publish_topology_runtime_error_status(config.as_ref(), &source_generation, &formatted)
+        {
+            warn!(
+                "Unable to publish failed topology runtime status after publish error: {status_err:#}"
+            );
+        }
+        return Err(err);
+    }
 
     for node in &artifacts.effective.nodes {
         let next = node.effective_attachment_id.clone();
@@ -379,6 +395,21 @@ async fn main() -> Result<()> {
         let round_hints = match run_round(&mut health_state, &mut last_effective).await {
             Ok(hints) => hints,
             Err(err) => {
+                if let Ok(config) = load_config()
+                    && let Ok(source_generation) =
+                        compute_topology_source_generation(config.as_ref())
+                {
+                    let formatted = format!("{err:#}");
+                    if let Err(status_err) = publish_topology_runtime_error_status(
+                        config.as_ref(),
+                        &source_generation,
+                        &formatted,
+                    ) {
+                        warn!(
+                            "Unable to publish failed topology runtime status after round error: {status_err:#}"
+                        );
+                    }
+                }
                 warn!("Topology runtime round failed: {err:?}");
                 RoundHints::default()
             }

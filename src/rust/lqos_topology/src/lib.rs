@@ -9,9 +9,10 @@ use lqos_config::{
     TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
     TopologyCanonicalNode, TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
     TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
-    TopologyShapingCircuitInput, TopologyShapingDeviceInput, TopologyShapingInputsFile,
-    TopologyShapingResolutionSource, circuit_anchors_path, topology_effective_network_path,
-    topology_effective_state_path, topology_shaping_inputs_path,
+    TopologyRuntimeStatusFile, TopologyShapingCircuitInput, TopologyShapingDeviceInput,
+    TopologyShapingInputsFile, TopologyShapingResolutionSource, circuit_anchors_path,
+    topology_effective_network_path, topology_effective_state_path, topology_runtime_status_path,
+    topology_shaping_inputs_path,
 };
 use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile};
 use serde_json::{Map, Value};
@@ -722,6 +723,7 @@ fn build_effective_topology_artifacts_from_prepared(
 pub fn publish_effective_topology_artifacts(
     config: &Config,
     artifacts: &EffectiveTopologyArtifacts,
+    source_generation: &str,
 ) -> Result<()> {
     let _lock = acquire_effective_publish_lock(config)?;
 
@@ -801,7 +803,63 @@ pub fn publish_effective_topology_artifacts(
         })?;
     }
 
+    publish_topology_runtime_status(config, source_generation, true, None)?;
+
     Ok(())
+}
+
+fn topology_runtime_status_snapshot(
+    config: &Config,
+    source_generation: &str,
+    ready: bool,
+    error: Option<String>,
+) -> TopologyRuntimeStatusFile {
+    TopologyRuntimeStatusFile {
+        schema_version: 1,
+        source_generation: source_generation.to_string(),
+        ready,
+        generated_unix: now_unix(),
+        effective_state_path: topology_effective_state_path(config)
+            .to_string_lossy()
+            .to_string(),
+        effective_network_path: topology_effective_network_path(config)
+            .to_string_lossy()
+            .to_string(),
+        shaping_inputs_path: topology_shaping_inputs_path(config)
+            .to_string_lossy()
+            .to_string(),
+        error,
+    }
+}
+
+/// Publishes topology runtime readiness for one source generation.
+///
+/// Side effects: writes `topology_runtime_status.json` in `config.lqos_directory`.
+pub fn publish_topology_runtime_status(
+    config: &Config,
+    source_generation: &str,
+    ready: bool,
+    error: Option<String>,
+) -> Result<()> {
+    let status = topology_runtime_status_snapshot(config, source_generation, ready, error);
+    status.save(config).with_context(|| {
+        format!(
+            "Unable to publish topology runtime status at {:?}",
+            topology_runtime_status_path(config)
+        )
+    })?;
+    Ok(())
+}
+
+/// Publishes a failed topology runtime status for one source generation.
+///
+/// Side effects: writes `topology_runtime_status.json` in `config.lqos_directory`.
+pub fn publish_topology_runtime_error_status(
+    config: &Config,
+    source_generation: &str,
+    error: &str,
+) -> Result<()> {
+    publish_topology_runtime_status(config, source_generation, false, Some(error.to_string()))
 }
 
 fn parse_probe_ip(raw: &str) -> Option<IpAddr> {
@@ -3007,6 +3065,7 @@ mod tests {
     use super::{
         EffectiveTopologyArtifacts, apply_effective_topology_to_network_json,
         build_effective_topology_artifacts, build_shaping_inputs, compute_effective_state,
+        publish_effective_topology_artifacts, publish_topology_runtime_error_status,
         validate_effective_topology_network,
     };
     use lqos_config::{
@@ -3014,7 +3073,9 @@ mod tests {
         TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus,
         TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
         TopologyEditorNode, TopologyEditorStateFile, TopologyEffectiveAttachmentState,
-        TopologyEffectiveNodeState, TopologyEffectiveStateFile,
+        TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStatusFile,
+        topology_effective_network_path, topology_effective_state_path,
+        topology_runtime_status_path, topology_shaping_inputs_path,
     };
     use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile};
     use serde_json::{Value, json};
@@ -3062,6 +3123,98 @@ mod tests {
             suppressed_until_unix: None,
             effective_selected: false,
         }
+    }
+
+    fn sample_runtime_artifacts() -> EffectiveTopologyArtifacts {
+        EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: vec![TopologyEffectiveNodeState {
+                    node_id: "tower-1".to_string(),
+                    logical_parent_node_id: "site-a".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: Vec::new(),
+                }],
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                nodes: vec![TopologyEditorNode {
+                    node_id: "tower-1".to_string(),
+                    node_name: "Tower 1".to_string(),
+                    ..TopologyEditorNode::default()
+                }],
+            },
+            effective_network: Some(json!({
+                "Tower 1": {
+                    "id": "tower-1",
+                    "name": "Tower 1",
+                    "children": {}
+                }
+            })),
+        }
+    }
+
+    #[test]
+    fn topology_runtime_status_transitions_from_error_to_ready() {
+        let lqos_directory = unique_temp_dir("lqos-topology-runtime-status-transition");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+        let generation = "generation-1";
+
+        publish_topology_runtime_error_status(&config, generation, "topology build failed")
+            .expect("failed status should publish");
+        let failed = TopologyRuntimeStatusFile::load(&config).expect("failed status should load");
+        assert_eq!(failed.source_generation, generation);
+        assert!(!failed.ready);
+        assert_eq!(failed.error.as_deref(), Some("topology build failed"));
+
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Tower 1\",\"tower-1\",\"tower-1\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        publish_effective_topology_artifacts(&config, &sample_runtime_artifacts(), generation)
+            .expect("ready status should publish");
+        let ready = TopologyRuntimeStatusFile::load(&config).expect("ready status should load");
+        assert_eq!(ready.source_generation, generation);
+        assert!(ready.ready);
+        assert_eq!(ready.error, None);
+        assert_eq!(
+            ready.effective_state_path,
+            topology_effective_state_path(&config)
+                .to_string_lossy()
+                .to_string()
+        );
+        assert_eq!(
+            ready.effective_network_path,
+            topology_effective_network_path(&config)
+                .to_string_lossy()
+                .to_string()
+        );
+        assert_eq!(
+            ready.shaping_inputs_path,
+            topology_shaping_inputs_path(&config)
+                .to_string_lossy()
+                .to_string()
+        );
+        assert!(topology_effective_state_path(&config).exists());
+        assert!(topology_effective_network_path(&config).exists());
+        assert!(topology_shaping_inputs_path(&config).exists());
+        assert!(topology_runtime_status_path(&config).exists());
     }
 
     #[test]

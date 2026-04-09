@@ -977,6 +977,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(promote_to_root_list, m)?)?;
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_topology_source_generation, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_shaping_runtime_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_progress, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
@@ -2652,6 +2653,17 @@ fn calculate_hash() -> PyResult<i64> {
     let hash = lqos_utils::hash_to_i64(&combined);
 
     Ok(hash)
+}
+
+#[pyfunction]
+fn calculate_topology_source_generation() -> PyResult<Option<String>> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Ok(None);
+    };
+    match lqos_config::compute_topology_source_generation(config.as_ref()) {
+        Ok(generation) => Ok(Some(generation)),
+        Err(_) => Ok(None),
+    }
 }
 
 fn shaping_runtime_sqm_fingerprint() -> Result<String> {

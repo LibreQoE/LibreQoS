@@ -13,10 +13,11 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    scheduler_progress, overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
+    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive as _scheduler_alive_native, scheduler_error as _scheduler_error_native, \
+    calculate_topology_source_generation, \
+    scheduler_progress as _scheduler_progress_native, overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
     overrides_network_adjustments_materialized, \
-    scheduler_output, wait_for_bus_ready
+    scheduler_output as _scheduler_output_native, wait_for_bus_ready
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -32,6 +33,36 @@ INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
 TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
 SCHEDULER_STARTUP_STEP_COUNT = 5
 SCHEDULER_REFRESH_STEP_COUNT = 4
+scheduler_status_bus_enabled = True
+
+
+def set_scheduler_status_bus_enabled(enabled: bool):
+    global scheduler_status_bus_enabled
+    scheduler_status_bus_enabled = bool(enabled)
+
+
+def scheduler_alive():
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_alive_native()
+
+
+def scheduler_error(message: str):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_error_native(message)
+
+
+def scheduler_output(message: str):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_output_native(message)
+
+
+def scheduler_progress(active: bool, phase: str, phase_label: str, step_index: int, step_count: int, percent: int):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_progress_native(active, phase, phase_label, step_index, step_count, percent)
 
 
 def clear_scheduler_error():
@@ -901,13 +932,21 @@ def importAndShapeFullReload():
     global shaping_runtime_hash
     importFromCRM()
     publish_scheduler_progress(True, "starting_topology_runtime", "Starting topology runtime", 4, SCHEDULER_STARTUP_STEP_COUNT)
-    ensure_topology_runtime_process(wait_for_outputs=True)
+    if not ensure_topology_runtime_process(wait_for_outputs=True):
+        report_topology_runtime_not_ready(
+            "Scheduler startup shaping refresh deferred",
+            phase_label="Scheduler waiting for topology runtime",
+            step_count=SCHEDULER_STARTUP_STEP_COUNT,
+        )
+        return
     publish_scheduler_progress(True, "initial_shaping_reload", "Refreshing shaper state", 5, SCHEDULER_STARTUP_STEP_COUNT)
     if not enable_insight_topology():
         refreshShapers()
         shaping_runtime_hash = calculate_shaping_runtime_hash()
     else:
         shaping_runtime_hash = calculate_shaping_runtime_hash()
+    if shaping_runtime_hash != 0:
+        set_scheduler_status_bus_enabled(True)
 
 
 def importAndShapePartialReload():
@@ -923,7 +962,13 @@ def importAndShapePartialReload():
         overrides_step=2,
     )
     publish_scheduler_progress(True, "partial_topology_runtime", "Refreshing topology runtime", 3, SCHEDULER_REFRESH_STEP_COUNT)
-    ensure_topology_runtime_process(wait_for_outputs=True)
+    if not ensure_topology_runtime_process(wait_for_outputs=True):
+        report_topology_runtime_not_ready(
+            "Scheduled shaping refresh deferred",
+            phase_label="Scheduler waiting for topology runtime",
+            step_count=SCHEDULER_REFRESH_STEP_COUNT,
+        )
+        return
     # Rebuild when runtime shaping inputs change, including effective adaptive
     # circuit overrides that do not belong in source-of-truth files.
     publish_scheduler_progress(True, "partial_runtime_hash", "Checking shaping inputs", 4, SCHEDULER_REFRESH_STEP_COUNT)
@@ -936,6 +981,8 @@ def importAndShapePartialReload():
             report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
             return
         shaping_runtime_hash = calculate_shaping_runtime_hash()
+        if shaping_runtime_hash != 0:
+            set_scheduler_status_bus_enabled(True)
     publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
 
 
@@ -950,71 +997,98 @@ def topology_runtime_output_paths():
         os.path.join(base_dir, "topology_effective_state.json"),
         os.path.join(base_dir, "network.effective.json"),
         os.path.join(base_dir, "shaping_inputs.json"),
+        os.path.join(base_dir, "topology_runtime_status.json"),
     ]
 
 
-def _load_json_field(path, field):
+def topology_runtime_status_path():
+    return os.path.join(get_libreqos_directory(), "topology_runtime_status.json")
+
+
+def _load_topology_runtime_status():
+    path = topology_runtime_status_path()
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
-    except Exception:
+    except FileNotFoundError:
         return None
-    value = data.get(field)
-    try:
-        return int(value) if value is not None else None
-    except Exception:
+    except Exception as e:
+        print(f"Failed to read topology runtime status from {path}: {e}")
         return None
+    return data if isinstance(data, dict) else None
 
 
-def _topology_runtime_freshness_target():
-    base_dir = get_libreqos_directory()
-    canonical_path = os.path.join(base_dir, "topology_canonical_state.json")
-    canonical_generated = _load_json_field(canonical_path, "generated_unix")
-    if canonical_generated is not None:
-        return ("generated_unix", canonical_generated)
-
-    editor_path = os.path.join(base_dir, "topology_editor_state.json")
-    editor_generated = _load_json_field(editor_path, "generated_unix")
-    if editor_generated is not None:
-        return ("generated_unix", editor_generated)
-
-    for path in (canonical_path, editor_path, os.path.join(base_dir, "network.json")):
-        if os.path.isfile(path):
-            return ("mtime", os.path.getmtime(path))
-    return (None, None)
-
-
-def _topology_runtime_outputs_are_fresh():
-    _, effective_state_path, effective_network_path, shaping_inputs_path = topology_runtime_output_paths()
-    if not (
-        os.path.isfile(effective_state_path)
-        and os.path.isfile(effective_network_path)
-        and os.path.isfile(shaping_inputs_path)
-    ):
-        return False
-
-    target_kind, target_value = _topology_runtime_freshness_target()
-    if target_kind is None:
-        return True
-
-    if target_kind == "generated_unix":
-        effective_canonical_generated = _load_json_field(effective_state_path, "canonical_generated_unix")
-        if effective_canonical_generated is not None:
-            return effective_canonical_generated >= target_value
-
+def current_topology_source_generation():
     try:
-        effective_state_mtime = os.path.getmtime(effective_state_path)
-        effective_network_mtime = os.path.getmtime(effective_network_path)
-        shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
-    except OSError:
-        return False
-    shaped_devices_path = os.path.join(get_libreqos_directory(), "ShapedDevices.csv")
-    circuit_anchors_path = os.path.join(get_libreqos_directory(), "circuit_anchors.json")
-    if os.path.isfile(shaped_devices_path) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_path):
-        return False
-    if os.path.isfile(circuit_anchors_path) and shaping_inputs_mtime < os.path.getmtime(circuit_anchors_path):
-        return False
-    return min(effective_state_mtime, effective_network_mtime, shaping_inputs_mtime) >= target_value
+        generation = calculate_topology_source_generation()
+    except Exception as e:
+        print(f"Failed to compute topology source generation: {e}")
+        return None
+    if generation is None:
+        return None
+    generation = str(generation).strip()
+    return generation or None
+
+
+def topology_runtime_readiness_detail():
+    current_generation = current_topology_source_generation()
+    if not current_generation:
+        return (
+            False,
+            "Topology runtime source generation is unavailable for current inputs.",
+            None,
+        )
+
+    status = _load_topology_runtime_status()
+    if not isinstance(status, dict):
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    status_generation = str(status.get("source_generation") or "").strip()
+    if status_generation != current_generation:
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    if not bool(status.get("ready")):
+        error = status.get("error")
+        if isinstance(error, str) and error.strip():
+            return (
+                False,
+                f"Topology runtime failed for the current source generation: {error.strip()}",
+                current_generation,
+            )
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    return (True, "", current_generation)
+
+
+def report_topology_runtime_not_ready(context: str, *, phase_label: str, step_count: int):
+    ready, detail, generation = topology_runtime_readiness_detail()
+    if ready:
+        return
+    message = f"{context}: {detail}"
+    if generation:
+        message += f" Generation {generation[:12]}."
+    print(message)
+    scheduler_error(message)
+    publish_scheduler_progress(
+        False,
+        "degraded",
+        phase_label,
+        step_count,
+        step_count,
+        percent=100,
+    )
 
 
 def clear_topology_runtime_outputs():
@@ -1045,10 +1119,11 @@ def stop_topology_runtime_process():
             pass
 
 
-def wait_for_topology_runtime_outputs(timeout_seconds=8.0):
+def wait_for_topology_runtime_ready(timeout_seconds=8.0):
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
-        if _topology_runtime_outputs_are_fresh():
+        ready, _, _ = topology_runtime_readiness_detail()
+        if ready:
             return True
         process = topology_runtime_process
         if process is not None and process.poll() is not None:
@@ -1076,7 +1151,7 @@ def ensure_topology_runtime_process(wait_for_outputs=False):
         code = topology_runtime_process.poll()
         if code is None:
             if wait_for_outputs:
-                wait_for_topology_runtime_outputs()
+                return wait_for_topology_runtime_ready()
             return True
         print(f"Topology runtime helper exited with code {code}. Restarting it.")
         clear_topology_runtime_outputs()
@@ -1089,7 +1164,7 @@ def ensure_topology_runtime_process(wait_for_outputs=False):
         )
         print("Started topology runtime helper.")
         if wait_for_outputs:
-            wait_for_topology_runtime_outputs()
+            return wait_for_topology_runtime_ready()
         return True
     except Exception as e:
         print(f"Failed to start topology runtime helper: {e}")
@@ -1101,7 +1176,13 @@ def ensure_topology_runtime_process(wait_for_outputs=False):
 def topology_runtime_refresh_tick():
     global shaping_runtime_hash
 
+    if shaping_runtime_hash == 0:
+        return
+
     ensure_topology_runtime_process()
+    ready, _, _ = topology_runtime_readiness_detail()
+    if not ready:
+        return
     new_hash = calculate_shaping_runtime_hash()
     if new_hash == 0 or new_hash == shaping_runtime_hash:
         return
@@ -1127,11 +1208,11 @@ def run_scheduler_main():
     global shaping_runtime_hash
 
     atexit.register(stop_topology_runtime_process)
+    set_scheduler_status_bus_enabled(False)
     publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
     ensure_bus_ready()
     try:
         importAndShapeFullReload()
-        shaping_runtime_hash = calculate_shaping_runtime_hash()
         publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
     except Exception as e:
         report_scheduler_runtime_failure("Scheduler startup shaping refresh failed", e, startup=True)

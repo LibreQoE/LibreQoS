@@ -1,5 +1,9 @@
-use crate::{Config, TopologyAttachmentHealthStatus};
+use crate::{
+    CIRCUIT_ANCHORS_FILENAME, Config, TOPOLOGY_CANONICAL_STATE_FILENAME,
+    TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAttachmentHealthStatus,
+};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,6 +21,9 @@ pub const TOPOLOGY_EFFECTIVE_NETWORK_FILENAME: &str = "network.effective.json";
 /// Runtime filename carrying shaping-ready circuit inputs resolved from topology runtime.
 pub const TOPOLOGY_SHAPING_INPUTS_FILENAME: &str = "shaping_inputs.json";
 
+/// Runtime filename carrying topology publication readiness for one source generation.
+pub const TOPOLOGY_RUNTIME_STATUS_FILENAME: &str = "topology_runtime_status.json";
+
 /// Errors returned while reading or writing topology runtime snapshots.
 #[derive(Debug, Error)]
 pub enum TopologyRuntimeStateError {
@@ -26,6 +33,9 @@ pub enum TopologyRuntimeStateError {
     /// Serializing or deserializing the snapshot failed.
     #[error("Unable to parse topology runtime state JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// Computing the topology source generation failed.
+    #[error("Unable to compute topology source generation: {0}")]
+    SourceGeneration(String),
 }
 
 /// One probe endpoint result inside a health-state entry.
@@ -290,6 +300,35 @@ pub struct TopologyShapingInputsFile {
     pub circuits: Vec<TopologyShapingCircuitInput>,
 }
 
+/// Topology runtime readiness published for one exact source generation.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TopologyRuntimeStatusFile {
+    /// Schema version for compatibility checks.
+    #[serde(default = "default_runtime_schema_version")]
+    pub schema_version: u32,
+    /// Stable generation hash of the source inputs topology used for this publish attempt.
+    #[serde(default)]
+    pub source_generation: String,
+    /// Whether runtime outputs are ready for the source generation above.
+    #[serde(default)]
+    pub ready: bool,
+    /// Unix timestamp when the status file was generated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_unix: Option<u64>,
+    /// Effective-state artifact path for operator inspection.
+    #[serde(default)]
+    pub effective_state_path: String,
+    /// Effective-network artifact path for operator inspection.
+    #[serde(default)]
+    pub effective_network_path: String,
+    /// Shaping-inputs artifact path for operator inspection.
+    #[serde(default)]
+    pub shaping_inputs_path: String,
+    /// Error for this generation when runtime publication failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 fn default_runtime_schema_version() -> u32 {
     1
 }
@@ -325,6 +364,92 @@ pub fn topology_effective_network_path(config: &Config) -> PathBuf {
 /// Returns the path of the runtime shaping-input snapshot file.
 pub fn topology_shaping_inputs_path(config: &Config) -> PathBuf {
     Path::new(&config.lqos_directory).join(TOPOLOGY_SHAPING_INPUTS_FILENAME)
+}
+
+/// Returns the path of the topology runtime readiness status file.
+pub fn topology_runtime_status_path(config: &Config) -> PathBuf {
+    Path::new(&config.lqos_directory).join(TOPOLOGY_RUNTIME_STATUS_FILENAME)
+}
+
+fn file_exists_with_nonempty_nodes(path: &Path) -> Result<bool, TopologyRuntimeStateError> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let raw = std::fs::read_to_string(path)?;
+    let value = serde_json::from_str::<serde_json::Value>(&raw)?;
+    Ok(value
+        .get("nodes")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|nodes| !nodes.is_empty()))
+}
+
+fn hash_file_state(
+    hasher: &mut Sha256,
+    label: &str,
+    path: &Path,
+) -> Result<(), TopologyRuntimeStateError> {
+    hasher.update(label.as_bytes());
+    hasher.update([0]);
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            hasher.update(b"present");
+            hasher.update([0]);
+            hasher.update(bytes.len().to_le_bytes());
+            hasher.update([0]);
+            hasher.update(&bytes);
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            hasher.update(b"missing");
+        }
+        Err(err) => return Err(err.into()),
+    }
+    hasher.update([0xff]);
+    Ok(())
+}
+
+/// Computes the stable source generation for current topology runtime inputs.
+///
+/// This generation changes whenever shaping-relevant source inputs change.
+pub fn compute_topology_source_generation(
+    config: &Config,
+) -> Result<String, TopologyRuntimeStateError> {
+    let base = Path::new(&config.lqos_directory);
+    let canonical_path = base.join(TOPOLOGY_CANONICAL_STATE_FILENAME);
+    let editor_path = base.join(TOPOLOGY_EDITOR_STATE_FILENAME);
+    let network_path = base.join("network.json");
+    let shaped_devices_path = base.join("ShapedDevices.csv");
+    let circuit_anchors_path = base.join(CIRCUIT_ANCHORS_FILENAME);
+
+    let canonical_active = file_exists_with_nonempty_nodes(&canonical_path)?;
+    let editor_active = !canonical_active && file_exists_with_nonempty_nodes(&editor_path)?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"topology-runtime-source-generation");
+    hasher.update([0]);
+    if canonical_active {
+        hasher.update(b"topology_source=canonical");
+    } else if editor_active {
+        hasher.update(b"topology_source=editor");
+    } else {
+        hasher.update(b"topology_source=legacy_network");
+    }
+    hasher.update([0xff]);
+
+    hash_file_state(&mut hasher, "network.json", &network_path)?;
+    hash_file_state(&mut hasher, "ShapedDevices.csv", &shaped_devices_path)?;
+    hash_file_state(&mut hasher, CIRCUIT_ANCHORS_FILENAME, &circuit_anchors_path)?;
+    if canonical_active {
+        hash_file_state(
+            &mut hasher,
+            TOPOLOGY_CANONICAL_STATE_FILENAME,
+            &canonical_path,
+        )?;
+    }
+    if editor_active {
+        hash_file_state(&mut hasher, TOPOLOGY_EDITOR_STATE_FILENAME, &editor_path)?;
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 impl TopologyAttachmentHealthStateFile {
@@ -375,5 +500,143 @@ impl TopologyShapingInputsFile {
     /// Saves the runtime shaping-input snapshot.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
         atomic_write_json(&topology_shaping_inputs_path(config), self)
+    }
+}
+
+impl TopologyRuntimeStatusFile {
+    /// Loads the topology runtime status file if it exists.
+    pub fn load(config: &Config) -> Result<Self, TopologyRuntimeStateError> {
+        let path = topology_runtime_status_path(config);
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let raw = std::fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&raw)?)
+    }
+
+    /// Saves the topology runtime status file atomically.
+    pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
+        atomic_write_json(&topology_runtime_status_path(config), self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        CIRCUIT_ANCHORS_FILENAME, Config, TOPOLOGY_CANONICAL_STATE_FILENAME,
+        TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyRuntimeStatusFile,
+        compute_topology_source_generation, topology_runtime_status_path,
+    };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be monotonic enough for tests")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("{prefix}-{unique}"));
+        fs::create_dir_all(&path).expect("temp directory should be creatable");
+        path
+    }
+
+    fn write_required_inputs(dir: &PathBuf) {
+        fs::write(dir.join("network.json"), "{\"root\":{}}\n").expect("network.json should write");
+        fs::write(
+            dir.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"c1\",\"Circuit 1\",\"d1\",\"Device 1\",\"Tower 1\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+    }
+
+    #[test]
+    fn topology_source_generation_is_stable_for_identical_inputs() {
+        let lqos_directory = unique_temp_dir("lqos-config-topology-generation-stable");
+        write_required_inputs(&lqos_directory);
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+
+        let first = compute_topology_source_generation(&config)
+            .expect("generation should compute for stable inputs");
+        let second = compute_topology_source_generation(&config)
+            .expect("generation should recompute for stable inputs");
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn topology_source_generation_changes_when_source_inputs_change() {
+        let lqos_directory = unique_temp_dir("lqos-config-topology-generation-changes");
+        write_required_inputs(&lqos_directory);
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+
+        let before = compute_topology_source_generation(&config)
+            .expect("generation should compute before source change");
+
+        fs::write(
+            lqos_directory.join(CIRCUIT_ANCHORS_FILENAME),
+            "{\"schema_version\":1,\"source\":\"test\",\"generated_unix\":1,\"anchors\":[]}\n",
+        )
+        .expect("circuit_anchors.json should write");
+        let after_anchors = compute_topology_source_generation(&config)
+            .expect("generation should compute after anchors change");
+        assert_ne!(before, after_anchors);
+
+        fs::write(
+            lqos_directory.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            concat!(
+                "{\"schema_version\":1,\"source\":\"test\",\"generated_unix\":1,",
+                "\"ingress_kind\":\"native_integration\",",
+                "\"compatibility_network_json\":{},",
+                "\"nodes\":[{\"node_id\":\"tower-1\",\"node_name\":\"Tower 1\",",
+                "\"node_kind\":\"Site\",\"is_virtual\":false,",
+                "\"allowed_parents\":[],\"can_move\":false,",
+                "\"rate_input\":{\"download_mbps\":100,\"upload_mbps\":100,\"source\":\"native_integration\"}}]}\n"
+            ),
+        )
+        .expect("topology_canonical_state.json should write");
+        let after_canonical = compute_topology_source_generation(&config)
+            .expect("generation should compute after canonical change");
+        assert_ne!(after_anchors, after_canonical);
+    }
+
+    #[test]
+    fn topology_runtime_status_round_trips() {
+        let lqos_directory = unique_temp_dir("lqos-config-topology-status-roundtrip");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+        let status = TopologyRuntimeStatusFile {
+            schema_version: 1,
+            source_generation: "generation-1".to_string(),
+            ready: true,
+            generated_unix: Some(123),
+            effective_state_path: "/tmp/effective.json".to_string(),
+            effective_network_path: "/tmp/network.effective.json".to_string(),
+            shaping_inputs_path: "/tmp/shaping_inputs.json".to_string(),
+            error: None,
+        };
+
+        status
+            .save(&config)
+            .expect("status file should save successfully");
+
+        let loaded =
+            TopologyRuntimeStatusFile::load(&config).expect("status file should load successfully");
+        assert_eq!(loaded, status);
+        assert_eq!(
+            topology_runtime_status_path(&config),
+            lqos_directory.join(TOPOLOGY_RUNTIME_STATUS_FILENAME)
+        );
     }
 }
