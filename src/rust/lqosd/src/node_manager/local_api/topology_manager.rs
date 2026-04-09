@@ -206,8 +206,8 @@ fn publish_candidate_overrides(
         .save()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let source_generation =
-        compute_topology_source_generation(config).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let source_generation = compute_topology_source_generation(config)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if publish_effective_topology_artifacts(config, &artifacts, &source_generation).is_err() {
         let _ = previous_overrides.save();

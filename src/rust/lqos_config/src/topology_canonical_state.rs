@@ -5,7 +5,7 @@ use crate::{
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -157,6 +157,143 @@ fn default_topology_canonical_schema_version() -> u32 {
 
 fn empty_json_object() -> Value {
     Value::Object(Map::new())
+}
+
+#[derive(Clone)]
+struct InsightLogicalNodeEntry {
+    node_id: String,
+    node_name: String,
+    node_kind: String,
+    is_virtual: bool,
+    download_mbps: Option<u64>,
+    upload_mbps: Option<u64>,
+}
+
+fn canonical_node_rates(node: &TopologyCanonicalNode) -> (Option<u64>, Option<u64>) {
+    (
+        node.rate_input
+            .intrinsic_download_mbps
+            .or(node.rate_input.legacy_imported_download_mbps),
+        node.rate_input
+            .intrinsic_upload_mbps
+            .or(node.rate_input.legacy_imported_upload_mbps),
+    )
+}
+
+fn normalized_insight_node_kind(kind: &str) -> String {
+    if kind.eq_ignore_ascii_case("ap") {
+        "AP".to_string()
+    } else if kind.is_empty() || kind.eq_ignore_ascii_case("site") {
+        "Site".to_string()
+    } else {
+        kind.to_string()
+    }
+}
+
+fn short_node_suffix(node_id: &str) -> &str {
+    let short = node_id.rsplit(':').next().unwrap_or(node_id);
+    &short[..short.len().min(8)]
+}
+
+fn unique_export_name(name: &str, node_id: &str, used_names: &mut HashSet<String>) -> String {
+    if used_names.insert(name.to_string()) {
+        return name.to_string();
+    }
+
+    let short = format!("{name} [{}]", short_node_suffix(node_id));
+    if used_names.insert(short.clone()) {
+        return short;
+    }
+
+    let fallback = format!("{name} [{node_id}]");
+    used_names.insert(fallback.clone());
+    fallback
+}
+
+fn build_insight_logical_entry_json(
+    entry_id: &str,
+    entries: &HashMap<String, InsightLogicalNodeEntry>,
+    children_by_parent: &HashMap<String, Vec<String>>,
+    visiting: &mut HashSet<String>,
+) -> (Value, u64, u64) {
+    let Some(entry) = entries.get(entry_id) else {
+        return (Value::Object(Map::new()), 1, 1);
+    };
+
+    if !visiting.insert(entry_id.to_string()) {
+        let download = entry.download_mbps.unwrap_or(1);
+        let upload = entry.upload_mbps.unwrap_or(1);
+        let mut map = Map::new();
+        map.insert("name".into(), entry.node_name.clone().into());
+        map.insert("id".into(), entry.node_id.clone().into());
+        map.insert(
+            "type".into(),
+            normalized_insight_node_kind(&entry.node_kind).into(),
+        );
+        map.insert("downloadBandwidthMbps".into(), download.into());
+        map.insert("uploadBandwidthMbps".into(), upload.into());
+        map.insert("children".into(), Value::Object(Map::new()));
+        return (Value::Object(map), download, upload);
+    }
+
+    let mut child_ids = children_by_parent
+        .get(entry_id)
+        .cloned()
+        .unwrap_or_default();
+    child_ids.sort_unstable_by(|left_id, right_id| {
+        let left = entries
+            .get(left_id)
+            .expect("child entry should exist when sorting Insight logical tree");
+        let right = entries
+            .get(right_id)
+            .expect("child entry should exist when sorting Insight logical tree");
+        left.node_name
+            .cmp(&right.node_name)
+            .then_with(|| left.node_id.cmp(&right.node_id))
+    });
+
+    let mut children = Map::new();
+    let mut used_names = HashSet::new();
+    let mut max_child_download = 0u64;
+    let mut max_child_upload = 0u64;
+    for child_id in child_ids {
+        let child = entries
+            .get(&child_id)
+            .expect("child entry should exist when building Insight logical tree");
+        let child_key = unique_export_name(&child.node_name, &child.node_id, &mut used_names);
+        let (child_value, child_download, child_upload) =
+            build_insight_logical_entry_json(&child_id, entries, children_by_parent, visiting);
+        max_child_download = max_child_download.max(child_download);
+        max_child_upload = max_child_upload.max(child_upload);
+        children.insert(child_key, child_value);
+    }
+
+    visiting.remove(entry_id);
+
+    let download = entry
+        .download_mbps
+        .or_else(|| (max_child_download > 0).then_some(max_child_download))
+        .unwrap_or(1);
+    let upload = entry
+        .upload_mbps
+        .or_else(|| (max_child_upload > 0).then_some(max_child_upload))
+        .unwrap_or(1);
+
+    let mut map = Map::new();
+    map.insert("name".into(), entry.node_name.clone().into());
+    map.insert("id".into(), entry.node_id.clone().into());
+    map.insert(
+        "type".into(),
+        normalized_insight_node_kind(&entry.node_kind).into(),
+    );
+    map.insert("downloadBandwidthMbps".into(), download.into());
+    map.insert("uploadBandwidthMbps".into(), upload.into());
+    if entry.is_virtual {
+        map.insert("virtual".into(), true.into());
+    }
+    map.insert("children".into(), Value::Object(children));
+
+    (Value::Object(map), download, upload)
 }
 
 fn atomic_write_json<T: Serialize>(
@@ -478,6 +615,109 @@ impl TopologyCanonicalStateFile {
         &self.compatibility_network_json
     }
 
+    /// Builds an Insight-only logical topology tree from canonical parent relationships.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn insight_topology_network_json(&self) -> Value {
+        if self.nodes.is_empty() {
+            return self.compatibility_network_json.clone();
+        }
+
+        let mut entries = HashMap::<String, InsightLogicalNodeEntry>::new();
+        for node in &self.nodes {
+            let (download_mbps, upload_mbps) = canonical_node_rates(node);
+            entries.insert(
+                node.node_id.clone(),
+                InsightLogicalNodeEntry {
+                    node_id: node.node_id.clone(),
+                    node_name: node.node_name.clone(),
+                    node_kind: node.node_kind.clone(),
+                    is_virtual: node.is_virtual,
+                    download_mbps,
+                    upload_mbps,
+                },
+            );
+        }
+
+        for node in &self.nodes {
+            let Some(parent_id) = node.current_parent_node_id.as_ref() else {
+                continue;
+            };
+            if entries.contains_key(parent_id) {
+                continue;
+            }
+
+            let parent_name = node
+                .current_parent_node_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(parent_id.as_str());
+            entries
+                .entry(parent_id.clone())
+                .or_insert_with(|| InsightLogicalNodeEntry {
+                    node_id: parent_id.clone(),
+                    node_name: parent_name.to_string(),
+                    node_kind: "Site".to_string(),
+                    is_virtual: false,
+                    download_mbps: None,
+                    upload_mbps: None,
+                });
+        }
+
+        let mut children_by_parent = HashMap::<String, Vec<String>>::new();
+        let mut seen_children = HashSet::<String>::new();
+        for node in &self.nodes {
+            let Some(parent_id) = node.current_parent_node_id.as_ref() else {
+                continue;
+            };
+            if !entries.contains_key(parent_id) || parent_id == &node.node_id {
+                continue;
+            }
+            children_by_parent
+                .entry(parent_id.clone())
+                .or_default()
+                .push(node.node_id.clone());
+            seen_children.insert(node.node_id.clone());
+        }
+
+        let mut root_ids = entries
+            .keys()
+            .filter(|entry_id| !seen_children.contains(*entry_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        root_ids.sort_unstable_by(|left_id, right_id| {
+            let left = entries
+                .get(left_id)
+                .expect("root entry should exist when sorting Insight logical tree");
+            let right = entries
+                .get(right_id)
+                .expect("root entry should exist when sorting Insight logical tree");
+            left.node_name
+                .cmp(&right.node_name)
+                .then_with(|| left.node_id.cmp(&right.node_id))
+        });
+
+        let mut out = Map::new();
+        let mut used_names = HashSet::new();
+        let mut visiting = HashSet::new();
+        for root_id in root_ids {
+            let root = entries
+                .get(&root_id)
+                .expect("root entry should exist when building Insight logical tree");
+            let export_name = unique_export_name(&root.node_name, &root.node_id, &mut used_names);
+            let (value, _, _) = build_insight_logical_entry_json(
+                &root_id,
+                &entries,
+                &children_by_parent,
+                &mut visiting,
+            );
+            out.insert(export_name, value);
+        }
+
+        Value::Object(out)
+    }
+
     /// Builds canonical state from integration-emitted editor state plus compatibility `network.json`.
     ///
     /// This function is pure: it has no side effects.
@@ -566,7 +806,7 @@ mod tests {
         TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyEditorNode,
         TopologyEditorStateFile,
     };
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn sample_attachment_option(
         attachment_id: &str,
@@ -746,5 +986,171 @@ mod tests {
             child.current_parent_node_id.as_deref(),
             Some(parent.node_id.as_str())
         );
+    }
+
+    #[test]
+    fn insight_topology_network_json_uses_logical_parent_hierarchy() {
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: Some(123),
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-router".to_string(),
+                    node_name: "WestRedd-SiteRouter".to_string(),
+                    current_parent_node_id: Some("root-west".to_string()),
+                    current_parent_node_name: Some("WestRedd".to_string()),
+                    current_attachment_id: Some("site-router".to_string()),
+                    current_attachment_name: Some("WestRedd-SiteRouter".to_string()),
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "core-west".to_string(),
+                    node_name: "Core-WestRedd".to_string(),
+                    current_parent_node_id: Some("site-router".to_string()),
+                    current_parent_node_name: Some("WestRedd-SiteRouter".to_string()),
+                    current_attachment_id: Some("core-west".to_string()),
+                    current_attachment_name: Some("Core-WestRedd".to_string()),
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "tuscany".to_string(),
+                    node_name: "Tuscany Ridge".to_string(),
+                    current_parent_node_id: Some("root-west".to_string()),
+                    current_parent_node_name: Some("WestRedd".to_string()),
+                    current_attachment_id: Some("aviat-west".to_string()),
+                    current_attachment_name: Some("AVIAT_WestRedd".to_string()),
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "monte".to_string(),
+                    node_name: "Monte Del Sol".to_string(),
+                    current_parent_node_id: Some("tuscany".to_string()),
+                    current_parent_node_name: Some("Tuscany Ridge".to_string()),
+                    current_attachment_id: Some("monte-ap".to_string()),
+                    current_attachment_name: Some("AF60LR-MonteDelSOl".to_string()),
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let compatibility_network = json!({
+            "WestRedd-SiteRouter": {
+                "children": {
+                    "Core-WestRedd": {
+                        "children": {},
+                        "downloadBandwidthMbps": 5000,
+                        "id": "core-west",
+                        "name": "Core-WestRedd",
+                        "type": "AP",
+                        "uploadBandwidthMbps": 5000
+                    }
+                },
+                "downloadBandwidthMbps": 5000,
+                "id": "site-router",
+                "name": "WestRedd-SiteRouter",
+                "type": "AP",
+                "uploadBandwidthMbps": 5000
+            },
+            "AVIAT_WestRedd": {
+                "children": {
+                    "AVIAT_TuscanyRidge": {
+                        "children": {
+                            "Tuscany Ridge": {
+                                "children": {
+                                    "AF60LR-MonteDelSOl": {
+                                        "children": {
+                                            "Monte Del Sol": {
+                                                "children": {},
+                                                "downloadBandwidthMbps": 900,
+                                                "id": "monte",
+                                                "name": "Monte Del Sol",
+                                                "type": "Site",
+                                                "uploadBandwidthMbps": 900
+                                            }
+                                        },
+                                        "downloadBandwidthMbps": 1200,
+                                        "id": "monte-ap",
+                                        "name": "AF60LR-MonteDelSOl",
+                                        "type": "AP",
+                                        "uploadBandwidthMbps": 1200
+                                    }
+                                },
+                                "downloadBandwidthMbps": 1200,
+                                "id": "tuscany",
+                                "name": "Tuscany Ridge",
+                                "type": "Site",
+                                "uploadBandwidthMbps": 1200
+                            }
+                        },
+                        "downloadBandwidthMbps": 1200,
+                        "id": "aviat-tuscany",
+                        "name": "AVIAT_TuscanyRidge",
+                        "type": "AP",
+                        "uploadBandwidthMbps": 1200
+                    }
+                },
+                "downloadBandwidthMbps": 5000,
+                "id": "aviat-west",
+                "name": "AVIAT_WestRedd",
+                "type": "AP",
+                "uploadBandwidthMbps": 5000
+            }
+        });
+
+        let canonical = TopologyCanonicalStateFile::from_editor_and_network(
+            &editor_state,
+            &compatibility_network,
+            TopologyCanonicalIngressKind::NativeIntegration,
+        );
+
+        let insight_tree = canonical.insight_topology_network_json();
+        let root = insight_tree
+            .as_object()
+            .and_then(|tree| tree.get("WestRedd"))
+            .and_then(Value::as_object)
+            .expect("expected synthetic logical root");
+        let root_children = root
+            .get("children")
+            .and_then(Value::as_object)
+            .expect("expected logical root children");
+        assert!(root_children.contains_key("WestRedd-SiteRouter"));
+        assert!(root_children.contains_key("Tuscany Ridge"));
+
+        let site_router_children = root_children
+            .get("WestRedd-SiteRouter")
+            .and_then(Value::as_object)
+            .and_then(|node| node.get("children"))
+            .and_then(Value::as_object)
+            .expect("expected site-router children");
+        assert!(site_router_children.contains_key("Core-WestRedd"));
+
+        let tuscany_children = root_children
+            .get("Tuscany Ridge")
+            .and_then(Value::as_object)
+            .and_then(|node| node.get("children"))
+            .and_then(Value::as_object)
+            .expect("expected Tuscany Ridge children");
+        assert!(tuscany_children.contains_key("Monte Del Sol"));
     }
 }

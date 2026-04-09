@@ -27,10 +27,10 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
 }
 
-fn load_insight_compatibility_network_json() -> anyhow::Result<String> {
+fn load_insight_logical_network_json() -> anyhow::Result<String> {
     let config = load_config()?;
     let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config.as_ref())?;
-    serde_json::to_string(canonical.compatibility_network_json()).map_err(Into::into)
+    serde_json::to_string(&canonical.insight_topology_network_json()).map_err(Into::into)
 }
 
 /// Temporary conversion function for LTS/Insight compatibility
@@ -118,11 +118,11 @@ pub(crate) fn submit_throughput_stats(
             tracing::info!("Sending topology to Insight");
             // Send the topology tree
             {
-                match load_insight_compatibility_network_json() {
-                    Err(err) => warn!("Unable to load Insight compatibility network JSON. {err:?}"),
+                match load_insight_logical_network_json() {
+                    Err(err) => warn!("Unable to load Insight logical topology JSON. {err:?}"),
                     Ok(raw_string) => match serde_json::from_str::<RawNetJs>(&raw_string) {
                         Err(e) => {
-                            warn!("Unable to parse Insight compatibility network JSON. {e:?}")
+                            warn!("Unable to parse Insight logical topology JSON. {e:?}")
                         }
                         Ok(json) => {
                             let lts2_format: Vec<_> =
@@ -559,16 +559,15 @@ fn ip6_to_bytes(ip: (Ipv6Addr, u32)) -> ([u8; 16], u8) {
     (bytes, ip.1 as u8)
 }
 
-/// Calculates a hash of the combination of the Insight compatibility network tree and shaped
-/// devices.
+/// Calculates a hash of the combination of the Insight logical topology tree and shaped devices.
 ///
-/// This intentionally uses the canonical compatibility export rather than any runtime-effective
-/// topology so Insight refresh stays aligned with the canonical integration contract.
+/// This intentionally uses the Insight-only logical topology export rather than any
+/// runtime-effective topology or local compatibility tree.
 fn combined_devices_network_hash() -> anyhow::Result<i64> {
     let cfg = load_config()?;
     let sd_path = std::path::Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
 
-    let nj_as_string = load_insight_compatibility_network_json()?;
+    let nj_as_string = load_insight_logical_network_json()?;
     let sd_as_string = read_to_string(sd_path)?;
     let combined = format!("{}\n{}", nj_as_string, sd_as_string);
     let hash = hash_to_i64(&combined);
