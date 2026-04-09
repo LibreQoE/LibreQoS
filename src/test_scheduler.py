@@ -1,5 +1,8 @@
 import importlib
+import json
+import os
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -29,6 +32,7 @@ def install_scheduler_stubs():
     lqlib.automatic_import_visp = lambda: False
     lqlib.calculate_hash = lambda: 0
     lqlib.calculate_shaping_runtime_hash = lambda: 0
+    lqlib.calculate_topology_source_generation = lambda: "test-generation"
     lqlib.efficiency_core_ids = lambda: []
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
@@ -160,6 +164,9 @@ class TestSchedulerAffinity(unittest.TestCase):
 
 
 class TestSchedulerErrorReporting(unittest.TestCase):
+    def setUp(self):
+        scheduler.set_scheduler_status_bus_enabled(True)
+
     def test_python_integration_output_does_not_set_scheduler_error(self):
         result = types.SimpleNamespace(returncode=0, stdout="normal info\n", stderr="")
 
@@ -174,7 +181,11 @@ class TestSchedulerErrorReporting(unittest.TestCase):
                         )
 
         mock_scheduler_error.assert_not_called()
-        mock_scheduler_output.assert_called_once_with("normal info\n")
+        mock_scheduler_output.assert_called_once()
+        self.assertIn(
+            "Example completed successfully. Captured 1 line(s) of output.",
+            mock_scheduler_output.call_args.args[0],
+        )
 
     def test_python_integration_nonzero_exit_sets_scheduler_error(self):
         result = types.SimpleNamespace(returncode=2, stdout="normal info\n", stderr="")
@@ -189,10 +200,17 @@ class TestSchedulerErrorReporting(unittest.TestCase):
                             label="Example",
                         )
 
-        mock_scheduler_error.assert_called_once_with(
-            "Integration Example exited with code 2. Continuing."
+        mock_scheduler_error.assert_called_once()
+        self.assertIn(
+            "Example exited with code 2. Continuing.",
+            mock_scheduler_error.call_args.args[0],
         )
-        mock_scheduler_output.assert_called_once_with("normal info\n")
+        self.assertIn("Output preview:\nnormal info", mock_scheduler_error.call_args.args[0])
+        self.assertIn(
+            "Full output saved to /tmp/lqos_scheduler_example_",
+            mock_scheduler_error.call_args.args[0],
+        )
+        mock_scheduler_output.assert_not_called()
 
     def test_import_from_crm_clears_error_and_keeps_success_output_non_error(self):
         result = types.SimpleNamespace(returncode=0, stdout="uisp info\n", stderr="")
@@ -209,9 +227,10 @@ class TestSchedulerErrorReporting(unittest.TestCase):
                                         scheduler.importFromCRM()
 
         self.assertEqual(mock_scheduler_error.call_args_list, [(( "",),)])
-        self.assertEqual(
-            mock_scheduler_output.call_args_list,
-            [(( "",),), (("uisp info\n",),)],
+        self.assertEqual(mock_scheduler_output.call_args_list[0], (("",),))
+        self.assertIn(
+            "UISP integration completed successfully. Captured 1 line(s) of output.",
+            mock_scheduler_output.call_args_list[1].args[0],
         )
 
     def test_import_from_crm_reports_nonzero_exit(self):
@@ -228,14 +247,20 @@ class TestSchedulerErrorReporting(unittest.TestCase):
                                     with patch("builtins.print"):
                                         scheduler.importFromCRM()
 
-        self.assertEqual(
-            mock_scheduler_error.call_args_list,
-            [(( "",),), (("UISP integration exited with code 1. Continuing.",),)],
+        self.assertEqual(mock_scheduler_error.call_args_list[0], (("",),))
+        self.assertIn(
+            "UISP integration exited with code 1. Continuing.",
+            mock_scheduler_error.call_args_list[1].args[0],
         )
-        self.assertEqual(
-            mock_scheduler_output.call_args_list,
-            [(( "",),), (("uisp info\n",),)],
+        self.assertIn(
+            "Output preview:\nuisp info",
+            mock_scheduler_error.call_args_list[1].args[0],
         )
+        self.assertIn(
+            "Full output saved to /tmp/lqos_scheduler_uisp_integration_",
+            mock_scheduler_error.call_args_list[1].args[0],
+        )
+        self.assertEqual(mock_scheduler_output.call_args_list, [(( "",),)])
 
     def test_run_scheduler_main_stays_alive_on_startup_refresh_failure(self):
         fake_ads = Mock()
@@ -274,16 +299,152 @@ class TestSchedulerErrorReporting(unittest.TestCase):
 
     def test_topology_runtime_refresh_tick_reports_refresh_failure(self):
         with patch.object(scheduler, "ensure_topology_runtime_process"):
-            with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=5):
-                with patch.object(scheduler, "refreshShapers", side_effect=RuntimeError("bad runtime")):
-                    with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
-                        with patch("builtins.print"):
-                            scheduler.shaping_runtime_hash = 0
-                            scheduler.topology_runtime_refresh_tick()
+            with patch.object(
+                scheduler,
+                "topology_runtime_readiness_detail",
+                return_value=(True, "", "generation-1"),
+            ):
+                with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=5):
+                    with patch.object(scheduler, "refreshShapers", side_effect=RuntimeError("bad runtime")):
+                        with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                            with patch("builtins.print"):
+                                scheduler.shaping_runtime_hash = 1
+                                scheduler.topology_runtime_refresh_tick()
 
         mock_scheduler_error.assert_called_once_with(
             "Topology runtime refresh failed: bad runtime"
         )
+
+    def test_topology_runtime_refresh_tick_skips_until_initial_shaping_succeeds(self):
+        with patch.object(scheduler, "ensure_topology_runtime_process") as mock_ensure:
+            with patch.object(scheduler, "calculate_shaping_runtime_hash") as mock_hash:
+                scheduler.shaping_runtime_hash = 0
+                scheduler.topology_runtime_refresh_tick()
+
+        mock_ensure.assert_not_called()
+        mock_hash.assert_not_called()
+
+    def test_import_and_shape_full_reload_reenables_status_bus_after_success(self):
+        scheduler.set_scheduler_status_bus_enabled(False)
+
+        with patch.object(scheduler, "importFromCRM"):
+            with patch.object(scheduler, "ensure_topology_runtime_process"):
+                with patch.object(scheduler, "publish_scheduler_progress"):
+                    with patch.object(scheduler, "enable_insight_topology", return_value=False):
+                        with patch.object(scheduler, "refreshShapers"):
+                            with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=9):
+                                scheduler.importAndShapeFullReload()
+
+        self.assertTrue(scheduler.scheduler_status_bus_enabled)
+
+
+class TestTopologyRuntimeReadiness(unittest.TestCase):
+    def test_missing_status_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("still building outputs", detail)
+
+    def test_stale_status_generation_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-old",
+                        "ready": True,
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-new",
+                ):
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-new")
+        self.assertIn("still building outputs", detail)
+
+    def test_ready_false_status_blocks_current_generation(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-1",
+                        "ready": False,
+                        "error": "Unable to publish shaping inputs",
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("failed for the current source generation", detail)
+        self.assertIn("Unable to publish shaping inputs", detail)
+
+    def test_ready_true_matching_status_allows_current_generation(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-1",
+                        "ready": True,
+                        "error": None,
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertTrue(ready)
+        self.assertEqual(detail, "")
+        self.assertEqual(generation, "generation-1")
+
+
+class TestTopologyRuntimeGating(unittest.TestCase):
+    def test_full_reload_skips_refresh_when_topology_runtime_not_ready(self):
+        with patch.object(scheduler, "importFromCRM"):
+            with patch.object(scheduler, "ensure_topology_runtime_process", return_value=False):
+                with patch.object(scheduler, "report_topology_runtime_not_ready") as mock_report:
+                    with patch.object(scheduler, "refreshShapers") as mock_refresh:
+                        with patch.object(scheduler, "publish_scheduler_progress"):
+                            scheduler.importAndShapeFullReload()
+
+        mock_refresh.assert_not_called()
+        mock_report.assert_called_once()
+
+    def test_partial_reload_skips_refresh_when_topology_runtime_not_ready(self):
+        with patch.object(scheduler, "importFromCRM"):
+            with patch.object(scheduler, "ensure_topology_runtime_process", return_value=False):
+                with patch.object(scheduler, "report_topology_runtime_not_ready") as mock_report:
+                    with patch.object(scheduler, "refreshShapers") as mock_refresh:
+                        with patch.object(scheduler, "publish_scheduler_progress"):
+                            scheduler.importAndShapePartialReload()
+
+        mock_refresh.assert_not_called()
+        mock_report.assert_called_once()
 
 
 class TestSchedulerOverrideMerge(unittest.TestCase):

@@ -77,13 +77,15 @@ pub use topology_parent_candidates::{
 };
 pub use topology_runtime_state::{
     TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_EFFECTIVE_NETWORK_FILENAME,
-    TOPOLOGY_EFFECTIVE_STATE_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
-    TopologyAttachmentEndpointStatus, TopologyAttachmentHealthEntry,
-    TopologyAttachmentHealthStateFile, TopologyEffectiveAttachmentState,
-    TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStateError,
-    TopologyShapingCircuitInput, TopologyShapingDeviceInput, TopologyShapingInputsFile,
-    TopologyShapingResolutionSource, topology_attachment_health_state_path,
-    topology_effective_network_path, topology_effective_state_path, topology_shaping_inputs_path,
+    TOPOLOGY_EFFECTIVE_STATE_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME,
+    TOPOLOGY_SHAPING_INPUTS_FILENAME, TopologyAttachmentEndpointStatus,
+    TopologyAttachmentHealthEntry, TopologyAttachmentHealthStateFile,
+    TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
+    TopologyRuntimeStateError, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
+    TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
+    compute_topology_source_generation, topology_attachment_health_state_path,
+    topology_effective_network_path, topology_effective_state_path, topology_runtime_status_path,
+    topology_shaping_inputs_path,
 };
 
 /// Used as a constant in determining buffer preallocation

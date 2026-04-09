@@ -34,10 +34,22 @@ flowchart LR
 - Actions:
   - On start: Run a full setup of queues
     - Current builds wait briefly for `lqosd` to finish binding the local bus before the first scheduler run.
-    - Current builds also wait for fresh runtime-effective topology outputs that match the just-imported canonical topology, rather than accepting any stale pre-existing `network.effective.json`.
+    - Current builds also wait for `lqos_topology` to publish `topology_runtime_status.json` with `ready: true` for the exact current `source_generation`, rather than inferring readiness from file mtimes.
   - Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.
     - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
     - The minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
+
+### lqos_topology runtime contract
+
+- `lqos_topology` continuously builds runtime-effective topology artifacts from current source inputs and attachment health.
+- After a successful publish, it writes `/opt/libreqos/src/topology_runtime_status.json` with:
+  - `source_generation`
+  - `ready`
+  - `generated_unix`
+  - artifact paths for `topology_effective_state.json`, `network.effective.json`, and `shaping_inputs.json`
+  - `error` when the current generation failed
+- `lqos_scheduler` only calls `refreshShapers()` when that status file reports `ready: true` for the exact current generation of `network.json`, `ShapedDevices.csv`, `circuit_anchors.json` when present, and the active topology source state.
+- If the runtime status is missing, stale, or failed for the current generation, scheduler stays alive in degraded mode and retries automatically on later refreshes.
 
 ### Checking service status
 

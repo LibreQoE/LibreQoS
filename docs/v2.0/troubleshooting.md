@@ -134,6 +134,20 @@ This exports a log file to lqos_sched_log.txt. You can review this file to see w
 
 If the scheduler fails immediately after a restart with a message like `Socket (typically /run/lqos/bus) not found`, that indicates `lqosd` had not finished binding the local bus yet. Current builds wait briefly for bus readiness at scheduler startup instead of crashing immediately, so repeated startup panics after restart should no longer be expected.
 
+If startup shaping fails because `shaping_inputs.json` is missing or stale, current builds leave the scheduler running in a degraded state and wait for the next scheduled full refresh to recover. The high-frequency topology refresh tick stays disabled until one shaping pass completes successfully, so repeated 3-second refresh attempts should not continue hammering a fresh install that has not produced runtime topology inputs yet.
+
+Current builds no longer gate startup shaping on file mtimes. Instead, `lqos_topology` publishes `/opt/libreqos/src/topology_runtime_status.json` with a `source_generation` derived from the current shaping inputs, and `lqos_scheduler` waits for `ready: true` for that exact generation before calling `refreshShapers()`.
+
+If scheduler startup is degraded with a message about topology runtime still building, that does not necessarily mean the scheduler service died. It means the current generation of `network.json`, `ShapedDevices.csv`, `circuit_anchors.json`, and active topology state has not finished producing committed runtime outputs yet. Once topology finishes and the status file flips to `ready: true` for the same generation, scheduled shaping refreshes recover automatically without restarting the service.
+
+If scheduler startup is degraded with a message that topology runtime failed for the current generation, inspect:
+
+```bash
+cat /opt/libreqos/src/topology_runtime_status.json
+ls -lh /opt/libreqos/src/topology_effective_state.json /opt/libreqos/src/network.effective.json /opt/libreqos/src/shaping_inputs.json
+journalctl -u lqos_scheduler --since "30 minutes ago"
+```
+
 If an integration subprocess fails, current builds keep the scheduler alive, publish a shortened output preview to the scheduler status/error surfaces, and save the full captured output to a timestamped file under `/tmp` such as `lqos_scheduler_uisp_integration_YYYYMMDD_HHMMSS.log`.
 
 ### Scheduler status in WebUI looks unhealthy
