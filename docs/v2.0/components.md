@@ -46,6 +46,7 @@ flowchart LR
 - Current builds keep two distinct topology views:
   - `compatibility_network_json` remains the local compatibility tree used as the base for `network.effective.json`
   - Insight topology submission derives a separate logical-parent tree from canonical topology state so sites are grouped by logical site hierarchy rather than immediate attachment hops
+  - When possible, the Insight-only logical tree preserves existing `network.json` export names for node identity compatibility instead of renaming nodes to raw canonical labels
 - After a successful publish, it writes `/opt/libreqos/src/topology_runtime_status.json` with:
   - `source_generation`
   - `ready`

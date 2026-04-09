@@ -145,6 +145,7 @@ pub enum TopologyCanonicalStateError {
 
 #[derive(Clone)]
 struct NetworkNodeSnapshot {
+    export_name: String,
     node_type: String,
     is_virtual: bool,
     download_mbps: Option<u64>,
@@ -162,7 +163,7 @@ fn empty_json_object() -> Value {
 #[derive(Clone)]
 struct InsightLogicalNodeEntry {
     node_id: String,
-    node_name: String,
+    export_name: String,
     node_kind: String,
     is_virtual: bool,
     download_mbps: Option<u64>,
@@ -224,7 +225,7 @@ fn build_insight_logical_entry_json(
         let download = entry.download_mbps.unwrap_or(1);
         let upload = entry.upload_mbps.unwrap_or(1);
         let mut map = Map::new();
-        map.insert("name".into(), entry.node_name.clone().into());
+        map.insert("name".into(), entry.export_name.clone().into());
         map.insert("id".into(), entry.node_id.clone().into());
         map.insert(
             "type".into(),
@@ -247,8 +248,8 @@ fn build_insight_logical_entry_json(
         let right = entries
             .get(right_id)
             .expect("child entry should exist when sorting Insight logical tree");
-        left.node_name
-            .cmp(&right.node_name)
+        left.export_name
+            .cmp(&right.export_name)
             .then_with(|| left.node_id.cmp(&right.node_id))
     });
 
@@ -260,7 +261,7 @@ fn build_insight_logical_entry_json(
         let child = entries
             .get(&child_id)
             .expect("child entry should exist when building Insight logical tree");
-        let child_key = unique_export_name(&child.node_name, &child.node_id, &mut used_names);
+        let child_key = unique_export_name(&child.export_name, &child.node_id, &mut used_names);
         let (child_value, child_download, child_upload) =
             build_insight_logical_entry_json(&child_id, entries, children_by_parent, visiting);
         max_child_download = max_child_download.max(child_download);
@@ -280,7 +281,7 @@ fn build_insight_logical_entry_json(
         .unwrap_or(1);
 
     let mut map = Map::new();
-    map.insert("name".into(), entry.node_name.clone().into());
+    map.insert("name".into(), entry.export_name.clone().into());
     map.insert("id".into(), entry.node_id.clone().into());
     map.insert(
         "type".into(),
@@ -390,6 +391,7 @@ fn build_network_node_index(
             .unwrap_or(key)
             .to_string();
         let snapshot = NetworkNodeSnapshot {
+            export_name: key.to_string(),
             node_type: node
                 .get("type")
                 .and_then(Value::as_str)
@@ -623,46 +625,31 @@ impl TopologyCanonicalStateFile {
             return self.compatibility_network_json.clone();
         }
 
+        let mut by_id = HashMap::new();
+        let mut by_name = HashMap::new();
+        if let Some(network_map) = self.compatibility_network_json.as_object() {
+            build_network_node_index(network_map, &mut by_id, &mut by_name);
+        }
+
         let mut entries = HashMap::<String, InsightLogicalNodeEntry>::new();
         for node in &self.nodes {
             let (download_mbps, upload_mbps) = canonical_node_rates(node);
+            let export_name = by_id
+                .get(&node.node_id)
+                .or_else(|| by_name.get(&node.node_name))
+                .map(|snapshot| snapshot.export_name.clone())
+                .unwrap_or_else(|| node.node_name.clone());
             entries.insert(
                 node.node_id.clone(),
                 InsightLogicalNodeEntry {
                     node_id: node.node_id.clone(),
-                    node_name: node.node_name.clone(),
+                    export_name,
                     node_kind: node.node_kind.clone(),
                     is_virtual: node.is_virtual,
                     download_mbps,
                     upload_mbps,
                 },
             );
-        }
-
-        for node in &self.nodes {
-            let Some(parent_id) = node.current_parent_node_id.as_ref() else {
-                continue;
-            };
-            if entries.contains_key(parent_id) {
-                continue;
-            }
-
-            let parent_name = node
-                .current_parent_node_name
-                .as_deref()
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-                .unwrap_or(parent_id.as_str());
-            entries
-                .entry(parent_id.clone())
-                .or_insert_with(|| InsightLogicalNodeEntry {
-                    node_id: parent_id.clone(),
-                    node_name: parent_name.to_string(),
-                    node_kind: "Site".to_string(),
-                    is_virtual: false,
-                    download_mbps: None,
-                    upload_mbps: None,
-                });
         }
 
         let mut children_by_parent = HashMap::<String, Vec<String>>::new();
@@ -693,8 +680,8 @@ impl TopologyCanonicalStateFile {
             let right = entries
                 .get(right_id)
                 .expect("root entry should exist when sorting Insight logical tree");
-            left.node_name
-                .cmp(&right.node_name)
+            left.export_name
+                .cmp(&right.export_name)
                 .then_with(|| left.node_id.cmp(&right.node_id))
         });
 
@@ -705,7 +692,7 @@ impl TopologyCanonicalStateFile {
             let root = entries
                 .get(&root_id)
                 .expect("root entry should exist when building Insight logical tree");
-            let export_name = unique_export_name(&root.node_name, &root.node_id, &mut used_names);
+            let export_name = unique_export_name(&root.export_name, &root.node_id, &mut used_names);
             let (value, _, _) = build_insight_logical_entry_json(
                 &root_id,
                 &entries,
@@ -1125,15 +1112,9 @@ mod tests {
         );
 
         let insight_tree = canonical.insight_topology_network_json();
-        let root = insight_tree
+        let root_children = insight_tree
             .as_object()
-            .and_then(|tree| tree.get("WestRedd"))
-            .and_then(Value::as_object)
-            .expect("expected synthetic logical root");
-        let root_children = root
-            .get("children")
-            .and_then(Value::as_object)
-            .expect("expected logical root children");
+            .expect("expected top-level logical roots");
         assert!(root_children.contains_key("WestRedd-SiteRouter"));
         assert!(root_children.contains_key("Tuscany Ridge"));
 
