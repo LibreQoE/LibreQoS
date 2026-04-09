@@ -2,7 +2,7 @@ use crate::node_manager::auth::LoginResult;
 use axum::http::StatusCode;
 use lqos_config::{
     Config, TopologyAllowedParent, TopologyAttachmentHealthStateFile, TopologyCanonicalStateFile,
-    TopologyEditorStateFile, load_config,
+    TopologyEditorStateFile, compute_topology_source_generation, load_config,
 };
 use lqos_overrides::{ManualAttachment, TopologyAttachmentMode, TopologyOverridesFile};
 use lqos_topology::{
@@ -206,7 +206,10 @@ fn publish_candidate_overrides(
         .save()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if publish_effective_topology_artifacts(config, &artifacts).is_err() {
+    let source_generation =
+        compute_topology_source_generation(config).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if publish_effective_topology_artifacts(config, &artifacts, &source_generation).is_err() {
         let _ = previous_overrides.save();
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }

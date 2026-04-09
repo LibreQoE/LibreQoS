@@ -1,11 +1,12 @@
 #!/bin/bash
+set -euo pipefail
 
 ####################################################
 # Copyright (c) 2022, Herbert Wolverson and LibreQoE
 # This is all GPL2.
 
 BUILD_DATE=$(date +%Y%m%d%H%M)
-[ "$1" = "--nostamp" ] && BUILD_DATE=""
+[ "${1:-}" = "--nostamp" ] && BUILD_DATE=""
 
 PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
@@ -149,7 +150,7 @@ fi
 sudo chown -R root:root /opt/libreqos
 
 # - Run lqsetup
-/opt/libreqos/src/bin/lqos_setup
+/opt/libreqos/src/bin/lqos_setup --skip-if-ready
 # - Setup the services
 install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
@@ -176,11 +177,11 @@ popd > /dev/null || exit
 
 # Copy files into the LibreQoS directory
 for file in "${LQOS_FILES[@]}"; do
-  cp "$file" "$LQOS_DIR" || echo "Error copying $file"
+  cp "$file" "$LQOS_DIR"
 done
 
 if [ -f deb-requirements-constraints.txt ]; then
-  cp deb-requirements-constraints.txt "$LQOS_DIR" || echo "Error copying deb-requirements-constraints.txt"
+  cp deb-requirements-constraints.txt "$LQOS_DIR"
 fi
 
 # Ensure helper scripts are executable in the package
@@ -190,7 +191,7 @@ fi
 
 # Copy files into the LibreQoS/bin directory
 for file in "${LQOS_BIN_FILES[@]}"; do
-  cp "bin/$file" "$LQOS_DIR/bin" || echo "Error copying $file"
+  cp "bin/$file" "$LQOS_DIR/bin"
 done
 
 # Copy the remove pinned maps
@@ -208,7 +209,7 @@ popd || exit
 cp rust/target/release/liblqos_python.so "$LQOS_DIR"
 # - The main executables
 for prog in "${RUSTPROGS[@]}"; do
-  cp rust/target/release/"$prog" "$LQOS_DIR"/bin || echo "Error copying $prog"
+  cp rust/target/release/"$prog" "$LQOS_DIR"/bin
 done
 
 cp -r bin/static2/* "$LQOS_DIR"/bin/static2

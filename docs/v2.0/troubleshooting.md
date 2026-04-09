@@ -134,6 +134,20 @@ This exports a log file to lqos_sched_log.txt. You can review this file to see w
 
 If the scheduler fails immediately after a restart with a message like `Socket (typically /run/lqos/bus) not found`, that indicates `lqosd` had not finished binding the local bus yet. Current builds wait briefly for bus readiness at scheduler startup instead of crashing immediately, so repeated startup panics after restart should no longer be expected.
 
+If a host upgrades to a newer CPython 3.x minor release than the machine used to build LibreQoS, current packages should no longer require an exact Python minor match for `liblqos_python.so`. The extension is now built in PyO3 `abi3` mode with a Python 3.10 floor. If you still see interpreter crashes or import failures after such an upgrade, treat that as a bug and capture:
+
+```bash
+python3 --version
+python3 - <<'PY'
+import sysconfig
+print(sysconfig.get_config_var("SOABI"))
+PY
+file /opt/libreqos/src/liblqos_python.so
+ldd /opt/libreqos/src/liblqos_python.so
+```
+
+Routine package upgrades now invoke `lqos_setup --skip-if-ready` during `postinst`. If `/etc/lqos.conf` loads, shaping interfaces are already selected and present, bandwidth is non-zero, and `network.json` plus `ShapedDevices.csv` already exist, the package skips the interactive Cursive setup screen instead of trying to launch a TUI during the upgrade.
+
 If startup shaping fails because `shaping_inputs.json` is missing or stale, current builds leave the scheduler running in a degraded state and wait for the next scheduled full refresh to recover. The high-frequency topology refresh tick stays disabled until one shaping pass completes successfully, so repeated 3-second refresh attempts should not continue hammering a fresh install that has not produced runtime topology inputs yet.
 
 Current builds no longer gate startup shaping on file mtimes. Instead, `lqos_topology` publishes `/opt/libreqos/src/topology_runtime_status.json` with a `source_generation` derived from the current shaping inputs, and `lqos_scheduler` waits for `ready: true` for that exact generation before calling `refreshShapers()`.

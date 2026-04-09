@@ -38,6 +38,7 @@ flowchart LR
   - Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.
     - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
     - The minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
+  - Current packages build `liblqos_python.so` with PyO3 `abi3` using a Python 3.10 floor, so the shipped extension is intended to remain import-compatible across newer CPython 3.x minor versions supported by PyO3 rather than matching only the build host's exact Python minor.
 
 ### lqos_topology runtime contract
 

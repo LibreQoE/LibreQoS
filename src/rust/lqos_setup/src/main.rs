@@ -7,6 +7,7 @@ mod preflight;
 mod webusers;
 
 use std::path::Path;
+use std::{env, fmt::Write as _};
 
 use bandwidth::bandwidth_view;
 use config_builder::CURRENT_CONFIG;
@@ -19,6 +20,7 @@ use cursive::{
 const VERSION: &str = include_str!("../../../VERSION_STRING");
 const DEFAULT_NETWORK_JSON: &str = include_str!("../../../network.example.json");
 const DEFAULT_SHAPED_DEVICES: &str = include_str!("../../../ShapedDevices.example.csv");
+const SKIP_IF_READY_FLAG: &str = "--skip-if-ready";
 
 fn config_exists() -> bool {
     let config_path = Path::new("/etc/lqos.conf");
@@ -41,7 +43,111 @@ fn shaped_devices_exists() -> bool {
     path.exists()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UpgradeReadiness {
+    config_present: bool,
+    config_loads: bool,
+    interfaces_ready: bool,
+    bandwidth_ready: bool,
+    network_json_present: bool,
+    shaped_devices_present: bool,
+}
+
+impl UpgradeReadiness {
+    fn all_ready(&self) -> bool {
+        self.config_present
+            && self.config_loads
+            && self.interfaces_ready
+            && self.bandwidth_ready
+            && self.network_json_present
+            && self.shaped_devices_present
+    }
+
+    fn summary(&self) -> String {
+        let mut message = String::from("lqos_setup --skip-if-ready checklist:");
+        let checklist = [
+            ("config present", self.config_present),
+            ("config loads", self.config_loads),
+            ("interfaces chosen", self.interfaces_ready),
+            ("bandwidth configured", self.bandwidth_ready),
+            ("network.json present", self.network_json_present),
+            ("ShapedDevices.csv present", self.shaped_devices_present),
+        ];
+        for (label, ready) in checklist {
+            let _ = write!(
+                &mut message,
+                "\n- {}: {}",
+                label,
+                if ready { "yes" } else { "no" }
+            );
+        }
+        message
+    }
+}
+
+fn upgrade_readiness_for_config_with(
+    config_path_exists: bool,
+    config: Option<&lqos_config::Config>,
+    interface_ready: impl Fn(&str) -> bool,
+) -> UpgradeReadiness {
+    let Some(config) = config else {
+        return UpgradeReadiness {
+            config_present: config_path_exists,
+            config_loads: false,
+            interfaces_ready: false,
+            bandwidth_ready: false,
+            network_json_present: false,
+            shaped_devices_present: false,
+        };
+    };
+
+    let base = Path::new(&config.lqos_directory);
+    let interfaces_ready = if let Some(bridge) = &config.bridge {
+        !bridge.to_internet.trim().is_empty()
+            && !bridge.to_network.trim().is_empty()
+            && bridge.to_internet != bridge.to_network
+            && interface_ready(&bridge.to_internet)
+            && interface_ready(&bridge.to_network)
+    } else if let Some(single) = &config.single_interface {
+        !single.interface.trim().is_empty() && interface_ready(&single.interface)
+    } else {
+        false
+    };
+
+    UpgradeReadiness {
+        config_present: config_path_exists,
+        config_loads: true,
+        interfaces_ready,
+        bandwidth_ready: config.queues.downlink_bandwidth_mbps > 0
+            && config.queues.uplink_bandwidth_mbps > 0,
+        network_json_present: base.join("network.json").exists(),
+        shaped_devices_present: base.join("ShapedDevices.csv").exists(),
+    }
+}
+
+fn upgrade_readiness() -> UpgradeReadiness {
+    let config_path_exists = config_exists();
+    let loaded_config = lqos_config::load_config().ok();
+    upgrade_readiness_for_config_with(config_path_exists, loaded_config.as_deref(), |interface| {
+        interfaces::interface_supports_lqos(interface).is_ok()
+    })
+}
+
+fn should_skip_interactive_setup() -> bool {
+    env::args().skip(1).any(|arg| arg == SKIP_IF_READY_FLAG)
+}
+
 fn main() {
+    if should_skip_interactive_setup() {
+        let readiness = upgrade_readiness();
+        println!("{}", readiness.summary());
+        if readiness.all_ready() {
+            println!("Existing LibreQoS install looks configured; skipping interactive setup.");
+            return;
+        }
+        println!("Interactive setup still required.");
+    }
+
     preflight::preflight();
     let mut ui = cursive::default();
     ui.add_global_callback('q', |s| s.quit());
@@ -145,6 +251,82 @@ fn main() {
             .button("SAVE CONFIG", finalize),
     );
     ui.run();
+}
+
+#[cfg(test)]
+mod test {
+    use super::upgrade_readiness_for_config_with;
+
+    fn configured_bridge_config(lqos_directory: String) -> lqos_config::Config {
+        let mut config = lqos_config::Config::default();
+        config.lqos_directory = lqos_directory;
+        config.bridge = Some(lqos_config::BridgeConfig {
+            use_xdp_bridge: true,
+            to_internet: "wan0".to_string(),
+            to_network: "lan0".to_string(),
+        });
+        config.single_interface = None;
+        config.queues.downlink_bandwidth_mbps = 1000;
+        config.queues.uplink_bandwidth_mbps = 1000;
+        config
+    }
+
+    #[test]
+    fn upgrade_ready_when_existing_install_is_configured() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("lqos-setup-upgrade-ready-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
+        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
+
+        let config = configured_bridge_config(temp_dir.display().to_string());
+        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
+        assert!(readiness.all_ready());
+
+        let _ = std::fs::remove_file(temp_dir.join("network.json"));
+        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn upgrade_not_ready_without_required_runtime_inputs() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "lqos-setup-upgrade-missing-files-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let config = configured_bridge_config(temp_dir.display().to_string());
+        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
+        assert!(!readiness.all_ready());
+        assert!(!readiness.network_json_present);
+        assert!(!readiness.shaped_devices_present);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn upgrade_not_ready_when_bridge_interfaces_are_not_distinct() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "lqos-setup-upgrade-same-iface-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
+        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
+
+        let mut config = configured_bridge_config(temp_dir.display().to_string());
+        if let Some(bridge) = config.bridge.as_mut() {
+            bridge.to_network = bridge.to_internet.clone();
+        }
+        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
+        assert!(!readiness.all_ready());
+        assert!(!readiness.interfaces_ready);
+
+        let _ = std::fs::remove_file(temp_dir.join("network.json"));
+        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }
 
 fn finalize(ui: &mut cursive::Cursive) {
