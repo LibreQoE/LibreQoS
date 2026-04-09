@@ -136,6 +136,7 @@ struct MigrationDirectionVerification {
     interface_name: String,
     expected_handle: TcHandle,
     expected_parent: TcHandle,
+    observed_present: bool,
     observed_parent: Option<TcHandle>,
     observed_leaf_qdisc_major: Option<u16>,
 }
@@ -147,19 +148,27 @@ impl MigrationDirectionVerification {
     }
 
     fn summary(&self, direction: &str) -> String {
-        let observed = match (self.observed_parent, self.observed_leaf_qdisc_major) {
-            (Some(parent), Some(leaf_major)) => format!(
+        let observed = match (
+            self.observed_present,
+            self.observed_parent,
+            self.observed_leaf_qdisc_major,
+        ) {
+            (false, _, _) => "observed missing".to_string(),
+            (true, Some(parent), Some(leaf_major)) => format!(
                 "observed parent {} with leaf qdisc 0x{:x}:",
                 parent.as_tc_string(),
                 leaf_major
             ),
-            (Some(parent), None) => {
+            (true, Some(parent), None) => {
                 format!(
                     "observed parent {} with no leaf qdisc",
                     parent.as_tc_string()
                 )
             }
-            (None, _) => "observed missing".to_string(),
+            (true, None, Some(leaf_major)) => {
+                format!("observed at root with leaf qdisc 0x{:x}:", leaf_major)
+            }
+            (true, None, None) => "observed at root with no leaf qdisc".to_string(),
         };
         format!(
             "{direction} {} expected class {} under parent {} with a leaf qdisc, {observed}",
@@ -168,6 +177,41 @@ impl MigrationDirectionVerification {
             self.expected_parent.as_tc_string()
         )
     }
+}
+
+fn wrong_parent_prune_commands_for_direction(
+    interface_name: String,
+    snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    expected_handle: TcHandle,
+    expected_parent: TcHandle,
+) -> Vec<Vec<String>> {
+    let Some(observed) = snapshot.get(&expected_handle) else {
+        return Vec::new();
+    };
+    if observed.parent == Some(expected_parent) {
+        return Vec::new();
+    }
+
+    let mut commands = Vec::new();
+    if observed.leaf_qdisc_major.is_some() {
+        commands.push(vec![
+            "qdisc".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            interface_name.clone(),
+            "parent".to_string(),
+            expected_handle.as_tc_string(),
+        ]);
+    }
+    commands.push(vec![
+        "class".to_string(),
+        "del".to_string(),
+        "dev".to_string(),
+        interface_name,
+        "classid".to_string(),
+        expected_handle.as_tc_string(),
+    ]);
+    commands
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3287,6 +3331,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             interface_name,
             expected_handle,
             expected_parent,
+            observed_present: observed.is_some(),
             observed_parent: observed.and_then(|entry| entry.parent),
             observed_leaf_qdisc_major: observed.and_then(|entry| entry.leaf_qdisc_major),
         }
@@ -3341,6 +3386,54 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         )
     }
 
+    fn migration_branch_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        down_handle: TcHandle,
+        down_parent: TcHandle,
+        up_handle: TcHandle,
+        up_parent: TcHandle,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_snapshot = read_live_class_snapshot(&config.isp_interface())?;
+        let mut commands = wrong_parent_prune_commands_for_direction(
+            config.isp_interface(),
+            &down_snapshot,
+            down_handle,
+            down_parent,
+        );
+
+        if config.on_a_stick_mode() {
+            return Ok(commands);
+        }
+
+        let up_snapshot = read_live_class_snapshot(&config.internet_interface())?;
+        commands.extend(wrong_parent_prune_commands_for_direction(
+            config.internet_interface(),
+            &up_snapshot,
+            up_handle,
+            up_parent,
+        ));
+        Ok(commands)
+    }
+
+    fn migration_shadow_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        migration: &Migration,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_handle = TcHandle::from_u32(
+            (u32::from(migration.class_major) << 16) | u32::from(migration.shadow_minor),
+        );
+        let up_handle = TcHandle::from_u32(
+            (u32::from(migration.up_class_major) << 16) | u32::from(migration.shadow_minor),
+        );
+        migration_branch_wrong_parent_prune_commands(
+            config,
+            down_handle,
+            migration.parent_class_id,
+            up_handle,
+            migration.up_parent_class_id,
+        )
+    }
+
     fn migration_final_verification(
         config: &Arc<Config>,
         migration: &Migration,
@@ -3352,6 +3445,25 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             (u32::from(migration.up_class_major) << 16) | u32::from(migration.final_minor),
         );
         migration_branch_verification(
+            config,
+            down_handle,
+            migration.parent_class_id,
+            up_handle,
+            migration.up_parent_class_id,
+        )
+    }
+
+    fn migration_final_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        migration: &Migration,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_handle = TcHandle::from_u32(
+            (u32::from(migration.class_major) << 16) | u32::from(migration.final_minor),
+        );
+        let up_handle = TcHandle::from_u32(
+            (u32::from(migration.up_class_major) << 16) | u32::from(migration.final_minor),
+        );
+        migration_branch_wrong_parent_prune_commands(
             config,
             down_handle,
             migration.parent_class_id,
@@ -3393,13 +3505,24 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         config,
                         "live-move: create shadow",
                     );
+                    let target_label = migration_target_label(mig);
+                    let mut cmds = match migration_shadow_wrong_parent_prune_commands(config, mig) {
+                        Ok(commands) => commands,
+                        Err(error) => {
+                            mark_reload_required(format!(
+                                "Bakery live-move shadow cleanup failed for {target_label}: {error}. A full reload is now required before further incremental topology mutations."
+                            ));
+                            mig.stage = MigrationStage::Done;
+                            advanced += 1;
+                            continue;
+                        }
+                    };
                     if let Some(temp) = build_shadow_add_cmd(
                         mig,
                         config,
                         &persisted_qdisc_handles,
                         &live_reserved_handles,
                     ) {
-                        let mut cmds = Vec::new();
                         match config.queues.lazy_queues.as_ref() {
                             None | Some(LazyQueueMode::No) => {
                                 if let Some(c) =
@@ -3510,7 +3633,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 }
                 MigrationStage::BuildFinal => {
                     let target_label = migration_target_label(mig);
-                    let mut cmds = Vec::new();
+                    let mut cmds = match migration_final_wrong_parent_prune_commands(config, mig) {
+                        Ok(commands) => commands,
+                        Err(error) => {
+                            mark_reload_required(format!(
+                                "Bakery live-move final cleanup failed for {target_label}: {error}. A full reload is now required before further incremental topology mutations."
+                            ));
+                            mig.stage = MigrationStage::Done;
+                            advanced += 1;
+                            continue;
+                        }
+                    };
                     let live_qdisc_handles = snapshot_live_qdisc_handle_majors_or_empty(
                         config,
                         "live-move: build final",
@@ -13253,6 +13386,7 @@ mod tests {
                 interface_name: "if-down".to_string(),
                 expected_handle: TcHandle::from_u32(0x4002000),
                 expected_parent: TcHandle::from_u32(0x4000015),
+                observed_present: true,
                 observed_parent: Some(TcHandle::from_u32(0x4000013)),
                 observed_leaf_qdisc_major: None,
             },
@@ -13260,6 +13394,7 @@ mod tests {
                 interface_name: "if-up".to_string(),
                 expected_handle: TcHandle::from_u32(0x5002000),
                 expected_parent: TcHandle::from_u32(0x5000015),
+                observed_present: false,
                 observed_parent: None,
                 observed_leaf_qdisc_major: None,
             }),
@@ -13278,6 +13413,84 @@ mod tests {
         assert!(summary.contains("500"));
         assert!(summary.contains("observed missing"));
         assert!(!verification.ready());
+    }
+
+    #[test]
+    fn migration_branch_verification_summary_reports_root_attached_class() {
+        let verification = MigrationDirectionVerification {
+            interface_name: "if-root".to_string(),
+            expected_handle: TcHandle::from_u32(0x221f5),
+            expected_parent: TcHandle::from_u32(0x2103a),
+            observed_present: true,
+            observed_parent: None,
+            observed_leaf_qdisc_major: Some(0x96c8),
+        };
+
+        let summary = verification.summary("down");
+        assert!(summary.contains("observed at root"));
+        assert!(summary.contains("96c8"));
+    }
+
+    #[test]
+    fn wrong_parent_prune_commands_delete_root_attached_target_class() {
+        let snapshot = HashMap::from([(
+            TcHandle::from_u32(0x221f5),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x221f5),
+                parent: None,
+                leaf_qdisc_major: Some(0x96c8),
+            },
+        )]);
+
+        let commands = wrong_parent_prune_commands_for_direction(
+            "if-root".to_string(),
+            &snapshot,
+            TcHandle::from_u32(0x221f5),
+            TcHandle::from_u32(0x2103a),
+        );
+
+        assert_eq!(
+            commands,
+            vec![
+                vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    "if-root".to_string(),
+                    "parent".to_string(),
+                    "0x2:0x21f5".to_string(),
+                ],
+                vec![
+                    "class".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    "if-root".to_string(),
+                    "classid".to_string(),
+                    "0x2:0x21f5".to_string(),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn wrong_parent_prune_commands_skip_target_when_parent_already_matches() {
+        let snapshot = HashMap::from([(
+            TcHandle::from_u32(0x221f5),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x221f5),
+                parent: Some(TcHandle::from_u32(0x2103a)),
+                leaf_qdisc_major: Some(0x96c8),
+            },
+        )]);
+
+        let commands = wrong_parent_prune_commands_for_direction(
+            "if-ok".to_string(),
+            &snapshot,
+            TcHandle::from_u32(0x221f5),
+            TcHandle::from_u32(0x2103a),
+        );
+
+        assert!(commands.is_empty());
     }
 
     #[test]
