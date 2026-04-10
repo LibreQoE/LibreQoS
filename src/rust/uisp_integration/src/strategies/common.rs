@@ -181,10 +181,24 @@ impl UispData {
             .find(|d| d.identification.id == device_id)
     }
 
-    pub fn find_device_by_name(&self, device_name: &str) -> Option<&Device> {
-        self.devices_raw
-            .iter()
-            .find(|d| d.get_name().unwrap_or_default() == device_name)
+    pub fn find_site_by_id(&self, site_id: &str) -> Option<&UispSite> {
+        self.sites.iter().find(|site| site.id == site_id)
+    }
+
+    pub fn find_uisp_device_by_id(&self, device_id: &str) -> Option<&UispDevice> {
+        self.devices.iter().find(|device| device.id == device_id)
+    }
+
+    pub fn device_display_name(&self, device_id: &str) -> String {
+        self.find_uisp_device_by_id(device_id)
+            .map(|device| {
+                if device.name.trim().is_empty() {
+                    device.id.clone()
+                } else {
+                    device.name.clone()
+                }
+            })
+            .unwrap_or_else(|| device_id.to_string())
     }
 
     pub fn map_clients_to_aps(&self) -> HashMap<String, Vec<String>> {

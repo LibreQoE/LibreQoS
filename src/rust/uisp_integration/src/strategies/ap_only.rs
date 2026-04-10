@@ -4,11 +4,45 @@ use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 use lqos_config::{CircuitEthernetMetadata, Config};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{error, info, warn};
+
+fn build_ap_only_network_json(
+    uisp_data: &UispData,
+    mappings: &HashMap<String, Vec<String>>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut root = serde_json::Map::new();
+    for ap_id in mappings.keys() {
+        let Some(ap_device) = uisp_data.find_uisp_device_by_id(ap_id) else {
+            warn!("Unable to find AP device for mapping key {ap_id}");
+            continue;
+        };
+        let ap_name = uisp_data.device_display_name(ap_id);
+
+        let mut ap_object = serde_json::Map::new();
+        ap_object.insert("children".to_string(), serde_json::Map::new().into());
+        ap_object.insert(
+            "downloadBandwidthMbps".to_string(),
+            serde_json::Value::Number(ap_device.download.into()),
+        );
+        ap_object.insert(
+            "uploadBandwidthMbps".to_string(),
+            serde_json::Value::Number(ap_device.upload.into()),
+        );
+        ap_object.insert("type".to_string(), "AP".to_string().into());
+        ap_object.insert(
+            "id".to_string(),
+            format!("uisp:device:{}", ap_device.id).into(),
+        );
+        ap_object.insert("uisp_device".to_string(), ap_device.id.clone().into());
+
+        root.insert(ap_name, ap_object.into());
+    }
+    root
+}
 
 /// Creates a network with only APs detected
 /// from clients.
@@ -28,35 +62,7 @@ pub async fn build_ap_only_network(
             "Network.json exists, and always overwrite network json is not true - not writing network.json"
         );
     } else {
-        let mut root = serde_json::Map::new();
-        for ap in mappings.keys() {
-            if let Some(ap_device) = uisp_data.devices.iter().find(|d| d.name == *ap) {
-                let mut ap_object = serde_json::Map::new();
-                // Empy children
-                ap_object.insert("children".to_string(), serde_json::Map::new().into());
-
-                // Limits
-                ap_object.insert(
-                    "downloadBandwidthMbps".to_string(),
-                    serde_json::Value::Number(ap_device.download.into()),
-                );
-                ap_object.insert(
-                    "uploadBandwidthMbps".to_string(),
-                    serde_json::Value::Number(ap_device.upload.into()),
-                );
-
-                // Metadata
-                ap_object.insert("type".to_string(), "AP".to_string().into());
-                ap_object.insert(
-                    "id".to_string(),
-                    format!("uisp:device:{}", ap_device.id).into(),
-                );
-                ap_object.insert("uisp_device".to_string(), ap_device.id.clone().into());
-
-                // Save the entry
-                root.insert(ap.to_string(), ap_object.into());
-            }
-        }
+        let root = build_ap_only_network_json(&uisp_data, &mappings);
         let json = serde_json::to_string_pretty(&root).unwrap();
         write(network_path, json).map_err(|e| {
             error!("Unable to write network.json");
@@ -71,7 +77,8 @@ pub async fn build_ap_only_network(
     let mut shaped_devices = Vec::new();
     let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
     let mut seen_pairs = HashSet::new();
-    for (parent, client_ids) in mappings.iter() {
+    for (parent_id, client_ids) in mappings.iter() {
+        let parent_name = uisp_data.device_display_name(parent_id);
         for client_id in client_ids {
             let site = uisp_data.sites.iter().find(|s| *client_id == s.id).unwrap();
             let devices = uisp_data
@@ -136,7 +143,7 @@ pub async fn build_ap_only_network(
                     circuit_name: site.name.clone(),
                     device_id: device.id.clone(),
                     device_name: device.name.clone(),
-                    parent_node: parent.clone(),
+                    parent_node: parent_name.clone(),
                     mac: device.mac.clone(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
@@ -167,4 +174,50 @@ pub async fn build_ap_only_network(
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_ap_only_network_json;
+    use crate::strategies::common::UispData;
+    use crate::uisp_types::{UispDevice, UispSite};
+    use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn ap_only_network_json_resolves_ap_ids_to_names() {
+        let uisp_data = UispData {
+            sites_raw: vec![],
+            devices_raw: vec![],
+            data_links_raw: vec![],
+            sites: vec![UispSite {
+                id: "client-site".to_string(),
+                name: "Client Site".to_string(),
+                ..Default::default()
+            }],
+            devices: vec![UispDevice {
+                id: "ap-1".to_string(),
+                name: "Tower AP".to_string(),
+                mac: "".to_string(),
+                role: None,
+                wireless_mode: None,
+                site_id: "tower-site".to_string(),
+                download: 500,
+                upload: 400,
+                ipv4: HashSet::new(),
+                ipv6: HashSet::new(),
+                negotiated_ethernet_mbps: None,
+                negotiated_ethernet_interface: None,
+            }],
+        };
+        let mappings = HashMap::from([("ap-1".to_string(), vec!["client-site".to_string()])]);
+
+        let network_json = build_ap_only_network_json(&uisp_data, &mappings);
+
+        assert!(network_json.get("Tower AP").is_some());
+        let ap = network_json
+            .get("Tower AP")
+            .and_then(|value| value.as_object())
+            .unwrap();
+        assert_eq!(ap.get("uisp_device").and_then(|v| v.as_str()), Some("ap-1"));
+    }
 }

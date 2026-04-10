@@ -16,8 +16,12 @@ pub enum GraphMapping {
     Root,
     SiteByName(String),
     //GeneratedSiteByName(String),
-    AccessPointByName(String),
+    AccessPointById(String),
     ClientById(String),
+}
+
+fn ap_name(uisp_data: &UispData, ap_id: &str) -> String {
+    uisp_data.device_display_name(ap_id)
 }
 
 /// Creates a network with APs detected from clients,
@@ -115,10 +119,9 @@ pub(crate) fn map_sites_above_aps(
     access_points: HashMap<String, Layer>,
 ) -> HashMap<String, Layer> {
     let mut sites = HashMap::new();
-    for (ap_name, client_ids) in ap_mappings.iter() {
-        if let Some(device) = uisp_data.find_device_by_name(ap_name) {
-            if let Some(device_site_id) = device.get_site_id()
-                && let Some(device_site) = uisp_data.sites.iter().find(|s| s.id == device_site_id)
+    for (ap_id, client_ids) in ap_mappings.iter() {
+        if let Some(device) = uisp_data.find_uisp_device_by_id(ap_id) {
+            if let Some(device_site) = uisp_data.find_site_by_id(&device.site_id)
             {
                 let site_entry = sites
                     .entry(device_site.name.clone())
@@ -126,12 +129,13 @@ pub(crate) fn map_sites_above_aps(
                         id: GraphMapping::SiteByName(device_site.name.clone()),
                         children: Vec::new(),
                     });
-                let ap_map = access_points.get(ap_name).unwrap().clone();
+                let ap_map = access_points.get(ap_id).unwrap().clone();
                 site_entry.children.push(ap_map);
             }
         } else {
+            let detached_name = ap_name(uisp_data, ap_id);
             let mut detached = Layer {
-                id: GraphMapping::SiteByName(ap_name.clone()),
+                id: GraphMapping::SiteByName(detached_name.clone()),
                 children: vec![],
             };
             for client_id in client_ids.iter() {
@@ -140,7 +144,7 @@ pub(crate) fn map_sites_above_aps(
                     children: vec![],
                 });
             }
-            sites.insert(ap_name.clone(), detached);
+            sites.insert(detached_name, detached);
         }
     }
     sites
@@ -148,9 +152,9 @@ pub(crate) fn map_sites_above_aps(
 
 pub(crate) fn get_ap_layer(ap_mappings: &HashMap<String, Vec<String>>) -> HashMap<String, Layer> {
     let mut access_points = HashMap::new();
-    for (ap_name, client_ids) in ap_mappings.iter() {
+    for (ap_id, client_ids) in ap_mappings.iter() {
         let mut ap_layer = Layer {
-            id: GraphMapping::AccessPointByName(ap_name.clone()),
+            id: GraphMapping::AccessPointById(ap_id.clone()),
             children: Vec::new(),
         };
         for client_id in client_ids.iter() {
@@ -159,7 +163,7 @@ pub(crate) fn get_ap_layer(ap_mappings: &HashMap<String, Vec<String>>) -> HashMa
                 children: Vec::new(),
             });
         }
-        access_points.insert(ap_name.clone(), ap_layer);
+        access_points.insert(ap_id.clone(), ap_layer);
     }
     access_points
 }
@@ -181,16 +185,29 @@ impl Layer {
     ) -> serde_json::Map<String, serde_json::Value> {
         let mut children = serde_json::Map::new();
         let parent_name = match &self.id {
-            GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name) => {
-                name.to_owned()
-            }
+            GraphMapping::SiteByName(name) => name.to_owned(),
+            GraphMapping::AccessPointById(ap_id) => ap_name(uisp_data, ap_id),
             _ => "".to_owned(),
         };
         for child in self.children.iter() {
             match &child.id {
-                GraphMapping::SiteByName(name) | GraphMapping::AccessPointByName(name) => {
+                GraphMapping::SiteByName(name) => {
                     children.insert(
                         name.clone(),
+                        child
+                            .walk_children(
+                                Some(&parent_name),
+                                uisp_data,
+                                shaped_devices,
+                                ethernet_advisories,
+                                config,
+                            )
+                            .into(),
+                    );
+                }
+                GraphMapping::AccessPointById(ap_id) => {
+                    children.insert(
+                        ap_name(uisp_data, ap_id),
                         child
                             .walk_children(
                                 Some(&parent_name),
@@ -245,11 +262,12 @@ impl Layer {
                         }
                     }
                 }
-                GraphMapping::AccessPointByName(name) => {
+                GraphMapping::AccessPointById(device_id) => {
+                    let name = ap_name(uisp_data, device_id);
                     root.insert("type".to_string(), "AP".into());
                     root.insert("name".to_string(), name.clone().into());
                     root.insert("parent_site".to_string(), parent.to_string().into());
-                    if let Some(device) = uisp_data.devices.iter().find(|d| d.name == *name) {
+                    if let Some(device) = uisp_data.find_uisp_device_by_id(device_id) {
                         root.insert("downloadBandwidthMbps".to_owned(), device.download.into());
                         root.insert("uploadBandwidthMbps".to_owned(), device.upload.into());
                         root.insert(
@@ -451,7 +469,7 @@ mod tests {
             children: vec![Layer {
                 id: GraphMapping::SiteByName("Tower Site".to_string()),
                 children: vec![Layer {
-                    id: GraphMapping::AccessPointByName("AP 1".to_string()),
+                    id: GraphMapping::AccessPointById("ap-1".to_string()),
                     children: vec![Layer {
                         id: GraphMapping::ClientById("client-site".to_string()),
                         children: vec![],
@@ -486,6 +504,44 @@ mod tests {
             .unwrap();
         let ap_children = ap.get("children").and_then(|v| v.as_object()).unwrap();
         assert!(ap_children.is_empty());
+    }
+
+    #[test]
+    fn ap_site_uses_ap_device_id_for_lookup_but_emits_ap_name() {
+        let uisp_data = UispData {
+            sites_raw: vec![],
+            devices_raw: vec![],
+            data_links_raw: vec![],
+            sites: vec![UispSite {
+                id: "tower-site".to_string(),
+                name: "Tower Site".to_string(),
+                ..Default::default()
+            }],
+            devices: vec![UispDevice {
+                id: "ap-1".to_string(),
+                name: "AP 1".to_string(),
+                mac: "".to_string(),
+                role: None,
+                wireless_mode: None,
+                site_id: "tower-site".to_string(),
+                download: 500,
+                upload: 500,
+                ipv4: HashSet::new(),
+                ipv6: HashSet::new(),
+                negotiated_ethernet_mbps: None,
+                negotiated_ethernet_interface: None,
+            }],
+        };
+        let ap_mappings = HashMap::from([("ap-1".to_string(), vec!["client-site".to_string()])]);
+
+        let access_points = get_ap_layer(&ap_mappings);
+        let sites = map_sites_above_aps(&uisp_data, ap_mappings, access_points);
+
+        let tower_site = sites.get("Tower Site").unwrap();
+        assert!(matches!(
+            tower_site.children[0].id,
+            GraphMapping::AccessPointById(ref id) if id == "ap-1"
+        ));
     }
 }
 
