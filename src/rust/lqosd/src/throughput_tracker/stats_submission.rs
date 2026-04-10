@@ -16,8 +16,9 @@ use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use std::fs::read_to_string;
+use std::io::Write;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI64;
 use tracing::debug;
 use tracing::log::warn;
@@ -27,10 +28,32 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
 }
 
+fn insight_topology_debug_path(config: &lqos_config::Config) -> PathBuf {
+    Path::new(&config.lqos_directory).join("network.insight.debug.json")
+}
+
+fn write_insight_topology_debug_snapshot(
+    config: &lqos_config::Config,
+    raw_json: &str,
+) -> anyhow::Result<()> {
+    let path = insight_topology_debug_path(config);
+    let temp_path = path.with_extension("tmp");
+    let mut file = std::fs::File::create(&temp_path)?;
+    file.write_all(raw_json.as_bytes())?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    std::fs::rename(temp_path, path)?;
+    Ok(())
+}
+
 fn load_insight_logical_network_json() -> anyhow::Result<String> {
     let config = load_config()?;
     let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config.as_ref())?;
-    serde_json::to_string(&canonical.insight_topology_network_json()).map_err(Into::into)
+    let raw_json = serde_json::to_string_pretty(&canonical.insight_topology_network_json())?;
+    if let Err(err) = write_insight_topology_debug_snapshot(config.as_ref(), &raw_json) {
+        warn!("Unable to write Insight topology debug snapshot. {err:?}");
+    }
+    Ok(raw_json)
 }
 
 /// Temporary conversion function for LTS/Insight compatibility
