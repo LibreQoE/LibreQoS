@@ -46,6 +46,12 @@ function validateConfig() {
             return false;
         }
 
+        const airmaxFlexibleFrameDownloadRatio = parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value);
+        if (isNaN(airmaxFlexibleFrameDownloadRatio) || airmaxFlexibleFrameDownloadRatio <= 0 || airmaxFlexibleFrameDownloadRatio >= 1) {
+            alert("AirMax Flexible Frame Download Ratio must be a number greater than 0 and less than 1");
+            return false;
+        }
+
         const ltuCapacity = parseFloat(document.getElementById("uispLtuCapacity").value);
         if (isNaN(ltuCapacity) || ltuCapacity < 0) {
             alert("LTU Capacity must be a number greater than or equal to 0");
@@ -81,6 +87,9 @@ function validateConfig() {
 function updateConfig() {
     // Update only the uisp_integration section
     // Parse comma-separated strings into arrays
+    const existingUisp = { ...(window.config.uisp_integration || {}) };
+    delete existingUisp.enable_squashing;
+
     const excludeSites = document.getElementById("uispExcludeSites").value.trim();
     const excludeSitesArray = excludeSites ? excludeSites.split(',').map(s => s.trim()) : [];
 
@@ -98,7 +107,7 @@ function updateConfig() {
 
     // Update the config object
     window.config.uisp_integration = {
-        ...(window.config.uisp_integration || {}),  // Preserve existing values
+        ...existingUisp,
         enable_uisp: document.getElementById("enableUisp").checked,
         token: document.getElementById("uispToken").value.trim(),
         url: document.getElementById("uispUrl").value.trim(),
@@ -106,6 +115,7 @@ function updateConfig() {
         strategy: document.getElementById("uispStrategy").value.trim(),
         suspended_strategy: document.getElementById("uispSuspendedStrategy").value.trim(),
         airmax_capacity: parseFloat(document.getElementById("uispAirmaxCapacity").value),
+        airmax_flexible_frame_download_ratio: parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value),
         ltu_capacity: parseFloat(document.getElementById("uispLtuCapacity").value),
         ipv6_with_mikrotik: document.getElementById("uispIpv6WithMikrotik").checked,
         bandwidth_overhead_factor: parseFloat(document.getElementById("uispBandwidthOverhead").value),
@@ -116,7 +126,6 @@ function updateConfig() {
         exclude_sites: excludeSitesArray,
         squash_sites: squashSitesArray && squashSitesArray.length > 0 ? squashSitesArray : null,
         exception_cpes: exceptionCpesArray,
-        enable_squashing: document.getElementById("uispEnableSquashing").checked,
         do_not_squash_sites: doNotSquashSitesArray && doNotSquashSitesArray.length > 0 ? doNotSquashSitesArray : null,
     };
 }
@@ -145,8 +154,9 @@ loadConfig(() => {
         document.getElementById("uispSuspendedStrategy").value = uisp.suspended_strategy ?? "none";
 
         // Numeric fields
-        document.getElementById("uispAirmaxCapacity").value = uisp.airmax_capacity ?? 0.0;
-        document.getElementById("uispLtuCapacity").value = uisp.ltu_capacity ?? 0.0;
+        document.getElementById("uispAirmaxCapacity").value = uisp.airmax_capacity ?? 1.0;
+        document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value = uisp.airmax_flexible_frame_download_ratio ?? 0.8;
+        document.getElementById("uispLtuCapacity").value = uisp.ltu_capacity ?? 1.0;
         document.getElementById("uispBandwidthOverhead").value = uisp.bandwidth_overhead_factor ?? 1.0;
         document.getElementById("uispCommitMultiplier").value = uisp.commit_bandwidth_multiplier ?? 1.0;
 
@@ -154,7 +164,6 @@ loadConfig(() => {
         document.getElementById("uispExcludeSites").value = uisp.exclude_sites?.join(", ") || "";
         document.getElementById("uispSquashSites").value = uisp.squash_sites?.join(", ") || "";
         document.getElementById("uispExceptionCpes").value = uisp.exception_cpes?.map(e => `${e.cpe}:${e.parent}`).join(", ") || "";
-        document.getElementById("uispEnableSquashing").checked = uisp.enable_squashing ?? false;
         document.getElementById("uispDoNotSquashSites").value = uisp.do_not_squash_sites?.join(", ") || "";
 
         // Add save button click handler

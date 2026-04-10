@@ -1,5 +1,5 @@
 use crate::lqos_kernel::{
-    InterfaceDirection, attach_xdp_and_tc_to_interface,
+    AttachedPrograms, InterfaceDirection, attach_xdp_and_tc_to_interface,
     bpf::{self, ring_buffer_sample_fn},
     unload_xdp_from_interface,
 };
@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 /// world insists on it.
 pub(crate) struct LqosKernBpfWrapper {
     ptr: *mut bpf::lqos_kern,
+    kprobe_link: *mut bpf::bpf_link,
 }
 
 impl LqosKernBpfWrapper {
@@ -21,6 +22,14 @@ impl LqosKernBpfWrapper {
 
 unsafe impl Sync for LqosKernBpfWrapper {}
 unsafe impl Send for LqosKernBpfWrapper {}
+
+impl Drop for LqosKernBpfWrapper {
+    fn drop(&mut self) {
+        unsafe {
+            bpf::destroy_bpf_link(self.kprobe_link);
+        }
+    }
+}
 
 pub(crate) static BPF_SKELETON: Lazy<Mutex<Option<LqosKernBpfWrapper>>> =
     Lazy::new(|| Mutex::new(None));
@@ -58,21 +67,34 @@ impl LibreQoSKernels {
             to_isp: to_isp.to_string(),
             on_a_stick: false,
         };
-        let skeleton = attach_xdp_and_tc_to_interface(
+        let to_internet_ifindex =
+            crate::lqos_kernel::interface_name_to_index(&kernel.to_internet)? as i32;
+        let to_isp_ifindex = crate::lqos_kernel::interface_name_to_index(&kernel.to_isp)? as i32;
+        let AttachedPrograms {
+            skeleton,
+            kprobe_link,
+        } = attach_xdp_and_tc_to_interface(
             &kernel.to_internet,
+            to_internet_ifindex,
+            to_isp_ifindex,
+            true,
             InterfaceDirection::Internet,
             heimdall_event_handler,
             flowbee_event_handler,
         )?;
         attach_xdp_and_tc_to_interface(
             &kernel.to_isp,
+            to_internet_ifindex,
+            to_isp_ifindex,
+            false,
             InterfaceDirection::IspNetwork,
             heimdall_event_handler,
             flowbee_event_handler,
         )?;
-        BPF_SKELETON
-            .lock()
-            .replace(LqosKernBpfWrapper { ptr: skeleton });
+        BPF_SKELETON.lock().replace(LqosKernBpfWrapper {
+            ptr: skeleton,
+            kprobe_link,
+        });
         Ok(kernel)
     }
 
@@ -100,21 +122,32 @@ impl LibreQoSKernels {
             to_isp: String::new(),
             on_a_stick: true,
         };
-        let skeleton = attach_xdp_and_tc_to_interface(
+        let stick_ifindex =
+            crate::lqos_kernel::interface_name_to_index(&kernel.to_internet)? as i32;
+        let AttachedPrograms {
+            skeleton,
+            kprobe_link,
+        } = attach_xdp_and_tc_to_interface(
             &kernel.to_internet,
+            stick_ifindex,
+            -1,
+            true,
             InterfaceDirection::OnAStick(internet_vlan, isp_vlan, stick_offset),
             heimdall_event_handler,
             flowbee_event_handler,
         )?;
-        BPF_SKELETON
-            .lock()
-            .replace(LqosKernBpfWrapper { ptr: skeleton });
+        BPF_SKELETON.lock().replace(LqosKernBpfWrapper {
+            ptr: skeleton,
+            kprobe_link,
+        });
         Ok(kernel)
     }
 }
 
 impl Drop for LibreQoSKernels {
     fn drop(&mut self) {
+        let skeleton = BPF_SKELETON.lock().take();
+        drop(skeleton);
         if !self.on_a_stick {
             let _ = unload_xdp_from_interface(&self.to_internet);
             let _ = unload_xdp_from_interface(&self.to_isp);

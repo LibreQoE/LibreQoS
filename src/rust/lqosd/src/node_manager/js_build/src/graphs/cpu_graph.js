@@ -4,19 +4,10 @@ import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 export class CpuHistogram extends DashboardGraph {
     constructor(id) {
         super(id);
-        let d = [];
-        let axis = [];
-        for (let i=0; i<20; i++) {
-            d.push({
-                value: i,
-                itemStyle: {color: lerpGreenToRedViaOrange(20-i, 20)},
-            });
-            axis.push(i.toString());
-        }
         this.option = {
             xAxis: {
                 type: 'category',
-                data: axis,
+                data: [],
             },
             yAxis: {
                 type: 'value',
@@ -24,7 +15,7 @@ export class CpuHistogram extends DashboardGraph {
                 max: 100,
             },
             series: {
-                data: d,
+                data: [],
                 type: 'bar',
             }
         };
@@ -33,14 +24,12 @@ export class CpuHistogram extends DashboardGraph {
 
     update(cpu) {
         this.chart.hideLoading();
-        this.option.series.data = [];
-        for (let i=0; i<cpu.length; i++) {
-            this.option.series.data.push({
-                value: cpu[i],
-                itemStyle: {color: lerpGreenToRedViaOrange(100-cpu[i], 100)},
-            });
-        }
+        const usage = Array.isArray(cpu) ? cpu : [];
+        this.option.xAxis.data = usage.map((_, index) => index.toString());
+        this.option.series.data = usage.map((value) => ({
+            value,
+            itemStyle: {color: lerpGreenToRedViaOrange(100 - value, 100)},
+        }));
         this.chart.setOption(this.option);
     }
 }
-

@@ -14,7 +14,11 @@ def cidrToHosts():
 		csv_reader = csv.reader(csv_file, delimiter=',')
 		next(csv_reader)
 		for row in csv_reader:
-			circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
+			if len(row) >= 14:
+				circuitID, circuitName, deviceID, deviceName, ParentNode, ParentNodeID, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row[:14]
+			else:
+				circuitID, circuitName, deviceID, deviceName, ParentNode, mac, ipv4_input, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment = row
+				ParentNodeID = ''
 			ipv4_list = ipv4_input.replace(' ','').split(',')
 			counter = 10001
 			if len(ipv4_list) > 1:
@@ -26,12 +30,12 @@ def cidrToHosts():
 							extended_circuit_id = circuitID + "_host_" + str(counter)
 							extended_device_id = deviceID + "_host_" + str(counter)
 							counter += 1
-							revised_rows.append((extended_circuit_id, circuitName, extended_device_id, deviceName, ParentNode, mac, str_host, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment))
+							revised_rows.append((extended_circuit_id, circuitName, extended_device_id, deviceName, ParentNode, ParentNodeID, mac, str_host, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment))
 					else:
 						extended_circuit_id = circuitID + "_host_" + str(counter)
 						extended_device_id = deviceID + "_host_" + str(counter)
 						counter += 1
-						revised_rows.append((extended_circuit_id, circuitName, extended_device_id, deviceName, ParentNode, mac, ipv4, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment))
+						revised_rows.append((extended_circuit_id, circuitName, extended_device_id, deviceName, ParentNode, ParentNodeID, mac, ipv4, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment))
 					changed_made = True
 			else:
 				if ('/' in ipv4_input) and not ('/32' in ipv4_input):
@@ -41,7 +45,7 @@ def cidrToHosts():
 						extended_circuit_id = circuitID + "_host_" + str(counter)
 						extended_device_id = deviceID + "_host_" + str(counter)
 						counter += 1
-						revised_rows.append((extended_circuit_id, circuitName, extended_device_id, deviceName, ParentNode, mac, str_host, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment))
+						revised_rows.append((extended_circuit_id, circuitName, extended_device_id, deviceName, ParentNode, ParentNodeID, mac, str_host, ipv6_input, downloadMin, uploadMin, downloadMax, uploadMax, comment))
 					changed_made = True
 				else:
 					revised_rows.append(row)
@@ -49,7 +53,7 @@ def cidrToHosts():
 	if changed_made:
 		with open('ShapedDevices.csv','w') as file:
 			writer = csv.writer(file)
-			writer.writerow(('Circuit ID (Do Not Duplicate)', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'MAC', 'IPv4', 'IPv6', 'Download Min Mbps', 'Upload Min Mbps', 'Download Max Mbps', 'Upload Max Mbps', 'Comment'))
+			writer.writerow(('Circuit ID (Do Not Duplicate)', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'Parent Node ID', 'Anchor Node ID', 'MAC', 'IPv4', 'IPv6', 'Download Min Mbps', 'Upload Min Mbps', 'Download Max Mbps', 'Upload Max Mbps', 'Comment'))
 			for row in revised_rows:
 				writer.writerow(row)
 	

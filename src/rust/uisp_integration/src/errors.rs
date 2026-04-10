@@ -19,6 +19,8 @@ pub enum UispIntegrationError {
     CsvError,
     #[error("Unable to write network.json")]
     WriteNetJson,
+    #[error("Unable to write circuit_anchors.json")]
+    WriteCircuitAnchors,
     #[error("Bad IP")]
     BadIp,
 }

@@ -3,6 +3,7 @@ import datetime
 import csv
 import io
 import json
+import atexit
 import chardet
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
@@ -12,10 +13,11 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
+    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive as _scheduler_alive_native, scheduler_error as _scheduler_error_native, \
+    calculate_topology_source_generation, \
+    scheduler_progress as _scheduler_progress_native, overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
     overrides_network_adjustments_materialized, \
-    scheduler_output, wait_for_bus_ready
+    scheduler_output as _scheduler_output_native, wait_for_bus_ready
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -24,8 +26,43 @@ import os
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 shaping_runtime_hash = 0
+topology_runtime_process = None
+topology_runtime_missing_reported = False
 INTEGRATION_FAILURE_PREVIEW_LINES = 30
 INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
+TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
+SCHEDULER_STARTUP_STEP_COUNT = 5
+SCHEDULER_REFRESH_STEP_COUNT = 4
+scheduler_status_bus_enabled = True
+
+
+def set_scheduler_status_bus_enabled(enabled: bool):
+    global scheduler_status_bus_enabled
+    scheduler_status_bus_enabled = bool(enabled)
+
+
+def scheduler_alive():
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_alive_native()
+
+
+def scheduler_error(message: str):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_error_native(message)
+
+
+def scheduler_output(message: str):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_output_native(message)
+
+
+def scheduler_progress(active: bool, phase: str, phase_label: str, step_index: int, step_count: int, percent: int):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_progress_native(active, phase, phase_label, step_index, step_count, percent)
 
 
 def clear_scheduler_error():
@@ -36,6 +73,45 @@ def clear_scheduler_error():
 def clear_scheduler_output():
     """Clear the scheduler output shown in the Web UI."""
     scheduler_output("")
+
+
+def _scheduler_progress_percent(step_index: int, step_count: int, *, active: bool) -> int:
+    if step_count <= 0:
+        return 0
+    bounded_step = max(1, min(int(step_index), int(step_count)))
+    completed_steps = bounded_step - 1 if active else bounded_step
+    return max(0, min(100, int(round((completed_steps / step_count) * 100))))
+
+
+def publish_scheduler_progress(active: bool, phase: str, phase_label: str, step_index: int, step_count: int, *, percent=None):
+    try:
+        resolved_percent = _scheduler_progress_percent(step_index, step_count, active=active) if percent is None else int(percent)
+        resolved_percent = max(0, min(100, resolved_percent))
+        scheduler_progress(
+            bool(active),
+            str(phase),
+            str(phase_label),
+            int(step_index),
+            int(step_count),
+            resolved_percent,
+        )
+    except Exception as e:
+        print(f"Failed to publish scheduler progress: {e}")
+
+
+def report_scheduler_runtime_failure(context: str, exc: Exception, *, startup: bool = False):
+    message = f"{context}: {exc}"
+    print(message)
+    scheduler_error(message)
+    if startup:
+        publish_scheduler_progress(
+            False,
+            "degraded",
+            "Scheduler running with topology/runtime error",
+            SCHEDULER_STARTUP_STEP_COUNT,
+            SCHEDULER_STARTUP_STEP_COUNT,
+            percent=100,
+        )
 
 
 def _integration_output_lines(output):
@@ -234,9 +310,25 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
         print(err)
         scheduler_error(err)
 
-def importFromCRM():
+def importFromCRM(
+    *,
+    integration_phase="running_integration",
+    integration_label="Running integration sync",
+    integration_step=2,
+    progress_step_count=SCHEDULER_STARTUP_STEP_COUNT,
+    overrides_phase="applying_overrides",
+    overrides_label="Applying overrides",
+    overrides_step=3,
+):
     clear_scheduler_error()
     clear_scheduler_output()
+    publish_scheduler_progress(
+        True,
+        integration_phase,
+        integration_label,
+        integration_step,
+        progress_step_count,
+    )
     # CRM Hooks
     if automatic_import_uisp():
         try:
@@ -278,6 +370,13 @@ def importFromCRM():
             scheduler_error(msg)
     # Handle lqos_overrides
     try:
+        publish_scheduler_progress(
+            True,
+            overrides_phase,
+            overrides_label,
+            overrides_step,
+            progress_step_count,
+        )
         apply_lqos_overrides()
     except Exception as e:
         scheduler_error(f"Failed to apply lqos_overrides: {e}")
@@ -292,6 +391,8 @@ SHAPED_DEVICES_HEADER = [
     "Device ID",
     "Device Name",
     "Parent Node",
+    "Parent Node ID",
+    "Anchor Node ID",
     "MAC",
     "IPv4",
     "IPv6",
@@ -306,6 +407,66 @@ SHAPED_DEVICES_HEADER_WITH_SQM = [
     *SHAPED_DEVICES_HEADER,
     "sqm",
 ]
+
+
+def normalize_shaped_devices_header(header_value):
+    return ''.join(ch for ch in str(header_value).lower() if ch.isalnum())
+
+
+def shaped_devices_header_index_map(header):
+    legacy = {
+        'circuit_id': 0,
+        'circuit_name': 1,
+        'device_id': 2,
+        'device_name': 3,
+        'parent_node': 4,
+        'mac': 5,
+        'ipv4': 6,
+        'ipv6': 7,
+        'download_min': 8,
+        'upload_min': 9,
+        'download_max': 10,
+        'upload_max': 11,
+        'comment': 12,
+        'sqm': 13,
+    }
+    aliases = {
+        'circuit_id': {'circuitid', 'circuit_id'},
+        'circuit_name': {'circuitname', 'circuit_name'},
+        'device_id': {'deviceid', 'device_id'},
+        'device_name': {'devicename', 'device_name'},
+        'parent_node': {'parentnode', 'parent_node'},
+        'parent_node_id': {'parentnodeid', 'parent_node_id'},
+        'anchor_node_id': {'anchornodeid', 'anchor_node_id', 'id'},
+        'mac': {'mac'},
+        'ipv4': {'ipv4'},
+        'ipv6': {'ipv6'},
+        'download_min': {'downloadminmbps', 'downloadmin', 'download_min_mbps'},
+        'upload_min': {'uploadminmbps', 'uploadmin', 'upload_min_mbps'},
+        'download_max': {'downloadmaxmbps', 'downloadmax', 'download_max_mbps'},
+        'upload_max': {'uploadmaxmbps', 'uploadmax', 'upload_max_mbps'},
+        'comment': {'comment'},
+        'sqm': {'sqm'},
+    }
+    layout = dict(legacy)
+    layout['parent_node_id'] = None
+    layout['anchor_node_id'] = None
+    for idx, name in enumerate(header or []):
+        normalized = normalize_shaped_devices_header(name)
+        for field, names in aliases.items():
+            if normalized in names:
+                layout[field] = idx
+                break
+    return layout
+
+
+def set_row_value_by_header(row, header_map, field, value):
+    index = header_map.get(field)
+    if index is None:
+        return
+    while len(row) <= index:
+        row.append('')
+    row[index] = value
 
 
 def shaped_devices_csv_path() -> str:
@@ -352,31 +513,34 @@ def read_shaped_devices_csv(path: str):
         return header, data_rows
 
 
-def override_devices_to_rows(devices, include_sqm=False):
+def override_devices_to_rows(devices, header, include_sqm=False):
     """Convert override device dicts to CSV rows, preserving the existing CSV shape by default."""
     rows = []
+    header_map = shaped_devices_header_index_map(header)
+    row_len = max(len(header), len(SHAPED_DEVICES_HEADER_WITH_SQM if include_sqm else SHAPED_DEVICES_HEADER))
     for d in devices:
         ipv4s = d.get('ipv4s', [])
         ipv6s = d.get('ipv6s', [])
         sqm = d.get('sqm', '') or d.get('sqm_override', '')
         sqm = sqm or ""
-        row = [
-            d.get('circuitID', ''),
-            d.get('circuitName', ''),
-            d.get('deviceID', ''),
-            d.get('deviceName', ''),
-            d.get('ParentNode', ''),
-            d.get('mac', ''),
-            ','.join(ipv4s),
-            ','.join(ipv6s),
-            str(d.get('minDownload', '')),
-            str(d.get('minUpload', '')),
-            str(d.get('maxDownload', '')),
-            str(d.get('maxUpload', '')),
-            d.get('comment', ''),
-        ]
+        row = [''] * row_len
+        set_row_value_by_header(row, header_map, 'circuit_id', d.get('circuitID', ''))
+        set_row_value_by_header(row, header_map, 'circuit_name', d.get('circuitName', ''))
+        set_row_value_by_header(row, header_map, 'device_id', d.get('deviceID', ''))
+        set_row_value_by_header(row, header_map, 'device_name', d.get('deviceName', ''))
+        set_row_value_by_header(row, header_map, 'parent_node', d.get('ParentNode', ''))
+        set_row_value_by_header(row, header_map, 'parent_node_id', d.get('ParentNodeID', ''))
+        set_row_value_by_header(row, header_map, 'anchor_node_id', d.get('AnchorNodeID', ''))
+        set_row_value_by_header(row, header_map, 'mac', d.get('mac', ''))
+        set_row_value_by_header(row, header_map, 'ipv4', ','.join(ipv4s))
+        set_row_value_by_header(row, header_map, 'ipv6', ','.join(ipv6s))
+        set_row_value_by_header(row, header_map, 'download_min', str(d.get('minDownload', '')))
+        set_row_value_by_header(row, header_map, 'upload_min', str(d.get('minUpload', '')))
+        set_row_value_by_header(row, header_map, 'download_max', str(d.get('maxDownload', '')))
+        set_row_value_by_header(row, header_map, 'upload_max', str(d.get('maxUpload', '')))
+        set_row_value_by_header(row, header_map, 'comment', d.get('comment', ''))
         if include_sqm:
-            row.append(str(sqm))
+            set_row_value_by_header(row, header_map, 'sqm', str(sqm))
         rows.append(row)
     return rows
 
@@ -410,7 +574,9 @@ def write_shaped_devices_csv(path: str, header, rows):
 
 
 def header_has_sqm(header):
-    return len(header) > 13 and header[13].strip().lower() == "sqm"
+    return shaped_devices_header_index_map(header).get('sqm') is not None and any(
+        normalize_shaped_devices_header(value) == 'sqm' for value in (header or [])
+    )
 
 
 def operator_requires_sqm_column(devices, adjustments):
@@ -451,8 +617,9 @@ def apply_lqos_overrides():
             if len(row) < len(header):
                 row.extend([""] * (len(header) - len(row)))
 
-    override_rows = override_devices_to_rows(extra or [], include_sqm=need_sqm_column)
+    override_rows = override_devices_to_rows(extra or [], header, include_sqm=need_sqm_column)
     merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
+    header_map = shaped_devices_header_index_map(header)
 
     def set_if_some(value_opt, current_str):
         if value_opt is None:
@@ -515,8 +682,10 @@ def apply_lqos_overrides():
                 cid = adj.get('circuit_id', '')
                 parent_node = adj.get('parent_node', '')
                 for r in merged_rows:
-                    if len(r) >= 5 and r[0] == cid:
-                        r[4] = parent_node
+                    circuit_id_idx = header_map.get('circuit_id', 0)
+                    if len(r) > circuit_id_idx and r[circuit_id_idx] == cid:
+                        set_row_value_by_header(r, header_map, 'parent_node', parent_node)
+                        set_row_value_by_header(r, header_map, 'parent_node_id', '')
                         changed = True
 
     if changed:
@@ -527,10 +696,20 @@ def apply_lqos_overrides():
     # 3) Load, adjust, and optionally save network.json
     nj_path = network_json_path()
     network = load_network_json(nj_path)
-    net_changed = apply_network_adjustments(network)
+    try:
+        adjustments = overrides_network_adjustments_materialized()
+    except Exception as e:
+        print(f"Failed to read network adjustments: {e}")
+        adjustments = []
+    net_changed = apply_network_adjustments(network, adjustments)
     if net_changed:
         write_network_json(nj_path, network)
         print("Updated network.json with overrides")
+        canonical_path = topology_canonical_state_path()
+        canonical_state = load_topology_canonical_state(canonical_path)
+        if canonical_state and apply_network_adjustments_to_canonical_state(canonical_state, adjustments):
+            write_topology_canonical_state(canonical_path, canonical_state)
+            print("Updated topology_canonical_state.json with overrides")
 
 
 # --------------- Network JSON handling ---------------
@@ -554,7 +733,26 @@ def load_network_json(path: str):
             return {}
 
 
-def apply_network_adjustments(network: dict) -> bool:
+def topology_canonical_state_path() -> str:
+    return os.path.join(get_libreqos_directory(), "topology_canonical_state.json")
+
+
+def load_topology_canonical_state(path: str):
+    if not os.path.isfile(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        try:
+            return json.loads(f.read())
+        except Exception:
+            return None
+
+
+def write_topology_canonical_state(path: str, canonical_state: dict):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(json.dumps(canonical_state, indent=4))
+
+
+def apply_network_adjustments(network: dict, adjustments=None) -> bool:
     """Apply network adjustments from overrides to the network JSON structure.
 
     Currently supports: adjust_site_speed (preferring node_id, with legacy
@@ -569,11 +767,12 @@ def apply_network_adjustments(network: dict) -> bool:
     source of truth.
     Returns True if any changes were applied.
     """
-    try:
-        adjustments = overrides_network_adjustments_materialized()
-    except Exception as e:
-        print(f"Failed to read network adjustments: {e}")
-        return False
+    if adjustments is None:
+        try:
+            adjustments = overrides_network_adjustments_materialized()
+        except Exception as e:
+            print(f"Failed to read network adjustments: {e}")
+            return False
 
     if not adjustments:
         return False
@@ -657,27 +856,343 @@ def apply_network_adjustments(network: dict) -> bool:
     return net_changed
 
 
+def apply_network_adjustments_to_canonical_state(canonical_state: dict, adjustments) -> bool:
+    if not isinstance(canonical_state, dict):
+        return False
+
+    compatibility_network = canonical_state.get('compatibility_network_json')
+    nodes = canonical_state.get('nodes')
+    if not isinstance(compatibility_network, dict) or not isinstance(nodes, list):
+        return False
+
+    compatibility_changed = apply_network_adjustments(compatibility_network, adjustments)
+
+    def normalize_bandwidth_value(value):
+        numeric = float(value)
+        if numeric.is_integer():
+            return int(numeric)
+        return numeric
+
+    nodes_changed = False
+    for adj in adjustments:
+        adj_type = adj.get('type')
+        if adj_type == 'adjust_site_speed':
+            target_node_id = adj.get('node_id', None)
+            target_name = adj.get('site_name', '')
+            download = adj.get('download_bandwidth_mbps', None)
+            upload = adj.get('upload_bandwidth_mbps', None)
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                matches_target = False
+                if target_node_id:
+                    matches_target = node.get('node_id') == target_node_id
+                elif target_name:
+                    matches_target = node.get('node_name') == target_name
+                if not matches_target:
+                    continue
+                rate_input = node.get('rate_input')
+                if not isinstance(rate_input, dict):
+                    rate_input = {}
+                    node['rate_input'] = rate_input
+                if download is not None:
+                    normalized_download = normalize_bandwidth_value(download)
+                    rate_input['intrinsic_download_mbps'] = normalized_download
+                    rate_input['legacy_imported_download_mbps'] = normalized_download
+                    nodes_changed = True
+                if upload is not None:
+                    normalized_upload = normalize_bandwidth_value(upload)
+                    rate_input['intrinsic_upload_mbps'] = normalized_upload
+                    rate_input['legacy_imported_upload_mbps'] = normalized_upload
+                    nodes_changed = True
+                if download is not None or upload is not None:
+                    rate_input['source'] = 'compatibility_export'
+        elif adj_type == 'set_node_virtual':
+            target_name = adj.get('node_name', '')
+            virtual_val = adj.get('virtual', None)
+            if not target_name or virtual_val is None:
+                continue
+            normalized_virtual = bool(virtual_val)
+            for node in nodes:
+                if not isinstance(node, dict) or node.get('node_name') != target_name:
+                    continue
+                if bool(node.get('is_virtual', False)) != normalized_virtual:
+                    node['is_virtual'] = normalized_virtual
+                    nodes_changed = True
+
+    return compatibility_changed or nodes_changed
+
+
 def write_network_json(path: str, network: dict):
     with open(path, 'w', encoding='utf-8') as f:
         f.write(json.dumps(network, indent=4))
 
 
 def importAndShapeFullReload():
+    global shaping_runtime_hash
     importFromCRM()
+    publish_scheduler_progress(True, "starting_topology_runtime", "Starting topology runtime", 4, SCHEDULER_STARTUP_STEP_COUNT)
+    if not ensure_topology_runtime_process(wait_for_outputs=True):
+        report_topology_runtime_not_ready(
+            "Scheduler startup shaping refresh deferred",
+            phase_label="Scheduler waiting for topology runtime",
+            step_count=SCHEDULER_STARTUP_STEP_COUNT,
+        )
+        return
+    publish_scheduler_progress(True, "initial_shaping_reload", "Refreshing shaper state", 5, SCHEDULER_STARTUP_STEP_COUNT)
     if not enable_insight_topology():
         refreshShapers()
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
+    else:
+        shaping_runtime_hash = calculate_shaping_runtime_hash()
+    if shaping_runtime_hash != 0:
+        set_scheduler_status_bus_enabled(True)
 
 
 def importAndShapePartialReload():
     global shaping_runtime_hash
 
-    importFromCRM()
+    importFromCRM(
+        integration_phase="partial_integration",
+        integration_label="Running scheduled integration refresh",
+        integration_step=1,
+        progress_step_count=SCHEDULER_REFRESH_STEP_COUNT,
+        overrides_phase="partial_overrides",
+        overrides_label="Applying scheduled overrides",
+        overrides_step=2,
+    )
+    publish_scheduler_progress(True, "partial_topology_runtime", "Refreshing topology runtime", 3, SCHEDULER_REFRESH_STEP_COUNT)
+    if not ensure_topology_runtime_process(wait_for_outputs=True):
+        report_topology_runtime_not_ready(
+            "Scheduled shaping refresh deferred",
+            phase_label="Scheduler waiting for topology runtime",
+            step_count=SCHEDULER_REFRESH_STEP_COUNT,
+        )
+        return
     # Rebuild when runtime shaping inputs change, including effective adaptive
     # circuit overrides that do not belong in source-of-truth files.
+    publish_scheduler_progress(True, "partial_runtime_hash", "Checking shaping inputs", 4, SCHEDULER_REFRESH_STEP_COUNT)
     new_hash = calculate_shaping_runtime_hash()
     if new_hash != shaping_runtime_hash:
-        refreshShapers()
+        publish_scheduler_progress(True, "partial_reload", "Applying incremental shaper refresh", 4, SCHEDULER_REFRESH_STEP_COUNT)
+        try:
+            refreshShapers()
+        except Exception as e:
+            report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
+            return
         shaping_runtime_hash = calculate_shaping_runtime_hash()
+        if shaping_runtime_hash != 0:
+            set_scheduler_status_bus_enabled(True)
+    publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
+
+
+def topology_runtime_binary_path():
+    return os.path.join(get_libreqos_directory(), "bin", "lqos_topology")
+
+
+def topology_runtime_output_paths():
+    base_dir = get_libreqos_directory()
+    return [
+        os.path.join(base_dir, "topology_attachment_health_state.json"),
+        os.path.join(base_dir, "topology_effective_state.json"),
+        os.path.join(base_dir, "network.effective.json"),
+        os.path.join(base_dir, "shaping_inputs.json"),
+        os.path.join(base_dir, "topology_runtime_status.json"),
+    ]
+
+
+def topology_runtime_status_path():
+    return os.path.join(get_libreqos_directory(), "topology_runtime_status.json")
+
+
+def _load_topology_runtime_status():
+    path = topology_runtime_status_path()
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        print(f"Failed to read topology runtime status from {path}: {e}")
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def current_topology_source_generation():
+    try:
+        generation = calculate_topology_source_generation()
+    except Exception as e:
+        print(f"Failed to compute topology source generation: {e}")
+        return None
+    if generation is None:
+        return None
+    generation = str(generation).strip()
+    return generation or None
+
+
+def topology_runtime_readiness_detail():
+    current_generation = current_topology_source_generation()
+    if not current_generation:
+        return (
+            False,
+            "Topology runtime source generation is unavailable for current inputs.",
+            None,
+        )
+
+    status = _load_topology_runtime_status()
+    if not isinstance(status, dict):
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    status_generation = str(status.get("source_generation") or "").strip()
+    if status_generation != current_generation:
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    if not bool(status.get("ready")):
+        error = status.get("error")
+        if isinstance(error, str) and error.strip():
+            return (
+                False,
+                f"Topology runtime failed for the current source generation: {error.strip()}",
+                current_generation,
+            )
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    return (True, "", current_generation)
+
+
+def report_topology_runtime_not_ready(context: str, *, phase_label: str, step_count: int):
+    ready, detail, generation = topology_runtime_readiness_detail()
+    if ready:
+        return
+    message = f"{context}: {detail}"
+    if generation:
+        message += f" Generation {generation[:12]}."
+    print(message)
+    scheduler_error(message)
+    publish_scheduler_progress(
+        False,
+        "degraded",
+        phase_label,
+        step_count,
+        step_count,
+        percent=100,
+    )
+
+
+def clear_topology_runtime_outputs():
+    for path in topology_runtime_output_paths():
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            print(f"Failed to remove topology runtime artifact {path}: {e}")
+
+
+def stop_topology_runtime_process():
+    global topology_runtime_process
+    process = topology_runtime_process
+    topology_runtime_process = None
+    if process is None:
+        return
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=5)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def wait_for_topology_runtime_ready(timeout_seconds=8.0):
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        ready, _, _ = topology_runtime_readiness_detail()
+        if ready:
+            return True
+        process = topology_runtime_process
+        if process is not None and process.poll() is not None:
+            return False
+        time.sleep(0.1)
+    return False
+
+
+def ensure_topology_runtime_process(wait_for_outputs=False):
+    global topology_runtime_process
+    global topology_runtime_missing_reported
+
+    binary = topology_runtime_binary_path()
+    if not os.path.isfile(binary):
+        if not topology_runtime_missing_reported:
+            print(f"Topology runtime helper is unavailable at {binary}. Rain suppression is disabled.")
+            topology_runtime_missing_reported = True
+        clear_topology_runtime_outputs()
+        topology_runtime_process = None
+        return False
+
+    topology_runtime_missing_reported = False
+
+    if topology_runtime_process is not None:
+        code = topology_runtime_process.poll()
+        if code is None:
+            if wait_for_outputs:
+                return wait_for_topology_runtime_ready()
+            return True
+        print(f"Topology runtime helper exited with code {code}. Restarting it.")
+        clear_topology_runtime_outputs()
+        topology_runtime_process = None
+
+    try:
+        topology_runtime_process = subprocess.Popen(
+            [binary],
+            cwd=get_libreqos_directory(),
+        )
+        print("Started topology runtime helper.")
+        if wait_for_outputs:
+            return wait_for_topology_runtime_ready()
+        return True
+    except Exception as e:
+        print(f"Failed to start topology runtime helper: {e}")
+        clear_topology_runtime_outputs()
+        topology_runtime_process = None
+        return False
+
+
+def topology_runtime_refresh_tick():
+    global shaping_runtime_hash
+
+    if shaping_runtime_hash == 0:
+        return
+
+    ensure_topology_runtime_process()
+    ready, _, _ = topology_runtime_readiness_detail()
+    if not ready:
+        return
+    new_hash = calculate_shaping_runtime_hash()
+    if new_hash == 0 or new_hash == shaping_runtime_hash:
+        return
+
+    try:
+        refreshShapers()
+    except Exception as e:
+        report_scheduler_runtime_failure("Topology runtime refresh failed", e)
+        return
+    shaping_runtime_hash = calculate_shaping_runtime_hash()
 
 
 def not_dead_yet():
@@ -689,23 +1204,40 @@ def ensure_bus_ready():
     """Wait briefly for lqosd to finish binding the local bus socket."""
     wait_for_bus_ready(5000)
 
+def run_scheduler_main():
+    global shaping_runtime_hash
+
+    atexit.register(stop_topology_runtime_process)
+    set_scheduler_status_bus_enabled(False)
+    publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
+    ensure_bus_ready()
+    try:
+        importAndShapeFullReload()
+        publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
+    except Exception as e:
+        report_scheduler_runtime_failure("Scheduler startup shaping refresh failed", e, startup=True)
+        import traceback
+        traceback.print_exc()
+        shaping_runtime_hash = 0
+
+    print("Starting scheduler with jobs:")
+    print(f"- not_dead_yet every 1 minute")
+    refresh_interval = queue_refresh_interval_mins()
+    print(f"- topology_runtime_refresh_tick every {TOPOLOGY_RUNTIME_REFRESH_SECONDS} seconds")
+    print(f"- importAndShapePartialReload every {refresh_interval} minutes")
+
+    not_dead_yet()
+    ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
+    ads.add_job(topology_runtime_refresh_tick, 'interval', seconds=TOPOLOGY_RUNTIME_REFRESH_SECONDS, max_instances=1)
+    ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
+
+    print("Scheduler starting...")
+    ads.start()
+
+
 if __name__ == '__main__':
     try:
-        ensure_bus_ready()
-        importAndShapeFullReload()
-        shaping_runtime_hash = calculate_shaping_runtime_hash()
-
-        print("Starting scheduler with jobs:")
-        print(f"- not_dead_yet every 1 minute")
-        refresh_interval = queue_refresh_interval_mins()
-        print(f"- importAndShapePartialReload every {refresh_interval} minutes")
-        
-        not_dead_yet()
-        ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
-        ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
-
-        print("Scheduler starting...")
-        ads.start()
+        run_scheduler_main()
     except Exception as e:
         print(f"Error starting scheduler: {e}")
         import traceback

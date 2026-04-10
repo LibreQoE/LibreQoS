@@ -4,9 +4,10 @@ login.js
 first-run.js
 shaped-devices.js
 tree.js
+topology_manager.js
+topology_probes.js
 help.js
 unknown-ips.js
-configuration.js
 circuit.js
 ethernet_caps.js
 site_map.js

@@ -12,6 +12,8 @@
 struct host_counter {
     __u64 download_bytes;
     __u64 upload_bytes;
+    __u64 actual_download_bytes;
+    __u64 actual_upload_bytes;
     __u64 download_packets;
     __u64 upload_packets;
     __u64 tcp_download_packets;

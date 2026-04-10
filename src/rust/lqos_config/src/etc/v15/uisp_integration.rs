@@ -1,6 +1,14 @@
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
+fn default_airmax_flexible_frame_download_ratio() -> f32 {
+    0.8
+}
+
+fn default_infrastructure_transport_caps_enabled() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct UispIntegration {
     pub enable_uisp: bool,
@@ -10,6 +18,8 @@ pub struct UispIntegration {
     pub strategy: String,
     pub suspended_strategy: String,
     pub airmax_capacity: f32,
+    #[serde(default = "default_airmax_flexible_frame_download_ratio")]
+    pub airmax_flexible_frame_download_ratio: f32,
     pub ltu_capacity: f32,
     pub exclude_sites: Vec<String>,
     pub squash_sites: Option<Vec<String>>,
@@ -20,8 +30,11 @@ pub struct UispIntegration {
     pub use_ptmp_as_parent: bool,
     #[serde(default = "default_ignore_calculated_capacity")]
     pub ignore_calculated_capacity: bool,
+    #[serde(default = "default_infrastructure_transport_caps_enabled")]
+    pub infrastructure_transport_caps_enabled: bool,
     pub insecure_ssl: Option<bool>,
 
+    /// Deprecated legacy importer-side squashing toggle. Existing values are ignored.
     pub enable_squashing: Option<bool>,
     pub do_not_squash_sites: Option<Vec<String>>,
 }
@@ -45,8 +58,9 @@ impl Default for UispIntegration {
             site: "".to_string(),
             strategy: "".to_string(),
             suspended_strategy: "".to_string(),
-            airmax_capacity: 0.0,
-            ltu_capacity: 0.0,
+            airmax_capacity: 1.0,
+            airmax_flexible_frame_download_ratio: default_airmax_flexible_frame_download_ratio(),
+            ltu_capacity: 1.0,
             exclude_sites: vec![],
             squash_sites: None,
             ipv6_with_mikrotik: false,
@@ -55,9 +69,24 @@ impl Default for UispIntegration {
             exception_cpes: vec![],
             use_ptmp_as_parent: false,
             ignore_calculated_capacity: false,
+            infrastructure_transport_caps_enabled: default_infrastructure_transport_caps_enabled(),
             insecure_ssl: None,
             enable_squashing: None,
             do_not_squash_sites: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UispIntegration;
+
+    #[test]
+    fn default_capacity_defaults_match_new_install_policy() {
+        let config = UispIntegration::default();
+        assert_eq!(config.airmax_capacity, 1.0);
+        assert_eq!(config.airmax_flexible_frame_download_ratio, 0.8);
+        assert_eq!(config.ltu_capacity, 1.0);
+        assert!(config.infrastructure_transport_caps_enabled);
     }
 }

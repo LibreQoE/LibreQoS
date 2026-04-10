@@ -8,16 +8,26 @@
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 pub mod authentication;
+mod circuit_anchors;
 mod circuit_ethernet_metadata;
 mod cpu_topology;
 mod etc;
+mod ethernet_port_limits;
 mod network_json;
 mod planner;
 mod program_control;
 mod qoo_profiles;
 mod shaped_devices;
+mod topology_canonical_state;
+mod topology_editor_state;
+mod topology_parent_candidates;
+mod topology_runtime_state;
 
 pub use authentication::{AuthenticatedUser, UserRole, WebUser, WebUsers};
+pub use circuit_anchors::{
+    CIRCUIT_ANCHORS_FILENAME, CircuitAnchor, CircuitAnchorsError, CircuitAnchorsFile,
+    circuit_anchors_path,
+};
 pub use circuit_ethernet_metadata::{
     CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
 };
@@ -30,6 +40,10 @@ pub use etc::{
     TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
     clear_cached_config, disable_xdp_bridge, enable_long_term_stats, load_config,
     treeguard_cpu_mode_migration_notice, update_config,
+};
+pub use ethernet_port_limits::{
+    DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
+    EthernetRateDecision, RequestedCircuitRates, apply_ethernet_rate_cap, usable_ethernet_cap_mbps,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use planner::{
@@ -46,6 +60,33 @@ pub use qoo_profiles::{
     list_qoo_profiles, load_qoo_profiles_file,
 };
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
+pub use topology_canonical_state::{
+    TOPOLOGY_CANONICAL_STATE_FILENAME, TopologyCanonicalIngressKind, TopologyCanonicalNode,
+    TopologyCanonicalRateInput, TopologyCanonicalRateInputSource, TopologyCanonicalStateError,
+    TopologyCanonicalStateFile, topology_canonical_state_path,
+};
+pub use topology_editor_state::{
+    TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
+    TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,
+    TopologyAttachmentRole, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
+    topology_editor_state_path,
+};
+pub use topology_parent_candidates::{
+    TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,
+    TopologyParentCandidatesFile, TopologyParentCandidatesNode, topology_parent_candidates_path,
+};
+pub use topology_runtime_state::{
+    TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_EFFECTIVE_NETWORK_FILENAME,
+    TOPOLOGY_EFFECTIVE_STATE_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME,
+    TOPOLOGY_SHAPING_INPUTS_FILENAME, TopologyAttachmentEndpointStatus,
+    TopologyAttachmentHealthEntry, TopologyAttachmentHealthStateFile,
+    TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
+    TopologyRuntimeStateError, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
+    TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
+    compute_topology_source_generation, topology_attachment_health_state_path,
+    topology_effective_network_path, topology_effective_state_path, topology_runtime_status_path,
+    topology_shaping_inputs_path,
+};
 
 /// Used as a constant in determining buffer preallocation
 pub const SUPPORTED_CUSTOMERS: usize = 100_000;

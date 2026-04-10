@@ -4,8 +4,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 use lqos_bus::{
-    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, BusResponse, TcHandle,
-    UrgentSeverity, UrgentSource,
+    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, BusResponse,
+    SchedulerProgressReport, TcHandle, UrgentSeverity, UrgentSource,
 };
 use lqos_utils::hex_string::read_hex_string;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
@@ -977,7 +977,9 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(promote_to_root_list, m)?)?;
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_topology_source_generation, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_shaping_runtime_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_progress, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_output, m)?)?;
@@ -1321,7 +1323,7 @@ fn wait_for_bus_ready(timeout_ms: u64) -> PyResult<bool> {
 
 /// Returns a Python list of dictionaries representing persistent devices for ShapedDevices.csv
 /// The dictionary keys mirror the normalized loader used in LibreQoS.py:
-/// circuitID, circuitName, deviceID, deviceName, ParentNode, mac,
+/// circuitID, circuitName, deviceID, deviceName, ParentNode, ParentNodeID, mac,
 /// ipv4s (list[str]), ipv6s (list[str]), minDownload, minUpload, maxDownload,
 /// maxUpload, comment, sqm.
 #[pyfunction]
@@ -1350,6 +1352,14 @@ fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
         d.set_item("deviceID", dev.device_id.clone())?;
         d.set_item("deviceName", dev.device_name.clone())?;
         d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item(
+            "ParentNodeID",
+            dev.parent_node_id.clone().unwrap_or_default(),
+        )?;
+        d.set_item(
+            "AnchorNodeID",
+            dev.anchor_node_id.clone().unwrap_or_default(),
+        )?;
         d.set_item("mac", dev.mac.clone())?;
         d.set_item("ipv4s", ipv4s)?;
         d.set_item("ipv6s", ipv6s)?;
@@ -1408,6 +1418,14 @@ fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObje
         d.set_item("deviceID", dev.device_id.clone())?;
         d.set_item("deviceName", dev.device_name.clone())?;
         d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item(
+            "ParentNodeID",
+            dev.parent_node_id.clone().unwrap_or_default(),
+        )?;
+        d.set_item(
+            "AnchorNodeID",
+            dev.anchor_node_id.clone().unwrap_or_default(),
+        )?;
         d.set_item("mac", dev.mac.clone())?;
         d.set_item("ipv4s", ipv4s)?;
         d.set_item("ipv6s", ipv6s)?;
@@ -1461,6 +1479,14 @@ fn overrides_persistent_devices_materialized(py: Python<'_>) -> PyResult<Vec<PyO
         d.set_item("deviceID", dev.device_id.clone())?;
         d.set_item("deviceName", dev.device_name.clone())?;
         d.set_item("ParentNode", dev.parent_node.clone())?;
+        d.set_item(
+            "ParentNodeID",
+            dev.parent_node_id.clone().unwrap_or_default(),
+        )?;
+        d.set_item(
+            "AnchorNodeID",
+            dev.anchor_node_id.clone().unwrap_or_default(),
+        )?;
         d.set_item("mac", dev.mac.clone())?;
         d.set_item("ipv4s", ipv4s)?;
         d.set_item("ipv6s", ipv6s)?;
@@ -1846,6 +1872,28 @@ fn network_adjustments_to_py(
                 d.set_item("type", "set_node_virtual")?;
                 d.set_item("node_name", node_name.clone())?;
                 d.set_item("virtual", *virtual_node)?;
+            }
+            lqos_overrides::NetworkAdjustment::TopologyParentOverride {
+                node_id,
+                node_name,
+                mode,
+                parent_node_ids,
+                parent_node_names,
+            } => {
+                d.set_item("type", "topology_parent_override")?;
+                d.set_item("node_id", node_id.clone())?;
+                d.set_item("node_name", node_name.clone())?;
+                d.set_item(
+                    "mode",
+                    match mode {
+                        lqos_overrides::TopologyParentOverrideMode::Pinned => "pinned",
+                        lqos_overrides::TopologyParentOverrideMode::PreferredOrder => {
+                            "preferred_order"
+                        }
+                    },
+                )?;
+                d.set_item("parent_node_ids", parent_node_ids.clone())?;
+                d.set_item("parent_node_names", parent_node_names.clone())?;
             }
         }
         let obj: PyObject = d.unbind().into();
@@ -2607,6 +2655,17 @@ fn calculate_hash() -> PyResult<i64> {
     Ok(hash)
 }
 
+#[pyfunction]
+fn calculate_topology_source_generation() -> PyResult<Option<String>> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Ok(None);
+    };
+    match lqos_config::compute_topology_source_generation(config.as_ref()) {
+        Ok(generation) => Ok(Some(generation)),
+        Err(_) => Ok(None),
+    }
+}
+
 fn shaping_runtime_sqm_fingerprint() -> Result<String> {
     let config = lqos_config::load_config()?;
     let apply_stormguard = config
@@ -2654,8 +2713,38 @@ fn calculate_shaping_runtime_hash() -> PyResult<i64> {
     let Ok(config) = lqos_config::load_config() else {
         return Ok(0);
     };
-    let nj_path = Path::new(&config.lqos_directory).join("network.json");
-    let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+    let base_path = Path::new(&config.lqos_directory);
+    let effective_path = base_path.join("network.effective.json");
+    let nj_path = if effective_path.exists() {
+        effective_path
+    } else if config
+        .long_term_stats
+        .enable_insight_topology
+        .unwrap_or(false)
+    {
+        let insight_path = base_path.join("network.insight.json");
+        if insight_path.exists() {
+            insight_path
+        } else {
+            base_path.join("network.json")
+        }
+    } else {
+        base_path.join("network.json")
+    };
+    let sd_path = if config
+        .long_term_stats
+        .enable_insight_topology
+        .unwrap_or(false)
+    {
+        let insight_path = base_path.join("ShapedDevices.insight.csv");
+        if insight_path.exists() {
+            insight_path
+        } else {
+            base_path.join("ShapedDevices.csv")
+        }
+    } else {
+        base_path.join("ShapedDevices.csv")
+    };
 
     let Ok(nj_as_string) = read_to_string(nj_path) else {
         return Ok(0);
@@ -3136,6 +3225,36 @@ fn scheduler_error(_py: Python, error: String) -> PyResult<bool> {
 #[pyfunction]
 fn scheduler_output(_py: Python, output: String) -> PyResult<bool> {
     if let Ok(reply) = run_query(vec![BusRequest::SchedulerOutput(output)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Report structured scheduler progress for startup or long-running refresh phases.
+#[pyfunction]
+fn scheduler_progress(
+    _py: Python,
+    active: bool,
+    phase: String,
+    phase_label: String,
+    step_index: u32,
+    step_count: u32,
+    percent: u8,
+) -> PyResult<bool> {
+    let report = SchedulerProgressReport {
+        active,
+        phase,
+        phase_label,
+        step_index,
+        step_count,
+        percent,
+        updated_unix: None,
+    };
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerProgress(report)]) {
         for resp in reply.iter() {
             if let BusResponse::Ack = resp {
                 return Ok(true);

@@ -10,14 +10,15 @@ use crate::throughput_tracker::{
 };
 use csv::ReaderBuilder;
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_config::{ShapedDevice, load_config};
+use lqos_config::{ShapedDevice, TopologyCanonicalStateFile, load_config};
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use std::fs::read_to_string;
+use std::io::Write;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI64;
 use tracing::debug;
 use tracing::log::warn;
@@ -25,6 +26,34 @@ use uuid::Uuid;
 
 fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
+}
+
+fn insight_topology_debug_path(config: &lqos_config::Config) -> PathBuf {
+    Path::new(&config.lqos_directory).join("network.insight.debug.json")
+}
+
+fn write_insight_topology_debug_snapshot(
+    config: &lqos_config::Config,
+    raw_json: &str,
+) -> anyhow::Result<()> {
+    let path = insight_topology_debug_path(config);
+    let temp_path = path.with_extension("tmp");
+    let mut file = std::fs::File::create(&temp_path)?;
+    file.write_all(raw_json.as_bytes())?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    std::fs::rename(temp_path, path)?;
+    Ok(())
+}
+
+fn load_insight_logical_network_json() -> anyhow::Result<String> {
+    let config = load_config()?;
+    let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config.as_ref())?;
+    let raw_json = serde_json::to_string_pretty(&canonical.insight_topology_network_json())?;
+    if let Err(err) = write_insight_topology_debug_snapshot(config.as_ref(), &raw_json) {
+        warn!("Unable to write Insight topology debug snapshot. {err:?}");
+    }
+    Ok(raw_json)
 }
 
 /// Temporary conversion function for LTS/Insight compatibility
@@ -90,7 +119,7 @@ pub(crate) fn submit_throughput_stats(
         THROUGHPUT_TRACKER.icmp_packets_per_second.get_down(),
         THROUGHPUT_TRACKER.icmp_packets_per_second.get_up(),
     );
-    let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
+    let bits_per_second = THROUGHPUT_TRACKER.actual_bits_per_second();
 
     // Check that the stats haven't gone wonky and don't submit obviously bad data.
     if let Ok(config) = load_config() {
@@ -112,11 +141,11 @@ pub(crate) fn submit_throughput_stats(
             tracing::info!("Sending topology to Insight");
             // Send the topology tree
             {
-                let filename = Path::new(&config.lqos_directory).join("network.json");
-                if let Ok(raw_string) = read_to_string(filename) {
-                    match serde_json::from_str::<RawNetJs>(&raw_string) {
+                match load_insight_logical_network_json() {
+                    Err(err) => warn!("Unable to load Insight logical topology JSON. {err:?}"),
+                    Ok(raw_string) => match serde_json::from_str::<RawNetJs>(&raw_string) {
                         Err(e) => {
-                            warn!("Unable to parse network.json. {e:?}");
+                            warn!("Unable to parse Insight logical topology JSON. {e:?}")
                         }
                         Ok(json) => {
                             let lts2_format: Vec<_> =
@@ -127,9 +156,7 @@ pub(crate) fn submit_throughput_stats(
                                 warn!("Error sending message to Insight. {e:?}");
                             }
                         }
-                    }
-                } else {
-                    warn!("Unable to read network.json");
+                    },
                 }
             }
 
@@ -202,8 +229,10 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Send top-level throughput stats to LTS2
-        let bytes = THROUGHPUT_TRACKER.bytes_per_second.as_down_up();
-        let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
+        let bytes = THROUGHPUT_TRACKER.actual_bytes_per_second.as_down_up();
+        let shaped_bytes = THROUGHPUT_TRACKER
+            .shaped_actual_bytes_per_second
+            .as_down_up();
         let mut min_rtt = None;
         let mut max_rtt = None;
         let mut median_rtt = None;
@@ -280,11 +309,11 @@ pub(crate) fn submit_throughput_stats(
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
+            .filter(|(_k, h)| h.circuit_id.is_some() && h.actual_bytes_per_second.not_zero())
             .for_each(|(_k, h)| {
                 let mut crazy = false;
                 if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
-                    && (h.bytes_per_second.down > *dl || h.bytes_per_second.up > *ul)
+                    && (h.actual_bytes_per_second.down > *dl || h.actual_bytes_per_second.up > *ul)
                 {
                     crazy_values.insert(h.circuit_hash.unwrap_or(0));
                     crazy = true;
@@ -294,7 +323,7 @@ pub(crate) fn submit_throughput_stats(
                     return;
                 }
                 if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
-                    c.bytes += h.bytes_per_second;
+                    c.bytes += h.actual_bytes_per_second;
                     c.packets += h.packets_per_second;
                     c.tcp_packets += h.tcp_packets;
                     c.udp_packets += h.udp_packets;
@@ -303,7 +332,7 @@ pub(crate) fn submit_throughput_stats(
                     circuit_throughput.insert(
                         h.circuit_hash.unwrap_or(0),
                         CircuitThroughputTemp {
-                            bytes: h.bytes_per_second,
+                            bytes: h.actual_bytes_per_second,
                             packets: h.packets_per_second,
                             tcp_packets: h.tcp_packets,
                             udp_packets: h.udp_packets,
@@ -553,16 +582,15 @@ fn ip6_to_bytes(ip: (Ipv6Addr, u32)) -> ([u8; 16], u8) {
     (bytes, ip.1 as u8)
 }
 
-/// Calculates a hash of the combination of network.json and shaped devices.
-/// This uses the NON-INSIGHT version, always - this is deliberate. If Insight
-/// is updating, but integrations are changing the original, we want to use
-/// the original.
+/// Calculates a hash of the combination of the Insight logical topology tree and shaped devices.
+///
+/// This intentionally uses the Insight-only logical topology export rather than any
+/// runtime-effective topology or local compatibility tree.
 fn combined_devices_network_hash() -> anyhow::Result<i64> {
     let cfg = load_config()?;
-    let nj_path = Path::new(&cfg.lqos_directory).join("network.json");
-    let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
+    let sd_path = std::path::Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
 
-    let nj_as_string = read_to_string(nj_path)?;
+    let nj_as_string = load_insight_logical_network_json()?;
     let sd_as_string = read_to_string(sd_path)?;
     let combined = format!("{}\n{}", nj_as_string, sd_as_string);
     let hash = hash_to_i64(&combined);
@@ -592,11 +620,12 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
         .comment(Some(b'#'))
         .trim(csv::Trim::All)
         .from_path(sd_path)?;
+    let headers = reader.headers()?.clone();
     let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
 
     for result in reader.records() {
         if let Ok(result) = result {
-            let device = ShapedDevice::from_csv(&result)?;
+            let device = ShapedDevice::from_csv(&result, Some(&headers))?;
             devices.push(device);
         } else {
             anyhow::bail!("Error reading ShapedDevices.csv");

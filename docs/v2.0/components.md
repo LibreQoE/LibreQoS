@@ -34,9 +34,28 @@ flowchart LR
 - Actions:
   - On start: Run a full setup of queues
     - Current builds wait briefly for `lqosd` to finish binding the local bus before the first scheduler run.
+    - Current builds also wait for `lqos_topology` to publish `topology_runtime_status.json` with `ready: true` for the exact current `source_generation`, rather than inferring readiness from file mtimes.
   - Every X minutes: Update queues, pulling new configuration from CRM integration, if enabled.
     - The default minute interval is 30, so the refresh occurs every 30 minutes by default.
     - The minute interval is adjustable with the setting `queue_refresh_interval_mins` in `/etc/lqos.conf`.
+  - Current packages build `liblqos_python.so` with PyO3 `abi3` using a Python 3.10 floor, so the shipped extension is intended to remain import-compatible across newer CPython 3.x minor versions supported by PyO3 rather than matching only the build host's exact Python minor.
+
+### lqos_topology runtime contract
+
+- `lqos_topology` continuously builds runtime-effective topology artifacts from current source inputs and attachment health.
+- Current builds keep two distinct topology views:
+  - `compatibility_network_json` remains the local compatibility tree used as the base for `network.effective.json`
+  - Insight topology submission derives a separate logical-parent tree from canonical topology state so sites are grouped by logical site hierarchy rather than immediate attachment hops
+  - For inspection, `lqosd` writes the exact Insight topology JSON it is about to serialize to `/opt/libreqos/src/network.insight.debug.json`
+- UISP ingest now deduplicates duplicate raw device rows by device ID before graph construction, and graph building defensively skips any residual duplicate device IDs.
+- After a successful publish, it writes `/opt/libreqos/src/topology_runtime_status.json` with:
+  - `source_generation`
+  - `ready`
+  - `generated_unix`
+  - artifact paths for `topology_effective_state.json`, `network.effective.json`, and `shaping_inputs.json`
+  - `error` when the current generation failed
+- `lqos_scheduler` only calls `refreshShapers()` when that status file reports `ready: true` for the exact current generation of `network.json`, `ShapedDevices.csv`, `circuit_anchors.json` when present, and the active topology source state.
+- If the runtime status is missing, stale, or failed for the current generation, scheduler stays alive in degraded mode and retries automatically on later refreshes.
 
 ### Checking service status
 
@@ -118,6 +137,7 @@ WebUI (Node Manager) includes an urgent issue channel for high-priority events (
 WebUI (Node Manager) includes scheduler status visibility for operator awareness.
 
 - Use scheduler status as a quick health signal for recurring refresh jobs.
+- During startup and scheduled refresh phases, the sidebar indicator reports coarse progress and the current scheduler phase instead of showing a blind spinner.
 - If scheduler is not healthy, validate `lqosd` and `lqos_scheduler` service state first.
 - Confirm details with:
   - `journalctl -u lqos_scheduler --since "30 minutes ago"`

@@ -3,13 +3,14 @@ use allocative::Allocative;
 use csv::StringRecord;
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tracing::error;
 
 /// Represents a row in the `ShapedDevices.csv` file.
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Allocative)]
 pub struct ShapedDevice {
-    // Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+    // Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment[,sqm]
     /// The ID of the circuit to which the device belongs. Circuits are 1:many,
     /// multiple devices may be in a single circuit.
     pub circuit_id: String,
@@ -26,6 +27,18 @@ pub struct ShapedDevice {
 
     /// The parent node of the device, derived from `network.json`
     pub parent_node: String,
+
+    /// Optional stable `network.json` identifier for the parent node.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_node_id: Option<String>,
+
+    /// Optional compatibility field for a stable topology node identifier.
+    ///
+    /// Built-in integrations should prefer `circuit_anchors.json` for circuit
+    /// anchor resolution. This CSV field remains accepted for DIY and legacy
+    /// operator-managed inputs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_node_id: Option<String>,
 
     /// The device's MAC address. This isn't actually used, it exists for
     /// convenient mapping/seraching.
@@ -78,26 +91,129 @@ pub struct ShapedDevice {
 }
 
 impl ShapedDevice {
+    fn normalize_header(value: &str) -> String {
+        value
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric())
+            .flat_map(|ch| ch.to_lowercase())
+            .collect()
+    }
+
+    fn csv_layout(headers: Option<&StringRecord>) -> HashMap<&'static str, usize> {
+        let mut layout = HashMap::from([
+            ("circuit_id", 0usize),
+            ("circuit_name", 1usize),
+            ("device_id", 2usize),
+            ("device_name", 3usize),
+            ("parent_node", 4usize),
+            ("mac", 5usize),
+            ("ipv4", 6usize),
+            ("ipv6", 7usize),
+            ("download_min", 8usize),
+            ("upload_min", 9usize),
+            ("download_max", 10usize),
+            ("upload_max", 11usize),
+            ("comment", 12usize),
+            ("sqm", 13usize),
+        ]);
+
+        let Some(headers) = headers else {
+            return layout;
+        };
+
+        layout.remove("sqm");
+
+        for (idx, header) in headers.iter().enumerate() {
+            match Self::normalize_header(header).as_str() {
+                "circuitid" | "circuit_id" => {
+                    layout.insert("circuit_id", idx);
+                }
+                "circuitname" | "circuit_name" => {
+                    layout.insert("circuit_name", idx);
+                }
+                "deviceid" | "device_id" => {
+                    layout.insert("device_id", idx);
+                }
+                "devicename" | "device_name" => {
+                    layout.insert("device_name", idx);
+                }
+                "parentnode" | "parent_node" => {
+                    layout.insert("parent_node", idx);
+                }
+                "parentnodeid" | "parent_node_id" => {
+                    layout.insert("parent_node_id", idx);
+                }
+                "anchornodeid" | "anchor_node_id" | "id" => {
+                    layout.insert("anchor_node_id", idx);
+                }
+                "mac" => {
+                    layout.insert("mac", idx);
+                }
+                "ipv4" => {
+                    layout.insert("ipv4", idx);
+                }
+                "ipv6" => {
+                    layout.insert("ipv6", idx);
+                }
+                "downloadmin" | "downloadminmbps" | "download_min_mbps" => {
+                    layout.insert("download_min", idx);
+                }
+                "uploadmin" | "uploadminmbps" | "upload_min_mbps" => {
+                    layout.insert("upload_min", idx);
+                }
+                "downloadmax" | "downloadmaxmbps" | "download_max_mbps" => {
+                    layout.insert("download_max", idx);
+                }
+                "uploadmax" | "uploadmaxmbps" | "upload_max_mbps" => {
+                    layout.insert("upload_max", idx);
+                }
+                "comment" => {
+                    layout.insert("comment", idx);
+                }
+                "sqm" => {
+                    layout.insert("sqm", idx);
+                }
+                _ => {}
+            }
+        }
+
+        layout
+    }
+
+    fn field<'a>(
+        record: &'a StringRecord,
+        layout: &HashMap<&'static str, usize>,
+        key: &str,
+    ) -> &'a str {
+        layout
+            .get(key)
+            .and_then(|idx| record.get(*idx))
+            .unwrap_or_default()
+    }
+
     /// Creates a new `ShapedDevice` instance from a CSV string record.
     ///
     /// This function parses a CSV record containing device configuration data and constructs
-    /// a `ShapedDevice` with all necessary fields populated. The CSV record must contain
-    /// exactly 13 fields in the following order (optionally a 14th `sqm` field may be present):
+    /// a `ShapedDevice` with all necessary fields populated. The CSV record uses header-aware
+    /// parsing and supports the legacy 13-column shape or the newer optional `Parent Node ID`,
+    /// `Anchor Node ID`/`id`, and trailing `sqm` fields:
     ///
     /// 1. Circuit ID
     /// 2. Circuit Name
     /// 3. Device ID
     /// 4. Device Name
     /// 5. Parent Node
-    /// 6. MAC Address
-    /// 7. IPv4 Addresses (comma-separated, CIDR notation supported)
-    /// 8. IPv6 Addresses (comma-separated, CIDR notation supported)
-    /// 9. Download Min Mbps
-    /// 10. Upload Min Mbps
-    /// 11. Download Max Mbps
-    /// 12. Upload Max Mbps
-    /// 13. Comment
-    /// 14. sqm (optional; allowed values: "cake", "fq_codel", "none", or
+    /// 6. Parent Node ID (optional)
+    /// 7. Anchor Node ID (optional)
+    /// 8. MAC Address
+    /// 9. IPv4 Addresses (comma-separated, CIDR notation supported)
+    /// 10. IPv6 Addresses (comma-separated, CIDR notation supported)
+    /// 11. Download Min Mbps
+    /// 12. Upload Min Mbps
+    /// 13. Download Max Mbps
+    /// 14. Upload Max Mbps
+    /// 15. Comment
+    /// 16. sqm (optional; allowed values: "cake", "fq_codel", "none", or
     ///     a directional override in the form "down_sqm/up_sqm". Either side
     ///     may be empty to indicate no override for that direction, e.g.
     ///     "cake/" or "/fq_codel".)
@@ -116,21 +232,37 @@ impl ShapedDevice {
     /// This function will return an error if:
     /// * The bandwidth values (min/max upload/download) cannot be parsed as unsigned integers
     /// * The CSV record doesn't contain the expected number of fields
-    pub fn from_csv(record: &StringRecord) -> Result<Self, ShapedDevicesError> {
+    pub fn from_csv(
+        record: &StringRecord,
+        headers: Option<&StringRecord>,
+    ) -> Result<Self, ShapedDevicesError> {
+        let layout = Self::csv_layout(headers);
         // Parse mandatory fields (first 13 entries)
         let mut device = Self {
-            circuit_id: record[0].to_string(),
-            circuit_name: record[1].to_string(),
-            device_id: record[2].to_string(),
-            device_name: record[3].to_string(),
-            parent_node: record[4].to_string(),
-            mac: record[5].to_string(),
-            ipv4: ShapedDevice::parse_ipv4(&record[6]),
-            ipv6: ShapedDevice::parse_ipv6(&record[7]),
+            circuit_id: Self::field(record, &layout, "circuit_id").to_string(),
+            circuit_name: Self::field(record, &layout, "circuit_name").to_string(),
+            device_id: Self::field(record, &layout, "device_id").to_string(),
+            device_name: Self::field(record, &layout, "device_name").to_string(),
+            parent_node: Self::field(record, &layout, "parent_node").to_string(),
+            parent_node_id: match Self::field(record, &layout, "parent_node_id").trim() {
+                "" => None,
+                value => Some(value.to_string()),
+            },
+            anchor_node_id: match Self::field(record, &layout, "anchor_node_id").trim() {
+                "" => None,
+                value => Some(value.to_string()),
+            },
+            mac: Self::field(record, &layout, "mac").to_string(),
+            ipv4: ShapedDevice::parse_ipv4(Self::field(record, &layout, "ipv4")),
+            ipv6: ShapedDevice::parse_ipv6(Self::field(record, &layout, "ipv6")),
             download_min_mbps: {
-                let rate = record[8]
+                let rate = Self::field(record, &layout, "download_min")
                     .parse::<f32>()
-                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[8].to_string()))?;
+                    .map_err(|_| {
+                        ShapedDevicesError::CsvEntryParseError(
+                            Self::field(record, &layout, "download_min").to_string(),
+                        )
+                    })?;
                 if rate < 0.01 {
                     return Err(ShapedDevicesError::CsvEntryParseError(format!(
                         "Download min rate {} too small (minimum 0.01 Mbps)",
@@ -140,9 +272,13 @@ impl ShapedDevice {
                 rate
             },
             upload_min_mbps: {
-                let rate = record[9]
+                let rate = Self::field(record, &layout, "upload_min")
                     .parse::<f32>()
-                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[9].to_string()))?;
+                    .map_err(|_| {
+                        ShapedDevicesError::CsvEntryParseError(
+                            Self::field(record, &layout, "upload_min").to_string(),
+                        )
+                    })?;
                 if rate < 0.01 {
                     return Err(ShapedDevicesError::CsvEntryParseError(format!(
                         "Upload min rate {} too small (minimum 0.01 Mbps)",
@@ -152,9 +288,13 @@ impl ShapedDevice {
                 rate
             },
             download_max_mbps: {
-                let rate = record[10]
+                let rate = Self::field(record, &layout, "download_max")
                     .parse::<f32>()
-                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[10].to_string()))?;
+                    .map_err(|_| {
+                        ShapedDevicesError::CsvEntryParseError(
+                            Self::field(record, &layout, "download_max").to_string(),
+                        )
+                    })?;
                 if rate < 0.01 {
                     return Err(ShapedDevicesError::CsvEntryParseError(format!(
                         "Download max rate {} too small (minimum 0.01 Mbps)",
@@ -164,9 +304,13 @@ impl ShapedDevice {
                 rate
             },
             upload_max_mbps: {
-                let rate = record[11]
+                let rate = Self::field(record, &layout, "upload_max")
                     .parse::<f32>()
-                    .map_err(|_| ShapedDevicesError::CsvEntryParseError(record[11].to_string()))?;
+                    .map_err(|_| {
+                        ShapedDevicesError::CsvEntryParseError(
+                            Self::field(record, &layout, "upload_max").to_string(),
+                        )
+                    })?;
                 if rate < 0.01 {
                     return Err(ShapedDevicesError::CsvEntryParseError(format!(
                         "Upload max rate {} too small (minimum 0.01 Mbps)",
@@ -175,16 +319,16 @@ impl ShapedDevice {
                 }
                 rate
             },
-            comment: record[12].to_string(),
+            comment: Self::field(record, &layout, "comment").to_string(),
             sqm_override: None,
-            circuit_hash: hash_to_i64(&record[0]),
-            device_hash: hash_to_i64(&record[2]),
-            parent_hash: hash_to_i64(&record[4]),
+            circuit_hash: hash_to_i64(Self::field(record, &layout, "circuit_id")),
+            device_hash: hash_to_i64(Self::field(record, &layout, "device_id")),
+            parent_hash: hash_to_i64(Self::field(record, &layout, "parent_node")),
         };
 
         // Optional 14th field: per-circuit SQM override token
-        if record.len() >= 14 {
-            let raw = record[13].trim();
+        if let Some(raw) = layout.get("sqm").and_then(|idx| record.get(*idx)) {
+            let raw = raw.trim();
             if !raw.is_empty() {
                 // Normalize case and whitespace around optional '/'
                 let token = raw.to_lowercase();
@@ -346,7 +490,7 @@ mod tests {
             "Test fractional rates",
         ]);
 
-        let device = ShapedDevice::from_csv(&record).expect("Should parse fractional rates");
+        let device = ShapedDevice::from_csv(&record, None).expect("Should parse fractional rates");
 
         assert_eq!(device.download_min_mbps, 0.5);
         assert_eq!(device.upload_min_mbps, 1.0);
@@ -373,12 +517,111 @@ mod tests {
             "Integer rates",
         ]);
 
-        let device = ShapedDevice::from_csv(&record).expect("Should parse integer rates");
+        let device = ShapedDevice::from_csv(&record, None).expect("Should parse integer rates");
 
         assert_eq!(device.download_min_mbps, 10.0);
         assert_eq!(device.upload_min_mbps, 20.0);
         assert_eq!(device.download_max_mbps, 100.0);
         assert_eq!(device.upload_max_mbps, 200.0);
+    }
+
+    #[test]
+    fn test_header_aware_parent_node_id_parsing() {
+        let headers = StringRecord::from(vec![
+            "Circuit ID",
+            "Circuit Name",
+            "Device ID",
+            "Device Name",
+            "Parent Node",
+            "Parent Node ID",
+            "Anchor Node ID",
+            "MAC",
+            "IPv4",
+            "IPv6",
+            "Download Min Mbps",
+            "Upload Min Mbps",
+            "Download Max Mbps",
+            "Upload Max Mbps",
+            "Comment",
+        ]);
+        let record = StringRecord::from(vec![
+            "test3",
+            "Test Circuit 3",
+            "device3",
+            "Test Device 3",
+            "Tower-A",
+            "uisp:device:tower-a",
+            "uisp:site:test-site",
+            "00:00:00:00:00:03",
+            "192.168.1.3",
+            "",
+            "10",
+            "20",
+            "100",
+            "200",
+            "Header aware",
+        ]);
+
+        let device = ShapedDevice::from_csv(&record, Some(&headers))
+            .expect("Should parse parent node ID from header-aware CSV");
+
+        assert_eq!(device.parent_node, "Tower-A");
+        assert_eq!(
+            device.parent_node_id.as_deref(),
+            Some("uisp:device:tower-a")
+        );
+        assert_eq!(
+            device.anchor_node_id.as_deref(),
+            Some("uisp:site:test-site")
+        );
+        assert_eq!(device.mac, "00:00:00:00:00:03");
+        assert_eq!(device.ipv4.len(), 1);
+    }
+
+    #[test]
+    fn test_header_aware_id_alias_parsing() {
+        let headers = StringRecord::from(vec![
+            "Circuit ID",
+            "Circuit Name",
+            "Device ID",
+            "Device Name",
+            "Parent Node",
+            "Parent Node ID",
+            "id",
+            "MAC",
+            "IPv4",
+            "IPv6",
+            "Download Min Mbps",
+            "Upload Min Mbps",
+            "Download Max Mbps",
+            "Upload Max Mbps",
+            "Comment",
+        ]);
+        let record = StringRecord::from(vec![
+            "test4",
+            "Test Circuit 4",
+            "device4",
+            "Test Device 4",
+            "Tower-B",
+            "uisp:device:tower-b",
+            "uisp:site:test-site-b",
+            "00:00:00:00:00:04",
+            "192.168.1.4",
+            "",
+            "10",
+            "20",
+            "100",
+            "200",
+            "Header aware id alias",
+        ]);
+
+        let device = ShapedDevice::from_csv(&record, Some(&headers))
+            .expect("Should parse anchor node ID from id header alias");
+
+        assert_eq!(
+            device.anchor_node_id.as_deref(),
+            Some("uisp:site:test-site-b")
+        );
     }
 
     #[test]
@@ -400,7 +643,7 @@ mod tests {
             "Rate too small",
         ]);
 
-        let result = ShapedDevice::from_csv(&record);
+        let result = ShapedDevice::from_csv(&record, None);
         assert!(result.is_err(), "Should reject rates below 0.01 Mbps");
     }
 
@@ -423,7 +666,7 @@ mod tests {
             "Invalid rate",
         ]);
 
-        let result = ShapedDevice::from_csv(&record);
+        let result = ShapedDevice::from_csv(&record, None);
         assert!(result.is_err(), "Should reject invalid rate strings");
     }
 }

@@ -344,6 +344,17 @@ function redactableHtml(text) {
     return `<span class="redactable">${escapeHtml(text ?? "")}</span>`;
 }
 
+function treePageHrefForNodeId(nodeId) {
+    const normalizedId = String(nodeId || "").trim();
+    if (!normalizedId) {
+        return null;
+    }
+    const params = new URLSearchParams();
+    params.set("parent", "0");
+    params.set("nodeId", normalizedId);
+    return `/tree.html?${params.toString()}`;
+}
+
 function findNearestAncestorSiteIndex(indexMap, startIndex) {
     let currentIndex = startIndex;
     const visited = new Set();
@@ -1925,7 +1936,11 @@ class SiteMapPage {
             return;
         }
         this.detailsPanel.style.display = "block";
-        this.detailsTitle.innerHTML = redactableHtml(displayNodeName(props.name, props.nodeType));
+        const detailsTitleText = displayNodeName(props.name, props.nodeType);
+        const treePageHref = treePageHrefForNodeId(props.nodeId);
+        this.detailsTitle.innerHTML = treePageHref
+            ? `<a class="link-body-emphasis text-decoration-none" href="${escapeHtml(treePageHref)}">${redactableHtml(detailsTitleText)}</a>`
+            : redactableHtml(detailsTitleText);
         const parentName = displayParentName(props.parentName, props.parentType);
         const subtitleBits = [
             escapeHtml(String(props.nodeType || "").toUpperCase()),

@@ -2,8 +2,10 @@ use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
-use crate::strategies::full::shaped_devices_writer::ShapedDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use crate::strategies::full::shaped_devices_writer::{ShapedDevice, write_circuit_anchors};
+use lqos_config::{
+    CircuitAnchor, CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::Path;
@@ -51,6 +53,7 @@ pub async fn build_ap_only_network(
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
 
     // Find the clients
     let mappings = uisp_data.map_clients_to_aps();
@@ -75,10 +78,13 @@ pub async fn build_ap_only_network(
     // Write ShapedDevices.csv
     let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
     let mut shaped_devices = Vec::new();
+    let mut circuit_anchors = Vec::<CircuitAnchor>::new();
     let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
     let mut seen_pairs = HashSet::new();
+    let mut seen_circuits = HashSet::new();
     for (parent_id, client_ids) in mappings.iter() {
         let parent_name = uisp_data.device_display_name(parent_id);
+        let parent_node_id = format!("uisp:device:{parent_id}");
         for client_id in client_ids {
             let site = uisp_data.sites.iter().find(|s| *client_id == s.id).unwrap();
             let devices = uisp_data
@@ -121,16 +127,30 @@ pub async fn build_ap_only_network(
                 )
             };
             let ethernet_decision = apply_ethernet_rate_cap(
+                ethernet_policy,
                 &site.id,
                 &site.name,
                 devices.iter().copied(),
-                requested.0,
-                requested.2,
-                requested.1,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.2,
+                    download_max: requested.1,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);
+            }
+            if devices.iter().any(|device| device.has_address())
+                && seen_circuits.insert(site.id.clone())
+                && !parent_node_id.is_empty()
+            {
+                circuit_anchors.push(CircuitAnchor {
+                    circuit_id: site.id.clone(),
+                    circuit_name: Some(site.name.clone()),
+                    anchor_node_id: parent_node_id.clone(),
+                    anchor_node_name: Some(parent_name.clone()),
+                });
             }
             for device in devices.iter().filter(|d| d.has_address()) {
                 let key = (site.id.clone(), device.id.clone());
@@ -144,6 +164,8 @@ pub async fn build_ap_only_network(
                     device_id: device.id.clone(),
                     device_name: device.name.clone(),
                     parent_node: parent_name.clone(),
+                    parent_node_id: parent_node_id.clone(),
+                    anchor_node_id: String::new(),
                     mac: device.mac.clone(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
@@ -170,6 +192,7 @@ pub async fn build_ap_only_network(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_circuit_anchors(&config, "uisp/ap_only", &circuit_anchors)?;
     write_ethernet_advisories(&config, &ethernet_advisories)?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 
@@ -180,35 +203,42 @@ pub async fn build_ap_only_network(
 mod tests {
     use super::build_ap_only_network_json;
     use crate::strategies::common::UispData;
-    use crate::uisp_types::{UispDevice, UispSite};
+    use crate::uisp_types::{UispAttachmentRateSource, UispDevice, UispSite};
     use std::collections::{HashMap, HashSet};
 
     #[test]
     fn ap_only_network_json_resolves_ap_ids_to_names() {
-        let uisp_data = UispData {
-            sites_raw: vec![],
-            devices_raw: vec![],
-            data_links_raw: vec![],
-            sites: vec![UispSite {
+        let uisp_data = UispData::from_parts(
+            vec![],
+            vec![],
+            vec![],
+            vec![UispSite {
                 id: "client-site".to_string(),
                 name: "Client Site".to_string(),
                 ..Default::default()
             }],
-            devices: vec![UispDevice {
+            vec![UispDevice {
                 id: "ap-1".to_string(),
                 name: "Tower AP".to_string(),
                 mac: "".to_string(),
                 role: None,
                 wireless_mode: None,
                 site_id: "tower-site".to_string(),
+                raw_download: 500,
+                raw_upload: 400,
                 download: 500,
                 upload: 400,
                 ipv4: HashSet::new(),
                 ipv6: HashSet::new(),
+                probe_ipv4: HashSet::new(),
+                probe_ipv6: HashSet::new(),
                 negotiated_ethernet_mbps: None,
                 negotiated_ethernet_interface: None,
+                transport_cap_mbps: None,
+                transport_cap_reason: None,
+                attachment_rate_source: UispAttachmentRateSource::Static,
             }],
-        };
+        );
         let mappings = HashMap::from([("ap-1".to_string(), vec!["client-site".to_string()])]);
 
         let network_json = build_ap_only_network_json(&uisp_data, &mappings);

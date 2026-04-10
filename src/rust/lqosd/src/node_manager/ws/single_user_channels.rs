@@ -12,6 +12,7 @@ use crate::node_manager::ws::single_user_channels::circuit::circuit_watcher;
 use crate::node_manager::ws::single_user_channels::circuit_metrics::watch_circuit_metrics;
 use crate::node_manager::ws::single_user_channels::ping_monitor::ping_monitor;
 use crate::node_manager::ws::single_user_channels::tree_attached_circuits::watch_tree_attached_circuits;
+use lqos_probe::ProbeClient;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tracing::info;
@@ -23,6 +24,7 @@ pub struct PrivateState {
         lqos_bus::BusRequest,
     )>,
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
+    probe_client: ProbeClient,
     browser_language: Option<String>,
     chatbot_request: Option<u64>,
     circuit_watch: Option<tokio::task::JoinHandle<()>>,
@@ -41,12 +43,14 @@ impl PrivateState {
         control_tx: tokio::sync::mpsc::Sender<
             crate::lts2_sys::control_channel::ControlChannelCommand,
         >,
+        probe_client: ProbeClient,
         browser_language: Option<String>,
     ) -> Self {
         Self {
             tx,
             bus_tx,
             control_tx,
+            probe_client,
             browser_language,
             chatbot_request: None,
             circuit_watch: None,
@@ -127,7 +131,11 @@ impl PrivateState {
 
     fn replace_ping_monitor_watch(&mut self, ips: Vec<(String, String)>) {
         self.abort_ping_monitor_watch();
-        self.ping_monitor_watch = Some(spawn(ping_monitor(ips, self.tx.clone())));
+        self.ping_monitor_watch = Some(spawn(ping_monitor(
+            ips,
+            self.tx.clone(),
+            self.probe_client.clone(),
+        )));
     }
 
     fn abort_ping_monitor_watch(&mut self) {

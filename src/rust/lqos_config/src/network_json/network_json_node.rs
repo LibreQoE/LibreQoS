@@ -71,6 +71,10 @@ pub struct NetworkJsonNode {
     /// Optional geographic longitude carried in `network.json` metadata.
     pub longitude: Option<f32>,
 
+    /// Selected attachment name carried in `network.effective.json` metadata when runtime
+    /// squashing collapses attachment nodes into a site-centric tree.
+    pub active_attachment_name: Option<String>,
+
     /// Rolling per-site TemporalHeatmap (optional, allocated when enabled).
     pub heatmap: Option<TemporalHeatmap>,
 
@@ -151,6 +155,7 @@ impl NetworkJsonNode {
             node_type: self.node_type.clone(),
             latitude: self.latitude,
             longitude: self.longitude,
+            active_attachment_name: self.active_attachment_name.clone(),
             subtree_site_count: 0,
             subtree_circuit_count: 0,
             subtree_device_count: 0,

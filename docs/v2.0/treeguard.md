@@ -138,6 +138,7 @@ In practice, this means:
 3. Very large `all_circuits` enrollments are swept incrementally over multiple ticks, with a target full sweep around 15 seconds instead of attempting a full per-second scan.
 4. TreeGuard node virtualization now goes through Bakery live runtime planning/apply paths instead of forcing a LibreQoS reload or Bakery full reload.
 5. Supported top-level runtime virtualization now uses a Bakery-side rebalance/migration plan that can promote child sites and direct circuits across queue roots while preserving the logical hierarchy for reporting.
+6. TreeGuard will not attempt nested runtime virtualization inside an already-retained Bakery shadow branch. Those nodes are treated as structurally ineligible until the ancestor runtime branch is restored or the topology changes.
 
 Recent TreeGuard activity is available in two places:
 

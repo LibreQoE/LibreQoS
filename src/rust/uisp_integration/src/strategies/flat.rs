@@ -3,32 +3,16 @@ use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::dedup_site_names;
+use crate::strategies::full::shaped_devices_writer::{ShapedDevice, write_circuit_anchors};
 use crate::uisp_types::UispDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
-use serde::Serialize;
+use lqos_config::{
+    CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tracing::{error, info, warn};
-
-/// Represents a shaped device in the ShapedDevices.csv file.
-#[derive(Serialize, Debug)]
-struct ShapedDevice {
-    pub circuit_id: String,
-    pub circuit_name: String,
-    pub device_id: String,
-    pub device_name: String,
-    pub parent_node: String,
-    pub mac: String,
-    pub ipv4: String,
-    pub ipv6: String,
-    pub download_min: f32,
-    pub upload_min: f32,
-    pub download_max: f32,
-    pub upload_max: f32,
-    pub comment: String,
-}
 
 /// Builds a flat network for UISP
 ///
@@ -39,6 +23,7 @@ pub async fn build_flat_network(
     config: Arc<Config>,
     ip_ranges: IpRanges,
 ) -> Result<(), UispIntegrationError> {
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
     // Load the devices from UISP
     let (devices, json_devices) = uisp::load_all_devices_with_interfaces(config.clone())
         .await
@@ -180,13 +165,16 @@ pub async fn build_flat_network(
                 .filter(|device| device.site_id == site.id && device.has_address())
                 .collect();
             let ethernet_decision = apply_ethernet_rate_cap(
+                ethernet_policy,
                 &site.id,
                 &site.name_or_blank(),
                 site_devices.iter(),
-                requested.0,
-                requested.1,
-                requested.2,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.1,
+                    download_max: requested.2,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);
@@ -205,6 +193,8 @@ pub async fn build_flat_network(
                         device_id: device.get_id(),
                         device_name: device.get_name().unwrap_or("".to_string()),
                         parent_node: "".to_string(),
+                        parent_node_id: "".to_string(),
+                        anchor_node_id: "".to_string(),
                         mac: device.identification.mac.clone().unwrap_or("".to_string()),
                         ipv4: dev.ipv4_list(),
                         ipv6: dev.ipv6_list(),
@@ -235,6 +225,7 @@ pub async fn build_flat_network(
         error!("{e:?}");
         UispIntegrationError::CsvError
     })?;
+    write_circuit_anchors(&config, "uisp/flat", &[])?;
     write_ethernet_advisories(&config, &ethernet_advisories)?;
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
 

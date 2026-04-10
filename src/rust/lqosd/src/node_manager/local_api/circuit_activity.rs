@@ -1,7 +1,5 @@
 use crate::shaped_devices_tracker::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES};
-use crate::throughput_tracker::flow_data::{
-    ALL_FLOWS, FlowbeeLocalData, get_asn_name_and_country,
-};
+use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowbeeLocalData, get_asn_name_and_country};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use lqos_utils::unix_time::time_since_boot;
@@ -22,6 +20,8 @@ const TRAFFIC_FLOW_HIDE_THRESHOLD_BPS: u32 = 1_048_576;
 pub struct CircuitSummaryData {
     pub circuit_id: String,
     pub bytes_per_second: DownUpOrder<u64>,
+    #[serde(default)]
+    pub actual_bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
     pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
     pub qoo_score: Option<f32>,
@@ -81,17 +81,18 @@ pub struct CircuitTopAsnsQuery {
     pub hide_small: bool,
 }
 
-/// Aggregated row for the circuit `Top ASNs` table.
+/// Aggregated row for the circuit `Top ASNs` table, including recent rate,
+/// median RTT/QoO, retransmit, and flow-count context for a circuit-local ASN.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CircuitTopAsnRow {
     pub asn_name: String,
     pub asn_country: String,
     pub down_bps: u64,
     pub up_bps: u64,
-    pub bytes_sent_down: u64,
-    pub bytes_sent_up: u64,
-    pub packets_sent_down: u64,
-    pub packets_sent_up: u64,
+    pub rtt_down_nanos: u64,
+    pub rtt_up_nanos: u64,
+    pub qoo_down: Option<f32>,
+    pub qoo_up: Option<f32>,
     pub retransmit_down_pct: f64,
     pub retransmit_up_pct: f64,
     pub flow_count: usize,
@@ -290,7 +291,11 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
                 qoo_down: qoo.down,
                 qoo_up: qoo.up,
                 last_seen_nanos,
-                opacity: 1.0 - f64::min(1.0, last_seen_nanos as f64 / RECENT_CIRCUIT_FLOWS_WINDOW_NANOS as f64),
+                opacity: 1.0
+                    - f64::min(
+                        1.0,
+                        last_seen_nanos as f64 / RECENT_CIRCUIT_FLOWS_WINDOW_NANOS as f64,
+                    ),
                 sort_rate_bps: current_rate as f64,
             })
         })
@@ -307,7 +312,11 @@ fn compare_f64(left: f64, right: f64, asc: bool) -> Ordering {
 }
 
 fn compare_u64(left: u64, right: u64, asc: bool) -> Ordering {
-    if asc { left.cmp(&right) } else { right.cmp(&left) }
+    if asc {
+        left.cmp(&right)
+    } else {
+        right.cmp(&left)
+    }
 }
 
 fn compare_strings(left: &str, right: &str, asc: bool) -> Ordering {
@@ -318,15 +327,59 @@ fn compare_strings(left: &str, right: &str, asc: bool) -> Ordering {
     }
 }
 
+fn median_u64(values: &mut [u64]) -> Option<u64> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_unstable();
+    let midpoint = values.len() / 2;
+    if values.len() % 2 == 1 {
+        Some(values[midpoint])
+    } else {
+        let left = values[midpoint - 1] as u128;
+        let right = values[midpoint] as u128;
+        Some(((left + right) / 2) as u64)
+    }
+}
+
+fn median_f32(values: &mut [f32]) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|left, right| left.total_cmp(right));
+    let midpoint = values.len() / 2;
+    if values.len() % 2 == 1 {
+        Some(values[midpoint])
+    } else {
+        Some((values[midpoint - 1] + values[midpoint]) / 2.0)
+    }
+}
+
 fn sort_traffic_rows(rows: &mut [CircuitFlowSnapshotRow], sort_column: &str, sort_direction: &str) {
     let asc = sort_direction_is_asc(sort_direction);
     rows.sort_by(|a, b| {
         let primary = match sort_column {
             "protocol" => compare_strings(&a.protocol_name, &b.protocol_name, asc),
-            "bytes" => compare_u64(a.bytes_sent_down + a.bytes_sent_up, b.bytes_sent_down + b.bytes_sent_up, asc),
-            "packets" => compare_u64(a.packets_sent_down + a.packets_sent_up, b.packets_sent_down + b.packets_sent_up, asc),
-            "retransmits" => compare_f64(a.retransmit_down_pct + a.retransmit_up_pct, b.retransmit_down_pct + b.retransmit_up_pct, asc),
-            "rtt" => compare_u64(a.rtt_down_nanos + a.rtt_up_nanos, b.rtt_down_nanos + b.rtt_up_nanos, asc),
+            "bytes" => compare_u64(
+                a.bytes_sent_down + a.bytes_sent_up,
+                b.bytes_sent_down + b.bytes_sent_up,
+                asc,
+            ),
+            "packets" => compare_u64(
+                a.packets_sent_down + a.packets_sent_up,
+                b.packets_sent_down + b.packets_sent_up,
+                asc,
+            ),
+            "retransmits" => compare_f64(
+                a.retransmit_down_pct + a.retransmit_up_pct,
+                b.retransmit_down_pct + b.retransmit_up_pct,
+                asc,
+            ),
+            "rtt" => compare_u64(
+                a.rtt_down_nanos + a.rtt_up_nanos,
+                b.rtt_down_nanos + b.rtt_up_nanos,
+                asc,
+            ),
             "qoo" => compare_f64(
                 a.qoo_down.unwrap_or(0.0) as f64 + a.qoo_up.unwrap_or(0.0) as f64,
                 b.qoo_down.unwrap_or(0.0) as f64 + b.qoo_up.unwrap_or(0.0) as f64,
@@ -358,7 +411,10 @@ pub fn circuit_flow_counts(circuit_id: &str) -> (usize, usize) {
 pub fn circuit_traffic_flows_page(query: &CircuitTrafficFlowsQuery) -> CircuitTrafficFlowsPage {
     let mut rows = flow_snapshot_rows(&query.circuit);
     if query.hide_small {
-        rows.retain(|row| row.down_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS || row.up_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS);
+        rows.retain(|row| {
+            row.down_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS
+                || row.up_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS
+        });
     }
     sort_traffic_rows(&mut rows, &query.sort_column, &query.sort_direction);
 
@@ -408,8 +464,10 @@ pub fn circuit_top_asns_data(query: &CircuitTopAsnsQuery) -> CircuitTopAsnsData 
         asn_country: String,
         down_bps: u64,
         up_bps: u64,
-        bytes_sent_down: u64,
-        bytes_sent_up: u64,
+        rtt_down_nanos: Vec<u64>,
+        rtt_up_nanos: Vec<u64>,
+        qoo_down: Vec<f32>,
+        qoo_up: Vec<f32>,
         packets_sent_down: u64,
         packets_sent_up: u64,
         tcp_retransmits_down: u64,
@@ -419,55 +477,72 @@ pub fn circuit_top_asns_data(query: &CircuitTopAsnsQuery) -> CircuitTopAsnsData 
 
     let mut rows = flow_snapshot_rows(&query.circuit);
     if query.hide_small {
-        rows.retain(|row| row.down_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS || row.up_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS);
+        rows.retain(|row| {
+            row.down_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS
+                || row.up_bps > TRAFFIC_FLOW_HIDE_THRESHOLD_BPS
+        });
     }
 
-    let mut buckets: fxhash::FxHashMap<(String, String), AsnBucket> = fxhash::FxHashMap::default();
+    let mut buckets: fxhash::FxHashMap<u32, AsnBucket> = fxhash::FxHashMap::default();
     for row in rows {
-        let key = (
-            if row.asn_name.trim().is_empty() {
+        let bucket = buckets.entry(row.asn_id).or_insert_with(|| AsnBucket {
+            asn_name: if row.asn_name.trim().is_empty() {
                 "Unknown ASN".to_string()
             } else {
                 row.asn_name.clone()
             },
-            row.asn_country.clone(),
-        );
-        let bucket = buckets.entry(key.clone()).or_insert_with(|| AsnBucket {
-            asn_name: key.0.clone(),
-            asn_country: key.1.clone(),
+            asn_country: row.asn_country.clone(),
             down_bps: 0,
             up_bps: 0,
-            bytes_sent_down: 0,
-            bytes_sent_up: 0,
+            rtt_down_nanos: Vec::new(),
+            rtt_up_nanos: Vec::new(),
+            qoo_down: Vec::new(),
+            qoo_up: Vec::new(),
             packets_sent_down: 0,
             packets_sent_up: 0,
             tcp_retransmits_down: 0,
             tcp_retransmits_up: 0,
             flow_count: 0,
         });
+        if bucket.asn_name == "Unknown ASN" && !row.asn_name.trim().is_empty() {
+            bucket.asn_name = row.asn_name.clone();
+        }
+        if bucket.asn_country.trim().is_empty() && !row.asn_country.trim().is_empty() {
+            bucket.asn_country = row.asn_country.clone();
+        }
         bucket.down_bps += row.down_bps as u64;
         bucket.up_bps += row.up_bps as u64;
-        bucket.bytes_sent_down += row.bytes_sent_down;
-        bucket.bytes_sent_up += row.bytes_sent_up;
         bucket.packets_sent_down += row.packets_sent_down;
         bucket.packets_sent_up += row.packets_sent_up;
         bucket.tcp_retransmits_down += row.tcp_retransmits_down as u64;
         bucket.tcp_retransmits_up += row.tcp_retransmits_up as u64;
+        if row.rtt_down_nanos > 0 {
+            bucket.rtt_down_nanos.push(row.rtt_down_nanos);
+        }
+        if row.rtt_up_nanos > 0 {
+            bucket.rtt_up_nanos.push(row.rtt_up_nanos);
+        }
+        if let Some(qoo_down) = row.qoo_down {
+            bucket.qoo_down.push(qoo_down);
+        }
+        if let Some(qoo_up) = row.qoo_up {
+            bucket.qoo_up.push(qoo_up);
+        }
         bucket.flow_count += 1;
     }
 
     let total_asns = buckets.len();
     let mut bucket_rows: Vec<CircuitTopAsnRow> = buckets
         .into_values()
-        .map(|row| CircuitTopAsnRow {
+        .map(|mut row| CircuitTopAsnRow {
             asn_name: row.asn_name,
             asn_country: row.asn_country,
             down_bps: row.down_bps,
             up_bps: row.up_bps,
-            bytes_sent_down: row.bytes_sent_down,
-            bytes_sent_up: row.bytes_sent_up,
-            packets_sent_down: row.packets_sent_down,
-            packets_sent_up: row.packets_sent_up,
+            rtt_down_nanos: median_u64(&mut row.rtt_down_nanos).unwrap_or_default(),
+            rtt_up_nanos: median_u64(&mut row.rtt_up_nanos).unwrap_or_default(),
+            qoo_down: median_f32(&mut row.qoo_down),
+            qoo_up: median_f32(&mut row.qoo_up),
             retransmit_down_pct: if row.packets_sent_down > 0 {
                 row.tcp_retransmits_down as f64 / row.packets_sent_down as f64
             } else {
@@ -515,4 +590,27 @@ pub fn circuit_flow_sankey_rows(circuit_id: &str) -> Vec<CircuitFlowSankeyRow> {
             last_seen_nanos: row.last_seen_nanos,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{median_f32, median_u64};
+
+    #[test]
+    fn median_u64_handles_even_and_odd_lengths() {
+        let mut odd = vec![30_u64, 10, 20];
+        assert_eq!(median_u64(&mut odd), Some(20));
+
+        let mut even = vec![40_u64, 10, 30, 20];
+        assert_eq!(median_u64(&mut even), Some(25));
+    }
+
+    #[test]
+    fn median_f32_handles_even_and_odd_lengths() {
+        let mut odd = vec![30.0_f32, 10.0, 20.0];
+        assert_eq!(median_f32(&mut odd), Some(20.0));
+
+        let mut even = vec![40.0_f32, 10.0, 30.0, 20.0];
+        assert_eq!(median_f32(&mut even), Some(25.0));
+    }
 }

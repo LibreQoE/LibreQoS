@@ -31,13 +31,12 @@ impl Default for ConfigShapedDevices {
 }
 
 impl ConfigShapedDevices {
-    /// The path to the current `ShapedDevices.csv` file, determined
-    /// by acquiring the prefix from the `/etc/lqos.conf` configuration
-    /// file.
-    pub fn path() -> Result<PathBuf, ShapedDevicesError> {
-        let cfg = crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+    /// Computes the shaped-devices path for one concrete config snapshot.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn path_for_config(cfg: &crate::Config) -> PathBuf {
         let base_path = Path::new(&cfg.lqos_directory);
-        let full_path = if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
+        if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
             let tmp_path = base_path.join("ShapedDevices.insight.csv");
             if tmp_path.exists() {
                 tmp_path
@@ -46,7 +45,15 @@ impl ConfigShapedDevices {
             }
         } else {
             base_path.join("ShapedDevices.csv")
-        };
+        }
+    }
+
+    /// The path to the current `ShapedDevices.csv` file, determined
+    /// by acquiring the prefix from the `/etc/lqos.conf` configuration
+    /// file.
+    pub fn path() -> Result<PathBuf, ShapedDevicesError> {
+        let cfg = crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+        let full_path = Self::path_for_config(cfg.as_ref());
         debug!("ShapedDevices.csv path: {:?}", full_path);
         Ok(full_path)
     }
@@ -119,7 +126,13 @@ impl ConfigShapedDevices {
     /// Loads `ShapedDevices.csv` and constructs a `ConfigShapedDevices`
     /// object containing the resulting data.
     pub fn load() -> Result<Self, ShapedDevicesError> {
-        let final_path = ConfigShapedDevices::path()?;
+        let cfg = crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+        Self::load_for_config(cfg.as_ref())
+    }
+
+    /// Loads `ShapedDevices.csv` using a caller-supplied config snapshot.
+    pub fn load_for_config(cfg: &crate::Config) -> Result<Self, ShapedDevicesError> {
+        let final_path = ConfigShapedDevices::path_for_config(cfg);
 
         // Load the CSV file as a byte array
         if !final_path.exists() {
@@ -138,12 +151,17 @@ impl ConfigShapedDevices {
             .flexible(true)
             .from_reader(utf8_bytes.as_slice());
 
+        let headers = reader
+            .headers()
+            .map_err(|e| ShapedDevicesError::GenericCsvError(format!("CSV HEADERS: {e:?}")))?
+            .clone();
+
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
 
         let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
         for result in reader.records() {
             if let Ok(result) = result {
-                let device = ShapedDevice::from_csv(&result);
+                let device = ShapedDevice::from_csv(&result, Some(&headers));
                 if let Ok(device) = device {
                     devices.push(device);
                 } else {

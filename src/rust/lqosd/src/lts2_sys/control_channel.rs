@@ -12,6 +12,7 @@ use tungstenite::Message;
 
 use crate::lts2_sys::license_grant;
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
+use lqos_probe::ProbeClass;
 
 mod messages;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
@@ -1325,20 +1326,19 @@ async fn shaper_snapshot_streaming(
     request_id: u64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
-    // Mirror node_manager ticker throughput: fetch current throughput and send compact tuple data
-    use lqos_bus::BusResponse;
-
-    let resp = crate::throughput_tracker::current_throughput();
-    if let BusResponse::CurrentThroughput {
-        bits_per_second,
-        packets_per_second,
-        shaped_bits_per_second,
-        ..
-    } = resp
+    // Mirror node_manager ticker throughput: send compact tuple data.
+    // Note: field names are historical; values are bits per second.
     {
+        let bits_per_second =
+            crate::throughput_tracker::THROUGHPUT_TRACKER.actual_bits_per_second();
+        let shaped_bits_per_second =
+            crate::throughput_tracker::THROUGHPUT_TRACKER.shaped_actual_bits_per_second();
+        let packets_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .packets_per_second
+            .as_down_up();
+
         let message = messages::WsMessage::StreamingShaper {
             request_id,
-            // Note: field names are historical; values are bits per second
             bytes_down: bits_per_second.down,
             bytes_up: bits_per_second.up,
             shaped_bytes_down: shaped_bits_per_second.down,
@@ -1418,30 +1418,20 @@ async fn circuit_snapshot_streaming(
 
     // Helper: run one ping with 1s timeout; respects disable_icmp_ping
     async fn one_ping(ip: std::net::IpAddr) -> Option<f32> {
-        let Ok(cfg) = lqos_config::load_config() else {
-            return None;
-        };
-        if cfg.disable_icmp_ping.unwrap_or(false) {
-            return None;
-        }
-        use rand::random;
-        use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
-        let client = match ip {
-            std::net::IpAddr::V4(_) => Client::new(&Config::default()),
-            std::net::IpAddr::V6(_) => Client::new(&Config::builder().kind(ICMP::V6).build()),
-        };
-        if client.is_err() {
-            return None;
-        }
-        let client = client.ok()?;
-        let payload = [0; 56];
-        let mut pinger = client.pinger(ip, PingIdentifier(random())).await;
-        pinger.timeout(Duration::from_secs(1));
-        match pinger.ping(PingSequence(0), &payload).await {
-            Ok((IcmpPacket::V4(..), dur)) | Ok((IcmpPacket::V6(..), dur)) => {
-                Some(dur.as_secs_f32() * 1000.0)
+        match crate::probe_provider::probe_round_trip_time(
+            ip.to_string(),
+            ProbeClass::Diagnostic,
+            Duration::from_secs(1),
+            Duration::from_millis(250),
+        )
+        .await
+        {
+            Ok(observation) if observation.reachable => observation.rtt_ms.map(|rtt| rtt as f32),
+            Ok(_) => None,
+            Err(err) => {
+                debug!("Unable to sample shared RTT probe for {ip}: {err}");
+                None
             }
-            _ => None,
         }
     }
 

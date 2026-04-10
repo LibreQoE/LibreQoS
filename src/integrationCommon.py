@@ -10,6 +10,7 @@ import ipaddress
 import enum
 import json
 import os
+import time
 
 def isInAllowedSubnets(inputIP):
 	# Check whether an IP address occurs inside the allowedSubnets list
@@ -573,14 +574,19 @@ class NetworkGraph:
 		import csv
 		# Builds ShapedDevices.csv from the network tree.
 		circuits = []
+		circuit_anchors = []
 		
 		if not self._cache_valid:
 			self._buildChildrenCache()
 		
 		for i, node in enumerate(self.nodes):
 			if node.type == NodeType.client:
-				parent = self.nodes[node.parentIndex].displayName
+				parent_node = self.nodes[node.parentIndex]
+				parent = parent_node.displayName
+				parent_id = parent_node.networkJsonId
 				if parent == "Shaper Root": parent = ""
+				if parent == "":
+					parent_id = ""
 				
 				if circuit_name_use_address():
 					displayNameToUse = node.address
@@ -594,10 +600,19 @@ class NetworkGraph:
 					"id": node.id,
 					"name": displayNameToUse,
 					"parent": parent,
+					"parent_id": parent_id,
 					"download": node.downloadMbps,
 					"upload": node.uploadMbps,
 					"devices": []
 				}
+				anchor_id = node.networkJsonId
+				if anchor_id:
+					circuit_anchors.append({
+						"circuit_id": node.id,
+						"circuit_name": displayNameToUse,
+						"anchor_node_id": anchor_id,
+						"anchor_node_name": node.displayName if node.displayName else None,
+					})
 				
 				# O(1) lookup of children
 				child_indices = self._children_cache.get(i, [])
@@ -621,7 +636,7 @@ class NetworkGraph:
 		
 		with open('ShapedDevices.csv', 'w', newline='') as csvfile:
 			wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
-			wr.writerow(['Circuit ID', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'MAC',
+			wr.writerow(['Circuit ID', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'Parent Node ID', 'Anchor Node ID', 'MAC',
 						 'IPv4', 'IPv6', 'Download Min', 'Upload Min', 'Download Max', 'Upload Max', 'Comment'])
 			for circuit in circuits:
 				for device in circuit["devices"]:
@@ -638,6 +653,8 @@ class NetworkGraph:
 						device["id"],
 						device["name"],
 						circuit["parent"],
+						circuit.get("parent_id", ""),
+						"",
 						device["mac"],
 						device["ipv4"],
 						device["ipv6"],
@@ -657,6 +674,15 @@ class NetworkGraph:
 					reader = csv.reader(f)
 					for row in reader:
 						wr.writerow(row)
+
+		with open('circuit_anchors.json', 'w', encoding='utf-8') as anchorfile:
+			json.dump({
+				"schema_version": 1,
+				"source": "python/integration_common",
+				"generated_unix": int(time.time()),
+				"anchors": circuit_anchors,
+			}, anchorfile, indent=2)
+			anchorfile.write('\n')
 
 	def plotNetworkGraph(self, showClients=False):
 		# Requires `pip install graphviz` to function.

@@ -16,8 +16,10 @@ lqos_sys = { path = "../lqos_sys" }
 lqos_queue_tracker = { path = "../lqos_queue_tracker" }
 lqos_utils = { path = "../lqos_utils" }
 lqos_overrides = { path = "../lqos_overrides" }
+lqos_topology = { path = "../lqos_topology" }
 lqos_heimdall = { path = "../lqos_heimdall" }
 lqos_stormguard = { path = "../lqos_stormguard" }
+lqos_probe = { path = "../lqos_probe" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
@@ -45,7 +47,6 @@ axum-extra = {  version = "0.9.4", features = ["cookie", "cookie-private"] }
 tower-http = { version = "0.6.1", features = ["fs", "cors"] }
 strum = {  version = "0.26.3", features = ["derive"] }
 default-net = {  workspace = true }
-surge-ping = "0.8.1"
 rand = "0.8.5"
 serde_cbor = { workspace = true }
 timerfd = {  workspace = true }

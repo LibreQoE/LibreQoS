@@ -136,6 +136,7 @@ struct MigrationDirectionVerification {
     interface_name: String,
     expected_handle: TcHandle,
     expected_parent: TcHandle,
+    observed_present: bool,
     observed_parent: Option<TcHandle>,
     observed_leaf_qdisc_major: Option<u16>,
 }
@@ -147,19 +148,27 @@ impl MigrationDirectionVerification {
     }
 
     fn summary(&self, direction: &str) -> String {
-        let observed = match (self.observed_parent, self.observed_leaf_qdisc_major) {
-            (Some(parent), Some(leaf_major)) => format!(
+        let observed = match (
+            self.observed_present,
+            self.observed_parent,
+            self.observed_leaf_qdisc_major,
+        ) {
+            (false, _, _) => "observed missing".to_string(),
+            (true, Some(parent), Some(leaf_major)) => format!(
                 "observed parent {} with leaf qdisc 0x{:x}:",
                 parent.as_tc_string(),
                 leaf_major
             ),
-            (Some(parent), None) => {
+            (true, Some(parent), None) => {
                 format!(
                     "observed parent {} with no leaf qdisc",
                     parent.as_tc_string()
                 )
             }
-            (None, _) => "observed missing".to_string(),
+            (true, None, Some(leaf_major)) => {
+                format!("observed at root with leaf qdisc 0x{:x}:", leaf_major)
+            }
+            (true, None, None) => "observed at root with no leaf qdisc".to_string(),
         };
         format!(
             "{direction} {} expected class {} under parent {} with a leaf qdisc, {observed}",
@@ -168,6 +177,41 @@ impl MigrationDirectionVerification {
             self.expected_parent.as_tc_string()
         )
     }
+}
+
+fn wrong_parent_prune_commands_for_direction(
+    interface_name: String,
+    snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    expected_handle: TcHandle,
+    expected_parent: TcHandle,
+) -> Vec<Vec<String>> {
+    let Some(observed) = snapshot.get(&expected_handle) else {
+        return Vec::new();
+    };
+    if observed.parent == Some(expected_parent) {
+        return Vec::new();
+    }
+
+    let mut commands = Vec::new();
+    if observed.leaf_qdisc_major.is_some() {
+        commands.push(vec![
+            "qdisc".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            interface_name.clone(),
+            "parent".to_string(),
+            expected_handle.as_tc_string(),
+        ]);
+    }
+    commands.push(vec![
+        "class".to_string(),
+        "del".to_string(),
+        "dev".to_string(),
+        interface_name,
+        "classid".to_string(),
+        expected_handle.as_tc_string(),
+    ]);
+    commands
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1089,8 +1133,10 @@ pub struct BakeryRuntimeOperationsSnapshot {
     pub applying_count: usize,
     /// Number of operations awaiting deferred cleanup.
     pub awaiting_cleanup_count: usize,
-    /// Number of failed operations that may be retried.
+    /// Number of failed operations that are not classified as structural blocks.
     pub failed_count: usize,
+    /// Number of operations blocked by structural runtime constraints until topology changes.
+    pub blocked_count: usize,
     /// Number of operations marked Dirty.
     pub dirty_count: usize,
     /// Most recently updated runtime operation, if any.
@@ -1333,6 +1379,7 @@ impl Default for BakeryTelemetryState {
                 applying_count: 0,
                 awaiting_cleanup_count: 0,
                 failed_count: 0,
+                blocked_count: 0,
                 dirty_count: 0,
                 latest: None,
             },
@@ -1452,6 +1499,33 @@ fn mark_reload_required(summary: String) {
     if should_emit {
         push_bakery_event("reload_required", "error", summary);
     }
+}
+
+fn is_live_migration_reload_required_reason(reason: &str) -> bool {
+    reason.starts_with("Bakery live-move ") || reason.starts_with("Bakery live migration ")
+}
+
+fn cancel_pending_migrations_for_observe_mode(
+    migrations: &mut HashMap<i64, Migration>,
+    reason: &str,
+) -> usize {
+    let canceled = migrations.len();
+    if canceled > 0 {
+        let summary = format!("Bakery canceled {canceled} pending live migration(s): {reason}");
+        info!("{summary}");
+        push_bakery_event("live_migrations_canceled", "info", summary);
+        migrations.clear();
+    }
+
+    if let Some(reload_reason) = bakery_reload_required_reason()
+        && is_live_migration_reload_required_reason(&reload_reason)
+    {
+        clear_reload_required(
+            "Observe mode canceled pending Bakery live-migration verification state; incremental live-move reload requirements were cleared.",
+        );
+    }
+
+    canceled
 }
 
 fn clear_reload_required(summary: &str) {
@@ -1589,6 +1663,16 @@ pub fn bakery_runtime_node_branch_snapshot(
         .runtime_branch_states_by_site
         .get(&site_hash)
         .cloned()
+}
+
+/// Returns every retained Bakery runtime branch-state snapshot currently tracked.
+pub fn bakery_runtime_node_branch_snapshots() -> Vec<BakeryRuntimeNodeBranchSnapshot> {
+    telemetry_state()
+        .read()
+        .runtime_branch_states_by_site
+        .values()
+        .cloned()
+        .collect()
 }
 
 /// Returns the current Bakery reload-required reason, if runtime drift has frozen incremental
@@ -3247,6 +3331,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             interface_name,
             expected_handle,
             expected_parent,
+            observed_present: observed.is_some(),
             observed_parent: observed.and_then(|entry| entry.parent),
             observed_leaf_qdisc_major: observed.and_then(|entry| entry.leaf_qdisc_major),
         }
@@ -3301,6 +3386,54 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         )
     }
 
+    fn migration_branch_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        down_handle: TcHandle,
+        down_parent: TcHandle,
+        up_handle: TcHandle,
+        up_parent: TcHandle,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_snapshot = read_live_class_snapshot(&config.isp_interface())?;
+        let mut commands = wrong_parent_prune_commands_for_direction(
+            config.isp_interface(),
+            &down_snapshot,
+            down_handle,
+            down_parent,
+        );
+
+        if config.on_a_stick_mode() {
+            return Ok(commands);
+        }
+
+        let up_snapshot = read_live_class_snapshot(&config.internet_interface())?;
+        commands.extend(wrong_parent_prune_commands_for_direction(
+            config.internet_interface(),
+            &up_snapshot,
+            up_handle,
+            up_parent,
+        ));
+        Ok(commands)
+    }
+
+    fn migration_shadow_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        migration: &Migration,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_handle = TcHandle::from_u32(
+            (u32::from(migration.class_major) << 16) | u32::from(migration.shadow_minor),
+        );
+        let up_handle = TcHandle::from_u32(
+            (u32::from(migration.up_class_major) << 16) | u32::from(migration.shadow_minor),
+        );
+        migration_branch_wrong_parent_prune_commands(
+            config,
+            down_handle,
+            migration.parent_class_id,
+            up_handle,
+            migration.up_parent_class_id,
+        )
+    }
+
     fn migration_final_verification(
         config: &Arc<Config>,
         migration: &Migration,
@@ -3320,6 +3453,25 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         )
     }
 
+    fn migration_final_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        migration: &Migration,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_handle = TcHandle::from_u32(
+            (u32::from(migration.class_major) << 16) | u32::from(migration.final_minor),
+        );
+        let up_handle = TcHandle::from_u32(
+            (u32::from(migration.up_class_major) << 16) | u32::from(migration.final_minor),
+        );
+        migration_branch_wrong_parent_prune_commands(
+            config,
+            down_handle,
+            migration.parent_class_id,
+            up_handle,
+            migration.up_parent_class_id,
+        )
+    }
+
     fn process_pending_migrations(
         config: &Arc<Config>,
         circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
@@ -3329,6 +3481,14 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
         runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
     ) {
+        if config.queues.queue_mode.is_observe() {
+            cancel_pending_migrations_for_observe_mode(
+                migrations,
+                "queue_mode is observe; the shaping tree is not live.",
+            );
+            return;
+        }
+
         let mut advanced = 0usize;
         let mut to_remove = Vec::new();
         let mut effective_state_changed = false;
@@ -3345,13 +3505,24 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         config,
                         "live-move: create shadow",
                     );
+                    let target_label = migration_target_label(mig);
+                    let mut cmds = match migration_shadow_wrong_parent_prune_commands(config, mig) {
+                        Ok(commands) => commands,
+                        Err(error) => {
+                            mark_reload_required(format!(
+                                "Bakery live-move shadow cleanup failed for {target_label}: {error}. A full reload is now required before further incremental topology mutations."
+                            ));
+                            mig.stage = MigrationStage::Done;
+                            advanced += 1;
+                            continue;
+                        }
+                    };
                     if let Some(temp) = build_shadow_add_cmd(
                         mig,
                         config,
                         &persisted_qdisc_handles,
                         &live_reserved_handles,
                     ) {
-                        let mut cmds = Vec::new();
                         match config.queues.lazy_queues.as_ref() {
                             None | Some(LazyQueueMode::No) => {
                                 if let Some(c) =
@@ -3462,7 +3633,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 }
                 MigrationStage::BuildFinal => {
                     let target_label = migration_target_label(mig);
-                    let mut cmds = Vec::new();
+                    let mut cmds = match migration_final_wrong_parent_prune_commands(config, mig) {
+                        Ok(commands) => commands,
+                        Err(error) => {
+                            mark_reload_required(format!(
+                                "Bakery live-move final cleanup failed for {target_label}: {error}. A full reload is now required before further incremental topology mutations."
+                            ));
+                            mig.stage = MigrationStage::Done;
+                            advanced += 1;
+                            continue;
+                        }
+                    };
                     let live_qdisc_handles = snapshot_live_qdisc_handle_majors_or_empty(
                         config,
                         "live-move: build final",
@@ -4042,10 +4223,20 @@ fn handle_commit_batch(
     let effective_new_batch =
         apply_runtime_virtualization_overlay(raw_batch.clone(), virtualized_sites);
     let resolved_mq_layout = current_mq_layout(&raw_batch, &config, mq_layout);
+    let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
+    let shaping_tree_active = SHAPING_TREE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+    let desired_tree_active = desired_shaping_tree_active(&config);
 
     let mapped_limit = resolve_mapped_circuit_limit();
     let effective_limit = mapped_limit.effective_limit;
     let limit_label = format_mapped_limit(effective_limit);
+
+    if shaping_tree_active && !desired_tree_active {
+        cancel_pending_migrations_for_observe_mode(
+            migrations,
+            "queue mode transitioned to observe; a full reload will rebuild the retained root MQ without the shaping tree.",
+        );
+    }
 
     if let Some(reason) = bakery_reload_required_reason() {
         let summary = format!(
@@ -4089,9 +4280,6 @@ fn handle_commit_batch(
         return;
     }
 
-    let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
-    let shaping_tree_active = SHAPING_TREE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
-    let desired_tree_active = desired_shaping_tree_active(&config);
     if !has_mq_been_setup {
         push_bakery_event(
             "baseline_rebuild_required",
@@ -5164,6 +5352,7 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
         site_hash,
         parent_class_id,
         up_parent_class_id,
+        class_minor,
         ..
     } = site
     else {
@@ -5180,6 +5369,18 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
     let Some((site_down_class, site_up_class)) = site_class_handles(site) else {
         return Some(format!("Site {} is not a valid AddSite command", site_hash));
     };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(down_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(up_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+    {
+        return Some(format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ));
+    }
 
     let (parent_down_major, _) = parent_class_id.get_major_minor();
     let (parent_up_major, _) = up_parent_class_id.get_major_minor();
@@ -5268,6 +5469,38 @@ impl RuntimeNodeEligibilityError {
             failure_reason: Some(failure_reason),
         }
     }
+}
+
+fn nested_runtime_shadow_branch_eligibility_error(
+    site: &BakeryCommands,
+) -> Option<RuntimeNodeEligibilityError> {
+    let BakeryCommands::AddSite {
+        site_hash,
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(down_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(up_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+    {
+        return None;
+    }
+
+    Some(RuntimeNodeEligibilityError::new(
+        format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ),
+        RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch,
+    ))
 }
 
 fn site_prune_commands(
@@ -5630,6 +5863,7 @@ fn rebuild_runtime_operations_snapshot(
     let mut applying_count = 0usize;
     let mut awaiting_cleanup_count = 0usize;
     let mut failed_count = 0usize;
+    let mut blocked_count = 0usize;
     let mut dirty_count = 0usize;
 
     let latest = runtime_node_operations
@@ -5639,7 +5873,13 @@ fn rebuild_runtime_operations_snapshot(
             RuntimeNodeOperationStatus::Deferred => deferred_count += 1,
             RuntimeNodeOperationStatus::Applying => applying_count += 1,
             RuntimeNodeOperationStatus::AppliedAwaitingCleanup => awaiting_cleanup_count += 1,
-            RuntimeNodeOperationStatus::Failed => failed_count += 1,
+            RuntimeNodeOperationStatus::Failed => {
+                if operation.failure_reason.is_some() {
+                    blocked_count += 1;
+                } else {
+                    failed_count += 1;
+                }
+            }
             RuntimeNodeOperationStatus::Dirty => dirty_count += 1,
             RuntimeNodeOperationStatus::Completed => {}
         })
@@ -5662,6 +5902,7 @@ fn rebuild_runtime_operations_snapshot(
         applying_count,
         awaiting_cleanup_count,
         failed_count,
+        blocked_count,
         dirty_count,
         latest,
     }
@@ -9339,6 +9580,13 @@ fn handle_treeguard_set_node_virtual_live(
             }
 
             if let Some(reason) =
+                nested_runtime_shadow_branch_eligibility_error(target_site.as_ref())
+            {
+                failure_reason = reason.failure_reason;
+                return Err(reason.message);
+            }
+
+            if let Some(reason) =
                 site_runtime_virtualization_eligibility_error(target_site.as_ref())
             {
                 return Err(reason);
@@ -10952,6 +11200,18 @@ mod tests {
     }
 
     #[test]
+    fn nested_runtime_shadow_branch_rejects_non_top_level_virtualization() {
+        let site = mk_add_site(77, 0x10003, 0x20003, 0x2001);
+        let reason = nested_runtime_shadow_branch_eligibility_error(site.as_ref())
+            .expect("runtime shadow site should be rejected");
+        assert!(reason.message.contains("retained runtime shadow branch"));
+        assert_eq!(
+            reason.failure_reason,
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch)
+        );
+    }
+
+    #[test]
     fn site_runtime_virtualization_rejects_non_site_commands() {
         let circuit = mk_add_circuit(77, "192.0.2.77/32");
         let reason = site_runtime_virtualization_eligibility_error(circuit.as_ref())
@@ -11077,6 +11337,55 @@ mod tests {
                 .as_deref()
                 .unwrap_or_default()
                 .contains("one top-level TreeGuard runtime operation in flight")
+        );
+    }
+
+    #[test]
+    fn structural_runtime_failures_are_counted_as_blocked_not_failed() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let now = unix_now();
+        let mut retryable = RuntimeNodeOperation::new(
+            1,
+            20,
+            Some("retryable-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now,
+        );
+        retryable.update_status(
+            RuntimeNodeOperationStatus::Failed,
+            now,
+            Some("transient runtime failure".to_string()),
+            None,
+        );
+
+        let mut blocked = RuntimeNodeOperation::new(
+            2,
+            21,
+            Some("blocked-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now.saturating_add(1),
+        );
+        blocked.update_status_with_reason(
+            RuntimeNodeOperationStatus::Failed,
+            now.saturating_add(1),
+            Some("inside a retained runtime shadow branch".to_string()),
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch),
+            None,
+        );
+
+        let runtime_node_operations = HashMap::from([(20, retryable), (21, blocked)]);
+        let snapshot = rebuild_runtime_operations_snapshot(&runtime_node_operations);
+
+        assert_eq!(snapshot.failed_count, 1);
+        assert_eq!(snapshot.blocked_count, 1);
+        assert_eq!(
+            snapshot
+                .latest
+                .as_ref()
+                .and_then(|entry| entry.site_name.as_deref()),
+            Some("blocked-site")
         );
     }
 
@@ -12930,6 +13239,105 @@ mod tests {
         assert!(bakery_reload_required_reason().is_none());
     }
 
+    fn sample_test_migration(hash: i64) -> Migration {
+        Migration {
+            circuit_hash: hash,
+            circuit_name: Some(format!("circuit-{hash}")),
+            site_name: Some(format!("site-{hash}")),
+            old_class_major: 0x1,
+            old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
+            parent_class_id: TcHandle::from_u32(0x10034),
+            up_parent_class_id: TcHandle::from_u32(0x20034),
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            old_down_min: 1.0,
+            old_down_max: 10.0,
+            old_up_min: 1.0,
+            old_up_max: 10.0,
+            new_down_min: 1.0,
+            new_down_max: 20.0,
+            new_up_min: 1.0,
+            new_up_max: 20.0,
+            old_minor: 0x21,
+            shadow_minor: 0x2000,
+            final_minor: 0x35,
+            ips: vec![format!("192.0.2.{hash}/32")],
+            sqm_override: None,
+            desired_cmd: mk_test_circuit(
+                hash,
+                0x10034,
+                0x20034,
+                0x35,
+                0x1,
+                0x2,
+                &format!("192.0.2.{hash}/32"),
+            ),
+            stage: MigrationStage::VerifyFinalReady,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
+        }
+    }
+
+    #[test]
+    fn observe_transition_cancels_pending_live_migrations_and_clears_live_migration_reload_state() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+        clear_reload_required(
+            "reset before observe_transition_cancels_pending_live_migrations_and_clears_live_migration_reload_state",
+        );
+
+        let mut migrations = HashMap::from([(9007, sample_test_migration(9007))]);
+        mark_reload_required(
+            "Bakery live-move final verification did not find the expected final class/qdisc for circuit 9007: observed missing. A full reload is now required before further incremental topology mutations."
+                .to_string(),
+        );
+
+        let canceled = cancel_pending_migrations_for_observe_mode(
+            &mut migrations,
+            "queue mode transitioned to observe; the shaping tree is no longer live.",
+        );
+
+        assert_eq!(canceled, 1);
+        assert!(migrations.is_empty());
+        assert!(bakery_reload_required_reason().is_none());
+        assert!(bakery_activity_snapshot().iter().any(|entry| {
+            entry.event == "live_migrations_canceled"
+                && entry.summary.contains("pending live migration")
+        }));
+    }
+
+    #[test]
+    fn observe_transition_preserves_non_migration_reload_required_state() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+        clear_reload_required(
+            "reset before observe_transition_preserves_non_migration_reload_required_state",
+        );
+
+        let unrelated_reason = "Bakery full reload triggered because site speed live-change enqueue failed: synthetic failure.";
+        let mut migrations = HashMap::from([(9008, sample_test_migration(9008))]);
+        mark_reload_required(unrelated_reason.to_string());
+
+        let canceled = cancel_pending_migrations_for_observe_mode(
+            &mut migrations,
+            "queue mode transitioned to observe; the shaping tree is no longer live.",
+        );
+
+        assert_eq!(canceled, 1);
+        assert!(migrations.is_empty());
+        assert_eq!(
+            bakery_reload_required_reason().as_deref(),
+            Some(unrelated_reason)
+        );
+        clear_reload_required(
+            "reset after observe_transition_preserves_non_migration_reload_required_state",
+        );
+    }
+
     #[test]
     fn migration_target_label_includes_circuit_and_site_names_when_known() {
         let migration = Migration {
@@ -12978,6 +13386,7 @@ mod tests {
                 interface_name: "if-down".to_string(),
                 expected_handle: TcHandle::from_u32(0x4002000),
                 expected_parent: TcHandle::from_u32(0x4000015),
+                observed_present: true,
                 observed_parent: Some(TcHandle::from_u32(0x4000013)),
                 observed_leaf_qdisc_major: None,
             },
@@ -12985,6 +13394,7 @@ mod tests {
                 interface_name: "if-up".to_string(),
                 expected_handle: TcHandle::from_u32(0x5002000),
                 expected_parent: TcHandle::from_u32(0x5000015),
+                observed_present: false,
                 observed_parent: None,
                 observed_leaf_qdisc_major: None,
             }),
@@ -13003,6 +13413,84 @@ mod tests {
         assert!(summary.contains("500"));
         assert!(summary.contains("observed missing"));
         assert!(!verification.ready());
+    }
+
+    #[test]
+    fn migration_branch_verification_summary_reports_root_attached_class() {
+        let verification = MigrationDirectionVerification {
+            interface_name: "if-root".to_string(),
+            expected_handle: TcHandle::from_u32(0x221f5),
+            expected_parent: TcHandle::from_u32(0x2103a),
+            observed_present: true,
+            observed_parent: None,
+            observed_leaf_qdisc_major: Some(0x96c8),
+        };
+
+        let summary = verification.summary("down");
+        assert!(summary.contains("observed at root"));
+        assert!(summary.contains("96c8"));
+    }
+
+    #[test]
+    fn wrong_parent_prune_commands_delete_root_attached_target_class() {
+        let snapshot = HashMap::from([(
+            TcHandle::from_u32(0x221f5),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x221f5),
+                parent: None,
+                leaf_qdisc_major: Some(0x96c8),
+            },
+        )]);
+
+        let commands = wrong_parent_prune_commands_for_direction(
+            "if-root".to_string(),
+            &snapshot,
+            TcHandle::from_u32(0x221f5),
+            TcHandle::from_u32(0x2103a),
+        );
+
+        assert_eq!(
+            commands,
+            vec![
+                vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    "if-root".to_string(),
+                    "parent".to_string(),
+                    "0x2:0x21f5".to_string(),
+                ],
+                vec![
+                    "class".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    "if-root".to_string(),
+                    "classid".to_string(),
+                    "0x2:0x21f5".to_string(),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn wrong_parent_prune_commands_skip_target_when_parent_already_matches() {
+        let snapshot = HashMap::from([(
+            TcHandle::from_u32(0x221f5),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x221f5),
+                parent: Some(TcHandle::from_u32(0x2103a)),
+                leaf_qdisc_major: Some(0x96c8),
+            },
+        )]);
+
+        let commands = wrong_parent_prune_commands_for_direction(
+            "if-ok".to_string(),
+            &snapshot,
+            TcHandle::from_u32(0x221f5),
+            TcHandle::from_u32(0x2103a),
+        );
+
+        assert!(commands.is_empty());
     }
 
     #[test]

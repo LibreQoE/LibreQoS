@@ -128,8 +128,10 @@ suspended_strategy = "none"
 
 # Capacity Adjustments
 # UISP's reported AP capacities can be optimistic
-airmax_capacity = 0.65  # Use 65% of reported AirMax capacity
-ltu_capacity = 0.95     # Use 95% of reported LTU capacity
+airmax_capacity = 0.8  # Use 80% of reported AirMax capacity on new installs
+airmax_flexible_frame_download_ratio = 0.8  # Fallback split for AirMax flexible framing when UISP does not expose dlRatio
+ltu_capacity = 1.0      # Use 100% of reported LTU capacity on new installs
+infrastructure_transport_caps_enabled = true  # Automatically cap radio capacity to active/model Ethernet transport ceilings
 
 # Site Management
 exclude_sites = []  # Sites to exclude, e.g., ["Test_Site", "Lab_Site"]
@@ -144,8 +146,7 @@ ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
 always_overwrite_network_json = true  # Recommended when using UISP integration in production
 exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
 squash_sites = []  # Optional: sites to squash
-enable_squashing = false  # Optional: enable AP/single-entry squashing logic
-do_not_squash_sites = []  # Optional: never squash these sites
+do_not_squash_sites = []  # Optional: keep these site names unsquashed in the runtime/export tree
 ignore_calculated_capacity = false  # Optional: keep configured capacities even if calculated differs
 insecure_ssl = false  # Optional: ignore UISP TLS certificate validation
 ```
@@ -157,21 +158,39 @@ The following UISP options are available in current builds and WebUI (Node Manag
 - `exclude_sites`: list of site names to exclude from import.
 - `exception_cpes`: list of `cpe:parent` overrides for ambiguous parent assignment.
 - `squash_sites`: optional list of sites to squash in full strategy workflows.
-- `enable_squashing`: enables additional squashing behavior where supported.
-- `do_not_squash_sites`: explicit exclusions from squashing.
+- `do_not_squash_sites`: explicit site-name exclusions from runtime/export squashing.
 - `use_ptmp_as_parent`: prefer PtMP AP as parent for relevant topology paths.
 - `ignore_calculated_capacity`: prefer configured capacities instead of integration-calculated values.
+- `infrastructure_transport_caps_enabled`: automatically cap UISP radio/device attachment rates to observed or known transport-port ceilings before they enter topology/export.
 - `insecure_ssl`: disables TLS certificate verification for UISP API calls.
+- `airmax_flexible_frame_download_ratio`: when UISP reports aggregate AirMax AP capacity for flexible framing and the live `dlRatio` is absent, LibreQoS uses this fallback download share. `0.8` means 80/20 download/upload.
+
+Topology Manager attachment-health probes use UISP-reported management IPs for the selected attachment pair. Current builds no longer prune those probe IPs through shaping `allow_subnets`; the shaping address allowlist still applies to generated subscriber/device shaping data, but not to management-plane topology probe targets.
+
+Topology Manager attachment-rate overrides stay disabled for UISP attachments whose rates come directly from dynamic radio-capacity telemetry, such as radios where UISP is actively reporting live directional capacity. Static UISP attachments, black-box/fallback cases, and manual attachment groups remain eligible for attachment-scoped rate overrides.
+
+Current UISP builds also classify attachment feed roles for Topology Manager and runtime export. Typical roles are `PtP Backhaul`, `PtMP Uplink`, and `Wired Uplink`. Runtime/export squashing only collapses effective backhaul-style roles; PtMP access/uplink APs stay visible in `tree.html`.
+
+Shared integration defaults also include Ethernet port limiting. When UISP can detect negotiated subscriber-facing Ethernet speed, current builds apply a conservative default multiplier of `0.94` unless the operator overrides it in `Configuration -> Integrations -> Integration Defaults`.
+
+Current UISP builds also use that same conservative multiplier for infrastructure attachment transport caps when `infrastructure_transport_caps_enabled = true`. LibreQoS prefers the highest active transport-looking Ethernet/SFP interface reported by UISP for those infrastructure caps, with exact model fallbacks for known hardware ceilings such as AF60-LR.
+
+Current builds scope this flexible-frame handling narrowly to devices where UISP reports `identification.type == "airMax"` and `identification.role == "ap"`. Those AirMax APs use `theoreticalTotalCapacity` only as a flexible-framing hint. The actual shaping rate comes from aggregate `totalCapacity` when UISP provides it, otherwise from the stronger directional capacity, and the split still prefers the live wireless `dlRatio` when UISP provides one.
 
 Recommended use:
 1. Keep `insecure_ssl = false` unless you have a known internal PKI/self-signed requirement.
 2. Use `exclude_sites` and `do_not_squash_sites` first for safer topology changes.
-3. Apply `squash_sites`/`enable_squashing` incrementally and validate queue placement after each change.
+3. UISP runtime/export squashing is always enabled after Topology Manager. Use `do_not_squash_sites` only when a specific site path must remain unsquashed.
+
+Legacy note:
+- Existing `enable_squashing` values in `/etc/lqos.conf` are ignored for backward compatibility.
 
 On the first successful run, the integration creates `network.json` and `ShapedDevices.csv`.
 If a `network.json` file exists, it is only overwritten when `always_overwrite_network_json = true`.
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
+
+If UISP exposes a site and an AP with the same visible name in the same topology, current builds keep the site name stable in `network.json` and disambiguate the AP name during export so the site branch is not dropped from the tree.
 
 When UISP client sites share the same name, LibreQoS now tries to disambiguate the generated circuit/site display names with a human-friendly suffix such as the first street-address segment, falling back to service name and then a short ID only when needed. Stable circuit identity still comes from the UISP site/service ID, not the display name.
 
@@ -181,39 +200,22 @@ You have the option to run `uisp_integration` automatically on boot and every X 
 
 ### UISP Overrides
 
-You can also modify the following files to more accurately reflect your network:
-- integrationUISPbandwidths.csv
-- integrationUISProutes.csv
+You can also use the following override inputs to more accurately reflect your network:
+- Tree-page `Rate Override` edits, stored as operator `AdjustSiteSpeed` entries in `lqos_overrides.json`
+- Tree-page `Topology Override` edits for supported UISP `full` nodes, stored in `lqos_overrides.json`
+- integrationUISPbandwidths.csv as a legacy compatibility input only
 
-Tree-page `Operator Override` edits are separate from these legacy UISP files. Current builds write those operator-owned node rate changes to `lqos_overrides.json` and do not rewrite `integrationUISPbandwidths.csv`.
+Current UISP builds auto-migrate a legacy `integrationUISPbandwidths.csv` into operator `AdjustSiteSpeed` overrides on the next integration run when no operator rate overrides exist yet. If operator rate overrides already exist, the CSV is ignored and a warning is logged so there is only one active source of truth.
+Deprecated legacy `uisp.bandwidth_overrides` JSON entries are ignored. The authoritative bandwidth override path is operator `AdjustSiteSpeed` in `lqos_overrides.json`.
+Current UISP builds ignore legacy `uisp.route_overrides` entries in `lqos_overrides.json` and legacy `integrationUISProutes.csv` files. If either is present, LibreQoS logs a warning and uses detected topology plus Topology Manager overrides instead.
 
-Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src). To utilize the template, copy the file (removing the `.template` part of the filename) and set the appropriate information inside each file.
-For example, if you want to change the set bandwidth for a site, you would do:
-```
-sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
-```
-And edit the CSV using LibreOffice or your preferred CSV editor.
+UISP `full` strategy builds also expose tree-page `Topology Override` editing for supported nodes. These overrides are stored in `lqos_overrides.json` and resolve before final `network.json` / `ShapedDevices.csv` emission. Current WebUI support is `Pinned Parent` only.
 
-To avoid conflicting sources of truth, prefer one durable override path per node: either the legacy UISP CSV workflow or the operator override layer.
+Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src).
 
-#### UISP Route Overrides
+For new bandwidth changes, use the operator override layer. `integrationUISPbandwidths.csv` remains a compatibility input for one-time migration into `AdjustSiteSpeed`, not the preferred long-term workflow.
 
-The default cost between nodes is typically 10. The integration creates a dot graph file `/opt/libreqos/src/graph.dot` which can be rendered using [Graphviz](https://dreampuf.github.io/GraphvizOnline/). This renders a map with the associated costs of all links.
-
-![image](https://github.com/user-attachments/assets/4edba4b5-c377-4659-8798-dfc40d50c859)
-
-Say you have Site 1, Site 2, and Site 3.
-A backup path exists between Site 1 and Site 3, but is not the preferred path.
-Your preference is Site 1 > Site 2 > Site 3, but the integration by default connects Site 1 > Site 3 directly.
-
-To fix this, add a cost above the default for the path between Site 1 and Site 3.
-```
-Site 1, Site 3, 100
-Site 3, Site 1, 100
-```
-With this, data will flow Site 1 > Site 2 > Site 3.
-
-To make the change, perform a reload of the integration with ```sudo systemctl restart lqos_scheduler```.
+For path intent, use Topology Manager parent selection and attachment preference. That is now the supported replacement for older UISP route-cost overrides.
 
 
 ## Related Pages

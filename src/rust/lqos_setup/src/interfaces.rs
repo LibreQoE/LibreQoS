@@ -10,13 +10,13 @@ use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 
 pub fn get_interfaces() -> anyhow::Result<Vec<String>> {
     let interfaces = nix::ifaddrs::getifaddrs()?
-        .filter(|iface| check_queues(&iface.interface_name).is_ok())
+        .filter(|iface| interface_supports_lqos(&iface.interface_name).is_ok())
         .map(|iface| iface.interface_name)
         .collect::<Vec<_>>();
     Ok(interfaces)
 }
 
-fn check_queues(interface: &str) -> anyhow::Result<()> {
+pub(crate) fn interface_supports_lqos(interface: &str) -> anyhow::Result<()> {
     let path = format!("/sys/class/net/{interface}/queues/");
     let sys_path = Path::new(&path);
     if !sys_path.exists() {

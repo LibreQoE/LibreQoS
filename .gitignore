@@ -156,12 +156,36 @@ src/.~lock.*#
 
 # Local build artifact (built on target host)
 src/bin/lqos_overrides
+src/bin/lqos_setup
+src/bin/lqos_topology
+src/bin/lqosd.pre_*
 
 # Local large test topology artifact
 src/network.large.json
-<<<<<<< HEAD
 /src/lqos_overrides.json
-
-=======
 /src/planner_state.json
->>>>>>> develop
+
+# Local runtime / topology state
+/src/.systemd_hotfix_installed
+/src/bakery_qdisc_handles.json
+/src/circuit_ethernet_metadata.json
+/src/cpu_topology_cache.json
+/src/lqusers.session.key
+/src/network.effective.json
+/src/network.json.pre_*
+/src/topology_attachment_health_state.json
+/src/topology_editor_state.json
+/src/topology_effective_state.json
+/src/topology_overrides.json
+/src/topology_parent_candidates.json
+/src/topology_canonical_state.json
+/src/circuit_anchors.json
+/src/shaping_inputs.json
+
+# Migrated integration compatibility artifacts
+/src/integrationUISPbandwidths.csv.migrated-*
+/src/integrationUISProutes.csv.migrated-*
+
+# Local override snapshots
+/src/lqos_overrides.stormguard.json
+/src/lqos_overrides.treeguard.json
