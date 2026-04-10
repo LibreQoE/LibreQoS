@@ -164,6 +164,16 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 
 If Insight shows sites buried under AP/backhaul chains or only a narrow subset of sites loads cleanly, check whether the host is on a build before the separate Insight logical-topology export. Current builds submit an Insight-only logical-parent tree derived from canonical topology state, while `compatibility_network_json` remains reserved for local compatibility and `network.effective.json` generation.
 
+To inspect the exact topology JSON that `lqosd` is preparing for Insight, review:
+
+```bash
+cat /opt/libreqos/src/network.insight.debug.json
+```
+
+This debug snapshot is separate from `network.insight.json`. The latter is an installed-runtime input path used by shaping components when Insight topology mode is enabled, while `network.insight.debug.json` is only a diagnostic snapshot of the payload source tree.
+
+If specific APs or switches appear multiple times with suffixed names such as `... [AP deadbeef]`, check whether UISP is returning duplicate rows for the same device ID. Current builds defensively deduplicate raw UISP devices by `identification.id` before topology graph construction, and skip any residual duplicate device IDs during graph assembly.
+
 If an integration subprocess fails, current builds keep the scheduler alive, publish a shortened output preview to the scheduler status/error surfaces, and save the full captured output to a timestamped file under `/tmp` such as `lqos_scheduler_uisp_integration_YYYYMMDD_HHMMSS.log`.
 
 ### Scheduler status in WebUI looks unhealthy

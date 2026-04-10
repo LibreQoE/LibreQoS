@@ -861,6 +861,14 @@ fn add_devices_to_graph(
     bandwidth_overrides: &[BandwidthOverride],
 ) {
     for device in uisp_data.devices_raw.iter() {
+        if device_map.contains_key(&device.identification.id) {
+            warn!(
+                device_id = %device.identification.id,
+                device_name = %device.get_name().unwrap_or_default(),
+                "Skipping duplicate UISP device row while building topology graph"
+            );
+            continue;
+        }
         let Some(site_id) = &device.identification.site else {
             continue;
         };

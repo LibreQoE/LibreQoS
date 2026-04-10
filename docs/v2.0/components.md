@@ -46,7 +46,8 @@ flowchart LR
 - Current builds keep two distinct topology views:
   - `compatibility_network_json` remains the local compatibility tree used as the base for `network.effective.json`
   - Insight topology submission derives a separate logical-parent tree from canonical topology state so sites are grouped by logical site hierarchy rather than immediate attachment hops
-  - When possible, the Insight-only logical tree preserves existing `network.json` export names for node identity compatibility instead of renaming nodes to raw canonical labels
+  - For inspection, `lqosd` writes the exact Insight topology JSON it is about to serialize to `/opt/libreqos/src/network.insight.debug.json`
+- UISP ingest now deduplicates duplicate raw device rows by device ID before graph construction, and graph building defensively skips any residual duplicate device IDs.
 - After a successful publish, it writes `/opt/libreqos/src/topology_runtime_status.json` with:
   - `source_generation`
   - `ready`

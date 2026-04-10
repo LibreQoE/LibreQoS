@@ -5,6 +5,7 @@ use crate::strategies::full::parse::parse_uisp_datasets;
 use crate::strategies::full::uisp_fetch::load_uisp_data;
 use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::Config;
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
@@ -193,6 +194,55 @@ pub(crate) fn dedup_site_names(sites: &mut [Site]) {
     }
 }
 
+fn dedup_raw_devices_by_id(
+    devices_raw: Vec<Device>,
+    devices_as_json: Vec<Value>,
+) -> (Vec<Device>, Vec<Value>) {
+    let original_raw_len = devices_raw.len();
+    let original_json_len = devices_as_json.len();
+    if original_raw_len != original_json_len {
+        warn!(
+            raw_devices = original_raw_len,
+            raw_device_json = original_json_len,
+            "UISP device rows and raw device JSON rows differ in length before dedupe"
+        );
+    }
+
+    let mut seen_ids = HashSet::<String>::new();
+    let mut duplicate_counts = HashMap::<String, usize>::new();
+    let mut deduped_devices = Vec::with_capacity(original_raw_len);
+    let mut deduped_json = Vec::with_capacity(original_json_len);
+
+    for (device, raw_json) in devices_raw.into_iter().zip(devices_as_json.into_iter()) {
+        let device_id = device.identification.id.clone();
+        if !seen_ids.insert(device_id.clone()) {
+            *duplicate_counts.entry(device_id).or_insert(0) += 1;
+            continue;
+        }
+        deduped_devices.push(device);
+        deduped_json.push(raw_json);
+    }
+
+    if !duplicate_counts.is_empty() {
+        let duplicate_rows = duplicate_counts.values().sum::<usize>();
+        let mut duplicate_ids = duplicate_counts.into_iter().collect::<Vec<_>>();
+        duplicate_ids.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        let sample_ids = duplicate_ids
+            .iter()
+            .take(5)
+            .map(|(device_id, count)| format!("{device_id} (+{count})"))
+            .collect::<Vec<_>>();
+        warn!(
+            duplicate_device_ids = duplicate_ids.len(),
+            duplicate_device_rows = duplicate_rows,
+            sample_ids = ?sample_ids,
+            "UISP returned duplicate device IDs; deduping by device ID before topology processing"
+        );
+    }
+
+    (deduped_devices, deduped_json)
+}
+
 impl UispData {
     pub(crate) fn from_parts(
         sites_raw: Vec<Site>,
@@ -282,6 +332,7 @@ impl UispData {
         // Obtain the UISP data and transform it into easier to work with types
         let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) =
             load_uisp_data(config.clone()).await?;
+        let (devices_raw, devices_as_json) = dedup_raw_devices_by_id(devices_raw, devices_as_json);
 
         // Normalize endpoint/customer names before deduplication and downstream parsing.
         normalize_client_site_names(&mut sites_raw);
@@ -506,9 +557,9 @@ impl UispData {
 
 #[cfg(test)]
 mod tests {
-    use super::{dedup_site_names, normalize_client_site_names};
+    use super::{dedup_raw_devices_by_id, dedup_site_names, normalize_client_site_names};
     use serde_json::json;
-    use uisp::Site;
+    use uisp::{Device, Site};
 
     fn mk_site(id: &str, name: &str, address: Option<&str>, service_name: Option<&str>) -> Site {
         let mut value = json!({
@@ -537,6 +588,24 @@ mod tests {
         }
 
         serde_json::from_value(value).expect("site JSON must deserialize")
+    }
+
+    fn mk_device(id: &str, name: &str, site_id: &str) -> Device {
+        serde_json::from_value(json!({
+            "identification": {
+                "id": id,
+                "hostname": name,
+                "role": "ap",
+                "site": {
+                    "id": site_id,
+                    "parent": null
+                }
+            },
+            "overview": {
+                "status": "active"
+            }
+        }))
+        .expect("device JSON must deserialize")
     }
 
     #[test]
@@ -624,5 +693,35 @@ mod tests {
         normalize_client_site_names(&mut sites);
 
         assert_eq!(sites[0].name_or_blank(), "Rubio, Jorge");
+    }
+
+    #[test]
+    fn duplicate_raw_devices_are_deduped_by_id_with_matching_json_rows() {
+        let first = mk_device("device-1", "First Name", "site-a");
+        let duplicate = mk_device("device-1", "Second Name", "site-a");
+        let unique = mk_device("device-2", "Unique Name", "site-b");
+
+        let (devices, raw_json) = dedup_raw_devices_by_id(
+            vec![first, duplicate, unique],
+            vec![
+                json!({"identification": {"id": "device-1", "hostname": "First Name"}}),
+                json!({"identification": {"id": "device-1", "hostname": "Second Name"}}),
+                json!({"identification": {"id": "device-2", "hostname": "Unique Name"}}),
+            ],
+        );
+
+        assert_eq!(devices.len(), 2);
+        assert_eq!(raw_json.len(), 2);
+        assert_eq!(devices[0].identification.id, "device-1");
+        assert_eq!(devices[0].get_name().as_deref(), Some("First Name"));
+        assert_eq!(devices[1].identification.id, "device-2");
+        assert_eq!(
+            raw_json[0]["identification"]["hostname"].as_str(),
+            Some("First Name")
+        );
+        assert_eq!(
+            raw_json[1]["identification"]["hostname"].as_str(),
+            Some("Unique Name")
+        );
     }
 }
