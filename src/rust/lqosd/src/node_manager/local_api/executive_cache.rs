@@ -4,7 +4,6 @@ use crate::node_manager::local_api::executive::{
     ExecutiveOversubscribedSiteRow, ExecutiveRttBlocks, ExecutiveScalarBlocks,
     ExecutiveSplitBlocks, ExecutiveTopAsnRow, ExecutiveTreeLocator,
 };
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::throughput_tracker::{
     THROUGHPUT_TRACKER, asn_heatmaps, circuit_heatmaps, executive_summary_header, global_heatmap,
     site_heatmaps,
@@ -595,23 +594,24 @@ fn node_path_names(idx: usize, nodes: &[lqos_config::NetworkJsonNode]) -> Option
 }
 
 fn node_locator_map() -> FxHashMap<String, ExecutiveTreeLocator> {
-    let reader = NETWORK_JSON.read();
-    let nodes = reader.get_nodes_when_ready();
-    let mut locators = FxHashMap::default();
-    for (idx, node) in nodes.iter().enumerate() {
-        if node.name == "Root" || locators.contains_key(&node.name) {
-            continue;
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let mut locators = FxHashMap::default();
+        for (idx, node) in nodes.iter().enumerate() {
+            if node.name == "Root" || locators.contains_key(&node.name) {
+                continue;
+            }
+            locators.insert(
+                node.name.clone(),
+                ExecutiveTreeLocator {
+                    node_id: node.id.clone(),
+                    node_path: node_path_names(idx, nodes),
+                    parent_index: Some(idx),
+                },
+            );
         }
-        locators.insert(
-            node.name.clone(),
-            ExecutiveTreeLocator {
-                node_id: node.id.clone(),
-                node_path: node_path_names(idx, nodes),
-                parent_index: Some(idx),
-            },
-        );
-    }
-    locators
+        locators
+    })
 }
 
 fn entity_snapshots(
@@ -686,7 +686,7 @@ fn entity_snapshots(
 fn build_oversubscribed_sites(
     entities: &[ExecutiveEntitySnapshot],
 ) -> Vec<ExecutiveOversubscribedSiteRow> {
-    let devices = SHAPED_DEVICES.load();
+    let devices = lqos_network_devices::shaped_devices_snapshot();
     let mut circuit_map: std::collections::HashMap<String, (String, f32, f32)> =
         std::collections::HashMap::new();
     for device in &devices.devices {
@@ -697,106 +697,107 @@ fn build_oversubscribed_sites(
         entry.2 = entry.2.max(device.upload_max_mbps);
     }
 
-    let reader = NETWORK_JSON.read();
-    let nodes = reader.get_nodes_when_ready();
-    if nodes.is_empty() {
-        return Vec::new();
-    }
-
-    let mut children: Vec<Vec<usize>> = vec![Vec::new(); nodes.len()];
-    for (idx, node) in nodes.iter().enumerate() {
-        if let Some(parent) = node.immediate_parent
-            && parent < children.len()
-        {
-            children[parent].push(idx);
-        }
-    }
-
     let entity_map = entities
         .iter()
         .filter(|entity| entity.entity_kind == ExecutiveEntityKind::Site)
         .map(|entity| (entity.label.clone(), entity))
         .collect::<FxHashMap<_, _>>();
 
-    let mut results = Vec::new();
-    for (idx, node) in nodes.iter().enumerate() {
-        if node.name == "Root" {
-            continue;
-        }
-        let node_type = node.node_type.as_deref().unwrap_or("").to_ascii_lowercase();
-        if node_type != "site" && !node_type.is_empty() && node_type != "ap" {
-            continue;
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        if nodes.is_empty() {
+            return Vec::new();
         }
 
-        let mut stack = vec![idx];
-        let mut visited = FxHashSet::default();
-        let mut descendant_names = FxHashSet::default();
-        while let Some(next_idx) = stack.pop() {
-            if !visited.insert(next_idx) {
+        let mut children: Vec<Vec<usize>> = vec![Vec::new(); nodes.len()];
+        for (idx, node) in nodes.iter().enumerate() {
+            if let Some(parent) = node.immediate_parent
+                && parent < children.len()
+            {
+                children[parent].push(idx);
+            }
+        }
+
+        let mut results = Vec::new();
+        for (idx, node) in nodes.iter().enumerate() {
+            if node.name == "Root" {
                 continue;
             }
-            if let Some(name) = nodes.get(next_idx).map(|entry| entry.name.clone()) {
-                descendant_names.insert(name);
+            let node_type = node.node_type.as_deref().unwrap_or("").to_ascii_lowercase();
+            if node_type != "site" && !node_type.is_empty() && node_type != "ap" {
+                continue;
             }
-            if let Some(child_nodes) = children.get(next_idx) {
-                for child in child_nodes {
-                    stack.push(*child);
+
+            let mut stack = vec![idx];
+            let mut visited = FxHashSet::default();
+            let mut descendant_names = FxHashSet::default();
+            while let Some(next_idx) = stack.pop() {
+                if !visited.insert(next_idx) {
+                    continue;
+                }
+                if let Some(name) = nodes.get(next_idx).map(|entry| entry.name.clone()) {
+                    descendant_names.insert(name);
+                }
+                if let Some(child_nodes) = children.get(next_idx) {
+                    for child in child_nodes {
+                        stack.push(*child);
+                    }
                 }
             }
-        }
 
-        let cap_down = node.max_throughput.0 as f32;
-        let cap_up = node.max_throughput.1 as f32;
+            let cap_down = node.max_throughput.0 as f32;
+            let cap_up = node.max_throughput.1 as f32;
 
-        let mut sub_down = 0.0_f32;
-        let mut sub_up = 0.0_f32;
-        for (parent_name, circuit_down, circuit_up) in circuit_map.values() {
-            if descendant_names.contains(parent_name) {
-                sub_down += *circuit_down;
-                sub_up += *circuit_up;
+            let mut sub_down = 0.0_f32;
+            let mut sub_up = 0.0_f32;
+            for (parent_name, circuit_down, circuit_up) in circuit_map.values() {
+                if descendant_names.contains(parent_name) {
+                    sub_down += *circuit_down;
+                    sub_up += *circuit_up;
+                }
             }
+
+            let Some(stats) = entity_map.get(&node.name) else {
+                continue;
+            };
+            let (avg_down_util, _) = average_with_count(&stats.heatmap.download);
+            let (avg_up_util, _) = average_with_count(&stats.heatmap.upload);
+            let median_rtt_ms = median_value(&stats.heatmap.rtt);
+            let ratio_down = (cap_down > 0.0).then_some(sub_down / cap_down);
+            let ratio_up = (cap_up > 0.0).then_some(sub_up / cap_up);
+            let ratio_max = match (ratio_down, ratio_up) {
+                (Some(down), Some(up)) => Some(down.max(up)),
+                (Some(down), None) => Some(down),
+                (None, Some(up)) => Some(up),
+                (None, None) => None,
+            };
+
+            results.push(ExecutiveOversubscribedSiteRow {
+                row_key: stats.row_key.clone(),
+                site_name: node.name.clone(),
+                tree: stats.tree.clone(),
+                ratio_down,
+                ratio_up,
+                ratio_max,
+                cap_down,
+                cap_up,
+                sub_down,
+                sub_up,
+                avg_down_util,
+                avg_up_util,
+                median_rtt_ms,
+            });
         }
 
-        let Some(stats) = entity_map.get(&node.name) else {
-            continue;
-        };
-        let (avg_down_util, _) = average_with_count(&stats.heatmap.download);
-        let (avg_up_util, _) = average_with_count(&stats.heatmap.upload);
-        let median_rtt_ms = median_value(&stats.heatmap.rtt);
-        let ratio_down = (cap_down > 0.0).then_some(sub_down / cap_down);
-        let ratio_up = (cap_up > 0.0).then_some(sub_up / cap_up);
-        let ratio_max = match (ratio_down, ratio_up) {
-            (Some(down), Some(up)) => Some(down.max(up)),
-            (Some(down), None) => Some(down),
-            (None, Some(up)) => Some(up),
-            (None, None) => None,
-        };
-
-        results.push(ExecutiveOversubscribedSiteRow {
-            row_key: stats.row_key.clone(),
-            site_name: node.name.clone(),
-            tree: stats.tree.clone(),
-            ratio_down,
-            ratio_up,
-            ratio_max,
-            cap_down,
-            cap_up,
-            sub_down,
-            sub_up,
-            avg_down_util,
-            avg_up_util,
-            median_rtt_ms,
+        results.sort_by(|left, right| {
+            right
+                .ratio_max
+                .unwrap_or(0.0)
+                .total_cmp(&left.ratio_max.unwrap_or(0.0))
         });
-    }
-
-    results.sort_by(|left, right| {
-        right
-            .ratio_max
-            .unwrap_or(0.0)
-            .total_cmp(&left.ratio_max.unwrap_or(0.0))
-    });
-    results.truncate(EXECUTIVE_OVERSUBSCRIBED_LIMIT);
-    results
+        results.truncate(EXECUTIVE_OVERSUBSCRIBED_LIMIT);
+        results
+    })
 }
 
 /// Invalidates the shared executive cache so the next read rebuilds immediately.

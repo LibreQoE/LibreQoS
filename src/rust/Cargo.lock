@@ -608,6 +608,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "colored"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
+dependencies = [
+ "lazy_static",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2100,6 +2110,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_network_devices"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "crossbeam-channel",
+ "fxhash",
+ "lqos_config",
+ "lqos_utils",
+ "once_cell",
+ "parking_lot",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "lqos_overrides"
 version = "0.1.0"
 dependencies = [
@@ -2135,6 +2161,7 @@ dependencies = [
  "lqos_bakery",
  "lqos_bus",
  "lqos_config",
+ "lqos_network_devices",
  "lqos_overrides",
  "lqos_sys",
  "lqos_utils",
@@ -2199,6 +2226,7 @@ dependencies = [
  "lqos_bakery",
  "lqos_bus",
  "lqos_config",
+ "lqos_network_devices",
  "lqos_overrides",
  "lqos_probe",
  "lqos_queue_tracker",
@@ -2206,6 +2234,22 @@ dependencies = [
  "parking_lot",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "lqos_support_tool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "colored",
+ "lqos_config",
+ "lqos_network_devices",
+ "miniz_oxide",
+ "nix",
+ "serde",
+ "serde_cbor",
+ "serde_json",
 ]
 
 [[package]]
@@ -2291,6 +2335,7 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "lqos_heimdall",
+ "lqos_network_devices",
  "lqos_overrides",
  "lqos_probe",
  "lqos_queue_tracker",

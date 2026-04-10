@@ -147,7 +147,7 @@ pub struct AsnHeatmapData {
 /// Metrics for the Executive Summary header cards.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative, Default)]
 pub struct ExecutiveSummaryHeader {
-    /// Total number of unique circuits from SHAPED_DEVICES.
+    /// Total number of unique circuits from the shaped-devices snapshot.
     pub circuit_count: u64,
     /// Total number of shaped devices.
     pub device_count: u64,

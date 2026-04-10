@@ -1,4 +1,3 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use lqos_utils::unix_time::time_since_boot;
 use serde::Serialize;
@@ -36,7 +35,7 @@ pub fn circuit_count_data() -> CircuitCount {
         .collect();
 
     // Get configured circuits from ShapedDevices
-    let shaped_devices = SHAPED_DEVICES.load();
+    let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
     let configured_circuits: HashSet<&str> = shaped_devices
         .devices
         .iter()

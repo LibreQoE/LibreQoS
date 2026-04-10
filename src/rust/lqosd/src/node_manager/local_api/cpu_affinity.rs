@@ -1,7 +1,6 @@
 use crate::node_manager::local_api::network_tree_lite::{
     NetworkTreeLiteNode, network_tree_lite_data,
 };
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::system_stats::{CPU_USAGE, NUM_CPUS};
 use lqos_config::{ShapingCpuDetection, detect_shaping_cpus, load_config};
 use serde::Serialize;
@@ -560,7 +559,7 @@ fn derive_runtime_node_placements(
 }
 
 fn direct_circuit_counts_by_node() -> HashMap<String, u32> {
-    let shaped = SHAPED_DEVICES.load();
+    let shaped = lqos_network_devices::shaped_devices_snapshot();
     let mut circuits_by_node: HashMap<String, BTreeSet<i64>> = HashMap::new();
 
     for device in &shaped.devices {

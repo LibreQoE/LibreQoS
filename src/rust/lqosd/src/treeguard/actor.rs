@@ -5,7 +5,6 @@
 
 use crate::node_manager::ws::messages::{TreeguardActivityEntry, TreeguardStatusData};
 use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
 use crate::treeguard::TreeguardError;
@@ -269,16 +268,17 @@ fn empty_status_snapshot() -> TreeguardStatusData {
 
 fn current_topology_totals() -> (usize, usize) {
     let total_nodes = {
-        let reader = NETWORK_JSON.read();
-        reader
-            .get_nodes_when_ready()
-            .iter()
-            .filter(|n| n.name != "Root")
-            .count()
+        lqos_network_devices::with_network_json_read(|net_json| {
+            net_json
+                .get_nodes_when_ready()
+                .iter()
+                .filter(|n| n.name != "Root")
+                .count()
+        })
     };
 
     let total_circuits = {
-        let shaped = SHAPED_DEVICES.load();
+        let shaped = lqos_network_devices::shaped_devices_snapshot();
         let mut circuits: FxHashSet<&str> = FxHashSet::default();
         for d in shaped.devices.iter() {
             let id = d.circuit_id.trim();
@@ -837,7 +837,7 @@ fn run_tick(
         return;
     }
 
-    let shaped = SHAPED_DEVICES.load();
+    let shaped = lqos_network_devices::shaped_devices_snapshot();
     ensure_circuit_inventory(runtime_state, &shaped);
 
     let link_states = &mut runtime_state.link_states;
@@ -898,12 +898,13 @@ fn run_tick(
     } else {
         let mut enrolled: FxHashSet<String> = tg.links.nodes.iter().cloned().collect();
         if top_level_auto_virtualize {
-            let reader = NETWORK_JSON.read();
-            for node in reader.get_nodes_when_ready().iter() {
-                if node.name != "Root" && node.immediate_parent == Some(0) {
-                    enrolled.insert(node.name.clone());
+            lqos_network_devices::with_network_json_read(|net_json| {
+                for node in net_json.get_nodes_when_ready().iter() {
+                    if node.name != "Root" && node.immediate_parent == Some(0) {
+                        enrolled.insert(node.name.clone());
+                    }
                 }
-            }
+            });
         }
         enrolled.len()
     };
@@ -1029,10 +1030,10 @@ fn run_tick(
             link_states.remove(&node_name);
         }
     } else {
-        let reader = NETWORK_JSON.read();
+        lqos_network_devices::with_network_json_read(|net_json| {
         let top_level_nodes: FxHashSet<String> = if top_level_auto_virtualize && !tg.links.all_nodes
         {
-            reader
+            net_json
                 .get_nodes_when_ready()
                 .iter()
                 .filter(|n| n.name != "Root" && n.immediate_parent == Some(0))
@@ -1059,7 +1060,7 @@ fn run_tick(
             .unwrap_or_default();
 
         let mut removed: FxHashSet<String> = if tg.links.all_nodes {
-            let current: FxHashSet<&str> = reader
+            let current: FxHashSet<&str> = net_json
                 .get_nodes_when_ready()
                 .iter()
                 .filter(|n| n.name != "Root")
@@ -1078,7 +1079,7 @@ fn run_tick(
                 .collect()
         };
         if tg.links.all_nodes {
-            let current: FxHashSet<&str> = reader
+            let current: FxHashSet<&str> = net_json
                 .get_nodes_when_ready()
                 .iter()
                 .filter(|n| n.name != "Root")
@@ -1121,7 +1122,7 @@ fn run_tick(
             managed_nodes.remove(&node_name);
             link_states.remove(&node_name);
         }
-        let nodes = reader.get_nodes_when_ready();
+        let nodes = net_json.get_nodes_when_ready();
         let parent_by_index: Vec<Option<usize>> =
             nodes.iter().map(|node| node.immediate_parent).collect();
         let subtree_node_counts = build_subtree_node_counts(&parent_by_index);
@@ -1193,7 +1194,7 @@ fn run_tick(
                 continue;
             }
 
-            let Some(index) = reader.get_index_for_name(node_name) else {
+            let Some(index) = net_json.get_index_for_name(node_name) else {
                 status.warnings.push(format!(
                     "TreeGuard links allowlist: node '{node_name}' not found in network.json."
                 ));
@@ -1564,6 +1565,7 @@ fn run_tick(
                 link_virtualization_backoff_until_unix,
             );
         }
+        });
     }
 
     // --- Circuit sampling + decisions (SQM switching) ---
@@ -3271,7 +3273,6 @@ mod tests {
         try_consume_circuit_change_budget,
     };
     use crate::node_manager::ws::messages::TreeguardActivityEntry;
-    use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
     use crate::system_stats::SystemStats;
     use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
     use crate::treeguard::decisions;
@@ -4197,11 +4198,14 @@ mod tests {
         }];
         let mut shaped = ConfigShapedDevices::default();
         shaped.replace_with_new_data(devices.clone());
-        let old_shaped = SHAPED_DEVICES.load_full();
-        SHAPED_DEVICES.store(Arc::new(shaped));
+        let old_shaped = lqos_network_devices::swap_shaped_devices_snapshot(
+            "treeguard:test:run_tick_end_to_end",
+            Arc::new(shaped),
+        );
 
-        let old_network = NETWORK_JSON.read().nodes.clone();
-        NETWORK_JSON.write().nodes = Vec::new();
+        let old_network =
+            lqos_network_devices::with_network_json_read(|net_json| net_json.nodes.clone());
+        lqos_network_devices::with_network_json_write(|net_json| net_json.nodes = Vec::new());
 
         let old_queue_structure = QUEUE_STRUCTURE.load_full();
         QUEUE_STRUCTURE.store(Arc::new(QueueStructure {
@@ -4310,8 +4314,11 @@ mod tests {
         assert_eq!(circuit_hash, lqos_utils::hash_to_i64("circuit-3"));
         assert_eq!(sqm_override, Some("fq_codel/fq_codel".to_string()));
 
-        SHAPED_DEVICES.store(old_shaped);
-        NETWORK_JSON.write().nodes = old_network;
+        let _ = lqos_network_devices::swap_shaped_devices_snapshot(
+            "treeguard:test:run_tick_end_to_end:restore",
+            old_shaped,
+        );
+        lqos_network_devices::with_network_json_write(|net_json| net_json.nodes = old_network);
         QUEUE_STRUCTURE.store(old_queue_structure);
         CIRCUIT_RTT_BUFFERS.store(old_rtt);
     }

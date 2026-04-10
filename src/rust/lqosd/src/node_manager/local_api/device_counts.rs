@@ -1,5 +1,4 @@
 use crate::node_manager::local_api::unknown_ips::get_unknown_ips;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use serde::Serialize;
 
 #[derive(Serialize, Debug, Clone)]
@@ -10,7 +9,7 @@ pub struct DeviceCount {
 
 pub fn device_count() -> DeviceCount {
     DeviceCount {
-        shaped_devices: SHAPED_DEVICES.load().devices.len(),
+        shaped_devices: lqos_network_devices::shaped_devices_snapshot().devices.len(),
         unknown_ips: get_unknown_ips().len(),
     }
 }

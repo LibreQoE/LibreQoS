@@ -1,6 +1,5 @@
 use crate::lts2_sys::get_lts_license_status;
 use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, LtsStatus};
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::ALL_FLOWS;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
@@ -288,7 +287,7 @@ pub(crate) fn submit_throughput_stats(
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
 
-        let shaped_devices = SHAPED_DEVICES.load();
+        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
         const CRAZY_LIMIT: u64 = 8; // 8x the max bandwidth
         let plan_lookup: FxHashMap<i64, (u64, u64)> = shaped_devices
             .devices
@@ -453,10 +452,8 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Network tree stats
-        let tree = {
-            let reader = NETWORK_JSON.read();
-            reader.get_nodes_when_ready().clone()
-        };
+        let tree =
+            lqos_network_devices::with_network_json_read(|net_json| net_json.get_nodes_when_ready().clone());
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();
         let mut site_retransmits: Vec<crate::lts2_sys::shared_types::SiteRetransmits> = Vec::new();
         let mut site_rtt: Vec<crate::lts2_sys::shared_types::SiteRtt> = Vec::new();

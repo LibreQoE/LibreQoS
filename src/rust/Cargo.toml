@@ -17,6 +17,7 @@ codegen-units = 16
 members = [
     "lqos_sys", # System support for handling the XDP component
     "lqos_config", # Configuration support
+    "lqos_network_devices", # Shared network.json + ShapedDevices.csv runtime access layer
     "lqosd", # LibreQoS Daemon
     "lqos_bus", # Bus data types
     "lqtop", # A command line utility to show current activity
@@ -35,6 +36,7 @@ members = [
     "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
     "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
     "lqos_topology", # Shared topology runtime domain logic and health/effective-state helper.
+    "lqos_support_tool", # Support/sanity-check CLI for gathering and submitting support dumps.
 ]
 
 [dependencies]

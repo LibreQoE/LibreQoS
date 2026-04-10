@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{CIRCUIT_LIVE_LAST_REFRESH_SECS, CIRCUIT_LIVE_REFRESH_LOCK, CIRCUIT_LIVE_SNAPSHOT};
-use super::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES};
 
 /// Per-circuit live metrics aggregated from the device-level throughput tracker.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -104,8 +103,8 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
     };
     let kernel_now: std::time::Duration = kernel_now.into();
 
-    let shaped_devices = SHAPED_DEVICES.load();
-    let cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+    let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
     let mut by_circuit_id: FxHashMap<String, CircuitAccumulator> = FxHashMap::default();
 
     for (ip_key, data) in THROUGHPUT_TRACKER.raw_data.lock().iter() {

@@ -1,4 +1,3 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_bus::{IpStats, TcHandle};
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Serialize};
@@ -33,7 +32,7 @@ impl From<&IpStats> for IpStatsWithPlan {
         };
 
         if !result.circuit_id.is_empty() {
-            let shaped_devices_reader = SHAPED_DEVICES.load();
+            let shaped_devices_reader = lqos_network_devices::shaped_devices_snapshot();
             if let Some(circuit) = shaped_devices_reader
                 .devices
                 .iter()

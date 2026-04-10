@@ -2,7 +2,6 @@ use super::{
     FlowAnalysis, FlowbeeEffectiveDirection, get_asn_lat_lon, get_asn_name_and_country,
     get_asn_name_by_id,
 };
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use allocative_derive::Allocative;
 use crossbeam_channel::Sender;
@@ -476,8 +475,7 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             .get(&key.local_ip)
             .and_then(|te| te.circuit_hash)
             .or_else(|| {
-                SHAPED_DEVICES
-                    .load()
+                lqos_network_devices::shaped_devices_snapshot()
                     .get_circuit_hash_from_ip(&key.local_ip)
             })
     });

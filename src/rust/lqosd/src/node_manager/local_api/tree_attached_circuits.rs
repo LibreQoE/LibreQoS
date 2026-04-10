@@ -1,5 +1,4 @@
 use crate::node_manager::local_api::ethernet_caps::{EthernetCapBadge, ethernet_cap_badge_map};
-use crate::shaped_devices_tracker::NETWORK_JSON;
 use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -81,45 +80,46 @@ fn normalized_page_size(query: &TreeAttachedCircuitsQuery) -> usize {
 }
 
 fn resolve_node_name(query: &TreeAttachedCircuitsQuery) -> Option<String> {
-    let reader = NETWORK_JSON.read();
-    let nodes = reader.get_nodes_when_ready();
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
 
-    if let Some(node_id) = query.node_id.as_deref()
-        && let Some(node) = nodes
-            .iter()
-            .find(|node| node.id.as_deref() == Some(node_id))
-    {
-        return Some(node.name.clone());
-    }
-
-    let node_path = query.node_path.as_ref()?;
-    if node_path.is_empty() {
-        return None;
-    }
-    nodes.iter().find_map(|node| {
-        let path = if node.name == "Root" {
-            vec!["Root".to_string()]
-        } else {
-            let parent_indexes = if node.parents.is_empty() {
-                vec![node.immediate_parent.unwrap_or(0)]
-            } else {
-                node.parents.clone()
-            };
-            let mut names = Vec::new();
-            for idx in parent_indexes {
-                let parent = nodes.get(idx)?;
-                names.push(parent.name.clone());
-            }
-            if names.last() != Some(&node.name) {
-                names.push(node.name.clone());
-            }
-            names
-        };
-        if &path == node_path {
-            Some(node.name.clone())
-        } else {
-            None
+        if let Some(node_id) = query.node_id.as_deref()
+            && let Some(node) = nodes
+                .iter()
+                .find(|node| node.id.as_deref() == Some(node_id))
+        {
+            return Some(node.name.clone());
         }
+
+        let node_path = query.node_path.as_ref()?;
+        if node_path.is_empty() {
+            return None;
+        }
+        nodes.iter().find_map(|node| {
+            let path = if node.name == "Root" {
+                vec!["Root".to_string()]
+            } else {
+                let parent_indexes = if node.parents.is_empty() {
+                    vec![node.immediate_parent.unwrap_or(0)]
+                } else {
+                    node.parents.clone()
+                };
+                let mut names = Vec::new();
+                for idx in parent_indexes {
+                    let parent = nodes.get(idx)?;
+                    names.push(parent.name.clone());
+                }
+                if names.last() != Some(&node.name) {
+                    names.push(node.name.clone());
+                }
+                names
+            };
+            if &path == node_path {
+                Some(node.name.clone())
+            } else {
+                None
+            }
+        })
     })
 }
 

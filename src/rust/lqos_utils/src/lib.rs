@@ -10,6 +10,9 @@ pub mod fdtimer;
 /// Wrapper for watching when a file has changed.
 pub mod file_watcher;
 
+/// Watches a directory and coalesces filesystem events.
+pub mod directory_watcher;
+
 /// Utilities for handling strings in hex format
 pub mod hex_string;
 

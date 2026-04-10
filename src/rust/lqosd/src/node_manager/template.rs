@@ -3,7 +3,6 @@
 
 use crate::lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::{FIRST_LOAD, get_username};
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
@@ -153,7 +152,7 @@ pub async fn apply_templates(
             let week_ago = now - (7 * 24 * 60 * 60);
             let fl = FIRST_LOAD.load(Relaxed);
             if fl != 0 && fl < week_ago {
-                let sd = SHAPED_DEVICES.load();
+                let sd = lqos_network_devices::shaped_devices_snapshot();
                 let num_circuits = sd
                     .devices
                     .iter()

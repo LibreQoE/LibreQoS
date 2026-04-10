@@ -1,8 +1,7 @@
 use lqos_bus::BusResponse;
-use lqos_config::ConfigShapedDevices;
 
 pub fn validate_shaped_devices_csv() -> BusResponse {
-    let result = ConfigShapedDevices::load();
+    let result = lqos_network_devices::load_shaped_devices();
     match result {
         Ok(..) => BusResponse::Ack,
         Err(e) => BusResponse::ShapedDevicesValidation(format!("{e:#?}")),

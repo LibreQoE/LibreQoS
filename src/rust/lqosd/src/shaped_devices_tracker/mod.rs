@@ -5,7 +5,7 @@ use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{
-    ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice,
+    ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport,
     TopologyShapingInputsFile, load_config, topology_shaping_inputs_path,
 };
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
@@ -21,82 +21,10 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-// Removed rate_for_plan() function - no longer needed with f32 plan structures
-const SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS: u64 = 500;
-const SHAPED_DEVICES_RELOAD_ATTEMPTS: usize = 2;
-
 pub mod circuit_live;
-mod netjson;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 pub use circuit_live::CircuitLiveSnapshot;
-pub use netjson::*;
 
-pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
-    Lazy::new(|| ArcSwap::new(Arc::new(ConfigShapedDevices::default())));
-
-#[derive(Debug, Default)]
-pub struct ShapedDeviceHashCache {
-    by_device_hash: FxHashMap<i64, usize>,
-    by_circuit_hash: FxHashMap<i64, usize>,
-}
-
-impl ShapedDeviceHashCache {
-    fn from_devices(devices: &[ShapedDevice]) -> Self {
-        let mut by_device_hash = FxHashMap::default();
-        by_device_hash.reserve(devices.len());
-        let mut by_circuit_hash = FxHashMap::default();
-        by_circuit_hash.reserve(devices.len());
-        for (idx, dev) in devices.iter().enumerate() {
-            by_device_hash.insert(dev.device_hash, idx);
-            by_circuit_hash.entry(dev.circuit_hash).or_insert(idx);
-        }
-        Self {
-            by_device_hash,
-            by_circuit_hash,
-        }
-    }
-
-    pub fn index_by_device_hash(
-        &self,
-        shaped: &ConfigShapedDevices,
-        device_hash: i64,
-    ) -> Option<usize> {
-        if let Some(idx) = self.by_device_hash.get(&device_hash).copied()
-            && shaped
-                .devices
-                .get(idx)
-                .is_some_and(|d| d.device_hash == device_hash)
-        {
-            return Some(idx);
-        }
-        shaped
-            .devices
-            .iter()
-            .position(|d| d.device_hash == device_hash)
-    }
-
-    pub fn index_by_circuit_hash(
-        &self,
-        shaped: &ConfigShapedDevices,
-        circuit_hash: i64,
-    ) -> Option<usize> {
-        if let Some(idx) = self.by_circuit_hash.get(&circuit_hash).copied()
-            && shaped
-                .devices
-                .get(idx)
-                .is_some_and(|d| d.circuit_hash == circuit_hash)
-        {
-            return Some(idx);
-        }
-        shaped
-            .devices
-            .iter()
-            .position(|d| d.circuit_hash == circuit_hash)
-    }
-}
-
-pub static SHAPED_DEVICE_HASH_CACHE: Lazy<ArcSwap<ShapedDeviceHashCache>> =
-    Lazy::new(|| ArcSwap::new(Arc::new(ShapedDeviceHashCache::default())));
 pub static CIRCUIT_LIVE_SNAPSHOT: Lazy<ArcSwap<CircuitLiveSnapshot>> =
     Lazy::new(|| ArcSwap::new(Arc::new(CircuitLiveSnapshot::default())));
 pub static CIRCUIT_LIVE_LAST_REFRESH_SECS: AtomicU64 = AtomicU64::new(0);
@@ -286,128 +214,57 @@ fn build_network_tree_summaries(
     summaries
 }
 
-fn publish_shaped_devices(new_file: ConfigShapedDevices) {
-    debug!("ShapedDevices.csv loaded");
-    let cache = ShapedDeviceHashCache::from_devices(&new_file.devices);
-    SHAPED_DEVICES.store(Arc::new(new_file));
-    SHAPED_DEVICE_HASH_CACHE.store(Arc::new(cache));
-    invalidate_circuit_live_snapshot();
-    invalidate_executive_cache_snapshot();
-    let nj = NETWORK_JSON.read();
-    crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
-}
-
-fn load_shaped_devices() {
-    debug!("ShapedDevices.csv has changed. Attempting to load it.");
-    for attempt in 1..=SHAPED_DEVICES_RELOAD_ATTEMPTS {
-        match ConfigShapedDevices::load() {
-            Ok(new_file) => {
-                publish_shaped_devices(new_file);
-                return;
-            }
-            Err(err) => {
-                if attempt < SHAPED_DEVICES_RELOAD_ATTEMPTS {
-                    warn!(
-                        "ShapedDevices.csv reload attempt {attempt}/{} failed: {err}. Retrying after {} ms.",
-                        SHAPED_DEVICES_RELOAD_ATTEMPTS, SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS
-                    );
-                    std::thread::sleep(Duration::from_millis(SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS));
-                } else {
-                    let current = SHAPED_DEVICES.load();
-                    warn!(
-                        "ShapedDevices.csv reload failed after {} attempts: {err}. Keeping last-known-good data with {} devices.",
-                        SHAPED_DEVICES_RELOAD_ATTEMPTS,
-                        current.devices.len()
-                    );
-                }
-            }
-        }
-    }
-}
-
-pub fn shaped_devices_watcher() -> Result<()> {
-    std::thread::Builder::new()
-        .name("ShapedDevices Watcher".to_string())
-        .spawn(|| {
-            debug!("Watching for ShapedDevices.csv changes");
-            if let Err(e) = watch_for_shaped_devices_changing() {
-                error!("Error watching for ShapedDevices.csv: {:?}", e);
-            }
-        })?;
-    Ok(())
-}
-
-/// Fires up a Linux file system watcher than notifies
-/// when `ShapedDevices.csv` changes, and triggers a reload.
-fn watch_for_shaped_devices_changing() -> Result<()> {
-    let watch_path = ConfigShapedDevices::path();
-    if watch_path.is_err() {
-        error!("Unable to generate path for ShapedDevices.csv");
-        return Err(anyhow::Error::msg(
-            "Unable to create path for ShapedDevices.csv",
-        ));
-    }
-    let watch_path = watch_path?;
-
-    let mut watcher = FileWatcher::new("ShapedDevices.csv", watch_path);
-    watcher.set_file_exists_callback(load_shaped_devices);
-    watcher.set_file_created_callback(load_shaped_devices);
-    watcher.set_file_changed_callback(load_shaped_devices);
-    loop {
-        let result = watcher.watch();
-        info!("ShapedDevices watcher returned: {result:?}");
-    }
-}
-
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
-    let net_json = NETWORK_JSON.read();
-    let nodes_ref = net_json.get_nodes_when_ready();
-    let shaped_devices = SHAPED_DEVICES.load();
-    let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
-    if let Some(parent) = nodes_ref.get(parent_idx) {
-        let mut nodes = vec![(
-            parent_idx,
-            node_to_transport_with_summary(
-                parent,
-                summaries.get(parent_idx).copied().unwrap_or_default(),
-            ),
-        )];
-        nodes.extend(
-            nodes_ref
-                .iter()
-                .enumerate()
-                .filter(|(_, node)| node.immediate_parent == Some(parent_idx))
-                .map(|(i, node)| {
-                    (
-                        i,
-                        node_to_transport_with_summary(
-                            node,
-                            summaries.get(i).copied().unwrap_or_default(),
-                        ),
-                    )
-                }),
-        );
-        BusResponse::NetworkMap(nodes)
-    } else {
-        BusResponse::Fail("No such node".to_string())
-    }
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes_ref = net_json.get_nodes_when_ready();
+        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+        let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
+        if let Some(parent) = nodes_ref.get(parent_idx) {
+            let mut nodes = vec![(
+                parent_idx,
+                node_to_transport_with_summary(
+                    parent,
+                    summaries.get(parent_idx).copied().unwrap_or_default(),
+                ),
+            )];
+            nodes.extend(
+                nodes_ref
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, node)| node.immediate_parent == Some(parent_idx))
+                    .map(|(i, node)| {
+                        (
+                            i,
+                            node_to_transport_with_summary(
+                                node,
+                                summaries.get(i).copied().unwrap_or_default(),
+                            ),
+                        )
+                    }),
+            );
+            BusResponse::NetworkMap(nodes)
+        } else {
+            BusResponse::Fail("No such node".to_string())
+        }
+    })
 }
 
 pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
-    let nj = NETWORK_JSON.read();
-    let nodes = nj.get_nodes_when_ready();
-    let shaped_devices = SHAPED_DEVICES.load();
-    let summaries = build_network_tree_summaries(nodes, shaped_devices.as_ref());
-    nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| {
-            (
-                i,
-                node_to_transport_with_summary(n, summaries.get(i).copied().unwrap_or_default()),
-            )
-        })
-        .collect()
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+        let summaries = build_network_tree_summaries(nodes, shaped_devices.as_ref());
+        nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                (
+                    i,
+                    node_to_transport_with_summary(n, summaries.get(i).copied().unwrap_or_default()),
+                )
+            })
+            .collect()
+    })
 }
 
 fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
@@ -470,13 +327,14 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
 /// Returns a lightweight live snapshot of the network tree for pages that do not need the full
 /// `NetworkJsonTransport` payload.
 pub fn full_network_map_lite_snapshot() -> Vec<(usize, NetworkTreeLiteNode)> {
-    let nj = NETWORK_JSON.read();
-    let nodes = nj.get_nodes_when_ready();
-    nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| (i, node_to_transport_lite(n)))
-        .collect()
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (i, node_to_transport_lite(n)))
+            .collect()
+    })
 }
 
 pub fn get_full_network_map() -> BusResponse {
@@ -484,42 +342,45 @@ pub fn get_full_network_map() -> BusResponse {
 }
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
-    let net_json = NETWORK_JSON.read();
-    let nodes_ref = net_json.get_nodes_when_ready();
-    let shaped_devices = SHAPED_DEVICES.load();
-    let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
-    if let Some(parent) = nodes_ref.first() {
-        let mut nodes = vec![(
-            0,
-            node_to_transport_with_summary(parent, summaries.first().copied().unwrap_or_default()),
-        )];
-        nodes.extend(
-            nodes_ref
-                .iter()
-                .enumerate()
-                .filter(|(idx, node)| *idx != 0 && node.immediate_parent == Some(0))
-                .map(|(idx, node)| {
-                    (
-                        idx,
-                        node_to_transport_with_summary(
-                            node,
-                            summaries.get(idx).copied().unwrap_or_default(),
-                        ),
-                    )
-                }),
-        );
-        // Remove the top-level entry for root
-        nodes.remove(0);
-        // Sort by total bandwidth (up + down) descending
-        nodes.sort_by(|a, b| {
-            let total_a = a.1.current_throughput.0 + a.1.current_throughput.1;
-            let total_b = b.1.current_throughput.0 + b.1.current_throughput.1;
-            total_b.cmp(&total_a)
-        });
-        // Summarize everything after n_queues
-        if nodes.len() > n_queues {
-            let mut other_bw = (0, 0);
-            let mut other_packets = (0, 0);
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes_ref = net_json.get_nodes_when_ready();
+        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+        let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
+        if let Some(parent) = nodes_ref.first() {
+            let mut nodes = vec![(
+                0,
+                node_to_transport_with_summary(
+                    parent,
+                    summaries.first().copied().unwrap_or_default(),
+                ),
+            )];
+            nodes.extend(
+                nodes_ref
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, node)| *idx != 0 && node.immediate_parent == Some(0))
+                    .map(|(idx, node)| {
+                        (
+                            idx,
+                            node_to_transport_with_summary(
+                                node,
+                                summaries.get(idx).copied().unwrap_or_default(),
+                            ),
+                        )
+                    }),
+            );
+            // Remove the top-level entry for root
+            nodes.remove(0);
+            // Sort by total bandwidth (up + down) descending
+            nodes.sort_by(|a, b| {
+                let total_a = a.1.current_throughput.0 + a.1.current_throughput.1;
+                let total_b = b.1.current_throughput.0 + b.1.current_throughput.1;
+                total_b.cmp(&total_a)
+            });
+            // Summarize everything after n_queues
+            if nodes.len() > n_queues {
+                let mut other_bw = (0, 0);
+                let mut other_packets = (0, 0);
             let mut other_tcp_packets = (0, 0);
             let mut other_tcp_retransmit_packets = (0, 0);
             let mut other_udp_packets = (0, 0);
@@ -581,21 +442,23 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                 },
             ));
         }
-        BusResponse::NetworkMap(nodes)
-    } else {
-        BusResponse::Fail("No such node".to_string())
-    }
+            BusResponse::NetworkMap(nodes)
+        } else {
+            BusResponse::Fail("No such node".to_string())
+        }
+    })
 }
 
 pub fn map_node_names(nodes: &[usize]) -> BusResponse {
-    let mut result = Vec::new();
-    let reader = NETWORK_JSON.read();
-    nodes.iter().for_each(|id| {
-        if let Some(node) = reader.get_nodes_when_ready().get(*id) {
-            result.push((*id, node.name.clone()));
-        }
-    });
-    BusResponse::NodeNames(result)
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let mut result = Vec::new();
+        nodes.iter().for_each(|id| {
+            if let Some(node) = net_json.get_nodes_when_ready().get(*id) {
+                result.push((*id, node.name.clone()));
+            }
+        });
+        BusResponse::NodeNames(result)
+    })
 }
 
 /// Canonical parent-node metadata resolved from `network.json`.
@@ -618,36 +481,36 @@ pub fn resolve_parent_node_reference(
     if trimmed.is_empty() && trimmed_id.is_none() {
         return None;
     }
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
 
-    let reader = NETWORK_JSON.read();
-    let nodes = reader.get_nodes_when_ready();
-
-    if let Some(parent_node_id) = trimmed_id
-        && let Some(node) = nodes
-            .iter()
-            .find(|node| node.id.as_deref() == Some(parent_node_id))
-    {
-        return Some(ResolvedParentNode {
-            name: node.name.clone(),
-            id: node.id.clone(),
-        });
-    }
-
-    if let Some(node) = nodes.iter().find(|node| node.name == trimmed) {
-        return Some(ResolvedParentNode {
-            name: node.name.clone(),
-            id: node.id.clone(),
-        });
-    }
-
-    nodes.iter().find_map(|node| {
-        node.active_attachment_name
-            .as_deref()
-            .filter(|alias| alias.trim() == trimmed)
-            .map(|_| ResolvedParentNode {
+        if let Some(parent_node_id) = trimmed_id
+            && let Some(node) = nodes
+                .iter()
+                .find(|node| node.id.as_deref() == Some(parent_node_id))
+        {
+            return Some(ResolvedParentNode {
                 name: node.name.clone(),
                 id: node.id.clone(),
-            })
+            });
+        }
+
+        if let Some(node) = nodes.iter().find(|node| node.name == trimmed) {
+            return Some(ResolvedParentNode {
+                name: node.name.clone(),
+                id: node.id.clone(),
+            });
+        }
+
+        nodes.iter().find_map(|node| {
+            node.active_attachment_name
+                .as_deref()
+                .filter(|alias| alias.trim() == trimmed)
+                .map(|_| ResolvedParentNode {
+                    name: node.name.clone(),
+                    id: node.id.clone(),
+                })
+        })
     })
 }
 
@@ -662,31 +525,29 @@ pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
 }
 
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
-    let reader = NETWORK_JSON.read();
-    if let Some(index) = reader.get_index_for_name(circuit_id) {
-        // Reverse the scanning order and skip the last entry (the parent)
-        let mut result = Vec::new();
-        for idx in reader.get_nodes_when_ready()[index]
-            .parents
-            .iter()
-            .rev()
-            .skip(1)
-        {
-            result.push((
-                *idx,
-                node_to_transport(&reader.get_nodes_when_ready()[*idx]),
-            ));
+    lqos_network_devices::with_network_json_read(|net_json| {
+        if let Some(index) = net_json.get_index_for_name(circuit_id) {
+            // Reverse the scanning order and skip the last entry (the parent)
+            let mut result = Vec::new();
+            for idx in net_json.get_nodes_when_ready()[index]
+                .parents
+                .iter()
+                .rev()
+                .skip(1)
+            {
+                result.push((*idx, node_to_transport(&net_json.get_nodes_when_ready()[*idx])));
+            }
+            return BusResponse::NetworkMap(result);
         }
-        return BusResponse::NetworkMap(result);
-    }
 
-    BusResponse::Fail("Unknown Node".into())
+        BusResponse::Fail("Unknown Node".into())
+    })
 }
 
 pub fn get_all_circuits() -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
-        let devices = SHAPED_DEVICES.load();
-        let cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let devices = lqos_network_devices::shaped_devices_snapshot();
+        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -805,8 +666,8 @@ pub fn get_all_circuits() -> BusResponse {
 pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
         let desired_hash = hash_to_i64(&desired_circuit_id);
-        let devices = SHAPED_DEVICES.load();
-        let cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let devices = lqos_network_devices::shaped_devices_snapshot();
+        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()

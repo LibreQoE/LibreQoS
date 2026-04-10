@@ -1,6 +1,6 @@
 use crate::node_manager::local_api::ethernet_caps::ethernet_advisory_for_circuit;
 use crate::shaped_devices_tracker::{
-    SHAPED_DEVICES, effective_parent_for_circuit, resolve_parent_node_reference,
+    effective_parent_for_circuit, resolve_parent_node_reference,
 };
 use lqos_config::{CircuitEthernetMetadata, ShapedDevice};
 use serde::{Deserialize, Serialize};
@@ -73,7 +73,7 @@ fn circuit_parent_node(
 
 pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
     let safe_id = id.to_lowercase().trim().to_string();
-    let reader = SHAPED_DEVICES.load();
+    let reader = lqos_network_devices::shaped_devices_snapshot();
     let mut devices: Vec<ShapedDevice> = reader
         .devices
         .iter()

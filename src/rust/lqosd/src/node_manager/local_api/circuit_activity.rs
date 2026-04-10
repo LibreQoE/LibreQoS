@@ -1,4 +1,3 @@
-use crate::shaped_devices_tracker::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES};
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowbeeLocalData, get_asn_name_and_country};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
@@ -220,8 +219,8 @@ fn flow_qoo(local: &FlowbeeLocalData) -> DownUpOrder<Option<f32>> {
 
 fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
     let circuit_hash = hash_to_i64(circuit_id);
-    let shaped = SHAPED_DEVICES.load();
-    let cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let shaped = lqos_network_devices::shaped_devices_snapshot();
+    let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
     let display_rate_ceiling = circuit_display_rate_ceiling_bps(&shaped, circuit_hash);
     let Ok(now) = time_since_boot() else {
         return Vec::new();
@@ -243,8 +242,8 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
 
             let device_name = local
                 .device_hash
-                .and_then(|hash| cache.index_by_device_hash(&shaped, hash))
-                .and_then(|idx| shaped.devices.get(idx))
+                .and_then(|hash| cache.index_by_device_hash(shaped.as_ref(), hash))
+                .and_then(|idx| shaped.as_ref().devices.get(idx))
                 .map(|d| d.device_name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
 

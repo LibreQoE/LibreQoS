@@ -2,9 +2,9 @@ use crate::node_manager::local_api::circuit_activity::{CircuitSummaryData, circu
 use crate::node_manager::ws::messages::{CircuitDevicesResult, WsResponse, encode_ws_message};
 use crate::node_manager::ws::ticker::all_circuits;
 use crate::rtt_exclusions;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use lqos_bus::{BusRequest, Circuit};
+use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
@@ -13,15 +13,9 @@ use tracing::info;
 const QUEUING_ACTIVITY_RTT_FLOOR_BPS: u64 = 200_000;
 
 fn qoo_score_for_circuit(circuit: &str) -> Option<f32> {
-    let shaped = SHAPED_DEVICES.load();
-    let circuit_hash = shaped
-        .devices
-        .iter()
-        .find(|d| d.circuit_id == circuit)
-        .map(|d| d.circuit_hash);
-    circuit_hash.and_then(|hash| {
-        let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
-        qoq_heatmaps.get(&hash).and_then(|heatmap| {
+    let circuit_hash = hash_to_i64(circuit.trim());
+    let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
+    qoq_heatmaps.get(&circuit_hash).and_then(|heatmap| {
             let blocks = heatmap.blocks();
             let dl = blocks.download_total.last().copied().flatten();
             let ul = blocks.upload_total.last().copied().flatten();
@@ -31,7 +25,6 @@ fn qoo_score_for_circuit(circuit: &str) -> Option<f32> {
                 (None, Some(u)) => Some(u),
                 (None, None) => None,
             }
-        })
     })
 }
 

@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use lqos_bakery::BakeryCommands;
-use lqos_config::{ConfigShapedDevices, ShapedDevice};
+use lqos_config::ShapedDevice;
 use lqos_overrides::{OverrideFile, OverrideLayer, OverrideStore};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use lqos_utils::hash_to_i64;
@@ -136,7 +136,7 @@ pub fn clear_circuit_fallback(
 
 pub fn load_persisted_circuit_fallbacks() -> Result<HashMap<String, PersistedCircuitFallback>> {
     let overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    let current_devices = ConfigShapedDevices::load()?.devices;
+    let current_devices = lqos_network_devices::load_shaped_devices()?.devices;
     Ok(group_circuit_fallbacks(&overrides, &current_devices))
 }
 
@@ -159,7 +159,7 @@ fn current_site_override(
 }
 
 fn load_devices_for_circuit(circuit_id: &str) -> Result<Vec<ShapedDevice>> {
-    let shaped_devices = ConfigShapedDevices::load()?;
+    let shaped_devices = lqos_network_devices::load_shaped_devices()?;
     Ok(shaped_devices
         .devices
         .into_iter()

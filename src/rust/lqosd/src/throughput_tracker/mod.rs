@@ -11,7 +11,6 @@ use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
 use crate::{
     lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
-    shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::{FlowApplyContext, ThroughputTracker},
 };
@@ -190,59 +189,61 @@ fn throughput_task(
 
         // Formerly a "spawn blocking" blob
         {
-            let mut net_json_calc = NETWORK_JSON.write();
-            timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
-            net_json_calc.zero_throughput_and_rtt();
-            timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
-            timer_metrics.copy_previous_and_reset_rtt = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER
-                .apply_new_throughput_counters(&mut net_json_calc, bakery_sender.clone());
-            timer_metrics.apply_new_throughput_counters =
-                timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.apply_flow_data(FlowApplyContext {
-                timeout_seconds,
-                sender: netflow_sender.clone(),
-                net_json_calc: &mut net_json_calc,
-                rtt_circuit_tracker: &mut rtt_circuit_tracker,
-                rtt_by_circuit: &mut rtt_by_circuit,
-                tcp_retries: &mut tcp_retries,
-                tcp_retry_packets: &mut tcp_retry_packets,
-                expired_keys: &mut expired_flows,
+            lqos_network_devices::with_network_json_write(|net_json_calc| {
+                timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
+                net_json_calc.zero_throughput_and_rtt();
+                timer_metrics.zero_throughput_and_rtt =
+                    timer_metrics.start.elapsed().as_secs_f64();
+                THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
+                timer_metrics.copy_previous_and_reset_rtt =
+                    timer_metrics.start.elapsed().as_secs_f64();
+                THROUGHPUT_TRACKER
+                    .apply_new_throughput_counters(net_json_calc, bakery_sender.clone());
+                timer_metrics.apply_new_throughput_counters =
+                    timer_metrics.start.elapsed().as_secs_f64();
+                THROUGHPUT_TRACKER.apply_flow_data(FlowApplyContext {
+                    timeout_seconds,
+                    sender: netflow_sender.clone(),
+                    net_json_calc,
+                    rtt_circuit_tracker: &mut rtt_circuit_tracker,
+                    rtt_by_circuit: &mut rtt_by_circuit,
+                    tcp_retries: &mut tcp_retries,
+                    tcp_retry_packets: &mut tcp_retry_packets,
+                    expired_keys: &mut expired_flows,
+                });
+                CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
+                THROUGHPUT_TRACKER.record_circuit_heatmaps();
+                let enable_site_heatmaps = lqos_config::load_config()
+                    .map(|config| config.enable_site_heatmaps)
+                    .unwrap_or(true);
+                net_json_calc.record_site_heatmaps(enable_site_heatmaps);
+
+                // Clean up work tables
+                rtt_circuit_tracker.clear();
+                rtt_by_circuit.clear();
+                tcp_retries.clear();
+                tcp_retry_packets.clear();
+                expired_flows.clear();
+                rtt_circuit_tracker.shrink_to_fit();
+                rtt_by_circuit.shrink_to_fit();
+                tcp_retries.shrink_to_fit();
+                tcp_retry_packets.shrink_to_fit();
+                expired_flows.shrink_to_fit();
+
+                timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
+                if bakery_reload_in_progress {
+                    debug!(
+                        "Throughput monitor: skipping queue-stat application during Bakery full reload"
+                    );
+                } else {
+                    THROUGHPUT_TRACKER.apply_queue_stats(net_json_calc);
+                }
+                timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
+                THROUGHPUT_TRACKER.update_totals();
+                timer_metrics.update_totals = timer_metrics.start.elapsed().as_secs_f64();
+                THROUGHPUT_TRACKER.next_cycle();
+                timer_metrics.next_cycle = timer_metrics.start.elapsed().as_secs_f64();
             });
-            CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
-            THROUGHPUT_TRACKER.record_circuit_heatmaps();
-            let enable_site_heatmaps = lqos_config::load_config()
-                .map(|config| config.enable_site_heatmaps)
-                .unwrap_or(true);
-            net_json_calc.record_site_heatmaps(enable_site_heatmaps);
-
-            // Clean up work tables
-            rtt_circuit_tracker.clear();
-            rtt_by_circuit.clear();
-            tcp_retries.clear();
-            tcp_retry_packets.clear();
-            expired_flows.clear();
-            rtt_circuit_tracker.shrink_to_fit();
-            rtt_by_circuit.shrink_to_fit();
-            tcp_retries.shrink_to_fit();
-            tcp_retry_packets.shrink_to_fit();
-            expired_flows.shrink_to_fit();
-
-            timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
-            if bakery_reload_in_progress {
-                debug!(
-                    "Throughput monitor: skipping queue-stat application during Bakery full reload"
-                );
-            } else {
-                THROUGHPUT_TRACKER.apply_queue_stats(&mut net_json_calc);
-            }
-            timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.update_totals();
-            timer_metrics.update_totals = timer_metrics.start.elapsed().as_secs_f64();
-            THROUGHPUT_TRACKER.next_cycle();
-            timer_metrics.next_cycle = timer_metrics.start.elapsed().as_secs_f64();
-            std::mem::drop(net_json_calc);
             timer_metrics.finish_update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
@@ -453,7 +454,7 @@ pub fn circuit_heatmaps() -> BusResponse {
         return BusResponse::CircuitHeatmaps(Vec::new());
     }
 
-    let devices = SHAPED_DEVICES.load();
+    let devices = lqos_network_devices::shaped_devices_snapshot();
     let mut circuit_meta: FxHashMap<i64, (String, String)> = FxHashMap::default();
     devices.devices.iter().for_each(|device| {
         circuit_meta
@@ -492,25 +493,26 @@ pub fn site_heatmaps() -> BusResponse {
         return BusResponse::SiteHeatmaps(Vec::new());
     }
 
-    let reader = NETWORK_JSON.read();
-    let mut rows: Vec<SiteHeatmapData> = reader
-        .get_nodes_when_ready()
-        .iter()
-        .filter_map(|node| {
-            if node.name == "Root" || node.name.parse::<std::net::IpAddr>().is_ok() {
-                return None;
-            }
-            node.heatmap.as_ref().map(|heatmap| SiteHeatmapData {
-                site_name: node.name.clone(),
-                node_type: node.node_type.clone(),
-                depth: node.parents.len().saturating_sub(1),
-                blocks: heatmap.blocks(),
-                qoq_blocks: node.qoq_heatmap.as_ref().map(|heatmap| heatmap.blocks()),
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let mut rows: Vec<SiteHeatmapData> = net_json
+            .get_nodes_when_ready()
+            .iter()
+            .filter_map(|node| {
+                if node.name == "Root" || node.name.parse::<std::net::IpAddr>().is_ok() {
+                    return None;
+                }
+                node.heatmap.as_ref().map(|heatmap| SiteHeatmapData {
+                    site_name: node.name.clone(),
+                    node_type: node.node_type.clone(),
+                    depth: node.parents.len().saturating_sub(1),
+                    blocks: heatmap.blocks(),
+                    qoq_blocks: node.qoq_heatmap.as_ref().map(|heatmap| heatmap.blocks()),
+                })
             })
-        })
-        .collect();
-    rows.sort_by(|a, b| a.site_name.cmp(&b.site_name));
-    BusResponse::SiteHeatmaps(rows)
+            .collect();
+        rows.sort_by(|a, b| a.site_name.cmp(&b.site_name));
+        BusResponse::SiteHeatmaps(rows)
+    })
 }
 
 /// Retrieve per-ASN heatmap data for the executive summary.
@@ -891,7 +893,7 @@ fn current_host_counts() -> (u32, u32) {
 
 /// Gather headline metrics for the Executive Summary header cards.
 pub fn executive_summary_header() -> BusResponse {
-    let devices = SHAPED_DEVICES.load();
+    let devices = lqos_network_devices::shaped_devices_snapshot();
     let circuit_count = devices
         .devices
         .iter()
@@ -900,12 +902,11 @@ pub fn executive_summary_header() -> BusResponse {
         .len() as u64;
     let device_count = devices.devices.len() as u64;
 
-    let site_count = {
-        let reader = NETWORK_JSON.read();
-        let total_nodes = reader.get_nodes_when_ready().len();
+    let site_count = lqos_network_devices::with_network_json_read(|net_json| {
+        let total_nodes = net_json.get_nodes_when_ready().len();
         // Remove the synthetic root node when counting sites.
         total_nodes.saturating_sub(1) as u64
-    };
+    });
 
     let (total_hosts, shaped_hosts) = current_host_counts();
     let mapped_ip_count = shaped_hosts as u64;
@@ -1109,8 +1110,8 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
-    let shaped = SHAPED_DEVICES.load();
-    let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let shaped = lqos_network_devices::shaped_devices_snapshot();
+    let shaped_cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
     let throughput = THROUGHPUT_TRACKER.raw_data.lock();
 
     let result = table
@@ -1181,8 +1182,8 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock();
         let throughput = THROUGHPUT_TRACKER.raw_data.lock();
-        let shaped = SHAPED_DEVICES.load();
-        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let shaped = lqos_network_devices::shaped_devices_snapshot();
+        let shaped_cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
         let (circuit_id, circuit_name) = {
             let mut circuit_id = String::new();
             let mut circuit_name = String::new();

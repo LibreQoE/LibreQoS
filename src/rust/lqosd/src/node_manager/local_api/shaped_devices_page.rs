@@ -1,4 +1,3 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_config::ShapedDevice;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
@@ -53,7 +52,7 @@ pub fn shaped_devices_page(query: ShapedDevicesPageQuery) -> ShapedDevicesPage {
     let page = query.page.unwrap_or(0);
     let page_size = normalized_page_size(&query);
     let search = query.search.as_deref().unwrap_or("").trim().to_lowercase();
-    let devices = SHAPED_DEVICES.load();
+    let devices = lqos_network_devices::shaped_devices_snapshot();
 
     let mut filtered: Vec<ShapedDevice> = devices
         .devices

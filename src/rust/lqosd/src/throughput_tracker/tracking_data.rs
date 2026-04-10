@@ -8,7 +8,6 @@ use super::{
 };
 use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
 use crate::{
-    shaped_devices_tracker::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::HIGH_WATERMARK,
     throughput_tracker::flow_data::{FlowbeeEffectiveDirection, expire_rtt_flows, flowbee_rtt_map},
 };
@@ -172,7 +171,7 @@ impl ThroughputTracker {
             return;
         }
 
-        let shaped_devices = SHAPED_DEVICES.load();
+        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
         let mut capacity_lookup: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
         capacity_lookup.reserve(shaped_devices.devices.len());
         shaped_devices.devices.iter().for_each(|device| {
@@ -405,7 +404,7 @@ impl ThroughputTracker {
 
     fn shaped_device_for_hashes<'a>(
         shaped: &'a lqos_config::ConfigShapedDevices,
-        cache: &crate::shaped_devices_tracker::ShapedDeviceHashCache,
+        cache: &lqos_network_devices::ShapedDeviceHashCache,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
     ) -> Option<&'a lqos_config::ShapedDevice> {
@@ -424,7 +423,7 @@ impl ThroughputTracker {
 
     fn lookup_network_parents_from_hashes(
         shaped: &lqos_config::ConfigShapedDevices,
-        cache: &crate::shaped_devices_tracker::ShapedDeviceHashCache,
+        cache: &lqos_network_devices::ShapedDeviceHashCache,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
         lock: &NetworkJson,
@@ -434,8 +433,8 @@ impl ThroughputTracker {
     }
 
     pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
-        let shaped = SHAPED_DEVICES.load();
-        let cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let shaped = lqos_network_devices::shaped_devices_snapshot();
+        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
         let mut raw_data = self.raw_data.lock();
         raw_data.iter_mut().for_each(|(_key, data)| {
             let shaped_device = Self::shaped_device_for_hashes(
@@ -463,8 +462,8 @@ impl ThroughputTracker {
         let mut changed_circuits = HashSet::new();
 
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-        let shaped = SHAPED_DEVICES.load();
-        let cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let shaped = lqos_network_devices::shaped_devices_snapshot();
+        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
         let mut raw_data = self.raw_data.lock();
         throughput_for_each(&mut |xdp_ip, counts| {
             let reduced = ReducedHostCounters::from_counters(counts);

@@ -1,4 +1,3 @@
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use ip_network::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -103,7 +102,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
 
     // First pass: exact IP matches using the LPM trie
     if let Some(ip) = exact_ip {
-        let sd_reader = SHAPED_DEVICES.load();
+        let sd_reader = lqos_network_devices::shaped_devices_snapshot();
         let query_v6 = match ip {
             IpAddr::V4(v4) => v4.to_ipv6_mapped(),
             IpAddr::V6(v6) => v6,
@@ -143,7 +142,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                     IpNetwork::V6(v6net) => Some(IpNetwork::V6(v6net)),
                 };
                 if let Some(query_v6) = net_v6.as_ref() {
-                    let sd_reader = SHAPED_DEVICES.load();
+                    let sd_reader = lqos_network_devices::shaped_devices_snapshot();
                     for (n, &idx) in sd_reader.trie.iter() {
                         if results.len() >= MAX_RESULTS {
                             break;
@@ -168,7 +167,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
             }
         } else {
             // Fallback: textual prefix (e.g., "10.1.")
-            let sd_reader = SHAPED_DEVICES.load();
+            let sd_reader = lqos_network_devices::shaped_devices_snapshot();
             for (n, &idx) in sd_reader.trie.iter() {
                 if results.len() >= MAX_RESULTS {
                     break;
@@ -195,7 +194,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
 
     // Third pass: Circuit/Device name substring matches
     if results.len() < MAX_RESULTS && term_lc.len() >= 3 {
-        let sd_reader = SHAPED_DEVICES.load();
+        let sd_reader = lqos_network_devices::shaped_devices_snapshot();
         for sd in sd_reader.devices.iter() {
             if results.len() >= MAX_RESULTS {
                 break;
@@ -233,23 +232,24 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
 
     // Fourth pass: Site name substring matches
     if results.len() < MAX_RESULTS && term_lc.len() >= 3 {
-        let net_reader = NETWORK_JSON.read();
-        for (idx, n) in net_reader.get_nodes_when_ready().iter().enumerate() {
-            if results.len() >= MAX_RESULTS {
-                break;
+        lqos_network_devices::with_network_json_read(|net_reader| {
+            for (idx, n) in net_reader.get_nodes_when_ready().iter().enumerate() {
+                if results.len() >= MAX_RESULTS {
+                    break;
+                }
+                if n.name.to_lowercase().contains(&term_lc) {
+                    push_result(
+                        &mut results,
+                        &mut seen,
+                        SearchResult::Site {
+                            idx,
+                            name: n.name.clone(),
+                        },
+                        MAX_RESULTS,
+                    );
+                }
             }
-            if n.name.to_lowercase().contains(&term_lc) {
-                push_result(
-                    &mut results,
-                    &mut seen,
-                    SearchResult::Site {
-                        idx,
-                        name: n.name.clone(),
-                    },
-                    MAX_RESULTS,
-                );
-            }
-        }
+        });
     }
 
     results

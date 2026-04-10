@@ -1,0 +1,18 @@
+[package]
+name = "lqos_network_devices"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-only"
+
+[dependencies]
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+crossbeam-channel = { workspace = true }
+fxhash = "0.2.1"
+lqos_config = { path = "../lqos_config" }
+lqos_utils = { path = "../lqos_utils" }
+once_cell = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
