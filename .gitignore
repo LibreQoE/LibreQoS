@@ -173,17 +173,30 @@ src/network.large.json
 /src/lqusers.session.key
 /src/network.effective.json
 /src/network.json.pre_*
+/src/network.effective.json.stale-*
 /src/topology_attachment_health_state.json
+/src/topology_attachment_health_state.json.stale-*
 /src/topology_editor_state.json
+/src/topology_editor_state.json.stale-*
 /src/topology_effective_state.json
+/src/topology_effective_state.json.stale-*
 /src/topology_overrides.json
 /src/topology_parent_candidates.json
 /src/topology_canonical_state.json
+/src/topology_canonical_state.json.stale-*
+/src/topology_runtime_status.json
+/src/topology_runtime_status.json.stale-*
+/src/topology_import.json
 /src/circuit_anchors.json
 /src/shaping_inputs.json
+/src/shaping_inputs.json.stale-*
+/src/.topology_stale/
+/src/.codex
 
 # Migrated integration compatibility artifacts
 /src/integrationUISPbandwidths.csv.migrated-*
+/src/integrationUISPbandwidths.csv.backup*
+/src/integrationSplynxBandwidths.csv.backup*
 /src/integrationUISProutes.csv.migrated-*
 
 # Local override snapshots

@@ -2132,11 +2132,13 @@ dependencies = [
  "anyhow",
  "base64",
  "chrono",
+ "csv",
  "lqos_bakery",
  "lqos_bus",
  "lqos_config",
  "lqos_overrides",
  "lqos_sys",
+ "lqos_topology_compile",
  "lqos_utils",
  "miniz_oxide",
  "nix",
@@ -2144,6 +2146,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_cbor",
+ "serde_json",
  "sysinfo",
  "tempfile",
  "tokio",
@@ -2237,10 +2240,22 @@ dependencies = [
  "lqos_config",
  "lqos_overrides",
  "lqos_probe",
+ "lqos_topology_compile",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lqos_topology_compile"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "lqos_config",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -2297,6 +2312,7 @@ dependencies = [
  "lqos_stormguard",
  "lqos_sys",
  "lqos_topology",
+ "lqos_topology_compile",
  "lqos_utils",
  "miniz_oxide",
  "native-tls",
@@ -4303,6 +4319,7 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "lqos_overrides",
+ "lqos_topology_compile",
  "lqos_utils",
  "petgraph",
  "serde",

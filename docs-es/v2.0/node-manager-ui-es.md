@@ -94,6 +94,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - `Devices` muestra tablas de detalle por dispositivo y gráficos en vivo de throughput, retransmisiones y latencia.
 - `Queue Stats` muestra historial reciente de la cola del circuito, incluyendo backlog, delay, longitud de cola, tráfico, marcas ECN y drops.
 - Los gráficos de Queue Stats usan hover sincronizado para inspeccionar el mismo segundo en todos los gráficos de cola al mismo tiempo.
+- `Queue Stats` debe seguir mostrando la telemetría en vivo de la cola del circuito en modo `flat` igual que en los demás modos de topología.
 - `Queue Tree` muestra la ruta ascendente de colas del circuito, incluyendo un resumen de ruta y contexto de throughput, retransmisiones y latencia para cada nodo aguas arriba.
 - `Traffic Flows` es una tabla operativa de flujos recientes, no una vista de historial a largo plazo.
 - `Traffic Flows` incluye paginación y un filtro `Hide Small Flows` para que los circuitos grandes y ocupados sigan siendo utilizables sin intentar renderizar cada fila.
@@ -116,8 +117,13 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Incluye paginación y filtros.
 - En el editor dedicado, las acciones de agregar, editar y eliminar se guardan de inmediato.
 
+### Páginas de configuración
+- Las contraseñas, los tokens API y las claves guardadas permanecen ocultos al abrir una página de integración.
+- Si ya existe una credencial guardada, el campo permanece vacío hasta que escriba un reemplazo. Use `Clear` solo cuando quiera quitar el valor guardado.
+- Deje el campo vacío para conservar el valor actual. Escriba uno nuevo para reemplazarlo.
+
 ### Problemas urgentes
-- WebUI puede mostrar problemas operativos urgentes emitidos por servicios backend.
+- WebUI puede mostrar problemas operativos urgentes informados por los servicios de LibreQoS.
 - Ejemplos: advertencias de límites de mapeo/licencia y errores de alta prioridad.
 - Operadores pueden reconocer/limpiar eventos desde la UI.
 - Códigos comunes: `MAPPED_CIRCUIT_LIMIT` y `TC_U16_OVERFLOW` (ver [Solución de Problemas](troubleshooting-es.md#códigos-de-problemas-urgentes-y-primeras-acciones)).
@@ -132,10 +138,10 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 ## Modo privacidad / redacción
 
 - Se activa con el ícono de máscara en la barra superior.
-- Es redacción del lado cliente y se guarda en `localStorage` del navegador.
+- Es un ajuste visual que se guarda en su navegador.
 - Ayuda a ocultar PII en capturas/demos.
 - Site Map reemplaza los nombres de sitios mostrados por `[redacted]` mientras el modo de redacción está activo.
-- No modifica `ShapedDevices.csv`, `network.json` ni datos backend.
+- No cambia sus datos guardados ni sus archivos de configuración.
 
 ## Comportamiento de vistas vacías
 

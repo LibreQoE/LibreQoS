@@ -31,7 +31,6 @@ pub struct CircuitLiveRollup {
 #[derive(Clone, Debug, Default)]
 pub struct CircuitLiveSnapshot {
     pub by_circuit_id: FxHashMap<String, CircuitLiveRollup>,
-    pub circuit_ids_by_parent_node: FxHashMap<String, Vec<String>>,
 }
 
 #[derive(Default)]
@@ -165,18 +164,11 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
     }
 
     let mut finalized: FxHashMap<String, CircuitLiveRollup> = FxHashMap::default();
-    let mut circuit_ids_by_parent_node: FxHashMap<String, Vec<String>> = FxHashMap::default();
     for (circuit_id, value) in by_circuit_id {
         let parent_node = super::effective_parent_for_circuit(&circuit_id)
             .map(|parent| parent.name)
             .filter(|name| !name.trim().is_empty())
             .unwrap_or(value.parent_node);
-        if !parent_node.trim().is_empty() {
-            circuit_ids_by_parent_node
-                .entry(parent_node.clone())
-                .or_default()
-                .push(circuit_id.clone());
-        }
         finalized.insert(
             circuit_id.clone(),
             CircuitLiveRollup {
@@ -197,13 +189,9 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
             },
         );
     }
-    for ids in circuit_ids_by_parent_node.values_mut() {
-        ids.sort_unstable();
-    }
 
     let snapshot = Arc::new(CircuitLiveSnapshot {
         by_circuit_id: finalized,
-        circuit_ids_by_parent_node,
     });
     CIRCUIT_LIVE_SNAPSHOT.store(snapshot.clone());
     CIRCUIT_LIVE_LAST_REFRESH_SECS

@@ -460,11 +460,11 @@ function loadObserveShapeControl() {
         }
 
         listenOnce("GetConfig", (cfgMsg) => {
-            if (!cfgMsg || !cfgMsg.data) {
+            if (!cfgMsg || !cfgMsg.data || !cfgMsg.data.config) {
                 nav.classList.add("d-none");
                 return;
             }
-            cachedQueueModeConfig = cfgMsg.data;
+            cachedQueueModeConfig = cfgMsg.data.config;
             const mode = inferQueueMode(cachedQueueModeConfig);
             nav.classList.remove("d-none");
             renderQueueModeState(mode, false);

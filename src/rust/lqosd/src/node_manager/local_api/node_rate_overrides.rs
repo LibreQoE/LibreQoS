@@ -221,7 +221,7 @@ fn legacy_warning_messages() -> Result<Vec<String>, StatusCode> {
     }
     if config.splynx_integration.enable_splynx && base.join(LEGACY_SPLYNX_FILE).exists() {
         warnings.push(format!(
-            "Legacy Splynx bandwidth overrides are present in `{LEGACY_SPLYNX_FILE}`. Tree edits write operator overrides to `lqos_overrides.json` and do not modify that file."
+            "Legacy Splynx bandwidth overrides are present in `{LEGACY_SPLYNX_FILE}`. Current Splynx builds auto-migrate that file into operator `AdjustSiteSpeed` overrides in `lqos_overrides.json` and rename the CSV to a backup."
         ));
     }
 

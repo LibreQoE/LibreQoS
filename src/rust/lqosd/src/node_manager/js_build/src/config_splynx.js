@@ -1,16 +1,20 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    bindSecretField,
+    loadConfig,
+    renderConfigMenu,
+    saveConfig,
+    secretWillExistAfterSave,
+} from "./config/config_helper";
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enableSplynx").checked) {
-        const apiKey = document.getElementById("apiKey").value.trim();
-        if (!apiKey) {
+        if (!secretWillExistAfterSave("splynx_integration", "api_key", "apiKey")) {
             alert("API Key is required when Splynx integration is enabled");
             return false;
         }
 
-        const apiSecret = document.getElementById("apiSecret").value.trim();
-        if (!apiSecret) {
+        if (!secretWillExistAfterSave("splynx_integration", "api_secret", "apiSecret")) {
             alert("API Secret is required when Splynx integration is enabled");
             return false;
         }
@@ -37,7 +41,7 @@ function updateConfig() {
         api_key: document.getElementById("apiKey").value.trim(),
         api_secret: document.getElementById("apiSecret").value.trim(),
         url: document.getElementById("splynxUrl").value.trim(),
-        strategy: document.getElementById("topologyStrategy").value
+        strategy: window.config.topology?.compile_mode ?? document.getElementById("topologyStrategy").value
     };
 }
 
@@ -54,10 +58,22 @@ loadConfig(() => {
     // Populate form fields with config values
     const splynx = window.config.splynx_integration;
     document.getElementById("enableSplynx").checked = splynx.enable_splynx ?? false;
-    document.getElementById("apiKey").value = splynx.api_key ?? "";
-    document.getElementById("apiSecret").value = splynx.api_secret ?? "";
     document.getElementById("splynxUrl").value = splynx.url ?? "";
-    document.getElementById("topologyStrategy").value = splynx.strategy ?? "ap_only";
+    document.getElementById("topologyStrategy").value = window.config.topology?.compile_mode ?? splynx.strategy ?? "ap_site";
+    bindSecretField({
+        section: "splynx_integration",
+        field: "api_key",
+        inputId: "apiKey",
+        statusId: "apiKeyStatus",
+        clearButtonId: "clearApiKey",
+    });
+    bindSecretField({
+        section: "splynx_integration",
+        field: "api_secret",
+        inputId: "apiSecret",
+        statusId: "apiSecretStatus",
+        clearButtonId: "clearApiSecret",
+    });
 
     // Add save button click handler
     document.getElementById('saveButton').addEventListener('click', () => {

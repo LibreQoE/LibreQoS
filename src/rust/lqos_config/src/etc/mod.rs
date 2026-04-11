@@ -10,7 +10,7 @@ use once_cell::sync::Lazy;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
-use toml_edit::{DocumentMut, value};
+use toml_edit::{DocumentMut, Item, Table, value};
 use tracing::{debug, error, info};
 
 mod migration;
@@ -20,9 +20,9 @@ pub mod test_data;
 mod v15;
 pub use v15::{
     BridgeConfig, IntegrationConfig, LazyQueueMode, QueueMode, RttThresholds,
-    SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TreeguardCircuitsConfig,
-    TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig,
-    TreeguardQooConfig, Tunables,
+    SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TopologyConfig,
+    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
+    TreeguardLinksConfig, TreeguardQooConfig, Tunables,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
@@ -62,6 +62,117 @@ pub fn treeguard_cpu_mode_migration_notice() -> Option<String> {
 
 fn treeguard_cpu_mode_migration_stamp_path(config_path: &str) -> String {
     format!("{config_path}.treeguard_cpu_mode_migrated")
+}
+
+fn uisp_capacity_defaults_migration_stamp_path(config_path: &str) -> String {
+    format!("{config_path}.uisp_capacity_defaults_migrated")
+}
+
+fn topology_compile_mode_migration_stamp_path(config_path: &str) -> String {
+    format!("{config_path}.topology_compile_mode_migrated")
+}
+
+fn enabled_table_string(
+    doc: &DocumentMut,
+    table_name: &str,
+    enabled_key: &str,
+    value_key: &str,
+) -> Option<String> {
+    let table = doc.get(table_name)?.as_table_like()?;
+    if !table.get(enabled_key)?.as_bool().unwrap_or(false) {
+        return None;
+    }
+    let raw = table.get(value_key)?.as_str()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    crate::etc::v15::normalize_topology_compile_mode(raw).map(ToString::to_string)
+}
+
+fn maybe_migrate_topology_compile_mode(
+    config_location: &str,
+    raw: String,
+) -> Result<String, LibreQoSConfigError> {
+    let stamp_path = topology_compile_mode_migration_stamp_path(config_location);
+    if Path::new(&stamp_path).exists() {
+        return Ok(raw);
+    }
+
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+
+    if let Some(existing) = doc
+        .get("topology")
+        .and_then(|section| section.as_table_like())
+        .and_then(|section| section.get("compile_mode"))
+        .and_then(|mode| mode.as_str())
+        .and_then(crate::etc::v15::normalize_topology_compile_mode)
+    {
+        std::fs::write(&stamp_path, format!("{existing}\n")).map_err(|e| {
+            LibreQoSConfigError::CannotWrite {
+                path: stamp_path.clone(),
+                source: e,
+            }
+        })?;
+        return Ok(raw);
+    }
+
+    let uisp_mode = enabled_table_string(&doc, "uisp_integration", "enable_uisp", "strategy");
+    let splynx_mode = enabled_table_string(&doc, "splynx_integration", "enable_splynx", "strategy");
+
+    let selected = match (uisp_mode.as_deref(), splynx_mode.as_deref()) {
+        (Some(uisp), Some(splynx)) if uisp == splynx => Some(uisp.to_string()),
+        (Some(_), Some(_)) => None,
+        (Some(uisp), None) => Some(uisp.to_string()),
+        (None, Some(splynx)) => Some(splynx.to_string()),
+        (None, None) => None,
+    };
+
+    let Some(selected) = selected else {
+        if uisp_mode.is_some() && splynx_mode.is_some() {
+            info!(
+                "Topology compile mode migration skipped because UISP and Splynx legacy strategies differ."
+            );
+        }
+        std::fs::write(&stamp_path, b"skipped\n").map_err(|e| {
+            LibreQoSConfigError::CannotWrite {
+                path: stamp_path,
+                source: e,
+            }
+        })?;
+        return Ok(raw);
+    };
+
+    if !doc.as_table().contains_key("topology") {
+        doc["topology"] = Item::Table(Table::new());
+    }
+    doc["topology"]["compile_mode"] = value(selected.as_str());
+    let migrated = doc.to_string();
+
+    let config_path = Path::new(config_location);
+    if config_path.exists() {
+        let backup_path = format!("{config_location}.topology_compile_mode_backup");
+        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
+            path: backup_path,
+            source: e,
+        })?;
+    }
+
+    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: config_location.to_string(),
+        source: e,
+    })?;
+    std::fs::write(&stamp_path, format!("{selected}\n")).map_err(|e| {
+        LibreQoSConfigError::CannotWrite {
+            path: stamp_path,
+            source: e,
+        }
+    })?;
+
+    info!("Topology compile mode was automatically migrated to '{selected}'.");
+    Ok(migrated)
 }
 
 fn maybe_migrate_treeguard_cpu_mode(
@@ -128,6 +239,58 @@ fn maybe_migrate_treeguard_cpu_mode(
     Ok(migrated)
 }
 
+fn maybe_migrate_uisp_capacity_defaults(
+    config_location: &str,
+    raw: String,
+) -> Result<String, LibreQoSConfigError> {
+    let stamp_path = uisp_capacity_defaults_migration_stamp_path(config_location);
+    if Path::new(&stamp_path).exists() {
+        return Ok(raw);
+    }
+
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+
+    if !doc.as_table().contains_key("uisp_integration") {
+        doc["uisp_integration"] = Item::Table(Table::new());
+    }
+
+    doc["uisp_integration"]["airmax_capacity"] = value(1.0);
+    doc["uisp_integration"]["ltu_capacity"] = value(1.0);
+    let migrated = doc.to_string();
+
+    if migrated != raw {
+        let config_path = Path::new(config_location);
+        if config_path.exists() {
+            let backup_path = format!("{config_location}.uisp_capacity_defaults_backup");
+            std::fs::copy(config_path, &backup_path).map_err(|e| {
+                LibreQoSConfigError::CannotWrite {
+                    path: backup_path,
+                    source: e,
+                }
+            })?;
+        }
+
+        std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
+            path: config_location.to_string(),
+            source: e,
+        })?;
+
+        info!(
+            "UISP AirMax and LTU capacity defaults were automatically normalized to 1.0 during upgrade."
+        );
+    }
+
+    std::fs::write(&stamp_path, b"1.0\n").map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: stamp_path,
+        source: e,
+    })?;
+
+    Ok(migrated)
+}
+
 fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
         info!("Overriding lqos.conf location from environment variable.");
@@ -169,6 +332,8 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     })?;
 
     let raw = maybe_migrate_treeguard_cpu_mode(&config_location, raw)?;
+    let raw = maybe_migrate_uisp_capacity_defaults(&config_location, raw)?;
+    let raw = maybe_migrate_topology_compile_mode(&config_location, raw)?;
 
     let mut final_config = Config::load_from_string(&raw).map_err(|e| {
         error!("Unable to parse {config_location}");
@@ -286,4 +451,190 @@ pub enum LibreQoSConfigError {
         #[source]
         source: std::io::Error,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        maybe_migrate_topology_compile_mode, maybe_migrate_uisp_capacity_defaults,
+        topology_compile_mode_migration_stamp_path, uisp_capacity_defaults_migration_stamp_path,
+    };
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "lqos_config_uisp_capacity_test_{}_{}",
+            std::process::id(),
+            nanos
+        ))
+    }
+
+    fn write_test_config(base_dir: &Path, raw: &str) -> PathBuf {
+        fs::create_dir_all(base_dir).expect("should create temp dir");
+        let config_path = base_dir.join("lqos.conf");
+        fs::write(&config_path, raw).expect("should write test config");
+        config_path
+    }
+
+    fn path_string(path: &Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn uisp_capacity_migration_rewrites_existing_values_and_stamps() {
+        let test_dir = unique_test_dir();
+        let raw = "[uisp_integration]\nairmax_capacity = 0.65\nltu_capacity = 0.9\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        let migrated = maybe_migrate_uisp_capacity_defaults(&config_path_str, raw.to_string())
+            .expect("migration should succeed");
+
+        assert!(migrated.contains("airmax_capacity = 1.0"));
+        assert!(migrated.contains("ltu_capacity = 1.0"));
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("config should be rewritten"),
+            migrated
+        );
+        assert_eq!(
+            fs::read_to_string(config_path.with_extension("conf.uisp_capacity_defaults_backup"))
+                .expect("backup should exist"),
+            raw
+        );
+        assert!(
+            Path::new(&uisp_capacity_defaults_migration_stamp_path(
+                &config_path_str
+            ))
+            .exists()
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    #[test]
+    fn uisp_capacity_migration_stamps_already_correct_values_without_rewrite() {
+        let test_dir = unique_test_dir();
+        let raw = "[uisp_integration]\nairmax_capacity = 1.0\nltu_capacity = 1.0\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        let migrated = maybe_migrate_uisp_capacity_defaults(&config_path_str, raw.to_string())
+            .expect("migration should succeed");
+
+        assert_eq!(migrated, raw);
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("config should remain unchanged"),
+            raw
+        );
+        assert!(
+            !config_path
+                .with_extension("conf.uisp_capacity_defaults_backup")
+                .exists()
+        );
+        assert!(
+            Path::new(&uisp_capacity_defaults_migration_stamp_path(
+                &config_path_str
+            ))
+            .exists()
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    #[test]
+    fn uisp_capacity_migration_respects_manual_changes_after_stamp() {
+        let test_dir = unique_test_dir();
+        let raw = "[uisp_integration]\nairmax_capacity = 0.65\nltu_capacity = 0.9\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        maybe_migrate_uisp_capacity_defaults(&config_path_str, raw.to_string())
+            .expect("initial migration should succeed");
+
+        let manual = "[uisp_integration]\nairmax_capacity = 0.72\nltu_capacity = 0.81\n";
+        fs::write(&config_path, manual).expect("should simulate operator edit");
+
+        let second = maybe_migrate_uisp_capacity_defaults(&config_path_str, manual.to_string())
+            .expect("second migration should skip after stamp");
+
+        assert_eq!(second, manual);
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("manual edit should remain"),
+            manual
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    #[test]
+    fn topology_compile_mode_migration_copies_enabled_uisp_strategy() {
+        let test_dir = unique_test_dir();
+        let raw = "[uisp_integration]\nenable_uisp = true\nstrategy = \"full2\"\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        let migrated = maybe_migrate_topology_compile_mode(&config_path_str, raw.to_string())
+            .expect("migration should succeed");
+
+        assert!(migrated.contains("[topology]"));
+        assert!(migrated.contains("compile_mode = \"full\""));
+        assert!(
+            Path::new(&topology_compile_mode_migration_stamp_path(
+                &config_path_str
+            ))
+            .exists()
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    #[test]
+    fn topology_compile_mode_migration_copies_enabled_splynx_strategy() {
+        let test_dir = unique_test_dir();
+        let raw = "[splynx_integration]\nenable_splynx = true\nstrategy = \"ap_site\"\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        let migrated = maybe_migrate_topology_compile_mode(&config_path_str, raw.to_string())
+            .expect("migration should succeed");
+
+        assert!(migrated.contains("[topology]"));
+        assert!(migrated.contains("compile_mode = \"ap_site\""));
+        assert!(
+            Path::new(&topology_compile_mode_migration_stamp_path(
+                &config_path_str
+            ))
+            .exists()
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    #[test]
+    fn topology_compile_mode_migration_skips_conflicting_legacy_strategies() {
+        let test_dir = unique_test_dir();
+        let raw = "[uisp_integration]\nenable_uisp = true\nstrategy = \"full\"\n\n[splynx_integration]\nenable_splynx = true\nstrategy = \"ap_only\"\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        let migrated = maybe_migrate_topology_compile_mode(&config_path_str, raw.to_string())
+            .expect("migration should succeed");
+
+        assert_eq!(migrated, raw);
+        assert!(!migrated.contains("[topology]"));
+        assert!(
+            Path::new(&topology_compile_mode_migration_stamp_path(
+                &config_path_str
+            ))
+            .exists()
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
 }

@@ -27,9 +27,9 @@ Use esta guía para evitar confusión con opciones:
 
 ## Notas operativas
 
-- `ShapedDevices.csv` se regenera en cada sincronización.
-- `network.json` depende de `always_overwrite_network_json`.
-- Para despliegues guiados por integración, use `always_overwrite_network_json = true` para mantener la topología alineada con UISP en cada ciclo.
+- La sincronización actualiza automáticamente los datos importados y de shaping que LibreQoS usa con UISP.
+- `network.json` queda para despliegues DIY o manuales.
+- Use la WebUI para confirmar que la importación y la profundidad del árbol son las esperadas.
 - En modo integración, trate ediciones de archivos como temporales.
 
 ## Validación en 5 minutos después de cambios UISP
@@ -41,7 +41,7 @@ sudo /opt/libreqos/src/bin/uisp_integration
 ```
 2. Confirme archivos generados/actualizados:
 ```bash
-ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+ls -lh /opt/libreqos/src/topology_import.json /opt/libreqos/src/shaping_inputs.json
 ```
 3. Verifique salud de servicios:
 ```bash
@@ -61,7 +61,7 @@ Los valores por defecto de integración también incluyen el límite compartido 
 
 Las compilaciones UISP actuales también reutilizan ese mismo multiplicador conservador para límites de transporte en adjuntos de infraestructura cuando `infrastructure_transport_caps_enabled = true`. Para esos límites de infraestructura, LibreQoS prefiere la interfaz Ethernet/SFP de transporte activa con mayor velocidad reportada por UISP, con fallbacks exactos por modelo para techos de hardware conocidos como AF60-LR.
 
-La compactación de runtime/exportación para UISP ahora siempre se aplica después de que Topology Manager resuelve la preferencia de adjuntos. La topología canónica de UISP y Topology Manager permanecen sin compactar; `tree.html` y shaping usan el árbol efectivo compactado. `do_not_squash_sites` sigue permitiendo excluir nombres de sitios concretos de esa compactación de runtime.
+La compactación de runtime/exportación para UISP ahora siempre se aplica después de que Topology Manager resuelve la preferencia de adjuntos. `do_not_squash_sites` sigue permitiendo excluir nombres de sitios concretos de esa compactación.
 
 Nota heredada:
 - Los valores existentes de `enable_squashing` en `/etc/lqos.conf` se ignoran por compatibilidad hacia atrás.

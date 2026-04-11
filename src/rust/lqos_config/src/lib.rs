@@ -4,6 +4,8 @@
 //! * The `/etc/lqos.conf` file.
 //! * `ShapedDevices.csv` files.
 //! * `network.json` files.
+//! * `topology_import.json` files for compiler-backed integration ingress.
+//! * `topology_compiled_shaping.json` files for compiler-selected integration shaping ingress.
 
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
@@ -36,7 +38,7 @@ pub use cpu_topology::{
 };
 pub use etc::{
     BridgeConfig, Config, LazyQueueMode, QueueMode, RttThresholds, SingleInterfaceConfig,
-    StormguardConfig, StormguardStrategy, TreeguardCircuitsConfig, TreeguardConfig,
+    StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
     TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
     clear_cached_config, disable_xdp_bridge, enable_long_term_stats, load_config,
     treeguard_cpu_mode_migration_notice, update_config,
@@ -64,6 +66,7 @@ pub use topology_canonical_state::{
     TOPOLOGY_CANONICAL_STATE_FILENAME, TopologyCanonicalIngressKind, TopologyCanonicalNode,
     TopologyCanonicalRateInput, TopologyCanonicalRateInputSource, TopologyCanonicalStateError,
     TopologyCanonicalStateFile, topology_canonical_state_path,
+    topology_ingress_identity_from_tokens,
 };
 pub use topology_editor_state::{
     TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
@@ -76,16 +79,17 @@ pub use topology_parent_candidates::{
     TopologyParentCandidatesFile, TopologyParentCandidatesNode, topology_parent_candidates_path,
 };
 pub use topology_runtime_state::{
-    TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_EFFECTIVE_NETWORK_FILENAME,
-    TOPOLOGY_EFFECTIVE_STATE_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME,
-    TOPOLOGY_SHAPING_INPUTS_FILENAME, TopologyAttachmentEndpointStatus,
-    TopologyAttachmentHealthEntry, TopologyAttachmentHealthStateFile,
-    TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
-    TopologyRuntimeStateError, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
-    TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
-    compute_topology_source_generation, topology_attachment_health_state_path,
-    topology_effective_network_path, topology_effective_state_path, topology_runtime_status_path,
-    topology_shaping_inputs_path,
+    TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_COMPILED_SHAPING_FILENAME,
+    TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
+    TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
+    TopologyAttachmentEndpointStatus, TopologyAttachmentHealthEntry,
+    TopologyAttachmentHealthStateFile, TopologyEffectiveAttachmentState,
+    TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStateError,
+    TopologyRuntimeStatusFile, TopologyShapingCircuitInput, TopologyShapingDeviceInput,
+    TopologyShapingInputsFile, TopologyShapingResolutionSource, compute_topology_source_generation,
+    topology_attachment_health_state_path, topology_compiled_shaping_path,
+    topology_effective_network_path, topology_effective_state_path, topology_import_path,
+    topology_runtime_status_path, topology_shaping_inputs_path,
 };
 
 /// Used as a constant in determining buffer preallocation

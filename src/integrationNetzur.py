@@ -12,7 +12,6 @@ from liblqos_python import (
 	netzur_api_key,
 	netzur_api_url,
 	netzur_api_timeout,
-	overwrite_network_json_always,
 )
 
 import json
@@ -168,12 +167,8 @@ def createShaper() -> NetworkGraph:
         except json.JSONDecodeError as err:
             LOG.warning("[Netzur] Unable to parse Mikrotik IPv6 map: %s", err)
 
-    if net.doesNetworkJsonExist() and not overwrite_network_json_always():
-        LOG.info("[Netzur] network.json exists and overwrite disabled; preserving current file")
-    else:
-        net.createNetworkJson()
-    net.createShapedDevices()
-    LOG.info("[Netzur] ShapedDevices.csv updated")
+    net.materializeCompiledTopology("python/netzur", "full")
+    LOG.info("[Netzur] Topology import artifacts updated")
     for error in net.getErrors():
         LOG.error("[Netzur] %s", error)
     return net

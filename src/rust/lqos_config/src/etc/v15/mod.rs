@@ -15,6 +15,7 @@ mod queues;
 mod sonar_integration;
 mod splynx_integration;
 mod stormguard;
+mod topology;
 mod treeguard;
 mod tuning;
 mod uisp_integration;
@@ -26,6 +27,7 @@ pub use integration_common::IntegrationConfig;
 pub use long_term_stats::LongTermStats;
 pub use queues::{LazyQueueMode, QueueMode};
 pub use stormguard::{StormguardConfig, StormguardStrategy};
+pub use topology::{TopologyConfig, normalize_topology_compile_mode};
 pub use treeguard::{
     TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig,

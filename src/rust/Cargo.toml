@@ -35,6 +35,7 @@ members = [
     "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
     "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
     "lqos_topology", # Shared topology runtime domain logic and health/effective-state helper.
+    "lqos_topology_compile", # Shared topology compilation and mode projection layer.
 ]
 
 [dependencies]

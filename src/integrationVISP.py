@@ -12,7 +12,6 @@ from collections import Counter
 
 from liblqos_python import (
     get_libreqos_directory,
-    overwrite_network_json_always,
     visp_client_id,
     visp_client_secret,
     visp_username,
@@ -419,12 +418,7 @@ def createShaper() -> None:
             pass
 
     net.prepareTree()
-
-    if net.doesNetworkJsonExist() and not overwrite_network_json_always():
-        print("[VISP] network.json exists and overwrite disabled; preserving current file")
-    else:
-        net.createNetworkJson()
-    net.createShapedDevices()
+    net.materializeCompiledTopology("python/visp", "full")
 
     print(
         "[VISP] shaped={shaped} wifi_bulk_services={wifi_bulk_services} "

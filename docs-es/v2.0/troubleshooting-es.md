@@ -36,6 +36,12 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 Si el problema es de integración, agregue:
 
 ```bash
+ls -lh /opt/libreqos/src/topology_import.json /opt/libreqos/src/shaping_inputs.json
+```
+
+Si usa un despliegue manual o con archivos propios en lugar de una integración incluida, agregue:
+
+```bash
 ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
 ```
 

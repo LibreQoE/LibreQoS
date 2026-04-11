@@ -18,11 +18,10 @@ To test the Sonar Integration, use
 python3 integrationSonar.py
 ```
 
-On the first successful run, it will create a ShapedDevices.csv file.
-If a network.json file exists, it will not be overwritten, unless you set ```always_overwrite_network_json = true```.
-You can modify the network.json file to more accurately reflect bandwidth limits.
-ShapedDevices.csv will be overwritten every time the Sonar integration is run.
-Recommended: keep `always_overwrite_network_json = true` for integration-driven deployments so topology stays aligned with Sonar syncs.
+On the first successful run, it creates the Sonar import and shaping data LibreQoS needs for scheduled refreshes.
+Built-in Sonar integrations do not write `network.json`; keep that file for DIY/manual deployments.
+You can maintain a separate DIY `network.json` when Sonar is not the system you want to use for topology.
+The Sonar integration refreshes its imported topology and shaping data every run.
 You have the option to run integrationSonar.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_sonar = true``` in `/etc/lqos.conf`.
 
 

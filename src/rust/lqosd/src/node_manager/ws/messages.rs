@@ -23,6 +23,7 @@ use crate::node_manager::local_api::node_topology_overrides::{
     NodeTopologyOverrideData, NodeTopologyOverrideQuery,
 };
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
+use crate::node_manager::local_api::config::{ConfigSecretClearRequest, ConfigView};
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
 use crate::node_manager::local_api::shaped_devices_page::{
@@ -183,6 +184,8 @@ pub enum WsRequest {
     QooProfiles,
     UpdateConfig {
         config: Config,
+        #[serde(default)]
+        clear_secrets: ConfigSecretClearRequest,
     },
     UpdateNetworkJsonOnly {
         network_json: Value,
@@ -639,7 +642,7 @@ pub enum WsResponse {
         ok: bool,
     },
     GetConfig {
-        data: Config,
+        data: ConfigView,
     },
     QooProfiles {
         data: QooProfilesSummary,

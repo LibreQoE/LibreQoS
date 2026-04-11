@@ -52,6 +52,9 @@ pub struct TopologyParentCandidatesFile {
     /// Human-readable source for the snapshot, such as `uisp/full`.
     #[serde(default)]
     pub source: String,
+    /// Stable identity of the imported topology facts plus selected compile mode, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ingress_identity: Option<String>,
     /// Candidate-parent metadata keyed by node.
     #[serde(default)]
     pub nodes: Vec<TopologyParentCandidatesNode>,

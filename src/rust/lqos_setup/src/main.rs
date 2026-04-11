@@ -253,82 +253,6 @@ fn main() {
     ui.run();
 }
 
-#[cfg(test)]
-mod test {
-    use super::upgrade_readiness_for_config_with;
-
-    fn configured_bridge_config(lqos_directory: String) -> lqos_config::Config {
-        let mut config = lqos_config::Config::default();
-        config.lqos_directory = lqos_directory;
-        config.bridge = Some(lqos_config::BridgeConfig {
-            use_xdp_bridge: true,
-            to_internet: "wan0".to_string(),
-            to_network: "lan0".to_string(),
-        });
-        config.single_interface = None;
-        config.queues.downlink_bandwidth_mbps = 1000;
-        config.queues.uplink_bandwidth_mbps = 1000;
-        config
-    }
-
-    #[test]
-    fn upgrade_ready_when_existing_install_is_configured() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("lqos-setup-upgrade-ready-{}", std::process::id()));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
-        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
-
-        let config = configured_bridge_config(temp_dir.display().to_string());
-        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
-        assert!(readiness.all_ready());
-
-        let _ = std::fs::remove_file(temp_dir.join("network.json"));
-        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn upgrade_not_ready_without_required_runtime_inputs() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "lqos-setup-upgrade-missing-files-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-
-        let config = configured_bridge_config(temp_dir.display().to_string());
-        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
-        assert!(!readiness.all_ready());
-        assert!(!readiness.network_json_present);
-        assert!(!readiness.shaped_devices_present);
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn upgrade_not_ready_when_bridge_interfaces_are_not_distinct() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "lqos-setup-upgrade-same-iface-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
-        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
-
-        let mut config = configured_bridge_config(temp_dir.display().to_string());
-        if let Some(bridge) = config.bridge.as_mut() {
-            bridge.to_network = bridge.to_internet.clone();
-        }
-        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
-        assert!(!readiness.all_ready());
-        assert!(!readiness.interfaces_ready);
-
-        let _ = std::fs::remove_file(temp_dir.join("network.json"));
-        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-}
-
 fn finalize(ui: &mut cursive::Cursive) {
     // If we cannot load the config but a file exists, warn the user and
     // take a backup before proceeding to create a new config.
@@ -482,4 +406,82 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
             .title("Setup Complete")
             .button("OK", |ui| ui.quit()),
     );
+}
+
+#[cfg(test)]
+mod test {
+    use super::upgrade_readiness_for_config_with;
+
+    fn configured_bridge_config(lqos_directory: String) -> lqos_config::Config {
+        let mut config = lqos_config::Config {
+            lqos_directory,
+            bridge: Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: true,
+                to_internet: "wan0".to_string(),
+                to_network: "lan0".to_string(),
+            }),
+            single_interface: None,
+            ..lqos_config::Config::default()
+        };
+        config.queues.downlink_bandwidth_mbps = 1000;
+        config.queues.uplink_bandwidth_mbps = 1000;
+        config
+    }
+
+    #[test]
+    fn upgrade_ready_when_existing_install_is_configured() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("lqos-setup-upgrade-ready-{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
+        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
+
+        let config = configured_bridge_config(temp_dir.display().to_string());
+        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
+        assert!(readiness.all_ready());
+
+        let _ = std::fs::remove_file(temp_dir.join("network.json"));
+        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn upgrade_not_ready_without_required_runtime_inputs() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "lqos-setup-upgrade-missing-files-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let config = configured_bridge_config(temp_dir.display().to_string());
+        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
+        assert!(!readiness.all_ready());
+        assert!(!readiness.network_json_present);
+        assert!(!readiness.shaped_devices_present);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn upgrade_not_ready_when_bridge_interfaces_are_not_distinct() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "lqos-setup-upgrade-same-iface-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
+        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
+
+        let mut config = configured_bridge_config(temp_dir.display().to_string());
+        if let Some(bridge) = config.bridge.as_mut() {
+            bridge.to_network = bridge.to_internet.clone();
+        }
+        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
+        assert!(!readiness.all_ready());
+        assert!(!readiness.interfaces_ready);
+
+        let _ = std::fs::remove_file(temp_dir.join("network.json"));
+        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

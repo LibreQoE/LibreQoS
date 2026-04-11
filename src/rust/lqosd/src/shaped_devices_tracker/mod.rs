@@ -6,9 +6,10 @@ use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{
     ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice,
-    TopologyShapingInputsFile, load_config, topology_shaping_inputs_path,
+    TopologyShapingInputsFile, load_config, topology_import_path, topology_shaping_inputs_path,
 };
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
+use lqos_topology_compile::TopologyImportFile;
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::hash_to_i64;
 use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
@@ -297,10 +298,39 @@ fn publish_shaped_devices(new_file: ConfigShapedDevices) {
     crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
 }
 
+fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
+    config.uisp_integration.enable_uisp
+        || config.splynx_integration.enable_splynx
+        || config
+            .netzur_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_netzur)
+        || config
+            .visp_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_visp)
+        || config.powercode_integration.enable_powercode
+        || config.sonar_integration.enable_sonar
+        || config
+            .wispgate_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_wispgate)
+}
+
+fn load_shaped_devices_from_active_ingress() -> Result<ConfigShapedDevices> {
+    let config = load_config()?;
+    if integration_ingress_enabled(config.as_ref())
+        && let Some(topology_import) = TopologyImportFile::load(config.as_ref())?
+    {
+        return Ok(topology_import.into_imported_bundle().shaped_devices);
+    }
+    Ok(ConfigShapedDevices::load()?)
+}
+
 fn load_shaped_devices() {
-    debug!("ShapedDevices.csv has changed. Attempting to load it.");
+    debug!("Shaped-device ingress has changed. Attempting to load it.");
     for attempt in 1..=SHAPED_DEVICES_RELOAD_ATTEMPTS {
-        match ConfigShapedDevices::load() {
+        match load_shaped_devices_from_active_ingress() {
             Ok(new_file) => {
                 publish_shaped_devices(new_file);
                 return;
@@ -308,14 +338,14 @@ fn load_shaped_devices() {
             Err(err) => {
                 if attempt < SHAPED_DEVICES_RELOAD_ATTEMPTS {
                     warn!(
-                        "ShapedDevices.csv reload attempt {attempt}/{} failed: {err}. Retrying after {} ms.",
+                        "Shaped-device ingress reload attempt {attempt}/{} failed: {err}. Retrying after {} ms.",
                         SHAPED_DEVICES_RELOAD_ATTEMPTS, SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS
                     );
                     std::thread::sleep(Duration::from_millis(SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS));
                 } else {
                     let current = SHAPED_DEVICES.load();
                     warn!(
-                        "ShapedDevices.csv reload failed after {} attempts: {err}. Keeping last-known-good data with {} devices.",
+                        "Shaped-device ingress reload failed after {} attempts: {err}. Keeping last-known-good data with {} devices.",
                         SHAPED_DEVICES_RELOAD_ATTEMPTS,
                         current.devices.len()
                     );
@@ -329,9 +359,9 @@ pub fn shaped_devices_watcher() -> Result<()> {
     std::thread::Builder::new()
         .name("ShapedDevices Watcher".to_string())
         .spawn(|| {
-            debug!("Watching for ShapedDevices.csv changes");
+            debug!("Watching for shaped-device ingress changes");
             if let Err(e) = watch_for_shaped_devices_changing() {
-                error!("Error watching for ShapedDevices.csv: {:?}", e);
+                error!("Error watching for shaped-device ingress: {:?}", e);
             }
         })?;
     Ok(())
@@ -340,16 +370,17 @@ pub fn shaped_devices_watcher() -> Result<()> {
 /// Fires up a Linux file system watcher than notifies
 /// when `ShapedDevices.csv` changes, and triggers a reload.
 fn watch_for_shaped_devices_changing() -> Result<()> {
-    let watch_path = ConfigShapedDevices::path();
-    if watch_path.is_err() {
-        error!("Unable to generate path for ShapedDevices.csv");
-        return Err(anyhow::Error::msg(
-            "Unable to create path for ShapedDevices.csv",
-        ));
-    }
-    let watch_path = watch_path?;
+    let config = load_config()?;
+    let (watch_name, watch_path) = if integration_ingress_enabled(config.as_ref()) {
+        (
+            "topology_import.json",
+            topology_import_path(config.as_ref()),
+        )
+    } else {
+        ("ShapedDevices.csv", ConfigShapedDevices::path()?)
+    };
 
-    let mut watcher = FileWatcher::new("ShapedDevices.csv", watch_path);
+    let mut watcher = FileWatcher::new(watch_name, watch_path);
     watcher.set_file_exists_callback(load_shaped_devices);
     watcher.set_file_created_callback(load_shaped_devices);
     watcher.set_file_changed_callback(load_shaped_devices);

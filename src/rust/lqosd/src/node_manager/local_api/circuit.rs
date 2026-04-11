@@ -14,6 +14,14 @@ pub struct CircuitParentNode {
     pub id: Option<String>,
 }
 
+/// Circuit-page queue-stats mode.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CircuitQueueStatsMode {
+    /// Standard per-circuit queue stats are expected to be available.
+    Live,
+}
+
 /// Circuit-page payload containing shaped devices plus optional Ethernet advisory metadata.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircuitByIdData {
@@ -21,6 +29,8 @@ pub struct CircuitByIdData {
     pub devices: Vec<ShapedDevice>,
     /// Canonical circuit parent resolved from the shaped-device parent and `network.json`.
     pub parent_node: Option<CircuitParentNode>,
+    /// Queue-stats behavior for the active topology mode.
+    pub queue_stats_mode: CircuitQueueStatsMode,
     /// Optional negotiated-Ethernet advisory derived from integration metadata.
     pub ethernet_advisory: Option<CircuitEthernetMetadata>,
 }
@@ -71,6 +81,10 @@ fn circuit_parent_node(
         .or(canonical_parent)
 }
 
+fn queue_stats_mode() -> CircuitQueueStatsMode {
+    CircuitQueueStatsMode::Live
+}
+
 pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
     let safe_id = id.to_lowercase().trim().to_string();
     let reader = SHAPED_DEVICES.load();
@@ -85,10 +99,12 @@ pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
         None
     } else {
         let parent_node = circuit_parent_node(&safe_id, &mut devices);
+        let queue_stats_mode = queue_stats_mode();
         let ethernet_advisory = load_ethernet_advisory(&safe_id, &devices);
         Some(CircuitByIdData {
             devices,
             parent_node,
+            queue_stats_mode,
             ethernet_advisory,
         })
     }

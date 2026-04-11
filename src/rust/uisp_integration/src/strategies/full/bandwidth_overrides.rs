@@ -54,29 +54,22 @@ pub fn get_site_bandwidth_overrides(
         );
     }
 
-    let mut materialized = materialize_operator_site_bandwidth_overrides(&operator_overrides);
-    if !materialized.is_empty() {
-        let legacy_path = legacy_bandwidth_csv_path(config);
-        if legacy_path.exists() {
-            warn!(
-                "Legacy {} is present but operator rate overrides already exist in lqos_overrides.json; the CSV is ignored.",
-                LEGACY_UISP_BANDWIDTH_FILE
-            );
+    if let Some(migrated) =
+        try_migrate_legacy_csv_to_operator_overrides(config, &mut operator_overrides)?
+    {
+        let materialized = materialize_operator_site_bandwidth_overrides(&operator_overrides);
+        if materialized.is_empty() {
+            return Ok(migrated);
         }
+        return Ok(materialized);
+    }
+
+    let materialized = materialize_operator_site_bandwidth_overrides(&operator_overrides);
+    if !materialized.is_empty() {
         info!(
             "Using {} UISP bandwidth override(s) from operator AdjustSiteSpeed entries in lqos_overrides.json",
             materialized.len()
         );
-        return Ok(materialized);
-    }
-
-    if let Some(migrated) =
-        try_migrate_legacy_csv_to_operator_overrides(config, &mut operator_overrides)?
-    {
-        materialized = materialize_operator_site_bandwidth_overrides(&operator_overrides);
-        if materialized.is_empty() {
-            return Ok(migrated);
-        }
         return Ok(materialized);
     }
 
@@ -138,6 +131,19 @@ fn try_migrate_legacy_csv_to_operator_overrides(
     }
 
     for override_row in &migrated {
+        let already_present = operator_overrides
+            .network_adjustments()
+            .iter()
+            .any(|adjustment| {
+                matches!(
+                    adjustment,
+                    NetworkAdjustment::AdjustSiteSpeed { site_name, .. }
+                        if site_name == &override_row.site_name
+                )
+            });
+        if already_present {
+            continue;
+        }
         operator_overrides.set_site_bandwidth_override(
             None,
             override_row.site_name.clone(),
@@ -233,8 +239,11 @@ fn rename_legacy_csv_to_backup(file_path: &Path) -> std::io::Result<()> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let backup_name = format!("{LEGACY_UISP_BANDWIDTH_FILE}.migrated-{unix_secs}");
-    let backup_path = file_path.with_file_name(backup_name);
+    let mut backup_path = file_path.with_file_name(format!("{LEGACY_UISP_BANDWIDTH_FILE}.backup"));
+    if backup_path.exists() {
+        backup_path =
+            file_path.with_file_name(format!("{LEGACY_UISP_BANDWIDTH_FILE}.backup-{unix_secs}"));
+    }
     fs::rename(file_path, backup_path)
 }
 
@@ -374,7 +383,8 @@ mod test {
                 upload_bandwidth_mbps: Some(45.0),
             }]
         );
-        assert!(legacy_bandwidth_csv_path(&config).exists());
+        assert!(!legacy_bandwidth_csv_path(&config).exists());
+        assert!(dir.join("integrationUISPbandwidths.csv.backup").exists());
     }
 
     #[test]

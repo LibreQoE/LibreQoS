@@ -38,6 +38,12 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 If integration-related, also include:
 
 ```bash
+ls -lh /opt/libreqos/src/topology_import.json /opt/libreqos/src/shaping_inputs.json
+```
+
+If you run a manual or custom-file deployment instead of a built-in integration, include:
+
+```bash
 ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
 ```
 
@@ -150,9 +156,7 @@ Routine package upgrades now invoke `lqos_setup --skip-if-ready` during `postins
 
 If startup shaping fails because `shaping_inputs.json` is missing or stale, current builds leave the scheduler running in a degraded state and wait for the next scheduled full refresh to recover. The high-frequency topology refresh tick stays disabled until one shaping pass completes successfully, so repeated 3-second refresh attempts should not continue hammering a fresh install that has not produced runtime topology inputs yet.
 
-Current builds no longer gate startup shaping on file mtimes. Instead, `lqos_topology` publishes `/opt/libreqos/src/topology_runtime_status.json` with a `source_generation` derived from the current shaping inputs, and `lqos_scheduler` waits for `ready: true` for that exact generation before calling `refreshShapers()`.
-
-If scheduler startup is degraded with a message about topology runtime still building, that does not necessarily mean the scheduler service died. It means the current generation of `network.json`, `ShapedDevices.csv`, `circuit_anchors.json`, and active topology state has not finished producing committed runtime outputs yet. Once topology finishes and the status file flips to `ready: true` for the same generation, scheduled shaping refreshes recover automatically without restarting the service.
+If scheduler startup is degraded with a message about topology runtime still building, that usually means LibreQoS is still finishing an import or refreshing shaping data. Give the current cycle a little time to complete, then recheck Scheduler Status before changing unrelated settings.
 
 If scheduler startup is degraded with a message that topology runtime failed for the current generation, inspect:
 
@@ -162,15 +166,15 @@ ls -lh /opt/libreqos/src/topology_effective_state.json /opt/libreqos/src/network
 journalctl -u lqos_scheduler --since "30 minutes ago"
 ```
 
-If Insight shows sites buried under AP/backhaul chains or only a narrow subset of sites loads cleanly, check whether the host is on a build before the separate Insight logical-topology export. Current builds submit an Insight-only logical-parent tree derived from canonical topology state, while `compatibility_network_json` remains reserved for local compatibility and `network.effective.json` generation.
+If Topology Manager changes or imports seem stuck on older data, check whether LibreQoS set older snapshots aside under `/opt/libreqos/src/.topology_stale/`, then review recent scheduler logs before retrying.
 
-To inspect the exact topology JSON that `lqosd` is preparing for Insight, review:
+If Insight topology looks wrong, review the current troubleshooting snapshot that `lqosd` is preparing for Insight:
 
 ```bash
 cat /opt/libreqos/src/network.insight.debug.json
 ```
 
-This debug snapshot is separate from `network.insight.json`. The latter is an installed-runtime input path used by shaping components when Insight topology mode is enabled, while `network.insight.debug.json` is only a diagnostic snapshot of the payload source tree.
+Treat `network.insight.debug.json` as a troubleshooting snapshot only; do not edit it.
 
 If specific APs or switches appear multiple times with suffixed names such as `... [AP deadbeef]`, check whether UISP is returning duplicate rows for the same device ID. Current builds defensively deduplicate raw UISP devices by `identification.id` before topology graph construction, and skip any residual duplicate device IDs during graph assembly.
 
@@ -180,6 +184,7 @@ If an integration subprocess fails, current builds keep the scheduler alive, pub
 
 Recent builds expose scheduler readiness/state in the WebUI (Node Manager).
 If the scheduler is still starting, the sidebar now reports the current startup phase and a coarse progress ring rather than only a spinner.
+Current builds also treat scheduler progress, output, and error bus messages as proof that the scheduler is alive, so the sidebar should not stay stuck on `Scheduler available: false` while the scheduler is actively reporting work.
 
 If scheduler status appears down/stale:
 1. Verify both services:
@@ -249,7 +254,7 @@ Site Map has one extra dependency beyond normal WebUI data feeds: current builds
 If Site Map alone is blank or slow:
 1. Confirm `lqosd` is healthy.
 2. Confirm the box can reach `insight.libreqos.com` from its management network.
-3. Wait briefly and reload the page; the browser retries tile requests automatically while cold tiles are being populated upstream.
+3. Wait briefly and reload the page; the map page retries tile requests automatically while cold tiles are being populated upstream.
 4. Check recent `lqosd` logs:
 ```
 journalctl -u lqosd --since "10 minutes ago"

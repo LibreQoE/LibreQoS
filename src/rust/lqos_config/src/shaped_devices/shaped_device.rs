@@ -34,9 +34,9 @@ pub struct ShapedDevice {
 
     /// Optional compatibility field for a stable topology node identifier.
     ///
-    /// Built-in integrations should prefer `circuit_anchors.json` for circuit
-    /// anchor resolution. This CSV field remains accepted for DIY and legacy
-    /// operator-managed inputs.
+    /// Built-in integrations should prefer `topology_compiled_shaping.json`
+    /// for circuit anchor resolution. This CSV field remains accepted for DIY
+    /// and legacy operator-managed inputs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anchor_node_id: Option<String>,
 

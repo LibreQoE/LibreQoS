@@ -12,9 +12,9 @@ Use esta integración cuando Sonar sea su fuente de verdad CRM/NMS.
 
 ## Notas operativas
 
-- `ShapedDevices.csv` se regenera en cada sincronización.
-- `network.json` depende de su configuración de sobrescritura.
-- Recomendado: mantener `always_overwrite_network_json = true` para alinear topología con Sonar en cada ciclo.
+- La integración refresca automáticamente los datos importados y de shaping que LibreQoS usa con Sonar.
+- `network.json` queda para despliegues DIY o manuales.
+- Use la WebUI para confirmar que la importación terminó correctamente.
 
 ## Referencia completa
 

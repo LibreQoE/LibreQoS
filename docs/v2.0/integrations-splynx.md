@@ -1,6 +1,6 @@
 # Splynx Integration
 
-> **⚠️ Breaking Change Notice**: Prior to v1.5-RC-2, the default Splynx strategy was `full`. Starting with v1.5-RC-2, the default strategy is `ap_only` for improved CPU performance. If you require the previous behavior, explicitly set `strategy = "full"` in your Splynx configuration section.
+> **⚠️ Breaking Change Notice**: Prior to v1.5-RC-2, the default Splynx strategy was `full`. The recommended shared topology mode is now `ap_site` as the best default balance of structure and operator clarity. If you require the previous behavior, explicitly set `topology.compile_mode = "full"`.
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.
 
@@ -8,14 +8,10 @@ First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret
 
 Start with this baseline unless you have a known reason to deviate:
 
-- `strategy = "ap_only"` (default, lowest confusion)
+- `topology.compile_mode = "ap_site"` (default)
 - `enable_splynx = true`
-- `always_overwrite_network_json = true` for integration-driven deployments
 
 Then run one manual sync and validate outputs before enabling frequent scheduler refresh cycles.
-
-Overwrite policy:
-- Recommended: keep `always_overwrite_network_json = true` so topology stays aligned with Splynx on each refresh cycle.
 
 ### Topology Strategies
 
@@ -24,21 +20,22 @@ LibreQoS supports multiple topology strategies for Splynx integration to balance
 | Strategy | Description | CPU Impact | Use Case |
 |----------|-------------|------------|----------|
 | `flat` | Only shapes subscribers, no hierarchy | Lowest | Maximum performance, simple subscriber-only shaping |
-| `ap_only` | Single layer: AP → Clients | Low | **Default**. Best balance of performance and structure |
-| `ap_site` | Two layers: Site → AP → Clients | Medium | Site-level aggregation with moderate complexity |
-| `full` | Complete topology mapping | Highest | Full network hierarchy representation |
+| `ap_only` | Single layer: AP → Clients | Low | Lowest overhead when site-level grouping is not needed |
+| `ap_site` | Two layers: Site → AP → Clients | Medium | **Default**. Best balance of structure and operator clarity |
+| `full` | Complete monitoring-parent topology mapping | Highest | Preserves the richer Splynx monitoring hierarchy instead of flattening to Network Sites |
 
-Configure the strategy in `/etc/lqos.conf` under the `[splynx_integration]` section:
+When Splynx `full` cannot infer a circuit parent from `access_device` or router metadata, LibreQoS now groups those circuits under a single generated `LibreQoS Unattached [Site]` node instead of leaving them fully unresolved at runtime.
+
+Configure the shared topology mode in `/etc/lqos.conf` under the `[topology]` section:
 
 ```ini
-[splynx_integration]
-# ... other splynx settings ...
-strategy = "ap_only"
+[topology]
+compile_mode = "ap_site"
 ```
 
 **Performance Considerations:**
 - `flat` and `ap_only` strategies significantly reduce CPU load by limiting network depth
-- Choose `ap_only` for most deployments unless you need site-level traffic aggregation
+- Choose `ap_site` by default, and move to `ap_only` only when you want lower overhead and can give up site-level grouping
 - Only use `full` if you require complete network topology representation and have adequate CPU resources
 
 ### Promote to Root Nodes (Performance Optimization)
@@ -101,10 +98,12 @@ To test the Splynx Integration, use
 python3 integrationSplynx.py
 ```
 
-On the first successful run, it creates `ShapedDevices.csv` and `network.json`.
-ShapedDevices.csv will be overwritten every time the Splynx integration is run.
+On the first successful run, it creates the Splynx import and shaping files LibreQoS needs for scheduled refreshes.
+Legacy `integrationSplynxBandwidths.csv` values are migrated into operator `AdjustSiteSpeed` overrides in `lqos_overrides.json`, and the original CSV is renamed to a `.backup` file.
 
 Current builds also expose a shared Ethernet port headroom policy under `Configuration -> Integrations -> Integration Defaults`. Integrations that can supply negotiated subscriber-facing port speed use a conservative default multiplier of `0.94` unless the operator overrides it.
+Current builds also expose the shared topology compile mode under `Configuration -> Integrations -> Integration Defaults`. Existing `splynx_integration.strategy` values are retained only as a compatibility mirror during upgrade.
+Topology Manager now receives a native infrastructure topology export for Splynx imports, so real sites and APs use their resolved parent chain instead of being reconstructed from the compatibility tree. Customer-derived generated sites stay compatibility-only: they are excluded from canonical/editor topology and circuits shape under the nearest real infrastructure parent instead. Current Python-backed imports are intentionally conservative: infrastructure nodes import as fixed roots or fixed-parent branches unless the importer can provide a bounded, trustworthy set of alternative parents. When a bounded move set is available, it is limited to the node's current parent plus nearby sibling-parent alternatives under the same upstream branch, or peer root parents of the same type when the current parent is itself a root.
 
 You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_splynx = true``` under the ```[splynx_integration]``` section in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.
@@ -117,8 +116,9 @@ python3 integrationSplynx.py
 ```
 2. Confirm files exist and were updated:
 ```shell
-ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+ls -lh /opt/libreqos/src/topology_import.json /opt/libreqos/src/shaping_inputs.json
 ```
+Built-in Splynx imports refresh LibreQoS's imported topology and shaping data automatically. They do not use `network.json` or `ShapedDevices.csv` as the normal working files for this integration.
 3. Confirm services are healthy:
 ```shell
 sudo systemctl status lqosd lqos_scheduler
@@ -132,7 +132,7 @@ If sync looks successful but data is incomplete, recheck API permissions and str
 
 You can also modify the the file `integrationSplynxBandwidths.csv` to override the default bandwidths for each Node (Site, AP).
 
-Tree-page `Operator Override` edits are separate from this legacy Splynx file. Current builds write those operator-owned node rate changes to `lqos_overrides.json` and do not rewrite `integrationSplynxBandwidths.csv`.
+Rate overrides saved from the tree page are separate from this legacy Splynx CSV workflow. Pick one long-term override method for a given node so your changes stay predictable.
 
 A template is available in the `/opt/libreqos/src` folder. To utilize the template, copy the file `integrationSplynxBandwidths.template.csv` (removing the `.template` part of the filename) and set the appropriate information inside each file. For example, if you want to change the set bandwidth for a site, you would do:
 ```
@@ -140,7 +140,7 @@ sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos
 ```
 And edit the CSV using LibreOffice or your preferred CSV editor.
 
-To avoid conflicting sources of truth, prefer one durable override path per node: either the legacy Splynx CSV workflow or the operator override layer.
+To avoid conflicting edits, prefer one long-term override path per node: either the legacy Splynx CSV workflow or WebUI overrides.
 
 
 ## Related Pages
