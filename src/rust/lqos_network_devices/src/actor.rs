@@ -1,4 +1,4 @@
-use crate::dynamic::CircuitObservation;
+use crate::dynamic::{CircuitObservation, expired_dynamic_circuit_ids};
 use crate::dynamic_store::{load_dynamic_circuits_from_disk, persist_dynamic_circuits_to_disk};
 use crate::state;
 use crate::{DaemonHooks, load_network_json, load_shaped_devices};
@@ -13,6 +13,7 @@ use tracing::{debug, error, warn};
 
 const RELOAD_RETRY_DELAY_MS: u64 = 500;
 const RELOAD_ATTEMPTS: usize = 2;
+const DYNAMIC_CIRCUITS_MAINTENANCE_TICK_SECONDS: u64 = 60;
 
 static ACTOR_SENDER: OnceCell<Sender<NetworkDevicesCommand>> = OnceCell::new();
 
@@ -148,41 +149,57 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
     }
     reload_dynamic_circuits_inner("startup");
 
-    while let Ok(command) = rx.recv() {
-        match command {
-            NetworkDevicesCommand::ReloadShapedDevices { reason, reply } => {
-                let result = reload_shaped_devices_inner(&reason, hooks.as_deref());
-                let _ = reply.send(result);
-            }
-            NetworkDevicesCommand::ReloadNetworkJson { reason, reply } => {
-                let result = reload_network_json_inner(&reason, hooks.as_deref());
-                let _ = reply.send(result);
-            }
-            NetworkDevicesCommand::ApplyShapedDevicesSnapshot {
-                reason,
-                shaped,
-                reply,
-            } => {
-                debug!("Publishing shaped-devices snapshot reason={reason}");
-                state::publish_shaped_devices(*shaped);
-                if let Some(hooks) = &hooks {
-                    hooks.on_shaped_devices_updated();
+    let tick = crossbeam_channel::tick(Duration::from_secs(
+        DYNAMIC_CIRCUITS_MAINTENANCE_TICK_SECONDS,
+    ));
+
+    loop {
+        crossbeam_channel::select! {
+            recv(rx) -> msg => {
+                let command = match msg {
+                    Ok(value) => value,
+                    Err(_) => break,
+                };
+
+                match command {
+                    NetworkDevicesCommand::ReloadShapedDevices { reason, reply } => {
+                        let result = reload_shaped_devices_inner(&reason, hooks.as_deref());
+                        let _ = reply.send(result);
+                    }
+                    NetworkDevicesCommand::ReloadNetworkJson { reason, reply } => {
+                        let result = reload_network_json_inner(&reason, hooks.as_deref());
+                        let _ = reply.send(result);
+                    }
+                    NetworkDevicesCommand::ApplyShapedDevicesSnapshot {
+                        reason,
+                        shaped,
+                        reply,
+                    } => {
+                        debug!("Publishing shaped-devices snapshot reason={reason}");
+                        state::publish_shaped_devices(*shaped);
+                        if let Some(hooks) = &hooks {
+                            hooks.on_shaped_devices_updated();
+                        }
+                        let _ = reply.send(Ok(()));
+                    }
+                    NetworkDevicesCommand::ReportObservations { observations } => {
+                        handle_observations(&observations);
+                    }
+                    NetworkDevicesCommand::UpsertDynamicCircuit {
+                        shaped_device,
+                        reply,
+                    } => {
+                        let result = upsert_dynamic_circuit_inner(*shaped_device);
+                        let _ = reply.send(result);
+                    }
+                    NetworkDevicesCommand::RemoveDynamicCircuit { circuit_id, reply } => {
+                        let result = remove_dynamic_circuit_inner(&circuit_id);
+                        let _ = reply.send(result);
+                    }
                 }
-                let _ = reply.send(Ok(()));
             }
-            NetworkDevicesCommand::ReportObservations { observations } => {
-                handle_observations(&observations);
-            }
-            NetworkDevicesCommand::UpsertDynamicCircuit {
-                shaped_device,
-                reply,
-            } => {
-                let result = upsert_dynamic_circuit_inner(*shaped_device);
-                let _ = reply.send(result);
-            }
-            NetworkDevicesCommand::RemoveDynamicCircuit { circuit_id, reply } => {
-                let result = remove_dynamic_circuit_inner(&circuit_id);
-                let _ = reply.send(result);
+            recv(tick) -> _ => {
+                prune_expired_dynamic_circuits_inner(hooks.as_deref());
             }
         }
     }
@@ -204,6 +221,65 @@ fn reload_dynamic_circuits_inner(reason: &str) {
     let circuits = load_dynamic_circuits_from_disk();
     debug!("Loaded {} dynamic circuits reason={reason}", circuits.len());
     state::publish_dynamic_circuits_snapshot(circuits);
+}
+
+fn prune_expired_dynamic_circuits_inner(hooks: Option<&dyn DaemonHooks>) {
+    let Ok(config) = lqos_config::load_config() else {
+        return;
+    };
+    let Some(dynamic_cfg) = config.dynamic_circuits.as_ref() else {
+        return;
+    };
+    if !dynamic_cfg.enabled {
+        return;
+    }
+    let ttl_seconds = dynamic_cfg.ttl_seconds;
+    if ttl_seconds == 0 {
+        return;
+    }
+
+    let Ok(now_unix) = lqos_utils::unix_time::unix_now() else {
+        return;
+    };
+
+    let snapshot = state::dynamic_circuits_snapshot();
+    if snapshot.is_empty() {
+        return;
+    }
+
+    let mut expired_ids = expired_dynamic_circuit_ids(snapshot.as_ref(), now_unix, ttl_seconds);
+    if expired_ids.is_empty() {
+        return;
+    }
+    expired_ids.sort();
+    expired_ids.dedup();
+
+    let expired_keys: HashSet<String> = expired_ids
+        .iter()
+        .map(|id| normalize_circuit_id_key(id))
+        .collect();
+    let updated: Vec<_> = snapshot
+        .iter()
+        .filter(|circuit| {
+            let key = normalize_circuit_id_key(&circuit.shaped.circuit_id);
+            !expired_keys.contains(&key)
+        })
+        .cloned()
+        .collect();
+
+    if let Err(err) = persist_dynamic_circuits_to_disk(&updated) {
+        warn!("Unable to persist dynamic circuits after TTL pruning: {err:?}");
+        return;
+    }
+    state::publish_dynamic_circuits_snapshot(updated);
+    debug!(
+        "Pruned {} expired dynamic circuits ttl_seconds={ttl_seconds}",
+        expired_ids.len()
+    );
+
+    if let Some(hooks) = hooks {
+        hooks.on_dynamic_circuits_expired(&expired_ids);
+    }
 }
 
 fn upsert_dynamic_circuit_inner(mut shaped_device: lqos_config::ShapedDevice) -> Result<()> {

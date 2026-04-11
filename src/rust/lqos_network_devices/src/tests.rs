@@ -134,3 +134,56 @@ fn dynamic_circuit_last_seen_updates_for_seen_hashes() {
 
     crate::state::publish_dynamic_circuits_snapshot(original.as_ref().clone());
 }
+
+#[test]
+fn dynamic_circuit_expiration_helper_respects_ttl_boundary() {
+    let _guard = TEST_LOCK.lock();
+
+    let now_unix = 1_000;
+    let ttl_seconds = 300;
+
+    let mut alive = ShapedDevice::default();
+    alive.circuit_id = "alive".into();
+    alive.device_id = "device-alive".into();
+
+    let mut expired = ShapedDevice::default();
+    expired.circuit_id = "expired".into();
+    expired.device_id = "device-expired".into();
+
+    let circuits = vec![
+        DynamicCircuit {
+            shaped: alive,
+            // age == ttl => not expired
+            last_seen_unix: now_unix - ttl_seconds,
+        },
+        DynamicCircuit {
+            shaped: expired,
+            // age > ttl => expired
+            last_seen_unix: now_unix - ttl_seconds - 1,
+        },
+    ];
+
+    let mut ids = crate::dynamic::expired_dynamic_circuit_ids(&circuits, now_unix, ttl_seconds);
+    ids.sort();
+    assert_eq!(ids, vec!["expired".to_string()]);
+}
+
+#[test]
+fn dynamic_circuit_expiration_helper_expires_zero_last_seen() {
+    let _guard = TEST_LOCK.lock();
+
+    let now_unix = 1_000;
+    let ttl_seconds = 300;
+
+    let mut shaped = ShapedDevice::default();
+    shaped.circuit_id = "zero".into();
+    shaped.device_id = "device-zero".into();
+
+    let circuits = vec![DynamicCircuit {
+        shaped,
+        last_seen_unix: 0,
+    }];
+
+    let ids = crate::dynamic::expired_dynamic_circuit_ids(&circuits, now_unix, ttl_seconds);
+    assert_eq!(ids, vec!["zero".to_string()]);
+}

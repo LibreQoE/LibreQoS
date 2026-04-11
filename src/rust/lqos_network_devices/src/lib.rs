@@ -33,6 +33,10 @@ pub trait DaemonHooks: Send + Sync + 'static {
     fn on_shaped_devices_updated(&self);
     /// Called after a new `network.json` snapshot is published.
     fn on_network_json_updated(&self);
+    /// Called after one or more dynamic circuits are expired and pruned by the runtime actor.
+    ///
+    /// Default implementation does nothing so non-daemon callers don't need to handle it.
+    fn on_dynamic_circuits_expired(&self, _circuit_ids: &[String]) {}
 }
 
 /// Starts the runtime actor and directory watcher used by long-running daemons.
