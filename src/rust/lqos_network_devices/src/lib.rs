@@ -8,6 +8,7 @@
 mod actor;
 mod catalog;
 mod directory_watcher;
+mod dynamic;
 mod hash_cache;
 mod state;
 mod topology;
@@ -21,6 +22,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 pub use catalog::{CircuitRateCaps, ShapedDevicesCatalog};
+pub use dynamic::{CircuitObservation, DynamicCircuit};
 pub use hash_cache::ShapedDeviceHashCache;
 pub use topology::{ResolvedParentNode, resolve_parent_node, resolve_parent_node_reference};
 
@@ -70,6 +72,13 @@ pub fn shaped_device_hash_cache_snapshot() -> Arc<ShapedDeviceHashCache> {
     state::shaped_device_hash_cache_snapshot()
 }
 
+/// Returns the current in-memory dynamic circuit overlay snapshot.
+///
+/// Note: This is a runtime-only overlay and does not mutate `ShapedDevices.csv`.
+pub fn dynamic_circuits_snapshot() -> Arc<Vec<DynamicCircuit>> {
+    state::dynamic_circuits_snapshot()
+}
+
 /// Run a closure with a read-only view of the current in-memory `NetworkJson`.
 pub fn with_network_json_read<R>(f: impl FnOnce(&NetworkJson) -> R) -> R {
     state::with_network_json_read(f)
@@ -95,6 +104,13 @@ pub fn request_reload_network_json(reason: &str) -> Result<()> {
 /// Publishes a caller-provided shaped-devices snapshot through the runtime actor.
 pub fn apply_shaped_devices_snapshot(reason: &str, shaped: ConfigShapedDevices) -> Result<()> {
     actor::apply_shaped_devices_snapshot(reason, shaped)
+}
+
+/// Reports kernel observations that may indicate dynamic circuit activity.
+///
+/// This function is not pure: it sends a message to the runtime actor when running.
+pub fn report_observations(observations: &[CircuitObservation]) {
+    actor::report_observations(observations)
 }
 
 /// Replaces the in-memory `ShapedDevices.csv` snapshot without involving the runtime actor.

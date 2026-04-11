@@ -1,9 +1,12 @@
-use crate::{ShapedDevicesCatalog, resolve_parent_node_reference, with_network_json_write};
+use crate::{
+    DynamicCircuit, ShapedDevicesCatalog, resolve_parent_node_reference, with_network_json_write,
+};
 use lqos_config::{ConfigShapedDevices, NetworkJsonNode, ShapedDevice};
 use lqos_utils::rtt::RttBuffer;
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -94,4 +97,40 @@ fn resolve_parent_node_reference_prefers_id_then_name_then_alias() {
     let by_alias = resolve_parent_node_reference("B-alias", None)
         .expect("Expected active attachment alias to resolve");
     assert_eq!(by_alias.name, "Site B");
+}
+
+#[test]
+fn dynamic_circuit_last_seen_updates_for_seen_hashes() {
+    let _guard = TEST_LOCK.lock();
+
+    let original = crate::state::dynamic_circuits_snapshot();
+
+    let mut shaped = ShapedDevice::default();
+    shaped.circuit_id = "dynamic-circuit".into();
+    shaped.device_id = "dynamic-device".into();
+    shaped.circuit_hash = 10;
+    shaped.device_hash = 100;
+
+    crate::state::publish_dynamic_circuits_snapshot(vec![DynamicCircuit {
+        shaped: shaped.clone(),
+        last_seen_unix: 0,
+    }]);
+
+    let mut seen_device_hashes: HashSet<i64> = HashSet::new();
+    seen_device_hashes.insert(shaped.device_hash);
+    let seen_circuit_hashes: HashSet<i64> = HashSet::new();
+    let now_unix = 1234;
+
+    let changed = crate::state::refresh_dynamic_circuits_last_seen_for_hashes(
+        &seen_device_hashes,
+        &seen_circuit_hashes,
+        now_unix,
+    );
+    assert!(changed);
+
+    let updated = crate::state::dynamic_circuits_snapshot();
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated[0].last_seen_unix, now_unix);
+
+    crate::state::publish_dynamic_circuits_snapshot(original.as_ref().clone());
 }

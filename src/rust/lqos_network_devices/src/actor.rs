@@ -1,8 +1,10 @@
+use crate::dynamic::CircuitObservation;
 use crate::state;
 use crate::{DaemonHooks, load_network_json, load_shaped_devices};
 use anyhow::{Result, anyhow};
 use crossbeam_channel::{Receiver, Sender};
 use once_cell::sync::OnceCell;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -72,6 +74,19 @@ pub(crate) fn apply_shaped_devices_snapshot(
         .map_err(|_| anyhow!("Apply shaped devices reply channel closed"))?
 }
 
+pub(crate) fn report_observations(observations: &[CircuitObservation]) {
+    if observations.is_empty() {
+        return;
+    }
+
+    let Some(sender) = ACTOR_SENDER.get().cloned() else {
+        return;
+    };
+    let _ = sender.try_send(NetworkDevicesCommand::ReportObservations {
+        observations: observations.to_vec(),
+    });
+}
+
 enum NetworkDevicesCommand {
     ReloadShapedDevices {
         reason: String,
@@ -85,6 +100,9 @@ enum NetworkDevicesCommand {
         reason: String,
         shaped: Box<lqos_config::ConfigShapedDevices>,
         reply: oneshot::Sender<Result<()>>,
+    },
+    ReportObservations {
+        observations: Vec<CircuitObservation>,
     },
 }
 
@@ -120,10 +138,81 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                 }
                 let _ = reply.send(Ok(()));
             }
+            NetworkDevicesCommand::ReportObservations { observations } => {
+                handle_observations(&observations);
+            }
         }
     }
 
     error!("lqos_network_devices actor stopped");
+}
+
+fn handle_observations(observations: &[CircuitObservation]) {
+    if observations.is_empty() {
+        return;
+    }
+
+    let catalog = state::shaped_devices_catalog();
+    let dynamic_snapshot = state::dynamic_circuits_snapshot();
+    let mut dynamic_device_hashes: HashSet<i64> = HashSet::new();
+    let mut dynamic_circuit_hashes: HashSet<i64> = HashSet::new();
+    dynamic_device_hashes.reserve(dynamic_snapshot.len());
+    dynamic_circuit_hashes.reserve(dynamic_snapshot.len());
+    for circuit in dynamic_snapshot.iter() {
+        dynamic_device_hashes.insert(circuit.shaped.device_hash);
+        dynamic_circuit_hashes.insert(circuit.shaped.circuit_hash);
+    }
+
+    let mut seen_device_hashes: HashSet<i64> = HashSet::new();
+    let mut seen_circuit_hashes: HashSet<i64> = HashSet::new();
+    let mut unknown_candidates: Vec<CircuitObservation> = Vec::new();
+
+    for observation in observations {
+        if catalog
+            .device_by_hashes(observation.device_hash, observation.circuit_hash)
+            .is_some()
+        {
+            continue;
+        }
+
+        if let Some(device_hash) = observation.device_hash
+            && dynamic_device_hashes.contains(&device_hash)
+        {
+            seen_device_hashes.insert(device_hash);
+            continue;
+        }
+
+        if let Some(circuit_hash) = observation.circuit_hash
+            && dynamic_circuit_hashes.contains(&circuit_hash)
+        {
+            seen_circuit_hashes.insert(circuit_hash);
+            continue;
+        }
+
+        unknown_candidates.push(*observation);
+    }
+
+    if (!seen_device_hashes.is_empty() || !seen_circuit_hashes.is_empty())
+        && let Ok(now_unix) = lqos_utils::unix_time::unix_now()
+    {
+        state::refresh_dynamic_circuits_last_seen_for_hashes(
+            &seen_device_hashes,
+            &seen_circuit_hashes,
+            now_unix,
+        );
+    }
+
+    if !unknown_candidates.is_empty() {
+        // TODO(dynamic-circuits): This is where unknown observations will be evaluated
+        // and potentially turned into dynamic circuit overlay entries.
+        //
+        // Unknown candidates are kernel observations whose hashes do not match static shaped
+        // devices and also do not match any existing dynamic circuits.
+        debug!(
+            "Received {} unknown circuit observations (dynamic circuit auto-create not implemented yet)",
+            unknown_candidates.len()
+        );
+    }
 }
 
 fn reload_shaped_devices_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) -> Result<()> {

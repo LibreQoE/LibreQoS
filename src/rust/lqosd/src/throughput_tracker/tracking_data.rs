@@ -11,7 +11,7 @@ use crate::{
     stats::HIGH_WATERMARK,
     throughput_tracker::flow_data::{FlowbeeEffectiveDirection, expire_rtt_flows, flowbee_rtt_map},
 };
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::BakeryCommands;
 use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
@@ -442,11 +442,67 @@ impl ThroughputTracker {
         net_json_calc: &mut NetworkJson,
         bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
     ) {
+        const MAX_UNKNOWN_OBSERVATIONS_PER_TICK: usize = 256;
+
+        let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
+        let mut dynamic_device_hashes: FxHashSet<i64> = FxHashSet::default();
+        let mut dynamic_circuit_hashes: FxHashSet<i64> = FxHashSet::default();
+        dynamic_device_hashes.reserve(dynamic_snapshot.len());
+        dynamic_circuit_hashes.reserve(dynamic_snapshot.len());
+        for circuit in dynamic_snapshot.iter() {
+            dynamic_device_hashes.insert(circuit.shaped.device_hash);
+            dynamic_circuit_hashes.insert(circuit.shaped.circuit_hash);
+        }
+
+        let mut reported_dynamic_device_hashes: FxHashSet<i64> = FxHashSet::default();
+        let mut reported_dynamic_circuit_hashes: FxHashSet<i64> = FxHashSet::default();
+        let mut observations: Vec<lqos_network_devices::CircuitObservation> = Vec::new();
+
         let mut changed_circuits = HashSet::new();
 
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let catalog = lqos_network_devices::shaped_devices_catalog();
         let mut raw_data = self.raw_data.lock();
+
+        #[allow(clippy::too_many_arguments)]
+        fn record_dynamic_observation(
+            observations: &mut Vec<lqos_network_devices::CircuitObservation>,
+            reported_dynamic_device_hashes: &mut FxHashSet<i64>,
+            reported_dynamic_circuit_hashes: &mut FxHashSet<i64>,
+            dynamic_device_hashes: &FxHashSet<i64>,
+            dynamic_circuit_hashes: &FxHashSet<i64>,
+            ip: XdpIpAddress,
+            device_hash: Option<i64>,
+            circuit_hash: Option<i64>,
+        ) {
+            if dynamic_device_hashes.is_empty() && dynamic_circuit_hashes.is_empty() {
+                return;
+            }
+
+            if let Some(device_hash) = device_hash
+                && dynamic_device_hashes.contains(&device_hash)
+                && reported_dynamic_device_hashes.insert(device_hash)
+            {
+                observations.push(lqos_network_devices::CircuitObservation {
+                    ip,
+                    device_hash: Some(device_hash),
+                    circuit_hash,
+                });
+                return;
+            }
+
+            if let Some(circuit_hash) = circuit_hash
+                && dynamic_circuit_hashes.contains(&circuit_hash)
+                && reported_dynamic_circuit_hashes.insert(circuit_hash)
+            {
+                observations.push(lqos_network_devices::CircuitObservation {
+                    ip,
+                    device_hash,
+                    circuit_hash: Some(circuit_hash),
+                });
+            }
+        }
+
         throughput_for_each(&mut |xdp_ip, counts| {
             let reduced = ReducedHostCounters::from_counters(counts);
             if let Some(entry) = raw_data.get_mut(xdp_ip) {
@@ -474,6 +530,26 @@ impl ThroughputTracker {
                     entry.network_json_parents = shaped_device.and_then(|device| {
                         net_json_calc.get_parents_for_circuit_id(&device.parent_node)
                     });
+
+                    if shaped_device.is_none() {
+                        record_dynamic_observation(
+                            &mut observations,
+                            &mut reported_dynamic_device_hashes,
+                            &mut reported_dynamic_circuit_hashes,
+                            &dynamic_device_hashes,
+                            &dynamic_circuit_hashes,
+                            *xdp_ip,
+                            entry.device_hash,
+                            entry.circuit_hash,
+                        );
+                        if observations.len() < MAX_UNKNOWN_OBSERVATIONS_PER_TICK {
+                            observations.push(lqos_network_devices::CircuitObservation {
+                                ip: *xdp_ip,
+                                device_hash: entry.device_hash,
+                                circuit_hash: entry.circuit_hash,
+                            });
+                        }
+                    }
                 }
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self_cycle;
@@ -481,6 +557,17 @@ impl ThroughputTracker {
                     if let Some(circuit_hash) = entry.circuit_hash {
                         changed_circuits.insert(circuit_hash);
                     }
+
+                    record_dynamic_observation(
+                        &mut observations,
+                        &mut reported_dynamic_device_hashes,
+                        &mut reported_dynamic_circuit_hashes,
+                        &dynamic_device_hashes,
+                        &dynamic_circuit_hashes,
+                        *xdp_ip,
+                        entry.device_hash,
+                        entry.circuit_hash,
+                    );
 
                     if let Some(parents) = &entry.network_json_parents {
                         net_json_calc.add_throughput_cycle(
@@ -538,6 +625,26 @@ impl ThroughputTracker {
                 let shaped_device =
                     Self::shaped_device_for_hashes(&catalog, device_hash, circuit_hash);
                 let circuit_id = shaped_device.map(|d| d.circuit_id.clone());
+
+                record_dynamic_observation(
+                    &mut observations,
+                    &mut reported_dynamic_device_hashes,
+                    &mut reported_dynamic_circuit_hashes,
+                    &dynamic_device_hashes,
+                    &dynamic_circuit_hashes,
+                    *xdp_ip,
+                    device_hash,
+                    circuit_hash,
+                );
+                if shaped_device.is_none() && observations.len() < MAX_UNKNOWN_OBSERVATIONS_PER_TICK
+                {
+                    observations.push(lqos_network_devices::CircuitObservation {
+                        ip: *xdp_ip,
+                        device_hash,
+                        circuit_hash,
+                    });
+                }
+
                 // Call the Bakery Queue Creation for new circuits
                 if let Some(circuit_hash) = circuit_hash
                     && let Ok(config) = lqos_config::load_config()
@@ -595,6 +702,10 @@ impl ThroughputTracker {
                 raw_data.insert(*xdp_ip, entry);
             }
         });
+
+        if !observations.is_empty() {
+            lqos_network_devices::report_observations(&observations);
+        }
 
         if !changed_circuits.is_empty()
             && let Err(e) = bakery_sender.send(BakeryCommands::OnCircuitActivity {
