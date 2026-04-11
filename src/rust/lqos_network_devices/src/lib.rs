@@ -37,6 +37,10 @@ pub trait DaemonHooks: Send + Sync + 'static {
     ///
     /// Default implementation does nothing so non-daemon callers don't need to handle it.
     fn on_dynamic_circuits_expired(&self, _circuit_ids: &[String]) {}
+    /// Called when the runtime actor promotes an unknown IP into a dynamic circuit overlay entry.
+    ///
+    /// Default implementation does nothing so non-daemon callers don't need to handle it.
+    fn on_unknown_ip_promoted(&self, _shaped_device: &lqos_config::ShapedDevice) {}
 }
 
 /// Starts the runtime actor and directory watcher used by long-running daemons.

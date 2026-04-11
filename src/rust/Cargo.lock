@@ -2118,6 +2118,7 @@ dependencies = [
  "crossbeam-channel",
  "fxhash",
  "ip_network",
+ "ip_network_table",
  "lqos_config",
  "lqos_utils",
  "once_cell",

@@ -71,7 +71,7 @@ fn upsert_bakery_overlay(shaped_device: ShapedDevice) -> Result<(), String> {
         return Err("Bakery not initialized".to_string());
     };
 
-    let (tx, rx) = mpsc::channel::<Result<(), String>>();
+    let (tx, rx) = mpsc::channel::<Result<Option<lqos_bus::TcHandle>, String>>();
     sender
         .send(lqos_bakery::BakeryCommands::UpsertDynamicCircuitOverlay {
             shaped_device: Box::new(shaped_device),
@@ -81,6 +81,7 @@ fn upsert_bakery_overlay(shaped_device: ShapedDevice) -> Result<(), String> {
 
     rx.recv_timeout(Duration::from_secs(10))
         .map_err(|e| format!("bakery reply timeout: {e}"))?
+        .map(|_| ())
 }
 
 fn remove_bakery_overlay(circuit_id: &str) -> Result<(), String> {

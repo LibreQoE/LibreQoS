@@ -1,11 +1,13 @@
 use crate::dynamic::{CircuitObservation, expired_dynamic_circuit_ids};
 use crate::dynamic_store::{load_dynamic_circuits_from_disk, persist_dynamic_circuits_to_disk};
 use crate::state;
-use crate::{DaemonHooks, load_network_json, load_shaped_devices};
+use crate::{DaemonHooks, ShapedDevicesCatalog, load_network_json, load_shaped_devices};
 use anyhow::{Context, Result, anyhow};
 use crossbeam_channel::{Receiver, Sender};
+use ip_network_table::IpNetworkTable;
 use once_cell::sync::OnceCell;
 use std::collections::HashSet;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -14,6 +16,7 @@ use tracing::{debug, error, warn};
 const RELOAD_RETRY_DELAY_MS: u64 = 500;
 const RELOAD_ATTEMPTS: usize = 2;
 const DYNAMIC_CIRCUITS_MAINTENANCE_TICK_SECONDS: u64 = 60;
+const MAX_UNKNOWN_IP_PROMOTIONS_PER_OBSERVATION: usize = 32;
 
 static ACTOR_SENDER: OnceCell<Sender<NetworkDevicesCommand>> = OnceCell::new();
 
@@ -183,7 +186,7 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                         let _ = reply.send(Ok(()));
                     }
                     NetworkDevicesCommand::ReportObservations { observations } => {
-                        handle_observations(&observations);
+                        handle_observations(&observations, hooks.as_deref());
                     }
                     NetworkDevicesCommand::UpsertDynamicCircuit {
                         shaped_device,
@@ -289,11 +292,15 @@ fn upsert_dynamic_circuit_inner(mut shaped_device: lqos_config::ShapedDevice) ->
     let snapshot = state::dynamic_circuits_snapshot();
     let mut updated = snapshot.as_ref().clone();
     let key = normalize_circuit_id_key(&shaped_device.circuit_id);
+    let mut should_persist = false;
 
     if let Some(pos) = updated
         .iter()
         .position(|c| normalize_circuit_id_key(&c.shaped.circuit_id) == key)
     {
+        if updated[pos].shaped != shaped_device {
+            should_persist = true;
+        }
         updated[pos].shaped = shaped_device;
         updated[pos].last_seen_unix = now_unix;
     } else {
@@ -301,9 +308,12 @@ fn upsert_dynamic_circuit_inner(mut shaped_device: lqos_config::ShapedDevice) ->
             shaped: shaped_device,
             last_seen_unix: now_unix,
         });
+        should_persist = true;
     }
 
-    persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
+    if should_persist {
+        persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
+    }
     state::publish_dynamic_circuits_snapshot(updated);
     Ok(())
 }
@@ -330,7 +340,7 @@ fn remove_dynamic_circuit_inner(circuit_id: &str) -> Result<bool> {
     Ok(true)
 }
 
-fn handle_observations(observations: &[CircuitObservation]) {
+fn handle_observations(observations: &[CircuitObservation], hooks: Option<&dyn DaemonHooks>) {
     if observations.is_empty() {
         return;
     }
@@ -386,16 +396,166 @@ fn handle_observations(observations: &[CircuitObservation]) {
     }
 
     if !unknown_candidates.is_empty() {
-        // TODO(dynamic-circuits): This is where unknown observations will be evaluated
-        // and potentially turned into dynamic circuit overlay entries.
-        //
-        // Unknown candidates are kernel observations whose hashes do not match static shaped
-        // devices and also do not match any existing dynamic circuits.
+        maybe_promote_unknown_ips(&unknown_candidates, &catalog, hooks);
+    }
+}
+
+fn maybe_promote_unknown_ips(
+    unknown_candidates: &[CircuitObservation],
+    catalog: &ShapedDevicesCatalog,
+    hooks: Option<&dyn DaemonHooks>,
+) {
+    let Ok(config) = lqos_config::load_config() else {
+        return;
+    };
+
+    let Some(dynamic_cfg) = config.dynamic_circuits.as_ref() else {
+        return;
+    };
+    if !dynamic_cfg.enabled || !dynamic_cfg.enable_unknown_ip_promotion {
+        return;
+    }
+    if dynamic_cfg.ranges.is_empty() {
+        return;
+    }
+
+    let mut trie: IpNetworkTable<usize> = IpNetworkTable::new();
+    for (idx, rule) in dynamic_cfg.ranges.iter().enumerate() {
+        trie.insert(rule.ip_range, idx);
+    }
+
+    let mut promoted = 0usize;
+    for observation in unknown_candidates {
+        if promoted >= MAX_UNKNOWN_IP_PROMOTIONS_PER_OBSERVATION {
+            break;
+        }
+
+        // Never promote an IP that is already covered by static shaped devices.
+        if catalog
+            .device_longest_match_for_ip(&observation.ip)
+            .is_some()
+        {
+            continue;
+        }
+
+        let ip: IpAddr = observation.ip.as_ip();
+        let Some((_net, rule_idx)) = trie.longest_match(ip) else {
+            continue;
+        };
+        let Some(rule) = dynamic_cfg.ranges.get(*rule_idx) else {
+            continue;
+        };
+
+        let label = format!("[dyn] ({}) {}", rule.name.trim(), observation.ip);
+        let parent_node = resolve_unknown_promotion_parent(rule.attach_to.trim());
+        if parent_node.trim().is_empty() {
+            continue;
+        }
+
+        let shaped_device = shaped_device_from_unknown_ip(&label, &parent_node, ip, rule);
+        if let Err(err) = upsert_dynamic_circuit_inner(shaped_device.clone()) {
+            warn!(
+                "Unable to persist dynamic circuit from unknown IP promotion for {}: {err:?}",
+                observation.ip
+            );
+            continue;
+        }
+
+        if let Some(hooks) = hooks {
+            hooks.on_unknown_ip_promoted(&shaped_device);
+        }
+
+        promoted += 1;
+    }
+
+    if promoted > 0 {
         debug!(
-            "Received {} unknown circuit observations (dynamic circuit auto-create not implemented yet)",
+            "Promoted {promoted} unknown IP(s) into dynamic circuits (candidates={})",
             unknown_candidates.len()
         );
     }
+}
+
+fn resolve_unknown_promotion_parent(attach_to: &str) -> String {
+    let trimmed_attach = attach_to.trim();
+    if !trimmed_attach.is_empty() {
+        if let Some(resolved) = crate::resolve_parent_node(trimmed_attach) {
+            return resolved.name;
+        }
+
+        // In "flat" setups (no meaningful `network.json`), attachments are just site-name strings.
+        let is_flat = state::with_network_json_read(|net_json| {
+            let nodes = net_json.get_nodes_when_ready();
+            let has_non_root = nodes
+                .iter()
+                .any(|node| node.name.trim() != "Root" && !node.name.trim().is_empty());
+            nodes.len() <= 1 || !has_non_root
+        });
+        if is_flat {
+            return trimmed_attach.to_string();
+        }
+    }
+
+    let (node_len, orphans, first_non_root) = state::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let first_non_root = nodes
+            .iter()
+            .find(|node| node.name.trim() != "Root" && !node.name.trim().is_empty())
+            .map(|node| node.name.clone());
+        let orphans = nodes
+            .iter()
+            .find(|node| node.name.trim().eq_ignore_ascii_case("ORPHANS"))
+            .map(|node| node.name.clone());
+
+        (nodes.len(), orphans, first_non_root)
+    });
+    // "Flat" means `network.json` had no meaningful tree beyond Root.
+    let is_flat = node_len <= 1 || first_non_root.is_none();
+    if !is_flat {
+        if let Some(orphans) = orphans {
+            return orphans;
+        }
+        if let Some(first) = first_non_root {
+            return first;
+        }
+    }
+
+    let shaped_parent = state::shaped_devices_snapshot()
+        .devices
+        .iter()
+        .find_map(|dev| {
+            let trimmed = dev.parent_node.trim();
+            (!trimmed.is_empty()).then_some(trimmed.to_string())
+        });
+
+    shaped_parent.unwrap_or_else(|| "Root".to_string())
+}
+
+fn shaped_device_from_unknown_ip(
+    label: &str,
+    parent_node: &str,
+    ip: IpAddr,
+    rule: &lqos_config::DynamicCircuitRangeRule,
+) -> lqos_config::ShapedDevice {
+    let mut device = lqos_config::ShapedDevice {
+        circuit_id: label.to_string(),
+        circuit_name: label.to_string(),
+        device_id: label.to_string(),
+        device_name: label.to_string(),
+        parent_node: parent_node.to_string(),
+        download_min_mbps: rule.download_min_mbps,
+        upload_min_mbps: rule.upload_min_mbps,
+        download_max_mbps: rule.download_max_mbps,
+        upload_max_mbps: rule.upload_max_mbps,
+        ..Default::default()
+    };
+
+    match ip {
+        IpAddr::V4(ip) => device.ipv4.push((ip, 32)),
+        IpAddr::V6(ip) => device.ipv6.push((ip, 128)),
+    }
+
+    device
 }
 
 fn reload_shaped_devices_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) -> Result<()> {

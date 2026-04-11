@@ -751,7 +751,7 @@ fn handle_upsert_dynamic_circuit_overlay(
     mq_layout: &Option<MqDeviceLayout>,
     qdisc_handles: &mut QdiscHandleState,
     migrations: &HashMap<i64, Migration>,
-) -> Result<(), String> {
+) -> Result<Option<TcHandle>, String> {
     if shaped_device.circuit_id.trim().is_empty() {
         return Err("dynamic circuit requires circuit_id".to_string());
     }
@@ -776,7 +776,7 @@ fn handle_upsert_dynamic_circuit_overlay(
     if batch_in_progress {
         // Avoid mutating live TC while a full batch is being assembled; the overlay will be
         // applied when the batch is committed.
-        return Ok(());
+        return Ok(None);
     }
 
     let Ok(config) = lqos_config::load_config() else {
@@ -784,18 +784,28 @@ fn handle_upsert_dynamic_circuit_overlay(
     };
 
     if config.queues.queue_mode.is_observe() {
-        return Ok(());
+        return Ok(None);
     }
 
     // If we don't yet have a baseline MQ layout or any sites, keep the overlay and let the next
     // commit batch create the circuit.
     if !MQ_CREATED.load(Ordering::Relaxed) || mq_layout.is_none() || sites.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
 
     // If the circuit is already present, don't attempt to live-update it here yet.
-    if circuits.contains_key(&circuit_hash) {
-        return Ok(());
+    if let Some(existing) = circuits.get(&circuit_hash) {
+        if let BakeryCommands::AddCircuit {
+            class_major,
+            class_minor,
+            ..
+        } = existing.as_ref()
+        {
+            return Ok(Some(TcHandle::from_u32(
+                ((*class_major as u32) << 16) | (*class_minor as u32),
+            )));
+        }
+        return Ok(None);
     }
 
     let site_hash = runtime_hash_to_i64(&entry.shaped_device.parent_node);
@@ -889,7 +899,7 @@ fn handle_upsert_dynamic_circuit_overlay(
     }
 
     let Some(layout) = mq_layout.as_ref() else {
-        return Ok(());
+        return Ok(None);
     };
     let live_reserved_handles =
         snapshot_live_qdisc_handle_majors_or_empty(&config, "dynamic circuit additions");
@@ -911,7 +921,9 @@ fn handle_upsert_dynamic_circuit_overlay(
     qdisc_handles.save(&config);
     update_queue_distribution_snapshot(sites, circuits);
 
-    Ok(())
+    Ok(Some(TcHandle::from_u32(
+        ((down_major as u32) << 16) | (class_minor as u32),
+    )))
 }
 
 #[allow(clippy::too_many_arguments)]

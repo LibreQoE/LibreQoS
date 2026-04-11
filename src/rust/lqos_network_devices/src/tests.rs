@@ -46,17 +46,21 @@ fn make_node(
 fn catalog_device_by_hashes_prefers_device_hash() {
     let _guard = TEST_LOCK.lock();
 
-    let mut a = ShapedDevice::default();
-    a.circuit_id = "circuit-a".into();
-    a.device_id = "device-a".into();
-    a.circuit_hash = 10;
-    a.device_hash = 100;
+    let a = ShapedDevice {
+        circuit_id: "circuit-a".into(),
+        device_id: "device-a".into(),
+        circuit_hash: 10,
+        device_hash: 100,
+        ..Default::default()
+    };
 
-    let mut b = ShapedDevice::default();
-    b.circuit_id = "circuit-b".into();
-    b.device_id = "device-b".into();
-    b.circuit_hash = 20;
-    b.device_hash = 200;
+    let b = ShapedDevice {
+        circuit_id: "circuit-b".into(),
+        device_id: "device-b".into(),
+        circuit_hash: 20,
+        device_hash: 200,
+        ..Default::default()
+    };
 
     let mut shaped = ConfigShapedDevices::default();
     shaped.replace_with_new_data(vec![a.clone(), b.clone()]);
@@ -105,11 +109,13 @@ fn dynamic_circuit_last_seen_updates_for_seen_hashes() {
 
     let original = crate::state::dynamic_circuits_snapshot();
 
-    let mut shaped = ShapedDevice::default();
-    shaped.circuit_id = "dynamic-circuit".into();
-    shaped.device_id = "dynamic-device".into();
-    shaped.circuit_hash = 10;
-    shaped.device_hash = 100;
+    let shaped = ShapedDevice {
+        circuit_id: "dynamic-circuit".into(),
+        device_id: "dynamic-device".into(),
+        circuit_hash: 10,
+        device_hash: 100,
+        ..Default::default()
+    };
 
     crate::state::publish_dynamic_circuits_snapshot(vec![DynamicCircuit {
         shaped: shaped.clone(),
@@ -142,13 +148,17 @@ fn dynamic_circuit_expiration_helper_respects_ttl_boundary() {
     let now_unix = 1_000;
     let ttl_seconds = 300;
 
-    let mut alive = ShapedDevice::default();
-    alive.circuit_id = "alive".into();
-    alive.device_id = "device-alive".into();
+    let alive = ShapedDevice {
+        circuit_id: "alive".into(),
+        device_id: "device-alive".into(),
+        ..Default::default()
+    };
 
-    let mut expired = ShapedDevice::default();
-    expired.circuit_id = "expired".into();
-    expired.device_id = "device-expired".into();
+    let expired = ShapedDevice {
+        circuit_id: "expired".into(),
+        device_id: "device-expired".into(),
+        ..Default::default()
+    };
 
     let circuits = vec![
         DynamicCircuit {
@@ -175,9 +185,11 @@ fn dynamic_circuit_expiration_helper_expires_zero_last_seen() {
     let now_unix = 1_000;
     let ttl_seconds = 300;
 
-    let mut shaped = ShapedDevice::default();
-    shaped.circuit_id = "zero".into();
-    shaped.device_id = "device-zero".into();
+    let shaped = ShapedDevice {
+        circuit_id: "zero".into(),
+        device_id: "device-zero".into(),
+        ..Default::default()
+    };
 
     let circuits = vec![DynamicCircuit {
         shaped,

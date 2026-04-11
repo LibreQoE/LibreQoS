@@ -240,7 +240,7 @@ pub enum BakeryCommands {
         shaped_device: Box<lqos_config::ShapedDevice>,
         /// Optional synchronous reply channel for immediate acceptance reporting.
         #[allocative(skip)]
-        reply: Option<ReplySender<Result<(), String>>>,
+        reply: Option<ReplySender<Result<Option<TcHandle>, String>>>,
     },
     /// Remove a runtime-only dynamic circuit overlay entry by circuit identifier.
     ///
