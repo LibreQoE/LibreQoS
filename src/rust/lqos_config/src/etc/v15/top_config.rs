@@ -106,6 +106,12 @@ pub struct Config {
     /// IP Range definitions
     pub ip_ranges: super::ip_ranges::IpRanges,
 
+    /// Dynamic circuits configuration.
+    ///
+    /// Optional so older configs without this section still deserialize cleanly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic_circuits: Option<super::dynamic_circuits::DynamicCircuitsConfig>,
+
     /// Network flows configuration
     pub flows: Option<super::flows::FlowConfig>,
 
@@ -248,6 +254,9 @@ impl Config {
             stormguard.validate()?;
         }
         self.treeguard.validate()?;
+        if let Some(dynamic_circuits) = &self.dynamic_circuits {
+            dynamic_circuits.validate()?;
+        }
         Ok(())
     }
 
@@ -320,6 +329,7 @@ impl Default for Config {
             queues: super::queues::QueueConfig::default(),
             long_term_stats: super::long_term_stats::LongTermStats::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
+            dynamic_circuits: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),

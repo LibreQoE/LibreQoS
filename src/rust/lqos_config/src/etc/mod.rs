@@ -19,10 +19,10 @@ mod python_migration;
 pub mod test_data;
 mod v15;
 pub use v15::{
-    BridgeConfig, IntegrationConfig, LazyQueueMode, QueueMode, RttThresholds,
-    SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TreeguardCircuitsConfig,
-    TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig,
-    TreeguardQooConfig, Tunables,
+    BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
+    QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig, StormguardStrategy,
+    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
+    TreeguardLinksConfig, TreeguardQooConfig, Tunables,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));

@@ -95,6 +95,32 @@ This can be used to exclude entire subscriber populations from LibreQoS shaping 
 
 Use this carefully: `ignore_subnets` is broader than a billing-only toggle. The same setting also affects other LibreQoS/Insight IP-policy handling.
 
+#### Dynamic circuits (optional)
+
+LibreQoS can be configured with an optional `[dynamic_circuits]` section. This is intended for the dynamic-circuit overlay layer (including unknown-IP promotion workflows).
+
+Example:
+
+```toml
+[dynamic_circuits]
+enabled = false
+ttl_seconds = 300
+enable_unknown_ip_promotion = false
+
+[[dynamic_circuits.ranges]]
+name = "Default"
+ip_range = "0.0.0.0" # shorthand for 0.0.0.0/0
+download_min_mbps = 10.0
+upload_min_mbps = 10.0
+download_max_mbps = 100.0
+upload_max_mbps = 100.0
+attach_to = "" # optional network.json node name
+```
+
+Notes:
+- `ip_range` must be a CIDR. `0.0.0.0` (and `::`) are allowed shorthands for the match-all `/0` networks.
+- `attach_to` is a `network.json` node name (optional; empty is allowed).
+
 #### CRM/NMS Integrations
 
 Learn more about [configuring integrations here](integrations.md).

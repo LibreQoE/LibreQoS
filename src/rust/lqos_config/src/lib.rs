@@ -35,11 +35,11 @@ pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
 pub use etc::{
-    BridgeConfig, Config, LazyQueueMode, QueueMode, RttThresholds, SingleInterfaceConfig,
-    StormguardConfig, StormguardStrategy, TreeguardCircuitsConfig, TreeguardConfig,
-    TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
-    clear_cached_config, disable_xdp_bridge, enable_long_term_stats, load_config,
-    treeguard_cpu_mode_migration_notice, update_config,
+    BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode, QueueMode,
+    RttThresholds, SingleInterfaceConfig, StormguardConfig, StormguardStrategy,
+    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
+    TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge,
+    enable_long_term_stats, load_config, treeguard_cpu_mode_migration_notice, update_config,
 };
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,

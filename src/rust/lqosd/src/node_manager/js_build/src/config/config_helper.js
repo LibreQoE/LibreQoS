@@ -479,6 +479,7 @@ export function renderConfigMenu(currentPage) {
         { href: "config_lts.html", icon: "fa-line-chart", text: "LibreQoS Insight", id: "lts" },
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
+        { href: "config_dynamic_circuits.html", icon: "fa-layer-group", text: "Dynamic Circuits", id: "dynamic_circuits" },
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
         { href: "config_splynx.html", icon: "fa-link", text: "Splynx", id: "splynx" },
         { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },
