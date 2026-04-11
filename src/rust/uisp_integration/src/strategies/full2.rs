@@ -9,10 +9,6 @@ use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::apply_ethernet_rate_cap;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
-use crate::strategies::legacy_bandwidth_overrides::{
-    BandwidthOverride, find_bandwidth_override,
-};
-use crate::strategies::legacy_routes_override::RouteOverride;
 use crate::strategies::full2::directionality::{
     build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
 };
@@ -20,6 +16,8 @@ use crate::strategies::full2::dot::save_dot_file;
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
+use crate::strategies::legacy_bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
+use crate::strategies::legacy_routes_override::RouteOverride;
 use crate::uisp_types::{UispAttachmentRateSource, UispDevice};
 use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, CircuitEthernetMetadata, Config, ConfigShapedDevices,
@@ -333,9 +331,6 @@ pub async fn build_imported_full2_bundle(
     let mut topology_parent_candidates = Vec::<TopologyParentCandidatesNode>::new();
     let mut topology_editor_nodes = Vec::<TopologyEditorNode>::new();
     for node in graph.node_indices() {
-        if node == root_idx {
-            continue;
-        }
         match &graph[node] {
             GraphMapping::GeneratedSite { name }
             | GraphMapping::Site { name, .. }
@@ -545,7 +540,22 @@ pub async fn build_imported_full2_bundle(
                     }
                 }
             }
-            _ => {}
+            GraphMapping::Root { name, .. } => {
+                topology_editor_nodes.push(TopologyEditorNode {
+                    node_id: graph[node].network_json_id(),
+                    node_name: name.to_owned(),
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                });
+            }
         }
     }
 
