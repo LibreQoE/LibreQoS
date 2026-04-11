@@ -48,8 +48,9 @@ fn watch_for_network_json_changing() -> Result<()> {
 
 fn load_network_json() {
     let njs = NetworkJson::load();
-    if let Ok(njs) = njs {
+    if let Ok(mut njs) = njs {
         let mut nj = NETWORK_JSON.write();
+        njs.carry_forward_heatmaps_from(&nj);
         *nj = njs;
         super::invalidate_circuit_live_snapshot();
         super::invalidate_executive_cache_snapshot();
