@@ -2,7 +2,7 @@ use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
 fn default_queue_auto_virtualize_threshold_mbps() -> u64 {
-    5_000
+    5_001
 }
 
 /// Shared topology compiler settings used by `lqos_topology`.

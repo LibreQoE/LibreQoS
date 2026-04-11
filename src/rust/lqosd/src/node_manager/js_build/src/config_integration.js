@@ -43,8 +43,8 @@ function validateConfig() {
         document.getElementById("queueAutoVirtualizeThresholdMbps").value,
         10,
     );
-    if (isNaN(queueAutoThreshold) || queueAutoThreshold < 1) {
-        alert("Queue Auto-Virtualize Threshold must be a whole number greater than 0");
+    if (isNaN(queueAutoThreshold) || queueAutoThreshold < 5001) {
+        alert("Queue Auto-Virtualize Threshold must be a whole number greater than or equal to 5001");
         return false;
     }
     
@@ -125,7 +125,7 @@ loadConfig(() => {
         document.getElementById("topologyCompileMode").value =
             window.config.topology?.compile_mode ?? "ap_site";
         document.getElementById("queueAutoVirtualizeThresholdMbps").value =
-            String(window.config.topology?.queue_auto_virtualize_threshold_mbps ?? 5000);
+            String(window.config.topology?.queue_auto_virtualize_threshold_mbps ?? 5001);
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

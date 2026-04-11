@@ -306,11 +306,9 @@ fn maybe_migrate_treeguard_link_virtualization_defaults(
         path: config_location.to_string(),
         source: e,
     })?;
-    std::fs::write(&stamp_path, b"disabled\n").map_err(|e| {
-        LibreQoSConfigError::CannotWrite {
-            path: stamp_path,
-            source: e,
-        }
+    std::fs::write(&stamp_path, b"disabled\n").map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: stamp_path,
+        source: e,
     })?;
 
     info!(
@@ -538,8 +536,7 @@ pub enum LibreQoSConfigError {
 #[cfg(test)]
 mod tests {
     use super::{
-        maybe_migrate_topology_compile_mode,
-        maybe_migrate_treeguard_link_virtualization_defaults,
+        maybe_migrate_topology_compile_mode, maybe_migrate_treeguard_link_virtualization_defaults,
         maybe_migrate_uisp_capacity_defaults, topology_compile_mode_migration_stamp_path,
         treeguard_links_virtualization_migration_stamp_path,
         uisp_capacity_defaults_migration_stamp_path,
@@ -750,8 +747,7 @@ mod tests {
     #[test]
     fn treeguard_link_virtualization_migration_stamps_when_already_disabled() {
         let test_dir = unique_test_dir();
-        let raw =
-            "[treeguard]\nenabled = true\n\n[treeguard.links]\nenabled = false\ntop_level_auto_virtualize = false\n";
+        let raw = "[treeguard]\nenabled = true\n\n[treeguard.links]\nenabled = false\ntop_level_auto_virtualize = false\n";
         let config_path = write_test_config(&test_dir, raw);
 
         let config_path_str = path_string(&config_path);

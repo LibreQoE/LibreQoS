@@ -2,7 +2,7 @@ mod serializable;
 mod shaped_device;
 
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use lqos_utils::XdpIpAddress;
+use lqos_utils::{XdpIpAddress, hash_to_i64};
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::net::IpAddr;
@@ -31,6 +31,14 @@ impl Default for ConfigShapedDevices {
 }
 
 impl ConfigShapedDevices {
+    fn refresh_derived_fields(devices: &mut [ShapedDevice]) {
+        for device in devices {
+            device.circuit_hash = hash_to_i64(&device.circuit_id);
+            device.device_hash = hash_to_i64(&device.device_id);
+            device.parent_hash = hash_to_i64(&device.parent_node);
+        }
+    }
+
     /// Computes the shaped-devices path for one concrete config snapshot.
     ///
     /// This function is pure: it has no side effects.
@@ -217,7 +225,8 @@ impl ConfigShapedDevices {
     }
 
     /// Replace the current shaped devices list with a new one
-    pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
+    pub fn replace_with_new_data(&mut self, mut devices: Vec<ShapedDevice>) {
+        Self::refresh_derived_fields(&mut devices);
         self.devices = devices;
         debug!("{:?}", self.devices);
         let mut new_trie = ConfigShapedDevices::make_trie(&self.devices);
@@ -477,6 +486,28 @@ mod test {
         let addr: Ipv4Addr = "1.2.3.4".parse().expect("IP Parse Error");
         let v6 = addr.to_ipv6_mapped();
         assert!(trie.longest_match(v6).is_some());
+    }
+
+    #[test]
+    fn replace_with_new_data_rebuilds_derived_hashes() {
+        let mut config = ConfigShapedDevices::default();
+        config.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: ShapedDevice::parse_ipv4("192.168.1.10"),
+            ..Default::default()
+        }]);
+
+        assert_eq!(config.devices.len(), 1);
+        assert_eq!(config.devices[0].circuit_hash, hash_to_i64("circuit-1"));
+        assert_eq!(config.devices[0].device_hash, hash_to_i64("device-1"));
+        assert_eq!(config.devices[0].parent_hash, hash_to_i64("Parent-A"));
+        assert_eq!(
+            config
+                .get_circuit_hash_from_ip(&XdpIpAddress::from_ip("192.168.1.10".parse().unwrap())),
+            Some(hash_to_i64("circuit-1"))
+        );
     }
 
     #[test]

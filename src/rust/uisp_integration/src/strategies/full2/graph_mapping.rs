@@ -60,8 +60,9 @@ impl GraphMapping {
 
     pub fn longitude(&self) -> Option<f32> {
         match self {
-            GraphMapping::Root { longitude, .. }
-            | GraphMapping::Site { longitude, .. } => *longitude,
+            GraphMapping::Root { longitude, .. } | GraphMapping::Site { longitude, .. } => {
+                *longitude
+            }
             GraphMapping::GeneratedSite { .. } | GraphMapping::AccessPoint { .. } => None,
         }
     }

@@ -4,8 +4,7 @@ use crate::{
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
     TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
     TopologyAllowedParent, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
-    TopologyQueueVisibilityPolicy,
-    TopologyParentCandidatesError, TopologyParentCandidatesFile,
+    TopologyParentCandidatesError, TopologyParentCandidatesFile, TopologyQueueVisibilityPolicy,
 };
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
@@ -1075,7 +1074,9 @@ impl TopologyCanonicalStateFile {
                 TopologyCanonicalNode {
                     node_id: node.node_id.clone(),
                     node_name: node.node_name.clone(),
-                    latitude: node.latitude.or_else(|| snapshot.and_then(|snapshot| snapshot.latitude)),
+                    latitude: node
+                        .latitude
+                        .or_else(|| snapshot.and_then(|snapshot| snapshot.latitude)),
                     longitude: node
                         .longitude
                         .or_else(|| snapshot.and_then(|snapshot| snapshot.longitude)),
@@ -1312,7 +1313,9 @@ mod tests {
             &compatibility_network,
             TopologyCanonicalIngressKind::NativeIntegration,
         );
-        let node = canonical.find_node("site-a").expect("expected canonical node");
+        let node = canonical
+            .find_node("site-a")
+            .expect("expected canonical node");
         assert_eq!(node.latitude, Some(31.86102867126465_f32));
         assert_eq!(node.longitude, Some(-106.5494613647461_f32));
 

@@ -489,14 +489,12 @@ pub async fn build_imported_full2_bundle(
                         );
 
                         if is_real_topology_node(&graph, node) {
-                            let queue_visibility_policy = if matches!(
-                                &graph[node],
-                                GraphMapping::Site { .. }
-                            ) {
-                                TopologyQueueVisibilityPolicy::QueueAuto
-                            } else {
-                                TopologyQueueVisibilityPolicy::QueueVisible
-                            };
+                            let queue_visibility_policy =
+                                if matches!(&graph[node], GraphMapping::Site { .. }) {
+                                    TopologyQueueVisibilityPolicy::QueueAuto
+                                } else {
+                                    TopologyQueueVisibilityPolicy::QueueVisible
+                                };
                             topology_parent_candidates.push(TopologyParentCandidatesNode {
                                 node_id: graph[node].network_json_id(),
                                 node_name: name.to_owned(),

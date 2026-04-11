@@ -190,8 +190,7 @@ fn redact_config_secrets(config: &mut Config) -> ConfigSecretState {
     }
 
     if let Some(visp) = config.visp_integration.as_mut() {
-        secret_state.visp_integration.client_secret =
-            redact_string_secret(&mut visp.client_secret);
+        secret_state.visp_integration.client_secret = redact_string_secret(&mut visp.client_secret);
         secret_state.visp_integration.password = redact_string_secret(&mut visp.password);
     }
 
@@ -266,7 +265,10 @@ fn apply_secret_updates(
         (None, None) => {}
     }
 
-    match (existing.visp_integration.as_ref(), incoming.visp_integration.as_mut()) {
+    match (
+        existing.visp_integration.as_ref(),
+        incoming.visp_integration.as_mut(),
+    ) {
         (Some(existing_visp), Some(incoming_visp)) => {
             merge_string_secret(
                 &mut incoming_visp.client_secret,

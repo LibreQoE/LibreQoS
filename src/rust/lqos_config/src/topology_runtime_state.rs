@@ -300,6 +300,9 @@ pub struct TopologyShapingInputsFile {
     /// Schema version for compatibility checks.
     #[serde(default = "default_runtime_schema_version")]
     pub schema_version: u32,
+    /// Stable generation hash for shaping-relevant content in this file.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub shaping_generation: String,
     /// Unix timestamp when the file was generated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated_unix: Option<u64>,
@@ -326,6 +329,9 @@ pub struct TopologyRuntimeStatusFile {
     /// Stable generation hash of the source inputs topology used for this publish attempt.
     #[serde(default)]
     pub source_generation: String,
+    /// Stable generation hash of the current shaping-relevant runtime output, when ready.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub shaping_generation: String,
     /// Whether runtime outputs are ready for the source generation above.
     #[serde(default)]
     pub ready: bool,
@@ -621,6 +627,32 @@ impl TopologyShapingInputsFile {
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
         atomic_write_json(&topology_shaping_inputs_path(config), self)
     }
+
+    /// Returns a copy normalized for semantic comparisons and stable generation hashing.
+    pub fn normalized_for_compare(&self) -> Self {
+        let mut normalized = self.clone();
+        normalized.shaping_generation.clear();
+        normalized.generated_unix = None;
+        normalized.canonical_generated_unix = None;
+        normalized.effective_generated_unix = None;
+        normalized
+    }
+
+    /// Returns true when two shaping-input payloads are semantically equal.
+    pub fn semantic_equals(&self, other: &Self) -> bool {
+        self.normalized_for_compare() == other.normalized_for_compare()
+    }
+
+    /// Computes the stable shaping generation for this payload.
+    pub fn compute_shaping_generation(&self) -> Result<String, TopologyRuntimeStateError> {
+        let normalized = self.normalized_for_compare();
+        let payload = serde_json::to_vec(&normalized)?;
+        let mut hasher = Sha256::new();
+        hasher.update(b"topology-runtime-shaping-generation");
+        hasher.update([0xff]);
+        hasher.update(payload);
+        Ok(format!("{:x}", hasher.finalize()))
+    }
 }
 
 impl TopologyRuntimeStatusFile {
@@ -646,7 +678,8 @@ mod tests {
         CIRCUIT_ANCHORS_FILENAME, Config, TOPOLOGY_CANONICAL_STATE_FILENAME,
         TOPOLOGY_COMPILED_SHAPING_FILENAME, TOPOLOGY_EDITOR_STATE_FILENAME,
         TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyRuntimeStatusFile,
-        compute_topology_source_generation, topology_runtime_status_path,
+        TopologyShapingCircuitInput, TopologyShapingInputsFile, compute_topology_source_generation,
+        topology_runtime_status_path,
     };
     use crate::{
         TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
@@ -1140,6 +1173,7 @@ mod tests {
         let status = TopologyRuntimeStatusFile {
             schema_version: 1,
             source_generation: "generation-1".to_string(),
+            shaping_generation: "shape-1".to_string(),
             ready: true,
             generated_unix: Some(123),
             effective_state_path: "/tmp/effective.json".to_string(),
@@ -1158,6 +1192,40 @@ mod tests {
         assert_eq!(
             topology_runtime_status_path(&config),
             lqos_directory.join(TOPOLOGY_RUNTIME_STATUS_FILENAME)
+        );
+    }
+
+    #[test]
+    fn shaping_generation_ignores_timestamp_only_changes() {
+        let first = TopologyShapingInputsFile {
+            schema_version: 1,
+            shaping_generation: String::new(),
+            generated_unix: Some(1),
+            canonical_generated_unix: Some(10),
+            effective_generated_unix: Some(20),
+            warnings: vec!["warn".to_string()],
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "circuit-1".to_string(),
+                effective_parent_node_name: "Tower 1".to_string(),
+                effective_parent_node_id: "tower-1".to_string(),
+                ..TopologyShapingCircuitInput::default()
+            }],
+        };
+        let second = TopologyShapingInputsFile {
+            generated_unix: Some(2),
+            canonical_generated_unix: Some(11),
+            effective_generated_unix: Some(21),
+            ..first.clone()
+        };
+
+        assert!(first.semantic_equals(&second));
+        assert_eq!(
+            first
+                .compute_shaping_generation()
+                .expect("generation should compute"),
+            second
+                .compute_shaping_generation()
+                .expect("generation should recompute")
         );
     }
 }

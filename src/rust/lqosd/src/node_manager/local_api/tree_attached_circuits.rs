@@ -1,8 +1,8 @@
 use crate::node_manager::local_api::ethernet_caps::{EthernetCapBadge, ethernet_cap_badge_map};
+use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
 use crate::shaped_devices_tracker::{
     NETWORK_JSON, SHAPED_DEVICES, effective_parent_for_circuit, resolve_parent_node_reference,
 };
-use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_config::{ConfigShapedDevices, ShapedDevice};
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
@@ -136,11 +136,7 @@ fn resolve_selected_node_index(query: &TreeAttachedCircuitsQuery) -> Option<usiz
             }
             names
         };
-        if &path == node_path {
-            Some(idx)
-        } else {
-            None
-        }
+        if &path == node_path { Some(idx) } else { None }
     })
 }
 
@@ -225,14 +221,14 @@ fn aggregate_attached_circuit_rows(
             continue;
         }
 
-        let entry = rows
-            .entry(device.circuit_id.clone())
-            .or_insert_with(|| CircuitRowAccumulator {
-                circuit_id: device.circuit_id.clone(),
-                circuit_name: device.circuit_name.clone(),
-                parent_node: parent_name.clone(),
-                ..CircuitRowAccumulator::default()
-            });
+        let entry =
+            rows.entry(device.circuit_id.clone())
+                .or_insert_with(|| CircuitRowAccumulator {
+                    circuit_id: device.circuit_id.clone(),
+                    circuit_name: device.circuit_name.clone(),
+                    parent_node: parent_name.clone(),
+                    ..CircuitRowAccumulator::default()
+                });
         if entry.circuit_name.is_empty() {
             entry.circuit_name = device.circuit_name.clone();
         }
@@ -293,21 +289,18 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
                             .map(|live| live.parent_node.clone())
                             .filter(|parent| !parent.trim().is_empty())
                             .unwrap_or(row.parent_node),
-                        device_names: live
-                            .map(|live| live.device_names.clone())
-                            .unwrap_or_else(|| {
-                                let mut names: Vec<String> =
-                                    row.device_names.into_iter().collect();
+                        device_names: live.map(|live| live.device_names.clone()).unwrap_or_else(
+                            || {
+                                let mut names: Vec<String> = row.device_names.into_iter().collect();
                                 names.sort_unstable();
                                 names
-                            }),
-                        ip_addrs: live
-                            .map(|live| live.ip_addrs.clone())
-                            .unwrap_or_else(|| {
-                                let mut addrs: Vec<String> = row.ip_addrs.into_iter().collect();
-                                addrs.sort_unstable();
-                                addrs
-                            }),
+                            },
+                        ),
+                        ip_addrs: live.map(|live| live.ip_addrs.clone()).unwrap_or_else(|| {
+                            let mut addrs: Vec<String> = row.ip_addrs.into_iter().collect();
+                            addrs.sort_unstable();
+                            addrs
+                        }),
                         plan_mbps: live.map(|live| live.plan_mbps).unwrap_or(row.plan_mbps),
                         bytes_per_second: live
                             .map(|live| live.bytes_per_second)
@@ -319,9 +312,7 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
                         tcp_retransmit_sample: live
                             .map(|live| live.tcp_retransmit_sample)
                             .unwrap_or_default(),
-                        last_seen_nanos: live
-                            .map(|live| live.last_seen_nanos)
-                            .unwrap_or(u64::MAX),
+                        last_seen_nanos: live.map(|live| live.last_seen_nanos).unwrap_or(u64::MAX),
                     }
                 })
                 .collect()

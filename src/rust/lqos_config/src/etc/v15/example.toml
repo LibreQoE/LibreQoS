@@ -138,7 +138,7 @@ timeout_secs = 20
 
 [topology]
 compile_mode = "ap_site"
-queue_auto_virtualize_threshold_mbps = 5000
+queue_auto_virtualize_threshold_mbps = 5001
 
 [uisp_integration]
 enable_uisp = false

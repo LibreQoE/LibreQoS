@@ -624,7 +624,7 @@ mod test {
         assert!(!cfg.treeguard.links.top_level_auto_virtualize);
         assert!(cfg.treeguard.circuits.enabled);
         assert!(cfg.treeguard.circuits.all_circuits);
-        assert_eq!(cfg.topology.queue_auto_virtualize_threshold_mbps, 5_000);
+        assert_eq!(cfg.topology.queue_auto_virtualize_threshold_mbps, 5_001);
     }
 
     #[test]

@@ -22,7 +22,8 @@ pub fn network_json_watcher() -> Result<()> {
 }
 
 fn active_network_tree_path() -> Result<PathBuf> {
-    NetworkJson::path().map_err(|_| anyhow::Error::msg("Unable to create path for active network tree"))
+    NetworkJson::path()
+        .map_err(|_| anyhow::Error::msg("Unable to create path for active network tree"))
 }
 
 /// Fires up a Linux file system watcher that notifies

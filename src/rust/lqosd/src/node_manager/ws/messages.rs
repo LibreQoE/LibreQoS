@@ -5,6 +5,7 @@ use crate::node_manager::local_api::circuit_activity::{
     CircuitFlowSankeyRow, CircuitSummaryData, CircuitTopAsnsData, CircuitTopAsnsQuery,
     CircuitTrafficFlowsPage, CircuitTrafficFlowsQuery,
 };
+use crate::node_manager::local_api::config::{ConfigSecretClearRequest, ConfigView};
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
 use crate::node_manager::local_api::directories::{
@@ -23,7 +24,6 @@ use crate::node_manager::local_api::node_topology_overrides::{
     NodeTopologyOverrideData, NodeTopologyOverrideQuery,
 };
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
-use crate::node_manager::local_api::config::{ConfigSecretClearRequest, ConfigView};
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
 use crate::node_manager::local_api::search::SearchResult;
 use crate::node_manager::local_api::shaped_devices_page::{

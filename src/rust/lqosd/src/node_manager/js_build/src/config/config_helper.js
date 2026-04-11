@@ -88,8 +88,8 @@ function ensureOptionalConfigSections(config) {
         topology.compile_mode = normalizeMode(topology.compile_mode) || "ap_site";
     }
     if (!Number.isFinite(Number(topology.queue_auto_virtualize_threshold_mbps))
-        || Number(topology.queue_auto_virtualize_threshold_mbps) < 1) {
-        topology.queue_auto_virtualize_threshold_mbps = 5000;
+        || Number(topology.queue_auto_virtualize_threshold_mbps) < 5001) {
+        topology.queue_auto_virtualize_threshold_mbps = 5001;
     } else {
         topology.queue_auto_virtualize_threshold_mbps = Math.trunc(
             Number(topology.queue_auto_virtualize_threshold_mbps),

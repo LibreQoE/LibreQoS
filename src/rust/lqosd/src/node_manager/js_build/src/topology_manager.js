@@ -502,6 +502,18 @@ function pathIdsForNode(nodeId, parentField) {
     return path;
 }
 
+function samePathIds(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+        return false;
+    }
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function proposedPathIds(nodeId, parentId) {
     if (!nodeId || !parentId) {
         return currentPathIds(nodeId);
@@ -1868,7 +1880,12 @@ function buildMapGraph() {
         return {nodes: [], edges: []};
     }
 
-    const currentPath = truncatedPreviewPath(currentPathIds(meta.node_id), `current:${meta.node_id}`);
+    const canonicalPathIdsRaw = currentPathIds(meta.node_id);
+    const livePathIdsRaw = effectivePathIds(meta.node_id);
+    const savedPathIdsRaw = meta.has_override
+        ? proposedPathIds(meta.node_id, meta.override_parent_node_id)
+        : livePathIdsRaw;
+    const currentPath = truncatedPreviewPath(canonicalPathIdsRaw, `current:${meta.node_id}`);
     const allowedParents = moveMode ? allowedParentsForSelected() : [];
     const alternatePaths = allowedParents.map((parent) => ({
         parent,
@@ -1886,24 +1903,52 @@ function buildMapGraph() {
     const xStep = Math.min(190, Math.max(110, 880 / Math.max(rootPathLength - 1, 1)));
     const startX = 100;
 
-    currentPath.forEach((node, depth) => {
-        displayedNodes.set(node.nodeId, {
-            ...node,
-            nodeId: node.nodeId,
-            x: startX + (depth * xStep),
-            y: MAP_CENTER_Y,
-            depth,
-            lane: 0,
-            role: "current",
+    const addPreviewPath = (path, kind, role) => {
+        path.forEach((node, depth) => {
+            if (!displayedNodes.has(node.nodeId)) {
+                displayedNodes.set(node.nodeId, {
+                    ...node,
+                    nodeId: node.nodeId,
+                    x: startX + (depth * xStep),
+                    y: MAP_CENTER_Y,
+                    depth,
+                    lane: 0,
+                    role,
+                });
+            }
+            if (depth > 0) {
+                displayedEdges.push({
+                    from: path[depth - 1].nodeId,
+                    to: node.nodeId,
+                    kind,
+                });
+            }
         });
-        if (depth > 0) {
-            displayedEdges.push({
-                from: currentPath[depth - 1].nodeId,
-                to: node.nodeId,
-                kind: "current",
-            });
+    };
+
+    if (moveMode) {
+        addPreviewPath(currentPath, "current", "current");
+    } else {
+        const canonicalPath = truncatedPreviewPath(canonicalPathIdsRaw, `canonical:${meta.node_id}`);
+        const livePath = truncatedPreviewPath(livePathIdsRaw, `live:${meta.node_id}`);
+        const savedPath = truncatedPreviewPath(savedPathIdsRaw, `saved:${meta.node_id}`);
+        const allAligned = samePathIds(canonicalPathIdsRaw, livePathIdsRaw)
+            && samePathIds(livePathIdsRaw, savedPathIdsRaw);
+
+        if (allAligned) {
+            addPreviewPath(livePath, "current", "current");
+        } else {
+            addPreviewPath(canonicalPath, "canonical_path", "canonical");
+            if (!samePathIds(livePathIdsRaw, canonicalPathIdsRaw)) {
+                addPreviewPath(livePath, "live_path", "live");
+            } else {
+                addPreviewPath(livePath, "current", "current");
+            }
+            if (meta.has_override) {
+                addPreviewPath(savedPath, "saved_path", "saved");
+            }
         }
-    });
+    }
 
     const selectedDepth = currentPath.length - 1;
     const children = preferredChildPreviewNodes(meta.node_id);
@@ -2008,6 +2053,16 @@ function edgePath(from, to, kind) {
         const controlOffset = to.y < from.y ? -60 : 60;
         return `M ${from.x} ${from.y} C ${midX} ${from.y + controlOffset}, ${midX} ${to.y - controlOffset}, ${to.x} ${to.y}`;
     }
+    if (kind === "canonical_path" || kind === "live_path" || kind === "saved_path") {
+        const midX = (from.x + to.x) / 2;
+        const midY = (from.y + to.y) / 2;
+        const curveOffset = kind === "canonical_path"
+            ? -28
+            : kind === "saved_path"
+                ? 28
+                : 0;
+        return `M ${from.x} ${from.y} Q ${midX} ${midY + curveOffset}, ${to.x} ${to.y}`;
+    }
     return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 }
 
@@ -2046,6 +2101,16 @@ function renderMap() {
         if (edge.kind === "current") {
             stroke = "rgba(59, 130, 246, 0.92)";
             width = 4;
+        } else if (edge.kind === "canonical_path") {
+            stroke = "rgba(148, 163, 184, 0.82)";
+            width = 3;
+        } else if (edge.kind === "live_path") {
+            stroke = "rgba(59, 130, 246, 0.96)";
+            width = 3.5;
+        } else if (edge.kind === "saved_path") {
+            stroke = "rgba(245, 158, 11, 0.95)";
+            width = 3;
+            dash = "10 7";
         } else if (edge.kind === "branch") {
             stroke = "rgba(59, 130, 246, 0.45)";
             width = 2.5;

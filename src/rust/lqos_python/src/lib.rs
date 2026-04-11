@@ -3120,12 +3120,42 @@ fn first_existing_path<'a>(paths: &'a [&'a Path]) -> Option<&'a Path> {
     paths.iter().copied().find(|path| path.exists())
 }
 
+fn topology_runtime_shaping_generation(base_path: &Path) -> Option<String> {
+    let status_path = base_path.join("topology_runtime_status.json");
+    if let Ok(status_raw) = read_to_string(&status_path)
+        && let Ok(status) =
+            serde_json::from_str::<lqos_config::TopologyRuntimeStatusFile>(&status_raw)
+        && status.ready
+        && !status.shaping_generation.is_empty()
+    {
+        return Some(status.shaping_generation);
+    }
+
+    let shaping_inputs_path = base_path.join("shaping_inputs.json");
+    let shaping_raw = read_to_string(&shaping_inputs_path).ok()?;
+    let shaping_inputs =
+        serde_json::from_str::<lqos_config::TopologyShapingInputsFile>(&shaping_raw).ok()?;
+    if !shaping_inputs.shaping_generation.is_empty() {
+        Some(shaping_inputs.shaping_generation)
+    } else {
+        shaping_inputs.compute_shaping_generation().ok()
+    }
+}
+
 fn calculate_shaping_runtime_hash_for_base(
     base_path: &Path,
     uses_topology_import_ingress: bool,
     insight_topology_enabled: bool,
     runtime_sqm_fingerprint: &str,
 ) -> i64 {
+    if uses_topology_import_ingress {
+        let Some(shaping_generation) = topology_runtime_shaping_generation(base_path) else {
+            return 0;
+        };
+        let combined = format!("{shaping_generation}\n{runtime_sqm_fingerprint}");
+        return lqos_utils::hash_to_i64(&combined);
+    }
+
     let effective_path = base_path.join("network.effective.json");
     let network_json_path = base_path.join("network.json");
     let network_insight_path = base_path.join("network.insight.json");
@@ -3133,8 +3163,7 @@ fn calculate_shaping_runtime_hash_for_base(
     let shaped_devices_path = base_path.join("ShapedDevices.csv");
     let shaped_devices_insight_path = base_path.join("ShapedDevices.insight.csv");
 
-    let network_candidates: Vec<&Path> = if effective_path.exists() || uses_topology_import_ingress
-    {
+    let network_candidates: Vec<&Path> = if effective_path.exists() {
         vec![effective_path.as_path()]
     } else if insight_topology_enabled {
         vec![network_insight_path.as_path(), network_json_path.as_path()]
@@ -3892,31 +3921,52 @@ mod tests {
         .expect("effective network should write");
         fs::write(
             base.join("shaping_inputs.json"),
-            r#"{"circuits":[{"circuit_id":"circuit-1","effective_parent_node_id":"site-a"}]}"#,
+            r#"{"shaping_generation":"shape-a","circuits":[]}"#,
         )
         .expect("shaping inputs should write");
 
-        let first = calculate_shaping_runtime_hash_for_base(
-            base,
-            true,
-            false,
-            "",
-        );
+        let first = calculate_shaping_runtime_hash_for_base(base, true, false, "");
         assert_ne!(first, 0);
 
         fs::write(
             base.join("shaping_inputs.json"),
-            r#"{"circuits":[{"circuit_id":"circuit-1","effective_parent_node_id":"site-b"}]}"#,
+            r#"{"shaping_generation":"shape-b","circuits":[]}"#,
         )
         .expect("updated shaping inputs should write");
-        let second = calculate_shaping_runtime_hash_for_base(
-            base,
-            true,
-            false,
-            "",
-        );
+        let second = calculate_shaping_runtime_hash_for_base(base, true, false, "");
         assert_ne!(second, 0);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn shaping_runtime_hash_ignores_runtime_timestamp_only_changes() {
+        let temp = tempdir().expect("tempdir should exist");
+        let base = temp.path();
+        fs::write(
+            base.join("shaping_inputs.json"),
+            r#"{
+                "shaping_generation": "shape-1",
+                "generated_unix": 1,
+                "circuits": []
+            }"#,
+        )
+        .expect("shaping inputs should write");
+
+        let first = calculate_shaping_runtime_hash_for_base(base, true, false, "");
+        assert_ne!(first, 0);
+
+        fs::write(
+            base.join("shaping_inputs.json"),
+            r#"{
+                "shaping_generation": "shape-1",
+                "generated_unix": 2,
+                "circuits": []
+            }"#,
+        )
+        .expect("updated shaping inputs should write");
+
+        let second = calculate_shaping_runtime_hash_for_base(base, true, false, "");
+        assert_eq!(first, second);
     }
 
     #[test]
@@ -3931,12 +3981,7 @@ mod tests {
         )
         .expect("shaped devices should write");
 
-        let hash = calculate_shaping_runtime_hash_for_base(
-            base,
-            false,
-            false,
-            "",
-        );
+        let hash = calculate_shaping_runtime_hash_for_base(base, false, false, "");
         assert_ne!(hash, 0);
     }
 }

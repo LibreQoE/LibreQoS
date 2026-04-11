@@ -72,8 +72,7 @@ pub use topology_editor_state::{
     TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
     TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,
     TopologyAttachmentRole, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
-    TopologyQueueVisibilityPolicy,
-    topology_editor_state_path,
+    TopologyQueueVisibilityPolicy, topology_editor_state_path,
 };
 pub use topology_parent_candidates::{
     TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,

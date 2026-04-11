@@ -107,10 +107,7 @@ fn collect_exported_effective_nodes(value: &Value, by_id: &mut HashMap<String, S
         let Some(map) = node.as_object() else {
             continue;
         };
-        let is_virtual = map
-            .get("virtual")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let is_virtual = map.get("virtual").and_then(Value::as_bool).unwrap_or(false);
         let node_id = map
             .get("id")
             .and_then(Value::as_str)
@@ -140,10 +137,7 @@ fn collect_exported_effective_aliases(
         let Some(map) = node.as_object() else {
             continue;
         };
-        let is_virtual = map
-            .get("virtual")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let is_virtual = map.get("virtual").and_then(Value::as_bool).unwrap_or(false);
         let node_id = map
             .get("id")
             .and_then(Value::as_str)
@@ -157,8 +151,9 @@ fn collect_exported_effective_aliases(
             .get("active_attachment_name")
             .and_then(Value::as_str)
             .and_then(optional_non_empty);
-        if !is_virtual && let (Some(alias), Some(node_id), Some(node_name)) =
-            (active_attachment_name, node_id, node_name)
+        if !is_virtual
+            && let (Some(alias), Some(node_id), Some(node_name)) =
+                (active_attachment_name, node_id, node_name)
         {
             aliases.entry(alias).or_insert((node_id, node_name));
         }
@@ -760,6 +755,7 @@ fn build_shaping_inputs(
 
     Ok(Some(TopologyShapingInputsFile {
         schema_version: 1,
+        shaping_generation: String::new(),
         generated_unix: now_unix(),
         canonical_generated_unix: artifacts.effective.canonical_generated_unix,
         effective_generated_unix: artifacts.effective.generated_unix,
@@ -1165,23 +1161,18 @@ fn build_effective_topology_artifacts_from_prepared(
     let effective = compute_effective_state_from_prepared(config, prepared, overrides, health);
     let ui_state =
         merged_topology_state_from_prepared(config, prepared, overrides, health, &effective);
-    let canonical_network = if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration
-    {
-        canonical.insight_topology_network_json()
-    } else {
-        canonical.compatibility_network_json().clone()
-    };
+    let canonical_network =
+        if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration {
+            canonical.insight_topology_network_json()
+        } else {
+            canonical.compatibility_network_json().clone()
+        };
     let effective_network = if runtime_flat_mode(config) {
         Some(runtime_flat_bucket_network(config))
     } else {
-        canonical_network
-            .as_object()
-            .map(|_| apply_effective_topology_to_canonical_state(
-                config,
-                canonical,
-                &ui_state,
-                &effective,
-            ))
+        canonical_network.as_object().map(|_| {
+            apply_effective_topology_to_canonical_state(config, canonical, &ui_state, &effective)
+        })
     };
 
     if let Some(effective_network) = effective_network.as_ref() {
@@ -1268,29 +1259,44 @@ pub fn publish_effective_topology_artifacts(
             return Err(err);
         }
     };
-    if let Some(shaping_inputs) = shaping_inputs {
-        let shaping_inputs_value = serde_json::to_value(&shaping_inputs)?;
-        let current_shaping_inputs = read_json_value(&shaping_inputs_path);
-        if current_shaping_inputs.as_ref() != Some(&shaping_inputs_value) {
-            atomic_write_json_value(&shaping_inputs_path, &shaping_inputs_value).with_context(
-                || {
-                    format!(
-                        "Unable to publish runtime shaping inputs at {:?}",
-                        shaping_inputs_path
-                    )
-                },
+    match shaping_inputs {
+        Some(mut shaping_inputs) => {
+            shaping_inputs.shaping_generation = shaping_inputs.compute_shaping_generation()?;
+            let current_shaping_inputs = TopologyShapingInputsFile::load(config).ok();
+            if !current_shaping_inputs
+                .as_ref()
+                .is_some_and(|current| current.semantic_equals(&shaping_inputs))
+            {
+                let shaping_inputs_value = serde_json::to_value(&shaping_inputs)?;
+                atomic_write_json_value(&shaping_inputs_path, &shaping_inputs_value).with_context(
+                    || {
+                        format!(
+                            "Unable to publish runtime shaping inputs at {:?}",
+                            shaping_inputs_path
+                        )
+                    },
+                )?;
+            }
+            publish_topology_runtime_status(
+                config,
+                source_generation,
+                Some(&shaping_inputs.shaping_generation),
+                true,
+                None,
             )?;
         }
-    } else if shaping_inputs_path.exists() {
-        std::fs::remove_file(&shaping_inputs_path).with_context(|| {
-            format!(
-                "Unable to remove stale runtime shaping inputs at {:?}",
-                shaping_inputs_path
-            )
-        })?;
+        None => {
+            if shaping_inputs_path.exists() {
+                std::fs::remove_file(&shaping_inputs_path).with_context(|| {
+                    format!(
+                        "Unable to remove stale runtime shaping inputs at {:?}",
+                        shaping_inputs_path
+                    )
+                })?;
+            }
+            publish_topology_runtime_status(config, source_generation, None, true, None)?;
+        }
     }
-
-    publish_topology_runtime_status(config, source_generation, true, None)?;
 
     Ok(())
 }
@@ -1298,12 +1304,14 @@ pub fn publish_effective_topology_artifacts(
 fn topology_runtime_status_snapshot(
     config: &Config,
     source_generation: &str,
+    shaping_generation: Option<&str>,
     ready: bool,
     error: Option<String>,
 ) -> TopologyRuntimeStatusFile {
     TopologyRuntimeStatusFile {
         schema_version: 1,
         source_generation: source_generation.to_string(),
+        shaping_generation: shaping_generation.unwrap_or_default().to_string(),
         ready,
         generated_unix: now_unix(),
         effective_state_path: topology_effective_state_path(config)
@@ -1325,10 +1333,17 @@ fn topology_runtime_status_snapshot(
 pub fn publish_topology_runtime_status(
     config: &Config,
     source_generation: &str,
+    shaping_generation: Option<&str>,
     ready: bool,
     error: Option<String>,
 ) -> Result<()> {
-    let status = topology_runtime_status_snapshot(config, source_generation, ready, error);
+    let status = topology_runtime_status_snapshot(
+        config,
+        source_generation,
+        shaping_generation,
+        ready,
+        error,
+    );
     status.save(config).with_context(|| {
         format!(
             "Unable to publish topology runtime status at {:?}",
@@ -1346,7 +1361,13 @@ pub fn publish_topology_runtime_error_status(
     source_generation: &str,
     error: &str,
 ) -> Result<()> {
-    publish_topology_runtime_status(config, source_generation, false, Some(error.to_string()))
+    publish_topology_runtime_status(
+        config,
+        source_generation,
+        None,
+        false,
+        Some(error.to_string()),
+    )
 }
 
 fn parse_probe_ip(raw: &str) -> Option<IpAddr> {
@@ -2261,8 +2282,11 @@ fn logical_child_branch_counts(ui_state: &TopologyEditorStateFile) -> HashMap<St
 }
 
 fn read_node_rate_mbps(node: &Map<String, Value>, key: &str) -> Option<u64> {
-    node.get(key)
-        .and_then(|value| value.as_u64().or_else(|| value.as_f64().map(|rate| rate as u64)))
+    node.get(key).and_then(|value| {
+        value
+            .as_u64()
+            .or_else(|| value.as_f64().map(|rate| rate as u64))
+    })
 }
 
 fn node_capacity_mbps(node: &Map<String, Value>) -> u64 {
@@ -3886,9 +3910,8 @@ mod tests {
         TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
         TopologyCanonicalIngressKind, TopologyCanonicalNode, TopologyCanonicalStateFile,
         TopologyEditorNode, TopologyEditorStateFile, TopologyEffectiveAttachmentState,
-        TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStatusFile,
-        TopologyQueueVisibilityPolicy,
-        topology_effective_network_path, topology_effective_state_path,
+        TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyQueueVisibilityPolicy,
+        TopologyRuntimeStatusFile, topology_effective_network_path, topology_effective_state_path,
         topology_runtime_status_path, topology_shaping_inputs_path,
     };
     use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile};
@@ -4034,6 +4057,7 @@ mod tests {
         assert_eq!(ready.source_generation, generation);
         assert!(ready.ready);
         assert_eq!(ready.error, None);
+        assert!(!ready.shaping_generation.is_empty());
         assert_eq!(
             ready.effective_state_path,
             topology_effective_state_path(&config)
@@ -5060,16 +5084,16 @@ mod tests {
                     current_parent_node_name: Some("Parent Site".to_string()),
                     current_attachment_id: Some("backhaul-attachment".to_string()),
                     current_attachment_name: Some("Backhaul Attachment".to_string()),
-                can_move: true,
-                allowed_parents: vec![TopologyAllowedParent {
-                    parent_node_id: "parent-site".to_string(),
-                    parent_node_name: "Parent Site".to_string(),
-                    attachment_options: vec![single_hop_attachment],
-                    all_attachments_suppressed: false,
-                    has_probe_unavailable_attachments: false,
-                }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
-                preferred_attachment_id: None,
+                    can_move: true,
+                    allowed_parents: vec![TopologyAllowedParent {
+                        parent_node_id: "parent-site".to_string(),
+                        parent_node_name: "Parent Site".to_string(),
+                        attachment_options: vec![single_hop_attachment],
+                        all_attachments_suppressed: false,
+                        has_probe_unavailable_attachments: false,
+                    }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
                     effective_attachment_name: None,
@@ -5520,8 +5544,12 @@ mod tests {
             ],
         };
 
-        let effective_network =
-            apply_effective_topology_to_canonical_state(&config, &canonical, &editor_state, &effective);
+        let effective_network = apply_effective_topology_to_canonical_state(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
         let root = effective_network
             .as_object()
             .expect("effective export should remain an object tree");
@@ -5668,8 +5696,12 @@ mod tests {
             ],
         };
 
-        let effective_network =
-            apply_effective_topology_to_network_json(&config, &canonical, &editor_state, &effective);
+        let effective_network = apply_effective_topology_to_network_json(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
         let root = effective_network
             .as_object()
             .expect("effective export should remain an object tree");
@@ -5824,16 +5856,30 @@ mod tests {
             ],
         };
 
-        let effective_network =
-            apply_effective_topology_to_network_json(&config, &canonical, &editor_state, &effective);
+        let effective_network = apply_effective_topology_to_network_json(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
         let root = effective_network
             .as_object()
             .expect("effective export should remain an object tree");
         let aggregation = root["Root"]["children"]["Aggregation"]
             .as_object()
             .expect("Aggregation should remain exported");
-        assert_eq!(aggregation.get("downloadBandwidthMbps").and_then(Value::as_u64), Some(2350));
-        assert_eq!(aggregation.get("uploadBandwidthMbps").and_then(Value::as_u64), Some(2350));
+        assert_eq!(
+            aggregation
+                .get("downloadBandwidthMbps")
+                .and_then(Value::as_u64),
+            Some(2350)
+        );
+        assert_eq!(
+            aggregation
+                .get("uploadBandwidthMbps")
+                .and_then(Value::as_u64),
+            Some(2350)
+        );
         assert_eq!(aggregation.get("virtual").and_then(Value::as_bool), None);
     }
 
@@ -6305,16 +6351,16 @@ mod tests {
                     current_parent_node_name: Some("Site Alpha".to_string()),
                     current_attachment_id: Some("beta-alpha-60".to_string()),
                     current_attachment_name: Some("Beta - Alpha 60".to_string()),
-                can_move: true,
-                allowed_parents: vec![TopologyAllowedParent {
-                    parent_node_id: "site-alpha".to_string(),
-                    parent_node_name: "Site Alpha".to_string(),
-                    attachment_options: vec![move_attachment],
-                    all_attachments_suppressed: false,
-                    has_probe_unavailable_attachments: false,
-                }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
-                preferred_attachment_id: None,
+                    can_move: true,
+                    allowed_parents: vec![TopologyAllowedParent {
+                        parent_node_id: "site-alpha".to_string(),
+                        parent_node_name: "Site Alpha".to_string(),
+                        attachment_options: vec![move_attachment],
+                        all_attachments_suppressed: false,
+                        has_probe_unavailable_attachments: false,
+                    }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
                     effective_attachment_name: None,
@@ -6610,7 +6656,7 @@ mod tests {
             &effective,
             &exported,
         )
-            .expect_err("missing site should fail validation");
+        .expect_err("missing site should fail validation");
         assert!(errors.iter().any(|error| error.contains("Site Beta")));
     }
 
@@ -6701,13 +6747,9 @@ mod tests {
 
         let config = Config::default();
         let errors = validate_effective_topology_network(
-            &config,
-            &exported,
-            &ui_state,
-            &effective,
-            &exported,
+            &config, &exported, &ui_state, &effective, &exported,
         )
-            .expect_err("site-parent cycle should fail validation");
+        .expect_err("site-parent cycle should fail validation");
         assert!(errors.iter().any(|error| error.contains("parent cycle")));
     }
 
@@ -6778,13 +6820,9 @@ mod tests {
 
         let config = Config::default();
         let errors = validate_effective_topology_network(
-            &config,
-            &exported,
-            &ui_state,
-            &effective,
-            &exported,
+            &config, &exported, &ui_state, &effective, &exported,
         )
-            .expect_err("invalid attachment should fail validation");
+        .expect_err("invalid attachment should fail validation");
         assert!(
             errors
                 .iter()

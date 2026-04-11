@@ -762,8 +762,7 @@ mod test {
         let temp = unique_temp_dir("network-json-effective-priority");
         std::fs::write(temp.join("network.effective.json"), "{}")
             .expect("effective tree should write");
-        std::fs::write(temp.join("network.insight.json"), "{}")
-            .expect("insight tree should write");
+        std::fs::write(temp.join("network.insight.json"), "{}").expect("insight tree should write");
         std::fs::write(temp.join("network.json"), "{}").expect("legacy tree should write");
         let mut config = crate::Config {
             lqos_directory: temp.display().to_string(),
