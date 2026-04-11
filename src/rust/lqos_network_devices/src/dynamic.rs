@@ -1,11 +1,12 @@
 use lqos_config::ShapedDevice;
 use lqos_utils::XdpIpAddress;
+use serde::{Deserialize, Serialize};
 
 /// Runtime-only dynamic circuit overlay entry.
 ///
 /// This is an overlay on top of `ShapedDevices.csv` and never mutates the static file.
 /// It is intended for circuits/devices that are created and managed dynamically at runtime.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DynamicCircuit {
     /// Shaped-device-like fields describing the dynamic circuit/device.
     pub shaped: ShapedDevice,

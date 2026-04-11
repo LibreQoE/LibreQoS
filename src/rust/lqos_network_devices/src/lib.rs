@@ -9,6 +9,7 @@ mod actor;
 mod catalog;
 mod directory_watcher;
 mod dynamic;
+mod dynamic_store;
 mod hash_cache;
 mod state;
 mod topology;
@@ -111,6 +112,28 @@ pub fn apply_shaped_devices_snapshot(reason: &str, shaped: ConfigShapedDevices) 
 /// This function is not pure: it sends a message to the runtime actor when running.
 pub fn report_observations(observations: &[CircuitObservation]) {
     actor::report_observations(observations)
+}
+
+/// Creates or updates a runtime-only dynamic circuit overlay entry.
+///
+/// Side effects:
+/// - Updates the in-memory dynamic circuit snapshot.
+/// - Writes `dynamic_circuits.json` in the LibreQoS directory.
+///
+/// This function does **not** mutate `ShapedDevices.csv`.
+pub fn upsert_dynamic_circuit(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+    actor::upsert_dynamic_circuit(shaped_device)
+}
+
+/// Removes a runtime-only dynamic circuit overlay entry by circuit id.
+///
+/// Side effects:
+/// - Updates the in-memory dynamic circuit snapshot.
+/// - Writes `dynamic_circuits.json` in the LibreQoS directory when a circuit is removed.
+///
+/// This function does **not** mutate `ShapedDevices.csv`.
+pub fn remove_dynamic_circuit(circuit_id: &str) -> Result<bool> {
+    actor::remove_dynamic_circuit(circuit_id)
 }
 
 /// Replaces the in-memory `ShapedDevices.csv` snapshot without involving the runtime actor.

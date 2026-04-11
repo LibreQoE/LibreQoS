@@ -1,7 +1,8 @@
 use crate::dynamic::CircuitObservation;
+use crate::dynamic_store::{load_dynamic_circuits_from_disk, persist_dynamic_circuits_to_disk};
 use crate::state;
 use crate::{DaemonHooks, load_network_json, load_shaped_devices};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use crossbeam_channel::{Receiver, Sender};
 use once_cell::sync::OnceCell;
 use std::collections::HashSet;
@@ -87,6 +88,28 @@ pub(crate) fn report_observations(observations: &[CircuitObservation]) {
     });
 }
 
+pub(crate) fn upsert_dynamic_circuit(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    sender()?.send(NetworkDevicesCommand::UpsertDynamicCircuit {
+        shaped_device: Box::new(shaped_device),
+        reply: reply_tx,
+    })?;
+    reply_rx
+        .blocking_recv()
+        .map_err(|_| anyhow!("Upsert dynamic circuit reply channel closed"))?
+}
+
+pub(crate) fn remove_dynamic_circuit(circuit_id: &str) -> Result<bool> {
+    let (reply_tx, reply_rx) = oneshot::channel();
+    sender()?.send(NetworkDevicesCommand::RemoveDynamicCircuit {
+        circuit_id: circuit_id.to_string(),
+        reply: reply_tx,
+    })?;
+    reply_rx
+        .blocking_recv()
+        .map_err(|_| anyhow!("Remove dynamic circuit reply channel closed"))?
+}
+
 enum NetworkDevicesCommand {
     ReloadShapedDevices {
         reason: String,
@@ -104,6 +127,14 @@ enum NetworkDevicesCommand {
     ReportObservations {
         observations: Vec<CircuitObservation>,
     },
+    UpsertDynamicCircuit {
+        shaped_device: Box<lqos_config::ShapedDevice>,
+        reply: oneshot::Sender<Result<()>>,
+    },
+    RemoveDynamicCircuit {
+        circuit_id: String,
+        reply: oneshot::Sender<Result<bool>>,
+    },
 }
 
 fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonHooks>>) {
@@ -115,6 +146,7 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
     if let Err(err) = reload_network_json_inner("startup", hooks.as_deref()) {
         warn!("Initial network-json load failed: {err}");
     }
+    reload_dynamic_circuits_inner("startup");
 
     while let Ok(command) = rx.recv() {
         match command {
@@ -141,10 +173,85 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
             NetworkDevicesCommand::ReportObservations { observations } => {
                 handle_observations(&observations);
             }
+            NetworkDevicesCommand::UpsertDynamicCircuit {
+                shaped_device,
+                reply,
+            } => {
+                let result = upsert_dynamic_circuit_inner(*shaped_device);
+                let _ = reply.send(result);
+            }
+            NetworkDevicesCommand::RemoveDynamicCircuit { circuit_id, reply } => {
+                let result = remove_dynamic_circuit_inner(&circuit_id);
+                let _ = reply.send(result);
+            }
         }
     }
 
     error!("lqos_network_devices actor stopped");
+}
+
+fn normalize_circuit_id_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn recompute_hashes(device: &mut lqos_config::ShapedDevice) {
+    device.circuit_hash = lqos_utils::hash_to_i64(&device.circuit_id);
+    device.device_hash = lqos_utils::hash_to_i64(&device.device_id);
+    device.parent_hash = lqos_utils::hash_to_i64(&device.parent_node);
+}
+
+fn reload_dynamic_circuits_inner(reason: &str) {
+    let circuits = load_dynamic_circuits_from_disk();
+    debug!("Loaded {} dynamic circuits reason={reason}", circuits.len());
+    state::publish_dynamic_circuits_snapshot(circuits);
+}
+
+fn upsert_dynamic_circuit_inner(mut shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+    recompute_hashes(&mut shaped_device);
+    let now_unix = lqos_utils::unix_time::unix_now().context("get unix time")?;
+
+    let snapshot = state::dynamic_circuits_snapshot();
+    let mut updated = snapshot.as_ref().clone();
+    let key = normalize_circuit_id_key(&shaped_device.circuit_id);
+
+    if let Some(pos) = updated
+        .iter()
+        .position(|c| normalize_circuit_id_key(&c.shaped.circuit_id) == key)
+    {
+        updated[pos].shaped = shaped_device;
+        updated[pos].last_seen_unix = now_unix;
+    } else {
+        updated.push(crate::DynamicCircuit {
+            shaped: shaped_device,
+            last_seen_unix: now_unix,
+        });
+    }
+
+    persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
+    state::publish_dynamic_circuits_snapshot(updated);
+    Ok(())
+}
+
+fn remove_dynamic_circuit_inner(circuit_id: &str) -> Result<bool> {
+    let snapshot = state::dynamic_circuits_snapshot();
+    if snapshot.is_empty() {
+        return Ok(false);
+    }
+
+    let key = normalize_circuit_id_key(circuit_id);
+    let updated: Vec<_> = snapshot
+        .iter()
+        .filter(|c| normalize_circuit_id_key(&c.shaped.circuit_id) != key)
+        .cloned()
+        .collect();
+
+    if updated.len() == snapshot.len() {
+        return Ok(false);
+    }
+
+    persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
+    state::publish_dynamic_circuits_snapshot(updated);
+    Ok(true)
 }
 
 fn handle_observations(observations: &[CircuitObservation]) {

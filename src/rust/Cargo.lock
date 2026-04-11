@@ -2122,6 +2122,8 @@ dependencies = [
  "lqos_utils",
  "once_cell",
  "parking_lot",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -2132,10 +2134,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "lqos_bus",
  "lqos_config",
  "nix",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

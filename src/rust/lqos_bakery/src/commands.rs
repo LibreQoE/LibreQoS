@@ -231,6 +231,28 @@ pub enum BakeryCommands {
         /// Optional per-circuit SQM override: "cake" or "fq_codel"
         sqm_override: Option<String>,
     },
+    /// Create or update a runtime-only dynamic circuit overlay entry.
+    ///
+    /// This does not mutate `ShapedDevices.csv`. Overlay circuits are retained across full reloads
+    /// and are applied to the active shaping tree when possible.
+    UpsertDynamicCircuitOverlay {
+        /// Shaped-device-like definition for the dynamic circuit/device.
+        shaped_device: Box<lqos_config::ShapedDevice>,
+        /// Optional synchronous reply channel for immediate acceptance reporting.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
+    /// Remove a runtime-only dynamic circuit overlay entry by circuit identifier.
+    ///
+    /// This does not mutate `ShapedDevices.csv`. When the circuit exists in the active shaping
+    /// tree, it is removed live when possible.
+    RemoveDynamicCircuitOverlay {
+        /// Stable circuit identifier to remove.
+        circuit_id: String,
+        /// Optional synchronous reply channel for immediate acceptance reporting.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
     /// Change a specific HTB class rate on-the-fly; optionally dry-run.
     StormGuardAdjustment {
         /// If true, log the tc command instead of executing it.

@@ -125,10 +125,14 @@ impl DynamicCircuitsConfig {
                 return Err(format!("{label}: upload_max_mbps must be >= 0.2"));
             }
             if rule.download_min_mbps > rule.download_max_mbps {
-                return Err(format!("{label}: download_min_mbps must be <= download_max_mbps"));
+                return Err(format!(
+                    "{label}: download_min_mbps must be <= download_max_mbps"
+                ));
             }
             if rule.upload_min_mbps > rule.upload_max_mbps {
-                return Err(format!("{label}: upload_min_mbps must be <= upload_max_mbps"));
+                return Err(format!(
+                    "{label}: upload_min_mbps must be <= upload_max_mbps"
+                ));
             }
         }
 

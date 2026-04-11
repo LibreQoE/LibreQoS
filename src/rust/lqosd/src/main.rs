@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
+mod dynamic_circuits;
 mod file_lock;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
@@ -531,6 +532,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     let _ = stick::recompute_stick_offset(&cfg);
                 }
                 BusResponse::Ack
+            }
+            BusRequest::CreateDynamicCircuit { shaped_device } => {
+                crate::dynamic_circuits::create_dynamic_circuit((**shaped_device).clone())
+            }
+            BusRequest::RemoveDynamicCircuit { circuit_id } => {
+                crate::dynamic_circuits::remove_dynamic_circuit(circuit_id)
             }
             BusRequest::InvalidateAuthCache => {
                 crate::node_manager::invalidate_auth_cache();

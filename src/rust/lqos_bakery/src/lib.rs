@@ -29,7 +29,7 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -70,6 +70,7 @@ use lqos_config::{
     plan_top_level_assignments,
 };
 use qdisc_handles::MqDeviceLayout;
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 const TEST_FAULT_ONCE_PATH: &str = "/tmp/lqos_bakery_fail_purpose_once.txt";
@@ -479,6 +480,508 @@ fn parse_ip_list(s: &str) -> Vec<String> {
         .map(|x| x.trim().to_string())
         .filter(|x| !x.is_empty())
         .collect()
+}
+
+const DYNAMIC_CIRCUITS_FILENAME: &str = "dynamic_circuits.json";
+
+#[derive(Clone, Debug)]
+struct DynamicCircuitOverlayEntry {
+    shaped_device: lqos_config::ShapedDevice,
+    class_minor: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PersistedDynamicCircuit {
+    shaped: lqos_config::ShapedDevice,
+    #[allow(dead_code)]
+    #[serde(default)]
+    last_seen_unix: u64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PersistedDynamicCircuitsFile {
+    #[serde(default)]
+    #[allow(dead_code)]
+    schema_version: u32,
+    #[serde(default)]
+    circuits: Vec<PersistedDynamicCircuit>,
+}
+
+fn dynamic_circuits_path(config: &Config) -> PathBuf {
+    Path::new(&config.lqos_directory).join(DYNAMIC_CIRCUITS_FILENAME)
+}
+
+fn recompute_shaped_hashes(device: &mut lqos_config::ShapedDevice) {
+    device.circuit_hash = runtime_hash_to_i64(&device.circuit_id);
+    device.device_hash = runtime_hash_to_i64(&device.device_id);
+    device.parent_hash = runtime_hash_to_i64(&device.parent_node);
+}
+
+fn load_dynamic_circuit_overlays_from_disk(
+    config: &Config,
+) -> HashMap<i64, DynamicCircuitOverlayEntry> {
+    let path = dynamic_circuits_path(config);
+    if !path.exists() {
+        return HashMap::new();
+    }
+
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                "Bakery: unable to read dynamic circuits file {} ({err}); treating as empty",
+                path.display()
+            );
+            return HashMap::new();
+        }
+    };
+
+    if raw.trim().is_empty() {
+        return HashMap::new();
+    }
+
+    let parsed: PersistedDynamicCircuitsFile = match serde_json::from_str(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                "Bakery: unable to parse dynamic circuits file {} ({err}); treating as empty",
+                path.display()
+            );
+            return HashMap::new();
+        }
+    };
+
+    let mut overlays = HashMap::new();
+    for entry in parsed.circuits {
+        let mut shaped = entry.shaped;
+        if shaped.circuit_id.trim().is_empty() {
+            continue;
+        }
+        if shaped.device_id.trim().is_empty() {
+            continue;
+        }
+        recompute_shaped_hashes(&mut shaped);
+        let circuit_hash = shaped.circuit_hash;
+        overlays.insert(
+            circuit_hash,
+            DynamicCircuitOverlayEntry {
+                shaped_device: shaped,
+                class_minor: None,
+            },
+        );
+    }
+
+    overlays
+}
+
+fn ip_list_from_shaped_device(device: &lqos_config::ShapedDevice) -> String {
+    let mut ips = Vec::new();
+    for (ip, prefix) in device.ipv4.iter() {
+        ips.push(format!("{ip}/{prefix}"));
+    }
+    for (ip, prefix) in device.ipv6.iter() {
+        ips.push(format!("{ip}/{prefix}"));
+    }
+    ips.sort();
+    ips.dedup();
+    ips.join(",")
+}
+
+fn normalize_circuit_id_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn find_free_dynamic_circuit_minor(
+    used_down: &HashSet<u16>,
+    used_up: &HashSet<u16>,
+) -> Option<u16> {
+    let start = ACTIVE_RUNTIME_MINOR_START.min(u16::MAX as u32) as u16;
+    (start..=0xFFFEu16).find(|m| !used_down.contains(m) && !used_up.contains(m))
+}
+
+fn append_dynamic_circuit_overlays_to_batch(
+    batch: &mut Vec<Arc<BakeryCommands>>,
+    overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
+    migrations: &HashMap<i64, Migration>,
+) {
+    if overlays.is_empty() {
+        return;
+    }
+
+    let planned_sites: HashMap<i64, Arc<BakeryCommands>> = batch
+        .iter()
+        .filter_map(|cmd| match cmd.as_ref() {
+            BakeryCommands::AddSite { site_hash, .. } => Some((*site_hash, Arc::clone(cmd))),
+            _ => None,
+        })
+        .collect();
+    let planned_circuits: HashMap<i64, Arc<BakeryCommands>> = batch
+        .iter()
+        .filter_map(|cmd| match cmd.as_ref() {
+            BakeryCommands::AddCircuit { circuit_hash, .. } => {
+                Some((*circuit_hash, Arc::clone(cmd)))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let mut overlay_keys: Vec<i64> = overlays.keys().copied().collect();
+    overlay_keys.sort_unstable();
+
+    let mut used_by_major: HashMap<(u16, u16), (HashSet<u16>, HashSet<u16>)> = HashMap::new();
+
+    for circuit_hash in overlay_keys {
+        let Some(entry) = overlays.get_mut(&circuit_hash) else {
+            continue;
+        };
+
+        if entry.shaped_device.circuit_id.trim().is_empty()
+            || entry.shaped_device.device_id.trim().is_empty()
+        {
+            continue;
+        }
+
+        recompute_shaped_hashes(&mut entry.shaped_device);
+        let site_hash = runtime_hash_to_i64(&entry.shaped_device.parent_node);
+        let Some(site_cmd) = planned_sites.get(&site_hash) else {
+            warn!(
+                "Bakery: skipping dynamic circuit overlay {} because parent node '{}' is not present in the current batch sites",
+                entry.shaped_device.circuit_id, entry.shaped_device.parent_node
+            );
+            continue;
+        };
+        let Some((down_parent, up_parent)) = site_class_handles(site_cmd.as_ref()) else {
+            warn!(
+                "Bakery: skipping dynamic circuit overlay {} because parent node '{}' did not resolve to a valid site class",
+                entry.shaped_device.circuit_id, entry.shaped_device.parent_node
+            );
+            continue;
+        };
+
+        let down_major = down_parent.get_major_minor().0;
+        let up_major = up_parent.get_major_minor().0;
+
+        let (used_down, used_up) =
+            used_by_major
+                .entry((down_major, up_major))
+                .or_insert_with(|| {
+                    let (mut used_down, mut used_up) =
+                        used_site_minors_for_majors(&planned_sites, down_major, up_major);
+                    let (used_circuit_down, used_circuit_up) =
+                        used_circuit_minors_for_majors(&planned_circuits, down_major, up_major);
+                    used_down.extend(used_circuit_down);
+                    used_up.extend(used_circuit_up);
+                    let (used_shadow_down, used_shadow_up) =
+                        used_pending_migration_shadow_minors_for_majors(
+                            migrations, down_major, up_major,
+                        );
+                    used_down.extend(used_shadow_down);
+                    used_up.extend(used_shadow_up);
+                    (used_down, used_up)
+                });
+
+        let mut desired_minor = entry.class_minor;
+        if let Some(minor) = desired_minor
+            && (minor < ACTIVE_RUNTIME_MINOR_START as u16
+                || used_down.contains(&minor)
+                || used_up.contains(&minor))
+        {
+            desired_minor = None;
+        }
+
+        let class_minor = match desired_minor
+            .or_else(|| find_free_dynamic_circuit_minor(used_down, used_up))
+        {
+            Some(minor) => minor,
+            None => {
+                warn!(
+                    "Bakery: unable to allocate a free class_minor for dynamic circuit overlay {} (down_major=0x{:x}, up_major=0x{:x})",
+                    entry.shaped_device.circuit_id, down_major, up_major
+                );
+                continue;
+            }
+        };
+        entry.class_minor = Some(class_minor);
+        used_down.insert(class_minor);
+        used_up.insert(class_minor);
+
+        // Ensure the overlay command is the only circuit entry for this hash.
+        batch.retain(|cmd| match cmd.as_ref() {
+            BakeryCommands::AddCircuit {
+                circuit_hash: h, ..
+            } => *h != circuit_hash,
+            _ => true,
+        });
+
+        let ip_addresses = ip_list_from_shaped_device(&entry.shaped_device);
+        let circuit_name = (!entry.shaped_device.circuit_name.trim().is_empty())
+            .then(|| entry.shaped_device.circuit_name.clone());
+        let site_name = (!entry.shaped_device.parent_node.trim().is_empty())
+            .then(|| entry.shaped_device.parent_node.clone());
+
+        batch.push(Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash,
+            circuit_name,
+            site_name,
+            parent_class_id: down_parent,
+            up_parent_class_id: up_parent,
+            class_minor,
+            download_bandwidth_min: entry.shaped_device.download_min_mbps,
+            upload_bandwidth_min: entry.shaped_device.upload_min_mbps,
+            download_bandwidth_max: entry.shaped_device.download_max_mbps,
+            upload_bandwidth_max: entry.shaped_device.upload_max_mbps,
+            class_major: down_major,
+            up_class_major: up_major,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses,
+            sqm_override: entry.shaped_device.sqm_override.clone(),
+        }));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_upsert_dynamic_circuit_overlay(
+    mut shaped_device: lqos_config::ShapedDevice,
+    overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
+    batch_in_progress: bool,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &mut HashMap<i64, u64>,
+    mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+    migrations: &HashMap<i64, Migration>,
+) -> Result<(), String> {
+    if shaped_device.circuit_id.trim().is_empty() {
+        return Err("dynamic circuit requires circuit_id".to_string());
+    }
+    if shaped_device.device_id.trim().is_empty() {
+        return Err("dynamic circuit requires device_id".to_string());
+    }
+    if shaped_device.parent_node.trim().is_empty() {
+        return Err("dynamic circuit requires parent_node".to_string());
+    }
+
+    recompute_shaped_hashes(&mut shaped_device);
+    let circuit_hash = shaped_device.circuit_hash;
+
+    let entry = overlays
+        .entry(circuit_hash)
+        .or_insert_with(|| DynamicCircuitOverlayEntry {
+            shaped_device: shaped_device.clone(),
+            class_minor: None,
+        });
+    entry.shaped_device = shaped_device;
+
+    if batch_in_progress {
+        // Avoid mutating live TC while a full batch is being assembled; the overlay will be
+        // applied when the batch is committed.
+        return Ok(());
+    }
+
+    let Ok(config) = lqos_config::load_config() else {
+        return Err("unable to load config".to_string());
+    };
+
+    if config.queues.queue_mode.is_observe() {
+        return Ok(());
+    }
+
+    // If we don't yet have a baseline MQ layout or any sites, keep the overlay and let the next
+    // commit batch create the circuit.
+    if !MQ_CREATED.load(Ordering::Relaxed) || mq_layout.is_none() || sites.is_empty() {
+        return Ok(());
+    }
+
+    // If the circuit is already present, don't attempt to live-update it here yet.
+    if circuits.contains_key(&circuit_hash) {
+        return Ok(());
+    }
+
+    let site_hash = runtime_hash_to_i64(&entry.shaped_device.parent_node);
+    let Some(site_cmd) = sites.get(&site_hash) else {
+        return Err(format!(
+            "parent node '{}' is not present in current bakery site state",
+            entry.shaped_device.parent_node
+        ));
+    };
+    let Some((down_parent, up_parent)) = site_class_handles(site_cmd.as_ref()) else {
+        return Err(format!(
+            "parent node '{}' did not resolve to a valid site class",
+            entry.shaped_device.parent_node
+        ));
+    };
+
+    let down_major = down_parent.get_major_minor().0;
+    let up_major = up_parent.get_major_minor().0;
+
+    let (mut used_down, mut used_up) = used_site_minors_for_majors(sites, down_major, up_major);
+    let (used_circuit_down, used_circuit_up) =
+        used_circuit_minors_for_majors(circuits, down_major, up_major);
+    used_down.extend(used_circuit_down);
+    used_up.extend(used_circuit_up);
+    let (used_shadow_down, used_shadow_up) =
+        used_pending_migration_shadow_minors_for_majors(migrations, down_major, up_major);
+    used_down.extend(used_shadow_down);
+    used_up.extend(used_shadow_up);
+
+    let mut desired_minor = entry.class_minor;
+    if let Some(minor) = desired_minor
+        && (minor < ACTIVE_RUNTIME_MINOR_START as u16
+            || used_down.contains(&minor)
+            || used_up.contains(&minor))
+    {
+        desired_minor = None;
+    }
+    let class_minor = desired_minor
+        .or_else(|| find_free_dynamic_circuit_minor(&used_down, &used_up))
+        .ok_or_else(|| "unable to allocate free class_minor for dynamic circuit".to_string())?;
+    entry.class_minor = Some(class_minor);
+
+    let ip_addresses = ip_list_from_shaped_device(&entry.shaped_device);
+    let candidate = Arc::new(BakeryCommands::AddCircuit {
+        circuit_hash,
+        circuit_name: (!entry.shaped_device.circuit_name.trim().is_empty())
+            .then(|| entry.shaped_device.circuit_name.clone()),
+        site_name: (!entry.shaped_device.parent_node.trim().is_empty())
+            .then(|| entry.shaped_device.parent_node.clone()),
+        parent_class_id: down_parent,
+        up_parent_class_id: up_parent,
+        class_minor,
+        download_bandwidth_min: entry.shaped_device.download_min_mbps,
+        upload_bandwidth_min: entry.shaped_device.upload_min_mbps,
+        download_bandwidth_max: entry.shaped_device.download_max_mbps,
+        upload_bandwidth_max: entry.shaped_device.upload_max_mbps,
+        class_major: down_major,
+        up_class_major: up_major,
+        down_qdisc_handle: None,
+        up_qdisc_handle: None,
+        ip_addresses,
+        sqm_override: entry.shaped_device.sqm_override.clone(),
+    });
+
+    let mapped_limit = resolve_mapped_circuit_limit();
+    if is_mapped_add_circuit(candidate.as_ref())
+        && let Some(limit) = mapped_limit.effective_limit
+        && circuits
+            .values()
+            .filter(|c| is_mapped_add_circuit(c.as_ref()))
+            .count()
+            >= limit
+    {
+        let stats = MappedLimitStats {
+            enforced_limit: mapped_limit.effective_limit,
+            requested_mapped: 1,
+            allowed_mapped: 0,
+            dropped_mapped: 1,
+        };
+        warn!(
+            "Bakery mapped circuit cap enforced (dynamic circuit addition): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+            stats.requested_mapped,
+            stats.allowed_mapped,
+            stats.dropped_mapped,
+            format_mapped_limit(mapped_limit.effective_limit),
+            mapped_limit.licensed,
+            mapped_limit.max_circuits
+        );
+        maybe_emit_mapped_circuit_limit_urgent(&stats);
+        return Err("mapped circuit limit reached".to_string());
+    }
+
+    let Some(layout) = mq_layout.as_ref() else {
+        return Ok(());
+    };
+    let live_reserved_handles =
+        snapshot_live_qdisc_handle_majors_or_empty(&config, "dynamic circuit additions");
+    let enriched = with_assigned_qdisc_handles_reserved(
+        &candidate,
+        &config,
+        layout,
+        qdisc_handles,
+        &live_reserved_handles,
+    );
+    let commands = enriched
+        .to_commands(&config, ExecutionMode::Builder)
+        .unwrap_or_default();
+    if !commands.is_empty() {
+        execute_and_record_live_change(&commands, "adding dynamic circuit");
+    }
+    circuits.insert(circuit_hash, enriched);
+    live_circuits.remove(&circuit_hash);
+    qdisc_handles.save(&config);
+    update_queue_distribution_snapshot(sites, circuits);
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_remove_dynamic_circuit_overlay(
+    circuit_id: &str,
+    overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
+    batch_in_progress: bool,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &mut HashMap<i64, u64>,
+    _mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+) -> Result<(), String> {
+    let normalized = normalize_circuit_id_key(circuit_id);
+    let overlay_key = overlays
+        .iter()
+        .find(|(_, entry)| normalize_circuit_id_key(&entry.shaped_device.circuit_id) == normalized)
+        .map(|(k, _)| *k)
+        .or_else(|| {
+            let computed = runtime_hash_to_i64(circuit_id);
+            overlays.contains_key(&computed).then_some(computed)
+        });
+
+    if let Some(key) = overlay_key {
+        overlays.remove(&key);
+    }
+
+    if batch_in_progress {
+        // Avoid mutating live TC while a full batch is being assembled; the next commit batch
+        // will reconcile the removal.
+        return Ok(());
+    }
+
+    let Ok(config) = lqos_config::load_config() else {
+        return Err("unable to load config".to_string());
+    };
+
+    let circuit_hash = overlay_key.unwrap_or_else(|| runtime_hash_to_i64(circuit_id));
+    if let Some(circuit) = circuits.remove(&circuit_hash) {
+        let was_activated = live_circuits.contains_key(&circuit_hash);
+        let commands = match config.queues.lazy_queues.as_ref() {
+            None | Some(LazyQueueMode::No) => circuit.to_prune(&config, true),
+            Some(LazyQueueMode::Htb) => {
+                if was_activated {
+                    circuit.to_prune(&config, false)
+                } else {
+                    None
+                }
+            }
+            Some(LazyQueueMode::Full) => {
+                if was_activated {
+                    circuit.to_prune(&config, true)
+                } else {
+                    None
+                }
+            }
+        };
+        if let Some(cmd) = commands {
+            execute_and_record_live_change(&cmd, "removing dynamic circuit");
+        }
+        live_circuits.remove(&circuit_hash);
+        qdisc_handles.release_circuit(&config.isp_interface(), circuit_hash);
+        if !config.on_a_stick_mode() {
+            qdisc_handles.release_circuit(&config.internet_interface(), circuit_hash);
+        }
+        qdisc_handles.save(&config);
+        update_queue_distribution_snapshot(sites, circuits);
+    }
+
+    Ok(())
 }
 
 /*fn parse_ip_and_prefix(ip: &str) -> (String, u32) {
@@ -3089,6 +3592,11 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
     let mut virtualized_sites: HashMap<i64, VirtualizedSiteState> = HashMap::new();
     let mut runtime_node_operations: HashMap<i64, RuntimeNodeOperation> = HashMap::new();
     let mut next_runtime_operation_id: u64 = 1;
+    let mut dynamic_circuit_overlays: HashMap<i64, DynamicCircuitOverlayEntry> =
+        lqos_config::load_config()
+            .ok()
+            .map(|config| load_dynamic_circuit_overlays_from_disk(&config))
+            .unwrap_or_default();
 
     // Mapping state
     #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -4017,6 +4525,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut batch,
                     &mut sites,
                     &mut circuits,
+                    &mut dynamic_circuit_overlays,
                     &mut live_circuits,
                     &mut mq_layout,
                     &mut qdisc_handles,
@@ -4053,6 +4562,40 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             BakeryCommands::AddCircuit { .. } => {
                 if let Some(batch) = &mut batch {
                     batch.push(Arc::new(command));
+                }
+            }
+            BakeryCommands::UpsertDynamicCircuitOverlay {
+                shaped_device,
+                reply,
+            } => {
+                let result = handle_upsert_dynamic_circuit_overlay(
+                    *shaped_device,
+                    &mut dynamic_circuit_overlays,
+                    batch.is_some(),
+                    &sites,
+                    &mut circuits,
+                    &mut live_circuits,
+                    &mq_layout,
+                    &mut qdisc_handles,
+                    &migrations,
+                );
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
+            BakeryCommands::RemoveDynamicCircuitOverlay { circuit_id, reply } => {
+                let result = handle_remove_dynamic_circuit_overlay(
+                    &circuit_id,
+                    &mut dynamic_circuit_overlays,
+                    batch.is_some(),
+                    &sites,
+                    &mut circuits,
+                    &mut live_circuits,
+                    &mq_layout,
+                    &mut qdisc_handles,
+                );
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
                 }
             }
             BakeryCommands::OnCircuitActivity { circuit_ids } => {
@@ -4199,6 +4742,7 @@ fn handle_commit_batch(
     batch: &mut Option<Vec<Arc<BakeryCommands>>>,
     sites: &mut HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    dynamic_circuit_overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
     live_circuits: &mut HashMap<i64, u64>,
     mq_layout: &mut Option<MqDeviceLayout>,
     qdisc_handles: &mut QdiscHandleState,
@@ -4218,6 +4762,8 @@ fn handle_commit_batch(
         debug!("CommitBatch received without a batch to commit.");
         return;
     };
+    let mut raw_batch = raw_batch;
+    append_dynamic_circuit_overlays_to_batch(&mut raw_batch, dynamic_circuit_overlays, migrations);
     let (baseline_sites, baseline_circuits) =
         reconstruct_structural_baseline_state(sites, circuits, virtualized_sites);
     let effective_new_batch =

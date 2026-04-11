@@ -14,5 +14,7 @@ lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

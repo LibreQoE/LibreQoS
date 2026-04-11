@@ -3,6 +3,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use anyhow::{Result, anyhow};
 use clap::{Args, Parser, Subcommand};
 
+use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient};
 use lqos_config::ShapedDevice;
 use lqos_overrides::{CircuitAdjustment, NetworkAdjustment, OverrideFile};
 
@@ -35,6 +36,11 @@ enum Commands {
     Uisp {
         #[command(subcommand)]
         command: UispCommand,
+    },
+    /// Manage runtime-only dynamic circuit overlay entries (via lqosd bus)
+    DynamicCircuits {
+        #[command(subcommand)]
+        command: DynamicCircuitsCommand,
     },
 }
 
@@ -146,6 +152,17 @@ enum UispCommand {
     },
     /// List deprecated UISP route override entries
     RouteList,
+}
+
+#[derive(Subcommand, Debug)]
+enum DynamicCircuitsCommand {
+    /// Add or update a dynamic circuit overlay entry
+    Add(Box<AddArgs>),
+    /// Remove a dynamic circuit overlay entry by circuit ID
+    Remove {
+        #[arg(long)]
+        circuit_id: String,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -318,222 +335,265 @@ struct AddSiteSpeedArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Load overrides file at start
-    let mut overrides = OverrideFile::load()?;
+    fn send_bus_request(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        rt.block_on(async {
+            let mut bus = LibreqosBusClient::new().await?;
+            Ok(bus.request(requests).await?)
+        })
+    }
 
     match cli.command {
-        Commands::PersistentDevices { command: cmd } => match cmd {
-            PersistentDevicesCommand::Add(args) => {
-                let device = args.into_device()?;
-                let changed = overrides.add_persistent_shaped_device_return_changed(device);
-                if changed {
-                    overrides.save()?;
-                    println!("Added device; overrides saved.");
-                } else {
-                    println!("No changes (device already present).");
+        Commands::DynamicCircuits { command: cmd } => match cmd {
+            DynamicCircuitsCommand::Add(args) => {
+                let device = (*args).into_device()?;
+                let mut replies = send_bus_request(vec![BusRequest::CreateDynamicCircuit {
+                    shaped_device: Box::new(device),
+                }])?;
+                match replies.pop() {
+                    Some(BusResponse::Ack) => println!("Dynamic circuit created/updated."),
+                    Some(BusResponse::Fail(message)) => return Err(anyhow!(message)),
+                    Some(other) => println!("Unexpected bus response: {other:?}"),
+                    None => println!("No bus response."),
                 }
             }
-            PersistentDevicesCommand::DeleteCircuitId { circuit_id } => {
-                let removed =
-                    overrides.remove_persistent_shaped_device_by_circuit_count(&circuit_id);
-                if removed > 0 {
-                    overrides.save()?;
-                    println!("Removed {removed} device(s) by circuit_id; overrides saved.");
-                } else {
-                    println!("No devices matched circuit_id {circuit_id}.");
-                }
-            }
-            PersistentDevicesCommand::DeleteDeviceId { device_id } => {
-                let removed = overrides.remove_persistent_shaped_device_by_device_count(&device_id);
-                if removed > 0 {
-                    overrides.save()?;
-                    println!("Removed {removed} device(s) by device_id; overrides saved.");
-                } else {
-                    println!("No devices matched device_id {device_id}.");
-                }
-            }
-            PersistentDevicesCommand::List => {
-                let list = overrides.persistent_devices();
-                println!("{}", serde_json::to_string_pretty(&list)?);
-            }
-        },
-        Commands::Adjustments { command: cmd } => match cmd {
-            AdjustmentsCommand::AddCircuitSpeed(args) => {
-                let adj = CircuitAdjustment::CircuitAdjustSpeed {
-                    circuit_id: args.circuit_id,
-                    min_download_bandwidth: args.min_download_bandwidth,
-                    max_download_bandwidth: args.max_download_bandwidth,
-                    min_upload_bandwidth: args.min_upload_bandwidth,
-                    max_upload_bandwidth: args.max_upload_bandwidth,
-                };
-                overrides.add_circuit_adjustment(adj);
-                overrides.save()?;
-                println!("Added circuit speed adjustment; overrides saved.");
-            }
-            AdjustmentsCommand::AddDeviceSpeed(args) => {
-                let adj = CircuitAdjustment::DeviceAdjustSpeed {
-                    device_id: args.device_id,
-                    min_download_bandwidth: args.min_download_bandwidth,
-                    max_download_bandwidth: args.max_download_bandwidth,
-                    min_upload_bandwidth: args.min_upload_bandwidth,
-                    max_upload_bandwidth: args.max_upload_bandwidth,
-                };
-                overrides.add_circuit_adjustment(adj);
-                overrides.save()?;
-                println!("Added device speed adjustment; overrides saved.");
-            }
-            AdjustmentsCommand::AddRemoveCircuit { circuit_id } => {
-                let adj = CircuitAdjustment::RemoveCircuit { circuit_id };
-                overrides.add_circuit_adjustment(adj);
-                overrides.save()?;
-                println!("Added remove-circuit adjustment; overrides saved.");
-            }
-            AdjustmentsCommand::AddRemoveDevice { device_id } => {
-                let adj = CircuitAdjustment::RemoveDevice { device_id };
-                overrides.add_circuit_adjustment(adj);
-                overrides.save()?;
-                println!("Added remove-device adjustment; overrides saved.");
-            }
-            AdjustmentsCommand::AddReparentCircuit {
-                circuit_id,
-                parent_node,
-            } => {
-                let adj = CircuitAdjustment::ReparentCircuit {
-                    circuit_id,
-                    parent_node,
-                };
-                overrides.add_circuit_adjustment(adj);
-                overrides.save()?;
-                println!("Added reparent-circuit adjustment; overrides saved.");
-            }
-            AdjustmentsCommand::DeleteIndex { index } => {
-                let ok = overrides.remove_circuit_adjustment_by_index(index);
-                if ok {
-                    overrides.save()?;
-                    println!("Removed adjustment at index {index}; overrides saved.");
-                } else {
-                    println!("No adjustment at index {index}.");
-                }
-            }
-            AdjustmentsCommand::List => {
-                let list = overrides.circuit_adjustments();
-                println!("{}", serde_json::to_string_pretty(&list)?);
-            }
-        },
-        Commands::NetworkAdjustments { command: cmd } => match cmd {
-            NetworkAdjustmentsCommand::AddSiteSpeed(args) => {
-                let adj = NetworkAdjustment::AdjustSiteSpeed {
-                    node_id: args.node_id,
-                    site_name: args.site_name,
-                    download_bandwidth_mbps: args.download_bandwidth_mbps,
-                    upload_bandwidth_mbps: args.upload_bandwidth_mbps,
-                };
-                overrides.add_network_adjustment(adj);
-                overrides.save()?;
-                println!("Added site speed adjustment; overrides saved.");
-            }
-            NetworkAdjustmentsCommand::SetVirtual {
-                node_name,
-                virtual_node,
-            } => {
-                overrides.set_network_node_virtual(node_name, virtual_node);
-                overrides.save()?;
-                println!("Set node virtual flag; overrides saved.");
-            }
-            NetworkAdjustmentsCommand::DeleteVirtual { node_name } => {
-                let removed = overrides.remove_network_node_virtual_by_name_count(&node_name);
-                if removed > 0 {
-                    overrides.save()?;
-                    println!(
-                        "Removed {removed} virtual override(s) for node '{node_name}'; overrides saved."
-                    );
-                } else {
-                    println!("No virtual override found for node '{node_name}'.");
-                }
-            }
-            NetworkAdjustmentsCommand::DeleteIndex { index } => {
-                let ok = overrides.remove_network_adjustment_by_index(index);
-                if ok {
-                    overrides.save()?;
-                    println!("Removed network adjustment at index {index}; overrides saved.");
-                } else {
-                    println!("No network adjustment at index {index}.");
-                }
-            }
-            NetworkAdjustmentsCommand::List => {
-                let list = overrides.network_adjustments();
-                println!("{}", serde_json::to_string_pretty(&list)?);
-            }
-        },
-        Commands::Uisp { command: cmd } => match cmd {
-            UispCommand::BandwidthSet {
-                site_name,
-                down,
-                up,
-            } => {
-                overrides.set_uisp_bandwidth_override(site_name, down, up);
-                overrides.save()?;
-                println!(
-                    "Added deprecated UISP bandwidth override entry; overrides saved. Current UISP builds ignore these entries and use AdjustSiteSpeed overrides instead."
-                );
-            }
-            UispCommand::BandwidthRemove { site_name } => {
-                let removed = overrides.remove_uisp_bandwidth_override(&site_name);
-                if removed {
-                    overrides.save()?;
-                    println!(
-                        "Removed deprecated UISP bandwidth override for {site_name}; overrides saved."
-                    );
-                } else {
-                    println!("No UISP bandwidth override found for {site_name}.");
-                }
-            }
-            UispCommand::BandwidthList => {
-                println!(
-                    "Deprecated UISP bandwidth override entries. Current UISP builds ignore these entries and use AdjustSiteSpeed overrides instead."
-                );
-                if let Some(uisp) = overrides.uisp() {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&uisp.bandwidth_overrides)?
-                    );
-                } else {
-                    println!("{{}}");
-                }
-            }
-            UispCommand::RouteAdd {
-                from_site,
-                to_site,
-                cost,
-            } => {
-                overrides.add_uisp_route_override(from_site, to_site, cost);
-                overrides.save()?;
-                println!(
-                    "Added deprecated UISP route override entry; overrides saved. Current UISP builds ignore these overrides."
-                );
-            }
-            UispCommand::RouteRemoveIndex { index } => {
-                let removed = overrides.remove_uisp_route_by_index(index);
-                if removed {
-                    overrides.save()?;
-                    println!(
-                        "Removed deprecated UISP route override at index {index}; overrides saved."
-                    );
-                } else {
-                    println!("No UISP route override at index {index}.");
-                }
-            }
-            UispCommand::RouteList => {
-                println!(
-                    "Deprecated UISP route override entries. Current UISP builds ignore these overrides."
-                );
-                if let Some(uisp) = overrides.uisp() {
-                    println!("{}", serde_json::to_string_pretty(&uisp.route_overrides)?);
-                } else {
-                    println!("[]");
+            DynamicCircuitsCommand::Remove { circuit_id } => {
+                let mut replies =
+                    send_bus_request(vec![BusRequest::RemoveDynamicCircuit { circuit_id }])?;
+                match replies.pop() {
+                    Some(BusResponse::Ack) => println!("Dynamic circuit removed."),
+                    Some(BusResponse::Fail(message)) => return Err(anyhow!(message)),
+                    Some(other) => println!("Unexpected bus response: {other:?}"),
+                    None => println!("No bus response."),
                 }
             }
         },
+        command => {
+            // All other commands operate on the overrides file.
+            let mut overrides = OverrideFile::load()?;
+
+            match command {
+                Commands::PersistentDevices { command: cmd } => match cmd {
+                    PersistentDevicesCommand::Add(args) => {
+                        let device = args.into_device()?;
+                        let changed = overrides.add_persistent_shaped_device_return_changed(device);
+                        if changed {
+                            overrides.save()?;
+                            println!("Added device; overrides saved.");
+                        } else {
+                            println!("No changes (device already present).");
+                        }
+                    }
+                    PersistentDevicesCommand::DeleteCircuitId { circuit_id } => {
+                        let removed =
+                            overrides.remove_persistent_shaped_device_by_circuit_count(&circuit_id);
+                        if removed > 0 {
+                            overrides.save()?;
+                            println!("Removed {removed} device(s) by circuit_id; overrides saved.");
+                        } else {
+                            println!("No devices matched circuit_id {circuit_id}.");
+                        }
+                    }
+                    PersistentDevicesCommand::DeleteDeviceId { device_id } => {
+                        let removed =
+                            overrides.remove_persistent_shaped_device_by_device_count(&device_id);
+                        if removed > 0 {
+                            overrides.save()?;
+                            println!("Removed {removed} device(s) by device_id; overrides saved.");
+                        } else {
+                            println!("No devices matched device_id {device_id}.");
+                        }
+                    }
+                    PersistentDevicesCommand::List => {
+                        let list = overrides.persistent_devices();
+                        println!("{}", serde_json::to_string_pretty(&list)?);
+                    }
+                },
+                Commands::Adjustments { command: cmd } => match cmd {
+                    AdjustmentsCommand::AddCircuitSpeed(args) => {
+                        let adj = CircuitAdjustment::CircuitAdjustSpeed {
+                            circuit_id: args.circuit_id,
+                            min_download_bandwidth: args.min_download_bandwidth,
+                            max_download_bandwidth: args.max_download_bandwidth,
+                            min_upload_bandwidth: args.min_upload_bandwidth,
+                            max_upload_bandwidth: args.max_upload_bandwidth,
+                        };
+                        overrides.add_circuit_adjustment(adj);
+                        overrides.save()?;
+                        println!("Added circuit speed adjustment; overrides saved.");
+                    }
+                    AdjustmentsCommand::AddDeviceSpeed(args) => {
+                        let adj = CircuitAdjustment::DeviceAdjustSpeed {
+                            device_id: args.device_id,
+                            min_download_bandwidth: args.min_download_bandwidth,
+                            max_download_bandwidth: args.max_download_bandwidth,
+                            min_upload_bandwidth: args.min_upload_bandwidth,
+                            max_upload_bandwidth: args.max_upload_bandwidth,
+                        };
+                        overrides.add_circuit_adjustment(adj);
+                        overrides.save()?;
+                        println!("Added device speed adjustment; overrides saved.");
+                    }
+                    AdjustmentsCommand::AddRemoveCircuit { circuit_id } => {
+                        let adj = CircuitAdjustment::RemoveCircuit { circuit_id };
+                        overrides.add_circuit_adjustment(adj);
+                        overrides.save()?;
+                        println!("Added remove-circuit adjustment; overrides saved.");
+                    }
+                    AdjustmentsCommand::AddRemoveDevice { device_id } => {
+                        let adj = CircuitAdjustment::RemoveDevice { device_id };
+                        overrides.add_circuit_adjustment(adj);
+                        overrides.save()?;
+                        println!("Added remove-device adjustment; overrides saved.");
+                    }
+                    AdjustmentsCommand::AddReparentCircuit {
+                        circuit_id,
+                        parent_node,
+                    } => {
+                        let adj = CircuitAdjustment::ReparentCircuit {
+                            circuit_id,
+                            parent_node,
+                        };
+                        overrides.add_circuit_adjustment(adj);
+                        overrides.save()?;
+                        println!("Added reparent-circuit adjustment; overrides saved.");
+                    }
+                    AdjustmentsCommand::DeleteIndex { index } => {
+                        let ok = overrides.remove_circuit_adjustment_by_index(index);
+                        if ok {
+                            overrides.save()?;
+                            println!("Removed adjustment at index {index}; overrides saved.");
+                        } else {
+                            println!("No adjustment at index {index}.");
+                        }
+                    }
+                    AdjustmentsCommand::List => {
+                        let list = overrides.circuit_adjustments();
+                        println!("{}", serde_json::to_string_pretty(&list)?);
+                    }
+                },
+                Commands::NetworkAdjustments { command: cmd } => match cmd {
+                    NetworkAdjustmentsCommand::AddSiteSpeed(args) => {
+                        let adj = NetworkAdjustment::AdjustSiteSpeed {
+                            node_id: args.node_id,
+                            site_name: args.site_name,
+                            download_bandwidth_mbps: args.download_bandwidth_mbps,
+                            upload_bandwidth_mbps: args.upload_bandwidth_mbps,
+                        };
+                        overrides.add_network_adjustment(adj);
+                        overrides.save()?;
+                        println!("Added site speed adjustment; overrides saved.");
+                    }
+                    NetworkAdjustmentsCommand::SetVirtual {
+                        node_name,
+                        virtual_node,
+                    } => {
+                        overrides.set_network_node_virtual(node_name, virtual_node);
+                        overrides.save()?;
+                        println!("Set node virtual flag; overrides saved.");
+                    }
+                    NetworkAdjustmentsCommand::DeleteVirtual { node_name } => {
+                        let removed =
+                            overrides.remove_network_node_virtual_by_name_count(&node_name);
+                        if removed > 0 {
+                            overrides.save()?;
+                            println!(
+                                "Removed {removed} virtual override(s) for node '{node_name}'; overrides saved."
+                            );
+                        } else {
+                            println!("No virtual override found for node '{node_name}'.");
+                        }
+                    }
+                    NetworkAdjustmentsCommand::DeleteIndex { index } => {
+                        let ok = overrides.remove_network_adjustment_by_index(index);
+                        if ok {
+                            overrides.save()?;
+                            println!(
+                                "Removed network adjustment at index {index}; overrides saved."
+                            );
+                        } else {
+                            println!("No network adjustment at index {index}.");
+                        }
+                    }
+                    NetworkAdjustmentsCommand::List => {
+                        let list = overrides.network_adjustments();
+                        println!("{}", serde_json::to_string_pretty(&list)?);
+                    }
+                },
+                Commands::Uisp { command: cmd } => match cmd {
+                    UispCommand::BandwidthSet {
+                        site_name,
+                        down,
+                        up,
+                    } => {
+                        overrides.set_uisp_bandwidth_override(site_name, down, up);
+                        overrides.save()?;
+                        println!(
+                            "Added deprecated UISP bandwidth override entry; overrides saved. Current UISP builds ignore these entries and use AdjustSiteSpeed overrides instead."
+                        );
+                    }
+                    UispCommand::BandwidthRemove { site_name } => {
+                        let removed = overrides.remove_uisp_bandwidth_override(&site_name);
+                        if removed {
+                            overrides.save()?;
+                            println!(
+                                "Removed deprecated UISP bandwidth override for {site_name}; overrides saved."
+                            );
+                        } else {
+                            println!("No UISP bandwidth override found for {site_name}.");
+                        }
+                    }
+                    UispCommand::BandwidthList => {
+                        println!(
+                            "Deprecated UISP bandwidth override entries. Current UISP builds ignore these entries and use AdjustSiteSpeed overrides instead."
+                        );
+                        if let Some(uisp) = overrides.uisp() {
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&uisp.bandwidth_overrides)?
+                            );
+                        } else {
+                            println!("{{}}");
+                        }
+                    }
+                    UispCommand::RouteAdd {
+                        from_site,
+                        to_site,
+                        cost,
+                    } => {
+                        overrides.add_uisp_route_override(from_site, to_site, cost);
+                        overrides.save()?;
+                        println!(
+                            "Added deprecated UISP route override entry; overrides saved. Current UISP builds ignore these overrides."
+                        );
+                    }
+                    UispCommand::RouteRemoveIndex { index } => {
+                        let removed = overrides.remove_uisp_route_by_index(index);
+                        if removed {
+                            overrides.save()?;
+                            println!(
+                                "Removed deprecated UISP route override at index {index}; overrides saved."
+                            );
+                        } else {
+                            println!("No UISP route override at index {index}.");
+                        }
+                    }
+                    UispCommand::RouteList => {
+                        println!(
+                            "Deprecated UISP route override entries. Current UISP builds ignore these overrides."
+                        );
+                        if let Some(uisp) = overrides.uisp() {
+                            println!("{}", serde_json::to_string_pretty(&uisp.route_overrides)?);
+                        } else {
+                            println!("[]");
+                        }
+                    }
+                },
+                Commands::DynamicCircuits { .. } => unreachable!("dynamic circuits handled above"),
+            }
+        }
     }
 
     Ok(())
