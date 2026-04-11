@@ -906,14 +906,17 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 BusResponse::Ack
             }
             BusRequest::SchedulerError(error) => {
+                tool_status::scheduler_seen();
                 tool_status::scheduler_error(Some(error.clone()));
                 BusResponse::Ack
             }
             BusRequest::SchedulerOutput(output) => {
+                tool_status::scheduler_seen();
                 tool_status::scheduler_output(Some(output.clone()));
                 BusResponse::Ack
             }
             BusRequest::SchedulerProgress(progress) => {
+                tool_status::scheduler_seen();
                 let mut progress = progress.clone();
                 if progress.updated_unix.is_none() {
                     progress.updated_unix = unix_now().ok();

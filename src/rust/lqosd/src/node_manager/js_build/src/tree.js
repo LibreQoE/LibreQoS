@@ -98,7 +98,7 @@ function sendPrivateRequest(command) {
 async function loadRootGaugeConfigMax() {
     try {
         const msg = await sendWsRequest("GetConfig", {GetConfig: {}});
-        const queues = msg?.data?.queues;
+        const queues = msg?.data?.config?.queues;
         if (!queues) {
             return;
         }

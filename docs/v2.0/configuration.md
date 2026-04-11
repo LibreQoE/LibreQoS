@@ -27,7 +27,7 @@ For most operators:
 
 Most day-to-day LibreQoS configuration is handled in WebUI (`http://your_shaper_ip:9123/config_general.html`).
 
-Current builds use shared configuration panels on the General, RTT, Queues, TreeGuard, Network Mode, Integration Defaults, Network Layout, Insight, provider-specific integration pages, IP Ranges, Flow Tracking, and Shaped Devices pages so node settings and operational tuning follow the same surface styling as the rest of Node Manager. The TreeGuard page starts with a live behavior summary rather than a permanent warning banner. Integration Defaults also carries the shared Ethernet port headroom policy used by integrations that can detect negotiated subscriber-facing port speeds.
+Current builds use a consistent configuration layout across the General, RTT, Queues, TreeGuard, Network Mode, Integration Defaults, Network Layout, Insight, provider integration, IP Ranges, Flow Tracking, and Shaped Devices pages. Integration Defaults also includes the shared Ethernet port headroom policy used by integrations that can detect negotiated subscriber-facing port speeds.
 
 ### Where in WebUI
 
@@ -37,11 +37,11 @@ Current builds use shared configuration panels on the General, RTT, Queues, Tree
 - Shaped devices editor: `Configuration -> Shaped Devices`
 - Runtime operational validation: `WebUI (Node Manager)` pages (dashboard/tree/flow/scheduler)
 
-When an integration is enabled and acting as the source of truth, the `Network Layout` and `Shaped Devices` editors remain viewable but become read-only in WebUI.
+When an integration is managing your shaping data, the `Network Layout` and `Shaped Devices` editors remain visible but become read-only in WebUI.
 
 Topology note:
 - `network.json` node names must be globally unique across the whole tree. Duplicate node names now fail validation and are not accepted by the WebUI save path or `LibreQoS.py`.
-- When a node exposes a stable `id`, current builds prefer that ID for operator-owned site bandwidth overrides while keeping legacy name-only matching as a fallback.
+- When a node exposes a stable `id`, LibreQoS prefers that ID for saved site bandwidth overrides while keeping legacy name-only matching as a fallback.
 
 Queue-mode note:
 - Current builds use `queue_mode` with `shape` and `observe` values. Older `monitor_only` wording is a compatibility alias rather than the primary operator-facing setting.

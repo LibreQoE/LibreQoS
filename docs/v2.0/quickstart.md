@@ -8,8 +8,8 @@ Use this page in order:
 1. Complete install and bridge setup.
 2. Complete first-run WebUI access.
 3. Pass the 10-minute health check.
-4. Pick one source of truth owner.
-5. Follow the recommended path for that owner.
+4. Choose one system to manage your shaping data.
+5. Follow the recommended path for that system.
 
 Need definitions for key terms? See the [Glossary](glossary.md).
 
@@ -89,23 +89,23 @@ Confirm:
 
 If this fails, go to [Troubleshooting](troubleshooting.md) before proceeding.
 
-## 3) Pick One Source of Truth Owner
+## 3) Choose One System To Manage Your Shaping Data
 
 This is the most important early decision.
 
-Source of truth means: the one place that should own persistent shaping data.
+On this page, "source of truth" just means the place where permanent shaping changes should be made.
 
 If you make persistent changes somewhere else, they may be overwritten later.
 
 Choose one:
 
-| If this describes you | Mode | Owner of durable shaping data |
+| If this describes you | Mode | Where permanent shaping changes belong |
 |---|---|---|
 | You use a supported LibreQoS CRM/NMS integration | Built-In Integration Mode | Integration jobs |
 | You generate `network.json` and `ShapedDevices.csv` with your own automation | Custom Source of Truth Mode | Your scripts |
 | You intentionally maintain files by hand | Manual Files Mode | Manual edits |
 
-Rule: keep one owner for persistent shaping inputs.
+Rule: pick one place for permanent shaping changes.
 
 Most operators should stop here and choose **Built-In Integration Mode**.
 
@@ -121,18 +121,14 @@ When to choose:
 Do this now:
 1. Configure integration settings in WebUI.
 2. Run the initial sync.
-3. Confirm outputs were created or refreshed:
-   - `network.json`
-   - `ShapedDevices.csv`
-4. Confirm Scheduler Status is healthy.
-5. Confirm Network Tree reflects the expected hierarchy depth for your chosen integration strategy.
-6. Confirm there are no urgent/fatal issues that block shaping.
-7. Only then move to limited pilot traffic or inline use.
+3. Confirm Scheduler Status is healthy.
+4. Confirm Network Tree reflects the expected hierarchy depth for your chosen integration strategy.
+5. Confirm there are no urgent or fatal issues that block shaping.
+6. Only then move to limited pilot traffic or inline use.
 
 Do not do this:
-- Do not hand-edit integration-owned files as your normal workflow.
-- Do not split ownership between integration syncs and manual file edits unless you intentionally want that complexity.
-- Do not change overwrite behavior unless you understand how your integration should own `network.json`.
+- Do not hand-edit files that your integration refreshes as part of your normal workflow.
+- Do not mix manual file edits with scheduled integration syncs unless you intentionally want that extra complexity.
 
 Next:
 - [CRM/NMS Integrations](integrations.md)
@@ -147,7 +143,7 @@ When to choose:
 
 Do this now:
 1. Implement script/process to generate and refresh shaping files.
-2. Declare script outputs as your source of truth.
+2. Treat your script outputs as the place for permanent shaping changes.
 3. Place LibreQoS inline for pilot traffic.
 4. Use WebUI for operational checks and short-term adjustments.
 5. Keep permanent changes in your external script workflow.
@@ -182,7 +178,7 @@ Next:
 
 ## 6) Common First-Run Mistakes
 
-- Unclear source of truth ownership between integration and manual edits.
+- Not deciding where permanent shaping changes should be made.
 - Hand-editing files even though your integration is supposed to own them.
 - Changing topology depth before passing the health gate.
 - Skipping post-change service/log validation before pilot traffic.

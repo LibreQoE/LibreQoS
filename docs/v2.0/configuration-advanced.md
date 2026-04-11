@@ -2,6 +2,8 @@
 
 Use this page when you need CLI-driven configuration, direct file editing, or deep reference details.
 
+For the full topology/shaping pipeline and file-role diagrams, see [Topology Data Flow](topology-data-flow.md).
+
 ## Topology Pattern Guardrails
 
 Use these guardrails before deeper tuning:
@@ -13,7 +15,7 @@ Use these guardrails before deeper tuning:
 If results diverge from expectations after edits, use [Troubleshooting](troubleshooting.md) before additional changes.
 
 ```{warning}
-If integration mode is enabled, direct edits to `network.json` and `ShapedDevices.csv` can be overwritten by integration refresh cycles. Use integration settings and overrides for durable changes.
+If built-in integration mode is enabled, do not treat `network.json` or `ShapedDevices.csv` as the durable source of truth. Use your CRM/NMS, topology settings, and `lqos_overrides.json` for durable changes.
 ```
 
 ## Configuration via Command Line
@@ -76,10 +78,68 @@ See also [Troubleshooting](troubleshooting.md).
 
 #### Source of Truth Boundary for Integration Users
 
-If integration mode is enabled, integration refresh cycles typically own `ShapedDevices.csv` and may also own `network.json` depending on settings.
+If built-in integration mode is enabled, the integration and topology compiler own the working topology/shaping artifacts. DIY/manual mode remains the place where `network.json` and `ShapedDevices.csv` are durable inputs.
 
 - Use WebUI/manual edits for short operational adjustments only.
 - Put permanent changes in your integration system, integration overrides, or declared external source of truth workflow.
+
+#### Static queue visibility policy
+
+Current builds separate logical topology from queue-visible topology.
+
+- Topology Manager keeps the full logical tree.
+- `network.effective.json`, `shaping_inputs.json`, `tree.html`, and HTB planning use the queue-visible runtime tree.
+- Large aggregation nodes can be auto-virtualized for queueing while still remaining visible in the runtime tree and Topology Manager.
+
+The topology config now includes:
+
+```toml
+[topology]
+queue_auto_virtualize_threshold_mbps = 5000
+```
+
+In the WebUI, this lives at `Configuration -> Integration - Common` as `Queue Auto-Virtualize Threshold (Mbps)`.
+
+How it works:
+
+- `queue_auto_virtualize_threshold_mbps` is the static queue-policy threshold used by `lqos_topology`.
+- Integration roots default to static virtual nodes in the runtime tree.
+- Site nodes above the threshold may also be virtualized automatically when they are acting as aggregation-only branches.
+- Nodes with directly attached circuits stay queue-visible by default.
+
+This static queue policy is now the primary way to avoid wasting HTB depth or creating artificial aggregate choke points. TreeGuard runtime link virtualization remains available, but is disabled by default.
+
+##### `QueueAuto` decision flow
+
+`QueueAuto` is a static topology policy resolved by `lqos_topology` during runtime-effective export. It is not the same thing as TreeGuard runtime virtualization.
+
+```{mermaid}
+flowchart TD
+    A[Node queue policy = QueueAuto] --> B{Is this a root node?}
+    B -->|Yes| C[Hide for queueing / promote children]
+    B -->|No| D{Is this a Site node?}
+    D -->|No| E[Keep queue-visible]
+    D -->|Yes| F{Does it have child branches?}
+    F -->|No| G[Keep queue-visible]
+    F -->|Yes| H{Final effective node rate >= threshold?}
+    H -->|No| I[Keep queue-visible]
+    H -->|Yes| J[Mark static virtual for queueing]
+```
+
+Current rule summary:
+
+- Root nodes default to queue-hidden or static virtual behavior depending on policy.
+- Non-`Site` nodes stay queue-visible under `QueueAuto`.
+- A `Site` with no child branches stays queue-visible.
+- A `Site` with child branches only becomes static virtual when its final effective node rate is at or above `queue_auto_virtualize_threshold_mbps`.
+- The rate used for this decision is the recompiled runtime-effective rate, not an earlier raw attachment max.
+
+When a node becomes static virtual:
+
+- it stays visible logically and in `tree.html`
+- it keeps monitoring, throughput, RTT, and roll-up context
+- it does not consume a physical HTB class
+- its children are shaped through the nearest non-virtual queue-visible path
 
 #### IP range allow/ignore behavior for integrations
 
@@ -362,8 +422,9 @@ If `sqm` is empty/missing, global queue defaults apply.
 TreeGuard can dynamically adjust per-circuit SQM (`cake`/`fq_codel`) based on circuit conditions.
 
 Important:
-- In LibreQoS v2.0, TreeGuard is enabled by default.
-- If you want fixed/manual SQM behavior, review TreeGuard settings early in deployment and either narrow its enrollment or disable it explicitly.
+- TreeGuard remains enabled by default for circuit SQM management.
+- Runtime link virtualization is disabled by default and is no longer the primary queue-planning mechanism.
+- If you want fixed/manual SQM behavior, review TreeGuard circuit settings early in deployment and either narrow its enrollment or disable it explicitly.
 
 See [TreeGuard](treeguard.md).
 

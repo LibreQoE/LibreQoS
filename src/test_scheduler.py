@@ -33,6 +33,7 @@ def install_scheduler_stubs():
     lqlib.calculate_hash = lambda: 0
     lqlib.calculate_shaping_runtime_hash = lambda: 0
     lqlib.calculate_topology_source_generation = lambda: "test-generation"
+    lqlib.topology_import_ingress_enabled = lambda: False
     lqlib.efficiency_core_ids = lambda: []
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
@@ -532,6 +533,64 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         written_rows = mock_write.call_args.args[2]
         self.assertEqual(written_rows[0][4], "AP-Updated")
         self.assertEqual(written_rows[0][5], "")
+
+    def test_apply_lqos_overrides_updates_canonical_only_for_integration_ingress(self):
+        header = [
+            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node", "MAC",
+            "IPv4", "IPv6", "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps",
+            "Upload Max Mbps", "Comment",
+        ]
+        rows = [[
+            "93", "Name", "splynx_service_93", "Name", "AP", "MAC", "1.1.1.1", "",
+            "1", "1", "330", "330", "",
+        ]]
+        canonical_state = {
+            "compatibility_network_json": {
+                "NodeB": {
+                    "downloadBandwidthMbps": 200,
+                    "uploadBandwidthMbps": 100,
+                    "children": {},
+                }
+            },
+            "nodes": [
+                {
+                    "node_id": "node-b",
+                    "node_name": "NodeB",
+                    "rate_input": {
+                        "intrinsic_download_mbps": 200,
+                        "intrinsic_upload_mbps": 100,
+                    },
+                }
+            ],
+        }
+
+        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):  # nosec B108
+            with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
+                with patch.object(scheduler, "overrides_persistent_devices_materialized", return_value=[]):
+                    with patch.object(scheduler, "overrides_circuit_adjustments_materialized", return_value=[]):
+                        with patch.object(
+                            scheduler,
+                            "overrides_network_adjustments_materialized",
+                            return_value=[{
+                                "type": "adjust_site_speed",
+                                "node_id": "node-b",
+                                "site_name": "NodeB",
+                                "download_bandwidth_mbps": 80,
+                                "upload_bandwidth_mbps": 40,
+                            }],
+                        ):
+                            with patch.object(scheduler, "topology_import_ingress_enabled", return_value=True):
+                                with patch.object(scheduler, "load_topology_canonical_state", return_value=canonical_state):
+                                    with patch.object(scheduler, "write_topology_canonical_state") as mock_write_canonical:
+                                        with patch.object(scheduler, "load_network_json") as mock_load_network:
+                                            with patch.object(scheduler, "write_network_json") as mock_write_network:
+                                                with patch.object(scheduler, "write_shaped_devices_csv") as mock_write_sd:
+                                                    scheduler.apply_lqos_overrides()
+
+        mock_load_network.assert_not_called()
+        mock_write_network.assert_not_called()
+        mock_write_sd.assert_not_called()
+        mock_write_canonical.assert_called_once()
 
     def test_override_devices_to_rows_preserves_anchor_node_id(self):
         header = [

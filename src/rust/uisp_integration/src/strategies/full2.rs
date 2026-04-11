@@ -6,12 +6,9 @@ mod net_json_parent;
 
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
-use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
+use crate::ethernet_advisory::apply_ethernet_rate_cap;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
-use crate::strategies::full::bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
-use crate::strategies::full::routes_override::RouteOverride;
-use crate::strategies::full::shaped_devices_writer::{ShapedDevice, write_circuit_anchors};
 use crate::strategies::full2::directionality::{
     build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
 };
@@ -19,30 +16,51 @@ use crate::strategies::full2::dot::save_dot_file;
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
+use crate::strategies::legacy_bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
+use crate::strategies::legacy_routes_override::RouteOverride;
 use crate::uisp_types::{UispAttachmentRateSource, UispDevice};
 use lqos_config::{
-    CircuitAnchor, CircuitEthernetMetadata, Config, EthernetPortLimitPolicy, RequestedCircuitRates,
+    CircuitAnchor, CircuitAnchorsFile, CircuitEthernetMetadata, Config, ConfigShapedDevices,
+    EthernetPortLimitPolicy, RequestedCircuitRates, ShapedDevice as ConfigShapedDevice,
     TOPOLOGY_ATTACHMENT_AUTO_ID, TopologyAllowedParent, TopologyAttachmentOption,
     TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
     TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
     TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
+    TopologyQueueVisibilityPolicy,
 };
 #[cfg(test)]
 use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
+use lqos_topology_compile::ImportedTopologyBundle;
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Directed>;
+
+#[derive(Clone, Debug)]
+struct LegacyShapedDevice {
+    circuit_id: String,
+    circuit_name: String,
+    device_id: String,
+    device_name: String,
+    parent_node: String,
+    parent_node_id: String,
+    anchor_node_id: String,
+    mac: String,
+    ipv4: String,
+    ipv6: String,
+    download_min: f32,
+    upload_min: f32,
+    download_max: f32,
+    upload_max: f32,
+    comment: String,
+}
 
 #[cfg(test)]
 #[derive(Clone, Debug)]
@@ -65,13 +83,56 @@ struct TopologyAllowedParentGroup {
     candidate_nodes: Vec<NodeIndex>,
 }
 
-fn atomic_write_string(path: &Path, raw: &str) -> std::io::Result<()> {
-    let temp_path = path.with_extension("tmp");
-    let mut file = File::create(&temp_path)?;
-    file.write_all(raw.as_bytes())?;
-    file.sync_all()?;
-    std::fs::rename(&temp_path, path)?;
-    Ok(())
+fn now_unix() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs())
+}
+
+fn config_shaped_device(legacy: LegacyShapedDevice) -> ConfigShapedDevice {
+    let headers = csv::StringRecord::from(vec![
+        "circuit_id",
+        "circuit_name",
+        "device_id",
+        "device_name",
+        "parent_node",
+        "parent_node_id",
+        "anchor_node_id",
+        "mac",
+        "ipv4",
+        "ipv6",
+        "download_min",
+        "upload_min",
+        "download_max",
+        "upload_max",
+        "comment",
+    ]);
+    let record = csv::StringRecord::from(vec![
+        legacy.circuit_id,
+        legacy.circuit_name,
+        legacy.device_id,
+        legacy.device_name,
+        legacy.parent_node,
+        legacy.parent_node_id,
+        legacy.anchor_node_id,
+        legacy.mac,
+        legacy.ipv4,
+        legacy.ipv6,
+        legacy.download_min.to_string(),
+        legacy.upload_min.to_string(),
+        legacy.download_max.to_string(),
+        legacy.upload_max.to_string(),
+        legacy.comment,
+    ]);
+    ConfigShapedDevice::from_csv(&record, Some(&headers))
+        .expect("UISP shaped-device rows must remain valid during compile conversion")
+}
+
+fn config_shaped_devices(rows: Vec<LegacyShapedDevice>) -> ConfigShapedDevices {
+    let mut shaped_devices = ConfigShapedDevices::default();
+    shaped_devices.replace_with_new_data(rows.into_iter().map(config_shaped_device).collect());
+    shaped_devices
 }
 
 fn debug_graph_output_enabled() -> bool {
@@ -93,27 +154,19 @@ fn anchor_for_site_ap(
     })
 }
 
-pub async fn build_full_network_v2(
+pub async fn build_imported_full2_bundle(
     config: Arc<Config>,
     ip_ranges: IpRanges,
-) -> Result<(), UispIntegrationError> {
+) -> Result<ImportedTopologyBundle, UispIntegrationError> {
     let build_started = Instant::now();
     let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
     // Fetch the data
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
-    // Report on obvious UISP errors that should be fixed
-    let _trouble = crate::strategies::ap_site::find_troublesome_sites(&uisp_data)
-        .await
-        .map_err(|e| {
-            error!("Error finding troublesome sites");
-            error!("{e:?}");
-            UispIntegrationError::UnknownSiteType
-        })?;
-
     let bandwidth_overrides =
-        crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
-    let routing_overrides = crate::strategies::full::routes_override::get_route_overrides(&config)?;
+        crate::strategies::legacy_bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
+    let routing_overrides =
+        crate::strategies::legacy_routes_override::get_route_overrides(&config)?;
 
     // Create a new graph
     let mut graph = GraphType::new();
@@ -279,9 +332,6 @@ pub async fn build_full_network_v2(
     let mut topology_parent_candidates = Vec::<TopologyParentCandidatesNode>::new();
     let mut topology_editor_nodes = Vec::<TopologyEditorNode>::new();
     for node in graph.node_indices() {
-        if node == root_idx {
-            continue;
-        }
         match &graph[node] {
             GraphMapping::GeneratedSite { name }
             | GraphMapping::Site { name, .. }
@@ -439,6 +489,12 @@ pub async fn build_full_network_v2(
                         );
 
                         if is_real_topology_node(&graph, node) {
+                            let queue_visibility_policy =
+                                if matches!(&graph[node], GraphMapping::Site { .. }) {
+                                    TopologyQueueVisibilityPolicy::QueueAuto
+                                } else {
+                                    TopologyQueueVisibilityPolicy::QueueVisible
+                                };
                             topology_parent_candidates.push(TopologyParentCandidatesNode {
                                 node_id: graph[node].network_json_id(),
                                 node_name: name.to_owned(),
@@ -453,6 +509,8 @@ pub async fn build_full_network_v2(
                             topology_editor_nodes.push(TopologyEditorNode {
                                 node_id: graph[node].network_json_id(),
                                 node_name: name.to_owned(),
+                                latitude: graph[node].latitude(),
+                                longitude: graph[node].longitude(),
                                 current_parent_node_id: logical_current_parent
                                     .as_ref()
                                     .map(|candidate| candidate.node_id.clone()),
@@ -467,6 +525,7 @@ pub async fn build_full_network_v2(
                                     .map(|candidate| candidate.node_name.clone()),
                                 can_move: !allowed_parents.is_empty(),
                                 allowed_parents,
+                                queue_visibility_policy,
                                 preferred_attachment_id: None,
                                 preferred_attachment_name: None,
                                 effective_attachment_id: None,
@@ -491,7 +550,26 @@ pub async fn build_full_network_v2(
                     }
                 }
             }
-            _ => {}
+            GraphMapping::Root { name, .. } => {
+                topology_editor_nodes.push(TopologyEditorNode {
+                    node_id: graph[node].network_json_id(),
+                    node_name: name.to_owned(),
+                    latitude: graph[node].latitude(),
+                    longitude: graph[node].longitude(),
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy:
+                        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                });
+            }
         }
     }
 
@@ -543,50 +621,25 @@ pub async fn build_full_network_v2(
             walk_parents(&parents, node_id, &mut visited).into(),
         );
     }
-    let network_path = Path::new(&config.lqos_directory).join("network.json");
-    if network_path.exists() && !config.integration_common.always_overwrite_network_json {
-        warn!(
-            "Network.json exists, and always overwrite network json is not true - not writing network.json"
-        );
-    } else {
-        let json = serde_json::to_string_pretty(&network_json).unwrap();
-        atomic_write_string(&network_path, &json).map_err(|e| {
-            error!("Unable to write network.json");
-            error!("{e:?}");
-            UispIntegrationError::WriteNetJson
-        })?;
-        info!("Written network.json");
-    }
-
     topology_parent_candidates.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
     let topology_candidates_file = TopologyParentCandidatesFile {
         source: "uisp/full".to_string(),
+        ingress_identity: None,
         nodes: topology_parent_candidates,
     };
-    if let Err(err) = topology_candidates_file.save(&config) {
-        warn!("Unable to write topology parent candidates snapshot: {err:?}");
-    }
     topology_editor_nodes.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
     let topology_editor_state = TopologyEditorStateFile {
         schema_version: 1,
         source: "uisp/full2".to_string(),
-        generated_unix: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .map(|duration| duration.as_secs()),
+        generated_unix: now_unix(),
+        ingress_identity: None,
         nodes: topology_editor_nodes,
     };
-    if let Err(err) = topology_editor_state.save(&config) {
-        warn!("Unable to write topology editor state snapshot: {err:?}");
-    }
     let canonical_state = TopologyCanonicalStateFile::from_editor_and_network(
         &topology_editor_state,
         &Value::Object(network_json.clone()),
         TopologyCanonicalIngressKind::NativeIntegration,
     );
-    if let Err(err) = canonical_state.save(&config) {
-        warn!("Unable to write topology canonical state snapshot: {err:?}");
-    }
     let export_elapsed_ms = export_started.elapsed().as_millis();
 
     // Shaped Devices
@@ -700,7 +753,7 @@ pub async fn build_full_network_v2(
                     continue;
                 }
 
-                let shaped_device = ShapedDevice {
+                let shaped_device = LegacyShapedDevice {
                     circuit_id: site.id.to_owned(),
                     circuit_name: site.name.to_owned(),
                     device_id: device.id.to_owned(),
@@ -730,31 +783,31 @@ pub async fn build_full_network_v2(
         "UISP shaped devices: processed {} site/AP pair(s) and produced {} shaped device row(s).",
         processed_site_pairs, shaped_device_count
     );
-    let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
-    let mut writer = csv::WriterBuilder::new()
-        .has_headers(true)
-        .from_path(file_path)
-        .unwrap();
-
-    for d in shaped_devices.iter() {
-        writer.serialize(d).unwrap();
-    }
-    writer.flush().map_err(|e| {
-        error!("Unable to flush CSV file");
-        error!("{e:?}");
-        UispIntegrationError::CsvError
-    })?;
-    write_circuit_anchors(&config, "uisp/full2", &circuit_anchors)?;
-    write_ethernet_advisories(&config, &ethernet_advisories)?;
     info!(
         shaped_devices = shaped_devices.len(),
         shaped_device_elapsed_ms = shaped_devices_started.elapsed().as_millis(),
         export_elapsed_ms,
         total_elapsed_ms = build_started.elapsed().as_millis(),
-        "Completed UISP full2 export"
+        "Completed UISP full2 import bundle"
     );
 
-    Ok(())
+    Ok(ImportedTopologyBundle {
+        source: "uisp/full2".to_string(),
+        generated_unix: topology_editor_state.generated_unix,
+        ingress_identity: None,
+        native_canonical: Some(canonical_state),
+        native_editor: Some(topology_editor_state),
+        parent_candidates: Some(topology_candidates_file),
+        compatibility_network_json: Value::Object(network_json),
+        shaped_devices: config_shaped_devices(shaped_devices),
+        circuit_anchors: CircuitAnchorsFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: now_unix(),
+            anchors: circuit_anchors,
+        },
+        ethernet_advisories,
+    })
 }
 
 fn add_device_links_to_graph(

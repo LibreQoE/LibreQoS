@@ -25,7 +25,7 @@ Para la mayoría de operadores:
 
 La mayoría de cambios operativos diarios se realizan en la WebUI (`http://tu_ip_del_shaper:9123/config_general.html`).
 
-Las versiones actuales usan paneles compartidos de configuración en las páginas General, RTT, Queues, TreeGuard, Network Mode, valores por defecto de integración, Network Layout, Insight, páginas de integración por proveedor, IP Ranges, Flow Tracking y Shaped Devices para que los ajustes del nodo y la afinación operativa sigan la misma presentación visual que el resto de Node Manager. La página de TreeGuard comienza con un resumen del comportamiento actual en lugar de un banner permanente de advertencia. Los valores por defecto de integración también incluyen la política compartida de margen para puertos Ethernet usada por integraciones que pueden detectar la velocidad negociada hacia el suscriptor.
+Las versiones actuales usan un diseño coherente de configuración en las páginas General, RTT, Queues, TreeGuard, Network Mode, valores por defecto de integración, Network Layout, Insight, páginas de integración por proveedor, IP Ranges, Flow Tracking y Shaped Devices. Los valores por defecto de integración también incluyen la política compartida de margen para puertos Ethernet usada por integraciones que pueden detectar la velocidad negociada hacia el suscriptor.
 
 ### Dónde en la WebUI
 
@@ -35,7 +35,7 @@ Las versiones actuales usan paneles compartidos de configuración en las página
 - Editor de dispositivos regulados: `Configuration -> Shaped Devices`
 - Validación operativa: páginas de `WebUI (Node Manager)` (dashboard/tree/flow/scheduler)
 
-Cuando una integración está habilitada y actúa como fuente de verdad, los editores `Network Layout` y `Shaped Devices` siguen siendo visibles pero pasan a modo de solo lectura en la WebUI.
+Cuando una integración está gestionando sus datos de shaping, los editores `Network Layout` y `Shaped Devices` siguen siendo visibles pero pasan a modo de solo lectura en la WebUI.
 
 Nota de topología:
 - Los nombres de nodo en `network.json` deben ser globalmente únicos en todo el árbol. Los nombres duplicados ahora fallan la validación y no son aceptados por el guardado de la WebUI ni por `LibreQoS.py`.

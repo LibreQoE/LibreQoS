@@ -97,7 +97,9 @@ Depends: $APT_DEPENDENCIES
 EOF
 popd > /dev/null || exit
 
-# Build the Rust programs (before the control file, we need to LDD lqosd)
+# Build the Rust programs (before the control file, we need to LDD lqosd).
+# Keep package artifacts on the full release profile; build_rust.sh --fast is
+# intentionally a local-iteration-only shortcut.
 pushd rust > /dev/null || exit
 # Build only required binaries and artifacts (exclude lqos_support_tool executable)
 cargo build --release \

@@ -1,4 +1,10 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    bindSecretField,
+    loadConfig,
+    renderConfigMenu,
+    saveConfig,
+    secretWillExistAfterSave,
+} from "./config/config_helper";
 
 function arrayToString(arr) {
     return arr ? arr.join(', ') : '';
@@ -67,8 +73,7 @@ function validateConfig() {
             return false;
         }
 
-        const apiKey = document.getElementById("sonarApiKey").value.trim();
-        if (!apiKey) {
+        if (!secretWillExistAfterSave("sonar_integration", "sonar_api_key", "sonarApiKey")) {
             alert("API Key is required when Sonar integration is enabled");
             return false;
         }
@@ -124,8 +129,6 @@ loadConfig(() => {
         // String fields
         document.getElementById("sonarApiUrl").value = 
             sonar.sonar_api_url ?? "";
-        document.getElementById("sonarApiKey").value = 
-            sonar.sonar_api_key ?? "";
         document.getElementById("snmpCommunity").value = 
             sonar.snmp_community ?? "public";
 
@@ -139,6 +142,13 @@ loadConfig(() => {
         document.getElementById("recurringExcludedServiceNames").value =
             arrayToString(sonar.recurring_excluded_service_names);
         renderRecurringRateRows(sonar.recurring_service_rates ?? []);
+        bindSecretField({
+            section: "sonar_integration",
+            field: "sonar_api_key",
+            inputId: "sonarApiKey",
+            statusId: "sonarApiKeyStatus",
+            clearButtonId: "clearSonarApiKey",
+        });
         document.getElementById("addRecurringRateRow").addEventListener("click", () => {
             document.getElementById("recurringServiceRatesBody").appendChild(buildRecurringRateRow());
         });

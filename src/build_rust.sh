@@ -7,6 +7,21 @@
 #
 # Don't forget to setup `/etc/lqos.conf`
 
+FAST_BUILD=0
+for arg in "$@"
+do
+    case "$arg" in
+        --fast)
+            FAST_BUILD=1
+            ;;
+        *)
+            echo "Unknown argument: $arg"
+            echo "Usage: $0 [--fast]"
+            exit 2
+            ;;
+    esac
+done
+
 # Check Pre-Requisites
 sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
 
@@ -26,8 +41,14 @@ fi
 #BUILD_FLAGS=""
 #TARGET=debug
 # Otherwise
-BUILD_FLAGS=--release
-TARGET=release
+if [ "$FAST_BUILD" -eq 1 ]; then
+    BUILD_FLAGS="--profile fast-release"
+    TARGET=fast-release
+    echo "Using fast local iteration profile"
+else
+    BUILD_FLAGS=--release
+    TARGET=release
+fi
 
 # Enable this if you are building on the same computer you are running on
 RUSTFLAGS="-C target-cpu=native"
@@ -38,45 +59,61 @@ rustup update
 
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_setup lqos_map_perf uisp_integration lqos_overrides lqos_topology"
+PROGS=(
+    lqosd
+    lqtop
+    xdp_iphash_to_cpu_cmdline
+    xdp_pping
+    lqusers
+    lqos_setup
+    lqos_map_perf
+    uisp_integration
+    lqos_overrides
+    lqos_topology
+)
+BUILD_PACKAGES=(
+    lqosd
+    lqtop
+    xdp_iphash_to_cpu_cmdline
+    xdp_pping
+    lqusers
+    lqos_setup
+    lqos_map_perf
+    uisp_integration
+    lqos_overrides
+    lqos_topology
+    lqos_python
+)
 mkdir -p bin/static
 pushd rust > /dev/null || exit
 #cargo clean
-for prog in $PROGS
+PACKAGE_ARGS=()
+for pkg in "${BUILD_PACKAGES[@]}"
 do
-    # If prog is lqosd
-    if [ $prog == "lqosd" ]; then
-        # If the environment variable FLAMEGRAPHS is set, set the FEATURE variable to flamegraph, otherwise it's empty
-        if [ -n "$FLAMEGRAPHS" ]; then
-            echo "Building lqosd with flamegraph support"
-            FEATURE="-F flamegraphs"
-        else
-            echo "Building lqosd without flamegraph support"
-            FEATURE=""
-        fi
-        echo "Building lqosd"
-        pushd lqosd > /dev/null || exit
-        cargo build $BUILD_FLAGS $FEATURE
-        if [ $? -ne 0 ]; then
-          echo "Cargo build failed. Exiting with code 1."
-          exit 1
-        fi
-        popd > /dev/null || exit
-    else
-      pushd $prog > /dev/null || exit
-      cargo build $BUILD_FLAGS
-      if [ $? -ne 0 ]; then
-        echo "Cargo build failed. Exiting with code 1."
-        exit 1
-      fi
-      popd || exit
-    fi
+    PACKAGE_ARGS+=("-p" "$pkg")
 done
+
+# If the environment variable FLAMEGRAPHS is set, lqosd needs its own build with that feature.
+if [ -n "${FLAMEGRAPHS:-}" ]; then
+    echo "Building lqosd with flamegraph support"
+    cargo build $BUILD_FLAGS -p lqosd -F flamegraphs
+    NON_LQOSD_ARGS=()
+    for pkg in "${BUILD_PACKAGES[@]}"
+    do
+        if [ "$pkg" != "lqosd" ]; then
+            NON_LQOSD_ARGS+=("-p" "$pkg")
+        fi
+    done
+    cargo build $BUILD_FLAGS "${NON_LQOSD_ARGS[@]}"
+else
+    echo "Building Rust workspace binaries and lqos_python"
+    cargo build $BUILD_FLAGS "${PACKAGE_ARGS[@]}"
+fi
 popd > /dev/null || exit
 
 echo "Installing new binaries into bin folder."
 pushd rust > /dev/null || exit
-for prog in $PROGS
+for prog in "${PROGS[@]}"
 do
     echo "Installing $prog in bin folder"
     cp target/$TARGET/$prog ../bin/$prog.new || exit
@@ -92,9 +129,6 @@ pushd rust/lqosd > /dev/null || exit
 popd > /dev/null || exit
 
 # Copy the Python library for LibreQoS.py et al.
-pushd rust/lqos_python > /dev/null || exit
-cargo build $BUILD_FLAGS
-popd > /dev/null || exit
 cp rust/target/$TARGET/liblqos_python.so ./liblqos_python.so.new
 mv liblqos_python.so.new liblqos_python.so
 

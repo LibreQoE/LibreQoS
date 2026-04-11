@@ -6,7 +6,7 @@
             <div class="lqos-config-panel-header">
                 <div>
                     <h5 class="lqos-config-panel-title">Integration Defaults</h5>
-                    <div class="lqos-config-panel-subtitle">Set import behavior shared across integrations, including naming, overwrite policy, queue-refresh timing, and bandwidth adjustments.</div>
+                    <div class="lqos-config-panel-subtitle">Set behavior shared across integrations, including topology compile mode, naming, DIY overwrite policy, queue-refresh timing, and bandwidth adjustments.</div>
                 </div>
             </div>
 
@@ -14,18 +14,29 @@
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Import Behavior</h6>
-                        <div class="lqos-config-section-subtitle">Control how imported topology and subscriber metadata are written into LibreQoS state files.</div>
+                        <div class="lqos-config-section-subtitle">Control how imported topology and subscriber metadata are turned into runtime shaping state.</div>
 
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="circuitNameAsAddress">
-                            <label class="form-check-label" for="circuitNameAsAddress">Use Circuit Name as Address</label>
-                            <div class="form-text">Replace IP addresses with circuit names in <code>network.json</code>.</div>
+                        <div class="mb-3">
+                            <label for="topologyCompileMode" class="form-label">Topology Compile Mode</label>
+                            <select class="form-select" id="topologyCompileMode">
+                                <option value="flat">Flat - Only shapes subscribers, no hierarchy</option>
+                                <option value="ap_only">AP Only - AP to clients</option>
+                                <option value="ap_site">AP Site - Site to AP to clients (Default)</option>
+                                <option value="full">Full - Preserve the richest hierarchy</option>
+                            </select>
+                            <div class="form-text">Shared topology mode used by Topology Manager and the scheduler for integration-driven imports.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="queueAutoVirtualizeThresholdMbps" class="form-label">Queue Auto-Virtualize Threshold (Mbps)</label>
+                            <input type="number" class="form-control" id="queueAutoVirtualizeThresholdMbps" min="5001" step="1" value="5001">
+                            <div class="form-text">Aggregation-only sites at or above this rate can be auto-virtualized so they stay visible with the ghost indicator but do not consume real HTB classes.</div>
                         </div>
 
                         <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="alwaysOverwriteNetworkJson">
-                            <label class="form-check-label" for="alwaysOverwriteNetworkJson">Always Overwrite network.json</label>
-                            <div class="form-text">Force overwrite of <code>network.json</code> on every update.</div>
+                            <input type="checkbox" class="form-check-input" id="circuitNameAsAddress">
+                            <label class="form-check-label" for="circuitNameAsAddress">Use Address for Circuit Name</label>
+                            <div class="form-text">For Python-based integrations, write the circuit address into the generated <code>Circuit Name</code> in <code>ShapedDevices.csv</code> and <code>circuit_anchors.json</code> instead of the customer or display name. Some integrations do not provide a real address.</div>
                         </div>
 
                         <div class="mb-3 form-check">

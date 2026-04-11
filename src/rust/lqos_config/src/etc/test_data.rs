@@ -122,7 +122,7 @@ influxDBtoken = \"\"
 # Use Customer Name or Address as Circuit Name
 circuitNameUseAddress = True
 
-# Should integrationUISP overwrite network.json on each run?
+# Legacy network.json overwrite flag from older configs. Modern integration mode ignores it.
 overwriteNetworkJSONalways = False
 
 # If a device shows a WAN IP within these subnets, assume they are behind NAT / un-shapable, and ignore them

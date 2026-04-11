@@ -21,7 +21,8 @@ pub struct NetworkDevicesCatalog {
 }
 
 impl NetworkDevicesCatalog {
-    pub(crate) fn from_snapshots(
+    /// Builds a combined catalog from explicit snapshots.
+    pub fn from_snapshots(
         shaped: ShapedDevicesCatalog,
         dynamic: Arc<Vec<DynamicCircuit>>,
     ) -> Self {
@@ -114,4 +115,3 @@ impl NetworkDevicesCatalog {
         self.dynamic.get(*idx).map(|circuit| &circuit.shaped)
     }
 }
-

@@ -404,30 +404,47 @@ impl ThroughputTracker {
         });
     }
 
-    fn shaped_device_for_hashes(
-        catalog: &lqos_network_devices::NetworkDevicesCatalog,
+    fn shaped_device_for_ip_or_hashes<'a>(
+        catalog: &'a lqos_network_devices::NetworkDevicesCatalog,
+        ip: &XdpIpAddress,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
-    ) -> Option<&lqos_config::ShapedDevice> {
-        catalog.device_by_hashes(device_hash, circuit_hash)
+    ) -> Option<&'a lqos_config::ShapedDevice> {
+        if let Some(device) = catalog.device_by_hashes(device_hash, circuit_hash) {
+            return Some(device);
+        }
+        catalog
+            .shaped_devices()
+            .device_longest_match_for_ip(ip)
+            .map(|(_net, device)| device)
     }
 
-    fn lookup_network_parents_from_hashes(
+    fn lookup_network_parents_from_ip_or_hashes(
         catalog: &lqos_network_devices::NetworkDevicesCatalog,
+        ip: &XdpIpAddress,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
         lock: &NetworkJson,
     ) -> Option<Vec<usize>> {
-        Self::shaped_device_for_hashes(catalog, device_hash, circuit_hash)
+        Self::shaped_device_for_ip_or_hashes(catalog, ip, device_hash, circuit_hash)
             .and_then(|device| lock.get_parents_for_circuit_id(&device.parent_node))
     }
 
     pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
         let catalog = lqos_network_devices::network_devices_catalog();
         let mut raw_data = self.raw_data.lock();
-        raw_data.iter_mut().for_each(|(_key, data)| {
-            let shaped_device =
-                Self::shaped_device_for_hashes(&catalog, data.device_hash, data.circuit_hash);
+        raw_data.iter_mut().for_each(|(ip, data)| {
+            let shaped_device = Self::shaped_device_for_ip_or_hashes(
+                &catalog,
+                ip,
+                data.device_hash,
+                data.circuit_hash,
+            );
+            if data.device_hash.is_none()
+                && let Some(device) = shaped_device
+            {
+                data.device_hash = Some(device.device_hash);
+            }
             if data.circuit_hash.is_none()
                 && let Some(device) = shaped_device
             {
@@ -506,14 +523,27 @@ impl ThroughputTracker {
                 entry.icmp_packets = reduced.icmp_packets;
                 entry.last_seen = reduced.last_seen;
 
-                let hashes_changed = entry.circuit_hash != reduced.circuit_hash
-                    || entry.device_hash != reduced.device_hash;
                 entry.tc_handle = reduced.tc_handle;
-                entry.circuit_hash = reduced.circuit_hash;
-                entry.device_hash = reduced.device_hash;
+                let shaped_device = Self::shaped_device_for_ip_or_hashes(
+                    &catalog,
+                    xdp_ip,
+                    reduced.device_hash,
+                    reduced.circuit_hash,
+                );
+                let resolved_circuit_hash = reduced
+                    .circuit_hash
+                    .or_else(|| shaped_device.map(|device| device.circuit_hash));
+                let resolved_device_hash = reduced
+                    .device_hash
+                    .or_else(|| shaped_device.map(|device| device.device_hash));
+                let hashes_changed = entry.circuit_hash != resolved_circuit_hash
+                    || entry.device_hash != resolved_device_hash;
+                entry.circuit_hash = resolved_circuit_hash;
+                entry.device_hash = resolved_device_hash;
                 if hashes_changed {
-                    let shaped_device = Self::shaped_device_for_hashes(
+                    let shaped_device = Self::shaped_device_for_ip_or_hashes(
                         &catalog,
+                        xdp_ip,
                         entry.device_hash,
                         entry.circuit_hash,
                     );
@@ -609,10 +639,18 @@ impl ThroughputTracker {
                     }
                 }
             } else {
-                let circuit_hash = reduced.circuit_hash;
-                let device_hash = reduced.device_hash;
-                let shaped_device =
-                    Self::shaped_device_for_hashes(&catalog, device_hash, circuit_hash);
+                let shaped_device = Self::shaped_device_for_ip_or_hashes(
+                    &catalog,
+                    xdp_ip,
+                    reduced.device_hash,
+                    reduced.circuit_hash,
+                );
+                let circuit_hash = reduced
+                    .circuit_hash
+                    .or_else(|| shaped_device.map(|device| device.circuit_hash));
+                let device_hash = reduced
+                    .device_hash
+                    .or_else(|| shaped_device.map(|device| device.device_hash));
                 let circuit_id = shaped_device.map(|d| d.circuit_id.clone());
 
                 record_dynamic_observation(
@@ -655,8 +693,9 @@ impl ThroughputTracker {
                     circuit_id,
                     circuit_hash,
                     device_hash,
-                    network_json_parents: Self::lookup_network_parents_from_hashes(
+                    network_json_parents: Self::lookup_network_parents_from_ip_or_hashes(
                         &catalog,
+                        xdp_ip,
                         device_hash,
                         circuit_hash,
                         net_json_calc,
@@ -1370,4 +1409,35 @@ fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasu
         retransmit_fraction,
         confidence,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ThroughputTracker;
+    use lqos_config::{ConfigShapedDevices, ShapedDevice};
+    use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
+    use lqos_utils::{XdpIpAddress, hash_to_i64};
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
+
+    #[test]
+    fn shaped_device_lookup_falls_back_to_ip_when_hashes_missing() {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            ..Default::default()
+        }]);
+        let shaped_catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
+        let catalog = NetworkDevicesCatalog::from_snapshots(shaped_catalog, Arc::new(Vec::new()));
+        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
+
+        let matched = ThroughputTracker::shaped_device_for_ip_or_hashes(&catalog, &ip, None, None)
+            .expect("lookup should resolve by IP");
+
+        assert_eq!(matched.circuit_hash, hash_to_i64("circuit-1"));
+        assert_eq!(matched.device_hash, hash_to_i64("device-1"));
+    }
 }

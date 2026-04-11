@@ -1035,17 +1035,23 @@ fn site_speed_override_matches(
 }
 
 impl OverrideStore {
+    /// Returns the filesystem path for one overrides layer using a caller-supplied config snapshot.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn path_for_layer_config(config: &lqos_config::Config, layer: OverrideLayer) -> PathBuf {
+        match layer {
+            OverrideLayer::Operator | OverrideLayer::Stormguard => overrides_path(config, layer),
+            OverrideLayer::Treeguard => treeguard_read_path(config),
+        }
+    }
+
     /// Loads a single overrides layer.
     ///
     /// Side effects: acquires the global overrides lock and may create the operator overrides file.
     pub fn load_layer(layer: OverrideLayer) -> Result<OverrideFile> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
-        let path = match layer {
-            OverrideLayer::Operator => overrides_path(&config, layer),
-            OverrideLayer::Stormguard => overrides_path(&config, layer),
-            OverrideLayer::Treeguard => treeguard_read_path(&config),
-        };
+        let path = Self::path_for_layer_config(&config, layer);
         let overrides = match layer {
             OverrideLayer::Operator => {
                 ensure_exists_default(&path)?;
@@ -1083,33 +1089,43 @@ impl OverrideStore {
     pub fn load_effective(apply_stormguard: bool, apply_treeguard: bool) -> Result<OverrideFile> {
         let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
+        let merged = Self::load_effective_for_config(&config, apply_stormguard, apply_treeguard)?;
+        drop(lock);
+        Ok(merged)
+    }
 
-        let operator_path = overrides_path(&config, OverrideLayer::Operator);
+    /// Loads the effective overrides view using a caller-supplied config snapshot.
+    ///
+    /// This function reads override files from the config's LibreQoS directory without
+    /// reloading `/etc/lqos.conf`.
+    pub fn load_effective_for_config(
+        config: &lqos_config::Config,
+        apply_stormguard: bool,
+        apply_treeguard: bool,
+    ) -> Result<OverrideFile> {
+        let operator_path = overrides_path(config, OverrideLayer::Operator);
         ensure_exists_default(&operator_path)?;
         let operator = load_from_path(&operator_path)?;
 
         if !apply_stormguard && !apply_treeguard {
-            drop(lock);
             return Ok(operator);
         }
 
-        let stormguard_path = overrides_path(&config, OverrideLayer::Stormguard);
+        let stormguard_path = overrides_path(config, OverrideLayer::Stormguard);
         let stormguard = if !apply_stormguard || !stormguard_path.exists() {
             OverrideFile::default()
         } else {
             load_from_path(&stormguard_path)?
         };
 
-        let treeguard_path = treeguard_read_path(&config);
+        let treeguard_path = treeguard_read_path(config);
         let treeguard = if !apply_treeguard || !treeguard_path.exists() {
             OverrideFile::default()
         } else {
             load_from_path(&treeguard_path)?
         };
 
-        let merged = merge_owned_sections(operator, stormguard, treeguard);
-        drop(lock);
-        Ok(merged)
+        Ok(merge_owned_sections(operator, stormguard, treeguard))
     }
 }
 

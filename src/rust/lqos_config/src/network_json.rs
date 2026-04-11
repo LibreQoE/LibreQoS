@@ -46,15 +46,29 @@ impl NetworkJson {
         (self.nodes.len(), self.nodes.capacity())
     }
 
-    /// The path to the current `network.json` file, determined
-    /// by acquiring the prefix from the `/etc/lqos.conf` configuration
-    /// file.
-    pub fn path() -> Result<PathBuf, NetworkJsonError> {
-        let cfg = crate::load_config().map_err(|_| NetworkJsonError::ConfigLoadError)?;
+    fn path_for_config(cfg: &crate::Config) -> PathBuf {
         let base_path = Path::new(&cfg.lqos_directory);
         let effective_path = base_path.join("network.effective.json");
-        let file_path = if effective_path.exists() {
+        let integration_ingress_enabled = cfg.uisp_integration.enable_uisp
+            || cfg.splynx_integration.enable_splynx
+            || cfg
+                .netzur_integration
+                .as_ref()
+                .is_some_and(|integration| integration.enable_netzur)
+            || cfg
+                .visp_integration
+                .as_ref()
+                .is_some_and(|integration| integration.enable_visp)
+            || cfg.powercode_integration.enable_powercode
+            || cfg.sonar_integration.enable_sonar
+            || cfg
+                .wispgate_integration
+                .as_ref()
+                .is_some_and(|integration| integration.enable_wispgate);
+        if effective_path.exists() {
             effective_path
+        } else if integration_ingress_enabled {
+            base_path.join("network.effective.json")
         } else if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
             let tmp_path = base_path.join("network.insight.json");
             if tmp_path.exists() {
@@ -64,8 +78,15 @@ impl NetworkJson {
             }
         } else {
             base_path.join("network.json")
-        };
-        Ok(file_path)
+        }
+    }
+
+    /// The path to the current `network.json` file, determined
+    /// by acquiring the prefix from the `/etc/lqos.conf` configuration
+    /// file.
+    pub fn path() -> Result<PathBuf, NetworkJsonError> {
+        let cfg = crate::load_config().map_err(|_| NetworkJsonError::ConfigLoadError)?;
+        Ok(Self::path_for_config(cfg.as_ref()))
     }
 
     /// Does network.json exist?
@@ -709,5 +730,57 @@ mod test {
             .expect("longitude encodes as number");
         assert!((encoded_lat - 45.123).abs() < 0.001);
         assert!((encoded_lon + 111.75).abs() < 0.001);
+    }
+
+    #[test]
+    fn path_for_config_prefers_runtime_effective_tree_for_integration_ingress() {
+        let temp = unique_temp_dir("network-json-integration-effective");
+        let mut config = crate::Config {
+            lqos_directory: temp.display().to_string(),
+            ..crate::Config::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+
+        let selected = NetworkJson::path_for_config(&config);
+        assert_eq!(selected, temp.join("network.effective.json"));
+    }
+
+    #[test]
+    fn path_for_config_uses_diy_network_json_when_integrations_are_disabled() {
+        let temp = unique_temp_dir("network-json-diy");
+        let config = crate::Config {
+            lqos_directory: temp.display().to_string(),
+            ..crate::Config::default()
+        };
+
+        let selected = NetworkJson::path_for_config(&config);
+        assert_eq!(selected, temp.join("network.json"));
+    }
+
+    #[test]
+    fn path_for_config_prefers_runtime_effective_tree_over_other_tree_inputs() {
+        let temp = unique_temp_dir("network-json-effective-priority");
+        std::fs::write(temp.join("network.effective.json"), "{}")
+            .expect("effective tree should write");
+        std::fs::write(temp.join("network.insight.json"), "{}").expect("insight tree should write");
+        std::fs::write(temp.join("network.json"), "{}").expect("legacy tree should write");
+        let mut config = crate::Config {
+            lqos_directory: temp.display().to_string(),
+            ..crate::Config::default()
+        };
+        config.long_term_stats.enable_insight_topology = Some(true);
+
+        let selected = NetworkJson::path_for_config(&config);
+        assert_eq!(selected, temp.join("network.effective.json"));
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time must advance")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("{prefix}-{unique}"));
+        std::fs::create_dir_all(&path).expect("temp dir should create");
+        path
     }
 }

@@ -319,6 +319,19 @@
         vertical-align: middle;
     }
 
+    .topology-manager-legend-line {
+        display: inline-block;
+        width: 1.4rem;
+        height: 0;
+        margin-right: 0.45rem;
+        vertical-align: middle;
+        border-top: 3px solid currentColor;
+    }
+
+    .topology-manager-legend-line.is-saved {
+        border-top-style: dashed;
+    }
+
     .topology-manager-path {
         display: flex;
         flex-wrap: wrap;
@@ -465,7 +478,7 @@
                 <div class="topology-manager-map-toolbar mb-2">
                     <div class="topology-manager-map-toolbar-title">
                         <h6 class="mb-0"><i class="fa fa-share-alt"></i> Move Preview</h6>
-                        <div class="topology-manager-map-toolbar-subtitle">Focused branch context and move preview.</div>
+                        <div class="topology-manager-map-toolbar-subtitle">Focused branch context, live parentage, and move preview.</div>
                     </div>
                     <div class="topology-manager-map-toolbar-actions">
                         <div class="topology-manager-search-shell">
@@ -493,7 +506,9 @@
 
                 <div class="topology-manager-legend">
                     <span><span class="topology-manager-legend-dot" style="background:#93c5fd;"></span>Selected branch</span>
-                    <span><span class="topology-manager-legend-dot" style="background:#3b82f6;"></span>Current hierarchy path</span>
+                    <span><span class="topology-manager-legend-line" style="color:#94a3b8;"></span>Canonical parentage</span>
+                    <span><span class="topology-manager-legend-line" style="color:#3b82f6;"></span>Live parentage</span>
+                    <span><span class="topology-manager-legend-line is-saved" style="color:#f59e0b;"></span>Saved intent</span>
                     <span><span class="topology-manager-legend-dot" style="background:#16a34a;"></span>Valid parent target</span>
                     <span><span class="topology-manager-legend-dot" style="background:#f59e0b;"></span>Proposed rehome target</span>
                     <span><span class="topology-manager-legend-dot" style="background:#f97316;"></span>Saved override</span>

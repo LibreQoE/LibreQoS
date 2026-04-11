@@ -53,9 +53,41 @@ pub fn start_daemon_mode(hooks: Option<Arc<dyn DaemonHooks>>) -> Result<()> {
     directory_watcher::start_network_devices_directory_watch()
 }
 
-/// Loads `ShapedDevices.csv` from disk.
+fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
+    config.uisp_integration.enable_uisp
+        || config.splynx_integration.enable_splynx
+        || config
+            .netzur_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_netzur)
+        || config
+            .visp_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_visp)
+        || config.powercode_integration.enable_powercode
+        || config.sonar_integration.enable_sonar
+        || config
+            .wispgate_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_wispgate)
+}
+
+/// Loads shaped-device configuration from disk.
+///
+/// When an integration-backed topology ingress is enabled, this loads shaped devices from the
+/// active `topology_import.json` bundle. Otherwise, it loads `ShapedDevices.csv`.
 pub fn load_shaped_devices() -> Result<ConfigShapedDevices> {
-    ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
+    let config = lqos_config::load_config().context("Unable to load /etc/lqos.conf")?;
+    if integration_ingress_enabled(config.as_ref()) {
+        match lqos_topology_compile::TopologyImportFile::load(config.as_ref())
+            .context("Unable to load topology_import.json")?
+        {
+            Some(topology_import) => Ok(topology_import.into_imported_bundle().shaped_devices),
+            None => Ok(ConfigShapedDevices::default()),
+        }
+    } else {
+        ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
+    }
 }
 
 /// Loads `network.json` from disk.

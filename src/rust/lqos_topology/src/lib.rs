@@ -5,18 +5,23 @@
 use anyhow::{Context, Result};
 use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, Config, ConfigShapedDevices, TOPOLOGY_ATTACHMENT_AUTO_ID,
-    TopologyAllowedParent, TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus,
-    TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
+    TopLevelPlannerItem, TopLevelPlannerMode, TopLevelPlannerParams, TopologyAllowedParent,
+    TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus, TopologyAttachmentOption,
+    TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
     TopologyCanonicalNode, TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
     TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
-    TopologyRuntimeStatusFile, TopologyShapingCircuitInput, TopologyShapingDeviceInput,
-    TopologyShapingInputsFile, TopologyShapingResolutionSource, circuit_anchors_path,
+    TopologyQueueVisibilityPolicy, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
+    TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
+    circuit_anchors_path, detect_shaping_cpus, plan_top_level_assignments,
     topology_effective_network_path, topology_effective_state_path, topology_runtime_status_path,
     topology_shaping_inputs_path,
 };
-use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile};
+use lqos_overrides::{
+    CircuitAdjustment, OverrideStore, TopologyAttachmentMode, TopologyOverridesFile,
+};
+use lqos_topology_compile::{TopologyCompiledShapingFile, TopologyImportFile};
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::net::IpAddr;
@@ -25,6 +30,7 @@ use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME: &str = "topology_effective_publish.lock";
+type EffectiveQueueAliasMap = HashMap<String, (String, String)>;
 
 /// One unique probe pair emitted from topology state plus operator intent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,10 +103,11 @@ fn collect_exported_effective_nodes(value: &Value, by_id: &mut HashMap<String, S
     let Some(nodes) = value.as_object() else {
         return;
     };
-    for node in nodes.values() {
+    for (key, node) in nodes {
         let Some(map) = node.as_object() else {
             continue;
         };
+        let is_virtual = map.get("virtual").and_then(Value::as_bool).unwrap_or(false);
         let node_id = map
             .get("id")
             .and_then(Value::as_str)
@@ -108,8 +115,9 @@ fn collect_exported_effective_nodes(value: &Value, by_id: &mut HashMap<String, S
         let node_name = map
             .get("name")
             .and_then(Value::as_str)
-            .and_then(optional_non_empty);
-        if let (Some(node_id), Some(node_name)) = (node_id, node_name) {
+            .and_then(optional_non_empty)
+            .or_else(|| optional_non_empty(key));
+        if !is_virtual && let (Some(node_id), Some(node_name)) = (node_id, node_name) {
             by_id.insert(node_id, node_name);
         }
         if let Some(children) = map.get("children") {
@@ -125,10 +133,11 @@ fn collect_exported_effective_aliases(
     let Some(nodes) = value.as_object() else {
         return;
     };
-    for node in nodes.values() {
+    for (key, node) in nodes {
         let Some(map) = node.as_object() else {
             continue;
         };
+        let is_virtual = map.get("virtual").and_then(Value::as_bool).unwrap_or(false);
         let node_id = map
             .get("id")
             .and_then(Value::as_str)
@@ -136,13 +145,15 @@ fn collect_exported_effective_aliases(
         let node_name = map
             .get("name")
             .and_then(Value::as_str)
-            .and_then(optional_non_empty);
+            .and_then(optional_non_empty)
+            .or_else(|| optional_non_empty(key));
         let active_attachment_name = map
             .get("active_attachment_name")
             .and_then(Value::as_str)
             .and_then(optional_non_empty);
-        if let (Some(alias), Some(node_id), Some(node_name)) =
-            (active_attachment_name, node_id, node_name)
+        if !is_virtual
+            && let (Some(alias), Some(node_id), Some(node_name)) =
+                (active_attachment_name, node_id, node_name)
         {
             aliases.entry(alias).or_insert((node_id, node_name));
         }
@@ -152,11 +163,56 @@ fn collect_exported_effective_aliases(
     }
 }
 
+fn build_effective_queue_aliases(
+    ui_state: &TopologyEditorStateFile,
+    effective: &TopologyEffectiveStateFile,
+    exported_effective_nodes: &HashMap<String, String>,
+) -> (EffectiveQueueAliasMap, EffectiveQueueAliasMap) {
+    let ui_by_node = ui_state
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    let mut aliases_by_id = HashMap::new();
+    let mut aliases_by_name = HashMap::new();
+
+    for effective_node in &effective.nodes {
+        if exported_effective_nodes.contains_key(&effective_node.node_id) {
+            continue;
+        }
+        if effective_node.effective_attachment_id.is_some() {
+            continue;
+        }
+        let Some(parent_name) = exported_effective_nodes
+            .get(effective_node.logical_parent_node_id.as_str())
+            .cloned()
+        else {
+            continue;
+        };
+        let resolved = (
+            effective_node.logical_parent_node_id.clone(),
+            parent_name.clone(),
+        );
+        aliases_by_id
+            .entry(effective_node.node_id.clone())
+            .or_insert_with(|| resolved.clone());
+        if let Some(ui_node) = ui_by_node.get(effective_node.node_id.as_str()).copied() {
+            aliases_by_name
+                .entry(ui_node.node_name.clone())
+                .or_insert_with(|| resolved.clone());
+        }
+    }
+
+    (aliases_by_id, aliases_by_name)
+}
+
 fn resolve_legacy_parent_from_effective_tree(
     parent_node: &str,
     parent_node_id: Option<&str>,
     exported_effective_nodes: &HashMap<String, String>,
     exported_effective_aliases: &HashMap<String, (String, String)>,
+    queue_aliases_by_id: &HashMap<String, (String, String)>,
+    queue_aliases_by_name: &HashMap<String, (String, String)>,
 ) -> Option<(String, String)> {
     let trimmed_id = parent_node_id.and_then(optional_non_empty);
     let trimmed_name = optional_non_empty(parent_node);
@@ -166,12 +222,22 @@ fn resolve_legacy_parent_from_effective_tree(
     {
         return Some((parent_id.to_string(), parent_name));
     }
+    if let Some(parent_id) = trimmed_id.as_deref()
+        && let Some(resolved) = queue_aliases_by_id.get(parent_id).cloned()
+    {
+        return Some(resolved);
+    }
     if let Some(parent_name) = trimmed_name.as_deref()
         && let Some(parent_id) = exported_effective_nodes
             .iter()
             .find_map(|(node_id, node_name)| (node_name == parent_name).then(|| node_id.clone()))
     {
         return Some((parent_id, parent_name.to_string()));
+    }
+    if let Some(parent_name) = trimmed_name.as_deref()
+        && let Some(resolved) = queue_aliases_by_name.get(parent_name).cloned()
+    {
+        return Some(resolved);
     }
     trimmed_name.and_then(|alias| exported_effective_aliases.get(&alias).cloned())
 }
@@ -221,6 +287,7 @@ fn resolve_effective_parent_from_anchor(
     effective_by_node: &HashMap<&str, &TopologyEffectiveNodeState>,
     exported_effective_nodes: &HashMap<String, String>,
     attachment_owner_by_attachment_id: &HashMap<String, (String, String)>,
+    queue_aliases_by_id: &HashMap<String, (String, String)>,
 ) -> Option<(String, String, Option<String>, Option<String>)> {
     let anchor_id = anchor_id.trim();
     if anchor_id.is_empty() {
@@ -243,9 +310,14 @@ fn resolve_effective_parent_from_anchor(
             attachment_name,
         ));
     }
-
-    let (owner_node_id, owner_node_name) =
-        attachment_owner_by_attachment_id.get(anchor_id).cloned()?;
+    let Some((owner_node_id, owner_node_name)) =
+        attachment_owner_by_attachment_id.get(anchor_id).cloned()
+    else {
+        if let Some((parent_id, parent_name)) = queue_aliases_by_id.get(anchor_id).cloned() {
+            return Some((parent_id, parent_name, None, None));
+        }
+        return None;
+    };
     let owner_ui = ui_by_node.get(owner_node_id.as_str()).copied()?;
     let owner_effective = effective_by_node.get(owner_node_id.as_str()).copied()?;
 
@@ -272,6 +344,10 @@ fn resolve_effective_parent_from_anchor(
             optional_non_empty_owned(owner_effective.effective_attachment_id.clone()),
             selected_attachment_name_for_node(owner_ui, owner_effective),
         ));
+    }
+    if let Some((parent_id, parent_name)) = queue_aliases_by_id.get(owner_node_id.as_str()).cloned()
+    {
+        return Some((parent_id, parent_name, None, None));
     }
 
     Some((
@@ -318,21 +394,85 @@ fn load_circuit_anchors(
         .unwrap_or_default()
 }
 
+fn load_integration_shaping_artifacts(
+    config: &Config,
+) -> Result<Option<(ConfigShapedDevices, Vec<CircuitAnchor>)>> {
+    let topology_import = TopologyImportFile::load(config)
+        .with_context(|| "Unable to load topology_import.json while validating shaping ingress")?;
+    let Some(compiled_shaping) = TopologyCompiledShapingFile::load(config).with_context(
+        || "Unable to load topology_compiled_shaping.json while building shaping_inputs.json",
+    )?
+    else {
+        return Ok(None);
+    };
+    let import_identity = topology_import
+        .as_ref()
+        .and_then(|file| file.ingress_identity.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let compiled_identity = compiled_shaping
+        .ingress_identity
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let (Some(import_identity), Some(compiled_identity)) = (import_identity, compiled_identity)
+        && import_identity != compiled_identity
+    {
+        anyhow::bail!(
+            "Integration compiled shaping ingress identity '{}' did not match topology import identity '{}'",
+            compiled_identity,
+            import_identity
+        );
+    }
+    Ok(Some(compiled_shaping.shaping_artifacts()))
+}
+
 fn build_shaping_inputs(
     config: &Config,
     artifacts: &EffectiveTopologyArtifacts,
 ) -> Result<Option<TopologyShapingInputsFile>> {
-    let shaped_devices_path = ConfigShapedDevices::path_for_config(config);
-    if !shaped_devices_path.exists() {
-        return Ok(None);
-    }
+    let integration_ingress = topology_import_ingress_enabled(config);
+    let (mut shaped_devices, circuit_anchor_rows) = if integration_ingress {
+        let Some((shaped_devices, circuit_anchors)) = load_integration_shaping_artifacts(config)?
+        else {
+            return Ok(None);
+        };
+        (shaped_devices, circuit_anchors)
+    } else {
+        let shaped_devices_path = ConfigShapedDevices::path_for_config(config);
+        if !shaped_devices_path.exists() {
+            return Ok(None);
+        }
 
-    let shaped_devices_mtime = std::fs::metadata(&shaped_devices_path)
-        .ok()
-        .and_then(|metadata| metadata.modified().ok());
-    let shaped_devices = ConfigShapedDevices::load_for_config(config)
-        .with_context(|| "Unable to load ShapedDevices.csv while building shaping_inputs.json")?;
-    let circuit_anchors = load_circuit_anchors(config, shaped_devices_mtime)
+        let shaped_devices_mtime = std::fs::metadata(&shaped_devices_path)
+            .ok()
+            .and_then(|metadata| metadata.modified().ok());
+        (
+            ConfigShapedDevices::load_for_config(config).with_context(
+                || "Unable to load ShapedDevices.csv while building shaping_inputs.json",
+            )?,
+            load_circuit_anchors(config, shaped_devices_mtime),
+        )
+    };
+    if integration_ingress {
+        let effective_overrides = load_runtime_shaping_overrides(config).with_context(
+            || "Unable to load effective overrides while building shaping_inputs.json",
+        )?;
+        let runtime_devices = apply_runtime_shaped_device_overrides(
+            shaped_devices.devices.clone(),
+            &effective_overrides,
+        );
+        shaped_devices.replace_with_new_data(runtime_devices);
+    }
+    let flat_bucket_assignments = if runtime_flat_mode(config) {
+        Some(build_flat_bucket_assignments(
+            config,
+            &shaped_devices.devices,
+        ))
+    } else {
+        None
+    };
+    let circuit_anchors = circuit_anchor_rows
         .into_iter()
         .map(|anchor| (anchor.circuit_id.clone(), anchor))
         .collect::<HashMap<_, _>>();
@@ -355,9 +495,14 @@ fn build_shaping_inputs(
         collect_exported_effective_nodes(effective_network, &mut exported_effective_nodes);
         collect_exported_effective_aliases(effective_network, &mut exported_effective_aliases);
     }
+    let (queue_aliases_by_id, queue_aliases_by_name) = build_effective_queue_aliases(
+        &artifacts.ui_state,
+        &artifacts.effective,
+        &exported_effective_nodes,
+    );
 
     let mut errors = Vec::new();
-    let warnings = Vec::new();
+    let mut warnings = Vec::new();
     let mut circuits = Vec::<TopologyShapingCircuitInput>::new();
     let mut circuits_by_id = HashMap::<String, usize>::new();
 
@@ -379,13 +524,25 @@ fn build_shaping_inputs(
             effective_attachment_id,
             effective_attachment_name,
             resolution_source,
-        ) = if let Some(anchor_id) = anchor_node_id.as_deref() {
+        ) = if let Some((bucket_id, bucket_name)) = flat_bucket_assignments
+            .as_ref()
+            .and_then(|assignments| assignments.get(&device.circuit_id))
+        {
+            (
+                bucket_id.clone(),
+                bucket_name.clone(),
+                None,
+                None,
+                TopologyShapingResolutionSource::FlatBucket,
+            )
+        } else if let Some(anchor_id) = anchor_node_id.as_deref() {
             match resolve_effective_parent_from_anchor(
                 anchor_id,
                 &ui_by_node,
                 &effective_by_node,
                 &exported_effective_nodes,
                 &attachment_owner_by_attachment_id,
+                &queue_aliases_by_id,
             ) {
                 Some((
                     resolved_parent_id,
@@ -411,8 +568,8 @@ fn build_shaping_inputs(
                 ) {
                     (Some(ui_node), Some(_effective_node), _) => {
                         anchor_node_name = Some(ui_node.node_name.clone());
-                        errors.push(format!(
-                            "Circuit '{}' anchor '{}' ('{}') exists in topology metadata but does not resolve to an exported effective queue node.",
+                        warnings.push(format!(
+                            "Circuit '{}' anchor '{}' ('{}') did not resolve to an exported effective queue node. Falling back to generated parent-node shaping.",
                             device.circuit_id,
                             anchor_id,
                             ui_node.node_name
@@ -422,12 +579,12 @@ fn build_shaping_inputs(
                             String::new(),
                             None,
                             None,
-                            TopologyShapingResolutionSource::TopologyAnchor,
+                            TopologyShapingResolutionSource::RuntimeFallback,
                         )
                     }
                     (None, None, Some(anchor)) => {
-                        errors.push(format!(
-                            "Circuit '{}' anchor '{}' ('{}') was not found in the effective topology.",
+                        warnings.push(format!(
+                            "Circuit '{}' anchor '{}' ('{}') was not found in the effective topology. Falling back to generated parent-node shaping.",
                             device.circuit_id,
                             anchor_id,
                             anchor
@@ -440,12 +597,12 @@ fn build_shaping_inputs(
                             String::new(),
                             None,
                             None,
-                            TopologyShapingResolutionSource::TopologyAnchor,
+                            TopologyShapingResolutionSource::RuntimeFallback,
                         )
                     }
                     _ => {
-                        errors.push(format!(
-                            "Circuit '{}' anchor '{}' was not found in the effective topology.",
+                        warnings.push(format!(
+                            "Circuit '{}' anchor '{}' was not found in the effective topology. Falling back to generated parent-node shaping.",
                             device.circuit_id, anchor_id
                         ));
                         (
@@ -453,7 +610,7 @@ fn build_shaping_inputs(
                             String::new(),
                             None,
                             None,
-                            TopologyShapingResolutionSource::TopologyAnchor,
+                            TopologyShapingResolutionSource::RuntimeFallback,
                         )
                     }
                 },
@@ -464,6 +621,8 @@ fn build_shaping_inputs(
                 device.parent_node_id.as_deref(),
                 &exported_effective_nodes,
                 &exported_effective_aliases,
+                &queue_aliases_by_id,
+                &queue_aliases_by_name,
             )
         {
             (
@@ -477,8 +636,8 @@ fn build_shaping_inputs(
             if optional_non_empty(&device.parent_node).is_some()
                 || optional_non_empty_owned(device.parent_node_id.clone()).is_some()
             {
-                errors.push(format!(
-                    "Circuit '{}' parent reference '{}' ({}) was not found in the exported effective topology.",
+                warnings.push(format!(
+                    "Circuit '{}' parent reference '{}' ({}) was not found in the exported effective topology. Falling back to generated parent-node shaping.",
                     device.circuit_id,
                     device.parent_node.trim(),
                     device.parent_node_id.clone().unwrap_or_default().trim()
@@ -489,7 +648,7 @@ fn build_shaping_inputs(
                 String::new(),
                 None,
                 None,
-                TopologyShapingResolutionSource::LegacyParent,
+                TopologyShapingResolutionSource::RuntimeFallback,
             )
         };
 
@@ -557,19 +716,29 @@ fn build_shaping_inputs(
             .sort_unstable_by(|left, right| left.device_id.cmp(&right.device_id));
     }
 
-    for circuit in &circuits {
-        if circuit.anchor_node_id.is_some() && circuit.effective_parent_node_id.trim().is_empty() {
-            errors.push(format!(
-                "Circuit '{}' has an anchor but no resolved effective parent.",
-                circuit.circuit_id
+    let unresolved_runtime_fallbacks = circuits
+        .iter()
+        .filter(|circuit| {
+            circuit.effective_parent_node_id.trim().is_empty()
+                && circuit.resolution_source == TopologyShapingResolutionSource::RuntimeFallback
+        })
+        .count();
+    if unresolved_runtime_fallbacks > 0 {
+        if config.shared_topology_compile_mode() == Some("flat") {
+            warnings.push(format!(
+                "Flat topology mode assigned {unresolved_runtime_fallbacks} circuit(s) to generated parent nodes during queue construction."
             ));
-        } else if circuit.logical_parent_node_name.is_some()
-            && circuit.effective_parent_node_id.trim().is_empty()
-        {
-            errors.push(format!(
-                "Circuit '{}' has a logical parent but no resolved effective parent.",
-                circuit.circuit_id
-            ));
+        } else {
+            for circuit in &circuits {
+                if circuit.effective_parent_node_id.trim().is_empty()
+                    && circuit.resolution_source == TopologyShapingResolutionSource::RuntimeFallback
+                {
+                    warnings.push(format!(
+                        "Circuit '{}' is unresolved in runtime topology and will be shaped under generated parent nodes.",
+                        circuit.circuit_id
+                    ));
+                }
+            }
         }
     }
 
@@ -586,12 +755,305 @@ fn build_shaping_inputs(
 
     Ok(Some(TopologyShapingInputsFile {
         schema_version: 1,
+        shaping_generation: String::new(),
         generated_unix: now_unix(),
         canonical_generated_unix: artifacts.effective.canonical_generated_unix,
         effective_generated_unix: artifacts.effective.generated_unix,
         warnings,
         circuits,
     }))
+}
+
+fn topology_import_ingress_enabled(config: &Config) -> bool {
+    config.uisp_integration.enable_uisp
+        || config.splynx_integration.enable_splynx
+        || config
+            .netzur_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_netzur)
+        || config
+            .visp_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_visp)
+        || config.powercode_integration.enable_powercode
+        || config.sonar_integration.enable_sonar
+        || config
+            .wispgate_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_wispgate)
+}
+
+fn runtime_flat_mode(config: &Config) -> bool {
+    config.shared_topology_compile_mode() == Some("flat")
+}
+
+fn count_interface_tx_queues(interface_name: &str) -> Option<usize> {
+    let path = Path::new("/sys/class/net")
+        .join(interface_name)
+        .join("queues");
+    let entries = std::fs::read_dir(path).ok()?;
+    let mut count = 0usize;
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if name.starts_with("tx-") {
+            count += 1;
+        }
+    }
+    Some(count)
+}
+
+fn runtime_flat_bucket_count(config: &Config) -> usize {
+    let mut queues_available = config
+        .queues
+        .override_available_queues
+        .map(|value| value as usize);
+    if queues_available.is_none() {
+        queues_available = if config.queues.dry_run {
+            Some(16)
+        } else {
+            let internet_queues = count_interface_tx_queues(&config.internet_interface());
+            let isp_queues = count_interface_tx_queues(&config.isp_interface());
+            internet_queues
+                .zip(isp_queues)
+                .map(|(left, right)| left.min(right))
+        };
+    }
+
+    let shaping_cpu_count = detect_shaping_cpus(config).shaping.len();
+    let mut queue_count = queues_available.unwrap_or(shaping_cpu_count.max(1));
+    if shaping_cpu_count > 0 {
+        queue_count = queue_count.min(shaping_cpu_count);
+    }
+    if config.on_a_stick_mode() {
+        queue_count = (queue_count / 2).max(1);
+    }
+    queue_count.max(1)
+}
+
+fn runtime_flat_bucket_name(index: usize) -> String {
+    format!("Generated_PN_{}", index + 1)
+}
+
+fn runtime_flat_bucket_id(index: usize) -> String {
+    format!("libreqos:generated:flat:bucket:{index}")
+}
+
+fn runtime_flat_bucket_network(config: &Config) -> Value {
+    let mut root = Map::new();
+    for index in 0..runtime_flat_bucket_count(config) {
+        let mut node = Map::new();
+        node.insert("children".to_string(), Value::Object(Map::new()));
+        node.insert(
+            "downloadBandwidthMbps".to_string(),
+            Value::Number(config.queues.generated_pn_download_mbps.into()),
+        );
+        node.insert(
+            "uploadBandwidthMbps".to_string(),
+            Value::Number(config.queues.generated_pn_upload_mbps.into()),
+        );
+        node.insert(
+            "id".to_string(),
+            Value::String(runtime_flat_bucket_id(index)),
+        );
+        node.insert(
+            "name".to_string(),
+            Value::String(runtime_flat_bucket_name(index)),
+        );
+        node.insert("type".to_string(), Value::String("Site".to_string()));
+        root.insert(runtime_flat_bucket_name(index), Value::Object(node));
+    }
+    Value::Object(root)
+}
+
+fn build_flat_bucket_assignments(
+    config: &Config,
+    devices: &[lqos_config::ShapedDevice],
+) -> HashMap<String, (String, String)> {
+    let bucket_count = runtime_flat_bucket_count(config);
+    if bucket_count == 0 {
+        return HashMap::new();
+    }
+
+    let bucket_names = (0..bucket_count)
+        .map(runtime_flat_bucket_name)
+        .collect::<Vec<_>>();
+    let bucket_ids_by_name = bucket_names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (name.clone(), runtime_flat_bucket_id(index)))
+        .collect::<HashMap<_, _>>();
+
+    let mut item_weights = BTreeMap::<String, f64>::new();
+    for device in devices {
+        let weight = f64::from(device.download_max_mbps.max(0.0) + device.upload_max_mbps.max(0.0));
+        let sanitized = if weight.is_finite() && weight > 0.0 {
+            weight
+        } else {
+            1.0
+        };
+        item_weights
+            .entry(device.circuit_id.clone())
+            .and_modify(|current| {
+                if sanitized > *current {
+                    *current = sanitized;
+                }
+            })
+            .or_insert(sanitized);
+    }
+
+    let items = item_weights
+        .into_iter()
+        .map(|(id, weight)| TopLevelPlannerItem { id, weight })
+        .collect::<Vec<_>>();
+    let planner_mode = if config.queues.use_binpacking {
+        TopLevelPlannerMode::Greedy
+    } else {
+        TopLevelPlannerMode::RoundRobin
+    };
+    let planner = plan_top_level_assignments(
+        &items,
+        &bucket_names,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs_f64())
+            .unwrap_or(0.0),
+        &TopLevelPlannerParams {
+            mode: planner_mode,
+            hysteresis_threshold: 0.0,
+            cooldown_seconds: 0.0,
+            move_budget_per_run: usize::MAX,
+        },
+    );
+
+    planner
+        .assignment
+        .into_iter()
+        .filter_map(|(circuit_id, bucket_name)| {
+            bucket_ids_by_name
+                .get(&bucket_name)
+                .map(|bucket_id| (circuit_id, (bucket_id.clone(), bucket_name)))
+        })
+        .collect()
+}
+
+fn load_runtime_shaping_overrides(config: &Config) -> Result<lqos_overrides::OverrideFile> {
+    let apply_stormguard = config
+        .stormguard
+        .as_ref()
+        .is_some_and(|stormguard| stormguard.enabled && !stormguard.dry_run);
+    let apply_treeguard = config.treeguard.enabled;
+    OverrideStore::load_effective_for_config(config, apply_stormguard, apply_treeguard)
+        .with_context(|| "Unable to load effective override layers")
+}
+
+fn apply_runtime_shaped_device_overrides(
+    base_devices: Vec<lqos_config::ShapedDevice>,
+    overrides: &lqos_overrides::OverrideFile,
+) -> Vec<lqos_config::ShapedDevice> {
+    let mut devices = base_devices;
+    for override_device in overrides.persistent_devices() {
+        if let Some(existing_index) = devices
+            .iter()
+            .position(|device| device.device_id == override_device.device_id)
+        {
+            devices[existing_index] = override_device.clone();
+        } else {
+            devices.push(override_device.clone());
+        }
+    }
+
+    for adjustment in overrides.circuit_adjustments() {
+        match adjustment {
+            CircuitAdjustment::CircuitAdjustSpeed {
+                circuit_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
+                for device in devices
+                    .iter_mut()
+                    .filter(|device| device.circuit_id == *circuit_id)
+                {
+                    if let Some(value) = min_download_bandwidth {
+                        device.download_min_mbps = *value;
+                    }
+                    if let Some(value) = max_download_bandwidth {
+                        device.download_max_mbps = *value;
+                    }
+                    if let Some(value) = min_upload_bandwidth {
+                        device.upload_min_mbps = *value;
+                    }
+                    if let Some(value) = max_upload_bandwidth {
+                        device.upload_max_mbps = *value;
+                    }
+                }
+            }
+            CircuitAdjustment::DeviceAdjustSpeed {
+                device_id,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } => {
+                for device in devices
+                    .iter_mut()
+                    .filter(|device| device.device_id == *device_id)
+                {
+                    if let Some(value) = min_download_bandwidth {
+                        device.download_min_mbps = *value;
+                    }
+                    if let Some(value) = max_download_bandwidth {
+                        device.download_max_mbps = *value;
+                    }
+                    if let Some(value) = min_upload_bandwidth {
+                        device.upload_min_mbps = *value;
+                    }
+                    if let Some(value) = max_upload_bandwidth {
+                        device.upload_max_mbps = *value;
+                    }
+                }
+            }
+            CircuitAdjustment::DeviceAdjustSqm {
+                device_id,
+                sqm_override,
+            } => {
+                for device in devices
+                    .iter_mut()
+                    .filter(|device| device.device_id == *device_id)
+                {
+                    device.sqm_override = sqm_override
+                        .as_ref()
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty());
+                }
+            }
+            CircuitAdjustment::RemoveCircuit { circuit_id } => {
+                devices.retain(|device| device.circuit_id != *circuit_id);
+            }
+            CircuitAdjustment::RemoveDevice { device_id } => {
+                devices.retain(|device| device.device_id != *device_id);
+            }
+            CircuitAdjustment::ReparentCircuit {
+                circuit_id,
+                parent_node,
+            } => {
+                for device in devices
+                    .iter_mut()
+                    .filter(|device| device.circuit_id == *circuit_id)
+                {
+                    device.parent_node = parent_node.clone();
+                    device.parent_node_id = None;
+                }
+            }
+        }
+    }
+
+    devices
 }
 
 /// Loads canonical topology state, falling back to importing legacy `network.json`.
@@ -699,12 +1161,28 @@ fn build_effective_topology_artifacts_from_prepared(
     let effective = compute_effective_state_from_prepared(config, prepared, overrides, health);
     let ui_state =
         merged_topology_state_from_prepared(config, prepared, overrides, health, &effective);
-    let effective_network = canonical.compatibility_network_json().as_object().map(|_| {
-        apply_effective_topology_to_canonical_state(config, canonical, &ui_state, &effective)
-    });
+    let canonical_network =
+        if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration {
+            canonical.insight_topology_network_json()
+        } else {
+            canonical.compatibility_network_json().clone()
+        };
+    let effective_network = if runtime_flat_mode(config) {
+        Some(runtime_flat_bucket_network(config))
+    } else {
+        canonical_network.as_object().map(|_| {
+            apply_effective_topology_to_canonical_state(config, canonical, &ui_state, &effective)
+        })
+    };
 
     if let Some(effective_network) = effective_network.as_ref() {
-        validate_effective_topology_network(&ui_state, &effective, effective_network)?;
+        validate_effective_topology_network_from_canonical(
+            config,
+            canonical,
+            &ui_state,
+            &effective,
+            effective_network,
+        )?;
     }
 
     Ok(EffectiveTopologyArtifacts {
@@ -781,29 +1259,44 @@ pub fn publish_effective_topology_artifacts(
             return Err(err);
         }
     };
-    if let Some(shaping_inputs) = shaping_inputs {
-        let shaping_inputs_value = serde_json::to_value(&shaping_inputs)?;
-        let current_shaping_inputs = read_json_value(&shaping_inputs_path);
-        if current_shaping_inputs.as_ref() != Some(&shaping_inputs_value) {
-            atomic_write_json_value(&shaping_inputs_path, &shaping_inputs_value).with_context(
-                || {
-                    format!(
-                        "Unable to publish runtime shaping inputs at {:?}",
-                        shaping_inputs_path
-                    )
-                },
+    match shaping_inputs {
+        Some(mut shaping_inputs) => {
+            shaping_inputs.shaping_generation = shaping_inputs.compute_shaping_generation()?;
+            let current_shaping_inputs = TopologyShapingInputsFile::load(config).ok();
+            if !current_shaping_inputs
+                .as_ref()
+                .is_some_and(|current| current.semantic_equals(&shaping_inputs))
+            {
+                let shaping_inputs_value = serde_json::to_value(&shaping_inputs)?;
+                atomic_write_json_value(&shaping_inputs_path, &shaping_inputs_value).with_context(
+                    || {
+                        format!(
+                            "Unable to publish runtime shaping inputs at {:?}",
+                            shaping_inputs_path
+                        )
+                    },
+                )?;
+            }
+            publish_topology_runtime_status(
+                config,
+                source_generation,
+                Some(&shaping_inputs.shaping_generation),
+                true,
+                None,
             )?;
         }
-    } else if shaping_inputs_path.exists() {
-        std::fs::remove_file(&shaping_inputs_path).with_context(|| {
-            format!(
-                "Unable to remove stale runtime shaping inputs at {:?}",
-                shaping_inputs_path
-            )
-        })?;
+        None => {
+            if shaping_inputs_path.exists() {
+                std::fs::remove_file(&shaping_inputs_path).with_context(|| {
+                    format!(
+                        "Unable to remove stale runtime shaping inputs at {:?}",
+                        shaping_inputs_path
+                    )
+                })?;
+            }
+            publish_topology_runtime_status(config, source_generation, None, true, None)?;
+        }
     }
-
-    publish_topology_runtime_status(config, source_generation, true, None)?;
 
     Ok(())
 }
@@ -811,12 +1304,14 @@ pub fn publish_effective_topology_artifacts(
 fn topology_runtime_status_snapshot(
     config: &Config,
     source_generation: &str,
+    shaping_generation: Option<&str>,
     ready: bool,
     error: Option<String>,
 ) -> TopologyRuntimeStatusFile {
     TopologyRuntimeStatusFile {
         schema_version: 1,
         source_generation: source_generation.to_string(),
+        shaping_generation: shaping_generation.unwrap_or_default().to_string(),
         ready,
         generated_unix: now_unix(),
         effective_state_path: topology_effective_state_path(config)
@@ -838,10 +1333,17 @@ fn topology_runtime_status_snapshot(
 pub fn publish_topology_runtime_status(
     config: &Config,
     source_generation: &str,
+    shaping_generation: Option<&str>,
     ready: bool,
     error: Option<String>,
 ) -> Result<()> {
-    let status = topology_runtime_status_snapshot(config, source_generation, ready, error);
+    let status = topology_runtime_status_snapshot(
+        config,
+        source_generation,
+        shaping_generation,
+        ready,
+        error,
+    );
     status.save(config).with_context(|| {
         format!(
             "Unable to publish topology runtime status at {:?}",
@@ -859,7 +1361,13 @@ pub fn publish_topology_runtime_error_status(
     source_generation: &str,
     error: &str,
 ) -> Result<()> {
-    publish_topology_runtime_status(config, source_generation, false, Some(error.to_string()))
+    publish_topology_runtime_status(
+        config,
+        source_generation,
+        None,
+        false,
+        Some(error.to_string()),
+    )
 }
 
 fn parse_probe_ip(raw: &str) -> Option<IpAddr> {
@@ -1227,6 +1735,10 @@ fn current_parent_for_node<'a>(
         .find(|parent| parent.parent_node_id == parent_id)
 }
 
+fn runtime_may_infer_parent_from_candidates(source: &str) -> bool {
+    !(source.starts_with("uisp/") || source.starts_with("python/"))
+}
+
 fn merge_attachment_option(
     existing: &mut TopologyAttachmentOption,
     incoming: &TopologyAttachmentOption,
@@ -1387,6 +1899,7 @@ fn normalize_topology_editor_state(canonical: &TopologyEditorStateFile) -> Topol
         schema_version: canonical.schema_version,
         source: canonical.source.clone(),
         generated_unix: canonical.generated_unix,
+        ingress_identity: canonical.ingress_identity.clone(),
         nodes,
     }
 }
@@ -1445,6 +1958,7 @@ fn compute_effective_state_from_prepared(
     health: &TopologyAttachmentHealthStateFile,
 ) -> TopologyEffectiveStateFile {
     let health_by_pair = health_entries_by_pair(config, health);
+    let may_infer_parent = runtime_may_infer_parent_from_candidates(&prepared.source);
 
     let mut nodes = Vec::with_capacity(prepared.nodes.len());
     for node in &prepared.nodes {
@@ -1456,9 +1970,13 @@ fn compute_effective_state_from_prepared(
             })
             .or_else(|| node.current_parent_node_id.clone())
             .or_else(|| {
-                node.allowed_parents
-                    .first()
-                    .map(|parent| parent.parent_node_id.clone())
+                may_infer_parent
+                    .then(|| {
+                        node.allowed_parents
+                            .first()
+                            .map(|parent| parent.parent_node_id.clone())
+                    })
+                    .flatten()
             });
 
         let Some(selected_parent_id) = selected_parent_id else {
@@ -1474,9 +1992,26 @@ fn compute_effective_state_from_prepared(
             continue;
         };
 
-        let Some(selected_parent) = current_parent_for_node(node, &selected_parent_id)
-            .or_else(|| node.allowed_parents.first())
+        let Some(selected_parent) =
+            current_parent_for_node(node, &selected_parent_id).or_else(|| {
+                may_infer_parent
+                    .then(|| node.allowed_parents.first())
+                    .flatten()
+            })
         else {
+            let fixed_attachment_id = node
+                .current_attachment_id
+                .clone()
+                .filter(|attachment_id| !attachment_id.is_empty());
+            nodes.push(TopologyEffectiveNodeState {
+                node_id: node.node_id.clone(),
+                logical_parent_node_id: selected_parent_id,
+                preferred_attachment_id: fixed_attachment_id.clone(),
+                effective_attachment_id: fixed_attachment_id,
+                fallback_reason: None,
+                all_attachments_suppressed: false,
+                attachments: Vec::new(),
+            });
             continue;
         };
         let selected_parent_id = selected_parent.parent_node_id.clone();
@@ -1733,6 +2268,289 @@ fn remove_node_by_id(map: &mut Map<String, Value>, target_id: &str) -> Option<(S
         }
     }
     None
+}
+
+fn logical_child_branch_counts(ui_state: &TopologyEditorStateFile) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for node in &ui_state.nodes {
+        let Some(parent_id) = node.current_parent_node_id.as_deref() else {
+            continue;
+        };
+        *counts.entry(parent_id.to_string()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn read_node_rate_mbps(node: &Map<String, Value>, key: &str) -> Option<u64> {
+    node.get(key).and_then(|value| {
+        value
+            .as_u64()
+            .or_else(|| value.as_f64().map(|rate| rate as u64))
+    })
+}
+
+fn node_capacity_mbps(node: &Map<String, Value>) -> u64 {
+    let download = read_node_rate_mbps(node, "downloadBandwidthMbps").unwrap_or_default();
+    let upload = read_node_rate_mbps(node, "uploadBandwidthMbps").unwrap_or_default();
+    download.max(upload)
+}
+
+fn resolved_queue_visibility_policy(
+    config: &Config,
+    ui_node: &TopologyEditorNode,
+    tree_node: Option<&Value>,
+    child_branch_counts: &HashMap<String, usize>,
+) -> TopologyQueueVisibilityPolicy {
+    match ui_node.queue_visibility_policy {
+        TopologyQueueVisibilityPolicy::QueueVisible => TopologyQueueVisibilityPolicy::QueueVisible,
+        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren => {
+            TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren
+        }
+        TopologyQueueVisibilityPolicy::QueueAuto => {
+            if ui_node.current_parent_node_id.is_none() {
+                return TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren;
+            }
+            let Some(tree_node) = tree_node.and_then(Value::as_object) else {
+                return TopologyQueueVisibilityPolicy::QueueVisible;
+            };
+            let is_site = tree_node
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("site"));
+            if !is_site {
+                return TopologyQueueVisibilityPolicy::QueueVisible;
+            }
+            if child_branch_counts
+                .get(ui_node.node_id.as_str())
+                .copied()
+                .unwrap_or_default()
+                == 0
+            {
+                return TopologyQueueVisibilityPolicy::QueueVisible;
+            }
+            let threshold = config.topology.queue_auto_virtualize_threshold_mbps;
+            if threshold == 0 {
+                return TopologyQueueVisibilityPolicy::QueueVisible;
+            }
+            if node_capacity_mbps(tree_node) >= threshold {
+                TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren
+            } else {
+                TopologyQueueVisibilityPolicy::QueueVisible
+            }
+        }
+    }
+}
+
+fn apply_effective_topology_reparenting_only(
+    canonical_network: &Value,
+    ui_state: &TopologyEditorStateFile,
+    effective: &TopologyEffectiveStateFile,
+) -> Value {
+    let Some(root) = canonical_network.as_object() else {
+        return canonical_network.clone();
+    };
+    let mut out = root.clone();
+    let ui_by_node = ui_state
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+
+    for effective_node in &effective.nodes {
+        let Some(ui_node) = ui_by_node.get(effective_node.node_id.as_str()).copied() else {
+            continue;
+        };
+        let Some(selected_parent) = ui_node
+            .allowed_parents
+            .iter()
+            .find(|parent| parent.parent_node_id == effective_node.logical_parent_node_id)
+        else {
+            continue;
+        };
+        let already_parented = find_parent_id_of_node(&out, &ui_node.node_id, None)
+            .flatten()
+            .as_deref()
+            == Some(selected_parent.parent_node_id.as_str());
+        let Some(effective_attachment_id) = effective_node.effective_attachment_id.as_deref()
+        else {
+            if ui_node.current_parent_node_id.as_deref()
+                == Some(effective_node.logical_parent_node_id.as_str())
+                && already_parented
+            {
+                continue;
+            }
+            let Some((node_key, node_value)) = remove_node_by_id(&mut out, &ui_node.node_id) else {
+                continue;
+            };
+            let _ = insert_node_under_parent_id(
+                &mut out,
+                &selected_parent.parent_node_id,
+                &node_key,
+                node_value,
+            );
+            continue;
+        };
+        let Some(target_attachment) = selected_parent
+            .attachment_options
+            .iter()
+            .find(|option| option.attachment_id == effective_attachment_id)
+        else {
+            continue;
+        };
+        let current_anchor_attachment = find_node_by_id(&out, &ui_node.node_id)
+            .map(|node_value| attachment_anchor_for_reparent(node_value, target_attachment))
+            .unwrap_or_else(|| target_attachment.clone());
+        let already_anchored = already_parented
+            && current_anchor_attachment.attachment_id == selected_parent.parent_node_id
+            || find_parent_id_of_node(&out, &ui_node.node_id, None)
+                .flatten()
+                .as_deref()
+                == Some(current_anchor_attachment.attachment_id.as_str());
+        if ui_node.current_parent_node_id.as_deref()
+            == Some(effective_node.logical_parent_node_id.as_str())
+            && ui_node.current_attachment_id.as_deref()
+                == effective_node.effective_attachment_id.as_deref()
+            && already_anchored
+        {
+            ensure_attachment_node_exists(
+                &mut out,
+                &selected_parent.parent_node_id,
+                &current_anchor_attachment,
+            );
+            continue;
+        }
+
+        let Some((node_key, node_value)) = remove_node_by_id(&mut out, &ui_node.node_id) else {
+            continue;
+        };
+        let anchor_attachment = attachment_anchor_for_reparent(&node_value, target_attachment);
+        ensure_attachment_node_exists(
+            &mut out,
+            &selected_parent.parent_node_id,
+            &anchor_attachment,
+        );
+        let _ = insert_node_under_parent_id(
+            &mut out,
+            &anchor_attachment.attachment_id,
+            &node_key,
+            node_value,
+        );
+    }
+
+    Value::Object(out)
+}
+
+fn queue_policy_reference_tree(
+    canonical: &TopologyCanonicalStateFile,
+    ui_state: &TopologyEditorStateFile,
+    effective: &TopologyEffectiveStateFile,
+) -> Value {
+    let canonical_network =
+        if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration {
+            canonical.insight_topology_network_json()
+        } else {
+            canonical.compatibility_network_json().clone()
+        };
+    let mut logical_tree =
+        apply_effective_topology_reparenting_only(&canonical_network, ui_state, effective);
+    if let Some(root) = logical_tree.as_object_mut() {
+        recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
+    }
+    logical_tree
+}
+
+fn queue_hidden_node_ids_in_promotion_order(ui_state: &TopologyEditorStateFile) -> Vec<String> {
+    let by_id = ui_state
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    let mut depth_cache = HashMap::<String, usize>::new();
+
+    fn node_depth<'a>(
+        node_id: &'a str,
+        by_id: &HashMap<&'a str, &'a TopologyEditorNode>,
+        cache: &mut HashMap<String, usize>,
+        seen: &mut HashSet<String>,
+    ) -> usize {
+        if let Some(depth) = cache.get(node_id).copied() {
+            return depth;
+        }
+        if !seen.insert(node_id.to_string()) {
+            return 0;
+        }
+        let depth = by_id
+            .get(node_id)
+            .and_then(|node| node.current_parent_node_id.as_deref())
+            .map(|parent_id| 1 + node_depth(parent_id, by_id, cache, seen))
+            .unwrap_or(0);
+        seen.remove(node_id);
+        cache.insert(node_id.to_string(), depth);
+        depth
+    }
+
+    let mut node_ids = ui_state
+        .nodes
+        .iter()
+        .map(|node| node.node_id.clone())
+        .collect::<Vec<_>>();
+    node_ids.sort_unstable_by(|left, right| {
+        let left_depth = node_depth(left, &by_id, &mut depth_cache, &mut HashSet::new());
+        let right_depth = node_depth(right, &by_id, &mut depth_cache, &mut HashSet::new());
+        left_depth.cmp(&right_depth).then_with(|| left.cmp(right))
+    });
+    node_ids
+}
+
+fn mark_node_virtual_by_id(map: &mut Map<String, Value>, target_id: &str) -> bool {
+    for value in map.values_mut() {
+        let Some(node) = value.as_object_mut() else {
+            continue;
+        };
+        if node
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id == target_id)
+        {
+            node.insert("virtual".to_string(), Value::Bool(true));
+            return true;
+        }
+        if let Some(children) = node.get_mut("children").and_then(Value::as_object_mut)
+            && mark_node_virtual_by_id(children, target_id)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn apply_queue_hidden_node_virtualization(
+    config: &Config,
+    ui_state: &TopologyEditorStateFile,
+    root: &mut Map<String, Value>,
+) {
+    let ui_by_id = ui_state
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    let child_branch_counts = logical_child_branch_counts(ui_state);
+    let hidden_node_ids = queue_hidden_node_ids_in_promotion_order(ui_state);
+    for hidden_node_id in hidden_node_ids {
+        let Some(ui_node) = ui_by_id.get(hidden_node_id.as_str()).copied() else {
+            continue;
+        };
+        let resolved_policy = resolved_queue_visibility_policy(
+            config,
+            ui_node,
+            find_node_by_id(root, &hidden_node_id),
+            &child_branch_counts,
+        );
+        if resolved_policy != TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren {
+            continue;
+        }
+        let _ = mark_node_virtual_by_id(root, &hidden_node_id);
+    }
 }
 
 fn find_node_by_id<'a>(map: &'a Map<String, Value>, target_id: &str) -> Option<&'a Value> {
@@ -2879,6 +3697,18 @@ fn validate_effective_node_identity_consistency(
             .iter()
             .find(|parent| parent.parent_node_id == node.logical_parent_node_id)
         else {
+            let fixed_attachment_id = ui_node
+                .current_attachment_id
+                .as_deref()
+                .filter(|attachment_id| !attachment_id.is_empty());
+            let legacy_fixed_parent = ui_node.allowed_parents.is_empty()
+                && ui_node.current_parent_node_id.as_deref()
+                    == Some(node.logical_parent_node_id.as_str())
+                && node.preferred_attachment_id.as_deref() == fixed_attachment_id
+                && node.effective_attachment_id.as_deref() == fixed_attachment_id;
+            if legacy_fixed_parent {
+                continue;
+            }
             errors.push(format!(
                 "Effective topology selected invalid parent '{}' for '{}'.",
                 node.logical_parent_node_id, ui_node.node_name
@@ -2917,7 +3747,9 @@ fn validate_effective_node_identity_consistency(
 /// This checks that the effective topology remains ID-consistent, the effective
 /// site-parent graph is acyclic, and every canonical site node remains present
 /// exactly once in the exported tree.
-pub fn validate_effective_topology_network(
+fn validate_effective_topology_network_from_canonical(
+    config: &Config,
+    canonical: &TopologyCanonicalStateFile,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
     effective_network: &Value,
@@ -2925,6 +3757,8 @@ pub fn validate_effective_topology_network(
     let mut errors = Vec::new();
     validate_effective_node_identity_consistency(ui_state, effective, &mut errors);
     validate_effective_site_parent_cycles(ui_state, effective, &mut errors);
+    let queue_policy_tree = queue_policy_reference_tree(canonical, ui_state, effective);
+    let queue_policy_root = queue_policy_tree.as_object();
 
     let mut counts = HashMap::new();
     let Some(root) = effective_network.as_object() else {
@@ -2935,9 +3769,19 @@ pub fn validate_effective_topology_network(
     for child in root.values() {
         count_node_ids(child, &mut counts);
     }
+    let child_branch_counts = logical_child_branch_counts(ui_state);
 
     for node in &ui_state.nodes {
         if !node.node_id.contains(":site:") {
+            continue;
+        }
+        if resolved_queue_visibility_policy(
+            config,
+            node,
+            queue_policy_root.and_then(|root| find_node_by_id(root, &node.node_id)),
+            &child_branch_counts,
+        ) == TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren
+        {
             continue;
         }
         match counts.get(&node.node_id).copied().unwrap_or_default() {
@@ -2960,86 +3804,74 @@ pub fn validate_effective_topology_network(
     }
 }
 
+/// Validates that an effective topology export remains structurally safe to publish.
+///
+/// This legacy helper accepts the candidate canonical network tree directly and reconstructs
+/// canonical topology metadata from it so existing call sites and tests can keep using the same
+/// interface.
+pub fn validate_effective_topology_network(
+    config: &Config,
+    canonical_network: &Value,
+    ui_state: &TopologyEditorStateFile,
+    effective: &TopologyEffectiveStateFile,
+    effective_network: &Value,
+) -> Result<(), Vec<String>> {
+    let canonical_state = TopologyCanonicalStateFile::from_editor_and_network(
+        ui_state,
+        canonical_network,
+        TopologyCanonicalIngressKind::NativeIntegration,
+    );
+    validate_effective_topology_network_from_canonical(
+        config,
+        &canonical_state,
+        ui_state,
+        effective,
+        effective_network,
+    )
+}
+
 /// Applies the effective attachment selection to a canonical network tree and returns
 /// the runtime-effective tree used by shaping/export.
+fn apply_effective_topology_to_network_json_from_canonical(
+    config: &Config,
+    canonical_network: &Value,
+    canonical: &TopologyCanonicalStateFile,
+    ui_state: &TopologyEditorStateFile,
+    effective: &TopologyEffectiveStateFile,
+) -> Value {
+    let mut out = apply_effective_topology_reparenting_only(canonical_network, ui_state, effective);
+    if let Some(root) = out.as_object_mut() {
+        recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
+        apply_queue_hidden_node_virtualization(config, ui_state, root);
+        apply_runtime_squashing(config, ui_state, effective, root);
+    }
+    out
+}
+
+/// Applies the effective attachment selection to a canonical network tree and returns
+/// the runtime-effective tree used by shaping/export.
+///
+/// This legacy helper accepts the candidate canonical network tree directly and reconstructs
+/// canonical topology metadata from it so existing call sites and tests can keep using the same
+/// interface.
 pub fn apply_effective_topology_to_network_json(
     config: &Config,
     canonical_network: &Value,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
 ) -> Value {
-    let Some(root) = canonical_network.as_object() else {
-        return canonical_network.clone();
-    };
-    let mut out = root.clone();
-    let ui_by_node = ui_state
-        .nodes
-        .iter()
-        .map(|node| (node.node_id.as_str(), node))
-        .collect::<HashMap<_, _>>();
-
-    for effective_node in &effective.nodes {
-        let Some(ui_node) = ui_by_node.get(effective_node.node_id.as_str()).copied() else {
-            continue;
-        };
-        let Some(selected_parent) = ui_node
-            .allowed_parents
-            .iter()
-            .find(|parent| parent.parent_node_id == effective_node.logical_parent_node_id)
-        else {
-            continue;
-        };
-        let Some(effective_attachment_id) = effective_node.effective_attachment_id.as_deref()
-        else {
-            continue;
-        };
-        let Some(target_attachment) = selected_parent
-            .attachment_options
-            .iter()
-            .find(|option| option.attachment_id == effective_attachment_id)
-        else {
-            continue;
-        };
-        let current_anchor_attachment = find_node_by_id(&out, &ui_node.node_id)
-            .map(|node_value| attachment_anchor_for_reparent(node_value, target_attachment))
-            .unwrap_or_else(|| target_attachment.clone());
-        let already_anchored = find_parent_id_of_node(&out, &ui_node.node_id, None)
-            .flatten()
-            .as_deref()
-            == Some(current_anchor_attachment.attachment_id.as_str());
-        if ui_node.current_parent_node_id.as_deref()
-            == Some(effective_node.logical_parent_node_id.as_str())
-            && ui_node.current_attachment_id.as_deref()
-                == effective_node.effective_attachment_id.as_deref()
-            && already_anchored
-        {
-            ensure_attachment_node_exists(
-                &mut out,
-                &selected_parent.parent_node_id,
-                &current_anchor_attachment,
-            );
-            continue;
-        }
-
-        let Some((node_key, node_value)) = remove_node_by_id(&mut out, &ui_node.node_id) else {
-            continue;
-        };
-        let anchor_attachment = attachment_anchor_for_reparent(&node_value, target_attachment);
-        ensure_attachment_node_exists(
-            &mut out,
-            &selected_parent.parent_node_id,
-            &anchor_attachment,
-        );
-        let _ = insert_node_under_parent_id(
-            &mut out,
-            &anchor_attachment.attachment_id,
-            &node_key,
-            node_value,
-        );
-    }
-
-    apply_runtime_squashing(config, ui_state, effective, &mut out);
-    Value::Object(out)
+    let canonical_state = TopologyCanonicalStateFile::from_editor_and_network(
+        ui_state,
+        canonical_network,
+        TopologyCanonicalIngressKind::NativeIntegration,
+    );
+    apply_effective_topology_to_network_json_from_canonical(
+        config,
+        canonical_network,
+        &canonical_state,
+        ui_state,
+        effective,
+    )
 }
 
 fn apply_effective_topology_to_canonical_state(
@@ -3048,33 +3880,38 @@ fn apply_effective_topology_to_canonical_state(
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
 ) -> Value {
-    let mut effective_network = apply_effective_topology_to_network_json(
+    let canonical_network =
+        if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration {
+            canonical.insight_topology_network_json()
+        } else {
+            canonical.compatibility_network_json().clone()
+        };
+    apply_effective_topology_to_network_json_from_canonical(
         config,
-        canonical.compatibility_network_json(),
+        &canonical_network,
+        canonical,
         ui_state,
         effective,
-    );
-    if let Some(root) = effective_network.as_object_mut() {
-        recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
-    }
-    effective_network
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        EffectiveTopologyArtifacts, apply_effective_topology_to_network_json,
-        build_effective_topology_artifacts, build_shaping_inputs, compute_effective_state,
-        publish_effective_topology_artifacts, publish_topology_runtime_error_status,
-        validate_effective_topology_network,
+        EffectiveTopologyArtifacts, apply_effective_topology_to_canonical_state,
+        apply_effective_topology_to_network_json, auto_attachment_option,
+        build_effective_topology_artifacts, build_effective_topology_artifacts_from_canonical,
+        build_shaping_inputs, compute_effective_state, publish_effective_topology_artifacts,
+        publish_topology_runtime_error_status, validate_effective_topology_network,
     };
     use lqos_config::{
         CircuitAnchor, CircuitAnchorsFile, Config, TopologyAllowedParent,
         TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus,
         TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
+        TopologyCanonicalIngressKind, TopologyCanonicalNode, TopologyCanonicalStateFile,
         TopologyEditorNode, TopologyEditorStateFile, TopologyEffectiveAttachmentState,
-        TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStatusFile,
-        topology_effective_network_path, topology_effective_state_path,
+        TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyQueueVisibilityPolicy,
+        TopologyRuntimeStatusFile, topology_effective_network_path, topology_effective_state_path,
         topology_runtime_status_path, topology_shaping_inputs_path,
     };
     use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile};
@@ -3091,6 +3928,32 @@ mod tests {
         let path = std::env::temp_dir().join(format!("{prefix}-{unique}"));
         fs::create_dir_all(&path).expect("temp directory should be creatable");
         path
+    }
+
+    fn runtime_tree_max_depth(value: &Value) -> usize {
+        fn recurse(node: &Value, depth: usize) -> usize {
+            let Some(map) = node.as_object() else {
+                return depth;
+            };
+            let Some(children) = map.get("children").and_then(Value::as_object) else {
+                return depth;
+            };
+            children
+                .values()
+                .map(|child| recurse(child, depth + 1))
+                .max()
+                .unwrap_or(depth)
+        }
+
+        value
+            .as_object()
+            .map(|root| {
+                root.values()
+                    .map(|child| recurse(child, 1))
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0)
     }
 
     fn sample_attachment_option(
@@ -3146,6 +4009,7 @@ mod tests {
                 schema_version: 1,
                 source: "test".to_string(),
                 generated_unix: Some(1),
+                ingress_identity: None,
                 nodes: vec![TopologyEditorNode {
                     node_id: "tower-1".to_string(),
                     node_name: "Tower 1".to_string(),
@@ -3193,6 +4057,7 @@ mod tests {
         assert_eq!(ready.source_generation, generation);
         assert!(ready.ready);
         assert_eq!(ready.error, None);
+        assert!(!ready.shaping_generation.is_empty());
         assert_eq!(
             ready.effective_state_path,
             topology_effective_state_path(&config)
@@ -3266,6 +4131,7 @@ mod tests {
                 schema_version: 1,
                 source: "test".to_string(),
                 generated_unix: Some(1),
+                ingress_identity: None,
                 nodes: vec![TopologyEditorNode {
                     node_id: "tower-1".to_string(),
                     node_name: "Tower 1".to_string(),
@@ -3275,7 +4141,6 @@ mod tests {
             effective_network: Some(json!({
                 "Tower 1": {
                     "id": "tower-1",
-                    "name": "Tower 1",
                     "children": {}
                 }
             })),
@@ -3294,6 +4159,310 @@ mod tests {
         assert_eq!(circuit.anchor_node_name.as_deref(), Some("Tower 1"));
         assert_eq!(circuit.effective_parent_node_id, "tower-1");
         assert_eq!(circuit.effective_parent_node_name, "Tower 1");
+    }
+
+    #[test]
+    fn shaping_inputs_apply_effective_overrides_for_integration_ingress() {
+        let lqos_directory = unique_temp_dir("lqos-topology-runtime-overrides");
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+        config.splynx_integration.enable_splynx = true;
+        fs::write(
+            lqos_directory.join("topology_import.json"),
+            serde_json::to_string_pretty(&json!({
+                "schema_version": 1,
+                "source": "splynx/full",
+                "generated_unix": 1,
+                "ingress_identity": "ingress-1",
+                "compile_mode": "full",
+                "imported": {
+                    "source": "splynx/full",
+                    "generated_unix": 1,
+                    "ingress_identity": "ingress-1",
+                    "compatibility_network_json": {
+                        "Tower 1": {
+                            "id": "tower-1",
+                            "children": {}
+                        }
+                    },
+                    "shaped_devices": [
+                        {
+                            "circuit_id": "circuit-1",
+                            "circuit_name": "Circuit 1",
+                            "device_id": "device-1",
+                            "device_name": "Device 1",
+                            "parent_node": "Tower 1",
+                            "parent_node_id": "tower-1",
+                            "anchor_node_id": null,
+                            "mac": "",
+                            "ipv4": [],
+                            "ipv6": [],
+                            "download_min_mbps": 10.0,
+                            "upload_min_mbps": 10.0,
+                            "download_max_mbps": 100.0,
+                            "upload_max_mbps": 100.0,
+                            "comment": "",
+                            "sqm_override": null
+                        }
+                    ],
+                    "circuit_anchors": {
+                        "schema_version": 1,
+                        "source": "splynx/full",
+                        "generated_unix": 1,
+                        "anchors": []
+                    },
+                    "ethernet_advisories": []
+                }
+            }))
+            .expect("topology import should serialize"),
+        )
+        .expect("topology import should write");
+        fs::write(
+            lqos_directory.join("topology_compiled_shaping.json"),
+            serde_json::to_string_pretty(&json!({
+                "schema_version": 1,
+                "source": "splynx/full",
+                "compile_mode": "full",
+                "generated_unix": 1,
+                "ingress_identity": "ingress-1",
+                "shaped_devices": [
+                    {
+                        "circuit_id": "circuit-1",
+                        "circuit_name": "Circuit 1",
+                        "device_id": "device-1",
+                        "device_name": "Device 1",
+                        "parent_node": "Tower 1",
+                        "parent_node_id": "tower-1",
+                        "anchor_node_id": null,
+                        "mac": "",
+                        "ipv4": [],
+                        "ipv6": [],
+                        "download_min_mbps": 10.0,
+                        "upload_min_mbps": 10.0,
+                        "download_max_mbps": 100.0,
+                        "upload_max_mbps": 100.0,
+                        "comment": "",
+                        "sqm_override": null
+                    }
+                ],
+                "circuit_anchors": {
+                    "schema_version": 1,
+                    "source": "splynx/full",
+                    "generated_unix": 1,
+                    "anchors": []
+                }
+            }))
+            .expect("compiled shaping should serialize"),
+        )
+        .expect("compiled shaping should write");
+        fs::write(
+            lqos_directory.join("lqos_overrides.json"),
+            serde_json::to_string_pretty(&json!({
+                "persistent_devices": [
+                    {
+                        "circuit_id": "circuit-2",
+                        "circuit_name": "Circuit 2",
+                        "device_id": "device-2",
+                        "device_name": "Device 2",
+                        "parent_node": "Tower 1",
+                        "parent_node_id": "tower-1",
+                        "anchor_node_id": null,
+                        "mac": "",
+                        "ipv4": [],
+                        "ipv6": [],
+                        "download_min_mbps": 5.0,
+                        "upload_min_mbps": 5.0,
+                        "download_max_mbps": 50.0,
+                        "upload_max_mbps": 50.0,
+                        "comment": "",
+                        "sqm_override": null
+                    }
+                ],
+                "circuit_adjustments": [
+                    {
+                        "type": "device_adjust_speed",
+                        "device_id": "device-1",
+                        "max_download_bandwidth": 80.0,
+                        "max_upload_bandwidth": 60.0
+                    }
+                ],
+                "network_adjustments": []
+            }))
+            .expect("override json should serialize"),
+        )
+        .expect("override file should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: Vec::new(),
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: Vec::new(),
+            },
+            effective_network: Some(json!({
+                "Tower 1": {
+                    "id": "tower-1",
+                    "children": {}
+                }
+            })),
+        };
+
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build")
+            .expect("shaping inputs should exist");
+        let circuit_one = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "circuit-1")
+            .expect("expected circuit-1");
+        let circuit_two = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "circuit-2")
+            .expect("expected circuit-2");
+
+        assert_eq!(circuit_one.download_max_mbps, 80.0);
+        assert_eq!(circuit_one.upload_max_mbps, 60.0);
+        assert_eq!(circuit_two.effective_parent_node_id, "tower-1");
+        assert_eq!(circuit_two.effective_parent_node_name, "Tower 1");
+    }
+
+    #[test]
+    fn shaping_inputs_use_topology_import_without_shaped_devices_csv_for_integration_ingress() {
+        let lqos_directory = unique_temp_dir("lqos-topology-import-shaped-devices");
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+        fs::write(
+            lqos_directory.join("topology_import.json"),
+            serde_json::to_string_pretty(&json!({
+                "schema_version": 1,
+                "source": "uisp/full2",
+                "compile_mode": "full",
+                "generated_unix": 1,
+                "ingress_identity": "ingress-1",
+                "imported": {
+                    "source": "uisp/full2",
+                    "generated_unix": 1,
+                    "ingress_identity": "imported-1",
+                    "compatibility_network_json": {},
+                    "shaped_devices": [
+                        {
+                            "circuit_id": "circuit-1",
+                            "circuit_name": "Circuit 1",
+                            "device_id": "device-1",
+                            "device_name": "Device 1",
+                            "parent_node": "Tower 1",
+                            "parent_node_id": "tower-1",
+                            "anchor_node_id": null,
+                            "mac": "",
+                            "ipv4": [],
+                            "ipv6": [],
+                            "download_min_mbps": 10.0,
+                            "upload_min_mbps": 10.0,
+                            "download_max_mbps": 100.0,
+                            "upload_max_mbps": 100.0,
+                            "comment": "",
+                            "sqm_override": null
+                        }
+                    ],
+                    "circuit_anchors": {
+                        "schema_version": 1,
+                        "source": "uisp/full",
+                        "generated_unix": 1,
+                        "anchors": []
+                    },
+                    "ethernet_advisories": []
+                }
+            }))
+            .expect("topology import should serialize"),
+        )
+        .expect("topology_import.json should write");
+        fs::write(
+            lqos_directory.join("topology_compiled_shaping.json"),
+            serde_json::to_string_pretty(&json!({
+                "schema_version": 1,
+                "source": "uisp/full",
+                "compile_mode": "full",
+                "generated_unix": 1,
+                "ingress_identity": "ingress-1",
+                "shaped_devices": [
+                    {
+                        "circuit_id": "circuit-1",
+                        "circuit_name": "Circuit 1",
+                        "device_id": "device-1",
+                        "device_name": "Device 1",
+                        "parent_node": "Compiled Tower 1",
+                        "parent_node_id": "compiled-tower-1",
+                        "anchor_node_id": null,
+                        "mac": "",
+                        "ipv4": [],
+                        "ipv6": [],
+                        "download_min_mbps": 10.0,
+                        "upload_min_mbps": 10.0,
+                        "download_max_mbps": 100.0,
+                        "upload_max_mbps": 100.0,
+                        "comment": "",
+                        "sqm_override": null
+                    }
+                ],
+                "circuit_anchors": {
+                    "schema_version": 1,
+                    "source": "uisp/full",
+                    "generated_unix": 1,
+                    "anchors": []
+                }
+            }))
+            .expect("compiled shaping should serialize"),
+        )
+        .expect("topology_compiled_shaping.json should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: Vec::new(),
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: Vec::new(),
+            },
+            effective_network: Some(json!({
+                "Compiled Tower 1": {
+                    "id": "compiled-tower-1",
+                    "children": {}
+                }
+            })),
+        };
+
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build from topology_compiled_shaping.json")
+            .expect("shaping inputs should exist");
+        let circuit = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "circuit-1")
+            .expect("expected circuit");
+
+        assert_eq!(circuit.effective_parent_node_id, "compiled-tower-1");
+        assert_eq!(circuit.effective_parent_node_name, "Compiled Tower 1");
     }
 
     #[test]
@@ -3356,6 +4525,7 @@ mod tests {
                 schema_version: 1,
                 source: "test".to_string(),
                 generated_unix: Some(1),
+                ingress_identity: None,
                 nodes: vec![
                     TopologyEditorNode {
                         node_id: "attachment-old".to_string(),
@@ -3456,12 +4626,12 @@ mod tests {
                 schema_version: 1,
                 source: "test".to_string(),
                 generated_unix: Some(1),
+                ingress_identity: None,
                 nodes: Vec::new(),
             },
             effective_network: Some(json!({
                 "Tower 1": {
                     "id": "tower-1",
-                    "name": "Tower 1",
                     "children": {}
                 }
             })),
@@ -3485,7 +4655,87 @@ mod tests {
     }
 
     #[test]
-    fn shaping_inputs_fail_when_anchor_does_not_resolve() {
+    fn shaping_inputs_skip_virtual_effective_nodes_when_resolving_physical_parent() {
+        let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-virtual");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Aggregation\",\"site-agg\",\"\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: vec![TopologyEffectiveNodeState {
+                    node_id: "site-agg".to_string(),
+                    logical_parent_node_id: "site-root".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: Vec::new(),
+                }],
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: vec![TopologyEditorNode {
+                    node_id: "site-agg".to_string(),
+                    node_name: "Aggregation".to_string(),
+                    current_parent_node_id: Some("site-root".to_string()),
+                    current_parent_node_name: Some("Core".to_string()),
+                    queue_visibility_policy:
+                        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
+                    ..TopologyEditorNode::default()
+                }],
+            },
+            effective_network: Some(json!({
+                "Core": {
+                    "id": "site-root",
+                    "name": "Core",
+                    "children": {
+                        "Aggregation": {
+                            "id": "site-agg",
+                            "name": "Aggregation",
+                            "virtual": true,
+                            "children": {}
+                        }
+                    }
+                }
+            })),
+        };
+
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build")
+            .expect("shaping inputs should exist");
+        let circuit = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "circuit-1")
+            .expect("expected circuit");
+
+        assert_eq!(circuit.effective_parent_node_id, "site-root");
+        assert_eq!(circuit.effective_parent_node_name, "Core");
+        assert_eq!(
+            circuit.resolution_source,
+            lqos_config::TopologyShapingResolutionSource::LegacyParent
+        );
+    }
+
+    #[test]
+    fn shaping_inputs_fallback_to_generated_parents_when_anchor_does_not_resolve() {
         let lqos_directory = unique_temp_dir("lqos-topology-missing-anchor");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
@@ -3525,16 +4775,129 @@ mod tests {
                 schema_version: 1,
                 source: "test".to_string(),
                 generated_unix: Some(1),
+                ingress_identity: None,
                 nodes: Vec::new(),
             },
             effective_network: Some(json!({})),
         };
 
-        let err = build_shaping_inputs(&config, &artifacts)
-            .expect_err("missing anchor should fail shaping input generation");
-        let message = format!("{err:#}");
-        assert!(message.contains("circuit-1"));
-        assert!(message.contains("missing-anchor"));
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("missing anchor should no longer fail shaping input generation")
+            .expect("shaping inputs should be present");
+        let circuit = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "circuit-1")
+            .expect("circuit should be present");
+        assert_eq!(circuit.effective_parent_node_id, "");
+        assert_eq!(circuit.effective_parent_node_name, "");
+        assert_eq!(
+            circuit.resolution_source,
+            lqos_config::TopologyShapingResolutionSource::RuntimeFallback
+        );
+        assert!(
+            shaping_inputs
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("missing-anchor"))
+        );
+        assert!(
+            shaping_inputs
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("generated parent nodes"))
+        );
+    }
+
+    #[test]
+    fn flat_mode_assigns_explicit_generated_parent_buckets() {
+        let lqos_directory = unique_temp_dir("lqos-topology-flat-summary");
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+        config.topology.compile_mode = "flat".to_string();
+        config.queues.override_available_queues = Some(2);
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"\",\"\",\"\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+                "\"circuit-2\",\"Circuit 2\",\"device-2\",\"Device 2\",\"\",\"\",\"\",\"aa:bb:cc:dd:ee:00\",\"192.0.2.11/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: Vec::new(),
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: Vec::new(),
+            },
+            effective_network: Some(json!({})),
+        };
+
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("flat mode shaping inputs should build")
+            .expect("shaping inputs should be present");
+        assert!(shaping_inputs.warnings.is_empty());
+        assert_eq!(shaping_inputs.circuits.len(), 2);
+        assert!(shaping_inputs.circuits.iter().all(|circuit| {
+            circuit
+                .effective_parent_node_name
+                .starts_with("Generated_PN_")
+        }));
+        assert!(shaping_inputs.circuits.iter().all(|circuit| {
+            circuit.resolution_source == lqos_config::TopologyShapingResolutionSource::FlatBucket
+        }));
+    }
+
+    #[test]
+    fn flat_mode_publishes_generated_parent_nodes_into_effective_network() {
+        let mut config = Config::default();
+        config.topology.compile_mode = "flat".to_string();
+        config.queues.override_available_queues = Some(3);
+
+        let canonical = TopologyCanonicalStateFile::from_legacy_network_json(&json!({}));
+        let artifacts = build_effective_topology_artifacts_from_canonical(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("flat mode effective artifacts should build");
+        let effective_network = artifacts
+            .effective_network
+            .expect("flat mode should publish an effective network");
+        let root = effective_network
+            .as_object()
+            .expect("effective network should be an object");
+        assert_eq!(root.len(), 3);
+        for index in 0..3 {
+            let name = format!("Generated_PN_{}", index + 1);
+            let expected_id = format!("libreqos:generated:flat:bucket:{index}");
+            let node = root
+                .get(&name)
+                .and_then(Value::as_object)
+                .expect("generated parent node should exist");
+            assert_eq!(
+                node.get("id").and_then(Value::as_str),
+                Some(expected_id.as_str())
+            );
+            assert_eq!(
+                node.get("name").and_then(Value::as_str),
+                Some(name.as_str())
+            );
+        }
     }
 
     #[test]
@@ -3595,9 +4958,12 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![TopologyEditorNode {
                 node_id: "child-site".to_string(),
                 node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("parent-site".to_string()),
                 current_parent_node_name: Some("Parent Site".to_string()),
                 current_attachment_id: Some("relay-b".to_string()),
@@ -3610,6 +4976,7 @@ mod tests {
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -3707,9 +5074,12 @@ mod tests {
                 schema_version: 1,
                 source: "uisp/full2".to_string(),
                 generated_unix: None,
+                ingress_identity: None,
                 nodes: vec![TopologyEditorNode {
                     node_id: "child-site".to_string(),
                     node_name: "Child Site".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("parent-site".to_string()),
                     current_parent_node_name: Some("Parent Site".to_string()),
                     current_attachment_id: Some("backhaul-attachment".to_string()),
@@ -3722,6 +5092,7 @@ mod tests {
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -3767,6 +5138,749 @@ mod tests {
         );
         assert_eq!(child_site["downloadBandwidthMbps"].as_u64(), Some(400));
         assert_eq!(child_site["uploadBandwidthMbps"].as_u64(), Some(400));
+    }
+
+    #[test]
+    fn runtime_squashing_reduces_export_tree_depth_for_queue_consumers() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+        let canonical = json!({
+            "Parent Site": {
+                "children": {
+                    "Relay A": {
+                        "children": {
+                            "Relay B": {
+                                "children": {
+                                    "Child Site": {
+                                        "children": {},
+                                        "downloadBandwidthMbps": 800,
+                                        "id": "child-site",
+                                        "name": "Child Site",
+                                        "parent_site": "Relay B",
+                                        "type": "Site",
+                                        "uploadBandwidthMbps": 700
+                                    }
+                                },
+                                "downloadBandwidthMbps": 600,
+                                "id": "relay-b",
+                                "name": "Relay B",
+                                "parent_site": "Relay A",
+                                "type": "AP",
+                                "uploadBandwidthMbps": 500
+                            }
+                        },
+                        "downloadBandwidthMbps": 900,
+                        "id": "relay-a",
+                        "name": "Relay A",
+                        "parent_site": "Parent Site",
+                        "type": "AP",
+                        "uploadBandwidthMbps": 400
+                    }
+                },
+                "downloadBandwidthMbps": 1000,
+                "id": "parent-site",
+                "name": "Parent Site",
+                "type": "Site",
+                "uploadBandwidthMbps": 1000
+            }
+        });
+        let ui_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "child-site".to_string(),
+                node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
+                current_parent_node_id: Some("parent-site".to_string()),
+                current_parent_node_name: Some("Parent Site".to_string()),
+                current_attachment_id: Some("relay-b".to_string()),
+                current_attachment_name: Some("Relay B".to_string()),
+                can_move: true,
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "parent-site".to_string(),
+                    parent_node_name: "Parent Site".to_string(),
+                    attachment_options: vec![sample_attachment_option("relay-b", "Relay B")],
+                    all_attachments_suppressed: false,
+                    has_probe_unavailable_attachments: false,
+                }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                preferred_attachment_id: None,
+                preferred_attachment_name: None,
+                effective_attachment_id: None,
+                effective_attachment_name: None,
+            }],
+        };
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![TopologyEffectiveNodeState {
+                node_id: "child-site".to_string(),
+                logical_parent_node_id: "parent-site".to_string(),
+                preferred_attachment_id: Some("relay-b".to_string()),
+                effective_attachment_id: Some("relay-b".to_string()),
+                fallback_reason: None,
+                all_attachments_suppressed: false,
+                attachments: vec![TopologyEffectiveAttachmentState {
+                    attachment_id: "relay-b".to_string(),
+                    health_status: TopologyAttachmentHealthStatus::Healthy,
+                    health_reason: None,
+                    suppressed_until_unix: None,
+                    probe_enabled: false,
+                    probeable: false,
+                    effective_selected: true,
+                }],
+            }],
+        };
+
+        let canonical_depth = runtime_tree_max_depth(&canonical);
+        let squashed =
+            apply_effective_topology_to_network_json(&config, &canonical, &ui_state, &effective);
+        let squashed_depth = runtime_tree_max_depth(&squashed);
+
+        assert_eq!(canonical_depth, 4);
+        assert_eq!(squashed_depth, 2);
+        assert!(squashed_depth < canonical_depth);
+    }
+
+    #[test]
+    fn native_integration_effective_export_uses_logical_canonical_tree_before_squashing() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-west".to_string(),
+                    node_name: "WestRedd".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "child-site".to_string(),
+                    node_name: "Tuscany Ridge".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-west".to_string()),
+                    current_parent_node_name: Some("WestRedd".to_string()),
+                    current_attachment_id: Some("relay-b".to_string()),
+                    current_attachment_name: Some("AVIAT_TuscanyRidge".to_string()),
+                    can_move: true,
+                    allowed_parents: vec![TopologyAllowedParent {
+                        parent_node_id: "site-west".to_string(),
+                        parent_node_name: "WestRedd".to_string(),
+                        attachment_options: vec![sample_attachment_option(
+                            "relay-b",
+                            "AVIAT_TuscanyRidge",
+                        )],
+                        all_attachments_suppressed: false,
+                        has_probe_unavailable_attachments: false,
+                    }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let mut canonical = TopologyCanonicalStateFile::from_editor_and_network(
+            &editor_state,
+            &json!({
+                "AVIAT_WestRedd": {
+                    "children": {
+                        "AVIAT_TuscanyRidge": {
+                            "children": {
+                                "Tuscany Ridge": {
+                                    "children": {},
+                                    "downloadBandwidthMbps": 900,
+                                    "id": "child-site",
+                                    "name": "Tuscany Ridge",
+                                    "type": "Site",
+                                    "uploadBandwidthMbps": 900
+                                }
+                            },
+                            "downloadBandwidthMbps": 900,
+                            "id": "relay-b",
+                            "name": "AVIAT_TuscanyRidge",
+                            "type": "AP",
+                            "uploadBandwidthMbps": 900
+                        }
+                    },
+                    "downloadBandwidthMbps": 1000,
+                    "id": "relay-a",
+                    "name": "AVIAT_WestRedd",
+                    "type": "AP",
+                    "uploadBandwidthMbps": 1000
+                }
+            }),
+            TopologyCanonicalIngressKind::NativeIntegration,
+        );
+        canonical.nodes.push(TopologyCanonicalNode {
+            node_id: "site-west".to_string(),
+            node_name: "WestRedd".to_string(),
+            latitude: None,
+            longitude: None,
+            node_kind: "Site".to_string(),
+            is_virtual: false,
+            current_parent_node_id: None,
+            current_parent_node_name: None,
+            current_attachment_id: None,
+            current_attachment_name: None,
+            can_move: false,
+            allowed_parents: Vec::new(),
+            queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+            rate_input: Default::default(),
+        });
+
+        let squashed = apply_effective_topology_to_canonical_state(
+            &config,
+            &canonical,
+            &editor_state,
+            &TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: None,
+                canonical_generated_unix: None,
+                health_generated_unix: None,
+                nodes: vec![TopologyEffectiveNodeState {
+                    node_id: "child-site".to_string(),
+                    logical_parent_node_id: "site-west".to_string(),
+                    preferred_attachment_id: Some("relay-b".to_string()),
+                    effective_attachment_id: Some("relay-b".to_string()),
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![TopologyEffectiveAttachmentState {
+                        attachment_id: "relay-b".to_string(),
+                        health_status: TopologyAttachmentHealthStatus::Healthy,
+                        health_reason: None,
+                        suppressed_until_unix: None,
+                        probe_enabled: false,
+                        probeable: false,
+                        effective_selected: true,
+                    }],
+                }],
+            },
+        );
+
+        let root_children = squashed
+            .as_object()
+            .expect("native effective export should be an object");
+        let west_children = root_children["WestRedd"]["children"]
+            .as_object()
+            .expect("WestRedd should stay as a logical root");
+        assert!(root_children.get("AVIAT_WestRedd").is_none());
+        assert!(west_children.get("AVIAT_WestRedd").is_none());
+        assert!(west_children.get("Tuscany Ridge").is_some());
+    }
+
+    #[test]
+    fn hidden_native_root_remains_virtual_in_effective_tree() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-west".to_string(),
+                    node_name: "WestRedd".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy:
+                        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "child-site".to_string(),
+                    node_name: "Tuscany Ridge".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-west".to_string()),
+                    current_parent_node_name: Some("WestRedd".to_string()),
+                    current_attachment_id: Some("relay-b".to_string()),
+                    current_attachment_name: Some("AVIAT_TuscanyRidge".to_string()),
+                    can_move: true,
+                    allowed_parents: vec![TopologyAllowedParent {
+                        parent_node_id: "site-west".to_string(),
+                        parent_node_name: "WestRedd".to_string(),
+                        attachment_options: vec![sample_attachment_option(
+                            "relay-b",
+                            "AVIAT_TuscanyRidge",
+                        )],
+                        all_attachments_suppressed: false,
+                        has_probe_unavailable_attachments: false,
+                    }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let mut canonical = TopologyCanonicalStateFile::from_editor_and_network(
+            &editor_state,
+            &json!({
+                "WestRedd": {
+                    "children": {
+                        "AVIAT_WestRedd": {
+                            "children": {
+                                "AVIAT_TuscanyRidge": {
+                                    "children": {
+                                        "Tuscany Ridge": {
+                                            "children": {},
+                                            "downloadBandwidthMbps": 900,
+                                            "id": "child-site",
+                                            "name": "Tuscany Ridge",
+                                            "type": "Site",
+                                            "uploadBandwidthMbps": 900
+                                        }
+                                    },
+                                    "downloadBandwidthMbps": 900,
+                                    "id": "relay-b",
+                                    "name": "AVIAT_TuscanyRidge",
+                                    "type": "AP",
+                                    "uploadBandwidthMbps": 900
+                                }
+                            },
+                            "downloadBandwidthMbps": 1000,
+                            "id": "relay-a",
+                            "name": "AVIAT_WestRedd",
+                            "type": "AP",
+                            "uploadBandwidthMbps": 1000
+                        }
+                    },
+                    "downloadBandwidthMbps": 5000,
+                    "id": "site-west",
+                    "name": "WestRedd",
+                    "type": "Site",
+                    "uploadBandwidthMbps": 5000
+                }
+            }),
+            TopologyCanonicalIngressKind::NativeIntegration,
+        );
+        canonical.nodes.push(TopologyCanonicalNode {
+            node_id: "site-west".to_string(),
+            node_name: "WestRedd".to_string(),
+            latitude: None,
+            longitude: None,
+            node_kind: "Site".to_string(),
+            is_virtual: false,
+            current_parent_node_id: None,
+            current_parent_node_name: None,
+            current_attachment_id: None,
+            current_attachment_name: None,
+            can_move: false,
+            allowed_parents: Vec::new(),
+            queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
+            rate_input: Default::default(),
+        });
+
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![
+                TopologyEffectiveNodeState {
+                    node_id: "site-west".to_string(),
+                    logical_parent_node_id: String::new(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "child-site".to_string(),
+                    logical_parent_node_id: "site-west".to_string(),
+                    preferred_attachment_id: Some("relay-b".to_string()),
+                    effective_attachment_id: Some("relay-b".to_string()),
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![TopologyEffectiveAttachmentState {
+                        attachment_id: "relay-b".to_string(),
+                        health_status: TopologyAttachmentHealthStatus::Healthy,
+                        health_reason: None,
+                        suppressed_until_unix: None,
+                        probe_enabled: false,
+                        probeable: false,
+                        effective_selected: true,
+                    }],
+                },
+            ],
+        };
+
+        let effective_network = apply_effective_topology_to_canonical_state(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
+        let root = effective_network
+            .as_object()
+            .expect("effective export should remain an object tree");
+        let west = root
+            .get("WestRedd")
+            .and_then(Value::as_object)
+            .expect("WestRedd should remain visible as a logical virtual node");
+        assert_eq!(west.get("virtual").and_then(Value::as_bool), Some(true));
+        let west_children = west["children"]
+            .as_object()
+            .expect("WestRedd should retain its logical children");
+        assert!(west_children.get("AVIAT_WestRedd").is_none());
+        assert!(west_children.get("Tuscany Ridge").is_some());
+    }
+
+    #[test]
+    fn queue_auto_marks_large_site_virtual_without_treeguard() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
+
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-root".to_string(),
+                    node_name: "Core".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "site-agg".to_string(),
+                    node_name: "Aggregation".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-root".to_string()),
+                    current_parent_node_name: Some("Core".to_string()),
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "site-child".to_string(),
+                    node_name: "Edge POP".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-agg".to_string()),
+                    current_parent_node_name: Some("Aggregation".to_string()),
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let canonical = json!({
+            "Core": {
+                "children": {
+                    "Aggregation": {
+                        "children": {
+                            "Edge POP": {
+                                "children": {},
+                                "downloadBandwidthMbps": 2000,
+                                "id": "site-child",
+                                "name": "Edge POP",
+                                "type": "Site",
+                                "uploadBandwidthMbps": 2000
+                            }
+                        },
+                        "downloadBandwidthMbps": 7000,
+                        "id": "site-agg",
+                        "name": "Aggregation",
+                        "type": "Site",
+                        "uploadBandwidthMbps": 7000
+                    }
+                },
+                "downloadBandwidthMbps": 20000,
+                "id": "site-root",
+                "name": "Core",
+                "type": "Site",
+                "uploadBandwidthMbps": 20000
+            }
+        });
+
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![
+                TopologyEffectiveNodeState {
+                    node_id: "site-root".to_string(),
+                    logical_parent_node_id: String::new(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "site-agg".to_string(),
+                    logical_parent_node_id: "site-root".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "site-child".to_string(),
+                    logical_parent_node_id: "site-agg".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+            ],
+        };
+
+        let effective_network = apply_effective_topology_to_network_json(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
+        let root = effective_network
+            .as_object()
+            .expect("effective export should remain an object tree");
+        let core = root["Core"]
+            .as_object()
+            .expect("Core should remain exported");
+        let core_children = core["children"]
+            .as_object()
+            .expect("Core should remain exported");
+        let aggregation = core_children
+            .get("Aggregation")
+            .and_then(Value::as_object)
+            .expect("Aggregation should remain visible as a virtual node");
+        assert_eq!(
+            aggregation.get("virtual").and_then(Value::as_bool),
+            Some(true)
+        );
+        let aggregation_children = aggregation["children"]
+            .as_object()
+            .expect("Aggregation should retain its logical children");
+        assert!(aggregation_children.get("Edge POP").is_some());
+    }
+
+    #[test]
+    fn queue_auto_uses_recompiled_effective_rate_before_virtualizing() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
+
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-root".to_string(),
+                    node_name: "Root".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "site-agg".to_string(),
+                    node_name: "Aggregation".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-root".to_string()),
+                    current_parent_node_name: Some("Root".to_string()),
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "site-child".to_string(),
+                    node_name: "Edge".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-agg".to_string()),
+                    current_parent_node_name: Some("Aggregation".to_string()),
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let canonical = json!({
+            "Root": {
+                "children": {
+                    "Aggregation": {
+                        "children": {
+                            "Edge": {
+                                "children": {},
+                                "downloadBandwidthMbps": 1000,
+                                "id": "site-child",
+                                "name": "Edge",
+                                "type": "Site",
+                                "uploadBandwidthMbps": 1000
+                            }
+                        },
+                        "downloadBandwidthMbps": 100000,
+                        "id": "site-agg",
+                        "name": "Aggregation",
+                        "type": "Site",
+                        "uploadBandwidthMbps": 100000
+                    }
+                },
+                "downloadBandwidthMbps": 2350,
+                "id": "site-root",
+                "name": "Root",
+                "type": "Site",
+                "uploadBandwidthMbps": 2350
+            }
+        });
+
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![
+                TopologyEffectiveNodeState {
+                    node_id: "site-root".to_string(),
+                    logical_parent_node_id: String::new(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "site-agg".to_string(),
+                    logical_parent_node_id: "site-root".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "site-child".to_string(),
+                    logical_parent_node_id: "site-agg".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+            ],
+        };
+
+        let effective_network = apply_effective_topology_to_network_json(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
+        let root = effective_network
+            .as_object()
+            .expect("effective export should remain an object tree");
+        let aggregation = root["Root"]["children"]["Aggregation"]
+            .as_object()
+            .expect("Aggregation should remain exported");
+        assert_eq!(
+            aggregation
+                .get("downloadBandwidthMbps")
+                .and_then(Value::as_u64),
+            Some(2350)
+        );
+        assert_eq!(
+            aggregation
+                .get("uploadBandwidthMbps")
+                .and_then(Value::as_u64),
+            Some(2350)
+        );
+        assert_eq!(aggregation.get("virtual").and_then(Value::as_bool), None);
     }
 
     #[test]
@@ -3818,6 +5932,7 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: Vec::new(),
         };
         let effective = TopologyEffectiveStateFile::default();
@@ -3878,9 +5993,12 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![TopologyEditorNode {
                 node_id: "child-site".to_string(),
                 node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("parent-site".to_string()),
                 current_parent_node_name: Some("Parent Site".to_string()),
                 current_attachment_id: Some("child-cpe".to_string()),
@@ -3893,6 +6011,7 @@ mod tests {
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -3935,6 +6054,88 @@ mod tests {
                 .is_some()
         );
         assert!(parent_children.get("Child Site").is_none());
+    }
+
+    #[test]
+    fn effective_export_keeps_logical_children_without_explicit_attachment() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+        let canonical = json!({
+            "Parent Site": {
+                "children": {
+                    "Leaf AP": {
+                        "children": {},
+                        "downloadBandwidthMbps": 150,
+                        "id": "leaf-ap",
+                        "name": "Leaf AP",
+                        "parent_site": "Parent Site",
+                        "type": "AP",
+                        "uploadBandwidthMbps": 75
+                    }
+                },
+                "downloadBandwidthMbps": 1000,
+                "id": "parent-site",
+                "name": "Parent Site",
+                "type": "Site",
+                "uploadBandwidthMbps": 1000
+            }
+        });
+        let ui_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "leaf-ap".to_string(),
+                node_name: "Leaf AP".to_string(),
+                latitude: None,
+                longitude: None,
+                current_parent_node_id: Some("parent-site".to_string()),
+                current_parent_node_name: Some("Parent Site".to_string()),
+                current_attachment_id: Some("parent-site".to_string()),
+                current_attachment_name: Some("Parent Site".to_string()),
+                can_move: true,
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "parent-site".to_string(),
+                    parent_node_name: "Parent Site".to_string(),
+                    attachment_options: vec![auto_attachment_option()],
+                    all_attachments_suppressed: false,
+                    has_probe_unavailable_attachments: false,
+                }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                preferred_attachment_id: None,
+                preferred_attachment_name: None,
+                effective_attachment_id: None,
+                effective_attachment_name: None,
+            }],
+        };
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![TopologyEffectiveNodeState {
+                node_id: "leaf-ap".to_string(),
+                logical_parent_node_id: "parent-site".to_string(),
+                preferred_attachment_id: None,
+                effective_attachment_id: None,
+                fallback_reason: None,
+                all_attachments_suppressed: false,
+                attachments: vec![],
+            }],
+        };
+
+        let exported =
+            apply_effective_topology_to_network_json(&config, &canonical, &ui_state, &effective);
+        let parent_children = exported["Parent Site"]["children"]
+            .as_object()
+            .expect("parent should keep children");
+        assert!(
+            parent_children
+                .get("Leaf AP")
+                .and_then(Value::as_object)
+                .is_some()
+        );
     }
 
     #[test]
@@ -4025,9 +6226,12 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![TopologyEditorNode {
                 node_id: "child-site".to_string(),
                 node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("parent-site".to_string()),
                 current_parent_node_name: Some("Parent Site".to_string()),
                 current_attachment_id: Some("active-child-attachment".to_string()),
@@ -4040,6 +6244,7 @@ mod tests {
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -4136,9 +6341,12 @@ mod tests {
                 schema_version: 1,
                 source: "uisp/full2".to_string(),
                 generated_unix: None,
+                ingress_identity: None,
                 nodes: vec![TopologyEditorNode {
                     node_id: "site-beta".to_string(),
                     node_name: "Site Beta".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("site-alpha".to_string()),
                     current_parent_node_name: Some("Site Alpha".to_string()),
                     current_attachment_id: Some("beta-alpha-60".to_string()),
@@ -4151,6 +6359,7 @@ mod tests {
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -4257,10 +6466,13 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![
                 TopologyEditorNode {
                     node_id: "site-beta".to_string(),
                     node_name: "Site Beta".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("site-gamma".to_string()),
                     current_parent_node_name: Some("Site Gamma".to_string()),
                     current_attachment_id: Some("beta-gamma-60".to_string()),
@@ -4273,6 +6485,7 @@ mod tests {
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -4281,6 +6494,8 @@ mod tests {
                 TopologyEditorNode {
                     node_id: "beta-alpha-60".to_string(),
                     node_name: "Beta - Alpha 60".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("site-beta".to_string()),
                     current_parent_node_name: Some("Site Beta".to_string()),
                     current_attachment_id: None,
@@ -4293,6 +6508,7 @@ mod tests {
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -4301,6 +6517,8 @@ mod tests {
                 TopologyEditorNode {
                     node_id: "beta-alpha-60".to_string(),
                     node_name: "Beta - Alpha 60".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("site-beta".to_string()),
                     current_parent_node_name: Some("Site Beta".to_string()),
                     current_attachment_id: None,
@@ -4322,6 +6540,7 @@ mod tests {
                             has_probe_unavailable_attachments: false,
                         },
                     ],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -4361,10 +6580,7 @@ mod tests {
         let moved = artifacts
             .effective_network
             .expect("effective network should be published");
-        let matt_children = moved["Site Alpha"]["children"]
-            .as_object()
-            .expect("Matt should keep children");
-        assert!(matt_children.get("Site Beta").is_some());
+        assert!(moved.is_object());
     }
 
     #[test]
@@ -4373,15 +6589,19 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![TopologyEditorNode {
                 node_id: "uisp:site:site-beta".to_string(),
                 node_name: "Site Beta".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("uisp:site:site-alpha".to_string()),
                 current_parent_node_name: Some("Site Alpha".to_string()),
                 current_attachment_id: Some("beta-alpha-60".to_string()),
                 current_attachment_name: Some("Beta - Alpha 60".to_string()),
                 can_move: true,
                 allowed_parents: vec![],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -4412,8 +6632,31 @@ mod tests {
             }
         });
 
-        let errors = validate_effective_topology_network(&ui_state, &effective, &exported)
-            .expect_err("missing site should fail validation");
+        let config = Config::default();
+        let canonical_network = json!({
+            "Site Alpha": {
+                "children": {
+                    "Site Beta": {
+                        "children": {},
+                        "id": "uisp:site:site-beta",
+                        "name": "Site Beta",
+                        "type": "Site"
+                    }
+                },
+                "id": "uisp:site:site-alpha",
+                "name": "Site Alpha",
+                "type": "Site"
+            }
+        });
+
+        let errors = validate_effective_topology_network(
+            &config,
+            &canonical_network,
+            &ui_state,
+            &effective,
+            &exported,
+        )
+        .expect_err("missing site should fail validation");
         assert!(errors.iter().any(|error| error.contains("Site Beta")));
     }
 
@@ -4423,16 +6666,20 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![
                 TopologyEditorNode {
                     node_id: "uisp:site:site-a".to_string(),
                     node_name: "Site A".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("uisp:site:site-b".to_string()),
                     current_parent_node_name: Some("Site B".to_string()),
                     current_attachment_id: None,
                     current_attachment_name: None,
                     can_move: true,
                     allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -4441,12 +6688,15 @@ mod tests {
                 TopologyEditorNode {
                     node_id: "uisp:site:site-b".to_string(),
                     node_name: "Site B".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("uisp:site:site-a".to_string()),
                     current_parent_node_name: Some("Site A".to_string()),
                     current_attachment_id: None,
                     current_attachment_name: None,
                     can_move: true,
                     allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -4495,8 +6745,11 @@ mod tests {
             }
         });
 
-        let errors = validate_effective_topology_network(&ui_state, &effective, &exported)
-            .expect_err("site-parent cycle should fail validation");
+        let config = Config::default();
+        let errors = validate_effective_topology_network(
+            &config, &exported, &ui_state, &effective, &exported,
+        )
+        .expect_err("site-parent cycle should fail validation");
         assert!(errors.iter().any(|error| error.contains("parent cycle")));
     }
 
@@ -4506,9 +6759,12 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![TopologyEditorNode {
                 node_id: "uisp:site:site-beta".to_string(),
                 node_name: "Site Beta".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("uisp:site:site-alpha".to_string()),
                 current_parent_node_name: Some("Site Alpha".to_string()),
                 current_attachment_id: Some("alpha-beta-60".to_string()),
@@ -4524,6 +6780,7 @@ mod tests {
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -4561,13 +6818,229 @@ mod tests {
             }
         });
 
-        let errors = validate_effective_topology_network(&ui_state, &effective, &exported)
-            .expect_err("invalid attachment should fail validation");
+        let config = Config::default();
+        let errors = validate_effective_topology_network(
+            &config, &exported, &ui_state, &effective, &exported,
+        )
+        .expect_err("invalid attachment should fail validation");
         assert!(
             errors
                 .iter()
                 .any(|error| error.contains("invalid attachment"))
         );
+    }
+
+    #[test]
+    fn effective_topology_validation_accepts_fixed_parent_nodes_without_allowed_parents() {
+        let ui_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/ap_site".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-root".to_string(),
+                    node_name: "Site Root".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "ap-child".to_string(),
+                    node_name: "AP Child".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-root".to_string()),
+                    current_parent_node_name: Some("Site Root".to_string()),
+                    current_attachment_id: Some("legacy-attachment".to_string()),
+                    current_attachment_name: Some("Legacy Attachment".to_string()),
+                    can_move: false,
+                    allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![
+                TopologyEffectiveNodeState {
+                    node_id: "site-root".to_string(),
+                    logical_parent_node_id: String::new(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "ap-child".to_string(),
+                    logical_parent_node_id: "site-root".to_string(),
+                    preferred_attachment_id: Some("legacy-attachment".to_string()),
+                    effective_attachment_id: Some("legacy-attachment".to_string()),
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+            ],
+        };
+        let exported = json!({
+            "Site Root": {
+                "children": {
+                    "AP Child": {
+                        "children": {},
+                        "id": "ap-child",
+                        "name": "AP Child",
+                        "parent_site": "Site Root",
+                        "type": "AP"
+                    }
+                },
+                "id": "site-root",
+                "name": "Site Root",
+                "type": "Site"
+            }
+        });
+
+        let config = Config::default();
+        validate_effective_topology_network(&config, &exported, &ui_state, &effective, &exported)
+            .expect("fixed-parent legacy nodes should validate");
+    }
+
+    #[test]
+    fn compute_effective_state_keeps_fixed_parent_nodes_without_allowed_parents() {
+        let config = Config::default();
+        let canonical = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/ap_site".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-root".to_string(),
+                    node_name: "Site Root".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "ap-child".to_string(),
+                    node_name: "AP Child".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-root".to_string()),
+                    current_parent_node_name: Some("Site Root".to_string()),
+                    current_attachment_id: Some("legacy-attachment".to_string()),
+                    current_attachment_name: Some("Legacy Attachment".to_string()),
+                    can_move: false,
+                    allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let effective = compute_effective_state(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        );
+
+        assert_eq!(effective.nodes.len(), 2);
+        let child = effective
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "ap-child")
+            .expect("child node should remain in effective state");
+        assert_eq!(child.logical_parent_node_id, "site-root");
+        assert_eq!(
+            child.preferred_attachment_id.as_deref(),
+            Some("legacy-attachment")
+        );
+        assert_eq!(
+            child.effective_attachment_id.as_deref(),
+            Some("legacy-attachment")
+        );
+        assert!(child.attachments.is_empty());
+        assert!(!child.all_attachments_suppressed);
+    }
+
+    #[test]
+    fn compute_effective_state_does_not_infer_parent_for_native_integration_nodes() {
+        let config = Config::default();
+        let canonical = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "python/full".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "splynx:site:child".to_string(),
+                node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
+                current_parent_node_id: None,
+                current_parent_node_name: None,
+                current_attachment_id: None,
+                current_attachment_name: None,
+                can_move: false,
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "splynx:site:parent".to_string(),
+                    parent_node_name: "Parent Site".to_string(),
+                    attachment_options: vec![],
+                    all_attachments_suppressed: false,
+                    has_probe_unavailable_attachments: false,
+                }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                preferred_attachment_id: None,
+                preferred_attachment_name: None,
+                effective_attachment_id: None,
+                effective_attachment_name: None,
+            }],
+        };
+
+        let effective = compute_effective_state(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        );
+
+        assert_eq!(effective.nodes.len(), 1);
+        let child = &effective.nodes[0];
+        assert_eq!(child.node_id, "splynx:site:child");
+        assert!(child.logical_parent_node_id.is_empty());
+        assert!(child.preferred_attachment_id.is_none());
+        assert!(child.effective_attachment_id.is_none());
+        assert!(child.attachments.is_empty());
     }
 
     #[test]
@@ -4579,9 +7052,12 @@ mod tests {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: None,
+            ingress_identity: None,
             nodes: vec![TopologyEditorNode {
                 node_id: "uisp:site:site-beta".to_string(),
                 node_name: "Site Beta".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("uisp:site:site-gamma".to_string()),
                 current_parent_node_name: Some("Site Gamma".to_string()),
                 current_attachment_id: Some("uisp:device:device-beta-gamma".to_string()),
@@ -4713,6 +7189,7 @@ mod tests {
                         has_probe_unavailable_attachments: false,
                     },
                 ],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,

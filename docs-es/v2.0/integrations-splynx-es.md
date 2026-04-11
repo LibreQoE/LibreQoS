@@ -16,15 +16,15 @@ Base recomendada:
 
 - `strategy = "ap_only"` (menos confusión inicial)
 - `enable_splynx = true`
-- `always_overwrite_network_json = true` para despliegues guiados por integración
+- `network.json` queda reservado para despliegues DIY o manuales
 
 Después, ejecute una sincronización manual y valide salidas antes de aumentar frecuencia de refresh.
 
 ## Notas operativas
 
-- `ShapedDevices.csv` se regenera en cada sincronización.
-- `network.json` depende de `always_overwrite_network_json`.
-- Recomendado: mantener `always_overwrite_network_json = true` para alinear topología con Splynx en cada ciclo.
+- La sincronización actualiza automáticamente los datos importados y de shaping que LibreQoS usa con Splynx.
+- `network.json` queda para despliegues DIY o manuales.
+- Use la WebUI para confirmar que la importación y la profundidad del árbol son las esperadas.
 - Use WebUI para ajustes operativos diarios.
 
 ## Validación en 5 minutos después de cambios Splynx
@@ -35,7 +35,7 @@ python3 integrationSplynx.py
 ```
 2. Confirme archivos actualizados:
 ```bash
-ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+ls -lh /opt/libreqos/src/topology_import.json /opt/libreqos/src/shaping_inputs.json
 ```
 3. Confirme salud de servicios:
 ```bash
@@ -49,4 +49,4 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 - [Referencia detallada de Splynx](integrations-reference-es.md#integración-con-splynx)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 
-Las versiones actuales también exponen una política compartida de margen para puertos Ethernet en `Configuration -> Integrations -> Integration Defaults`. Las integraciones que pueden aportar la velocidad Ethernet negociada hacia el suscriptor usan un multiplicador conservador por defecto de `0.94`, salvo que el operador lo sobrescriba.
+Las versiones actuales también exponen una política compartida de margen para puertos Ethernet en `Configuration -> Integrations -> Integration Defaults`. Las integraciones que pueden aportar la velocidad Ethernet negociada hacia el suscriptor usan un multiplicador conservador por defecto de `0.94`, salvo que el operador lo cambie.

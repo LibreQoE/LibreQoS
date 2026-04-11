@@ -83,15 +83,15 @@ Si elige laboratorio primero:
 3. Valide Dashboard, Tree, Flow, Scheduler Status y Urgent Issues.
 4. Continúe a la Decisión B.
 
-## 4) Decisión B: Fuente de verdad (elija un dueño)
+## 4) Decisión B: Elija dónde hará los cambios permanentes
 
-| Si esto describe su caso | Modo | Dueño de datos de shaping durables |
+| Si esto describe su caso | Modo | Dónde deben hacerse los cambios permanentes |
 |---|---|---|
 | Usa integración CRM/NMS soportada | Modo integración incluida | Jobs de integración |
 | Genera `network.json` y `ShapedDevices.csv` con scripts propios | Modo fuente de verdad personalizada | Sus scripts |
 | Mantiene archivos manualmente en red pequeña/simple | Modo archivos manuales | Edición manual |
 
-Regla: mantenga un único dueño para insumos persistentes de shaping.
+Regla: mantenga un solo lugar para los cambios permanentes de shaping.
 
 ## 5) Tarjetas de ruta
 
@@ -118,7 +118,7 @@ Cuándo elegir:
 
 Haga esto ahora:
 1. Implemente script/proceso para generar y refrescar archivos de shaping.
-2. Declare salidas del script como su fuente de verdad.
+2. Trate las salidas del script como el lugar donde hará los cambios permanentes.
 3. Coloque LibreQoS inline para tráfico piloto.
 4. Use WebUI para checks operativos y ajustes de corto plazo.
 5. Mantenga cambios permanentes en su flujo externo de scripts.
@@ -148,7 +148,7 @@ Siguiente:
 
 ## 6) Errores comunes en primera puesta en marcha
 
-- Propiedad poco clara de la fuente de verdad entre integración y edición manual.
+- No decidir con claridad dónde hará los cambios permanentes.
 - Cambiar profundidad topológica antes de pasar la puerta de salud.
 - Omitir validación de servicios/logs antes de tráfico piloto.
 

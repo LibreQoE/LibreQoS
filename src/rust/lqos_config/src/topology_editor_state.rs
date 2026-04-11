@@ -1,12 +1,17 @@
 use crate::{
     Config, TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyCanonicalStateFile,
     TopologyParentCandidatesError, TopologyParentCandidatesFile,
+    topology_canonical_state::{
+        current_topology_ingress_identity, legacy_id_for_name, quarantine_stale_topology_state,
+        topology_ingress_fingerprint_from_tokens,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use tracing::warn;
 
 /// Runtime filename carrying integration-provided topology editor state for UI editing.
 pub const TOPOLOGY_EDITOR_STATE_FILENAME: &str = "topology_editor_state.json";
@@ -59,6 +64,19 @@ pub enum TopologyAttachmentRole {
     WiredUplink,
     /// A manual operator-defined attachment.
     Manual,
+}
+
+/// Baseline queue-visibility policy for a logical topology node.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyQueueVisibilityPolicy {
+    /// The node remains visible in the baseline queue topology.
+    #[default]
+    QueueVisible,
+    /// The node remains logical-only for queueing and its children are promoted one level.
+    QueueHiddenPromoteChildren,
+    /// LibreQoS decides queue visibility from node role and configured capacity.
+    QueueAuto,
 }
 
 /// Errors returned while reading or writing topology editor snapshots.
@@ -169,12 +187,18 @@ pub struct TopologyAllowedParent {
 }
 
 /// Runtime topology-manager metadata for one movable node.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct TopologyEditorNode {
     /// Stable node identifier matching `network.json` metadata.
     pub node_id: String,
     /// Display name for the node.
     pub node_name: String,
+    /// Optional geographic latitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latitude: Option<f32>,
+    /// Optional geographic longitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub longitude: Option<f32>,
     /// Currently resolved immediate parent node ID, if one was resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_parent_node_id: Option<String>,
@@ -193,6 +217,9 @@ pub struct TopologyEditorNode {
     /// Ordered valid parent targets for this node.
     #[serde(default)]
     pub allowed_parents: Vec<TopologyAllowedParent>,
+    /// Baseline queue-visibility policy for runtime-effective topology export.
+    #[serde(default)]
+    pub queue_visibility_policy: TopologyQueueVisibilityPolicy,
     /// Stable attachment identifier preferred by operator intent, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_attachment_id: Option<String>,
@@ -208,7 +235,7 @@ pub struct TopologyEditorNode {
 }
 
 /// Integration-generated runtime snapshot consumed by the topology manager UI.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct TopologyEditorStateFile {
     /// Schema version for compatibility checks.
     #[serde(default = "default_topology_editor_schema_version")]
@@ -219,6 +246,9 @@ pub struct TopologyEditorStateFile {
     /// Unix timestamp when the snapshot was generated, if known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated_unix: Option<u64>,
+    /// Stable identity of the imported topology facts plus selected compile mode, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ingress_identity: Option<String>,
     /// Runtime topology-manager metadata keyed by node.
     #[serde(default)]
     pub nodes: Vec<TopologyEditorNode>,
@@ -265,7 +295,25 @@ impl TopologyEditorStateFile {
     pub fn load_with_legacy_fallback(config: &Config) -> Result<Self, TopologyEditorStateError> {
         let state = Self::load(config)?;
         if !state.nodes.is_empty() {
-            return Ok(state);
+            let is_current = match state.matches_current_ingress(config) {
+                Ok(is_current) => is_current,
+                Err(err) => {
+                    warn!(
+                        "Unable to validate topology editor state against current ingress; preserving existing state: {err}"
+                    );
+                    true
+                }
+            };
+            if is_current {
+                return Ok(state);
+            }
+            quarantine_stale_topology_state(
+                config,
+                &format!(
+                    "topology editor source '{}' does not match current topology ingress identity",
+                    state.source
+                ),
+            )?;
         }
 
         let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config)?;
@@ -285,6 +333,48 @@ impl TopologyEditorStateFile {
     /// Side effects: writes `topology_editor_state.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyEditorStateError> {
         atomic_write_json(&topology_editor_state_path(config), self)
+    }
+
+    /// Returns a stable fingerprint of the topology ingress this editor state represents.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn topology_ingress_fingerprint(&self) -> Option<String> {
+        topology_ingress_fingerprint_from_tokens(self.nodes.iter().map(|node| {
+            let node_id = node.node_id.trim();
+            if node_id.is_empty() {
+                legacy_id_for_name(&node.node_name)
+            } else {
+                node_id.to_string()
+            }
+        }))
+    }
+
+    /// Returns true if this editor state still matches the current topology ingress identity.
+    ///
+    /// Side effects: reads topology ingress inputs from `config.lqos_directory`.
+    pub fn matches_current_ingress(
+        &self,
+        config: &Config,
+    ) -> Result<bool, TopologyEditorStateError> {
+        if let Some(saved_identity) = self
+            .ingress_identity
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let Some(current_identity) = current_topology_ingress_identity(config)? else {
+                return Ok(true);
+            };
+            return Ok(saved_identity == current_identity);
+        }
+
+        let Some(current_fingerprint) = current_topology_ingress_identity(config)? else {
+            return Ok(true);
+        };
+        let Some(saved_fingerprint) = self.topology_ingress_fingerprint() else {
+            return Ok(false);
+        };
+        Ok(saved_fingerprint == current_fingerprint)
     }
 
     /// Finds runtime editor metadata for `node_id`.
@@ -340,12 +430,15 @@ impl TopologyEditorStateFile {
             nodes.push(TopologyEditorNode {
                 node_id: legacy_node.node_id.clone(),
                 node_name: legacy_node.node_name.clone(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: legacy_node.current_parent_node_id.clone(),
                 current_parent_node_name: legacy_node.current_parent_node_name.clone(),
                 current_attachment_id: None,
                 current_attachment_name: None,
                 can_move: !allowed_parents.is_empty(),
                 allowed_parents,
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -361,6 +454,7 @@ impl TopologyEditorStateFile {
                 format!("legacy:{}", legacy.source.trim())
             },
             generated_unix: None,
+            ingress_identity: legacy.ingress_identity.clone(),
             nodes,
         }
     }

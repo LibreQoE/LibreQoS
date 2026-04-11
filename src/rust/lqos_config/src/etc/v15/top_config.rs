@@ -119,6 +119,10 @@ pub struct Config {
     #[serde(default)]
     pub integration_common: super::integration_common::IntegrationConfig,
 
+    /// Shared topology compiler settings.
+    #[serde(default)]
+    pub topology: super::topology::TopologyConfig,
+
     /// Splynx Integration configuration. Optional so older configs without this
     /// section still deserialize cleanly.
     #[serde(default)]
@@ -235,6 +239,14 @@ impl Config {
                     .to_string(),
             );
         }
+        if !self.topology.compile_mode.trim().is_empty()
+            && super::topology::normalize_topology_compile_mode(&self.topology.compile_mode)
+                .is_none()
+        {
+            return Err(
+                "topology.compile_mode must be one of flat, ap_only, ap_site, or full".to_string(),
+            );
+        }
         let airmax_flexible_frame_download_ratio =
             self.uisp_integration.airmax_flexible_frame_download_ratio;
         if !airmax_flexible_frame_download_ratio.is_finite()
@@ -331,6 +343,7 @@ impl Default for Config {
             ip_ranges: super::ip_ranges::IpRanges::default(),
             dynamic_circuits: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
+            topology: super::topology::TopologyConfig::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
             visp_integration: Some(super::visp_integration::VispIntegration::default()),
@@ -356,6 +369,50 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Returns the explicitly configured shared topology compile mode, when set.
+    pub fn shared_topology_compile_mode(&self) -> Option<&'static str> {
+        super::topology::normalize_topology_compile_mode(&self.topology.compile_mode)
+    }
+
+    /// Returns the topology compile mode that UISP should use during the transition period.
+    pub fn resolved_topology_compile_mode_for_uisp(&self) -> &'static str {
+        self.shared_topology_compile_mode()
+            .filter(|mode| {
+                super::topology::integration_supports_topology_compile_mode("uisp", mode)
+            })
+            .or_else(|| {
+                super::topology::normalize_supported_topology_compile_mode(
+                    "uisp",
+                    &self.uisp_integration.strategy,
+                )
+            })
+            .unwrap_or("full")
+    }
+
+    /// Returns the topology compile mode that Splynx should use during the transition period.
+    pub fn resolved_topology_compile_mode_for_splynx(&self) -> &'static str {
+        self.shared_topology_compile_mode()
+            .filter(|mode| {
+                super::topology::integration_supports_topology_compile_mode("splynx", mode)
+            })
+            .or_else(|| {
+                super::topology::normalize_supported_topology_compile_mode(
+                    "splynx",
+                    &self.splynx_integration.strategy,
+                )
+            })
+            .unwrap_or("ap_site")
+    }
+
+    /// Returns the topology compile mode that Sonar should use.
+    pub fn resolved_topology_compile_mode_for_sonar(&self) -> &'static str {
+        self.shared_topology_compile_mode()
+            .filter(|mode| {
+                super::topology::integration_supports_topology_compile_mode("sonar", mode)
+            })
+            .unwrap_or("full")
+    }
+
     /// Calculate the unterface facing the Internet
     pub fn internet_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
@@ -489,6 +546,36 @@ mod test {
     }
 
     #[test]
+    fn sonar_mode_resolution_rejects_ap_site_and_ap_only() {
+        let cfg = Config {
+            topology: crate::etc::v15::TopologyConfig {
+                compile_mode: "ap_site".to_string(),
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        assert_eq!(cfg.resolved_topology_compile_mode_for_sonar(), "full");
+
+        let cfg = Config {
+            topology: crate::etc::v15::TopologyConfig {
+                compile_mode: "ap_only".to_string(),
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        assert_eq!(cfg.resolved_topology_compile_mode_for_sonar(), "full");
+
+        let cfg = Config {
+            topology: crate::etc::v15::TopologyConfig {
+                compile_mode: "flat".to_string(),
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        assert_eq!(cfg.resolved_topology_compile_mode_for_sonar(), "flat");
+    }
+
+    #[test]
     fn serialize_uses_splynx_keys() {
         let config =
             Config::load_from_string(include_str!("example.toml")).expect("Cannot read example");
@@ -542,11 +629,12 @@ mod test {
             cfg.treeguard.cpu.mode,
             crate::etc::v15::treeguard::TreeguardCpuMode::CpuAware
         );
-        assert!(cfg.treeguard.links.enabled);
+        assert!(!cfg.treeguard.links.enabled);
         assert!(cfg.treeguard.links.all_nodes);
-        assert!(cfg.treeguard.links.top_level_auto_virtualize);
+        assert!(!cfg.treeguard.links.top_level_auto_virtualize);
         assert!(cfg.treeguard.circuits.enabled);
         assert!(cfg.treeguard.circuits.all_circuits);
+        assert_eq!(cfg.topology.queue_auto_virtualize_threshold_mbps, 5_001);
     }
 
     #[test]
@@ -557,6 +645,7 @@ mod test {
         assert!(config.treeguard.enabled);
         assert!(!config.treeguard.dry_run);
         assert!(config.treeguard.links.all_nodes);
+        assert!(!config.treeguard.links.enabled);
         assert!(config.treeguard.circuits.all_circuits);
     }
 

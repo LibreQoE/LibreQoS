@@ -5,25 +5,30 @@ TreeGuard is a current LibreQoS v2.0 feature for intelligent node management.
 Important status:
 
 1. TreeGuard is **enabled by default** in LibreQoS v2.0.
-2. TreeGuard can manage both eligible node virtualization and per-circuit SQM policy.
-3. Operators can tune or disable TreeGuard in `/etc/lqos.conf` or the WebUI TreeGuard page.
+2. Per-circuit SQM management is enabled by default.
+3. Runtime link virtualization is now disabled by default and acts as an optional second-layer control.
+4. Operators can tune or disable TreeGuard in `/etc/lqos.conf` or the WebUI TreeGuard page.
 
 ## What TreeGuard Does
 
 TreeGuard has two control domains:
 
-1. Link/node virtualization management (for selected nodes).
+1. Optional link/node runtime virtualization (for selected nodes).
 2. Per-circuit SQM switching between `cake` and `fq_codel`.
 
 For circuits, TreeGuard can make per-direction decisions (download and upload independently).
 
-## Default Behavior in LibreQoS v2.0
+## Default Behavior in Current Builds
 
-In LibreQoS v2.0, TreeGuard is enabled by default.
+Current builds keep TreeGuard enabled by default, but the defaults are intentionally split:
 
-By default, TreeGuard may virtualize enrolled nodes and may switch enrolled circuit directions between `cake diffserv4` and `fq_codel` according to its configured guardrails.
+1. Per-circuit SQM management remains enabled by default.
+2. Runtime link virtualization is disabled by default.
+3. Static queue policy in `lqos_topology` is now the primary mechanism for hiding large aggregation nodes and promoting children before HTB is built.
 
-If you prefer fixed/manual behavior, disable TreeGuard or narrow its enrollment lists.
+This means new installs start with deterministic queue topology at startup instead of depending on delayed runtime link virtualization.
+
+Upgraded installs are also migrated to disable `treeguard.links.enabled` and `treeguard.links.top_level_auto_virtualize`. If a system was already runtime-virtualizing links, TreeGuard restores those branches on the next tick after link virtualization is disabled.
 
 ## Circuit SQM Switching Model
 
@@ -43,7 +48,7 @@ Important base-policy rule:
 
 1. If a direction's base SQM policy is `cake`, TreeGuard may temporarily switch that direction to `fq_codel` and later return it to base.
 2. If a direction's base SQM policy is `fq_codel`, TreeGuard does not circuit-switch that direction to `cake`.
-3. Link virtualization remains available regardless of the circuit SQM base policy.
+3. Optional link virtualization remains available regardless of the circuit SQM base policy.
 
 ## Configuration (`/etc/lqos.conf`)
 
@@ -69,9 +74,9 @@ cpu_high_pct = 75
 cpu_low_pct = 55
 
 [treeguard.links]
-enabled = true
+enabled = false
 all_nodes = true
-top_level_auto_virtualize = true
+top_level_auto_virtualize = false
 
 [treeguard.circuits]
 enabled = true
@@ -83,15 +88,14 @@ independent_directions = true
 enabled = true
 ```
 
-TreeGuard node virtualization is intended to be CPU-aware by default. Traffic, RTT, and QoO
-remain important safety and restore signals, but new automatic virtualization should happen when
-CPU pressure suggests HTB savings are worthwhile. Upgraded installs from older defaults are
-silently migrated from `traffic_rtt_only` to `cpu_aware`, with a visible notice in logs/UI.
+TreeGuard circuit behavior is CPU-aware by default. Traffic, RTT, and QoO remain important safety
+and restore signals for circuit SQM decisions. Upgraded installs from older defaults are also
+migrated from `traffic_rtt_only` to `cpu_aware`, with a visible notice in logs/UI.
 
 ## Safe Rollout Pattern
 
-1. Review TreeGuard settings early in deployment instead of assuming static/manual queue behavior.
-2. If you want a narrower rollout, disable `all_nodes` and/or `all_circuits` and use allowlists first.
+1. Review TreeGuard settings early in deployment instead of assuming circuit SQM behavior should remain fixed forever.
+2. If you want to enable runtime link virtualization, treat it as a narrow rollout and start with allowlists before enabling `all_nodes`.
 3. Validate behavior over multiple peak/off-peak windows.
 4. If you want observation-only validation, set `dry_run = true` temporarily.
 5. If you need fixed/manual behavior, set `enabled = false`.
@@ -102,13 +106,11 @@ When enabled and not dry-run, TreeGuard may persist circuit SQM decisions to:
 
 - `lqos_overrides.treeguard.json`
 
-TreeGuard is designed to avoid fighting operator-owned overrides. If operator overrides exist for enrolled entities, TreeGuard skips those entities and reports warnings.
+TreeGuard is designed to avoid fighting manually saved overrides. If those overrides exist for enrolled entities, TreeGuard skips those entities and reports warnings.
 
 TreeGuard virtual-node decisions are runtime-only Bakery operations. They are not materialized back
-into the base `network.json` by the scheduler, and they are not persisted as TreeGuard-owned
-`set_node_virtual` entries in the effective shaping input. In v1 they are ephemeral: a daemon
-restart returns the physical tree to the base operator-defined topology until TreeGuard decides
-again.
+into operator-authored topology files or static queue policy. They remain ephemeral runtime state:
+a daemon restart returns the topology to the base queue-visible tree until TreeGuard decides again.
 
 For local runtime verification and debugging, `liblqos_python` now exposes both the current
 TreeGuard node-operation status and a Bakery runtime branch-state snapshot. The branch-state
@@ -133,11 +135,11 @@ For scale, TreeGuard no longer rebuilds circuit membership from `ShapedDevices.c
 
 In practice, this means:
 
-1. Link virtualization still follows the normal TreeGuard tick cadence.
+1. Link virtualization, when enabled, still follows the normal TreeGuard tick cadence.
 2. Circuit SQM evaluation for small enrollments still completes quickly.
 3. Very large `all_circuits` enrollments are swept incrementally over multiple ticks, with a target full sweep around 15 seconds instead of attempting a full per-second scan.
-4. TreeGuard node virtualization now goes through Bakery live runtime planning/apply paths instead of forcing a LibreQoS reload or Bakery full reload.
-5. Supported top-level runtime virtualization now uses a Bakery-side rebalance/migration plan that can promote child sites and direct circuits across queue roots while preserving the logical hierarchy for reporting.
+4. TreeGuard node virtualization goes through Bakery live runtime planning/apply paths instead of forcing a LibreQoS reload or Bakery full reload.
+5. Supported top-level runtime virtualization uses a Bakery-side rebalance/migration plan that can promote child sites and direct circuits across queue roots while preserving the logical hierarchy for reporting.
 6. TreeGuard will not attempt nested runtime virtualization inside an already-retained Bakery shadow branch. Those nodes are treated as structurally ineligible until the ancestor runtime branch is restored or the topology changes.
 
 Recent TreeGuard activity is available in two places:

@@ -2,14 +2,14 @@ import { get_ws_client } from "../pubsub/ws";
 
 const sponsorBtn = "<a href=\"https://github.com/sponsors/LibreQoE/\" target='_blank' class='text-primary-emphasis'><i class=\"fa fa-heart\"></i> Sponsor Us on GitHub</a>";
 const sponsorMessages = [
-    "LibreQoS includes shaping and core controls. Insight adds historical dashboards and alerts so you can spot issues before tickets arrive. Start a free 30-day trial.",
-    "Need proof before or after changes? Insight keeps long-term latency, retransmit, and flow history in one place. Try it free.",
-    "Heatmaps in Insight make congestion trends obvious across sites and APs. Find busy hours fast. Start your free trial.",
-    "Managing multiple shapers? Insight gives you a single dashboard view across locations. Start free for 30 days.",
-    "Insight AI reports summarize what changed and where to look first, so troubleshooting takes minutes instead of hours.",
-    "When customers say internet is slow, Insight helps you verify latency, retransmits, and utilization quickly. Try it free.",
-    "LibreQoS handles shaping. Insight adds visibility, trends, and alerts to run operations proactively. Start a free trial.",
-    "See circuit and site behavior over time, not just right now. Insight gives you the historical context to make better decisions.",
+    "LibreQoS handles shaping. Insight adds history, dashboards, and alerts so you catch issues before tickets arrive.",
+    "Need proof before or after changes? Insight keeps latency, retransmit, and flow history in one place.",
+    "Insight heatmaps make congestion trends obvious across sites and APs. Find busy hours fast.",
+    "Managing multiple shapers? Insight gives you one dashboard view across locations.",
+    "Insight AI reports summarize what changed and where to look first, cutting troubleshooting time.",
+    "When customers say internet is slow, Insight helps you verify latency, retransmits, and utilization fast.",
+    "LibreQoS handles shaping. Insight adds visibility, trends, and alerts so you can run ops proactively.",
+    "See circuit and site behavior over time, not just right now. Insight gives you historical context.",
 ];
 
 export function sponsorTag(parentId) {

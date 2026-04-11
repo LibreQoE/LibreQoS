@@ -11,6 +11,7 @@ use csv::ReaderBuilder;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_config::{ShapedDevice, TopologyCanonicalStateFile, load_config};
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
+use lqos_topology_compile::TopologyImportFile;
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
@@ -585,10 +586,21 @@ fn ip6_to_bytes(ip: (Ipv6Addr, u32)) -> ([u8; 16], u8) {
 /// runtime-effective topology or local compatibility tree.
 fn combined_devices_network_hash() -> anyhow::Result<i64> {
     let cfg = load_config()?;
-    let sd_path = std::path::Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
 
     let nj_as_string = load_insight_logical_network_json()?;
-    let sd_as_string = read_to_string(sd_path)?;
+    let sd_as_string = if integration_ingress_enabled(cfg.as_ref()) {
+        let topology_import = TopologyImportFile::load(cfg.as_ref())?
+            .ok_or_else(|| anyhow::anyhow!("topology_import.json does not exist"))?;
+        serde_json::to_string(
+            &topology_import
+                .into_imported_bundle()
+                .shaped_devices
+                .devices,
+        )?
+    } else {
+        let sd_path = std::path::Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
+        read_to_string(sd_path)?
+    };
     let combined = format!("{}\n{}", nj_as_string, sd_as_string);
     let hash = hash_to_i64(&combined);
 
@@ -609,6 +621,14 @@ static LTS2_HASH: AtomicI64 = AtomicI64::new(0);
 /// transmission to Insight
 fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
     let cfg = load_config()?;
+    if integration_ingress_enabled(cfg.as_ref()) {
+        let topology_import = TopologyImportFile::load(cfg.as_ref())?
+            .ok_or_else(|| anyhow::anyhow!("topology_import.json does not exist"))?;
+        return Ok(topology_import
+            .into_imported_bundle()
+            .shaped_devices
+            .devices);
+    }
     let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
     if !sd_path.exists() {
         anyhow::bail!("ShapedDevices.csv does not exist");
@@ -629,6 +649,25 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
         }
     }
     Ok(devices)
+}
+
+fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
+    config.uisp_integration.enable_uisp
+        || config.splynx_integration.enable_splynx
+        || config
+            .netzur_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_netzur)
+        || config
+            .visp_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_visp)
+        || config.powercode_integration.enable_powercode
+        || config.sonar_integration.enable_sonar
+        || config
+            .wispgate_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_wispgate)
 }
 
 #[cfg(test)]

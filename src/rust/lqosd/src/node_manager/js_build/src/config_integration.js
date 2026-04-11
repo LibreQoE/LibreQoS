@@ -32,6 +32,21 @@ function validateConfig() {
             return false;
         }
     }
+
+    const topologyMode = document.getElementById("topologyCompileMode").value.trim();
+    if (!["flat", "ap_only", "ap_site", "full"].includes(topologyMode)) {
+        alert("Topology Compile Mode must be one of Flat, AP Only, AP Site, or Full");
+        return false;
+    }
+
+    const queueAutoThreshold = parseInt(
+        document.getElementById("queueAutoVirtualizeThresholdMbps").value,
+        10,
+    );
+    if (isNaN(queueAutoThreshold) || queueAutoThreshold < 5001) {
+        alert("Queue Auto-Virtualize Threshold must be a whole number greater than or equal to 5001");
+        return false;
+    }
     
     return true;
 }
@@ -40,7 +55,6 @@ function updateConfig() {
     // Update only the integration_common section
     window.config.integration_common = {
         circuit_name_as_address: document.getElementById("circuitNameAsAddress").checked,
-        always_overwrite_network_json: document.getElementById("alwaysOverwriteNetworkJson").checked,
         use_mikrotik_ipv6: document.getElementById("useMikrotikIpv6").checked,
         queue_refresh_interval_mins: parseInt(document.getElementById("queueRefreshInterval").value),
         promote_to_root: (() => {
@@ -64,6 +78,20 @@ function updateConfig() {
             return value === 0.94 ? null : value;
         })(),
     };
+    window.config.topology = {
+        ...(window.config.topology || {}),
+        compile_mode: document.getElementById("topologyCompileMode").value.trim(),
+        queue_auto_virtualize_threshold_mbps: parseInt(
+            document.getElementById("queueAutoVirtualizeThresholdMbps").value,
+            10,
+        ),
+    };
+    if (window.config.uisp_integration && typeof window.config.uisp_integration === "object") {
+        window.config.uisp_integration.strategy = window.config.topology.compile_mode;
+    }
+    if (window.config.splynx_integration && typeof window.config.splynx_integration === "object") {
+        window.config.splynx_integration.strategy = window.config.topology.compile_mode;
+    }
 }
 
 // Render the configuration menu
@@ -78,8 +106,6 @@ loadConfig(() => {
         // Boolean fields
         document.getElementById("circuitNameAsAddress").checked = 
             integration.circuit_name_as_address ?? false;
-        document.getElementById("alwaysOverwriteNetworkJson").checked = 
-            integration.always_overwrite_network_json ?? false;
         document.getElementById("useMikrotikIpv6").checked = 
             integration.use_mikrotik_ipv6 ?? false;
 
@@ -96,6 +122,10 @@ loadConfig(() => {
             integration.ethernet_port_limits_enabled ?? true;
         document.getElementById("ethernetPortLimitMultiplier").value =
             (integration.ethernet_port_limit_multiplier ?? 0.94).toFixed(2);
+        document.getElementById("topologyCompileMode").value =
+            window.config.topology?.compile_mode ?? "ap_site";
+        document.getElementById("queueAutoVirtualizeThresholdMbps").value =
+            String(window.config.topology?.queue_auto_virtualize_threshold_mbps ?? 5001);
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

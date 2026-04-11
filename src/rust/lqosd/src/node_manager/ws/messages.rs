@@ -5,6 +5,7 @@ use crate::node_manager::local_api::circuit_activity::{
     CircuitFlowSankeyRow, CircuitSummaryData, CircuitTopAsnsData, CircuitTopAsnsQuery,
     CircuitTrafficFlowsPage, CircuitTrafficFlowsQuery,
 };
+use crate::node_manager::local_api::config::{ConfigSecretClearRequest, ConfigView};
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
 use crate::node_manager::local_api::directories::{
@@ -183,6 +184,8 @@ pub enum WsRequest {
     QooProfiles,
     UpdateConfig {
         config: Config,
+        #[serde(default)]
+        clear_secrets: ConfigSecretClearRequest,
     },
     UpdateNetworkJsonOnly {
         network_json: Value,
@@ -639,7 +642,7 @@ pub enum WsResponse {
         ok: bool,
     },
     GetConfig {
-        data: Config,
+        data: ConfigView,
     },
     QooProfiles {
         data: QooProfilesSummary,

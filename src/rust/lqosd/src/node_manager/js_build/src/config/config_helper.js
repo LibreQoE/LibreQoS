@@ -1,6 +1,7 @@
 import { get_ws_client } from "../pubsub/ws";
 
 const wsClient = get_ws_client();
+const secretBindings = [];
 
 function sendWsRequest(responseEvent, request, onComplete, onError) {
     let done = false;
@@ -33,6 +34,9 @@ function ensureOptionalConfigSections(config) {
     if (!config.splynx_integration || typeof config.splynx_integration !== "object") {
         config.splynx_integration = {};
     }
+    if (!config.topology || typeof config.topology !== "object") {
+        config.topology = {};
+    }
 
     if (!config.sonar_integration || typeof config.sonar_integration !== "object") {
         config.sonar_integration = {};
@@ -59,7 +63,37 @@ function ensureOptionalConfigSections(config) {
     if (typeof splynx.api_secret !== "string") splynx.api_secret = "";
     if (typeof splynx.url !== "string") splynx.url = "";
     if (typeof splynx.strategy !== "string" || splynx.strategy.length === 0) {
-        splynx.strategy = "ap_only";
+        splynx.strategy = "ap_site";
+    }
+
+    const topology = config.topology;
+    const normalizeMode = (mode) => {
+        if (typeof mode !== "string") {
+            return "";
+        }
+        const lowered = mode.trim().toLowerCase();
+        if (lowered === "full2") {
+            return "full";
+        }
+        return ["flat", "ap_only", "ap_site", "full"].includes(lowered) ? lowered : "";
+    };
+    if (typeof topology.compile_mode !== "string" || topology.compile_mode.length === 0) {
+        topology.compile_mode = normalizeMode(topology.compile_mode)
+            || normalizeMode(config.uisp_integration?.strategy)
+            || normalizeMode(splynx.strategy)
+            || (config.uisp_integration?.enable_uisp ? "full" : "")
+            || (splynx.enable_splynx ? "ap_site" : "")
+            || "ap_site";
+    } else {
+        topology.compile_mode = normalizeMode(topology.compile_mode) || "ap_site";
+    }
+    if (!Number.isFinite(Number(topology.queue_auto_virtualize_threshold_mbps))
+        || Number(topology.queue_auto_virtualize_threshold_mbps) < 5001) {
+        topology.queue_auto_virtualize_threshold_mbps = 5001;
+    } else {
+        topology.queue_auto_virtualize_threshold_mbps = Math.trunc(
+            Number(topology.queue_auto_virtualize_threshold_mbps),
+        );
     }
 
     return config;
@@ -98,7 +132,10 @@ export function loadConfig(onComplete, onError) {
         "GetConfig",
         { GetConfig: {} },
         (msg) => {
-            window.config = ensureOptionalConfigSections(msg.data);
+            const payload = msg && msg.data ? msg.data : {};
+            window.config = ensureOptionalConfigSections(payload.config || {});
+            window.configSecretState = payload.secret_state || {};
+            window.configSecretClears = {};
             if (onComplete) onComplete(msg);
         },
         onError,
@@ -106,10 +143,31 @@ export function loadConfig(onComplete, onError) {
 }
 
 export function saveConfig(onComplete, onError) {
+    const clearSecrets = window.configSecretClears || {};
     sendWsRequest(
         "UpdateConfigResult",
-        { UpdateConfig: { config: window.config } },
+        {
+            UpdateConfig: {
+                config: window.config,
+                clear_secrets: clearSecrets,
+            },
+        },
         (msg) => {
+            if (msg && msg.ok) {
+                secretBindings.forEach((binding) => {
+                    const sectionState = secretFieldMap(window.configSecretState || {}, binding.section);
+                    const inputValue = binding.input.value.trim();
+                    sectionState[binding.field] = clearSecrets?.[binding.section]?.[binding.field]
+                        ? false
+                        : (inputValue.length > 0 || sectionState[binding.field]);
+                    if (window.config?.[binding.section] && typeof window.config[binding.section] === "object") {
+                        window.config[binding.section][binding.field] = "";
+                    }
+                    binding.input.value = "";
+                    setSecretClear(binding.section, binding.field, false);
+                    binding.updateStatus();
+                });
+            }
             if (onComplete) onComplete(msg);
         },
         (msg) => {
@@ -120,6 +178,108 @@ export function saveConfig(onComplete, onError) {
             }
         },
     );
+}
+
+function secretFieldMap(container, section) {
+    if (!container[section] || typeof container[section] !== "object") {
+        container[section] = {};
+    }
+    return container[section];
+}
+
+export function secretConfigured(section, field) {
+    return !!window.configSecretState?.[section]?.[field];
+}
+
+export function secretClearMarked(section, field) {
+    return !!window.configSecretClears?.[section]?.[field];
+}
+
+export function setSecretClear(section, field, clear) {
+    if (!window.configSecretClears || typeof window.configSecretClears !== "object") {
+        window.configSecretClears = {};
+    }
+    const sectionMap = secretFieldMap(window.configSecretClears, section);
+    if (clear) {
+        sectionMap[field] = true;
+    } else {
+        delete sectionMap[field];
+        if (Object.keys(sectionMap).length === 0) {
+            delete window.configSecretClears[section];
+        }
+    }
+}
+
+export function secretWillExistAfterSave(section, field, inputId) {
+    const input = document.getElementById(inputId);
+    const hasReplacement = !!(input && input.value.trim().length > 0);
+    if (hasReplacement) {
+        return true;
+    }
+    if (secretClearMarked(section, field)) {
+        return false;
+    }
+    return secretConfigured(section, field);
+}
+
+export function bindSecretField({
+    section,
+    field,
+    inputId,
+    statusId,
+    clearButtonId,
+    configuredMessage = "Stored on server. Leave blank to keep the current value.",
+    emptyMessage = "No value stored.",
+}) {
+    const input = document.getElementById(inputId);
+    const status = document.getElementById(statusId);
+    const clearButton = clearButtonId ? document.getElementById(clearButtonId) : null;
+    if (!input || !status) {
+        return;
+    }
+
+    const updateStatus = () => {
+        const hasReplacement = input.value.trim().length > 0;
+        const configured = secretConfigured(section, field);
+        const clearing = secretClearMarked(section, field);
+
+        if (hasReplacement) {
+            status.textContent = "A new value will replace the stored secret when you save.";
+        } else if (clearing) {
+            status.textContent = "The stored secret will be cleared when you save.";
+        } else if (configured) {
+            status.textContent = configuredMessage;
+        } else {
+            status.textContent = emptyMessage;
+        }
+
+        if (clearButton) {
+            clearButton.disabled = !configured && !hasReplacement && !clearing;
+        }
+    };
+
+    input.addEventListener("input", () => {
+        if (input.value.trim().length > 0) {
+            setSecretClear(section, field, false);
+        }
+        updateStatus();
+    });
+
+    if (clearButton) {
+        clearButton.addEventListener("click", () => {
+            input.value = "";
+            setSecretClear(section, field, secretConfigured(section, field));
+            updateStatus();
+        });
+    }
+
+    secretBindings.push({
+        section,
+        field,
+        input,
+        updateStatus,
+    });
+    updateStatus();
 }
 
 export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, onError) {

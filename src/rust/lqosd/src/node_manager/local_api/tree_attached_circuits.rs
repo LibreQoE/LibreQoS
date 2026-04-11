@@ -1,7 +1,11 @@
 use crate::node_manager::local_api::ethernet_caps::{EthernetCapBadge, ethernet_cap_badge_map};
 use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
+use crate::shaped_devices_tracker::effective_parent_for_circuit;
+use fxhash::{FxHashMap, FxHashSet};
+use lqos_config::ShapedDevice;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 const DEFAULT_ATTACHED_CIRCUITS_PAGE_SIZE: usize = 100;
 const MAX_ATTACHED_CIRCUITS_PAGE_SIZE: usize = 250;
@@ -72,6 +76,22 @@ pub struct TreeAttachedCircuitsPage {
     pub rows: Vec<TreeAttachedCircuitRow>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct SelectedNodeMatcher {
+    node_name: String,
+    node_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct CircuitRowAccumulator {
+    circuit_id: String,
+    circuit_name: String,
+    parent_node: String,
+    device_names: FxHashSet<String>,
+    ip_addrs: FxHashSet<String>,
+    plan_mbps: DownUpOrder<f32>,
+}
+
 fn normalized_page_size(query: &TreeAttachedCircuitsQuery) -> usize {
     query
         .page_size
@@ -79,7 +99,7 @@ fn normalized_page_size(query: &TreeAttachedCircuitsQuery) -> usize {
         .clamp(1, MAX_ATTACHED_CIRCUITS_PAGE_SIZE)
 }
 
-fn resolve_node_name(query: &TreeAttachedCircuitsQuery) -> Option<String> {
+fn build_selected_node_matcher(query: &TreeAttachedCircuitsQuery) -> Option<SelectedNodeMatcher> {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes = net_json.get_nodes_when_ready();
 
@@ -88,13 +108,17 @@ fn resolve_node_name(query: &TreeAttachedCircuitsQuery) -> Option<String> {
                 .iter()
                 .find(|node| node.id.as_deref() == Some(node_id))
         {
-            return Some(node.name.clone());
+            return Some(SelectedNodeMatcher {
+                node_name: node.name.clone(),
+                node_id: node.id.clone(),
+            });
         }
 
         let node_path = query.node_path.as_ref()?;
         if node_path.is_empty() {
             return None;
         }
+
         nodes.iter().find_map(|node| {
             let path = if node.name == "Root" {
                 vec!["Root".to_string()]
@@ -114,13 +138,125 @@ fn resolve_node_name(query: &TreeAttachedCircuitsQuery) -> Option<String> {
                 }
                 names
             };
+
             if &path == node_path {
-                Some(node.name.clone())
+                Some(SelectedNodeMatcher {
+                    node_name: node.name.clone(),
+                    node_id: node.id.clone(),
+                })
             } else {
                 None
             }
         })
     })
+}
+
+fn format_ipv4(addr: Ipv4Addr, prefix: u32) -> String {
+    if prefix >= 32 {
+        addr.to_string()
+    } else {
+        format!("{addr}/{prefix}")
+    }
+}
+
+fn format_ipv6(addr: Ipv6Addr, prefix: u32) -> String {
+    if prefix >= 128 {
+        addr.to_string()
+    } else {
+        format!("{addr}/{prefix}")
+    }
+}
+
+fn circuit_parent_matches_selected_node(
+    matcher: &SelectedNodeMatcher,
+    parent_name: &str,
+    parent_id: Option<&str>,
+) -> bool {
+    let trimmed_id = parent_id.map(str::trim).filter(|id| !id.is_empty());
+    let matcher_id = matcher
+        .node_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if let (Some(parent_id), Some(selected_id)) = (trimmed_id, matcher_id) {
+        return parent_id == selected_id;
+    }
+
+    let trimmed_name = parent_name.trim();
+    !trimmed_name.is_empty() && trimmed_name == matcher.node_name
+}
+
+fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Option<String>)> {
+    if let Some(runtime_parent) = effective_parent_for_circuit(&device.circuit_id) {
+        return Some((runtime_parent.name, runtime_parent.id));
+    }
+
+    lqos_network_devices::resolve_parent_node_reference(
+        &device.parent_node,
+        device.parent_node_id.as_deref(),
+    )
+        .map(|resolved| (resolved.name, resolved.id))
+        .or_else(|| {
+            let trimmed = device.parent_node.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some((trimmed.to_string(), device.parent_node_id.clone()))
+            }
+        })
+}
+
+fn aggregate_attached_circuit_rows<'a>(
+    matcher: &SelectedNodeMatcher,
+    shaped_devices: impl IntoIterator<Item = &'a ShapedDevice>,
+) -> Vec<CircuitRowAccumulator> {
+    let mut rows: FxHashMap<String, CircuitRowAccumulator> = FxHashMap::default();
+
+    for device in shaped_devices {
+        if device.circuit_id.trim().is_empty() {
+            continue;
+        }
+        let Some((parent_name, parent_id)) = effective_or_canonical_parent(device) else {
+            continue;
+        };
+        if !circuit_parent_matches_selected_node(matcher, &parent_name, parent_id.as_deref()) {
+            continue;
+        }
+
+        let entry =
+            rows.entry(device.circuit_id.clone())
+                .or_insert_with(|| CircuitRowAccumulator {
+                    circuit_id: device.circuit_id.clone(),
+                    circuit_name: device.circuit_name.clone(),
+                    parent_node: parent_name.clone(),
+                    ..CircuitRowAccumulator::default()
+                });
+        if entry.circuit_name.is_empty() {
+            entry.circuit_name = device.circuit_name.clone();
+        }
+        if entry.parent_node.is_empty() {
+            entry.parent_node = parent_name;
+        }
+        if !device.device_name.trim().is_empty() {
+            entry.device_names.insert(device.device_name.clone());
+        }
+        for (addr, prefix) in &device.ipv4 {
+            entry.ip_addrs.insert(format_ipv4(*addr, *prefix));
+        }
+        for (addr, prefix) in &device.ipv6 {
+            entry.ip_addrs.insert(format_ipv6(*addr, *prefix));
+        }
+        entry.plan_mbps.down = entry.plan_mbps.down.max(device.download_max_mbps.round());
+        entry.plan_mbps.up = entry.plan_mbps.up.max(device.upload_max_mbps.round());
+    }
+
+    let mut rows: Vec<CircuitRowAccumulator> = rows.into_values().collect();
+    rows.sort_by(|left, right| {
+        left.circuit_name
+            .cmp(&right.circuit_name)
+            .then_with(|| left.circuit_id.cmp(&right.circuit_id))
+    });
+    rows
 }
 
 /// Returns one filtered, sorted page of circuits attached to the selected tree node.
@@ -133,36 +269,57 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
         .clone()
         .unwrap_or(TreeAttachedCircuitsSort::CircuitName);
     let descending = query.descending.unwrap_or(false);
-    let node_name = resolve_node_name(&query);
+    let matcher = build_selected_node_matcher(&query);
 
     let snapshot = fresh_circuit_live_snapshot();
     let ethernet_badges = ethernet_cap_badge_map();
-    let mut rows: Vec<TreeAttachedCircuitRow> = match node_name.as_deref() {
-        Some(node_name) => snapshot
-            .circuit_ids_by_parent_node
-            .get(node_name)
-            .into_iter()
-            .flat_map(|ids| ids.iter())
-            .filter_map(|id| snapshot.by_circuit_id.get(id))
-            .map(|row| TreeAttachedCircuitRow {
-                circuit_id: row.circuit_id.clone(),
-                circuit_name: row.circuit_name.clone(),
-                ethernet_cap_badge: ethernet_badges
-                    .get(&row.circuit_id.to_ascii_lowercase())
-                    .cloned(),
-                parent_node: row.parent_node.clone(),
-                device_names: row.device_names.clone(),
-                ip_addrs: row.ip_addrs.clone(),
-                plan_mbps: row.plan_mbps,
-                bytes_per_second: row.bytes_per_second,
-                rtt_current_p50_nanos: row.rtt_current_p50_nanos,
-                qoo: row.qoo,
-                tcp_retransmit_sample: row.tcp_retransmit_sample,
-                last_seen_nanos: row.last_seen_nanos,
-            })
-            .collect(),
-        None => Vec::new(),
-    };
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let mut rows: Vec<TreeAttachedCircuitRow> = matcher
+        .as_ref()
+        .map(|matcher| {
+            aggregate_attached_circuit_rows(matcher, catalog.iter_all_devices())
+                .into_iter()
+                .map(|row| {
+                    let live = snapshot.by_circuit_id.get(&row.circuit_id);
+                    TreeAttachedCircuitRow {
+                        circuit_id: row.circuit_id.clone(),
+                        circuit_name: row.circuit_name.clone(),
+                        ethernet_cap_badge: ethernet_badges
+                            .get(&row.circuit_id.to_ascii_lowercase())
+                            .cloned(),
+                        parent_node: live
+                            .map(|live| live.parent_node.clone())
+                            .filter(|parent| !parent.trim().is_empty())
+                            .unwrap_or(row.parent_node),
+                        device_names: live.map(|live| live.device_names.clone()).unwrap_or_else(
+                            || {
+                                let mut names: Vec<String> = row.device_names.into_iter().collect();
+                                names.sort_unstable();
+                                names
+                            },
+                        ),
+                        ip_addrs: live.map(|live| live.ip_addrs.clone()).unwrap_or_else(|| {
+                            let mut addrs: Vec<String> = row.ip_addrs.into_iter().collect();
+                            addrs.sort_unstable();
+                            addrs
+                        }),
+                        plan_mbps: live.map(|live| live.plan_mbps).unwrap_or(row.plan_mbps),
+                        bytes_per_second: live
+                            .map(|live| live.bytes_per_second)
+                            .unwrap_or_default(),
+                        rtt_current_p50_nanos: live
+                            .map(|live| live.rtt_current_p50_nanos)
+                            .unwrap_or_default(),
+                        qoo: live.map(|live| live.qoo).unwrap_or_default(),
+                        tcp_retransmit_sample: live
+                            .map(|live| live.tcp_retransmit_sample)
+                            .unwrap_or_default(),
+                        last_seen_nanos: live.map(|live| live.last_seen_nanos).unwrap_or(u64::MAX),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     if !search.is_empty() {
         rows.retain(|row| {
@@ -229,5 +386,100 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
         },
         total_rows,
         rows,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+    use lqos_config::ConfigShapedDevices;
+
+    fn sample_device(
+        circuit_id: &str,
+        circuit_name: &str,
+        device_id: &str,
+        device_name: &str,
+        parent_node: &str,
+        parent_node_id: Option<&str>,
+        ipv4: &[&str],
+    ) -> ShapedDevice {
+        ShapedDevice {
+            circuit_id: circuit_id.to_string(),
+            circuit_name: circuit_name.to_string(),
+            device_id: device_id.to_string(),
+            device_name: device_name.to_string(),
+            parent_node: parent_node.to_string(),
+            parent_node_id: parent_node_id.map(str::to_string),
+            ipv4: ipv4
+                .iter()
+                .map(|value| {
+                    (
+                        Ipv4Addr::from_str(value).expect("test IPv4 addresses should parse"),
+                        32,
+                    )
+                })
+                .collect(),
+            download_max_mbps: 100.0,
+            upload_max_mbps: 50.0,
+            ..ShapedDevice::default()
+        }
+    }
+
+    #[test]
+    fn aggregate_attached_rows_include_only_directly_attached_circuits() {
+        let matcher = SelectedNodeMatcher {
+            node_name: "Parent A".to_string(),
+            node_id: Some("node-a".to_string()),
+        };
+        let shaped_devices = ConfigShapedDevices {
+            devices: vec![
+                sample_device(
+                    "circuit-1",
+                    "Circuit One",
+                    "device-1",
+                    "Device One",
+                    "Parent A",
+                    Some("node-a"),
+                    &["100.64.0.1"],
+                ),
+                sample_device(
+                    "circuit-1",
+                    "Circuit One",
+                    "device-2",
+                    "Device Two",
+                    "Parent A",
+                    Some("node-a"),
+                    &["100.64.0.2"],
+                ),
+                sample_device(
+                    "circuit-child",
+                    "Circuit Child",
+                    "device-child",
+                    "Device Child",
+                    "Child A",
+                    Some("node-child"),
+                    &["100.64.0.9"],
+                ),
+                sample_device(
+                    "circuit-2",
+                    "Circuit Two",
+                    "device-3",
+                    "Device Three",
+                    "Elsewhere",
+                    Some("node-b"),
+                    &["100.64.0.3"],
+                ),
+            ],
+            ..ConfigShapedDevices::default()
+        };
+
+        let rows = aggregate_attached_circuit_rows(&matcher, &shaped_devices);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].circuit_id, "circuit-1");
+        assert_eq!(rows[0].circuit_name, "Circuit One");
+        assert_eq!(rows[0].parent_node, "Parent A");
+        assert_eq!(rows[0].device_names.len(), 2);
+        assert_eq!(rows[0].ip_addrs.len(), 2);
     }
 }

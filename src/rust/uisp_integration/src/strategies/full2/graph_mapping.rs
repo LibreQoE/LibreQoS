@@ -50,6 +50,22 @@ impl GraphMapping {
             GraphMapping::AccessPoint { id, .. } => format!("uisp:device:{id}"),
         }
     }
+
+    pub fn latitude(&self) -> Option<f32> {
+        match self {
+            GraphMapping::Root { latitude, .. } | GraphMapping::Site { latitude, .. } => *latitude,
+            GraphMapping::GeneratedSite { .. } | GraphMapping::AccessPoint { .. } => None,
+        }
+    }
+
+    pub fn longitude(&self) -> Option<f32> {
+        match self {
+            GraphMapping::Root { longitude, .. } | GraphMapping::Site { longitude, .. } => {
+                *longitude
+            }
+            GraphMapping::GeneratedSite { .. } | GraphMapping::AccessPoint { .. } => None,
+        }
+    }
 }
 
 fn slugify_generated_name(name: &str) -> String {

@@ -45,7 +45,7 @@ from liblqos_python import is_lqosd_alive, clear_ip_mappings, delete_ip_mapping,
     overrides_circuit_adjustments_effective, \
     automatic_import_uisp, automatic_import_splynx, automatic_import_powercode, automatic_import_sonar, \
     automatic_import_wispgate, automatic_import_netzur, automatic_import_visp, \
-    plan_top_level_cpu_bins, \
+    plan_top_level_cpu_bins, topology_import_ingress_enabled, \
     plan_class_identities, \
     fast_queues_fq_codel, \
     shaping_cpu_count, \
@@ -57,6 +57,12 @@ try:
 except Exception:
     def submit_urgent_issue(*_args, **_kwargs):
         return False
+
+try:
+    from liblqos_python import calculate_topology_source_generation  # type: ignore
+except Exception:
+    def calculate_topology_source_generation():
+        return None
 
 
 class RefreshFailure(Exception):
@@ -113,6 +119,9 @@ def get_network_json_path():
     effective_path = os.path.join(base_dir, "network.effective.json")
 
     if os.path.exists(effective_path):
+        return effective_path
+
+    if topology_import_ingress_enabled():
         return effective_path
 
     if enable_insight_topology():
@@ -260,9 +269,67 @@ def _resolve_effective_parent_node(circuit, parent_node_ids, parent_node_aliases
     return parent_node, parent_node_id
 
 
+def _attachment_lookup_candidates(node_key, node_data):
+    candidates = []
+    node_id = str(node_data.get('id', '') or '').strip()
+    node_name = str(node_data.get('name', '') or '').strip()
+    for candidate in (node_id, str(node_key).strip(), node_name):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _current_topology_source_generation():
+    try:
+        generation = calculate_topology_source_generation()
+    except Exception:
+        return None
+    if generation is None:
+        return None
+    generation = str(generation).strip()
+    return generation if generation != '' else None
+
+
+def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
+    if not topology_import_ingress_enabled():
+        return False
+
+    current_generation = _current_topology_source_generation()
+    if current_generation is None:
+        return False
+
+    status_path = os.path.join(get_libreqos_directory(), 'topology_runtime_status.json')
+    try:
+        with open(status_path, 'r', encoding='utf-8') as handle:
+            status = json.load(handle)
+    except Exception:
+        return False
+
+    if not isinstance(status, dict):
+        return False
+    if not bool(status.get('ready')):
+        return False
+
+    status_generation = str(status.get('source_generation', '') or '').strip()
+    if status_generation != current_generation:
+        return False
+
+    status_shaping_inputs_path = str(status.get('shaping_inputs_path', '') or '').strip()
+    if status_shaping_inputs_path != '':
+        try:
+            if os.path.abspath(status_shaping_inputs_path) != os.path.abspath(shaping_inputs_path):
+                return False
+        except Exception:
+            return False
+
+    return True
+
+
 def _shaping_inputs_are_fresh(shaping_inputs_path, shaped_devices_file, network_json_file, circuit_anchors_file=None):
     if not os.path.isfile(shaping_inputs_path):
         return False
+    if _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
+        return True
     try:
         shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
         if os.path.isfile(shaped_devices_file) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_file):
@@ -670,13 +737,20 @@ def validateNetworkAndDevices():
     networkValidatedOrNot = True
     # Verify ShapedDevices.csv is valid
     devicesValidatedOrNot = True # True by default, switches to false if ANY entry in ShapedDevices.csv fails validation
+    integration_ingress = topology_import_ingress_enabled()
 
-    # Verify that the Rust side of things can read the CSV file
+    # Verify that the Rust side of things can read the active shaped-device ingress
     rustValid = validate_shaped_devices()
     if rustValid == "OK":
-        print("Rust validated ShapedDevices.csv")
+        if integration_ingress:
+            print("Rust validated integration shaping ingress")
+        else:
+            print("Rust validated ShapedDevices.csv")
     else:
-        warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
+        if integration_ingress:
+            warnings.warn("Rust failed to validate integration shaping ingress", stacklevel=2)
+        else:
+            warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
         warnings.warn(rustValid, stacklevel=2)
         devicesValidatedOrNot = False
     with open(get_network_json_path()) as file:
@@ -707,6 +781,17 @@ def validateNetworkAndDevices():
         except json.decoder.JSONDecodeError:
             warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
             networkValidatedOrNot = False
+    if integration_ingress:
+        if devicesValidatedOrNot == True:
+            print("integration shaping ingress passed validation")
+        else:
+            print("integration shaping ingress failed validation")
+        if networkValidatedOrNot == True:
+            print("network.json passed validation")
+        else:
+            print("network.json failed validation")
+        return devicesValidatedOrNot and networkValidatedOrNot
+
     rowNum = 2
 
     # Handle non-utf8 encoding in ShapedDevices.csv
@@ -1121,12 +1206,19 @@ def refreshShapers():
     safeToRunRefresh = False
     print("Validating input files '" + shapedDevicesFile + "' and '" + networkJSONfile + "'")
     if (validateNetworkAndDevices() == True):
-        shutil.copyfile(shapedDevicesFile, 'lastGoodConfig.csv')
+        if os.path.isfile(shapedDevicesFile):
+            shutil.copyfile(shapedDevicesFile, 'lastGoodConfig.csv')
         shutil.copyfile(networkJSONfile, 'lastGoodConfig.json')
-        print("Backed up good config as lastGoodConfig.csv and lastGoodConfig.json")
+        if os.path.isfile(shapedDevicesFile):
+            print("Backed up good config as lastGoodConfig.csv and lastGoodConfig.json")
+        else:
+            print("Backed up good config as lastGoodConfig.json")
         safeToRunRefresh = True
     else:
-        if (isThisFirstRunSinceBoot == False):
+        if topology_import_ingress_enabled():
+            warnings.warn("Validation failed for integration ingress/runtime artifacts - will now exit.", stacklevel=2)
+            safeToRunRefresh = False
+        elif (isThisFirstRunSinceBoot == False):
             warnings.warn("Validation failed. Because this is not the first run since boot (queues already set up) - will now exit.", stacklevel=2)
             safeToRunRefresh = False
         else:
@@ -2008,17 +2100,17 @@ def refreshShapers():
 
                 node_id = str(node_data.get('id', '') or '').strip()
                 node_name = str(node_data.get('name', '') or '').strip()
-                parent_candidates = []
-                for candidate in (node_id, node, node_name):
-                    if candidate and candidate not in parent_candidates:
-                        parent_candidates.append(candidate)
+                parent_candidates = _attachment_lookup_candidates(node, node_data)
 
                 selected_circuits = []
                 if node_id and node_id in circuits_by_parent_id:
                     selected_circuits = list(circuits_by_parent_id[node_id])
                 else:
                     seen_circuit_ids = set()
-                    for candidate in parent_candidates[1:]:
+                    name_candidates = (
+                        parent_candidates[1:] if node_id and parent_candidates else parent_candidates
+                    )
+                    for candidate in name_candidates:
                         for circuit in circuits_by_parent_name.get(candidate, []):
                             circuit_id = str(circuit.get('circuitID', '') or '')
                             if circuit_id in seen_circuit_ids:
@@ -2598,16 +2690,27 @@ def refreshShapers():
             flat_network,
         )
         if len(devicesSkipped) > 0:
-            warnings.warn(
-                str(len(devicesSkipped)) + " device(s) were not shaped. Detailed reasons are listed below.",
-                stacklevel=2,
+            flat_mode_generated_parent_only = flat_network and all(
+                entry.get("reasonCode") == "unattached_flat_network" for entry in devicesSkipped
             )
-            print("Devices not shaped:")
-            for entry in devicesSkipped:
-                print(format_unshaped_device_line(entry))
+            if flat_mode_generated_parent_only:
+                print(
+                    f"Flat network mode assigned {len(devicesSkipped)} device(s) to generated parent queues."
+                )
+            else:
+                warnings.warn(
+                    str(len(devicesSkipped)) + " device(s) were not shaped. Detailed reasons are listed below.",
+                    stacklevel=2,
+                )
+                print("Devices not shaped:")
+                for entry in devicesSkipped:
+                    print(format_unshaped_device_line(entry))
 
-        # Save ShapedDevices.csv as ShapedDevices.lastLoaded.csv
-        shutil.copyfile('ShapedDevices.csv', 'ShapedDevices.lastLoaded.csv')
+        # DIY/manual mode snapshots the active ShapedDevices.csv for update-only diffs.
+        # Built-in integrations no longer emit ShapedDevices.csv, so skip the legacy
+        # snapshot there instead of failing the whole scheduler refresh.
+        if os.path.isfile(shapedDevicesFile):
+            shutil.copyfile(shapedDevicesFile, 'ShapedDevices.lastLoaded.csv')
 
         # Save for stats
         with open('statsByCircuit.json', 'w') as f:

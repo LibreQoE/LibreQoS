@@ -9,6 +9,13 @@ strip = true
 lto = "thin"
 incremental = false
 
+[profile.fast-release]
+inherits = "release"
+strip = false
+lto = "off"
+incremental = true
+codegen-units = 256
+
 [profile.release.build-override]
 opt-level = 3
 codegen-units = 16
@@ -36,6 +43,7 @@ members = [
     "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
     "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
     "lqos_topology", # Shared topology runtime domain logic and health/effective-state helper.
+    "lqos_topology_compile", # Shared topology compilation and mode projection layer.
     "lqos_support_tool", # Support/sanity-check CLI for gathering and submitting support dumps.
 ]
 

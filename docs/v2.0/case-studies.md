@@ -20,7 +20,7 @@ Situation:
 
 Approach:
 - Adopted built-in UISP integration as durable source of truth.
-- Standardized on integration-owned `ShapedDevices.csv` with explicit overwrite policy.
+- Standardized on integration-driven shaping data with a clear refresh policy.
 - Started with moderate hierarchy depth before considering deeper topology.
 
 Outcome:

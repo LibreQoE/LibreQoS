@@ -24,7 +24,11 @@
 
             <div class="mb-3">
                 <label for="vispClientSecret" class="form-label">Client Secret</label>
-                <input type="password" class="form-control" id="vispClientSecret" autocomplete="off">
+                <div class="input-group">
+                    <input type="password" class="form-control" id="vispClientSecret" autocomplete="new-password">
+                    <button type="button" class="btn btn-outline-secondary" id="clearVispClientSecret">Clear</button>
+                </div>
+                <div class="form-text" id="vispClientSecretStatus"></div>
             </div>
 
             <div class="mb-3">
@@ -35,7 +39,11 @@
 
             <div class="mb-3">
                 <label for="vispPassword" class="form-label">Appuser Password</label>
-                <input type="password" class="form-control" id="vispPassword" autocomplete="current-password">
+                <div class="input-group">
+                    <input type="password" class="form-control" id="vispPassword" autocomplete="new-password">
+                    <button type="button" class="btn btn-outline-secondary" id="clearVispPassword">Clear</button>
+                </div>
+                <div class="form-text" id="vispPasswordStatus"></div>
             </div>
 
             <div class="mb-3">

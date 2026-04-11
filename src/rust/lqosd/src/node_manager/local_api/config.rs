@@ -37,16 +37,288 @@ const TOPOLOGY_SOURCE_INTEGRATIONS: [TopologySourceIntegration; 7] = [
     }),
 ];
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct UispSecretState {
+    #[serde(default)]
+    pub token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SplynxSecretState {
+    #[serde(default)]
+    pub api_key: bool,
+    #[serde(default)]
+    pub api_secret: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct VispSecretState {
+    #[serde(default)]
+    pub client_secret: bool,
+    #[serde(default)]
+    pub password: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SonarSecretState {
+    #[serde(default)]
+    pub sonar_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct NetzurSecretState {
+    #[serde(default)]
+    pub api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct PowercodeSecretState {
+    #[serde(default)]
+    pub powercode_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ConfigSecretState {
+    #[serde(default)]
+    pub uisp_integration: UispSecretState,
+    #[serde(default)]
+    pub splynx_integration: SplynxSecretState,
+    #[serde(default)]
+    pub visp_integration: VispSecretState,
+    #[serde(default)]
+    pub sonar_integration: SonarSecretState,
+    #[serde(default)]
+    pub netzur_integration: NetzurSecretState,
+    #[serde(default)]
+    pub powercode_integration: PowercodeSecretState,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct UispSecretClearRequest {
+    #[serde(default)]
+    pub token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SplynxSecretClearRequest {
+    #[serde(default)]
+    pub api_key: bool,
+    #[serde(default)]
+    pub api_secret: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct VispSecretClearRequest {
+    #[serde(default)]
+    pub client_secret: bool,
+    #[serde(default)]
+    pub password: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SonarSecretClearRequest {
+    #[serde(default)]
+    pub sonar_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct NetzurSecretClearRequest {
+    #[serde(default)]
+    pub api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct PowercodeSecretClearRequest {
+    #[serde(default)]
+    pub powercode_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ConfigSecretClearRequest {
+    #[serde(default)]
+    pub uisp_integration: UispSecretClearRequest,
+    #[serde(default)]
+    pub splynx_integration: SplynxSecretClearRequest,
+    #[serde(default)]
+    pub visp_integration: VispSecretClearRequest,
+    #[serde(default)]
+    pub sonar_integration: SonarSecretClearRequest,
+    #[serde(default)]
+    pub netzur_integration: NetzurSecretClearRequest,
+    #[serde(default)]
+    pub powercode_integration: PowercodeSecretClearRequest,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ConfigView {
+    pub config: Config,
+    #[serde(default)]
+    pub secret_state: ConfigSecretState,
+}
+
 pub fn admin_check_data(login: LoginResult) -> bool {
     matches!(login, LoginResult::Admin)
 }
 
-pub fn get_config_data(login: LoginResult) -> Result<Config, StatusCode> {
+fn has_secret(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
+fn redact_string_secret(value: &mut String) -> bool {
+    let configured = has_secret(value);
+    value.clear();
+    configured
+}
+
+fn redact_config_secrets(config: &mut Config) -> ConfigSecretState {
+    let mut secret_state = ConfigSecretState::default();
+
+    secret_state.uisp_integration.token = redact_string_secret(&mut config.uisp_integration.token);
+    secret_state.splynx_integration.api_key =
+        redact_string_secret(&mut config.splynx_integration.api_key);
+    secret_state.splynx_integration.api_secret =
+        redact_string_secret(&mut config.splynx_integration.api_secret);
+    secret_state.sonar_integration.sonar_api_key =
+        redact_string_secret(&mut config.sonar_integration.sonar_api_key);
+    secret_state.powercode_integration.powercode_api_key =
+        redact_string_secret(&mut config.powercode_integration.powercode_api_key);
+
+    if let Some(netzur) = config.netzur_integration.as_mut() {
+        secret_state.netzur_integration.api_key = redact_string_secret(&mut netzur.api_key);
+    }
+
+    if let Some(visp) = config.visp_integration.as_mut() {
+        secret_state.visp_integration.client_secret = redact_string_secret(&mut visp.client_secret);
+        secret_state.visp_integration.password = redact_string_secret(&mut visp.password);
+    }
+
+    secret_state
+}
+
+fn merge_string_secret(incoming: &mut String, existing: &str, clear: bool) {
+    if clear {
+        incoming.clear();
+    } else if incoming.trim().is_empty() {
+        *incoming = existing.to_string();
+    }
+}
+
+fn apply_secret_updates(
+    existing: &Config,
+    incoming: &mut Config,
+    clear_secrets: &ConfigSecretClearRequest,
+) {
+    merge_string_secret(
+        &mut incoming.uisp_integration.token,
+        &existing.uisp_integration.token,
+        clear_secrets.uisp_integration.token,
+    );
+    merge_string_secret(
+        &mut incoming.splynx_integration.api_key,
+        &existing.splynx_integration.api_key,
+        clear_secrets.splynx_integration.api_key,
+    );
+    merge_string_secret(
+        &mut incoming.splynx_integration.api_secret,
+        &existing.splynx_integration.api_secret,
+        clear_secrets.splynx_integration.api_secret,
+    );
+    merge_string_secret(
+        &mut incoming.sonar_integration.sonar_api_key,
+        &existing.sonar_integration.sonar_api_key,
+        clear_secrets.sonar_integration.sonar_api_key,
+    );
+    merge_string_secret(
+        &mut incoming.powercode_integration.powercode_api_key,
+        &existing.powercode_integration.powercode_api_key,
+        clear_secrets.powercode_integration.powercode_api_key,
+    );
+
+    match (
+        existing.netzur_integration.as_ref(),
+        incoming.netzur_integration.as_mut(),
+    ) {
+        (Some(existing_netzur), Some(incoming_netzur)) => {
+            merge_string_secret(
+                &mut incoming_netzur.api_key,
+                &existing_netzur.api_key,
+                clear_secrets.netzur_integration.api_key,
+            );
+        }
+        (Some(existing_netzur), None) => {
+            incoming.netzur_integration = Some(existing_netzur.clone());
+            if let Some(incoming_netzur) = incoming.netzur_integration.as_mut() {
+                merge_string_secret(
+                    &mut incoming_netzur.api_key,
+                    &existing_netzur.api_key,
+                    clear_secrets.netzur_integration.api_key,
+                );
+            }
+        }
+        (None, Some(incoming_netzur)) => {
+            if clear_secrets.netzur_integration.api_key {
+                incoming_netzur.api_key.clear();
+            }
+        }
+        (None, None) => {}
+    }
+
+    match (
+        existing.visp_integration.as_ref(),
+        incoming.visp_integration.as_mut(),
+    ) {
+        (Some(existing_visp), Some(incoming_visp)) => {
+            merge_string_secret(
+                &mut incoming_visp.client_secret,
+                &existing_visp.client_secret,
+                clear_secrets.visp_integration.client_secret,
+            );
+            merge_string_secret(
+                &mut incoming_visp.password,
+                &existing_visp.password,
+                clear_secrets.visp_integration.password,
+            );
+        }
+        (Some(existing_visp), None) => {
+            incoming.visp_integration = Some(existing_visp.clone());
+            if let Some(incoming_visp) = incoming.visp_integration.as_mut() {
+                merge_string_secret(
+                    &mut incoming_visp.client_secret,
+                    &existing_visp.client_secret,
+                    clear_secrets.visp_integration.client_secret,
+                );
+                merge_string_secret(
+                    &mut incoming_visp.password,
+                    &existing_visp.password,
+                    clear_secrets.visp_integration.password,
+                );
+            }
+        }
+        (None, Some(incoming_visp)) => {
+            if clear_secrets.visp_integration.client_secret {
+                incoming_visp.client_secret.clear();
+            }
+            if clear_secrets.visp_integration.password {
+                incoming_visp.password.clear();
+            }
+        }
+        (None, None) => {}
+    }
+}
+
+pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
     lqos_config::load_config()
-        .map(|config| (*config).clone())
+        .map(|config| {
+            let mut config = (*config).clone();
+            let secret_state = redact_config_secrets(&mut config);
+            ConfigView {
+                config,
+                secret_state,
+            }
+        })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
@@ -354,11 +626,14 @@ fn persist_shaped_devices(mut devices: Vec<ShapedDevice>) -> Result<(), String> 
 
 pub async fn update_lqosd_config_data(
     login: LoginResult,
-    config: Config,
+    mut config: Config,
+    clear_secrets: ConfigSecretClearRequest,
 ) -> Result<(), StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
+    let existing = lqos_config::load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    apply_secret_updates(existing.as_ref(), &mut config, &clear_secrets);
     bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(config))])
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -582,7 +857,11 @@ pub struct UserRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_network_json;
+    use super::{
+        ConfigSecretClearRequest, apply_secret_updates, redact_config_secrets,
+        validate_network_json,
+    };
+    use lqos_config::Config;
     use serde_json::json;
 
     #[test]
@@ -634,5 +913,142 @@ mod tests {
 
         let err = validate_network_json(&network).expect_err("duplicate names must fail");
         assert!(err.contains("Duplicate"));
+    }
+
+    #[test]
+    fn redacts_secret_fields_and_marks_presence() {
+        let mut config = Config::default();
+        config.uisp_integration.token = "uisp-token".to_string();
+        config.splynx_integration.api_key = "splynx-key".to_string();
+        config.splynx_integration.api_secret = "splynx-secret".to_string();
+        config.sonar_integration.sonar_api_key = "sonar-key".to_string();
+        config.powercode_integration.powercode_api_key = "powercode-key".to_string();
+        if let Some(visp) = config.visp_integration.as_mut() {
+            visp.client_secret = "visp-secret".to_string();
+            visp.password = "visp-password".to_string();
+        }
+        config.netzur_integration = Some(Default::default());
+        config
+            .netzur_integration
+            .as_mut()
+            .expect("netzur_integration should exist")
+            .api_key = "netzur-key".to_string();
+
+        let secret_state = redact_config_secrets(&mut config);
+
+        assert!(secret_state.uisp_integration.token);
+        assert!(secret_state.splynx_integration.api_key);
+        assert!(secret_state.splynx_integration.api_secret);
+        assert!(secret_state.visp_integration.client_secret);
+        assert!(secret_state.visp_integration.password);
+        assert!(secret_state.sonar_integration.sonar_api_key);
+        assert!(secret_state.netzur_integration.api_key);
+        assert!(secret_state.powercode_integration.powercode_api_key);
+        assert!(config.uisp_integration.token.is_empty());
+        assert!(config.splynx_integration.api_key.is_empty());
+        assert!(config.splynx_integration.api_secret.is_empty());
+        assert!(config.sonar_integration.sonar_api_key.is_empty());
+        assert!(config.powercode_integration.powercode_api_key.is_empty());
+        assert!(
+            config
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .client_secret
+                .is_empty()
+        );
+        assert!(
+            config
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .password
+                .is_empty()
+        );
+        assert!(
+            config
+                .netzur_integration
+                .as_ref()
+                .expect("netzur_integration should exist")
+                .api_key
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn applies_secret_updates_with_preserve_replace_and_clear() {
+        let mut existing = Config::default();
+        existing.uisp_integration.token = "old-uisp".to_string();
+        existing.splynx_integration.api_key = "old-key".to_string();
+        existing.splynx_integration.api_secret = "old-secret".to_string();
+        existing.sonar_integration.sonar_api_key = "old-sonar".to_string();
+        existing.powercode_integration.powercode_api_key = "old-powercode".to_string();
+        if let Some(visp) = existing.visp_integration.as_mut() {
+            visp.client_secret = "old-visp-secret".to_string();
+            visp.password = "old-visp-password".to_string();
+        }
+        existing.netzur_integration = Some(Default::default());
+        existing
+            .netzur_integration
+            .as_mut()
+            .expect("netzur_integration should exist")
+            .api_key = "old-netzur".to_string();
+
+        let mut incoming = existing.clone();
+        incoming.uisp_integration.token.clear();
+        incoming.splynx_integration.api_key = "new-key".to_string();
+        incoming.splynx_integration.api_secret.clear();
+        incoming.sonar_integration.sonar_api_key.clear();
+        incoming.powercode_integration.powercode_api_key.clear();
+        if let Some(visp) = incoming.visp_integration.as_mut() {
+            visp.client_secret.clear();
+            visp.password = "new-visp-password".to_string();
+        }
+        incoming
+            .netzur_integration
+            .as_mut()
+            .expect("netzur_integration should exist")
+            .api_key
+            .clear();
+
+        let mut clear_secrets = ConfigSecretClearRequest::default();
+        clear_secrets.splynx_integration.api_secret = true;
+        clear_secrets.sonar_integration.sonar_api_key = true;
+        clear_secrets.netzur_integration.api_key = true;
+
+        apply_secret_updates(&existing, &mut incoming, &clear_secrets);
+
+        assert_eq!(incoming.uisp_integration.token, "old-uisp");
+        assert_eq!(incoming.splynx_integration.api_key, "new-key");
+        assert!(incoming.splynx_integration.api_secret.is_empty());
+        assert!(incoming.sonar_integration.sonar_api_key.is_empty());
+        assert_eq!(
+            incoming
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .client_secret,
+            "old-visp-secret"
+        );
+        assert_eq!(
+            incoming
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .password,
+            "new-visp-password"
+        );
+        assert!(
+            incoming
+                .netzur_integration
+                .as_ref()
+                .expect("netzur_integration should exist")
+                .api_key
+                .is_empty()
+        );
+        assert_eq!(
+            incoming.powercode_integration.powercode_api_key,
+            "old-powercode"
+        );
     }
 }

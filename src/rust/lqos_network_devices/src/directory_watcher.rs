@@ -84,7 +84,7 @@ fn classify_changed_path(path: &Path) -> Option<DirectoryReloadEvent> {
     }
 
     match file_name {
-        "ShapedDevices.csv" | "ShapedDevices.insight.csv" => {
+        "ShapedDevices.csv" | "ShapedDevices.insight.csv" | "topology_import.json" => {
             Some(DirectoryReloadEvent::ShapedDevices)
         }
         "network.effective.json" | "network.insight.json" | "network.json" => {

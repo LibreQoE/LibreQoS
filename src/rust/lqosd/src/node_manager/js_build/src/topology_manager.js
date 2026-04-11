@@ -5,6 +5,7 @@ const MAP_VIEWBOX = {width: 1200, height: 820};
 const MAP_CENTER_Y = 410;
 const LANE_STEP = 140;
 const CHILD_LANE_STEP = 96;
+const INSPECT_PATH_LANE_STEP = 96;
 const MAP_NODE_HALF_WIDTH = 78;
 const MAP_NODE_HALF_HEIGHT = 36;
 const MAP_ZOOM_MIN = 0.65;
@@ -500,6 +501,18 @@ function pathIdsForNode(nodeId, parentField) {
         path.unshift(ROOT_NODE_ID);
     }
     return path;
+}
+
+function samePathIds(left, right) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+        return false;
+    }
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function proposedPathIds(nodeId, parentId) {
@@ -1868,7 +1881,12 @@ function buildMapGraph() {
         return {nodes: [], edges: []};
     }
 
-    const currentPath = truncatedPreviewPath(currentPathIds(meta.node_id), `current:${meta.node_id}`);
+    const canonicalPathIdsRaw = currentPathIds(meta.node_id);
+    const livePathIdsRaw = effectivePathIds(meta.node_id);
+    const savedPathIdsRaw = meta.has_override
+        ? proposedPathIds(meta.node_id, meta.override_parent_node_id)
+        : livePathIdsRaw;
+    const currentPath = truncatedPreviewPath(canonicalPathIdsRaw, `current:${meta.node_id}`);
     const allowedParents = moveMode ? allowedParentsForSelected() : [];
     const alternatePaths = allowedParents.map((parent) => ({
         parent,
@@ -1886,24 +1904,55 @@ function buildMapGraph() {
     const xStep = Math.min(190, Math.max(110, 880 / Math.max(rootPathLength - 1, 1)));
     const startX = 100;
 
-    currentPath.forEach((node, depth) => {
-        displayedNodes.set(node.nodeId, {
-            ...node,
-            nodeId: node.nodeId,
-            x: startX + (depth * xStep),
-            y: MAP_CENTER_Y,
-            depth,
-            lane: 0,
-            role: "current",
+    const addPreviewPath = (path, kind, role, lane = 0) => {
+        path.forEach((node, depth) => {
+            if (!displayedNodes.has(node.nodeId)) {
+                displayedNodes.set(node.nodeId, {
+                    ...node,
+                    nodeId: node.nodeId,
+                    x: startX + (depth * xStep),
+                    y: MAP_CENTER_Y + (lane * INSPECT_PATH_LANE_STEP),
+                    depth,
+                    lane,
+                    role,
+                });
+            }
+            if (depth > 0) {
+                displayedEdges.push({
+                    from: path[depth - 1].nodeId,
+                    to: node.nodeId,
+                    kind,
+                });
+            }
         });
-        if (depth > 0) {
-            displayedEdges.push({
-                from: currentPath[depth - 1].nodeId,
-                to: node.nodeId,
-                kind: "current",
-            });
+    };
+
+    if (moveMode) {
+        addPreviewPath(currentPath, "current", "current");
+    } else {
+        const canonicalPath = truncatedPreviewPath(canonicalPathIdsRaw, `canonical:${meta.node_id}`);
+        const livePath = truncatedPreviewPath(livePathIdsRaw, `live:${meta.node_id}`);
+        const savedPath = truncatedPreviewPath(savedPathIdsRaw, `saved:${meta.node_id}`);
+        const allAligned = samePathIds(canonicalPathIdsRaw, livePathIdsRaw)
+            && samePathIds(livePathIdsRaw, savedPathIdsRaw);
+
+        if (allAligned) {
+            addPreviewPath(livePath, "current", "current");
+        } else {
+            const liveMatchesCanonical = samePathIds(livePathIdsRaw, canonicalPathIdsRaw);
+            const savedMatchesLive = samePathIds(savedPathIdsRaw, livePathIdsRaw);
+
+            if (liveMatchesCanonical) {
+                addPreviewPath(livePath, "current", "current");
+            } else {
+                addPreviewPath(livePath, "live_path", "live");
+            }
+            addPreviewPath(canonicalPath, "canonical_path", "canonical", -0.55);
+            if (meta.has_override && !savedMatchesLive) {
+                addPreviewPath(savedPath, "saved_path", "saved", 0.55);
+            }
         }
-    });
+    }
 
     const selectedDepth = currentPath.length - 1;
     const children = preferredChildPreviewNodes(meta.node_id);
@@ -1999,14 +2048,40 @@ function fitGraphToViewport(graph) {
     };
 }
 
-function edgePath(from, to, kind) {
+function edgePort(from, to) {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    if (dx === 0 && dy === 0) {
+        return {x: from.x, y: from.y};
+    }
+    const scale = 1 / Math.max(
+        Math.abs(dx) / MAP_NODE_HALF_WIDTH,
+        Math.abs(dy) / MAP_NODE_HALF_HEIGHT,
+    );
+    return {
+        x: from.x + (dx * scale),
+        y: from.y + (dy * scale),
+    };
+}
+
+function straightEdgePath(from, to) {
+    const start = edgePort(from, to);
+    const end = edgePort(to, from);
+    return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+}
+
+function edgePath(from, to, kind, lane = 0) {
     if (!from || !to) {
         return "";
     }
-    if (kind === "candidate_link" || kind === "proposed_link") {
-        const midX = (from.x + to.x) / 2;
-        const controlOffset = to.y < from.y ? -60 : 60;
-        return `M ${from.x} ${from.y} C ${midX} ${from.y + controlOffset}, ${midX} ${to.y - controlOffset}, ${to.x} ${to.y}`;
+    if (kind === "current"
+        || kind === "candidate_link"
+        || kind === "proposed_link"
+        || kind === "candidate_path"
+        || kind === "canonical_path"
+        || kind === "live_path"
+        || kind === "saved_path") {
+        return straightEdgePath(from, to, lane);
     }
     return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 }
@@ -2039,13 +2114,28 @@ function renderMap() {
     const edgeHtml = graph.edges.map((edge) => {
         const from = nodeById.get(edge.from);
         const to = nodeById.get(edge.to);
-        const path = edgePath(from, to, edge.kind);
+        const path = edgePath(from, to, edge.kind, edge.lane || 0);
         let stroke = "rgba(148, 163, 184, 0.35)";
         let width = 2;
         let dash = "";
+        let linecap = "round";
         if (edge.kind === "current") {
             stroke = "rgba(59, 130, 246, 0.92)";
             width = 4;
+            linecap = "butt";
+        } else if (edge.kind === "canonical_path") {
+            stroke = "rgba(148, 163, 184, 0.82)";
+            width = 3;
+            linecap = "butt";
+        } else if (edge.kind === "live_path") {
+            stroke = "rgba(59, 130, 246, 0.96)";
+            width = 3.5;
+            linecap = "butt";
+        } else if (edge.kind === "saved_path") {
+            stroke = "rgba(245, 158, 11, 0.95)";
+            width = 3;
+            dash = "10 7";
+            linecap = "butt";
         } else if (edge.kind === "branch") {
             stroke = "rgba(59, 130, 246, 0.45)";
             width = 2.5;
@@ -2053,6 +2143,7 @@ function renderMap() {
             stroke = "rgba(34, 197, 94, 0.35)";
             width = 2;
             dash = "8 8";
+            linecap = "butt";
         } else if (edge.kind === "candidate_link") {
             stroke = "rgba(34, 197, 94, 0.65)";
             width = 3;
@@ -2062,7 +2153,7 @@ function renderMap() {
             width = 4;
             dash = "10 7";
         }
-        return `<path d="${path}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="round" stroke-dasharray="${dash}"></path>`;
+        return `<path d="${path}" fill="none" stroke="${stroke}" stroke-width="${width}" stroke-linecap="${linecap}" stroke-dasharray="${dash}"></path>`;
     }).join("");
 
     const nodeHtml = graph.nodes.map((node) => {
@@ -2136,6 +2227,7 @@ function renderMap() {
 
         return `
             <g class="topology-map-node" ${interactiveAttrs} transform="translate(${node.x}, ${node.y})" opacity="${opacity}" style="cursor:${cursor};">
+                <rect x="-80" y="-38" rx="19" ry="19" width="160" height="76" fill="rgba(15, 23, 42, 1)"></rect>
                 <rect x="-78" y="-36" rx="18" ry="18" width="156" height="72" fill="${fill}" stroke="${stroke}" stroke-width="${isSelected || isProposed ? 3 : 2}"></rect>
                 ${badge}
                 <text x="0" y="-4" text-anchor="middle" fill="${text}">${escapeHtml(label)}</text>
