@@ -192,6 +192,11 @@ src/network.large.json
 /src/shaping_inputs.json.stale-*
 /src/.topology_stale/
 /src/.codex
+/src/network.insight.debug.json
+/src/test_integrationNetzur.py
+/src/topology_compiled_shaping.json
+/src/topology_effective_publish.lock
+/src/topology_effective_state.tmp
 
 # Migrated integration compatibility artifacts
 /src/integrationUISPbandwidths.csv.migrated-*

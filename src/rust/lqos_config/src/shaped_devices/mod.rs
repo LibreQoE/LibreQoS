@@ -288,31 +288,27 @@ impl ConfigShapedDevices {
     /// Helper function to search for an XdpIpAddress and return a circuit id and name
     /// if they exist.
     pub fn get_circuit_id_and_name_from_ip(&self, ip: &XdpIpAddress) -> Option<(String, String)> {
+        self.get_device_from_ip(ip)
+            .map(|device| (device.circuit_id.clone(), device.circuit_name.clone()))
+    }
+
+    /// Helper function to search for an XdpIpAddress and return the matching shaped device
+    /// if it exists.
+    pub fn get_device_from_ip(&self, ip: &XdpIpAddress) -> Option<&ShapedDevice> {
         let lookup = match ip.as_ip() {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
             IpAddr::V6(ip) => ip,
         };
-        if let Some(c) = self.trie.longest_match(lookup) {
-            let device = &self.devices[*c.1];
-            return Some((device.circuit_id.clone(), device.circuit_name.clone()));
-        }
-
-        None
+        self.trie
+            .longest_match(lookup)
+            .and_then(|candidate| self.devices.get(*candidate.1))
     }
 
     /// Helper function to search for an XdpIpAddress and return a circuit id and name
     /// if they exist.
     pub fn get_circuit_hash_from_ip(&self, ip: &XdpIpAddress) -> Option<i64> {
-        let lookup = match ip.as_ip() {
-            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-            IpAddr::V6(ip) => ip,
-        };
-        if let Some(c) = self.trie.longest_match(lookup) {
-            let device = &self.devices[*c.1];
-            return Some(device.circuit_hash);
-        }
-
-        None
+        self.get_device_from_ip(ip)
+            .map(|device| device.circuit_hash)
     }
 }
 
@@ -508,6 +504,11 @@ mod test {
                 .get_circuit_hash_from_ip(&XdpIpAddress::from_ip("192.168.1.10".parse().unwrap())),
             Some(hash_to_i64("circuit-1"))
         );
+        let matched = config
+            .get_device_from_ip(&XdpIpAddress::from_ip("192.168.1.10".parse().unwrap()))
+            .expect("device should resolve by IP");
+        assert_eq!(matched.device_hash, hash_to_i64("device-1"));
+        assert_eq!(matched.circuit_id, "circuit-1");
     }
 
     #[test]

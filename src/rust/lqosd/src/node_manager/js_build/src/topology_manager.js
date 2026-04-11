@@ -2044,7 +2044,40 @@ function fitGraphToViewport(graph) {
     };
 }
 
-function edgePath(from, to, kind) {
+function ancestryLaneY(from, to, kind, lane = 0) {
+    const centerY = (from.y + to.y) / 2;
+    if (kind === "canonical_path") {
+        return centerY - MAP_NODE_HALF_HEIGHT - 26;
+    }
+    if (kind === "live_path") {
+        return centerY - MAP_NODE_HALF_HEIGHT - 12;
+    }
+    if (kind === "saved_path") {
+        return centerY + MAP_NODE_HALF_HEIGHT + 26;
+    }
+    if (kind === "candidate_path") {
+        const direction = lane < 0 ? -1 : 1;
+        return centerY + (direction * (MAP_NODE_HALF_HEIGHT + 20));
+    }
+    return centerY - MAP_NODE_HALF_HEIGHT - 18;
+}
+
+function ancestryPath(from, to, laneY) {
+    const routeAbove = laneY <= ((from.y + to.y) / 2);
+    const edgeInset = 8;
+    const curveInset = 30;
+    const startX = from.x + MAP_NODE_HALF_WIDTH - edgeInset;
+    const endX = to.x - MAP_NODE_HALF_WIDTH + edgeInset;
+    const startY = routeAbove
+        ? from.y - MAP_NODE_HALF_HEIGHT + edgeInset
+        : from.y + MAP_NODE_HALF_HEIGHT - edgeInset;
+    const endY = routeAbove
+        ? to.y - MAP_NODE_HALF_HEIGHT + edgeInset
+        : to.y + MAP_NODE_HALF_HEIGHT - edgeInset;
+    return `M ${startX} ${startY} C ${startX + curveInset} ${laneY}, ${endX - curveInset} ${laneY}, ${endX} ${endY}`;
+}
+
+function edgePath(from, to, kind, lane = 0) {
     if (!from || !to) {
         return "";
     }
@@ -2053,15 +2086,12 @@ function edgePath(from, to, kind) {
         const controlOffset = to.y < from.y ? -60 : 60;
         return `M ${from.x} ${from.y} C ${midX} ${from.y + controlOffset}, ${midX} ${to.y - controlOffset}, ${to.x} ${to.y}`;
     }
-    if (kind === "canonical_path" || kind === "live_path" || kind === "saved_path") {
-        const midX = (from.x + to.x) / 2;
-        const midY = (from.y + to.y) / 2;
-        const curveOffset = kind === "canonical_path"
-            ? -28
-            : kind === "saved_path"
-                ? 28
-                : 0;
-        return `M ${from.x} ${from.y} Q ${midX} ${midY + curveOffset}, ${to.x} ${to.y}`;
+    if (kind === "current"
+        || kind === "candidate_path"
+        || kind === "canonical_path"
+        || kind === "live_path"
+        || kind === "saved_path") {
+        return ancestryPath(from, to, ancestryLaneY(from, to, kind, lane));
     }
     return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
 }
@@ -2094,7 +2124,7 @@ function renderMap() {
     const edgeHtml = graph.edges.map((edge) => {
         const from = nodeById.get(edge.from);
         const to = nodeById.get(edge.to);
-        const path = edgePath(from, to, edge.kind);
+        const path = edgePath(from, to, edge.kind, edge.lane || 0);
         let stroke = "rgba(148, 163, 184, 0.35)";
         let width = 2;
         let dash = "";

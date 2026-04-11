@@ -9,6 +9,13 @@ strip = true
 lto = "thin"
 incremental = false
 
+[profile.fast-release]
+inherits = "release"
+strip = false
+lto = "off"
+incremental = true
+codegen-units = 256
+
 [profile.release.build-override]
 opt-level = 3
 codegen-units = 16
