@@ -540,6 +540,7 @@ mod test {
         let cfg = Config {
             topology: crate::etc::v15::TopologyConfig {
                 compile_mode: "ap_site".to_string(),
+                ..Default::default()
             },
             ..Config::default()
         };
@@ -548,6 +549,7 @@ mod test {
         let cfg = Config {
             topology: crate::etc::v15::TopologyConfig {
                 compile_mode: "ap_only".to_string(),
+                ..Default::default()
             },
             ..Config::default()
         };
@@ -556,6 +558,7 @@ mod test {
         let cfg = Config {
             topology: crate::etc::v15::TopologyConfig {
                 compile_mode: "flat".to_string(),
+                ..Default::default()
             },
             ..Config::default()
         };
@@ -616,11 +619,12 @@ mod test {
             cfg.treeguard.cpu.mode,
             crate::etc::v15::treeguard::TreeguardCpuMode::CpuAware
         );
-        assert!(cfg.treeguard.links.enabled);
+        assert!(!cfg.treeguard.links.enabled);
         assert!(cfg.treeguard.links.all_nodes);
-        assert!(cfg.treeguard.links.top_level_auto_virtualize);
+        assert!(!cfg.treeguard.links.top_level_auto_virtualize);
         assert!(cfg.treeguard.circuits.enabled);
         assert!(cfg.treeguard.circuits.all_circuits);
+        assert_eq!(cfg.topology.queue_auto_virtualize_threshold_mbps, 5_000);
     }
 
     #[test]
@@ -631,6 +635,7 @@ mod test {
         assert!(config.treeguard.enabled);
         assert!(!config.treeguard.dry_run);
         assert!(config.treeguard.links.all_nodes);
+        assert!(!config.treeguard.links.enabled);
         assert!(config.treeguard.circuits.all_circuits);
     }
 

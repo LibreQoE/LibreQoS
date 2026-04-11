@@ -2,6 +2,8 @@
 
 This page documents key WebUI (Node Manager) views and operational behavior in the local WebUI (`http://your_shaper_ip:9123`).
 
+For the full logical-topology versus queue-topology file flow, see [Topology Data Flow](topology-data-flow.md).
+
 ## Core Views
 
 ### Dashboard
@@ -40,7 +42,24 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Runtime-selected attachment hops are collapsed out of the main tree hierarchy. When a site is currently using a specific backhaul or radio path, `Node Details` shows that as `Active Attachment` metadata on the site instead of exposing the attachment as its own branch node.
 - Inactive alternate PtP/wired backhaul attachment stubs are also pruned from the runtime tree. `tree.html` shows the effective path only; dormant alternates remain visible in Topology Manager rather than as standalone runtime nodes.
 - For integration-backed topology, `Network Tree Overview`, Tree Overview sankey views, and HTB queue planning all follow the squashed runtime-effective tree from `network.effective.json`. Topology Manager intentionally keeps the fuller canonical/editor topology so transport hops such as backhauls can still be managed there.
+- Integration roots and large aggregation nodes can also be static virtual nodes. In that case `tree.html` still shows the node with the ghost virtual-state indicator, while HTB planning shapes through the nearest non-virtual ancestor/descendant path instead of building a real class for that node.
 - On the synthetic `Root` node, topology override still shows as not applicable rather than as a generic missing-node-ID warning.
+
+#### Static Virtual vs Runtime Virtualized vs Squashed
+
+These are different behaviors and should not be treated as synonyms.
+
+| State | Visible in Topology Manager | Visible in `tree.html` | In physical HTB tree | Controlled by |
+|---|---|---|---|---|
+| Static virtual (`virtual: true`) | Yes | Yes, with ghost state | No | static queue policy / `lqos_topology` |
+| Runtime virtualized (`runtime_virtualized: true`) | No special logical change | Yes, marked as runtime-virtualized | Temporarily flattened at runtime | TreeGuard / Bakery |
+| Squashed / omitted transport hop | Usually yes in Topology Manager | No | No | `lqos_topology` runtime squashing |
+
+Practical meaning:
+
+- Static virtual nodes are part of the logical and monitoring tree, but not the physical queue tree.
+- Runtime virtualized nodes are a live runtime optimization applied after the baseline queue tree exists.
+- Squashed nodes are transport-only queue-useless hops removed from the queue-visible runtime tree entirely.
 
 ### Topology Manager
 - Focused branch-reparenting editor for integration-backed topology state, intended primarily for branch/topology nodes rather than end-customer leaves.
@@ -54,6 +73,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Search shows live matching suggestions and is biased toward exact or branch-relevant matches so operator queries land on the intended site/branch more reliably than simple alphabetical matching.
 - The page opens in inspect mode. Clicking nodes changes selection and lets the operator navigate upstream/downstream branch context in the preview; it does not change parentage.
 - The current selected node is mirrored into the page URL, so refreshes and shared links reopen Topology Manager on the same node when that node still exists in the current topology state. When the page is opened without a `node_id`, it now defaults to the synthetic `Root` view before falling back to the ranked branch picker.
+- Topology Manager edits the logical network, not the queue tree. Integration roots, backhauls, and other logical-only nodes may remain visible here even when the runtime-effective tree hides or squashes them for queueing.
 - In the Move Preview, deep upstream ancestry is collapsed into a compact stub after the nearest two upstream nodes so long branch chains do not crush the left side of the map. The full breadcrumb remains visible in the hierarchy summary above.
 - While the page is open, Topology Manager lightly auto-refreshes topology-manager state in the background so attachment health and suppression state changes show up without a manual reload. Active move or attachment drafts stay in place unless the selected node itself disappears, and the refresh loop now defers itself while an operator is typing in Details-panel edit fields so the page does not steal focus mid-edit.
 - Parent changes are gated behind an explicit `Start Move` step in the Details panel. In move mode, legal parent targets are highlighted in green and can be chosen from the target cards or by dragging the selected branch onto a highlighted target.

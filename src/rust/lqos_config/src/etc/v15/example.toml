@@ -55,7 +55,7 @@ cpu_high_pct = 75
 cpu_low_pct = 55
 
 [treeguard.links]
-enabled = true
+enabled = false
 all_nodes = true
 nodes = []
 idle_util_pct = 2.0
@@ -65,7 +65,7 @@ unvirtualize_util_pct = 5.0
 min_state_dwell_minutes = 30
 max_link_changes_per_hour = 4
 reload_cooldown_minutes = 10
-top_level_auto_virtualize = true
+top_level_auto_virtualize = false
 top_level_safe_util_pct = 85.0
 
 [treeguard.circuits]
@@ -138,6 +138,7 @@ timeout_secs = 20
 
 [topology]
 compile_mode = "ap_site"
+queue_auto_virtualize_threshold_mbps = 5000
 
 [uisp_integration]
 enable_uisp = false

@@ -6,6 +6,9 @@ Use this page to decide where permanent shaping changes should live before you g
 
 Need definitions for terms on this page? See the [Glossary](glossary.md).
 
+For the full file/ownership/runtime diagram, see [Topology Data Flow](topology-data-flow.md).
+For static virtualization and queue-visibility behavior, see [Advanced Configuration Reference](configuration-advanced.md).
+
 ```{mermaid}
 flowchart TD
     A[Choose Where Changes Live] --> B{Using built-in CRM/NMS integration?}
@@ -29,6 +32,8 @@ Key behavior:
 - Built-in integrations do not use `network.json` as their normal working file.
 - Direct file edits may be overwritten on the next scheduler refresh.
 - `flat` mode intentionally simplifies the tree when you want lower overhead.
+- Built-in integrations can keep a fuller logical topology for Topology Manager while publishing a separate queue-visible runtime tree for `network.effective.json`, `shaping_inputs.json`, `tree.html`, and HTB.
+- Large integration roots and aggregation-only sites can be auto-virtualized automatically, so the queue-visible tree does not waste HTB depth or impose artificial aggregate bottlenecks while the nodes still remain visible for monitoring.
 
 ## Custom Source of Truth
 
@@ -72,4 +77,5 @@ If you are running built-in integrations, continue to [CRM/NMS Integrations](int
 
 - [Configure LibreQoS](configuration.md)
 - [CRM/NMS Integrations](integrations.md)
+- [Topology Data Flow](topology-data-flow.md)
 - [Advanced Configuration Reference](configuration-advanced.md)

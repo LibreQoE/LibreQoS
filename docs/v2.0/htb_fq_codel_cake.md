@@ -40,7 +40,7 @@ Practical LibreQoS behavior model:
 
 1. Default behavior uses `HTB` + `cake diffserv4` for shaped circuits.
 2. TreeGuard can dynamically switch circuit directions between `cake diffserv4` and `fq_codel` based on low-load/RTT guardrails.
-3. In LibreQoS v2.0, TreeGuard is enabled by default and operators should review its enrollment and guardrails if they want fixed/manual SQM behavior.
+3. Current builds keep TreeGuard enabled by default for circuit SQM management, while runtime link virtualization is disabled by default in favor of static queue policy from `lqos_topology`.
 
 See [TreeGuard](treeguard.md) for configuration and rollout details.
 

@@ -3116,61 +3116,81 @@ fn shaping_runtime_sqm_fingerprint() -> Result<String> {
     Ok(fingerprint)
 }
 
+fn first_existing_path<'a>(paths: &'a [&'a Path]) -> Option<&'a Path> {
+    paths.iter().copied().find(|path| path.exists())
+}
+
+fn calculate_shaping_runtime_hash_for_base(
+    base_path: &Path,
+    uses_topology_import_ingress: bool,
+    insight_topology_enabled: bool,
+    runtime_sqm_fingerprint: &str,
+) -> i64 {
+    let effective_path = base_path.join("network.effective.json");
+    let network_json_path = base_path.join("network.json");
+    let network_insight_path = base_path.join("network.insight.json");
+    let shaping_inputs_path = base_path.join("shaping_inputs.json");
+    let shaped_devices_path = base_path.join("ShapedDevices.csv");
+    let shaped_devices_insight_path = base_path.join("ShapedDevices.insight.csv");
+
+    let network_candidates: Vec<&Path> = if effective_path.exists() || uses_topology_import_ingress
+    {
+        vec![effective_path.as_path()]
+    } else if insight_topology_enabled {
+        vec![network_insight_path.as_path(), network_json_path.as_path()]
+    } else {
+        vec![network_json_path.as_path()]
+    };
+
+    let shaping_candidates: Vec<&Path> = if shaping_inputs_path.exists() {
+        vec![shaping_inputs_path.as_path()]
+    } else if insight_topology_enabled {
+        vec![
+            shaped_devices_insight_path.as_path(),
+            shaped_devices_path.as_path(),
+        ]
+    } else {
+        vec![shaped_devices_path.as_path()]
+    };
+
+    let Some(network_path) = first_existing_path(&network_candidates) else {
+        return 0;
+    };
+    let Some(shaping_path) = first_existing_path(&shaping_candidates) else {
+        return 0;
+    };
+    let Ok(network_payload) = read_to_string(network_path) else {
+        return 0;
+    };
+    let Ok(shaping_payload) = read_to_string(shaping_path) else {
+        return 0;
+    };
+
+    let combined = format!(
+        "{}\n{}\n{}",
+        network_payload, shaping_payload, runtime_sqm_fingerprint
+    );
+    lqos_utils::hash_to_i64(&combined)
+}
+
 #[pyfunction]
 fn calculate_shaping_runtime_hash() -> PyResult<i64> {
     let Ok(config) = lqos_config::load_config() else {
         return Ok(0);
     };
     let base_path = Path::new(&config.lqos_directory);
-    let effective_path = base_path.join("network.effective.json");
-    let nj_path = if effective_path.exists() {
-        effective_path
-    } else if config_uses_topology_import_ingress(config.as_ref()) {
-        base_path.join("network.effective.json")
-    } else if config
-        .long_term_stats
-        .enable_insight_topology
-        .unwrap_or(false)
-    {
-        let insight_path = base_path.join("network.insight.json");
-        if insight_path.exists() {
-            insight_path
-        } else {
-            base_path.join("network.json")
-        }
-    } else {
-        base_path.join("network.json")
-    };
-    let sd_path = if config
-        .long_term_stats
-        .enable_insight_topology
-        .unwrap_or(false)
-    {
-        let insight_path = base_path.join("ShapedDevices.insight.csv");
-        if insight_path.exists() {
-            insight_path
-        } else {
-            base_path.join("ShapedDevices.csv")
-        }
-    } else {
-        base_path.join("ShapedDevices.csv")
-    };
-
-    let Ok(nj_as_string) = read_to_string(nj_path) else {
-        return Ok(0);
-    };
-    let Ok(sd_as_string) = read_to_string(sd_path) else {
-        return Ok(0);
-    };
     let Ok(runtime_sqm_fingerprint) = shaping_runtime_sqm_fingerprint() else {
         return Ok(0);
     };
-
-    let combined = format!(
-        "{}\n{}\n{}",
-        nj_as_string, sd_as_string, runtime_sqm_fingerprint
-    );
-    Ok(lqos_utils::hash_to_i64(&combined))
+    Ok(calculate_shaping_runtime_hash_for_base(
+        base_path,
+        config_uses_topology_import_ingress(config.as_ref()),
+        config
+            .long_term_stats
+            .enable_insight_topology
+            .unwrap_or(false),
+        &runtime_sqm_fingerprint,
+    ))
 }
 
 ////////////////////////////// The Bakery class //////////////////////////////
@@ -3842,8 +3862,10 @@ pub fn hash_to_i64(text: String) -> PyResult<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::summarize_failure_examples;
+    use super::{calculate_shaping_runtime_hash_for_base, summarize_failure_examples};
     use std::collections::BTreeMap;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn summarize_failure_examples_limits_output() {
@@ -3857,5 +3879,64 @@ mod tests {
             summarize_failure_examples(&failures),
             "alpha (x2); beta; delta"
         );
+    }
+
+    #[test]
+    fn shaping_runtime_hash_prefers_runtime_artifacts_without_csv() {
+        let temp = tempdir().expect("tempdir should exist");
+        let base = temp.path();
+        fs::write(
+            base.join("network.effective.json"),
+            r#"{"Root":{"children":{"Site A":{"id":"site-a"}}}}"#,
+        )
+        .expect("effective network should write");
+        fs::write(
+            base.join("shaping_inputs.json"),
+            r#"{"circuits":[{"circuit_id":"circuit-1","effective_parent_node_id":"site-a"}]}"#,
+        )
+        .expect("shaping inputs should write");
+
+        let first = calculate_shaping_runtime_hash_for_base(
+            base,
+            true,
+            false,
+            "",
+        );
+        assert_ne!(first, 0);
+
+        fs::write(
+            base.join("shaping_inputs.json"),
+            r#"{"circuits":[{"circuit_id":"circuit-1","effective_parent_node_id":"site-b"}]}"#,
+        )
+        .expect("updated shaping inputs should write");
+        let second = calculate_shaping_runtime_hash_for_base(
+            base,
+            true,
+            false,
+            "",
+        );
+        assert_ne!(second, 0);
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn shaping_runtime_hash_falls_back_to_legacy_csv_when_runtime_inputs_missing() {
+        let temp = tempdir().expect("tempdir should exist");
+        let base = temp.path();
+        fs::write(base.join("network.json"), r#"{"Site A":{"children":{}}}"#)
+            .expect("network json should write");
+        fs::write(
+            base.join("ShapedDevices.csv"),
+            "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n\"c1\",\"Circuit 1\",\"d1\",\"Device 1\",\"Site A\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+        )
+        .expect("shaped devices should write");
+
+        let hash = calculate_shaping_runtime_hash_for_base(
+            base,
+            false,
+            false,
+            "",
+        );
+        assert_ne!(hash, 0);
     }
 }

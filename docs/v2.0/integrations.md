@@ -9,6 +9,9 @@ Need definitions for common terms? See the [Glossary](glossary.md).
 Most operators use built-in integrations.
 If you have not selected a deployment path yet, start with [Quickstart](quickstart.md).
 
+Need the full topology/shaping file-flow model? See [Topology Data Flow](topology-data-flow.md).
+For static queue-visibility rules and virtualization semantics, see [Advanced Configuration Reference](configuration-advanced.md) and [LibreQoS WebUI (Node Manager)](node-manager-ui.md).
+
 ```{mermaid}
 flowchart LR
     A[CRM/NMS] --> B[LibreQoS Integration Job]
@@ -92,6 +95,7 @@ Integrations that already ingest effective shaped rates keep those values as-is 
 ## Related Pages
 
 - [Quickstart](quickstart.md)
+- [Topology Data Flow](topology-data-flow.md)
 - [Operating Modes and Source of Truth](operating-modes.md)
 - [Configure LibreQoS](configuration.md)
 - [Scale Planning and Topology Design](scale-topology.md)

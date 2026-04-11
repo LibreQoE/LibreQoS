@@ -27,6 +27,12 @@
                             <div class="form-text">Shared topology mode used by Topology Manager and the scheduler for integration-driven imports.</div>
                         </div>
 
+                        <div class="mb-3">
+                            <label for="queueAutoVirtualizeThresholdMbps" class="form-label">Queue Auto-Virtualize Threshold (Mbps)</label>
+                            <input type="number" class="form-control" id="queueAutoVirtualizeThresholdMbps" min="1" step="1" value="5000">
+                            <div class="form-text">Aggregation-only sites at or above this rate can be auto-virtualized so they stay visible with the ghost indicator but do not consume real HTB classes.</div>
+                        </div>
+
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="circuitNameAsAddress">
                             <label class="form-check-label" for="circuitNameAsAddress">Use Address for Circuit Name</label>

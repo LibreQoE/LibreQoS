@@ -26,6 +26,7 @@ use lqos_config::{
     TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
     TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
     TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
+    TopologyQueueVisibilityPolicy,
 };
 #[cfg(test)]
 use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
@@ -488,6 +489,14 @@ pub async fn build_imported_full2_bundle(
                         );
 
                         if is_real_topology_node(&graph, node) {
+                            let queue_visibility_policy = if matches!(
+                                &graph[node],
+                                GraphMapping::Site { .. }
+                            ) {
+                                TopologyQueueVisibilityPolicy::QueueAuto
+                            } else {
+                                TopologyQueueVisibilityPolicy::QueueVisible
+                            };
                             topology_parent_candidates.push(TopologyParentCandidatesNode {
                                 node_id: graph[node].network_json_id(),
                                 node_name: name.to_owned(),
@@ -502,6 +511,8 @@ pub async fn build_imported_full2_bundle(
                             topology_editor_nodes.push(TopologyEditorNode {
                                 node_id: graph[node].network_json_id(),
                                 node_name: name.to_owned(),
+                                latitude: graph[node].latitude(),
+                                longitude: graph[node].longitude(),
                                 current_parent_node_id: logical_current_parent
                                     .as_ref()
                                     .map(|candidate| candidate.node_id.clone()),
@@ -516,6 +527,7 @@ pub async fn build_imported_full2_bundle(
                                     .map(|candidate| candidate.node_name.clone()),
                                 can_move: !allowed_parents.is_empty(),
                                 allowed_parents,
+                                queue_visibility_policy,
                                 preferred_attachment_id: None,
                                 preferred_attachment_name: None,
                                 effective_attachment_id: None,
@@ -544,12 +556,16 @@ pub async fn build_imported_full2_bundle(
                 topology_editor_nodes.push(TopologyEditorNode {
                     node_id: graph[node].network_json_id(),
                     node_name: name.to_owned(),
+                    latitude: graph[node].latitude(),
+                    longitude: graph[node].longitude(),
                     current_parent_node_id: None,
                     current_parent_node_name: None,
                     current_attachment_id: None,
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: Vec::new(),
+                    queue_visibility_policy:
+                        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,

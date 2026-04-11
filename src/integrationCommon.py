@@ -913,6 +913,13 @@ class NetworkGraph:
 				"current_attachment_name": None,
 				"can_move": can_move,
 				"allowed_parents": allowed_parents,
+				"queue_visibility_policy": (
+					"queue_hidden_promote_children"
+					if parent_node is None
+					else "queue_auto"
+					if node.type == NodeType.site
+					else "queue_visible"
+				),
 				"preferred_attachment_id": None,
 				"preferred_attachment_name": None,
 				"effective_attachment_id": None,

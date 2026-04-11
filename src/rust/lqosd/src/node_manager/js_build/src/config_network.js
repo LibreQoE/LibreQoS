@@ -337,7 +337,7 @@ function start() {
 
     loadConfig(
         (msg) => {
-            const config = msg?.data || window.config || {};
+            const config = window.config || msg?.data?.config || {};
             topology_editor_locked = topologyEditorsLocked(config);
             topology_editor_lock_message = topologyEditorsLockMessage(config);
             const activeIntegrations = activeTopologySourceIntegrations(config);
