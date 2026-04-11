@@ -4,9 +4,9 @@ First, set the relevant parameters for UISP in `/etc/lqos.conf`.
 
 ## New Operator Quick Chooser
 
-Use this section first to avoid common strategy confusion.
+Use this section first to avoid common topology-mode confusion.
 
-1. If you are new to UISP integration, start with `strategy = "ap_only"`.
+1. If you are new to UISP integration, start with `topology.compile_mode = "ap_site"` under `Integration - Common`.
 2. Move to `ap_site` when you need explicit site-level aggregation.
 3. Use `full` when you need full hierarchy/backhaul representation and have CPU headroom.
 4. Use `flat` only when hierarchy is not needed and maximum performance is the priority.
@@ -39,8 +39,9 @@ sudo /opt/libreqos/src/bin/uisp_integration
 ```
 2. Confirm outputs were generated/refreshed as expected:
 ```shell
-ls -lh /opt/libreqos/src/network.json /opt/libreqos/src/ShapedDevices.csv
+ls -lh /opt/libreqos/src/topology_import.json /opt/libreqos/src/shaping_inputs.json
 ```
+Built-in UISP imports refresh LibreQoS's imported topology and shaping data automatically. They do not use `network.json`, `ShapedDevices.csv`, or a standalone `circuit_anchors.json` as the normal working files for this integration.
 3. Confirm scheduler and shaper health:
 ```shell
 sudo systemctl status lqosd lqos_scheduler
@@ -48,9 +49,9 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 ```
 4. Validate result in WebUI:
 - Scheduler Status is healthy
-- Tree/Flow views reflect expected hierarchy depth for selected strategy
+- Tree/Flow views reflect expected hierarchy depth for the selected compile mode
 
-If hierarchy depth or parent mapping is not what you expect, revisit `strategy`, `use_ptmp_as_parent`, `exclude_sites`, and `exception_cpes` before changing other settings.
+If hierarchy depth or parent mapping is not what you expect, revisit `topology.compile_mode`, `use_ptmp_as_parent`, `exclude_sites`, and `exception_cpes` before changing other settings.
 
 ### Promote to Root Nodes (Performance Optimization)
 
@@ -113,6 +114,10 @@ Configure how LibreQoS handles suspended customer accounts:
 ### Configuration Example
 
 ```ini
+[topology]
+# Shared topology compile mode (see table above)
+compile_mode = "ap_site"  # Recommended starting point for new UISP deployments
+
 [uisp_integration]
 # Core Settings
 enable_uisp = true
@@ -120,17 +125,14 @@ token = "your-api-token-here"
 url = "https://uisp.your_domain.com"
 site = "Root_Site_Name"  # Root site for topology perspective
 
-# Topology Strategy (see table above)
-strategy = "ap_only"  # Recommended starting point for new UISP deployments
-
 # Suspension Handling (see table above)
 suspended_strategy = "none"
 
 # Capacity Adjustments
-# UISP's reported AP capacities can be optimistic
-airmax_capacity = 0.8  # Use 80% of reported AirMax capacity on new installs
+# Current defaults normalize both AP capacity multipliers to 1.0
+airmax_capacity = 1.0  # Use 100% of reported AirMax capacity
 airmax_flexible_frame_download_ratio = 0.8  # Fallback split for AirMax flexible framing when UISP does not expose dlRatio
-ltu_capacity = 1.0      # Use 100% of reported LTU capacity on new installs
+ltu_capacity = 1.0      # Use 100% of reported LTU capacity
 infrastructure_transport_caps_enabled = true  # Automatically cap radio capacity to active/model Ethernet transport ceilings
 
 # Site Management
@@ -143,7 +145,7 @@ commit_bandwidth_multiplier = 0.98  # Set minimum to 98% of maximum (CIR)
 
 # Advanced Options
 ipv6_with_mikrotik = false  # Enable if using DHCPv6 with MikroTik
-always_overwrite_network_json = true  # Recommended when using UISP integration in production
+# `network.json` is for DIY/manual deployments; built-in integrations do not write it
 exception_cpes = []  # CPE exceptions in ["cpe:parent"] format
 squash_sites = []  # Optional: sites to squash
 do_not_squash_sites = []  # Optional: keep these site names unsquashed in the runtime/export tree
@@ -184,32 +186,28 @@ Recommended use:
 
 Legacy note:
 - Existing `enable_squashing` values in `/etc/lqos.conf` are ignored for backward compatibility.
+- Existing `uisp_integration.strategy` values are retained only as a compatibility mirror. Current builds read the shared `topology.compile_mode` first.
 
-On the first successful run, the integration creates `network.json` and `ShapedDevices.csv`.
-If a `network.json` file exists, it is only overwritten when `always_overwrite_network_json = true`.
+On the first successful run, the integration creates the UISP import and shaping files LibreQoS needs for scheduled refreshes.
 
-ShapedDevices.csv will be overwritten every time the UISP integration is run.
-
-If UISP exposes a site and an AP with the same visible name in the same topology, current builds keep the site name stable in `network.json` and disambiguate the AP name during export so the site branch is not dropped from the tree.
+If UISP exposes a site and an AP with the same visible name in the same topology, current builds keep them distinct so the site branch is not dropped from runtime views.
 
 When UISP client sites share the same name, LibreQoS now tries to disambiguate the generated circuit/site display names with a human-friendly suffix such as the first street-address segment, falling back to service name and then a short ID only when needed. Stable circuit identity still comes from the UISP site/service ID, not the display name.
-
-For integration-driven deployments, keep `always_overwrite_network_json = true` so topology stays aligned with UISP on each refresh cycle.
 
 You have the option to run `uisp_integration` automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ### UISP Overrides
 
 You can also use the following override inputs to more accurately reflect your network:
-- Tree-page `Rate Override` edits, stored as operator `AdjustSiteSpeed` entries in `lqos_overrides.json`
-- Tree-page `Topology Override` edits for supported UISP `full` nodes, stored in `lqos_overrides.json`
+- Tree-page `Rate Override` edits, stored as `AdjustSiteSpeed` entries in `lqos_overrides.json`
+- Tree-page `Topology Override` edits for supported UISP `full` nodes, also stored in `lqos_overrides.json`
 - integrationUISPbandwidths.csv as a legacy compatibility input only
 
-Current UISP builds auto-migrate a legacy `integrationUISPbandwidths.csv` into operator `AdjustSiteSpeed` overrides on the next integration run when no operator rate overrides exist yet. If operator rate overrides already exist, the CSV is ignored and a warning is logged so there is only one active source of truth.
-Deprecated legacy `uisp.bandwidth_overrides` JSON entries are ignored. The authoritative bandwidth override path is operator `AdjustSiteSpeed` in `lqos_overrides.json`.
+Current UISP builds auto-migrate a legacy `integrationUISPbandwidths.csv` into `AdjustSiteSpeed` overrides on the next integration run when no newer rate overrides exist yet. If newer rate overrides already exist, the CSV is ignored and a warning is logged so only one override method stays active.
+Deprecated legacy `uisp.bandwidth_overrides` JSON entries are ignored. The supported long-term bandwidth override path is `AdjustSiteSpeed` in `lqos_overrides.json`.
 Current UISP builds ignore legacy `uisp.route_overrides` entries in `lqos_overrides.json` and legacy `integrationUISProutes.csv` files. If either is present, LibreQoS logs a warning and uses detected topology plus Topology Manager overrides instead.
 
-UISP `full` strategy builds also expose tree-page `Topology Override` editing for supported nodes. These overrides are stored in `lqos_overrides.json` and resolve before final `network.json` / `ShapedDevices.csv` emission. Current WebUI support is `Pinned Parent` only.
+UISP `full` strategy builds also expose tree-page `Topology Override` editing for supported nodes. Current WebUI support is `Pinned Parent` only.
 
 Each of the files above have templates available in the `/opt/libreqos/src` folder. If you don't find them there, you can navigate [here](https://github.com/LibreQoE/LibreQoS/tree/develop/src).
 

@@ -254,8 +254,6 @@ fn migrate_integration_common(
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
     new_config.integration_common.circuit_name_as_address = python_config.circuit_name_use_address;
-    new_config.integration_common.always_overwrite_network_json =
-        python_config.overwrite_network_jsonalways;
     new_config.integration_common.queue_refresh_interval_mins =
         python_config.queue_refresh_interval_mins as u32;
     new_config.integration_common.use_mikrotik_ipv6 = python_config.find_ipv6using_mikrotik_api;
@@ -270,6 +268,7 @@ fn migrate_splynx(
     new_config.splynx_integration.api_key = python_config.splynx_api_key.clone();
     new_config.splynx_integration.api_secret = python_config.splynx_api_secret.clone();
     new_config.splynx_integration.url = python_config.splynx_api_url.clone();
+    new_config.topology.compile_mode = "ap_site".to_string();
     Ok(())
 }
 
@@ -303,6 +302,10 @@ fn migrate_uisp(
     new_config.uisp_integration.url = python_config.uispbase_url.clone();
     new_config.uisp_integration.site = python_config.uisp_site.clone();
     new_config.uisp_integration.strategy = python_config.uisp_strategy.clone();
+    new_config.topology.compile_mode =
+        crate::etc::v15::normalize_topology_compile_mode(&python_config.uisp_strategy)
+            .unwrap_or("full")
+            .to_string();
     new_config.uisp_integration.suspended_strategy = python_config.uisp_suspended_strategy.clone();
     new_config.uisp_integration.airmax_capacity = python_config.air_max_capacity as f32;
     new_config.uisp_integration.ltu_capacity = python_config.ltu_capacity as f32;

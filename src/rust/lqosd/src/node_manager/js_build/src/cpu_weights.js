@@ -38,7 +38,7 @@ function requestConfig() {
         const timeout = setTimeout(() => finish(null), 5000);
         listenOnce("GetConfig", (msg) => {
             clearTimeout(timeout);
-            finish(msg && msg.data ? msg.data : null);
+            finish(msg && msg.data ? (msg.data.config || null) : null);
         });
         wsClient.send({ GetConfig: {} });
     });

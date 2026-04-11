@@ -1,7 +1,7 @@
 use crate::ip_ranges::IpRanges;
 use lqos_config::{Config, EthernetPortLimitPolicy, usable_ethernet_cap_mbps};
 use std::collections::HashSet;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use uisp::Device;
 
 #[derive(Debug)]
@@ -493,6 +493,44 @@ impl UispDevice {
         (ip_bits & host_mask) == 0
     }
 
+    fn normalize_ipv6_entry(raw: &str) -> Option<String> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        if !trimmed.contains('/') {
+            let addr = trimmed.parse::<Ipv6Addr>().ok()?;
+            return Some(addr.to_string());
+        }
+
+        let parts: Vec<&str> = trimmed.split('/').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+
+        let addr = parts[0].parse::<Ipv6Addr>().ok()?;
+        let prefix_len = parts[1].parse::<u8>().ok()?;
+        if prefix_len > 128 {
+            return None;
+        }
+        if prefix_len == 128 {
+            return Some(addr.to_string());
+        }
+
+        let host_bits = 128u32.saturating_sub(prefix_len as u32);
+        let addr_bits = u128::from_be_bytes(addr.octets());
+        let host_mask = if host_bits == 0 {
+            0
+        } else {
+            (1u128 << host_bits) - 1
+        };
+        if addr_bits & host_mask == 0 {
+            return Some(format!("{addr}/{prefix_len}"));
+        }
+        Some(addr.to_string())
+    }
+
     /// Creates a new UispDevice from a UISP device
     ///
     /// # Arguments
@@ -563,7 +601,9 @@ impl UispDevice {
         if let Some(ip) = &device.ipAddress {
             if ip.contains(':') {
                 // It's IPv6
-                ipv6.insert(ip.clone());
+                if let Some(normalized) = Self::normalize_ipv6_entry(ip) {
+                    ipv6.insert(normalized);
+                }
                 if let Some(probe_ip) = Self::probe_ip_candidate(ip) {
                     probe_ipv6.insert(probe_ip);
                 }
@@ -594,7 +634,9 @@ impl UispDevice {
                         if let Some(address) = &address.cidr {
                             if address.contains(':') {
                                 // It's IPv6
-                                ipv6.insert(address.clone());
+                                if let Some(normalized) = Self::normalize_ipv6_entry(address) {
+                                    ipv6.insert(normalized);
+                                }
                                 if let Some(probe_ip) = Self::probe_ip_candidate(address) {
                                     probe_ipv6.insert(probe_ip);
                                 }
@@ -743,20 +785,9 @@ impl UispDevice {
         if self.ipv6.is_empty() {
             return "".to_string();
         }
-        if self.ipv6.len() == 1 {
-            let mut result = "".to_string();
-            for ip in self.ipv6.iter() {
-                result = ip.clone();
-            }
-            return result;
-        }
-        let mut result = "".to_string();
-        for ip in self.ipv6.iter() {
-            result += &format!("{}, ", &ip);
-        }
-        result.truncate(result.len() - 2);
-        let result = format!("[{result}]");
-        result
+        let mut ips: Vec<&str> = self.ipv6.iter().map(String::as_str).collect();
+        ips.sort_unstable();
+        ips.join(", ")
     }
 }
 
@@ -1218,5 +1249,55 @@ mod tests {
                 .as_deref()
                 .is_some_and(|reason| reason.contains("sfp0") && reason.contains("2500 Mbps"))
         );
+    }
+
+    #[test]
+    fn normalize_ipv6_entry_keeps_real_prefixes_and_flattens_host_cidrs() {
+        assert_eq!(
+            UispDevice::normalize_ipv6_entry("2602:fd47:1a:80::/60").as_deref(),
+            Some("2602:fd47:1a:80::/60")
+        );
+        assert_eq!(
+            UispDevice::normalize_ipv6_entry("2602:fd47:1a:80:76ac:b9ff:fe73:e28/64").as_deref(),
+            Some("2602:fd47:1a:80:76ac:b9ff:fe73:e28")
+        );
+        assert_eq!(
+            UispDevice::normalize_ipv6_entry("2602:fd47:1:1b::9/128").as_deref(),
+            Some("2602:fd47:1:1b::9")
+        );
+    }
+
+    #[test]
+    fn ipv6_list_is_plain_csv_without_brackets() {
+        let device = UispDevice {
+            id: "dev-1".to_string(),
+            name: "Device 1".to_string(),
+            mac: "".to_string(),
+            role: None,
+            wireless_mode: None,
+            site_id: "".to_string(),
+            raw_download: 0,
+            raw_upload: 0,
+            download: 0,
+            upload: 0,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::from([
+                "2602:fd47:1a:80::/60".to_string(),
+                "2602:fd47:1:1b::9".to_string(),
+            ]),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: super::UispAttachmentRateSource::Static,
+        };
+
+        let rendered = device.ipv6_list();
+        assert!(!rendered.contains('['));
+        assert!(!rendered.contains(']'));
+        assert!(rendered.contains("2602:fd47:1a:80::/60"));
+        assert!(rendered.contains("2602:fd47:1:1b::9"));
     }
 }

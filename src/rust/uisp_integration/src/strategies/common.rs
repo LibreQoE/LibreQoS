@@ -1,8 +1,8 @@
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ip_ranges::IpRanges;
-use crate::strategies::full::parse::parse_uisp_datasets;
-use crate::strategies::full::uisp_fetch::load_uisp_data;
+use crate::strategies::legacy_parse::parse_uisp_datasets;
+use crate::strategies::legacy_uisp_fetch::load_uisp_data;
 use crate::uisp_types::{UispDevice, UispSite, UispSiteType};
 use lqos_config::Config;
 use serde_json::Value;
@@ -351,7 +351,7 @@ impl UispData {
         }
 
         // If Mikrotik is enabled, we need to fetch the Mikrotik data
-        let ipv4_to_v6 = crate::strategies::full::mikrotik::mikrotik_data(&config)
+        let ipv4_to_v6 = crate::strategies::legacy_mikrotik::mikrotik_data(&config)
             .await
             .unwrap_or_else(|_| Vec::new());
 
@@ -424,22 +424,6 @@ impl UispData {
             .flat_map(|indices| indices.iter())
             .filter_map(|index| self.devices.get(*index))
             .collect()
-    }
-
-    pub fn find_uisp_device_by_id(&self, device_id: &str) -> Option<&UispDevice> {
-        self.find_parsed_device_by_id(device_id)
-    }
-
-    pub fn device_display_name(&self, device_id: &str) -> String {
-        self.find_uisp_device_by_id(device_id)
-            .map(|device| {
-                if device.name.trim().is_empty() {
-                    device.id.clone()
-                } else {
-                    device.name.clone()
-                }
-            })
-            .unwrap_or_else(|| device_id.to_string())
     }
 
     pub fn map_clients_to_aps(&self) -> HashMap<String, Vec<String>> {

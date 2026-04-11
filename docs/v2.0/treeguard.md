@@ -102,7 +102,7 @@ When enabled and not dry-run, TreeGuard may persist circuit SQM decisions to:
 
 - `lqos_overrides.treeguard.json`
 
-TreeGuard is designed to avoid fighting operator-owned overrides. If operator overrides exist for enrolled entities, TreeGuard skips those entities and reports warnings.
+TreeGuard is designed to avoid fighting manually saved overrides. If those overrides exist for enrolled entities, TreeGuard skips those entities and reports warnings.
 
 TreeGuard virtual-node decisions are runtime-only Bakery operations. They are not materialized back
 into the base `network.json` by the scheduler, and they are not persisted as TreeGuard-owned

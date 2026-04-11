@@ -6,7 +6,7 @@ import time
 from urllib.parse import urlsplit, urlunsplit
 from liblqos_python import sonar_api_key, sonar_api_url, snmp_community, sonar_airmax_ap_model_ids, \
   sonar_ltu_ap_model_ids, sonar_active_status_ids, sonar_recurring_service_rates, \
-  sonar_recurring_excluded_service_names
+  sonar_recurring_excluded_service_names, sonar_strategy
 all_models = sonar_airmax_ap_model_ids() + sonar_ltu_ap_model_ids()
 from integrationCommon import NetworkGraph, NetworkNode, NodeType, apply_client_bandwidth_multiplier
 from multiprocessing.pool import ThreadPool
@@ -777,8 +777,9 @@ def createShaper():
 
   net.prepareTree()
   net.plotNetworkGraph(False)
-  net.createNetworkJson()
-  net.createShapedDevices()
+  mode = sonar_strategy()
+  print(f"Using Sonar topology mode: {mode}")
+  net.materializeCompiledTopology("python/sonar", mode)
 
 def importFromSonar():
 	createShaper()

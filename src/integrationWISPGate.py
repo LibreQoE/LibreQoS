@@ -5,7 +5,7 @@ import requests
 import warnings
 import os
 import csv
-from liblqos_python import exclude_sites, find_ipv6_using_mikrotik, bandwidth_overhead_factor, overwrite_network_json_always, wispgate_api_token, wispgate_api_url
+from liblqos_python import exclude_sites, find_ipv6_using_mikrotik, bandwidth_overhead_factor, wispgate_api_token, wispgate_api_url
 
 from integrationCommon import isIpv4Permitted
 if find_ipv6_using_mikrotik() == True:
@@ -138,15 +138,7 @@ def createShaper():
 	print("Imported " + "{:.0%}".format(circuits_added_counter/len(shaped_devices)) + " of known shaped devices from WISPGate.")
 	net.prepareTree()
 	net.plotNetworkGraph(False)
-	
-	if net.doesNetworkJsonExist():
-		if overwrite_network_json_always:
-			net.createNetworkJson()
-		else:
-			print("network.json already exists. Leaving in-place.")
-	else:
-		net.createNetworkJson()
-	net.createShapedDevices()
+	net.materializeCompiledTopology("python/wispgate", "full")
 
 def importFromWISPGate():
 	"""

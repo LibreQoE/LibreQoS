@@ -25,7 +25,7 @@ Si usa scripts propios como fuente de verdad para `network.json` y `ShapedDevice
 
 Comportamiento importante cuando hay integraciones habilitadas:
 - `ShapedDevices.csv` normalmente se regenera por los jobs de sincronización.
-- El comportamiento de sobrescritura de `network.json` depende de su configuración de integración (por ejemplo `always_overwrite_network_json`).
+- `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
 - Las ediciones manuales pueden sobrescribirse en el próximo ciclo de refresco.
 
 ## Integración con Splynx
@@ -42,8 +42,8 @@ LibreQoS soporta múltiples estrategias de topología para la integración con S
 |------------|-------------|-------------|-------------|
 | `flat` | Solo regula suscriptores, sin jerarquía | Menor | Máximo rendimiento, regulación simple de suscriptores únicamente |
 | `ap_only` | Una capa: AP → Clientes | Bajo | **Predeterminado**. Mejor balance entre rendimiento y estructura |
-| `ap_site` | Dos capas: Sitio → AP → Clientes | Medio | Agregación a nivel de sitio con complejidad moderada |
-| `full` | Mapeo completo de topología | Mayor | Representación completa de jerarquía de red |
+| `ap_site` | Dos capas: Sitio → AP → Clientes | Medio | Agregación a nivel de sitio usando Splynx Network Sites cuando estén disponibles |
+| `full` | Mapeo completo de la jerarquía de monitoreo | Mayor | Conserva la jerarquía más rica de monitoreo de Splynx en vez de compactarla a Network Sites |
 
 Configure la estrategia en `/etc/lqos.conf` bajo la sección `[splynx]`:
 
@@ -121,8 +121,7 @@ python3 integrationSplynx.py
 En la primera ejecución exitosa, se crearán los archivos ShapedDevices.csv y network.json.
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración con Splynx.
 
-Para asegurarse de que network.json siempre se sobrescriba con la versión más reciente obtenida por la integración, edite `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor `always_overwrite_network_json` a `true`.
-Luego ejecute `sudo systemctl restart lqosd`.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 Tiene la opción de ejecutar integrationSplynx.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_splynx = true``` bajo la sección ```[splynx_integration]``` en `/etc/lqos.conf`.
 Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
@@ -162,7 +161,7 @@ Para una importación manual:
 python3 integrationNetzur.py
 ```
 
-La integración actualiza `ShapedDevices.csv` y, salvo que `always_overwrite_network_json` esté deshabilitado, también `network.json`. Ajuste la opción Integración → Común si necesita preservar un `network.json` existente entre ejecuciones de Netzur.
+La integración actualiza sus artefactos propios de topología y shaping. `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
 
 ## Integración con VISP
 
@@ -186,7 +185,7 @@ Notas:
 
 - La importación VISP usa GraphQL y actualmente trabaja en estrategia `flat`.
 - La integración reescribe `ShapedDevices.csv` en cada ejecución.
-- `network.json` solo se sobrescribe cuando `always_overwrite_network_json = true` (en `[integration_common]`).
+- `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
 - Los tokens de VISP se cachean en `<lqos_directory>/.visp_token_cache_*.json`.
 
 Importación manual:
@@ -297,7 +296,6 @@ commit_bandwidth_multiplier = 0.98  # Establecer mínimo al 98% del máximo (CIR
 
 # Opciones Avanzadas
 ipv6_with_mikrotik = false  # Habilitar si usa DHCPv6 con MikroTik
-always_overwrite_network_json = true  # Recomendado para despliegues guiados por integración
 exception_cpes = []  # Excepciones de CPE en formato ["cpe:parent"]
 squash_sites = []  # Opcional: sitios a compactar
 do_not_squash_sites = []  # Opcional: nombres de sitios que deben permanecer sin compactar en runtime/exportación
@@ -338,14 +336,13 @@ cd /opt/libreqos/src
 sudo /opt/libreqos/src/bin/uisp_integration
 ```
 En la primera ejecución exitosa, se crearán los archivos network.json y ShapedDevices.csv.
-Si ya existe un archivo network.json, no será sobrescrito a menos que configure ```always_overwrite_network_json = true```.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración de UISP.
 
 Si UISP expone un sitio y un AP con el mismo nombre visible dentro de la misma topología, las compilaciones actuales conservan el nombre del sitio en `network.json` y diferencian el nombre exportado del AP para que la rama del sitio no desaparezca del árbol.
 
-Para asegurarse de que network.json siempre sea sobrescrito con la versión más reciente obtenida por la integración, edite el archivo `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor  `always_overwrite_network_json` a `true`.
-Luego ejecute: `sudo systemctl restart lqosd`.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 Tiene la opción de ejecutar `uisp_integration` automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_uisp = true``` en `/etc/lqos.conf`. Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
@@ -390,8 +387,7 @@ python3 integrationWISPGate.py
 En la primera ejecución exitosa, se crearán los archivos network.json y ShapedDevices.csv.
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración de WISPGate.
 
-Para asegurarse de que network.json siempre sea sobrescrito con la versión más reciente obtenida por la integración, edite el archivo `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor  `always_overwrite_network_json` a `true`.
-Luego ejecute: `sudo systemctl restart lqosd`.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 Tiene la opción de ejecutar integrationWISPGate.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_wispgate = true``` en `/etc/lqos.conf`. Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
@@ -421,7 +417,7 @@ python3 integrationSonar.py
 ```
 
 En la primera ejecución exitosa, se crearán los archivos network.json y ShapedDevices.csv.
-Si ya existe un archivo network.json, no será sobrescrito a menos que configure ```always_overwrite_network_json = true```.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 Puede modificar el archivo network.json para reflejar con mayor precisión los límites de ancho de banda.
 El archivo ShapedDevices.csv se sobrescribirá cada vez que se ejecute la integración de Sonar.
 Tiene la opción de ejecutar integrationSonar.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_sonar = true``` en `/etc/lqos.conf`.

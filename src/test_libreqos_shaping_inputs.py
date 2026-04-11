@@ -61,6 +61,7 @@ def install_libreqos_stubs():
     lqlib.automatic_import_wispgate = lambda: False
     lqlib.automatic_import_netzur = lambda: False
     lqlib.automatic_import_visp = lambda: False
+    lqlib.topology_import_ingress_enabled = lambda: False
     lqlib.plan_top_level_cpu_bins = lambda *_args, **_kwargs: {}
     lqlib.plan_class_identities = lambda *_args, **_kwargs: {}
     lqlib.fast_queues_fq_codel = lambda: False
@@ -74,6 +75,10 @@ LibreQoS = importlib.import_module("LibreQoS")
 
 
 class TestLibreQoSShapingInputs(unittest.TestCase):
+    def test_attachment_lookup_candidates_preserve_generated_parent_name_without_node_id(self):
+        candidates = LibreQoS._attachment_lookup_candidates("Generated_PN_1", {})
+        self.assertEqual(candidates, ["Generated_PN_1"])
+
     def test_shaping_inputs_freshness_tracks_circuit_anchors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")

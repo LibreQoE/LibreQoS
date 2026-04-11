@@ -43,9 +43,7 @@ python3 integrationSplynx.py
 On the first successful run, it will create a ShapedDevices.csv file and network.json.
 ShapedDevices.csv will be overwritten every time the Splynx integration is run.
 
-To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
-Edit the file to set the value of `always_overwrite_network_json` to `true`.
-Then, run `sudo systemctl restart lqosd`.
+Built-in integrations do not overwrite `network.json`; keep DIY `network.json` operator-owned.
 
 You have the option to run integrationSplynx.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_splynx = true``` under the ```[splynx_integration]``` section in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.
@@ -127,15 +125,13 @@ sudo /opt/libreqos/src/bin/uisp_integration
 ```
 
 On the first successful run, it will create a network.json and ShapedDevices.csv file.
-If a network.json file exists, it will not be overwritten, unless you set ```always_overwrite_network_json = true```.
+Built-in integrations do not overwrite `network.json`; keep DIY `network.json` operator-owned.
 
 ShapedDevices.csv will be overwritten every time the UISP integration is run.
 
 Cuando varios sitios cliente de UISP comparten el mismo nombre, LibreQoS ahora intenta diferenciar los nombres visibles generados para circuitos/sitios con un sufijo más humano, como el primer segmento de la dirección, recurriendo al nombre del servicio y luego a un ID corto solo cuando hace falta. La identidad estable del circuito sigue viniendo del ID de sitio/servicio de UISP, no del nombre visible.
 
-To ensure the network.json is always overwritten with the newest version pulled in by the integration, please edit `/etc/lqos.conf` with the command `sudo nano /etc/lqos.conf`.
-Edit the file to set the value of `always_overwrite_network_json` to `true`.
-Then, run `sudo systemctl restart lqosd`.
+Built-in integrations do not overwrite `network.json`; keep DIY `network.json` operator-owned.
 
 You have the option to run `uisp_integration` automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_uisp = true``` in `/etc/lqos.conf`. Once set, run `sudo systemctl restart lqos_scheduler`.
 
@@ -179,7 +175,7 @@ python3 integrationSonar.py
 ```
 
 On the first successful run, it will create a ShapedDevices.csv file.
-If a network.json file exists, it will not be overwritten, unless you set ```always_overwrite_network_json = true```.
+Built-in integrations do not overwrite `network.json`; keep DIY `network.json` operator-owned.
 You can modify the network.json file to more accurately reflect bandwidth limits.
 ShapedDevices.csv will be overwritten every time the Sonar integration is run.
 You have the option to run integrationSonar.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_sonar = true``` in `/etc/lqos.conf`.

@@ -206,6 +206,46 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(generated_site.parentId, "Parent Site")
         self.assertEqual(generated_site.parentIndex, 1)
 
+    def test_prepare_tree_lifts_nested_generated_sites_out_of_clients(self):
+        """
+        Nested generated sites should remain reachable from exported topology
+        instead of being stranded below plain client nodes.
+        """
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("AP 1", type=NodeType.ap))
+        graph.addRawNode(NetworkNode("Bonnie McBride", parentId="AP 1", type=NodeType.client))
+        graph.addRawNode(NetworkNode("LeRoy Dozois", parentId="Bonnie McBride", type=NodeType.client))
+        graph.addRawNode(NetworkNode("Nested Site", parentId="LeRoy Dozois", type=NodeType.site))
+        graph.addRawNode(
+            NetworkNode(
+                "bonnie-device",
+                parentId="Bonnie McBride",
+                type=NodeType.device,
+                ipv4=["100.64.0.1"],
+            )
+        )
+        graph.addRawNode(
+            NetworkNode(
+                "leroy-device",
+                parentId="LeRoy Dozois",
+                type=NodeType.device,
+                ipv4=["100.64.0.2"],
+            )
+        )
+
+        graph.prepareTree()
+
+        bonnie = next(node for node in graph.nodes if node.id == "Bonnie McBride")
+        bonnie_site = next(node for node in graph.nodes if node.id == "Bonnie McBride_gen")
+        leroy_site = next(node for node in graph.nodes if node.id == "LeRoy Dozois_gen")
+
+        self.assertEqual(bonnie.type, NodeType.client)
+        self.assertEqual(bonnie.parentId, "Bonnie McBride_gen")
+        self.assertEqual(bonnie_site.parentId, "AP 1")
+        self.assertEqual(leroy_site.parentId, "Bonnie McBride_gen")
+
     def test_find_unconnected(self):
         """
         Tests traversing a tree and finding nodes that
@@ -410,6 +450,244 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(net.nodes[2].parentId, "Site_1")
         net.prepareTree()
         self.assertEqual(net.nodes[2].parentIndex, 1)
+
+    def test_native_topology_editor_uses_nearest_real_infrastructure_parent(self):
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        net = NetworkGraph()
+        net.addRawNode(
+            NetworkNode(
+                "site_1",
+                "Site 1",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="splynx:site:1",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "relay_client",
+                "Relay Client",
+                "site_1",
+                NodeType.client,
+                100,
+                100,
+                networkJsonId="splynx:circuit:relay",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "child_site",
+                "Child Site",
+                "relay_client",
+                NodeType.site,
+                500,
+                500,
+                networkJsonId="splynx:site:2",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "relay_device",
+                "Relay Device",
+                "relay_client",
+                NodeType.device,
+                ipv4=["100.64.0.10"],
+            )
+        )
+
+        net.prepareTree()
+        editor = net.buildNativeTopologyEditorState("python/splynx")
+        nodes = {node["node_id"]: node for node in editor["nodes"]}
+
+        self.assertEqual(set(nodes.keys()), {"splynx:site:1", "splynx:site:2"})
+        self.assertIsNone(nodes["splynx:site:1"]["current_parent_node_id"])
+        self.assertFalse(nodes["splynx:site:1"]["can_move"])
+        self.assertEqual(nodes["splynx:site:1"]["allowed_parents"], [])
+        self.assertEqual(nodes["splynx:site:2"]["current_parent_node_id"], "splynx:site:1")
+        self.assertEqual(nodes["splynx:site:2"]["current_parent_node_name"], "Site 1")
+        self.assertFalse(nodes["splynx:site:2"]["can_move"])
+        self.assertEqual(nodes["splynx:site:2"]["allowed_parents"], [])
+
+    def test_legacy_parent_candidates_skip_fixed_roots(self):
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        net = NetworkGraph()
+        net.addRawNode(
+            NetworkNode(
+                "site_1",
+                "Site 1",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="splynx:site:1",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "site_2",
+                "Site 2",
+                "site_1",
+                NodeType.site,
+                500,
+                500,
+                networkJsonId="splynx:site:2",
+            )
+        )
+
+        net.prepareTree()
+        candidates = net.buildTopologyParentCandidates()
+        self.assertEqual(candidates["nodes"], [])
+
+    def test_native_topology_editor_exposes_bounded_local_move_candidates(self):
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        net = NetworkGraph()
+        net.addRawNode(
+            NetworkNode(
+                "root_site",
+                "Root Site",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="splynx:site:root",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "parent_a",
+                "Parent A",
+                "root_site",
+                NodeType.site,
+                800,
+                800,
+                networkJsonId="splynx:site:a",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "parent_b",
+                "Parent B",
+                "root_site",
+                NodeType.site,
+                800,
+                800,
+                networkJsonId="splynx:site:b",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "child_ap",
+                "Child AP",
+                "parent_a",
+                NodeType.ap,
+                300,
+                300,
+                networkJsonId="splynx:ap:child",
+            )
+        )
+
+        net.prepareTree()
+        editor = net.buildNativeTopologyEditorState("python/splynx")
+        nodes = {node["node_id"]: node for node in editor["nodes"]}
+        child = nodes["splynx:ap:child"]
+
+        self.assertEqual(child["current_parent_node_id"], "splynx:site:a")
+        self.assertTrue(child["can_move"])
+        self.assertEqual(
+            [parent["parent_node_id"] for parent in child["allowed_parents"]],
+            ["splynx:site:a", "splynx:site:b"],
+        )
+
+        candidates = net.buildTopologyParentCandidates()
+        candidate_by_id = {node["node_id"]: node for node in candidates["nodes"]}
+        self.assertEqual(
+            [candidate["node_id"] for candidate in candidate_by_id["splynx:ap:child"]["candidate_parents"]],
+            ["splynx:site:a", "splynx:site:b"],
+        )
+
+    def test_native_topology_editor_exposes_root_peer_move_candidates(self):
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        net = NetworkGraph()
+        net.addRawNode(
+            NetworkNode(
+                "gateway_a",
+                "Gateway A",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="splynx:site:gateway-a",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "gateway_b",
+                "Gateway B",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="splynx:site:gateway-b",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "gateway_c",
+                "Gateway C",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="splynx:site:gateway-c",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "unattached",
+                "LibreQoS Unattached [Site]",
+                "",
+                NodeType.site,
+                1000,
+                1000,
+                networkJsonId="libreqos:generated:splynx:site:unattached",
+            )
+        )
+        net.addRawNode(
+            NetworkNode(
+                "child_ap",
+                "Child AP",
+                "gateway_a",
+                NodeType.ap,
+                300,
+                300,
+                networkJsonId="splynx:ap:child",
+            )
+        )
+
+        net.prepareTree()
+        editor = net.buildNativeTopologyEditorState("python/splynx")
+        nodes = {node["node_id"]: node for node in editor["nodes"]}
+        child = nodes["splynx:ap:child"]
+
+        self.assertEqual(child["current_parent_node_id"], "splynx:site:gateway-a")
+        self.assertTrue(child["can_move"])
+        self.assertEqual(
+            [parent["parent_node_id"] for parent in child["allowed_parents"]],
+            ["splynx:site:gateway-a", "splynx:site:gateway-b", "splynx:site:gateway-c"],
+        )
+
+        candidates = net.buildTopologyParentCandidates()
+        candidate_by_id = {node["node_id"]: node for node in candidates["nodes"]}
+        self.assertEqual(
+            [candidate["node_id"] for candidate in candidate_by_id["splynx:ap:child"]["candidate_parents"]],
+            ["splynx:site:gateway-a", "splynx:site:gateway-b", "splynx:site:gateway-c"],
+        )
 
     def test_graph_render_to_pdf(self):
         """

@@ -59,6 +59,7 @@ let excludeRttBusy = false;
 let latestCakeMsg = null;
 let cakeGraphs = null;
 let cakeQueueUnavailable = false;
+let queueStatsMode = "live";
 let circuitSqmOverride = "";
 let queuingActivityGraph = null;
 let latestCircuitDevices = [];
@@ -864,6 +865,14 @@ function updateCakeTabAvailability(msg) {
     return true;
 }
 
+function renderCakeStatusMessage(html) {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab) {
+        return;
+    }
+    cakeTab.innerHTML = html;
+}
+
 function renderCakeGraphShell() {
     const cakeTab = document.getElementById("cake");
     if (!cakeTab || document.getElementById("cakeBacklog")) {
@@ -1100,6 +1109,14 @@ function formatDirectionalQueueTypeDisplay(downToken, upToken) {
     return `${downLabel} / ${upLabel}`;
 }
 
+function setQueueTypeDisplayText(label) {
+    const queueTypeEl = document.getElementById("cakeQueueType");
+    if (!queueTypeEl) {
+        return;
+    }
+    queueTypeEl.textContent = label;
+}
+
 function setQueueTypeDisplay(sqmToken) {
     const queueTypeEl = document.getElementById("cakeQueueType");
     if (!queueTypeEl) {
@@ -1109,13 +1126,9 @@ function setQueueTypeDisplay(sqmToken) {
 }
 
 function setQueueTypeDisplayFromKinds(kindDown, kindUp) {
-    const queueTypeEl = document.getElementById("cakeQueueType");
-    if (!queueTypeEl) {
-        return;
-    }
     const down = (kindDown ?? "").toString().trim().toLowerCase();
     const up = (kindUp ?? "").toString().trim().toLowerCase();
-    queueTypeEl.textContent = formatDirectionalQueueTypeDisplay(down, up);
+    setQueueTypeDisplayText(formatDirectionalQueueTypeDisplay(down, up));
 }
 
 function requestCircuitById(onSuccess, onError) {
@@ -2280,9 +2293,8 @@ function subscribeToCake() {
     
     // Function to show "Queue not loaded" message
     function showNoQueueMessage() {
-        const cakeTab = document.getElementById("cake");
-        if (cakeTab && !hasReceivedData) {
-            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The shaper queue for this circuit has not been created yet.</p></div></div>';
+        if (!hasReceivedData) {
+            renderCakeStatusMessage('<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The shaper queue for this circuit has not been created yet.</p></div></div>');
         }
     }
     
@@ -2400,6 +2412,7 @@ function loadInitial() {
     requestCircuitById((payload) => {
         const circuits = payload.devices || [];
         const advisory = payload.ethernet_advisory || null;
+        queueStatsMode = payload.queue_stats_mode || "live";
         let circuit = circuits[0];
         const parentNode = resolveCircuitParentNode(payload, circuits);
         circuitConfigDevices = circuits;

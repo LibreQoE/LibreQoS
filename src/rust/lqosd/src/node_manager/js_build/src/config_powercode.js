@@ -1,10 +1,15 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    bindSecretField,
+    loadConfig,
+    renderConfigMenu,
+    saveConfig,
+    secretWillExistAfterSave,
+} from "./config/config_helper";
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enablePowercode").checked) {
-        const apiKey = document.getElementById("powercodeApiKey").value.trim();
-        if (!apiKey) {
+        if (!secretWillExistAfterSave("powercode_integration", "powercode_api_key", "powercodeApiKey")) {
             alert("API Key is required when Powercode integration is enabled");
             return false;
         }
@@ -47,10 +52,15 @@ loadConfig(() => {
             powercode.enable_powercode ?? false;
 
         // String fields
-        document.getElementById("powercodeApiKey").value = 
-            powercode.powercode_api_key ?? "";
         document.getElementById("powercodeApiUrl").value = 
             powercode.powercode_api_url ?? "";
+        bindSecretField({
+            section: "powercode_integration",
+            field: "powercode_api_key",
+            inputId: "powercodeApiKey",
+            statusId: "powercodeApiKeyStatus",
+            clearButtonId: "clearPowercodeApiKey",
+        });
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

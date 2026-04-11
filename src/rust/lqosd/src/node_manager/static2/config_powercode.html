@@ -19,7 +19,11 @@
 
             <div class="mb-3">
                 <label for="powercodeApiKey" class="form-label">API Key</label>
-                <input type="text" class="form-control" id="powercodeApiKey">
+                <div class="input-group">
+                    <input type="password" class="form-control" id="powercodeApiKey" autocomplete="new-password">
+                    <button type="button" class="btn btn-outline-secondary" id="clearPowercodeApiKey">Clear</button>
+                </div>
+                <div class="form-text" id="powercodeApiKeyStatus"></div>
                 <div class="form-text">Powercode API key for authentication</div>
             </div>
 

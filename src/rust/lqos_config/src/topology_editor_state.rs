@@ -1,12 +1,17 @@
 use crate::{
     Config, TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyCanonicalStateFile,
     TopologyParentCandidatesError, TopologyParentCandidatesFile,
+    topology_canonical_state::{
+        current_topology_ingress_identity, legacy_id_for_name, quarantine_stale_topology_state,
+        topology_ingress_fingerprint_from_tokens,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+use tracing::warn;
 
 /// Runtime filename carrying integration-provided topology editor state for UI editing.
 pub const TOPOLOGY_EDITOR_STATE_FILENAME: &str = "topology_editor_state.json";
@@ -219,6 +224,9 @@ pub struct TopologyEditorStateFile {
     /// Unix timestamp when the snapshot was generated, if known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub generated_unix: Option<u64>,
+    /// Stable identity of the imported topology facts plus selected compile mode, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ingress_identity: Option<String>,
     /// Runtime topology-manager metadata keyed by node.
     #[serde(default)]
     pub nodes: Vec<TopologyEditorNode>,
@@ -265,7 +273,25 @@ impl TopologyEditorStateFile {
     pub fn load_with_legacy_fallback(config: &Config) -> Result<Self, TopologyEditorStateError> {
         let state = Self::load(config)?;
         if !state.nodes.is_empty() {
-            return Ok(state);
+            let is_current = match state.matches_current_ingress(config) {
+                Ok(is_current) => is_current,
+                Err(err) => {
+                    warn!(
+                        "Unable to validate topology editor state against current ingress; preserving existing state: {err}"
+                    );
+                    true
+                }
+            };
+            if is_current {
+                return Ok(state);
+            }
+            quarantine_stale_topology_state(
+                config,
+                &format!(
+                    "topology editor source '{}' does not match current topology ingress identity",
+                    state.source
+                ),
+            )?;
         }
 
         let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config)?;
@@ -285,6 +311,48 @@ impl TopologyEditorStateFile {
     /// Side effects: writes `topology_editor_state.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyEditorStateError> {
         atomic_write_json(&topology_editor_state_path(config), self)
+    }
+
+    /// Returns a stable fingerprint of the topology ingress this editor state represents.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn topology_ingress_fingerprint(&self) -> Option<String> {
+        topology_ingress_fingerprint_from_tokens(self.nodes.iter().map(|node| {
+            let node_id = node.node_id.trim();
+            if node_id.is_empty() {
+                legacy_id_for_name(&node.node_name)
+            } else {
+                node_id.to_string()
+            }
+        }))
+    }
+
+    /// Returns true if this editor state still matches the current topology ingress identity.
+    ///
+    /// Side effects: reads topology ingress inputs from `config.lqos_directory`.
+    pub fn matches_current_ingress(
+        &self,
+        config: &Config,
+    ) -> Result<bool, TopologyEditorStateError> {
+        if let Some(saved_identity) = self
+            .ingress_identity
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            let Some(current_identity) = current_topology_ingress_identity(config)? else {
+                return Ok(true);
+            };
+            return Ok(saved_identity == current_identity);
+        }
+
+        let Some(current_fingerprint) = current_topology_ingress_identity(config)? else {
+            return Ok(true);
+        };
+        let Some(saved_fingerprint) = self.topology_ingress_fingerprint() else {
+            return Ok(false);
+        };
+        Ok(saved_fingerprint == current_fingerprint)
     }
 
     /// Finds runtime editor metadata for `node_id`.
@@ -361,6 +429,7 @@ impl TopologyEditorStateFile {
                 format!("legacy:{}", legacy.source.trim())
             },
             generated_unix: None,
+            ingress_identity: legacy.ingress_identity.clone(),
             nodes,
         }
     }

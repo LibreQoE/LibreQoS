@@ -13,7 +13,7 @@ pub struct SplynxIntegration {
 }
 
 fn default_strategy() -> String {
-    "ap_only".to_string()
+    "ap_site".to_string()
 }
 
 impl Default for SplynxIntegration {
@@ -23,7 +23,7 @@ impl Default for SplynxIntegration {
             api_key: "".to_string(),
             api_secret: "".to_string(),
             url: "".to_string(),
-            strategy: "ap_only".to_string(),
+            strategy: "ap_site".to_string(),
         }
     }
 }

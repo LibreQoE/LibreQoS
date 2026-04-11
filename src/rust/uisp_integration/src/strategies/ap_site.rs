@@ -71,19 +71,13 @@ pub async fn build_ap_site_network(
     );
 
     let network_path = Path::new(&config.lqos_directory).join("network.json");
-    if network_path.exists() && !config.integration_common.always_overwrite_network_json {
-        warn!(
-            "Network.json exists, and always overwrite network json is not true - not writing network.json"
-        );
-    } else {
-        let json = serde_json::to_string_pretty(&net_json).unwrap();
-        write(network_path, json).map_err(|e| {
-            error!("Unable to write network.json");
-            error!("{e:?}");
-            UispIntegrationError::WriteNetJson
-        })?;
-        info!("Written network.json");
-    }
+    let json = serde_json::to_string_pretty(&net_json).unwrap();
+    write(network_path, json).map_err(|e| {
+        error!("Unable to write network.json");
+        error!("{e:?}");
+        UispIntegrationError::WriteNetJson
+    })?;
+    info!("Written network.json");
 
     let _ = write_shaped_devices(&config, &mut shaped_devices, &ethernet_advisories);
     info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
@@ -142,8 +136,7 @@ pub(crate) fn map_sites_above_aps(
     let mut sites = HashMap::new();
     for (ap_id, client_ids) in ap_mappings.iter() {
         if let Some(device) = uisp_data.find_uisp_device_by_id(ap_id) {
-            if let Some(device_site) = uisp_data.find_site_by_id(&device.site_id)
-            {
+            if let Some(device_site) = uisp_data.find_site_by_id(&device.site_id) {
                 let site_entry = sites
                     .entry(device_site.name.clone())
                     .or_insert_with(|| Layer {

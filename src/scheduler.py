@@ -14,7 +14,7 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive as _scheduler_alive_native, scheduler_error as _scheduler_error_native, \
-    calculate_topology_source_generation, \
+    calculate_topology_source_generation, topology_import_ingress_enabled, \
     scheduler_progress as _scheduler_progress_native, overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
     overrides_network_adjustments_materialized, \
     scheduler_output as _scheduler_output_native, wait_for_bus_ready
@@ -589,124 +589,127 @@ def operator_requires_sqm_column(devices, adjustments):
 
 
 def apply_lqos_overrides():
-    """Load ShapedDevices.csv, apply persistent devices and circuit adjustments, and save back."""
-    path = shaped_devices_csv_path()
-    header, rows = read_shaped_devices_csv(path)
+    """Apply overrides to source topology files without mutating integration-owned shaping CSV."""
+    if not topology_import_ingress_enabled():
+        path = shaped_devices_csv_path()
+        header, rows = read_shaped_devices_csv(path)
 
-    # 1) Persistent devices: replace by device_id or append
-    try:
-        extra = overrides_persistent_devices_materialized()
-    except Exception as e:
-        # Persistent device overrides are optional. Keep the scheduler healthy
-        # and continue applying the rest of the override sources if this loader
-        # is unavailable or temporarily broken.
-        print(f"Skipping persistent device overrides: {e}")
-        extra = []
-
-    # 2) Circuit adjustments: speed changes, removals, reparenting
-    try:
-        adjustments = overrides_circuit_adjustments_materialized()
-    except Exception as e:
-        print(f"Failed to read circuit adjustments: {e}")
-        adjustments = []
-
-    need_sqm_column = header_has_sqm(header) or operator_requires_sqm_column(extra, adjustments)
-    if need_sqm_column and not header_has_sqm(header):
-        header = list(header) + ["sqm"]
-        for row in rows:
-            if len(row) < len(header):
-                row.extend([""] * (len(header) - len(row)))
-
-    override_rows = override_devices_to_rows(extra or [], header, include_sqm=need_sqm_column)
-    merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
-    header_map = shaped_devices_header_index_map(header)
-
-    def set_if_some(value_opt, current_str):
-        if value_opt is None:
-            return current_str
+        # 1) Persistent devices: replace by device_id or append
         try:
-            return str(float(value_opt))
-        except Exception:
-            return current_str
+            extra = overrides_persistent_devices_materialized()
+        except Exception as e:
+            print(f"Skipping persistent device overrides: {e}")
+            extra = []
 
-    def set_row_value(row, index, value):
-        while len(row) <= index:
-            row.append('')
-        row[index] = value
+        # 2) Circuit adjustments: speed changes, removals, reparenting
+        try:
+            adjustments = overrides_circuit_adjustments_materialized()
+        except Exception as e:
+            print(f"Failed to read circuit adjustments: {e}")
+            adjustments = []
 
-    if adjustments:
-        for adj in adjustments:
-            t = adj.get('type')
-            if t == 'circuit_adjust_speed':
-                cid = adj.get('circuit_id', '')
-                for r in merged_rows:
-                    if len(r) >= 12 and r[0] == cid:
-                        r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
-                        r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
-                        r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
-                        r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
-                        changed = True
-            elif t == 'device_adjust_speed':
-                did = adj.get('device_id', '')
-                for r in merged_rows:
-                    if len(r) >= 12 and r[2] == did:
-                        r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
-                        r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
-                        r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
-                        r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
-                        changed = True
-            elif t == 'device_adjust_sqm':
-                if not need_sqm_column:
-                    continue
-                did = adj.get('device_id', '')
-                sqm_override = (adj.get('sqm_override') or '').strip()
-                for r in merged_rows:
-                    if len(r) >= 3 and r[2] == did:
-                        current_sqm = r[13] if len(r) > 13 else ''
-                        if current_sqm != sqm_override:
-                            set_row_value(r, 13, sqm_override)
+        need_sqm_column = header_has_sqm(header) or operator_requires_sqm_column(extra, adjustments)
+        if need_sqm_column and not header_has_sqm(header):
+            header = list(header) + ["sqm"]
+            for row in rows:
+                if len(row) < len(header):
+                    row.extend([""] * (len(header) - len(row)))
+
+        override_rows = override_devices_to_rows(extra or [], header, include_sqm=need_sqm_column)
+        merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
+        header_map = shaped_devices_header_index_map(header)
+
+        def set_if_some(value_opt, current_str):
+            if value_opt is None:
+                return current_str
+            try:
+                return str(float(value_opt))
+            except Exception:
+                return current_str
+
+        def set_row_value(row, index, value):
+            while len(row) <= index:
+                row.append('')
+            row[index] = value
+
+        if adjustments:
+            for adj in adjustments:
+                t = adj.get('type')
+                if t == 'circuit_adjust_speed':
+                    cid = adj.get('circuit_id', '')
+                    for r in merged_rows:
+                        if len(r) >= 12 and r[0] == cid:
+                            r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
+                            r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
+                            r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
+                            r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
                             changed = True
-            elif t == 'remove_circuit':
-                cid = adj.get('circuit_id', '')
-                before = len(merged_rows)
-                merged_rows = [r for r in merged_rows if len(r) < 1 or r[0] != cid]
-                if len(merged_rows) != before:
-                    changed = True
-            elif t == 'remove_device':
-                did = adj.get('device_id', '')
-                before = len(merged_rows)
-                merged_rows = [r for r in merged_rows if len(r) < 3 or r[2] != did]
-                if len(merged_rows) != before:
-                    changed = True
-            elif t == 'reparent_circuit':
-                cid = adj.get('circuit_id', '')
-                parent_node = adj.get('parent_node', '')
-                for r in merged_rows:
-                    circuit_id_idx = header_map.get('circuit_id', 0)
-                    if len(r) > circuit_id_idx and r[circuit_id_idx] == cid:
-                        set_row_value_by_header(r, header_map, 'parent_node', parent_node)
-                        set_row_value_by_header(r, header_map, 'parent_node_id', '')
+                elif t == 'device_adjust_speed':
+                    did = adj.get('device_id', '')
+                    for r in merged_rows:
+                        if len(r) >= 12 and r[2] == did:
+                            r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
+                            r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
+                            r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
+                            r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
+                            changed = True
+                elif t == 'device_adjust_sqm':
+                    if not need_sqm_column:
+                        continue
+                    did = adj.get('device_id', '')
+                    sqm_override = (adj.get('sqm_override') or '').strip()
+                    for r in merged_rows:
+                        if len(r) >= 3 and r[2] == did:
+                            current_sqm = r[13] if len(r) > 13 else ''
+                            if current_sqm != sqm_override:
+                                set_row_value(r, 13, sqm_override)
+                                changed = True
+                elif t == 'remove_circuit':
+                    cid = adj.get('circuit_id', '')
+                    before = len(merged_rows)
+                    merged_rows = [r for r in merged_rows if len(r) < 1 or r[0] != cid]
+                    if len(merged_rows) != before:
                         changed = True
+                elif t == 'remove_device':
+                    did = adj.get('device_id', '')
+                    before = len(merged_rows)
+                    merged_rows = [r for r in merged_rows if len(r) < 3 or r[2] != did]
+                    if len(merged_rows) != before:
+                        changed = True
+                elif t == 'reparent_circuit':
+                    cid = adj.get('circuit_id', '')
+                    parent_node = adj.get('parent_node', '')
+                    for r in merged_rows:
+                        circuit_id_idx = header_map.get('circuit_id', 0)
+                        if len(r) > circuit_id_idx and r[circuit_id_idx] == cid:
+                            set_row_value_by_header(r, header_map, 'parent_node', parent_node)
+                            set_row_value_by_header(r, header_map, 'parent_node_id', '')
+                            changed = True
 
-    if changed:
-        final_header = header if header else (SHAPED_DEVICES_HEADER_WITH_SQM if need_sqm_column else SHAPED_DEVICES_HEADER)
-        write_shaped_devices_csv(path, final_header, merged_rows)
-        print("Updated ShapedDevices.csv with overrides")
+        if changed:
+            final_header = header if header else (SHAPED_DEVICES_HEADER_WITH_SQM if need_sqm_column else SHAPED_DEVICES_HEADER)
+            write_shaped_devices_csv(path, final_header, merged_rows)
+            print("Updated ShapedDevices.csv with overrides")
 
-    # 3) Load, adjust, and optionally save network.json
-    nj_path = network_json_path()
-    network = load_network_json(nj_path)
+    # 3) Load, adjust, and optionally save topology compatibility state
     try:
         adjustments = overrides_network_adjustments_materialized()
     except Exception as e:
         print(f"Failed to read network adjustments: {e}")
         adjustments = []
-    net_changed = apply_network_adjustments(network, adjustments)
-    if net_changed:
-        write_network_json(nj_path, network)
-        print("Updated network.json with overrides")
-        canonical_path = topology_canonical_state_path()
-        canonical_state = load_topology_canonical_state(canonical_path)
+    canonical_path = topology_canonical_state_path()
+    canonical_state = load_topology_canonical_state(canonical_path)
+    if topology_import_ingress_enabled():
+        if canonical_state and apply_network_adjustments_to_canonical_state(canonical_state, adjustments):
+            write_topology_canonical_state(canonical_path, canonical_state)
+            print("Updated topology_canonical_state.json with overrides")
+    else:
+        nj_path = network_json_path()
+        network = load_network_json(nj_path)
+        net_changed = apply_network_adjustments(network, adjustments)
+        if net_changed:
+            write_network_json(nj_path, network)
+            print("Updated network.json with overrides")
         if canonical_state and apply_network_adjustments_to_canonical_state(canonical_state, adjustments):
             write_topology_canonical_state(canonical_path, canonical_state)
             print("Updated topology_canonical_state.json with overrides")
@@ -1209,8 +1212,10 @@ def run_scheduler_main():
 
     atexit.register(stop_topology_runtime_process)
     set_scheduler_status_bus_enabled(False)
-    publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
     ensure_bus_ready()
+    set_scheduler_status_bus_enabled(True)
+    scheduler_alive()
+    publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
     try:
         importAndShapeFullReload()
         publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)

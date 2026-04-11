@@ -1,10 +1,15 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    bindSecretField,
+    loadConfig,
+    renderConfigMenu,
+    saveConfig,
+    secretWillExistAfterSave,
+} from "./config/config_helper";
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enableUisp").checked) {
-        const token = document.getElementById("uispToken").value.trim();
-        if (!token) {
+        if (!secretWillExistAfterSave("uisp_integration", "token", "uispToken")) {
             alert("API Token is required when UISP integration is enabled");
             return false;
         }
@@ -24,12 +29,6 @@ function validateConfig() {
         const site = document.getElementById("uispSite").value.trim();
         if (!site) {
             alert("UISP Site is required when UISP integration is enabled");
-            return false;
-        }
-
-        const strategy = document.getElementById("uispStrategy").value.trim();
-        if (!strategy) {
-            alert("Strategy is required when UISP integration is enabled");
             return false;
         }
 
@@ -112,7 +111,7 @@ function updateConfig() {
         token: document.getElementById("uispToken").value.trim(),
         url: document.getElementById("uispUrl").value.trim(),
         site: document.getElementById("uispSite").value.trim(),
-        strategy: document.getElementById("uispStrategy").value.trim(),
+        strategy: window.config.topology?.compile_mode ?? document.getElementById("uispStrategy").value.trim(),
         suspended_strategy: document.getElementById("uispSuspendedStrategy").value.trim(),
         airmax_capacity: parseFloat(document.getElementById("uispAirmaxCapacity").value),
         airmax_flexible_frame_download_ratio: parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value),
@@ -147,10 +146,9 @@ loadConfig(() => {
         document.getElementById("uispInsecureSsl").checked = uisp.insecure_ssl ?? false;
 
         // String fields
-        document.getElementById("uispToken").value = uisp.token ?? "";
         document.getElementById("uispUrl").value = uisp.url ?? "";
         document.getElementById("uispSite").value = uisp.site ?? "";
-        document.getElementById("uispStrategy").value = uisp.strategy ?? "full";
+        document.getElementById("uispStrategy").value = window.config.topology?.compile_mode ?? uisp.strategy ?? "ap_site";
         document.getElementById("uispSuspendedStrategy").value = uisp.suspended_strategy ?? "none";
 
         // Numeric fields
@@ -165,6 +163,14 @@ loadConfig(() => {
         document.getElementById("uispSquashSites").value = uisp.squash_sites?.join(", ") || "";
         document.getElementById("uispExceptionCpes").value = uisp.exception_cpes?.map(e => `${e.cpe}:${e.parent}`).join(", ") || "";
         document.getElementById("uispDoNotSquashSites").value = uisp.do_not_squash_sites?.join(", ") || "";
+
+        bindSecretField({
+            section: "uisp_integration",
+            field: "token",
+            inputId: "uispToken",
+            statusId: "uispTokenStatus",
+            clearButtonId: "clearUispToken",
+        });
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

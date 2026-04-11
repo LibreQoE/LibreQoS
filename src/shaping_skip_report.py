@@ -42,7 +42,7 @@ def _classify_unshaped_circuit(circuit, valid_parent_nodes, flat_network):
     if flat_network:
         return (
             "unattached_flat_network",
-            "Circuit was not attached during shaping in flat-network mode.",
+            "Circuit is being shaped under generated parent queues in flat-network mode.",
         )
 
     if logical_parent_str in ("", "none"):
