@@ -1,0 +1,10 @@
+version = 1
+
+[[router]]
+name = "main"
+host = "100.64.0.1"
+port = 8728
+username = "admin"
+password = "password"
+use_ssl = false
+plaintext_login = true
