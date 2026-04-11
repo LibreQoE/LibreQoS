@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Debug, Error)]
 pub(crate) enum RuntimeStateMigrationError {
@@ -64,7 +64,7 @@ pub(crate) fn migrate_legacy_runtime_state(
     ensure_state_directories(config)?;
 
     let mut migrated = Vec::new();
-    let mut duplicate_legacy = Vec::new();
+    let mut removed_duplicate_legacy = Vec::new();
     let mut quarantined = Vec::new();
 
     for item in legacy_migrations(config) {
@@ -73,11 +73,11 @@ pub(crate) fn migrate_legacy_runtime_state(
             &item.destination,
             item.kind,
             &mut migrated,
-            &mut duplicate_legacy,
+            &mut removed_duplicate_legacy,
         )?;
     }
 
-    migrate_legacy_token_caches(config, &mut migrated, &mut duplicate_legacy)?;
+    migrate_legacy_token_caches(config, &mut migrated, &mut removed_duplicate_legacy)?;
     quarantine_legacy_backups(config, &mut quarantined)?;
 
     if !migrated.is_empty() {
@@ -86,10 +86,10 @@ pub(crate) fn migrate_legacy_runtime_state(
             migrated.join(", ")
         );
     }
-    if !duplicate_legacy.is_empty() {
-        warn!(
-            "Found duplicate legacy runtime artifacts in lqos_directory after state migration; keeping them for compatibility during this release: {}",
-            duplicate_legacy.join(", ")
+    if !removed_duplicate_legacy.is_empty() {
+        info!(
+            "Removed duplicate legacy runtime artifacts from lqos_directory after confirming canonical state copies exist: {}",
+            removed_duplicate_legacy.join(", ")
         );
     }
     if !quarantined.is_empty() {
@@ -269,7 +269,7 @@ fn migrate_legacy_item(
     destination: &Path,
     kind: LegacyArtifactKind,
     migrated: &mut Vec<String>,
-    duplicate_legacy: &mut Vec<String>,
+    removed_duplicate_legacy: &mut Vec<String>,
 ) -> Result<(), RuntimeStateMigrationError> {
     if !source.exists() {
         return Ok(());
@@ -282,7 +282,8 @@ fn migrate_legacy_item(
     }
 
     if destination.exists() {
-        duplicate_legacy.push(source.display().to_string());
+        remove_path(source)?;
+        removed_duplicate_legacy.push(source.display().to_string());
         return Ok(());
     }
 
@@ -294,7 +295,7 @@ fn migrate_legacy_item(
 fn migrate_legacy_token_caches(
     config: &Config,
     migrated: &mut Vec<String>,
-    duplicate_legacy: &mut Vec<String>,
+    removed_duplicate_legacy: &mut Vec<String>,
 ) -> Result<(), RuntimeStateMigrationError> {
     let legacy_root = Path::new(&config.lqos_directory);
     let entries =
@@ -321,7 +322,7 @@ fn migrate_legacy_token_caches(
             &destination,
             LegacyArtifactKind::File,
             migrated,
-            duplicate_legacy,
+            removed_duplicate_legacy,
         )?;
     }
 
@@ -434,6 +435,21 @@ fn move_path(source: &Path, destination: &Path) -> Result<(), RuntimeStateMigrat
     }
 }
 
+fn remove_path(path: &Path) -> Result<(), RuntimeStateMigrationError> {
+    if path.is_dir() {
+        fs::remove_dir_all(path).map_err(|source| RuntimeStateMigrationError::RemoveDirectory {
+            path: path.display().to_string(),
+            source,
+        })?;
+    } else {
+        fs::remove_file(path).map_err(|source| RuntimeStateMigrationError::RemoveFile {
+            path: path.display().to_string(),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
 fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), RuntimeStateMigrationError> {
     fs::create_dir_all(destination).map_err(|source_err| {
         RuntimeStateMigrationError::CreateDirectory {
@@ -524,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_duplicate_legacy_file_when_new_state_file_exists() {
+    fn removes_duplicate_legacy_file_when_new_state_file_exists() {
         let root = temp_path("duplicate");
         let src = root.join("src");
         let state = root.join("state/shaping");
@@ -536,10 +552,7 @@ mod tests {
         let config = test_config(&root);
         migrate_legacy_runtime_state(&config).unwrap();
 
-        assert_eq!(
-            fs::read_to_string(src.join("lastGoodConfig.csv")).unwrap(),
-            "legacy\n"
-        );
+        assert!(!src.join("lastGoodConfig.csv").exists());
         assert_eq!(
             fs::read_to_string(state.join("lastGoodConfig.csv")).unwrap(),
             "state\n"

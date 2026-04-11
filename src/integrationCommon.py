@@ -213,15 +213,14 @@ class NetworkGraph:
 		self._cache_valid = False
 		
 		if find_ipv6_using_mikrotik():
-			csv_path = "mikrotikDHCPRouterList.csv"
 			try:
 				from mikrotikFindIPv6 import pullMikrotikIPv6  
-				mikrotik_map = pullMikrotikIPv6(csv_path)
+				mikrotik_map = pullMikrotikIPv6()
 				if isinstance(mikrotik_map, str):
 					mikrotik_map = json.loads(mikrotik_map)
 				self.ipv4ToIPv6 = mikrotik_map
 			except FileNotFoundError:
-				self.errors.append("Mikrotik IPv6 enrichment skipped: missing mikrotikDHCPRouterList.csv")
+				self.errors.append("Mikrotik IPv6 enrichment skipped: missing /etc/libreqos/mikrotik_ipv6.toml")
 				self.ipv4ToIPv6 = {}
 			except json.JSONDecodeError as exc:
 				self.errors.append(f"Mikrotik IPv6 enrichment skipped: unable to parse Mikrotik data ({exc})")

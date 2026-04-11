@@ -19,7 +19,7 @@ mod python_migration;
 pub mod test_data;
 mod v15;
 pub use v15::{
-    BridgeConfig, IntegrationConfig, LazyQueueMode, QueueMode, RttThresholds,
+    BridgeConfig, IntegrationConfig, LazyQueueMode, MikrotikIpv6Config, QueueMode, RttThresholds,
     SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TopologyConfig,
     TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig, Tunables,
@@ -431,6 +431,16 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
         error!("Unable to migrate legacy runtime state: {e:?}");
         LibreQoSConfigError::MigrationFailed {
             path: final_config.lqos_directory.clone(),
+            details: e.to_string(),
+        }
+    })?;
+    crate::migrate_legacy_mikrotik_ipv6_credentials(&final_config).map_err(|e| {
+        error!("Unable to migrate legacy Mikrotik IPv6 credentials: {e:?}");
+        LibreQoSConfigError::MigrationFailed {
+            path: final_config
+                .resolved_mikrotik_ipv6_config_path()
+                .display()
+                .to_string(),
             details: e.to_string(),
         }
     })?;

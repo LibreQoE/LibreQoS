@@ -204,6 +204,197 @@ html[data-bs-theme="dark"] .lqos_logo {
     font-size: 0.6rem;
     line-height: 1;
 }
+.lqos-scheduler-modal-body {
+    min-height: 20rem;
+}
+.lqos-scheduler-modal-summary {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--lqos-border);
+    border-radius: 1rem;
+    background: linear-gradient(180deg, var(--lqos-surface-1), var(--lqos-surface-2));
+}
+.lqos-scheduler-modal-indicator {
+    flex: 0 0 auto;
+}
+.lqos-scheduler-modal-indicator .lqos-scheduler-ring {
+    width: 3.25rem;
+    height: 3.25rem;
+    flex-basis: 3.25rem;
+}
+.lqos-scheduler-modal-indicator .lqos-scheduler-ring-track,
+.lqos-scheduler-modal-indicator .lqos-scheduler-ring-value {
+    stroke-width: 2.6;
+}
+.lqos-scheduler-modal-indicator .lqos-scheduler-ring-icon {
+    font-size: 1rem;
+}
+.lqos-scheduler-modal-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.lqos-scheduler-modal-statusline {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.lqos-scheduler-modal-title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+.lqos-scheduler-modal-subtitle {
+    margin: 0.35rem 0 0;
+    color: var(--bs-secondary-color);
+}
+.lqos-scheduler-modal-updated {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--bs-secondary-color);
+}
+.lqos-scheduler-progress-card,
+.lqos-scheduler-activity-card,
+.lqos-scheduler-debug-card {
+    margin-top: 1rem;
+    border: 1px solid var(--lqos-border);
+    border-radius: 1rem;
+    background: var(--lqos-surface-1);
+}
+.lqos-scheduler-progress-card {
+    padding: 1rem 1.1rem;
+}
+.lqos-scheduler-progress-topline {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.7rem;
+    flex-wrap: wrap;
+}
+.lqos-scheduler-progress-title {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+}
+.lqos-scheduler-progress-meta {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--bs-secondary-color);
+}
+.lqos-scheduler-progress-bar {
+    height: 0.85rem;
+    border-radius: 999px;
+    background: var(--lqos-surface-2);
+}
+.lqos-scheduler-progress-bar .progress-bar {
+    border-radius: 999px;
+}
+.lqos-scheduler-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.85rem;
+    margin-top: 1rem;
+}
+.lqos-scheduler-stat {
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--lqos-border);
+    border-radius: 0.95rem;
+    background: var(--lqos-surface-2);
+}
+.lqos-scheduler-stat-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--bs-secondary-color);
+}
+.lqos-scheduler-stat-value {
+    display: block;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+.lqos-scheduler-activity-card,
+.lqos-scheduler-debug-card {
+    padding: 1rem 1.1rem;
+}
+.lqos-scheduler-section-title {
+    margin: 0 0 0.75rem;
+    font-size: 0.98rem;
+    font-weight: 700;
+}
+.lqos-scheduler-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+.lqos-scheduler-activity-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 0.9rem;
+    background: var(--lqos-surface-2);
+    border: 1px solid var(--lqos-border);
+}
+.lqos-scheduler-activity-item i {
+    margin-top: 0.1rem;
+    color: var(--bs-secondary-color);
+}
+.lqos-scheduler-empty {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    border-radius: 0.9rem;
+    background: var(--lqos-surface-2);
+    color: var(--bs-secondary-color);
+    border: 1px dashed var(--lqos-border);
+}
+.lqos-scheduler-debug-toggle {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--bs-body-color);
+    list-style: none;
+}
+.lqos-scheduler-debug-toggle::-webkit-details-marker {
+    display: none;
+}
+.lqos-scheduler-debug-toggle::before {
+    content: "\f078";
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    margin-right: 0.55rem;
+    color: var(--bs-secondary-color);
+}
+.lqos-scheduler-debug-card[open] .lqos-scheduler-debug-toggle::before {
+    content: "\f077";
+}
+.lqos-scheduler-debug-pre {
+    margin: 0.85rem 0 0;
+    padding: 0.9rem 1rem;
+    max-height: 18rem;
+    overflow: auto;
+    border-radius: 0.9rem;
+    background: var(--bs-tertiary-bg);
+    border: 1px solid var(--lqos-border);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.9rem;
+}
+@media (max-width: 575.98px) {
+    .lqos-scheduler-modal-summary {
+        flex-direction: column;
+    }
+    .lqos-scheduler-modal-indicator .lqos-scheduler-ring {
+        width: 2.8rem;
+        height: 2.8rem;
+        flex-basis: 2.8rem;
+    }
+}
 .navbar-toggler {
     border: 1px solid var(--lqos-border);
     border-radius: 0.75rem;

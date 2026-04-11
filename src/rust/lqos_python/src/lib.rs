@@ -976,6 +976,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(circuit_name_use_address, m)?)?;
     m.add_function(wrap_pyfunction!(find_ipv6_using_mikrotik, m)?)?;
     m.add_function(wrap_pyfunction!(integration_common_use_mikrotik_ipv6, m)?)?;
+    m.add_function(wrap_pyfunction!(mikrotik_ipv6_config_path, m)?)?;
+    m.add_function(wrap_pyfunction!(load_mikrotik_ipv6_routers_json, m)?)?;
     m.add_function(wrap_pyfunction!(exclude_sites, m)?)?;
     m.add_function(wrap_pyfunction!(bandwidth_overhead_factor, m)?)?;
     m.add_function(wrap_pyfunction!(committed_bandwidth_multiplier, m)?)?;
@@ -2197,6 +2199,23 @@ fn find_ipv6_using_mikrotik() -> PyResult<bool> {
 fn integration_common_use_mikrotik_ipv6() -> PyResult<bool> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.integration_common.use_mikrotik_ipv6)
+}
+
+#[pyfunction]
+fn mikrotik_ipv6_config_path() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .resolved_mikrotik_ipv6_config_path()
+        .display()
+        .to_string())
+}
+
+#[pyfunction]
+fn load_mikrotik_ipv6_routers_json() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    let routers = lqos_config::load_mikrotik_ipv6_router_credentials(&config)
+        .map_err(|e| PyOSError::new_err(e.to_string()))?;
+    serde_json::to_string(&routers).map_err(|e| PyOSError::new_err(e.to_string()))
 }
 
 #[pyfunction]

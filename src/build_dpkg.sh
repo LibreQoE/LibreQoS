@@ -17,6 +17,7 @@ DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 LQOS_STATE_DIR=$DPKG_DIR/opt/libreqos/state
 ETC_DIR=$DPKG_DIR/etc
+ETC_LIBREQOS_DIR=$DPKG_DIR/etc/libreqos
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
   csvToNetworkJSON.py
@@ -33,6 +34,7 @@ LQOS_FILES=(
   lqos.example
   lqTools.py
   mikrotikFindIPv6.py
+  mikrotik_ipv6.example.toml
   network.example.json
   pythonCheck.py
   qoo_profiles.json
@@ -42,7 +44,6 @@ LQOS_FILES=(
   shaping_skip_report.py
   systemd_hotfix.sh
   virtual_tree_nodes.py
-  mikrotikDHCPRouterList.template.csv
   integrationUISPbandwidths.template.csv
   manualNetwork.template.csv
   integrationUISProutes.template.csv
@@ -81,7 +82,7 @@ rm -rf dist
 # The Debian Packaging Bit
 
 # Create the basic directory structure
-mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
+mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$ETC_LIBREQOS_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
 mkdir -p "$LQOS_STATE_DIR"/topology "$LQOS_STATE_DIR"/shaping "$LQOS_STATE_DIR"/stats "$LQOS_STATE_DIR"/cache "$LQOS_STATE_DIR"/debug "$LQOS_STATE_DIR"/quarantine
 
 # shellcheck disable=SC2086
@@ -187,6 +188,8 @@ done
 if [ -f deb-requirements-constraints.txt ]; then
   cp deb-requirements-constraints.txt "$LQOS_DIR"
 fi
+
+cp mikrotik_ipv6.example.toml "$ETC_LIBREQOS_DIR"/mikrotik_ipv6.example.toml
 
 # Ensure helper scripts are executable in the package
 if [ -f "$LQOS_DIR/update_api.sh" ]; then

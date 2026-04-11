@@ -23,32 +23,39 @@ async fn fetch_mikrotik_data(config: &Config) -> anyhow::Result<Vec<Ipv4ToIpv6>>
         ));
     }
 
-    // Find the `mikrotikDHCPRouterList.csv` file.
-    let mikrotik_dhcp_router_list_path = base_path.join("mikrotikDHCPRouterList.csv");
-    if !mikrotik_dhcp_router_list_path.exists() {
+    let mikrotik_config_path = config.resolved_mikrotik_ipv6_config_path();
+    let legacy_csv_path = config.legacy_runtime_file_path("mikrotikDHCPRouterList.csv");
+    if !mikrotik_config_path.exists() && !legacy_csv_path.exists() {
         tracing::error!(
-            "Mikrotik DHCP router list not found at {:?}",
-            mikrotik_dhcp_router_list_path
+            "Mikrotik IPv6 credentials not found at {:?} or {:?}",
+            mikrotik_config_path,
+            legacy_csv_path
         );
         return Err(anyhow::anyhow!(
-            "Mikrotik DHCP router list not found at {:?}",
-            mikrotik_dhcp_router_list_path
+            "Mikrotik IPv6 credentials not found at {:?} or {:?}",
+            mikrotik_config_path,
+            legacy_csv_path
         ));
     }
 
     // Load the script
     let code = mikrotik_script_path.to_string_lossy().to_string();
-    let csv_path = mikrotik_dhcp_router_list_path.to_string_lossy().to_string();
 
     // Get the Python environment going
-    let output = Command::new("/usr/bin/python3")
-        .args([&code, &csv_path])
-        .output();
+    let output = Command::new("/usr/bin/python3").arg(&code).output();
     if let Err(e) = output {
         tracing::error!("Python error: {:?}", e);
         return Err(anyhow::anyhow!("Python error: {:?}", e));
     }
     let output = output?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::error!("Mikrotik helper failed: {}", stderr.trim());
+        return Err(anyhow::anyhow!(
+            "Mikrotik helper failed: {}",
+            stderr.trim()
+        ));
+    }
     let json_from_python = String::from_utf8(output.stdout)?;
 
     // Parse the JSON

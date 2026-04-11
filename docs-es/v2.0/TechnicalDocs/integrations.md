@@ -101,7 +101,7 @@ ltu_capacity = 1.0
 exclude_sites = []
 
 # If you use DHCPv6, and want to pull in IPv6 CIDRs corresponding to each customer's IPv4
-# address, you can do so with this. If enabled, be sure to fill out mikrotikDHCPRouterList.csv
+# address, you can do so with this. If enabled, configure `/etc/libreqos/mikrotik_ipv6.toml`
 # and run `python3 mikrotikFindIPv6.py` to test its functionality.
 ipv6_with_mikrotik = false
 

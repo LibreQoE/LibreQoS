@@ -72,6 +72,9 @@ circuit_name_as_address = false
 queue_refresh_interval_mins = 30
 use_mikrotik_ipv6 = false
 
+[mikrotik_ipv6]
+config_path = "/etc/libreqos/mikrotik_ipv6.toml"
+
 [splynx_integration]
 enable_splynx = false
 api_key = ""

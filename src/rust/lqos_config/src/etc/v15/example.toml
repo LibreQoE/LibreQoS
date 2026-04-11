@@ -105,6 +105,9 @@ ethernet_port_limits_enabled = true
 # Optional override. If omitted, LibreQoS uses a conservative default of 0.94.
 # ethernet_port_limit_multiplier = 0.94
 
+[mikrotik_ipv6]
+config_path = "/etc/libreqos/mikrotik_ipv6.toml"
+
 [integration_common.topology_attachment_health]
 enabled = true
 probe_interval_seconds = 1

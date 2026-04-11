@@ -153,7 +153,7 @@ use_mikrotik_ipv6 = false
 - `api_key` es el token Bearer generado dentro de Netzur.
 - `api_url` debe devolver un JSON con los arreglos `zones` (convertidos en sitios) y `customers` (convertidos en circuitos y dispositivos).
 - `timeout_secs` permite incrementar el tiempo de espera de la petición cuando el API responde lentamente (por defecto 60 segundos).
-- `use_mikrotik_ipv6` agrega prefijos IPv6 obtenidos de `mikrotikDHCPRouterList.csv`.
+- `use_mikrotik_ipv6` agrega prefijos IPv6 obtenidos de `/etc/libreqos/mikrotik_ipv6.toml`.
 
 Para una importación manual:
 

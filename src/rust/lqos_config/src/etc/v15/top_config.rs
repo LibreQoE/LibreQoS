@@ -122,6 +122,10 @@ pub struct Config {
     #[serde(default)]
     pub topology: super::topology::TopologyConfig,
 
+    /// Dedicated Mikrotik IPv6 enrichment secrets/config path.
+    #[serde(default)]
+    pub mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config,
+
     /// Splynx Integration configuration. Optional so older configs without this
     /// section still deserialize cleanly.
     #[serde(default)]
@@ -226,6 +230,9 @@ impl Config {
             .is_some_and(|path| path.trim().is_empty())
         {
             return Err("state_directory must not be empty when configured".to_string());
+        }
+        if self.mikrotik_ipv6.config_path.trim().is_empty() {
+            return Err("mikrotik_ipv6.config_path must not be empty".to_string());
         }
         if let Some(rtt) = &self.rtt_thresholds {
             if rtt.red_ms == 0 {
@@ -347,6 +354,7 @@ impl Default for Config {
             ip_ranges: super::ip_ranges::IpRanges::default(),
             integration_common: super::integration_common::IntegrationConfig::default(),
             topology: super::topology::TopologyConfig::default(),
+            mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
             visp_integration: Some(super::visp_integration::VispIntegration::default()),
@@ -392,6 +400,11 @@ impl Config {
             return parent.join("state");
         }
         base.join("state")
+    }
+
+    /// Returns the configured Mikrotik IPv6 secrets/config path.
+    pub fn resolved_mikrotik_ipv6_config_path(&self) -> PathBuf {
+        PathBuf::from(self.mikrotik_ipv6.config_path.trim())
     }
 
     /// Returns the preferred topology-state path for `filename`.
