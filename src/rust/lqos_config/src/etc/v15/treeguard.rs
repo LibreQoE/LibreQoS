@@ -187,7 +187,7 @@ pub struct TreeguardLinksConfig {
 impl Default for TreeguardLinksConfig {
     fn default() -> Self {
         Self {
-            enabled: default_enabled(),
+            enabled: default_false(),
             all_nodes: default_enabled(),
             nodes: Vec::new(),
             idle_util_pct: default_idle_util_pct(),
@@ -197,7 +197,7 @@ impl Default for TreeguardLinksConfig {
             min_state_dwell_minutes: default_min_state_dwell_minutes(),
             max_link_changes_per_hour: default_max_link_changes_per_hour(),
             reload_cooldown_minutes: default_reload_cooldown_minutes(),
-            top_level_auto_virtualize: default_enabled(),
+            top_level_auto_virtualize: default_false(),
             top_level_safe_util_pct: default_top_level_safe_util_pct(),
         }
     }

@@ -79,9 +79,9 @@ pub struct TreeAttachedCircuitsPage {
 }
 
 #[derive(Clone, Debug, Default)]
-struct SubtreeMatcher {
-    node_names: FxHashSet<String>,
-    node_ids: FxHashSet<String>,
+struct SelectedNodeMatcher {
+    node_name: String,
+    node_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -144,43 +144,15 @@ fn resolve_selected_node_index(query: &TreeAttachedCircuitsQuery) -> Option<usiz
     })
 }
 
-fn build_subtree_matcher(query: &TreeAttachedCircuitsQuery) -> Option<SubtreeMatcher> {
+fn build_selected_node_matcher(query: &TreeAttachedCircuitsQuery) -> Option<SelectedNodeMatcher> {
     let selected_idx = resolve_selected_node_index(query)?;
     let reader = NETWORK_JSON.read();
     let nodes = reader.get_nodes_when_ready();
     let selected = nodes.get(selected_idx)?;
 
-    let mut node_names = FxHashSet::default();
-    let mut node_ids = FxHashSet::default();
-    node_names.insert(selected.name.clone());
-    if let Some(node_id) = selected.id.clone() {
-        node_ids.insert(node_id);
-    }
-
-    for node in nodes {
-        let mut current = Some(node);
-        let mut in_subtree = false;
-        while let Some(candidate) = current {
-            if candidate.name == selected.name && candidate.id == selected.id {
-                in_subtree = true;
-                break;
-            }
-            current = candidate
-                .immediate_parent
-                .and_then(|parent_idx| nodes.get(parent_idx));
-        }
-        if !in_subtree {
-            continue;
-        }
-        node_names.insert(node.name.clone());
-        if let Some(node_id) = node.id.clone() {
-            node_ids.insert(node_id);
-        }
-    }
-
-    Some(SubtreeMatcher {
-        node_names,
-        node_ids,
+    Some(SelectedNodeMatcher {
+        node_name: selected.name.clone(),
+        node_id: selected.id.clone(),
     })
 }
 
@@ -200,24 +172,23 @@ fn format_ipv6(addr: Ipv6Addr, prefix: u32) -> String {
     }
 }
 
-fn circuit_parent_matches_subtree(
-    matcher: &SubtreeMatcher,
+fn circuit_parent_matches_selected_node(
+    matcher: &SelectedNodeMatcher,
     parent_name: &str,
     parent_id: Option<&str>,
 ) -> bool {
-    let trimmed_name = parent_name.trim();
-    if !trimmed_name.is_empty() && matcher.node_names.contains(trimmed_name) {
-        return true;
-    }
-
     let trimmed_id = parent_id.map(str::trim).filter(|id| !id.is_empty());
-    if let Some(parent_id) = trimmed_id
-        && matcher.node_ids.contains(parent_id)
-    {
-        return true;
+    let matcher_id = matcher
+        .node_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    if let (Some(parent_id), Some(selected_id)) = (trimmed_id, matcher_id) {
+        return parent_id == selected_id;
     }
 
-    false
+    let trimmed_name = parent_name.trim();
+    !trimmed_name.is_empty() && trimmed_name == matcher.node_name
 }
 
 fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Option<String>)> {
@@ -238,7 +209,7 @@ fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Optio
 }
 
 fn aggregate_attached_circuit_rows(
-    matcher: &SubtreeMatcher,
+    matcher: &SelectedNodeMatcher,
     shaped_devices: &ConfigShapedDevices,
 ) -> Vec<CircuitRowAccumulator> {
     let mut rows: FxHashMap<String, CircuitRowAccumulator> = FxHashMap::default();
@@ -250,7 +221,7 @@ fn aggregate_attached_circuit_rows(
         let Some((parent_name, parent_id)) = effective_or_canonical_parent(device) else {
             continue;
         };
-        if !circuit_parent_matches_subtree(matcher, &parent_name, parent_id.as_deref()) {
+        if !circuit_parent_matches_selected_node(matcher, &parent_name, parent_id.as_deref()) {
             continue;
         }
 
@@ -300,7 +271,7 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
         .clone()
         .unwrap_or(TreeAttachedCircuitsSort::CircuitName);
     let descending = query.descending.unwrap_or(false);
-    let matcher = build_subtree_matcher(&query);
+    let matcher = build_selected_node_matcher(&query);
 
     let snapshot = fresh_circuit_live_snapshot();
     let ethernet_badges = ethernet_cap_badge_map();
@@ -462,14 +433,10 @@ mod tests {
     }
 
     #[test]
-    fn aggregate_attached_rows_include_idle_circuits_in_selected_subtree() {
-        let matcher = SubtreeMatcher {
-            node_names: ["Parent A".to_string(), "Child A".to_string()]
-                .into_iter()
-                .collect(),
-            node_ids: ["node-a".to_string(), "node-child".to_string()]
-                .into_iter()
-                .collect(),
+    fn aggregate_attached_rows_include_only_directly_attached_circuits() {
+        let matcher = SelectedNodeMatcher {
+            node_name: "Parent A".to_string(),
+            node_id: Some("node-a".to_string()),
         };
         let shaped_devices = ConfigShapedDevices {
             devices: vec![
@@ -490,6 +457,15 @@ mod tests {
                     "Parent A",
                     Some("node-a"),
                     &["100.64.0.2"],
+                ),
+                sample_device(
+                    "circuit-child",
+                    "Circuit Child",
+                    "device-child",
+                    "Device Child",
+                    "Child A",
+                    Some("node-child"),
+                    &["100.64.0.9"],
                 ),
                 sample_device(
                     "circuit-2",

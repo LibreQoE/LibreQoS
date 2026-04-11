@@ -1,14 +1,34 @@
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
+fn default_queue_auto_virtualize_threshold_mbps() -> u64 {
+    5_000
+}
+
 /// Shared topology compiler settings used by `lqos_topology`.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Allocative)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct TopologyConfig {
     /// Selected topology compile mode.
     ///
     /// Empty means "use legacy per-integration fallback" during the transition period.
     #[serde(default)]
     pub compile_mode: String,
+
+    /// Practical per-node queue budget used by `queue_auto` visibility policy.
+    ///
+    /// Site-like aggregation nodes at or above this threshold may be hidden from the
+    /// queue-visible runtime tree when LibreQoS can safely promote their children.
+    #[serde(default = "default_queue_auto_virtualize_threshold_mbps")]
+    pub queue_auto_virtualize_threshold_mbps: u64,
+}
+
+impl Default for TopologyConfig {
+    fn default() -> Self {
+        Self {
+            compile_mode: String::new(),
+            queue_auto_virtualize_threshold_mbps: default_queue_auto_virtualize_threshold_mbps(),
+        }
+    }
 }
 
 /// Normalizes operator-facing topology compile mode strings.

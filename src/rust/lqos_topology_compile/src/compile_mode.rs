@@ -454,50 +454,38 @@ fn make_shaped_devices(devices: Vec<ShapedDevice>) -> ConfigShapedDevices {
 }
 
 struct SanitizedTopologyIndex {
+    exported_node_names_by_id: HashMap<String, String>,
+    exported_parent_by_node_id: HashMap<String, Option<String>>,
     node_names_by_id: HashMap<String, String>,
-    parent_by_node_id: HashMap<String, Option<String>>,
 }
 
 fn sanitized_topology_index(imported: &ImportedTopologyBundle) -> SanitizedTopologyIndex {
-    if let Some(native) = imported.native_canonical.as_ref() {
-        return SanitizedTopologyIndex {
-            node_names_by_id: native
-                .nodes
-                .iter()
-                .map(|node| (node.node_id.clone(), node.node_name.clone()))
-                .collect(),
-            parent_by_node_id: native
-                .nodes
-                .iter()
-                .map(|node| (node.node_id.clone(), node.current_parent_node_id.clone()))
-                .collect(),
-        };
-    }
+    let (nodes_by_id, _) = exported_index(&imported.compatibility_network_json);
+    let mut node_names_by_id = nodes_by_id
+        .iter()
+        .map(|(node_id, node)| (node_id.clone(), node.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let exported_node_names_by_id = node_names_by_id.clone();
+    let exported_parent_by_node_id = nodes_by_id
+        .iter()
+        .map(|(node_id, node)| (node_id.clone(), node.parent_id.clone()))
+        .collect::<HashMap<_, _>>();
+
     if let Some(native) = imported.native_editor.as_ref() {
-        return SanitizedTopologyIndex {
-            node_names_by_id: native
-                .nodes
-                .iter()
-                .map(|node| (node.node_id.clone(), node.node_name.clone()))
-                .collect(),
-            parent_by_node_id: native
-                .nodes
-                .iter()
-                .map(|node| (node.node_id.clone(), node.current_parent_node_id.clone()))
-                .collect(),
-        };
+        for node in &native.nodes {
+            node_names_by_id.insert(node.node_id.clone(), node.node_name.clone());
+        }
+    }
+    if let Some(native) = imported.native_canonical.as_ref() {
+        for node in &native.nodes {
+            node_names_by_id.insert(node.node_id.clone(), node.node_name.clone());
+        }
     }
 
-    let (nodes_by_id, _) = exported_index(&imported.compatibility_network_json);
     SanitizedTopologyIndex {
-        node_names_by_id: nodes_by_id
-            .iter()
-            .map(|(node_id, node)| (node_id.clone(), node.name.clone()))
-            .collect(),
-        parent_by_node_id: nodes_by_id
-            .iter()
-            .map(|(node_id, node)| (node_id.clone(), node.parent_id.clone()))
-            .collect(),
+        exported_node_names_by_id,
+        exported_parent_by_node_id,
+        node_names_by_id,
     }
 }
 
@@ -511,7 +499,10 @@ fn sanitize_editor_nodes(
             if node.node_id.starts_with("libreqos:generated:graph:") {
                 return None;
             }
-            let exported_name = topology_index.node_names_by_id.get(&node.node_id)?;
+            let exported_name = topology_index
+                .exported_node_names_by_id
+                .get(&node.node_id)
+                .or_else(|| topology_index.node_names_by_id.get(&node.node_id))?;
             node.allowed_parents.retain(|parent| {
                 topology_index
                     .node_names_by_id
@@ -534,7 +525,7 @@ fn sanitize_editor_nodes(
                         }
                     });
             let exported_parent = topology_index
-                .parent_by_node_id
+                .exported_parent_by_node_id
                 .get(&node.node_id)
                 .and_then(|parent| parent.as_deref())
                 .and_then(|parent_id| {
@@ -912,6 +903,7 @@ mod tests {
         TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
         TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
         TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
+        TopologyQueueVisibilityPolicy,
     };
     use serde_json::json;
 
@@ -1039,6 +1031,7 @@ mod tests {
                 current_attachment_name: Some("Missing Attachment".to_string()),
                 can_move: false,
                 allowed_parents: Vec::new(),
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -1203,6 +1196,7 @@ mod tests {
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -1274,6 +1268,7 @@ mod tests {
                         current_attachment_name: None,
                         can_move: false,
                         allowed_parents: Vec::new(),
+                        queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                         preferred_attachment_id: None,
                         preferred_attachment_name: None,
                         effective_attachment_id: None,
@@ -1319,6 +1314,7 @@ mod tests {
                             all_attachments_suppressed: false,
                             has_probe_unavailable_attachments: false,
                         }],
+                        queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                         preferred_attachment_id: None,
                         preferred_attachment_name: None,
                         effective_attachment_id: None,

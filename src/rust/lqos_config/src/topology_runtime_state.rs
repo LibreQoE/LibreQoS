@@ -648,7 +648,10 @@ mod tests {
         TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyRuntimeStatusFile,
         compute_topology_source_generation, topology_runtime_status_path,
     };
-    use crate::{TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile};
+    use crate::{
+        TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
+        TopologyQueueVisibilityPolicy,
+    };
     use serde_json::json;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1103,12 +1106,15 @@ mod tests {
                 nodes: vec![TopologyEditorNode {
                     node_id: "uisp:device:old-tower".to_string(),
                     node_name: "Old Tower".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: None,
                     current_parent_node_name: None,
                     current_attachment_id: None,
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,

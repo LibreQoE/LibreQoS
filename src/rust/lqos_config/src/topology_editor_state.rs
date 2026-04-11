@@ -66,6 +66,19 @@ pub enum TopologyAttachmentRole {
     Manual,
 }
 
+/// Baseline queue-visibility policy for a logical topology node.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyQueueVisibilityPolicy {
+    /// The node remains visible in the baseline queue topology.
+    #[default]
+    QueueVisible,
+    /// The node remains logical-only for queueing and its children are promoted one level.
+    QueueHiddenPromoteChildren,
+    /// LibreQoS decides queue visibility from node role and configured capacity.
+    QueueAuto,
+}
+
 /// Errors returned while reading or writing topology editor snapshots.
 #[derive(Debug, Error)]
 pub enum TopologyEditorStateError {
@@ -174,12 +187,18 @@ pub struct TopologyAllowedParent {
 }
 
 /// Runtime topology-manager metadata for one movable node.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct TopologyEditorNode {
     /// Stable node identifier matching `network.json` metadata.
     pub node_id: String,
     /// Display name for the node.
     pub node_name: String,
+    /// Optional geographic latitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latitude: Option<f32>,
+    /// Optional geographic longitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub longitude: Option<f32>,
     /// Currently resolved immediate parent node ID, if one was resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_parent_node_id: Option<String>,
@@ -198,6 +217,9 @@ pub struct TopologyEditorNode {
     /// Ordered valid parent targets for this node.
     #[serde(default)]
     pub allowed_parents: Vec<TopologyAllowedParent>,
+    /// Baseline queue-visibility policy for runtime-effective topology export.
+    #[serde(default)]
+    pub queue_visibility_policy: TopologyQueueVisibilityPolicy,
     /// Stable attachment identifier preferred by operator intent, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_attachment_id: Option<String>,
@@ -213,7 +235,7 @@ pub struct TopologyEditorNode {
 }
 
 /// Integration-generated runtime snapshot consumed by the topology manager UI.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct TopologyEditorStateFile {
     /// Schema version for compatibility checks.
     #[serde(default = "default_topology_editor_schema_version")]
@@ -408,12 +430,15 @@ impl TopologyEditorStateFile {
             nodes.push(TopologyEditorNode {
                 node_id: legacy_node.node_id.clone(),
                 node_name: legacy_node.node_name.clone(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: legacy_node.current_parent_node_id.clone(),
                 current_parent_node_name: legacy_node.current_parent_node_name.clone(),
                 current_attachment_id: None,
                 current_attachment_name: None,
                 can_move: !allowed_parents.is_empty(),
                 allowed_parents,
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,

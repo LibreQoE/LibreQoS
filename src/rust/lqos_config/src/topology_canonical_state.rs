@@ -4,6 +4,7 @@ use crate::{
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
     TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
     TopologyAllowedParent, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
+    TopologyQueueVisibilityPolicy,
     TopologyParentCandidatesError, TopologyParentCandidatesFile,
 };
 use lqos_utils::hash_to_i64;
@@ -67,12 +68,18 @@ pub struct TopologyCanonicalRateInput {
 }
 
 /// Canonical topology metadata for one node.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct TopologyCanonicalNode {
     /// Stable node identifier.
     pub node_id: String,
     /// Display name for the node.
     pub node_name: String,
+    /// Optional geographic latitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latitude: Option<f32>,
+    /// Optional geographic longitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub longitude: Option<f32>,
     /// Node kind or type label.
     #[serde(default)]
     pub node_kind: String,
@@ -97,6 +104,9 @@ pub struct TopologyCanonicalNode {
     /// Allowed logical parents and their attachment choices.
     #[serde(default)]
     pub allowed_parents: Vec<TopologyAllowedParent>,
+    /// Baseline queue-visibility policy for runtime-effective topology export.
+    #[serde(default)]
+    pub queue_visibility_policy: TopologyQueueVisibilityPolicy,
     /// Canonical rate inputs used for effective rate compilation.
     #[serde(default)]
     pub rate_input: TopologyCanonicalRateInput,
@@ -160,6 +170,8 @@ struct NetworkNodeSnapshot {
     is_virtual: bool,
     download_mbps: Option<u64>,
     upload_mbps: Option<u64>,
+    latitude: Option<f32>,
+    longitude: Option<f32>,
 }
 
 fn default_topology_canonical_schema_version() -> u32 {
@@ -405,6 +417,8 @@ struct InsightLogicalNodeEntry {
     is_virtual: bool,
     download_mbps: Option<u64>,
     upload_mbps: Option<u64>,
+    latitude: Option<f32>,
+    longitude: Option<f32>,
 }
 
 fn canonical_node_rates(node: &TopologyCanonicalNode) -> (Option<u64>, Option<u64>) {
@@ -468,6 +482,12 @@ fn build_insight_logical_entry_json(
             "type".into(),
             normalized_insight_node_kind(&entry.node_kind).into(),
         );
+        if let Some(latitude) = entry.latitude {
+            map.insert("latitude".into(), serde_json::json!(latitude));
+        }
+        if let Some(longitude) = entry.longitude {
+            map.insert("longitude".into(), serde_json::json!(longitude));
+        }
         map.insert("downloadBandwidthMbps".into(), download.into());
         map.insert("uploadBandwidthMbps".into(), upload.into());
         map.insert("children".into(), Value::Object(Map::new()));
@@ -524,6 +544,12 @@ fn build_insight_logical_entry_json(
         "type".into(),
         normalized_insight_node_kind(&entry.node_kind).into(),
     );
+    if let Some(latitude) = entry.latitude {
+        map.insert("latitude".into(), serde_json::json!(latitude));
+    }
+    if let Some(longitude) = entry.longitude {
+        map.insert("longitude".into(), serde_json::json!(longitude));
+    }
     map.insert("downloadBandwidthMbps".into(), download.into());
     map.insert("uploadBandwidthMbps".into(), upload.into());
     if entry.is_virtual {
@@ -613,6 +639,13 @@ fn read_u64_field(node: &Map<String, Value>, key: &str) -> Option<u64> {
     })
 }
 
+fn read_f32_field(node: &Map<String, Value>, key: &str) -> Option<f32> {
+    node.get(key).and_then(|value| match value {
+        Value::Number(number) => number.as_f64().map(|value| value as f32),
+        _ => None,
+    })
+}
+
 fn build_network_node_index(
     map: &Map<String, Value>,
     by_id: &mut HashMap<String, NetworkNodeSnapshot>,
@@ -640,6 +673,8 @@ fn build_network_node_index(
                 .unwrap_or(false),
             download_mbps: read_u64_field(node, "downloadBandwidthMbps"),
             upload_mbps: read_u64_field(node, "uploadBandwidthMbps"),
+            latitude: read_f32_field(node, "latitude"),
+            longitude: read_f32_field(node, "longitude"),
         };
         by_name.insert(name.clone(), snapshot.clone());
         if let Some(node_id) = node.get("id").and_then(Value::as_str) {
@@ -702,6 +737,8 @@ fn import_legacy_network_children(
             .unwrap_or(false);
         let download = read_u64_field(node, "downloadBandwidthMbps");
         let upload = read_u64_field(node, "uploadBandwidthMbps");
+        let latitude = read_f32_field(node, "latitude");
+        let longitude = read_f32_field(node, "longitude");
 
         let (
             current_parent_node_id,
@@ -731,6 +768,8 @@ fn import_legacy_network_children(
         out.push(TopologyCanonicalNode {
             node_id: node_id.clone(),
             node_name: node_name.clone(),
+            latitude,
+            longitude,
             node_kind: node_kind.clone(),
             is_virtual,
             current_parent_node_id,
@@ -739,6 +778,7 @@ fn import_legacy_network_children(
             current_attachment_name,
             can_move: false,
             allowed_parents: Vec::new(),
+            queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
             rate_input: TopologyCanonicalRateInput {
                 intrinsic_download_mbps: download,
                 intrinsic_upload_mbps: upload,
@@ -898,12 +938,15 @@ impl TopologyCanonicalStateFile {
                 .map(|node| TopologyEditorNode {
                     node_id: node.node_id.clone(),
                     node_name: node.node_name.clone(),
+                    latitude: node.latitude,
+                    longitude: node.longitude,
                     current_parent_node_id: node.current_parent_node_id.clone(),
                     current_parent_node_name: node.current_parent_node_name.clone(),
                     current_attachment_id: node.current_attachment_id.clone(),
                     current_attachment_name: node.current_attachment_name.clone(),
                     can_move: node.can_move,
                     allowed_parents: node.allowed_parents.clone(),
+                    queue_visibility_policy: node.queue_visibility_policy,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -951,6 +994,8 @@ impl TopologyCanonicalStateFile {
                     is_virtual: node.is_virtual,
                     download_mbps,
                     upload_mbps,
+                    latitude: node.latitude,
+                    longitude: node.longitude,
                 },
             );
         }
@@ -1030,6 +1075,10 @@ impl TopologyCanonicalStateFile {
                 TopologyCanonicalNode {
                     node_id: node.node_id.clone(),
                     node_name: node.node_name.clone(),
+                    latitude: node.latitude.or_else(|| snapshot.and_then(|snapshot| snapshot.latitude)),
+                    longitude: node
+                        .longitude
+                        .or_else(|| snapshot.and_then(|snapshot| snapshot.longitude)),
                     node_kind: snapshot
                         .map(|snapshot| snapshot.node_type.clone())
                         .unwrap_or_default(),
@@ -1040,6 +1089,7 @@ impl TopologyCanonicalStateFile {
                     current_attachment_name: node.current_attachment_name.clone(),
                     can_move: node.can_move,
                     allowed_parents: node.allowed_parents.clone(),
+                    queue_visibility_policy: node.queue_visibility_policy,
                     rate_input: canonical_rate_input_from_network_snapshot(node, snapshot),
                 }
             })
@@ -1100,7 +1150,7 @@ mod tests {
         TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyAllowedParent,
         TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,
         TopologyAttachmentRole, TopologyCanonicalNode, TopologyEditorNode, TopologyEditorStateFile,
-        TopologyParentCandidatesFile,
+        TopologyParentCandidatesFile, TopologyQueueVisibilityPolicy,
     };
     use serde_json::{Value, json};
     use std::fs;
@@ -1161,6 +1211,8 @@ mod tests {
             nodes: vec![TopologyEditorNode {
                 node_id: "child-site".to_string(),
                 node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("parent-site".to_string()),
                 current_parent_node_name: Some("Parent Site".to_string()),
                 current_attachment_id: Some("child-attachment".to_string()),
@@ -1178,6 +1230,7 @@ mod tests {
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -1212,6 +1265,69 @@ mod tests {
         assert_eq!(
             node.rate_input.source,
             TopologyCanonicalRateInputSource::AttachmentMax
+        );
+    }
+
+    #[test]
+    fn from_editor_and_network_preserves_site_coordinates_for_runtime_export() {
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: Some(123),
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "site-a".to_string(),
+                node_name: "Site A".to_string(),
+                latitude: None,
+                longitude: None,
+                current_parent_node_id: None,
+                current_parent_node_name: None,
+                current_attachment_id: None,
+                current_attachment_name: None,
+                can_move: false,
+                allowed_parents: Vec::new(),
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                preferred_attachment_id: None,
+                preferred_attachment_name: None,
+                effective_attachment_id: None,
+                effective_attachment_name: None,
+            }],
+        };
+
+        let compatibility_network = json!({
+            "Site A": {
+                "children": {},
+                "downloadBandwidthMbps": 900,
+                "id": "site-a",
+                "latitude": 31.86102867126465,
+                "longitude": -106.5494613647461,
+                "name": "Site A",
+                "type": "Site",
+                "uploadBandwidthMbps": 800
+            }
+        });
+
+        let canonical = TopologyCanonicalStateFile::from_editor_and_network(
+            &editor_state,
+            &compatibility_network,
+            TopologyCanonicalIngressKind::NativeIntegration,
+        );
+        let node = canonical.find_node("site-a").expect("expected canonical node");
+        assert_eq!(node.latitude, Some(31.86102867126465_f32));
+        assert_eq!(node.longitude, Some(-106.5494613647461_f32));
+
+        let logical = canonical.insight_topology_network_json();
+        let site = logical
+            .get("Site A")
+            .and_then(Value::as_object)
+            .expect("expected logical Site A export");
+        assert_eq!(
+            site.get("latitude").and_then(Value::as_f64),
+            Some(31.86102867126465_f64)
+        );
+        assert_eq!(
+            site.get("longitude").and_then(Value::as_f64),
+            Some(-106.5494613647461_f64)
         );
     }
 
@@ -1433,6 +1549,8 @@ mod tests {
             nodes: vec![TopologyCanonicalNode {
                 node_id: "uisp:device:current-ap".to_string(),
                 node_name: "Current AP".to_string(),
+                latitude: None,
+                longitude: None,
                 node_kind: "AP".to_string(),
                 is_virtual: false,
                 current_parent_node_id: None,
@@ -1441,6 +1559,7 @@ mod tests {
                 current_attachment_name: None,
                 can_move: false,
                 allowed_parents: Vec::new(),
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 rate_input: super::TopologyCanonicalRateInput {
                     intrinsic_download_mbps: Some(100),
                     intrinsic_upload_mbps: Some(100),
@@ -1466,12 +1585,15 @@ mod tests {
                 nodes: vec![TopologyEditorNode {
                     node_id: "uisp:device:current-ap".to_string(),
                     node_name: "Current AP".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: None,
                     current_parent_node_name: None,
                     current_attachment_id: None,
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -1653,12 +1775,15 @@ mod tests {
                 TopologyEditorNode {
                     node_id: "site-router".to_string(),
                     node_name: "WestRedd-SiteRouter".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("root-west".to_string()),
                     current_parent_node_name: Some("WestRedd".to_string()),
                     current_attachment_id: Some("site-router".to_string()),
                     current_attachment_name: Some("WestRedd-SiteRouter".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -1667,12 +1792,15 @@ mod tests {
                 TopologyEditorNode {
                     node_id: "core-west".to_string(),
                     node_name: "Core-WestRedd".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("site-router".to_string()),
                     current_parent_node_name: Some("WestRedd-SiteRouter".to_string()),
                     current_attachment_id: Some("core-west".to_string()),
                     current_attachment_name: Some("Core-WestRedd".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -1681,12 +1809,15 @@ mod tests {
                 TopologyEditorNode {
                     node_id: "tuscany".to_string(),
                     node_name: "Tuscany Ridge".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("root-west".to_string()),
                     current_parent_node_name: Some("WestRedd".to_string()),
                     current_attachment_id: Some("aviat-west".to_string()),
                     current_attachment_name: Some("AVIAT_WestRedd".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -1695,12 +1826,15 @@ mod tests {
                 TopologyEditorNode {
                     node_id: "monte".to_string(),
                     node_name: "Monte Del Sol".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("tuscany".to_string()),
                     current_parent_node_name: Some("Tuscany Ridge".to_string()),
                     current_attachment_id: Some("monte-ap".to_string()),
                     current_attachment_name: Some("AF60LR-MonteDelSOl".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,

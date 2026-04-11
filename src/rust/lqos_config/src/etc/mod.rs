@@ -72,6 +72,10 @@ fn topology_compile_mode_migration_stamp_path(config_path: &str) -> String {
     format!("{config_path}.topology_compile_mode_migrated")
 }
 
+fn treeguard_links_virtualization_migration_stamp_path(config_path: &str) -> String {
+    format!("{config_path}.treeguard_links_virtualization_migrated")
+}
+
 fn enabled_table_string(
     doc: &DocumentMut,
     table_name: &str,
@@ -239,6 +243,83 @@ fn maybe_migrate_treeguard_cpu_mode(
     Ok(migrated)
 }
 
+fn maybe_migrate_treeguard_link_virtualization_defaults(
+    config_location: &str,
+    raw: String,
+) -> Result<String, LibreQoSConfigError> {
+    let stamp_path = treeguard_links_virtualization_migration_stamp_path(config_location);
+    if Path::new(&stamp_path).exists() {
+        return Ok(raw);
+    }
+
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+
+    let links_enabled = doc
+        .get("treeguard")
+        .and_then(|section| section.as_table_like())
+        .and_then(|treeguard| treeguard.get("links"))
+        .and_then(|links| links.as_table_like())
+        .and_then(|links| links.get("enabled"))
+        .and_then(|value| value.as_bool());
+    let top_level_auto_virtualize = doc
+        .get("treeguard")
+        .and_then(|section| section.as_table_like())
+        .and_then(|treeguard| treeguard.get("links"))
+        .and_then(|links| links.as_table_like())
+        .and_then(|links| links.get("top_level_auto_virtualize"))
+        .and_then(|value| value.as_bool());
+
+    let already_disabled = links_enabled == Some(false) && top_level_auto_virtualize == Some(false);
+    if already_disabled {
+        std::fs::write(&stamp_path, b"disabled\n").map_err(|e| {
+            LibreQoSConfigError::CannotWrite {
+                path: stamp_path.clone(),
+                source: e,
+            }
+        })?;
+        return Ok(raw);
+    }
+
+    if !doc.as_table().contains_key("treeguard") {
+        doc["treeguard"] = Item::Table(Table::new());
+    }
+    if doc["treeguard"].get("links").is_none() {
+        doc["treeguard"]["links"] = Item::Table(Table::new());
+    }
+    doc["treeguard"]["links"]["enabled"] = value(false);
+    doc["treeguard"]["links"]["top_level_auto_virtualize"] = value(false);
+    let migrated = doc.to_string();
+
+    let config_path = Path::new(config_location);
+    if config_path.exists() {
+        let backup_path = format!("{config_location}.treeguard_links_virtualization_backup");
+        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
+            path: backup_path,
+            source: e,
+        })?;
+    }
+
+    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: config_location.to_string(),
+        source: e,
+    })?;
+    std::fs::write(&stamp_path, b"disabled\n").map_err(|e| {
+        LibreQoSConfigError::CannotWrite {
+            path: stamp_path,
+            source: e,
+        }
+    })?;
+
+    info!(
+        "TreeGuard link virtualization was automatically disabled during upgrade. Static queue policy is now the default baseline."
+    );
+
+    Ok(migrated)
+}
+
 fn maybe_migrate_uisp_capacity_defaults(
     config_location: &str,
     raw: String,
@@ -332,6 +413,7 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     })?;
 
     let raw = maybe_migrate_treeguard_cpu_mode(&config_location, raw)?;
+    let raw = maybe_migrate_treeguard_link_virtualization_defaults(&config_location, raw)?;
     let raw = maybe_migrate_uisp_capacity_defaults(&config_location, raw)?;
     let raw = maybe_migrate_topology_compile_mode(&config_location, raw)?;
 
@@ -456,8 +538,11 @@ pub enum LibreQoSConfigError {
 #[cfg(test)]
 mod tests {
     use super::{
-        maybe_migrate_topology_compile_mode, maybe_migrate_uisp_capacity_defaults,
-        topology_compile_mode_migration_stamp_path, uisp_capacity_defaults_migration_stamp_path,
+        maybe_migrate_topology_compile_mode,
+        maybe_migrate_treeguard_link_virtualization_defaults,
+        maybe_migrate_uisp_capacity_defaults, topology_compile_mode_migration_stamp_path,
+        treeguard_links_virtualization_migration_stamp_path,
+        uisp_capacity_defaults_migration_stamp_path,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -630,6 +715,57 @@ mod tests {
         assert!(!migrated.contains("[topology]"));
         assert!(
             Path::new(&topology_compile_mode_migration_stamp_path(
+                &config_path_str
+            ))
+            .exists()
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    #[test]
+    fn treeguard_link_virtualization_migration_disables_runtime_link_virtualization() {
+        let test_dir = unique_test_dir();
+        let raw = "[treeguard]\nenabled = true\n\n[treeguard.links]\nenabled = true\ntop_level_auto_virtualize = true\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        let migrated =
+            maybe_migrate_treeguard_link_virtualization_defaults(&config_path_str, raw.to_string())
+                .expect("migration should succeed");
+
+        assert!(migrated.contains("[treeguard.links]"));
+        assert!(migrated.contains("enabled = false"));
+        assert!(migrated.contains("top_level_auto_virtualize = false"));
+        assert!(
+            Path::new(&treeguard_links_virtualization_migration_stamp_path(
+                &config_path_str
+            ))
+            .exists()
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    #[test]
+    fn treeguard_link_virtualization_migration_stamps_when_already_disabled() {
+        let test_dir = unique_test_dir();
+        let raw =
+            "[treeguard]\nenabled = true\n\n[treeguard.links]\nenabled = false\ntop_level_auto_virtualize = false\n";
+        let config_path = write_test_config(&test_dir, raw);
+
+        let config_path_str = path_string(&config_path);
+        let migrated =
+            maybe_migrate_treeguard_link_virtualization_defaults(&config_path_str, raw.to_string())
+                .expect("migration should succeed");
+
+        assert_eq!(migrated, raw);
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("config should remain unchanged"),
+            raw
+        );
+        assert!(
+            Path::new(&treeguard_links_virtualization_migration_stamp_path(
                 &config_path_str
             ))
             .exists()

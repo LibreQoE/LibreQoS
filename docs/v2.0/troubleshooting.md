@@ -254,8 +254,9 @@ Site Map has one extra dependency beyond normal WebUI data feeds: current builds
 If Site Map alone is blank or slow:
 1. Confirm `lqosd` is healthy.
 2. Confirm the box can reach `insight.libreqos.com` from its management network.
-3. Wait briefly and reload the page; the map page retries tile requests automatically while cold tiles are being populated upstream.
-4. Check recent `lqosd` logs:
+3. Confirm runtime topology still carries coordinates for mapped Sites/APs in `network.effective.json`.
+4. Wait briefly and reload the page; the map page retries tile requests automatically while cold tiles are being populated upstream.
+5. Check recent `lqosd` logs:
 ```
 journalctl -u lqosd --since "10 minutes ago"
 ```

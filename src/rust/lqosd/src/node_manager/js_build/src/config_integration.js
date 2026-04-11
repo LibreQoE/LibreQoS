@@ -38,6 +38,15 @@ function validateConfig() {
         alert("Topology Compile Mode must be one of Flat, AP Only, AP Site, or Full");
         return false;
     }
+
+    const queueAutoThreshold = parseInt(
+        document.getElementById("queueAutoVirtualizeThresholdMbps").value,
+        10,
+    );
+    if (isNaN(queueAutoThreshold) || queueAutoThreshold < 1) {
+        alert("Queue Auto-Virtualize Threshold must be a whole number greater than 0");
+        return false;
+    }
     
     return true;
 }
@@ -72,6 +81,10 @@ function updateConfig() {
     window.config.topology = {
         ...(window.config.topology || {}),
         compile_mode: document.getElementById("topologyCompileMode").value.trim(),
+        queue_auto_virtualize_threshold_mbps: parseInt(
+            document.getElementById("queueAutoVirtualizeThresholdMbps").value,
+            10,
+        ),
     };
     if (window.config.uisp_integration && typeof window.config.uisp_integration === "object") {
         window.config.uisp_integration.strategy = window.config.topology.compile_mode;
@@ -111,6 +124,8 @@ loadConfig(() => {
             (integration.ethernet_port_limit_multiplier ?? 0.94).toFixed(2);
         document.getElementById("topologyCompileMode").value =
             window.config.topology?.compile_mode ?? "ap_site";
+        document.getElementById("queueAutoVirtualizeThresholdMbps").value =
+            String(window.config.topology?.queue_auto_virtualize_threshold_mbps ?? 5000);
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {
