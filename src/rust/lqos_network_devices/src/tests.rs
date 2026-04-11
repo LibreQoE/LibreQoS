@@ -7,6 +7,7 @@ use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::collections::HashSet;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -198,4 +199,39 @@ fn dynamic_circuit_expiration_helper_expires_zero_last_seen() {
 
     let ids = crate::dynamic::expired_dynamic_circuit_ids(&circuits, now_unix, ttl_seconds);
     assert_eq!(ids, vec!["zero".to_string()]);
+}
+
+#[test]
+fn dynamic_circuit_is_superseded_when_shaped_devices_now_cover_it() {
+    let _guard = TEST_LOCK.lock();
+
+    let mut static_device = ShapedDevice {
+        circuit_id: "static".into(),
+        device_id: "static-device".into(),
+        ..Default::default()
+    };
+    static_device.ipv4.push((Ipv4Addr::new(192, 0, 2, 42), 32));
+
+    let mut shaped = ConfigShapedDevices::default();
+    shaped.replace_with_new_data(vec![static_device]);
+    let catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
+
+    let mut dynamic_shaped = ShapedDevice {
+        circuit_id: "[dyn] (test) 192.0.2.42".into(),
+        device_id: "[dyn] (test) 192.0.2.42".into(),
+        circuit_hash: 123,
+        device_hash: 456,
+        ..Default::default()
+    };
+    dynamic_shaped.ipv4.push((Ipv4Addr::new(192, 0, 2, 42), 32));
+
+    let dyn_circuit = DynamicCircuit {
+        shaped: dynamic_shaped,
+        last_seen_unix: 0,
+    };
+
+    assert!(crate::dynamic::is_superseded_by_shaped_devices(
+        &dyn_circuit,
+        &catalog
+    ));
 }

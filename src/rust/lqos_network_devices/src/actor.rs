@@ -1,4 +1,6 @@
-use crate::dynamic::{CircuitObservation, expired_dynamic_circuit_ids};
+use crate::dynamic::{
+    CircuitObservation, expired_dynamic_circuit_ids, is_superseded_by_shaped_devices,
+};
 use crate::dynamic_store::{load_dynamic_circuits_from_disk, persist_dynamic_circuits_to_disk};
 use crate::state;
 use crate::{DaemonHooks, ShapedDevicesCatalog, load_network_json, load_shaped_devices};
@@ -151,6 +153,7 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
         warn!("Initial network-json load failed: {err}");
     }
     reload_dynamic_circuits_inner("startup");
+    prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks.as_deref());
 
     let tick = crossbeam_channel::tick(Duration::from_secs(
         DYNAMIC_CIRCUITS_MAINTENANCE_TICK_SECONDS,
@@ -180,6 +183,7 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                     } => {
                         debug!("Publishing shaped-devices snapshot reason={reason}");
                         state::publish_shaped_devices(*shaped);
+                        prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks.as_deref());
                         if let Some(hooks) = &hooks {
                             hooks.on_shaped_devices_updated();
                         }
@@ -564,6 +568,7 @@ fn reload_shaped_devices_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) ->
             Ok(shaped) => {
                 debug!("Loaded shaped devices reason={reason}");
                 state::publish_shaped_devices(shaped);
+                prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks);
                 if let Some(hooks) = hooks {
                     hooks.on_shaped_devices_updated();
                 }
@@ -587,6 +592,65 @@ fn reload_shaped_devices_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) ->
         }
     }
     unreachable!("reload loop must return");
+}
+
+fn prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks: Option<&dyn DaemonHooks>) {
+    let catalog = state::shaped_devices_catalog();
+    let snapshot = state::dynamic_circuits_snapshot();
+    if snapshot.is_empty() {
+        return;
+    }
+
+    let mut removed_ids: Vec<String> = Vec::new();
+    let mut removed_keys: HashSet<String> = HashSet::new();
+
+    for circuit in snapshot.iter() {
+        if !is_superseded_by_shaped_devices(circuit, &catalog) {
+            continue;
+        }
+
+        let circuit_id = circuit.shaped.circuit_id.trim();
+        if circuit_id.is_empty() {
+            continue;
+        }
+        let key = normalize_circuit_id_key(circuit_id);
+        if removed_keys.insert(key) {
+            removed_ids.push(circuit_id.to_string());
+        }
+    }
+
+    if removed_keys.is_empty() {
+        return;
+    }
+
+    removed_ids.sort();
+    removed_ids.dedup();
+
+    let updated: Vec<_> = snapshot
+        .iter()
+        .filter(|circuit| {
+            let circuit_id = circuit.shaped.circuit_id.trim();
+            if circuit_id.is_empty() {
+                return true;
+            }
+            let key = normalize_circuit_id_key(circuit_id);
+            !removed_keys.contains(&key)
+        })
+        .cloned()
+        .collect();
+
+    if let Err(err) = persist_dynamic_circuits_to_disk(&updated) {
+        warn!("Unable to persist dynamic circuits after shaped-devices conflict prune: {err:?}");
+    }
+    state::publish_dynamic_circuits_snapshot(updated);
+    debug!(
+        "Pruned {} dynamic circuits superseded by ShapedDevices.csv changes",
+        removed_ids.len()
+    );
+
+    if let Some(hooks) = hooks {
+        hooks.on_dynamic_circuits_expired(&removed_ids);
+    }
 }
 
 fn reload_network_json_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) -> Result<()> {
