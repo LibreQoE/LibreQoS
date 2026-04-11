@@ -1435,17 +1435,15 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    // Load "shaped devices" snapshot and pick devices in the target circuit
-    let shaped = lqos_network_devices::shaped_devices_snapshot();
-    let shaped_cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
-    let mut device_indexes: Vec<usize> = Vec::new();
-    for (idx, dev) in shaped.devices.iter().enumerate() {
-        if dev.circuit_hash == circuit_hash {
-            device_indexes.push(idx);
-        }
-    }
+    // Load shaped-devices catalog and pick devices in the target circuit.
+    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let circuit_devices = catalog
+        .iter_devices()
+        .filter(|dev| dev.circuit_hash == circuit_hash)
+        .cloned()
+        .collect::<Vec<_>>();
 
-    // Aggregation holders per device index
+    // Aggregation holders per device hash
     use lqos_utils::units::{DownUpOrder, down_up_divide};
     struct Agg {
         bps_bytes: DownUpOrder<u64>,
@@ -1453,18 +1451,7 @@ async fn circuit_snapshot_streaming(
         tcp_retries: DownUpOrder<u64>,
         rtts: Vec<f32>,
     }
-    let mut aggregates: std::collections::HashMap<usize, Agg> = std::collections::HashMap::new();
-    for idx in &device_indexes {
-        aggregates.insert(
-            *idx,
-            Agg {
-                bps_bytes: DownUpOrder::zeroed(),
-                tcp_packets: DownUpOrder::zeroed(),
-                tcp_retries: DownUpOrder::zeroed(),
-                rtts: Vec::new(),
-            },
-        );
-    }
+    let mut aggregates: std::collections::HashMap<i64, Agg> = std::collections::HashMap::new();
 
     // Walk raw throughput data and fold into devices of this circuit
     {
@@ -1478,17 +1465,21 @@ async fn circuit_snapshot_streaming(
             }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            if let Some(device_hash) = te.device_hash
-                && let Some(id) = shaped_cache.index_by_device_hash(shaped.as_ref(), device_hash)
-                && let Some(agg) = aggregates.get_mut(&id)
-            {
-                // bytes_per_second -> later convert to bits
-                agg.bps_bytes += te.bytes_per_second;
-                agg.tcp_packets += te.tcp_packets;
-                agg.tcp_retries += te.tcp_retransmits;
-                if let Some(rtt) = te.median_latency() {
-                    agg.rtts.push(rtt);
-                }
+            let Some(device_hash) = te.device_hash else {
+                continue;
+            };
+            let agg = aggregates.entry(device_hash).or_insert_with(|| Agg {
+                bps_bytes: DownUpOrder::zeroed(),
+                tcp_packets: DownUpOrder::zeroed(),
+                tcp_retries: DownUpOrder::zeroed(),
+                rtts: Vec::new(),
+            });
+            // bytes_per_second -> later convert to bits
+            agg.bps_bytes += te.bytes_per_second;
+            agg.tcp_packets += te.tcp_packets;
+            agg.tcp_retries += te.tcp_retransmits;
+            if let Some(rtt) = te.median_latency() {
+                agg.rtts.push(rtt);
             }
         }
         // raw lock dropped here
@@ -1496,9 +1487,8 @@ async fn circuit_snapshot_streaming(
 
     // Build device snapshots
     let mut devices_out: Vec<DeviceSnapshot> = Vec::new();
-    for idx in device_indexes {
-        let dev = &shaped.devices[idx];
-        let agg = aggregates.remove(&idx).unwrap_or(Agg {
+    for dev in circuit_devices {
+        let agg = aggregates.remove(&dev.device_hash).unwrap_or(Agg {
             bps_bytes: DownUpOrder::zeroed(),
             tcp_packets: DownUpOrder::zeroed(),
             tcp_retries: DownUpOrder::zeroed(),

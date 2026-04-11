@@ -16,15 +16,15 @@ fn qoo_score_for_circuit(circuit: &str) -> Option<f32> {
     let circuit_hash = hash_to_i64(circuit.trim());
     let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
     qoq_heatmaps.get(&circuit_hash).and_then(|heatmap| {
-            let blocks = heatmap.blocks();
-            let dl = blocks.download_total.last().copied().flatten();
-            let ul = blocks.upload_total.last().copied().flatten();
-            match (dl, ul) {
-                (Some(d), Some(u)) => Some(d.min(u)),
-                (Some(d), None) => Some(d),
-                (None, Some(u)) => Some(u),
-                (None, None) => None,
-            }
+        let blocks = heatmap.blocks();
+        let dl = blocks.download_total.last().copied().flatten();
+        let ul = blocks.upload_total.last().copied().flatten();
+        match (dl, ul) {
+            (Some(d), Some(u)) => Some(d.min(u)),
+            (Some(d), None) => Some(d),
+            (None, Some(u)) => Some(u),
+            (None, None) => None,
+        }
     })
 }
 

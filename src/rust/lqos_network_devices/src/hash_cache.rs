@@ -61,4 +61,3 @@ impl ShapedDeviceHashCache {
             .position(|d| d.circuit_hash == circuit_hash)
     }
 }
-

@@ -686,16 +686,8 @@ fn entity_snapshots(
 fn build_oversubscribed_sites(
     entities: &[ExecutiveEntitySnapshot],
 ) -> Vec<ExecutiveOversubscribedSiteRow> {
-    let devices = lqos_network_devices::shaped_devices_snapshot();
-    let mut circuit_map: std::collections::HashMap<String, (String, f32, f32)> =
-        std::collections::HashMap::new();
-    for device in &devices.devices {
-        let entry = circuit_map
-            .entry(device.circuit_id.clone())
-            .or_insert_with(|| (device.parent_node.clone(), 0.0_f32, 0.0_f32));
-        entry.1 = entry.1.max(device.download_max_mbps);
-        entry.2 = entry.2.max(device.upload_max_mbps);
-    }
+    let circuit_caps =
+        lqos_network_devices::shaped_devices_catalog().circuit_rate_caps_by_circuit_id();
 
     let entity_map = entities
         .iter()
@@ -750,10 +742,10 @@ fn build_oversubscribed_sites(
 
             let mut sub_down = 0.0_f32;
             let mut sub_up = 0.0_f32;
-            for (parent_name, circuit_down, circuit_up) in circuit_map.values() {
-                if descendant_names.contains(parent_name) {
-                    sub_down += *circuit_down;
-                    sub_up += *circuit_up;
+            for caps in circuit_caps.values() {
+                if descendant_names.contains(&caps.parent_node) {
+                    sub_down += caps.download_max_mbps;
+                    sub_up += caps.upload_max_mbps;
                 }
             }
 

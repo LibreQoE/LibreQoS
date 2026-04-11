@@ -559,10 +559,10 @@ fn derive_runtime_node_placements(
 }
 
 fn direct_circuit_counts_by_node() -> HashMap<String, u32> {
-    let shaped = lqos_network_devices::shaped_devices_snapshot();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     let mut circuits_by_node: HashMap<String, BTreeSet<i64>> = HashMap::new();
 
-    for device in &shaped.devices {
+    for device in catalog.iter_devices() {
         let node_name = device.parent_node.trim();
         if node_name.is_empty() {
             continue;

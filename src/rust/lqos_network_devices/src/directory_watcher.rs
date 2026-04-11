@@ -69,7 +69,8 @@ impl NetworkDevicesDirectoryWatcher {
 }
 
 fn classify_changed_paths(paths: &[PathBuf]) -> Vec<DirectoryReloadEvent> {
-    paths.iter()
+    paths
+        .iter()
         .filter_map(|path| classify_changed_path(path))
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -83,7 +84,9 @@ fn classify_changed_path(path: &Path) -> Option<DirectoryReloadEvent> {
     }
 
     match file_name {
-        "ShapedDevices.csv" | "ShapedDevices.insight.csv" => Some(DirectoryReloadEvent::ShapedDevices),
+        "ShapedDevices.csv" | "ShapedDevices.insight.csv" => {
+            Some(DirectoryReloadEvent::ShapedDevices)
+        }
         "network.effective.json" | "network.insight.json" | "network.json" => {
             Some(DirectoryReloadEvent::NetworkJson)
         }
@@ -100,8 +103,9 @@ fn is_ignored_filename(file_name: &str) -> bool {
 
 fn dispatch_reload(event: DirectoryReloadEvent) -> Result<()> {
     match event {
-        DirectoryReloadEvent::ShapedDevices => request_reload_shaped_devices("dirwatch:ShapedDevices.csv"),
+        DirectoryReloadEvent::ShapedDevices => {
+            request_reload_shaped_devices("dirwatch:ShapedDevices.csv")
+        }
         DirectoryReloadEvent::NetworkJson => request_reload_network_json("dirwatch:network.json"),
     }
 }
-

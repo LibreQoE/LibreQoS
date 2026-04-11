@@ -192,8 +192,7 @@ fn throughput_task(
             lqos_network_devices::with_network_json_write(|net_json_calc| {
                 timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
                 net_json_calc.zero_throughput_and_rtt();
-                timer_metrics.zero_throughput_and_rtt =
-                    timer_metrics.start.elapsed().as_secs_f64();
+                timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
                 THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
                 timer_metrics.copy_previous_and_reset_rtt =
                     timer_metrics.start.elapsed().as_secs_f64();
@@ -454,9 +453,9 @@ pub fn circuit_heatmaps() -> BusResponse {
         return BusResponse::CircuitHeatmaps(Vec::new());
     }
 
-    let devices = lqos_network_devices::shaped_devices_snapshot();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     let mut circuit_meta: FxHashMap<i64, (String, String)> = FxHashMap::default();
-    devices.devices.iter().for_each(|device| {
+    catalog.iter_devices().for_each(|device| {
         circuit_meta
             .entry(device.circuit_hash)
             .or_insert_with(|| (device.circuit_id.clone(), device.circuit_name.clone()));
@@ -893,14 +892,13 @@ fn current_host_counts() -> (u32, u32) {
 
 /// Gather headline metrics for the Executive Summary header cards.
 pub fn executive_summary_header() -> BusResponse {
-    let devices = lqos_network_devices::shaped_devices_snapshot();
-    let circuit_count = devices
-        .devices
-        .iter()
+    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let circuit_count = catalog
+        .iter_devices()
         .map(|device| device.circuit_hash)
         .collect::<FxHashSet<_>>()
         .len() as u64;
-    let device_count = devices.devices.len() as u64;
+    let device_count = catalog.devices_len() as u64;
 
     let site_count = lqos_network_devices::with_network_json_read(|net_json| {
         let total_nodes = net_json.get_nodes_when_ready().len();
@@ -1110,8 +1108,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
-    let shaped = lqos_network_devices::shaped_devices_snapshot();
-    let shaped_cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     let throughput = THROUGHPUT_TRACKER.raw_data.lock();
 
     let result = table
@@ -1126,14 +1123,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
                 if let Some(id) = &te.circuit_id {
                     circuit_id = id.clone();
                 }
-                let shaped_device = te
-                    .device_hash
-                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
-                    .or_else(|| {
-                        te.circuit_hash
-                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
-                    })
-                    .and_then(|idx| shaped.devices.get(idx));
+                let shaped_device = catalog.device_by_hashes(te.device_hash, te.circuit_hash);
                 if let Some(device) = shaped_device {
                     if circuit_id.is_empty() {
                         circuit_id = device.circuit_id.clone();
@@ -1182,8 +1172,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock();
         let throughput = THROUGHPUT_TRACKER.raw_data.lock();
-        let shaped = lqos_network_devices::shaped_devices_snapshot();
-        let shaped_cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
         let (circuit_id, circuit_name) = {
             let mut circuit_id = String::new();
             let mut circuit_name = String::new();
@@ -1191,14 +1180,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
                 if let Some(id) = &te.circuit_id {
                     circuit_id = id.clone();
                 }
-                let shaped_device = te
-                    .device_hash
-                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
-                    .or_else(|| {
-                        te.circuit_hash
-                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
-                    })
-                    .and_then(|idx| shaped.devices.get(idx));
+                let shaped_device = catalog.device_by_hashes(te.device_hash, te.circuit_hash);
                 if let Some(device) = shaped_device {
                     if circuit_id.is_empty() {
                         circuit_id = device.circuit_id.clone();

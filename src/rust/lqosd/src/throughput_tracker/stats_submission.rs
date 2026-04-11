@@ -287,11 +287,10 @@ pub(crate) fn submit_throughput_stats(
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
 
-        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
         const CRAZY_LIMIT: u64 = 8; // 8x the max bandwidth
-        let plan_lookup: FxHashMap<i64, (u64, u64)> = shaped_devices
-            .devices
-            .iter()
+        let plan_lookup: FxHashMap<i64, (u64, u64)> = catalog
+            .iter_devices()
             // Bandwidth: mbps * 1_000_000 to bytes
             .map(|d| {
                 (
@@ -452,8 +451,9 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Network tree stats
-        let tree =
-            lqos_network_devices::with_network_json_read(|net_json| net_json.get_nodes_when_ready().clone());
+        let tree = lqos_network_devices::with_network_json_read(|net_json| {
+            net_json.get_nodes_when_ready().clone()
+        });
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();
         let mut site_retransmits: Vec<crate::lts2_sys::shared_types::SiteRetransmits> = Vec::new();
         let mut site_rtt: Vec<crate::lts2_sys::shared_types::SiteRtt> = Vec::new();

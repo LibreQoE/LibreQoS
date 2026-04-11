@@ -108,7 +108,11 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                 let result = reload_network_json_inner(&reason, hooks.as_deref());
                 let _ = reply.send(result);
             }
-            NetworkDevicesCommand::ApplyShapedDevicesSnapshot { reason, shaped, reply } => {
+            NetworkDevicesCommand::ApplyShapedDevicesSnapshot {
+                reason,
+                shaped,
+                reply,
+            } => {
                 debug!("Publishing shaped-devices snapshot reason={reason}");
                 state::publish_shaped_devices(*shaped);
                 if let Some(hooks) = &hooks {
@@ -136,8 +140,7 @@ fn reload_shaped_devices_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) ->
             Err(err) if attempt < RELOAD_ATTEMPTS => {
                 warn!(
                     "ShapedDevices reload reason={reason} attempt {attempt}/{} failed: {err}. Retrying after {} ms.",
-                    RELOAD_ATTEMPTS,
-                    RELOAD_RETRY_DELAY_MS
+                    RELOAD_ATTEMPTS, RELOAD_RETRY_DELAY_MS
                 );
                 std::thread::sleep(Duration::from_millis(RELOAD_RETRY_DELAY_MS));
             }
@@ -168,8 +171,7 @@ fn reload_network_json_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) -> R
             Err(err) if attempt < RELOAD_ATTEMPTS => {
                 warn!(
                     "NetworkJson reload reason={reason} attempt {attempt}/{} failed: {err}. Retrying after {} ms.",
-                    RELOAD_ATTEMPTS,
-                    RELOAD_RETRY_DELAY_MS
+                    RELOAD_ATTEMPTS, RELOAD_RETRY_DELAY_MS
                 );
                 std::thread::sleep(Duration::from_millis(RELOAD_RETRY_DELAY_MS));
             }

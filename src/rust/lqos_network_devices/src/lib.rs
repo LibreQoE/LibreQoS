@@ -6,16 +6,23 @@
 //!   in-memory snapshots up to date.
 
 mod actor;
+mod catalog;
 mod directory_watcher;
 mod hash_cache;
 mod state;
+mod topology;
+
+#[cfg(test)]
+mod tests;
 
 use anyhow::{Context, Result};
 use lqos_config::{ConfigShapedDevices, NetworkJson};
 use std::sync::Arc;
 use tracing::debug;
 
+pub use catalog::{CircuitRateCaps, ShapedDevicesCatalog};
 pub use hash_cache::ShapedDeviceHashCache;
+pub use topology::{ResolvedParentNode, resolve_parent_node, resolve_parent_node_reference};
 
 /// Hooks that `lqosd` can provide to run side effects after updates.
 pub trait DaemonHooks: Send + Sync + 'static {
@@ -48,6 +55,14 @@ pub fn load_network_json() -> Result<NetworkJson> {
 /// Note: If the runtime actor has not been started, this returns an empty default snapshot.
 pub fn shaped_devices_snapshot() -> Arc<ConfigShapedDevices> {
     state::shaped_devices_snapshot()
+}
+
+/// Returns a higher-level shaped-devices catalog snapshot.
+///
+/// Prefer this API over directly iterating `shaped_devices_snapshot().devices` or separately
+/// fetching the hash cache snapshot.
+pub fn shaped_devices_catalog() -> ShapedDevicesCatalog {
+    state::shaped_devices_catalog()
 }
 
 /// Returns the current in-memory shaped-device hash cache snapshot.

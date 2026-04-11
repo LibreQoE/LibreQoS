@@ -99,7 +99,7 @@ pub fn network_json_data() -> Value {
 }
 
 pub fn all_shaped_devices_data() -> Vec<ShapedDevice> {
-    lqos_network_devices::shaped_devices_snapshot().devices.clone()
+    lqos_network_devices::shaped_devices_catalog().clone_all_devices()
 }
 
 /// Returns the enabled integration names that act as the source of truth for
@@ -343,8 +343,11 @@ fn persist_shaped_devices(mut devices: Vec<ShapedDevice>) -> Result<(), String> 
     copied
         .write_csv("ShapedDevices.csv")
         .map_err(|e| format!("Unable to write ShapedDevices.csv: {e}"))?;
-    lqos_network_devices::apply_shaped_devices_snapshot("node_manager:persist_shaped_devices", copied)
-        .map_err(|e| format!("Unable to publish ShapedDevices.csv snapshot: {e}"))?;
+    lqos_network_devices::apply_shaped_devices_snapshot(
+        "node_manager:persist_shaped_devices",
+        copied,
+    )
+    .map_err(|e| format!("Unable to publish ShapedDevices.csv snapshot: {e}"))?;
 
     Ok(())
 }
@@ -415,9 +418,8 @@ pub fn get_shaped_device_data(
         return Err(StatusCode::FORBIDDEN);
     }
     let wanted = device_id.trim();
-    Ok(lqos_network_devices::shaped_devices_snapshot()
-        .devices
-        .iter()
+    Ok(lqos_network_devices::shaped_devices_catalog()
+        .iter_devices()
         .find(|device| device.device_id == wanted)
         .cloned())
 }
@@ -434,7 +436,7 @@ pub fn create_shaped_device_data(
         return Err("Unauthorized".to_string());
     }
     ensure_topology_editor_unlocked()?;
-    let mut devices = lqos_network_devices::shaped_devices_snapshot().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     devices.push(device.clone());
     persist_shaped_devices(devices)?;
     let created = get_shaped_device_data(login, device.device_id.clone())
@@ -457,7 +459,7 @@ pub fn update_shaped_device_data(
         return Err("Unauthorized".to_string());
     }
     ensure_topology_editor_unlocked()?;
-    let mut devices = lqos_network_devices::shaped_devices_snapshot().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     let wanted = original_device_id.trim();
     let Some(index) = devices.iter().position(|row| row.device_id == wanted) else {
         return Err("Not found".to_string());
@@ -481,7 +483,7 @@ pub fn delete_shaped_device_data(login: LoginResult, device_id: String) -> Resul
     }
     ensure_topology_editor_unlocked()?;
     let wanted = device_id.trim();
-    let mut devices = lqos_network_devices::shaped_devices_snapshot().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     let before = devices.len();
     devices.retain(|device| device.device_id != wanted);
     if devices.len() == before {

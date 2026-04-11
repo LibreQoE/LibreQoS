@@ -46,14 +46,13 @@ pub async fn circuit_capacity(channels: Arc<PubSub>) {
         });
 
     // Map circuits to capacities
-    let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     let capacities: Vec<CircuitCapacityRow> = {
         circuits
             .iter()
             .filter_map(|(circuit_id, accumulator)| {
-                if let Some(device) = shaped_devices
-                    .devices
-                    .iter()
+                if let Some(device) = catalog
+                    .iter_devices()
                     .find(|sd| sd.circuit_id == *circuit_id)
                 {
                     let down_mbps = (accumulator.bytes.down as f64 * 8.0) / 1_000_000.0;

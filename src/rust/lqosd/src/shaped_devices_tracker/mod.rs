@@ -5,8 +5,8 @@ use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{
-    ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport,
-    TopologyShapingInputsFile, load_config, topology_shaping_inputs_path,
+    NetworkJsonNode, NetworkJsonTransport, TopologyShapingInputsFile, load_config,
+    topology_shaping_inputs_path,
 };
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
 use lqos_utils::file_watcher::FileWatcher;
@@ -171,7 +171,7 @@ fn node_to_transport_with_summary(
 
 fn build_network_tree_summaries(
     nodes: &[NetworkJsonNode],
-    shaped_devices: &ConfigShapedDevices,
+    shaped_devices: &lqos_network_devices::ShapedDevicesCatalog,
 ) -> Vec<NetworkTreeSummary> {
     let mut summaries = vec![NetworkTreeSummary::default(); nodes.len()];
     let mut direct_circuits = vec![FxHashSet::default(); nodes.len()];
@@ -182,7 +182,7 @@ fn build_network_tree_summaries(
         node_index_by_name.entry(node.name.as_str()).or_insert(idx);
     }
 
-    for device in &shaped_devices.devices {
+    for device in shaped_devices.iter_devices() {
         let Some(node_idx) = node_index_by_name.get(device.parent_node.as_str()).copied() else {
             continue;
         };
@@ -217,8 +217,8 @@ fn build_network_tree_summaries(
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes_ref = net_json.get_nodes_when_ready();
-        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
-        let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
+        let shaped_devices = lqos_network_devices::shaped_devices_catalog();
+        let summaries = build_network_tree_summaries(nodes_ref, &shaped_devices);
         if let Some(parent) = nodes_ref.get(parent_idx) {
             let mut nodes = vec![(
                 parent_idx,
@@ -252,15 +252,18 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes = net_json.get_nodes_when_ready();
-        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
-        let summaries = build_network_tree_summaries(nodes, shaped_devices.as_ref());
+        let shaped_devices = lqos_network_devices::shaped_devices_catalog();
+        let summaries = build_network_tree_summaries(nodes, &shaped_devices);
         nodes
             .iter()
             .enumerate()
             .map(|(i, n)| {
                 (
                     i,
-                    node_to_transport_with_summary(n, summaries.get(i).copied().unwrap_or_default()),
+                    node_to_transport_with_summary(
+                        n,
+                        summaries.get(i).copied().unwrap_or_default(),
+                    ),
                 )
             })
             .collect()
@@ -344,8 +347,8 @@ pub fn get_full_network_map() -> BusResponse {
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes_ref = net_json.get_nodes_when_ready();
-        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
-        let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
+        let shaped_devices = lqos_network_devices::shaped_devices_catalog();
+        let summaries = build_network_tree_summaries(nodes_ref, &shaped_devices);
         if let Some(parent) = nodes_ref.first() {
             let mut nodes = vec![(
                 0,
@@ -381,67 +384,67 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
             if nodes.len() > n_queues {
                 let mut other_bw = (0, 0);
                 let mut other_packets = (0, 0);
-            let mut other_tcp_packets = (0, 0);
-            let mut other_tcp_retransmit_packets = (0, 0);
-            let mut other_udp_packets = (0, 0);
-            let mut other_icmp_packets = (0, 0);
-            let mut other_xmit = (0, 0);
-            let mut other_marks = (0, 0);
-            let mut other_drops = (0, 0);
-            nodes.drain(n_queues..).for_each(|n| {
-                other_bw.0 += n.1.current_throughput.0;
-                other_bw.1 += n.1.current_throughput.1;
-                other_packets.0 += n.1.current_packets.0;
-                other_packets.1 += n.1.current_packets.1;
-                other_tcp_packets.0 += n.1.current_tcp_packets.0;
-                other_tcp_packets.1 += n.1.current_tcp_packets.1;
-                other_tcp_retransmit_packets.0 += n.1.current_tcp_retransmit_packets.0;
-                other_tcp_retransmit_packets.1 += n.1.current_tcp_retransmit_packets.1;
-                other_udp_packets.0 += n.1.current_udp_packets.0;
-                other_udp_packets.1 += n.1.current_udp_packets.1;
-                other_icmp_packets.0 += n.1.current_icmp_packets.0;
-                other_icmp_packets.1 += n.1.current_icmp_packets.1;
-                other_xmit.0 += n.1.current_retransmits.0;
-                other_xmit.1 += n.1.current_retransmits.1;
-                other_marks.0 += n.1.current_marks.0;
-                other_marks.1 += n.1.current_marks.1;
-                other_drops.0 += n.1.current_drops.0;
-                other_drops.1 += n.1.current_drops.1;
-            });
+                let mut other_tcp_packets = (0, 0);
+                let mut other_tcp_retransmit_packets = (0, 0);
+                let mut other_udp_packets = (0, 0);
+                let mut other_icmp_packets = (0, 0);
+                let mut other_xmit = (0, 0);
+                let mut other_marks = (0, 0);
+                let mut other_drops = (0, 0);
+                nodes.drain(n_queues..).for_each(|n| {
+                    other_bw.0 += n.1.current_throughput.0;
+                    other_bw.1 += n.1.current_throughput.1;
+                    other_packets.0 += n.1.current_packets.0;
+                    other_packets.1 += n.1.current_packets.1;
+                    other_tcp_packets.0 += n.1.current_tcp_packets.0;
+                    other_tcp_packets.1 += n.1.current_tcp_packets.1;
+                    other_tcp_retransmit_packets.0 += n.1.current_tcp_retransmit_packets.0;
+                    other_tcp_retransmit_packets.1 += n.1.current_tcp_retransmit_packets.1;
+                    other_udp_packets.0 += n.1.current_udp_packets.0;
+                    other_udp_packets.1 += n.1.current_udp_packets.1;
+                    other_icmp_packets.0 += n.1.current_icmp_packets.0;
+                    other_icmp_packets.1 += n.1.current_icmp_packets.1;
+                    other_xmit.0 += n.1.current_retransmits.0;
+                    other_xmit.1 += n.1.current_retransmits.1;
+                    other_marks.0 += n.1.current_marks.0;
+                    other_marks.1 += n.1.current_marks.1;
+                    other_drops.0 += n.1.current_drops.0;
+                    other_drops.1 += n.1.current_drops.1;
+                });
 
-            nodes.push((
-                0,
-                NetworkJsonTransport {
-                    name: "Others".into(),
-                    id: None,
-                    is_virtual: false,
-                    runtime_virtualized: false,
-                    max_throughput: (0.0, 0.0),
-                    configured_max_throughput: (0.0, 0.0),
-                    effective_max_throughput: None,
-                    current_throughput: other_bw,
-                    current_packets: other_packets,
-                    current_tcp_packets: other_tcp_packets,
-                    current_tcp_retransmit_packets: other_tcp_retransmit_packets,
-                    current_udp_packets: other_udp_packets,
-                    current_icmp_packets: other_icmp_packets,
-                    current_retransmits: other_xmit,
-                    current_marks: other_marks,
-                    current_drops: other_drops,
-                    rtts: Vec::new(),
-                    qoo: (None, None),
-                    parents: Vec::new(),
-                    immediate_parent: None,
-                    node_type: None,
-                    latitude: None,
-                    longitude: None,
-                    active_attachment_name: None,
-                    subtree_site_count: 0,
-                    subtree_circuit_count: 0,
-                    subtree_device_count: 0,
-                },
-            ));
-        }
+                nodes.push((
+                    0,
+                    NetworkJsonTransport {
+                        name: "Others".into(),
+                        id: None,
+                        is_virtual: false,
+                        runtime_virtualized: false,
+                        max_throughput: (0.0, 0.0),
+                        configured_max_throughput: (0.0, 0.0),
+                        effective_max_throughput: None,
+                        current_throughput: other_bw,
+                        current_packets: other_packets,
+                        current_tcp_packets: other_tcp_packets,
+                        current_tcp_retransmit_packets: other_tcp_retransmit_packets,
+                        current_udp_packets: other_udp_packets,
+                        current_icmp_packets: other_icmp_packets,
+                        current_retransmits: other_xmit,
+                        current_marks: other_marks,
+                        current_drops: other_drops,
+                        rtts: Vec::new(),
+                        qoo: (None, None),
+                        parents: Vec::new(),
+                        immediate_parent: None,
+                        node_type: None,
+                        latitude: None,
+                        longitude: None,
+                        active_attachment_name: None,
+                        subtree_site_count: 0,
+                        subtree_circuit_count: 0,
+                        subtree_device_count: 0,
+                    },
+                ));
+            }
             BusResponse::NetworkMap(nodes)
         } else {
             BusResponse::Fail("No such node".to_string())
@@ -461,67 +464,8 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     })
 }
 
-/// Canonical parent-node metadata resolved from `network.json`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedParentNode {
-    /// Canonical node name from `network.json`.
-    pub name: String,
-    /// Optional stable node identifier from `network.json` metadata.
-    pub id: Option<String>,
-}
-
-/// Resolve a shaped-device parent reference into canonical `network.json`
-/// parent metadata, preferring a stable node ID when one is available.
-pub fn resolve_parent_node_reference(
-    parent_node: &str,
-    parent_node_id: Option<&str>,
-) -> Option<ResolvedParentNode> {
-    let trimmed_id = parent_node_id.map(str::trim).filter(|id| !id.is_empty());
-    let trimmed = parent_node.trim();
-    if trimmed.is_empty() && trimmed_id.is_none() {
-        return None;
-    }
-    lqos_network_devices::with_network_json_read(|net_json| {
-        let nodes = net_json.get_nodes_when_ready();
-
-        if let Some(parent_node_id) = trimmed_id
-            && let Some(node) = nodes
-                .iter()
-                .find(|node| node.id.as_deref() == Some(parent_node_id))
-        {
-            return Some(ResolvedParentNode {
-                name: node.name.clone(),
-                id: node.id.clone(),
-            });
-        }
-
-        if let Some(node) = nodes.iter().find(|node| node.name == trimmed) {
-            return Some(ResolvedParentNode {
-                name: node.name.clone(),
-                id: node.id.clone(),
-            });
-        }
-
-        nodes.iter().find_map(|node| {
-            node.active_attachment_name
-                .as_deref()
-                .filter(|alias| alias.trim() == trimmed)
-                .map(|_| ResolvedParentNode {
-                    name: node.name.clone(),
-                    id: node.id.clone(),
-                })
-        })
-    })
-}
-
-/// Resolve a shaped-device parent node or active attachment alias into canonical `network.json`
-/// parent metadata.
-pub fn resolve_parent_node(parent_node: &str) -> Option<ResolvedParentNode> {
-    resolve_parent_node_reference(parent_node, None)
-}
-
 pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
-    resolve_parent_node(parent_node).map(|resolved| resolved.name)
+    lqos_network_devices::resolve_parent_node(parent_node).map(|resolved| resolved.name)
 }
 
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
@@ -535,7 +479,10 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
                 .rev()
                 .skip(1)
             {
-                result.push((*idx, node_to_transport(&net_json.get_nodes_when_ready()[*idx])));
+                result.push((
+                    *idx,
+                    node_to_transport(&net_json.get_nodes_when_ready()[*idx]),
+                ));
             }
             return BusResponse::NetworkMap(result);
         }
@@ -546,8 +493,7 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
 
 pub fn get_all_circuits() -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
-        let devices = lqos_network_devices::shaped_devices_snapshot();
-        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -570,15 +516,7 @@ pub fn get_all_circuits() -> BusResponse {
                 let mut parent_node = None;
                 // Plan is expressed in Mbps as f32
                 let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
-                let device = v
-                    .device_hash
-                    .and_then(|device_hash| cache.index_by_device_hash(&devices, device_hash))
-                    .or_else(|| {
-                        v.circuit_hash.and_then(|circuit_hash| {
-                            cache.index_by_circuit_hash(&devices, circuit_hash)
-                        })
-                    })
-                    .and_then(|idx| devices.devices.get(idx));
+                let device = catalog.device_by_hashes(v.device_hash, v.circuit_hash);
                 if let Some(device) = device {
                     circuit_id = Some(device.circuit_id.clone());
                     circuit_name = Some(device.circuit_name.clone());
@@ -666,8 +604,7 @@ pub fn get_all_circuits() -> BusResponse {
 pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
         let desired_hash = hash_to_i64(&desired_circuit_id);
-        let devices = lqos_network_devices::shaped_devices_snapshot();
-        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -693,15 +630,7 @@ pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
                 let mut parent_node = None;
                 // Plan is expressed in Mbps as f32
                 let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
-                let device = v
-                    .device_hash
-                    .and_then(|device_hash| cache.index_by_device_hash(&devices, device_hash))
-                    .or_else(|| {
-                        v.circuit_hash.and_then(|circuit_hash| {
-                            cache.index_by_circuit_hash(&devices, circuit_hash)
-                        })
-                    })
-                    .and_then(|idx| devices.devices.get(idx));
+                let device = catalog.device_by_hashes(v.device_hash, v.circuit_hash);
                 if let Some(device) = device {
                     circuit_id = Some(device.circuit_id.clone());
                     circuit_name = Some(device.circuit_name.clone());

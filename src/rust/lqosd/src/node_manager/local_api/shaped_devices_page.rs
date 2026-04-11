@@ -52,11 +52,10 @@ pub fn shaped_devices_page(query: ShapedDevicesPageQuery) -> ShapedDevicesPage {
     let page = query.page.unwrap_or(0);
     let page_size = normalized_page_size(&query);
     let search = query.search.as_deref().unwrap_or("").trim().to_lowercase();
-    let devices = lqos_network_devices::shaped_devices_snapshot();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
 
-    let mut filtered: Vec<ShapedDevice> = devices
-        .devices
-        .iter()
+    let mut filtered: Vec<ShapedDevice> = catalog
+        .iter_devices()
         .filter(|device| {
             if search.is_empty() {
                 return true;

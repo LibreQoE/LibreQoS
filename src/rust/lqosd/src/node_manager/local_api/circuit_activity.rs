@@ -163,13 +163,13 @@ fn sanitized_plan_ceiling_bps(plan_mbps: f32) -> u32 {
 }
 
 fn circuit_display_rate_ceiling_bps(
-    shaped: &lqos_config::ConfigShapedDevices,
+    catalog: &lqos_network_devices::ShapedDevicesCatalog,
     circuit_hash: i64,
 ) -> Option<DownUpOrder<u32>> {
     let mut max_down_mbps = 0.0_f32;
     let mut max_up_mbps = 0.0_f32;
 
-    for device in &shaped.devices {
+    for device in catalog.iter_devices() {
         if device.circuit_hash != circuit_hash {
             continue;
         }
@@ -219,9 +219,8 @@ fn flow_qoo(local: &FlowbeeLocalData) -> DownUpOrder<Option<f32>> {
 
 fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
     let circuit_hash = hash_to_i64(circuit_id);
-    let shaped = lqos_network_devices::shaped_devices_snapshot();
-    let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
-    let display_rate_ceiling = circuit_display_rate_ceiling_bps(&shaped, circuit_hash);
+    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let display_rate_ceiling = circuit_display_rate_ceiling_bps(&catalog, circuit_hash);
     let Ok(now) = time_since_boot() else {
         return Vec::new();
     };
@@ -240,11 +239,9 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
                 return None;
             }
 
-            let device_name = local
-                .device_hash
-                .and_then(|hash| cache.index_by_device_hash(shaped.as_ref(), hash))
-                .and_then(|idx| shaped.as_ref().devices.get(idx))
-                .map(|d| d.device_name.clone())
+            let device_name = catalog
+                .device_by_hashes(local.device_hash, local.circuit_hash)
+                .map(|device| device.device_name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
 
             let geo = get_asn_name_and_country(key.remote_ip.as_ip());

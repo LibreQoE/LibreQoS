@@ -10,7 +10,6 @@ use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
-use itertools::Itertools;
 use lqos_config::{RttThresholds, load_config};
 use lqos_utils::unix_time::unix_now;
 use std::path::Path;
@@ -152,13 +151,8 @@ pub async fn apply_templates(
             let week_ago = now - (7 * 24 * 60 * 60);
             let fl = FIRST_LOAD.load(Relaxed);
             if fl != 0 && fl < week_ago {
-                let sd = lqos_network_devices::shaped_devices_snapshot();
-                let num_circuits = sd
-                    .devices
-                    .iter()
-                    .sorted_by(|a, b| a.circuit_hash.cmp(&b.circuit_hash))
-                    .dedup()
-                    .count();
+                let num_circuits =
+                    lqos_network_devices::shaped_devices_catalog().configured_circuit_count();
                 if num_circuits > 1_000 && !script_has_insight {
                     show_modal = "true";
                     show_modal_number = num_circuits.to_string();

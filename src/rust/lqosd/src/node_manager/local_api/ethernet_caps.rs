@@ -142,9 +142,9 @@ fn load_advisory_file() -> Option<CircuitEthernetMetadataFile> {
 }
 
 fn parent_node_by_circuit_id() -> HashMap<String, String> {
-    let devices = lqos_network_devices::shaped_devices_snapshot();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     let mut parent_nodes = HashMap::new();
-    for device in &devices.devices {
+    for device in catalog.iter_devices() {
         let circuit_id = device.circuit_id.trim();
         if circuit_id.is_empty() {
             continue;

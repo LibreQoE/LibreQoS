@@ -1,4 +1,5 @@
 use ip_network::IpNetwork;
+use lqos_utils::XdpIpAddress;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr};
@@ -77,6 +78,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
     let term_lc = raw_term.to_lowercase();
     let exact_ip: Option<IpAddr> = raw_term.parse::<IpAddr>().ok();
     let looks_like_ip_prefix = raw_term.contains('.') || raw_term.contains(':');
+    let catalog = lqos_network_devices::shaped_devices_catalog();
 
     // Helper to add results with de-dup and cap
     fn push_result(
@@ -102,14 +104,8 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
 
     // First pass: exact IP matches using the LPM trie
     if let Some(ip) = exact_ip {
-        let sd_reader = lqos_network_devices::shaped_devices_snapshot();
-        let query_v6 = match ip {
-            IpAddr::V4(v4) => v4.to_ipv6_mapped(),
-            IpAddr::V6(v6) => v6,
-        };
-        if let Some((net, &idx)) = sd_reader.trie.longest_match(query_v6)
-            && let Some(dev) = sd_reader.devices.get(idx)
-        {
+        let xdp_ip = XdpIpAddress::from_ip(ip);
+        if let Some((net, dev)) = catalog.device_longest_match_for_ip(&xdp_ip) {
             let name = format!("{} ({})", dev.device_name, pretty_net(&net));
             push_result(
                 &mut results,
@@ -142,14 +138,11 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                     IpNetwork::V6(v6net) => Some(IpNetwork::V6(v6net)),
                 };
                 if let Some(query_v6) = net_v6.as_ref() {
-                    let sd_reader = lqos_network_devices::shaped_devices_snapshot();
-                    for (n, &idx) in sd_reader.trie.iter() {
+                    for (n, dev) in catalog.iter_ip_mappings() {
                         if results.len() >= MAX_RESULTS {
                             break;
                         }
-                        if ipv6_overlap(&n, query_v6)
-                            && let Some(dev) = sd_reader.devices.get(idx)
-                        {
+                        if ipv6_overlap(&n, query_v6) {
                             let name = format!("{} ({})", dev.device_name, pretty_net(&n));
                             push_result(
                                 &mut results,
@@ -167,15 +160,12 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
             }
         } else {
             // Fallback: textual prefix (e.g., "10.1.")
-            let sd_reader = lqos_network_devices::shaped_devices_snapshot();
-            for (n, &idx) in sd_reader.trie.iter() {
+            for (n, dev) in catalog.iter_ip_mappings() {
                 if results.len() >= MAX_RESULTS {
                     break;
                 }
                 let s = pretty_net(&n);
-                if s.starts_with(raw_term)
-                    && let Some(dev) = sd_reader.devices.get(idx)
-                {
+                if s.starts_with(raw_term) {
                     let name = format!("{} ({})", dev.device_name, s);
                     push_result(
                         &mut results,
@@ -194,8 +184,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
 
     // Third pass: Circuit/Device name substring matches
     if results.len() < MAX_RESULTS && term_lc.len() >= 3 {
-        let sd_reader = lqos_network_devices::shaped_devices_snapshot();
-        for sd in sd_reader.devices.iter() {
+        for sd in catalog.iter_devices() {
             if results.len() >= MAX_RESULTS {
                 break;
             }

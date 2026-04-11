@@ -20,4 +20,3 @@ impl lqos_network_devices::DaemonHooks for LqosdNetworkDevicesHooks {
         });
     }
 }
-

@@ -475,8 +475,7 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
             .get(&key.local_ip)
             .and_then(|te| te.circuit_hash)
             .or_else(|| {
-                lqos_network_devices::shaped_devices_snapshot()
-                    .get_circuit_hash_from_ip(&key.local_ip)
+                lqos_network_devices::shaped_devices_catalog().circuit_hash_for_ip(&key.local_ip)
             })
     });
 

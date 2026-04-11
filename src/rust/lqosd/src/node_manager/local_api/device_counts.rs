@@ -9,7 +9,7 @@ pub struct DeviceCount {
 
 pub fn device_count() -> DeviceCount {
     DeviceCount {
-        shaped_devices: lqos_network_devices::shaped_devices_snapshot().devices.len(),
+        shaped_devices: lqos_network_devices::shaped_devices_catalog().devices_len(),
         unknown_ips: get_unknown_ips().len(),
     }
 }

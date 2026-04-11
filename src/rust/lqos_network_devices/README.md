@@ -18,13 +18,26 @@ private static.
 ## Public API (high level)
 
 - `start_daemon_mode(hooks)`: starts actor + directory watcher.
-- `shaped_devices_snapshot()`: `Arc<ConfigShapedDevices>` snapshot.
-- `shaped_device_hash_cache_snapshot()`: hash→index cache snapshot (device/circuit hash lookups).
+- `shaped_devices_catalog()`: preferred shaped-devices snapshot handle with common lookup helpers.
+- `shaped_devices_snapshot()`: low-level `Arc<ConfigShapedDevices>` snapshot.
+- `shaped_device_hash_cache_snapshot()`: low-level hash→index cache snapshot (device/circuit hash lookups).
 - `with_network_json_read(|net_json| ...)`: read-only access to in-memory `NetworkJson`.
 - `with_network_json_write(|net_json| ...)`: mutable access to in-memory `NetworkJson` (used by runtime counters).
+- `resolve_parent_node_reference(parent_node, parent_node_id)`: canonicalize shaped-device parent references against `network.json`.
 - `request_reload_shaped_devices(reason)` / `request_reload_network_json(reason)`: ask actor to reload from disk.
 - `apply_shaped_devices_snapshot(reason, shaped)`: publish a caller-provided shaped-devices snapshot via actor.
 - `swap_shaped_devices_snapshot(reason, shaped_arc)`: replace shaped-devices snapshot without actor (intended for tests).
+
+## `ShapedDevicesCatalog` helpers
+
+`ShapedDevicesCatalog` exposes common verb-style operations over a consistent shaped-devices snapshot:
+
+- `device_by_hashes(device_hash, circuit_hash)`: lookups using stable baked hashes.
+- `devices_for_circuit_id(circuit_id)`: rows for one circuit.
+- `configured_circuit_count()`: unique configured circuits.
+- `circuit_rate_caps_by_circuit_id()`: per-circuit configured max Mbps.
+- `device_longest_match_for_ip(ip)`: longest-prefix match via the LPM trie.
+- `iter_ip_mappings()`: iterate the LPM trie mappings.
 
 ## Notes for `lqosd`
 

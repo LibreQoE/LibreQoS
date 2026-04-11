@@ -2117,6 +2117,7 @@ dependencies = [
  "arc-swap",
  "crossbeam-channel",
  "fxhash",
+ "ip_network",
  "lqos_config",
  "lqos_utils",
  "once_cell",

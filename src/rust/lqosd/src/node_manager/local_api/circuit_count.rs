@@ -35,22 +35,18 @@ pub fn circuit_count_data() -> CircuitCount {
         .collect();
 
     // Get configured circuits from ShapedDevices
-    let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
-    let configured_circuits: HashSet<&str> = shaped_devices
-        .devices
-        .iter()
-        .map(|device| device.circuit_id.as_str())
-        .collect();
+    let configured_count =
+        lqos_network_devices::shaped_devices_catalog().configured_circuit_count();
 
     // Use active count if > 0, otherwise fall back to configured count
     let count = if !active_circuits.is_empty() {
         active_circuits.len()
     } else {
-        configured_circuits.len()
+        configured_count
     };
 
     CircuitCount {
         count,
-        configured_count: configured_circuits.len(),
+        configured_count,
     }
 }

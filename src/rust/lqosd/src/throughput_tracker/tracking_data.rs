@@ -171,10 +171,10 @@ impl ThroughputTracker {
             return;
         }
 
-        let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
         let mut capacity_lookup: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
-        capacity_lookup.reserve(shaped_devices.devices.len());
-        shaped_devices.devices.iter().for_each(|device| {
+        capacity_lookup.reserve(catalog.devices_len());
+        catalog.iter_devices().for_each(|device| {
             let entry = capacity_lookup
                 .entry(device.circuit_hash)
                 .or_insert((device.download_max_mbps, device.upload_max_mbps));
@@ -402,47 +402,30 @@ impl ThroughputTracker {
         });
     }
 
-    fn shaped_device_for_hashes<'a>(
-        shaped: &'a lqos_config::ConfigShapedDevices,
-        cache: &lqos_network_devices::ShapedDeviceHashCache,
+    fn shaped_device_for_hashes(
+        catalog: &lqos_network_devices::ShapedDevicesCatalog,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
-    ) -> Option<&'a lqos_config::ShapedDevice> {
-        if let Some(device_hash) = device_hash
-            && let Some(idx) = cache.index_by_device_hash(shaped, device_hash)
-        {
-            return shaped.devices.get(idx);
-        }
-        if let Some(circuit_hash) = circuit_hash
-            && let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash)
-        {
-            return shaped.devices.get(idx);
-        }
-        None
+    ) -> Option<&lqos_config::ShapedDevice> {
+        catalog.device_by_hashes(device_hash, circuit_hash)
     }
 
     fn lookup_network_parents_from_hashes(
-        shaped: &lqos_config::ConfigShapedDevices,
-        cache: &lqos_network_devices::ShapedDeviceHashCache,
+        catalog: &lqos_network_devices::ShapedDevicesCatalog,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
         lock: &NetworkJson,
     ) -> Option<Vec<usize>> {
-        Self::shaped_device_for_hashes(shaped, cache, device_hash, circuit_hash)
+        Self::shaped_device_for_hashes(catalog, device_hash, circuit_hash)
             .and_then(|device| lock.get_parents_for_circuit_id(&device.parent_node))
     }
 
     pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
-        let shaped = lqos_network_devices::shaped_devices_snapshot();
-        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
         let mut raw_data = self.raw_data.lock();
         raw_data.iter_mut().for_each(|(_key, data)| {
-            let shaped_device = Self::shaped_device_for_hashes(
-                &shaped,
-                &cache,
-                data.device_hash,
-                data.circuit_hash,
-            );
+            let shaped_device =
+                Self::shaped_device_for_hashes(&catalog, data.device_hash, data.circuit_hash);
             if data.circuit_hash.is_none()
                 && let Some(device) = shaped_device
             {
@@ -462,8 +445,7 @@ impl ThroughputTracker {
         let mut changed_circuits = HashSet::new();
 
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-        let shaped = lqos_network_devices::shaped_devices_snapshot();
-        let cache = lqos_network_devices::shaped_device_hash_cache_snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
         let mut raw_data = self.raw_data.lock();
         throughput_for_each(&mut |xdp_ip, counts| {
             let reduced = ReducedHostCounters::from_counters(counts);
@@ -484,8 +466,7 @@ impl ThroughputTracker {
                 entry.device_hash = reduced.device_hash;
                 if hashes_changed {
                     let shaped_device = Self::shaped_device_for_hashes(
-                        &shaped,
-                        &cache,
+                        &catalog,
                         entry.device_hash,
                         entry.circuit_hash,
                     );
@@ -555,7 +536,7 @@ impl ThroughputTracker {
                 let circuit_hash = reduced.circuit_hash;
                 let device_hash = reduced.device_hash;
                 let shaped_device =
-                    Self::shaped_device_for_hashes(&shaped, &cache, device_hash, circuit_hash);
+                    Self::shaped_device_for_hashes(&catalog, device_hash, circuit_hash);
                 let circuit_id = shaped_device.map(|d| d.circuit_id.clone());
                 // Call the Bakery Queue Creation for new circuits
                 if let Some(circuit_hash) = circuit_hash
@@ -580,8 +561,7 @@ impl ThroughputTracker {
                     circuit_hash,
                     device_hash,
                     network_json_parents: Self::lookup_network_parents_from_hashes(
-                        &shaped,
-                        &cache,
+                        &catalog,
                         device_hash,
                         circuit_hash,
                         net_json_calc,

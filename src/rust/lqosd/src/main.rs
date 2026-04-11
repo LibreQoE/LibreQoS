@@ -1160,13 +1160,12 @@ fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
             }
         });
 
-    let shaped_devices = lqos_network_devices::shaped_devices_snapshot();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     circuits
         .iter()
         .filter_map(|(circuit_id, accumulator)| {
-            shaped_devices
-                .devices
-                .iter()
+            catalog
+                .iter_devices()
                 .find(|sd| sd.circuit_id == *circuit_id)
                 .map(|device| {
                     let down_mbps = (accumulator.bytes.down as f64 * 8.0) / 1_000_000.0;
