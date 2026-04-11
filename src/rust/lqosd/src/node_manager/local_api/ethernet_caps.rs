@@ -1,7 +1,5 @@
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
-use lqos_config::{
-    CircuitEthernetMetadata, CircuitEthernetMetadataFile, load_config,
-};
+use lqos_config::{CircuitEthernetMetadata, CircuitEthernetMetadataFile, load_config};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 

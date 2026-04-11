@@ -375,8 +375,16 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
     event_log.push("Configuration updated".to_string());
 
     let state_root = config.resolved_state_directory();
-    for category in ["topology", "shaping", "stats", "cache", "debug", "quarantine"] {
-        std::fs::create_dir_all(state_root.join(category)).expect("Unable to create state directory");
+    for category in [
+        "topology",
+        "shaping",
+        "stats",
+        "cache",
+        "debug",
+        "quarantine",
+    ] {
+        std::fs::create_dir_all(state_root.join(category))
+            .expect("Unable to create state directory");
     }
 
     // Does network.json exist?

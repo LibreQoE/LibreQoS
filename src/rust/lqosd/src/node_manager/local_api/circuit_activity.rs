@@ -1,4 +1,6 @@
-use crate::shaped_devices_tracker::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES};
+use crate::shaped_devices_tracker::{
+    SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, shaped_device_from_hashes_or_ip,
+};
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowbeeLocalData, get_asn_name_and_country};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
@@ -237,14 +239,20 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
             if local.last_seen < recent_cutoff {
                 return None;
             }
-            if local.circuit_hash != Some(circuit_hash) {
+            let device = shaped_device_from_hashes_or_ip(
+                &shaped,
+                &cache,
+                &key.local_ip,
+                local.device_hash,
+                local.circuit_hash,
+            );
+            let matches_desired = local.circuit_hash == Some(circuit_hash)
+                || device.is_some_and(|device| device.circuit_id == circuit_id);
+            if !matches_desired {
                 return None;
             }
 
-            let device_name = local
-                .device_hash
-                .and_then(|hash| cache.index_by_device_hash(&shaped, hash))
-                .and_then(|idx| shaped.devices.get(idx))
+            let device_name = device
                 .map(|d| d.device_name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
 

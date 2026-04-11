@@ -7,6 +7,7 @@ use self::flow_data::{
     ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
     snapshot_asn_heatmaps,
 };
+use self::throughput_entry::ThroughputEntry;
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
 use crate::{
@@ -41,6 +42,53 @@ const RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS: u64 = 5;
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
 pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
     Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
+
+fn shaped_device_for_entry<'a>(
+    shaped: &'a lqos_config::ConfigShapedDevices,
+    cache: &crate::shaped_devices_tracker::ShapedDeviceHashCache,
+    ip: &XdpIpAddress,
+    entry: &ThroughputEntry,
+) -> Option<&'a lqos_config::ShapedDevice> {
+    entry
+        .device_hash
+        .and_then(|hash| cache.index_by_device_hash(shaped, hash))
+        .or_else(|| {
+            entry
+                .circuit_hash
+                .and_then(|hash| cache.index_by_circuit_hash(shaped, hash))
+        })
+        .and_then(|idx| shaped.devices.get(idx))
+        .or_else(|| shaped.get_device_from_ip(ip))
+}
+
+fn resolve_circuit_metadata_for_entry(
+    shaped: &lqos_config::ConfigShapedDevices,
+    cache: &crate::shaped_devices_tracker::ShapedDeviceHashCache,
+    ip: &XdpIpAddress,
+    entry: &ThroughputEntry,
+) -> (String, String) {
+    let mut circuit_id = entry.circuit_id.clone().unwrap_or_default();
+    let mut circuit_name = String::new();
+
+    if let Some(device) = shaped_device_for_entry(shaped, cache, ip, entry) {
+        if circuit_id.is_empty() {
+            circuit_id = device.circuit_id.clone();
+        }
+        circuit_name = device.circuit_name.clone();
+    }
+
+    (circuit_id, circuit_name)
+}
+
+pub(crate) fn resolve_circuit_metadata_for_ip(ip: &XdpIpAddress) -> (String, String) {
+    let shaped = SHAPED_DEVICES.load();
+    let cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let throughput = THROUGHPUT_TRACKER.raw_data.lock();
+    let Some(entry) = throughput.get(ip) else {
+        return (String::new(), String::new());
+    };
+    resolve_circuit_metadata_for_entry(&shaped, &cache, ip, entry)
+}
 
 /// Create the throughput monitor thread, and begin polling for
 /// throughput data every second.
@@ -361,6 +409,8 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
             .load(std::sync::atomic::Ordering::Relaxed);
+        let shaped = SHAPED_DEVICES.load();
+        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -368,13 +418,15 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
             .map(|(k, te)| {
+                let (circuit_id, _circuit_name) =
+                    resolve_circuit_metadata_for_entry(&shaped, &shaped_cache, k, te);
                 (
                     *k,
                     te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    circuit_id,
                     down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
@@ -405,6 +457,8 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
             .load(std::sync::atomic::Ordering::Relaxed);
+        let shaped = SHAPED_DEVICES.load();
+        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -412,13 +466,15 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
             .filter(|(k, _v)| !k.as_ip().is_loopback())
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
             .map(|(k, te)| {
+                let (circuit_id, _circuit_name) =
+                    resolve_circuit_metadata_for_entry(&shaped, &shaped_cache, k, te);
                 (
                     *k,
                     te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    circuit_id,
                     down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
@@ -552,6 +608,8 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
             .load(std::sync::atomic::Ordering::Relaxed);
+        let shaped = SHAPED_DEVICES.load();
+        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -565,13 +623,15 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
             })
             .filter(|(_k, te)| te.median_latency().is_some())
             .map(|(k, te)| {
+                let (circuit_id, _circuit_name) =
+                    resolve_circuit_metadata_for_entry(&shaped, &shaped_cache, k, te);
                 (
                     *k,
                     te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    circuit_id,
                     down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
@@ -602,6 +662,8 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
             .load(std::sync::atomic::Ordering::Relaxed);
+        let shaped = SHAPED_DEVICES.load();
+        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -610,13 +672,15 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
             .filter(|(_k, d)| retire_check(tp_cycle, d.most_recent_cycle))
             .filter(|(_k, te)| te.median_latency().is_some())
             .map(|(k, te)| {
+                let (circuit_id, _circuit_name) =
+                    resolve_circuit_metadata_for_entry(&shaped, &shaped_cache, k, te);
                 (
                     *k,
                     te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    circuit_id,
                     down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
@@ -655,6 +719,8 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
             .load(std::sync::atomic::Ordering::Relaxed);
+        let shaped = SHAPED_DEVICES.load();
+        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -668,13 +734,15 @@ pub fn best_n(start: u32, end: u32) -> BusResponse {
             })
             .filter(|(_k, te)| te.median_latency().is_some())
             .map(|(k, te)| {
+                let (circuit_id, _circuit_name) =
+                    resolve_circuit_metadata_for_entry(&shaped, &shaped_cache, k, te);
                 (
                     *k,
                     te.actual_bytes_per_second,
                     te.packets_per_second,
                     te.median_latency().unwrap_or(0.0),
                     te.tc_handle,
-                    te.circuit_id.as_ref().unwrap_or(&String::new()).clone(),
+                    circuit_id,
                     down_up_retransmit_sample(te.tcp_retransmits, te.tcp_packets),
                 )
             })
@@ -1119,27 +1187,12 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         .map(|(ip, flow)| {
             let geo = get_asn_name_and_country(ip.remote_ip.as_ip());
 
-            let mut circuit_id = String::new();
-            let mut circuit_name = String::new();
-            if let Some(te) = throughput.get(&ip.local_ip) {
-                if let Some(id) = &te.circuit_id {
-                    circuit_id = id.clone();
-                }
-                let shaped_device = te
-                    .device_hash
-                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
-                    .or_else(|| {
-                        te.circuit_hash
-                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
-                    })
-                    .and_then(|idx| shaped.devices.get(idx));
-                if let Some(device) = shaped_device {
-                    if circuit_id.is_empty() {
-                        circuit_id = device.circuit_id.clone();
-                    }
-                    circuit_name = device.circuit_name.clone();
-                }
-            }
+            let (circuit_id, circuit_name) = throughput
+                .get(&ip.local_ip)
+                .map(|te| {
+                    resolve_circuit_metadata_for_entry(&shaped, &shaped_cache, &ip.local_ip, te)
+                })
+                .unwrap_or_default();
 
             lqos_bus::FlowbeeSummaryData {
                 remote_ip: ip.remote_ip.as_ip().to_string(),
@@ -1180,33 +1233,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock();
-        let throughput = THROUGHPUT_TRACKER.raw_data.lock();
-        let shaped = SHAPED_DEVICES.load();
-        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
-        let (circuit_id, circuit_name) = {
-            let mut circuit_id = String::new();
-            let mut circuit_name = String::new();
-            if let Some(te) = throughput.get(&ip) {
-                if let Some(id) = &te.circuit_id {
-                    circuit_id = id.clone();
-                }
-                let shaped_device = te
-                    .device_hash
-                    .and_then(|hash| shaped_cache.index_by_device_hash(&shaped, hash))
-                    .or_else(|| {
-                        te.circuit_hash
-                            .and_then(|hash| shaped_cache.index_by_circuit_hash(&shaped, hash))
-                    })
-                    .and_then(|idx| shaped.devices.get(idx));
-                if let Some(device) = shaped_device {
-                    if circuit_id.is_empty() {
-                        circuit_id = device.circuit_id.clone();
-                    }
-                    circuit_name = device.circuit_name.clone();
-                }
-            }
-            (circuit_id, circuit_name)
-        };
+        let (circuit_id, circuit_name) = resolve_circuit_metadata_for_ip(&ip);
         let matching_flows: Vec<_> = lock
             .flow_data
             .iter()
@@ -1364,8 +1391,17 @@ pub struct Lts2Device {
 
 #[cfg(test)]
 mod compatibility_tests {
-    use super::Lts2Circuit;
+    use super::{Lts2Circuit, resolve_circuit_metadata_for_entry};
+    use crate::shaped_devices_tracker::ShapedDeviceHashCache;
+    use crate::throughput_tracker::flow_data::RttData;
+    use crate::throughput_tracker::throughput_entry::ThroughputEntry;
+    use lqos_bus::TcHandle;
+    use lqos_config::{ConfigShapedDevices, ShapedDevice};
+    use lqos_utils::XdpIpAddress;
+    use lqos_utils::qoo::QoqScores;
+    use lqos_utils::units::DownUpOrder;
     use serde::Deserialize;
+    use std::net::Ipv4Addr;
 
     #[allow(dead_code)]
     #[derive(Debug, Deserialize)]
@@ -1419,5 +1455,57 @@ mod compatibility_tests {
 
         assert_eq!(decoded.download_max_mbps, 7);
         assert_eq!(decoded.upload_max_mbps, 4);
+    }
+
+    #[test]
+    fn circuit_metadata_falls_back_to_ip_when_entry_circuit_id_is_blank() {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit Alpha".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            ..Default::default()
+        }]);
+        let cache = ShapedDeviceHashCache::default();
+        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
+        let entry = ThroughputEntry {
+            circuit_id: None,
+            circuit_hash: None,
+            device_hash: None,
+            network_json_parents: None,
+            first_cycle: 0,
+            most_recent_cycle: 0,
+            bytes: DownUpOrder::zeroed(),
+            actual_bytes: DownUpOrder::zeroed(),
+            packets: DownUpOrder::zeroed(),
+            tcp_packets: DownUpOrder::zeroed(),
+            udp_packets: DownUpOrder::zeroed(),
+            icmp_packets: DownUpOrder::zeroed(),
+            prev_bytes: DownUpOrder::zeroed(),
+            prev_actual_bytes: DownUpOrder::zeroed(),
+            prev_packets: DownUpOrder::zeroed(),
+            prev_tcp_packets: DownUpOrder::zeroed(),
+            prev_udp_packets: DownUpOrder::zeroed(),
+            prev_icmp_packets: DownUpOrder::zeroed(),
+            bytes_per_second: DownUpOrder::zeroed(),
+            actual_bytes_per_second: DownUpOrder::zeroed(),
+            packets_per_second: DownUpOrder::zeroed(),
+            tc_handle: TcHandle::from_u32(0),
+            rtt_buffer: Default::default(),
+            recent_rtt_data: [RttData::from_nanos(0); 60],
+            last_fresh_rtt_data_cycle: 0,
+            last_seen: 0,
+            tcp_retransmits: DownUpOrder::zeroed(),
+            tcp_retransmit_packets: DownUpOrder::zeroed(),
+            qoq: QoqScores::default(),
+        };
+
+        let (circuit_id, circuit_name) =
+            resolve_circuit_metadata_for_entry(&shaped, &cache, &ip, &entry);
+
+        assert_eq!(circuit_id, "circuit-1");
+        assert_eq!(circuit_name, "Circuit Alpha");
     }
 }

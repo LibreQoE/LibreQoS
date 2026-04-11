@@ -1471,16 +1471,27 @@ async fn circuit_snapshot_streaming(
         let raw = crate::throughput_tracker::THROUGHPUT_TRACKER
             .raw_data
             .lock();
-        for (_xdp_ip, te) in raw.iter() {
-            // Only consider entries known to belong to this circuit and are fresh enough
-            if te.circuit_hash != Some(circuit_hash) {
+        for (xdp_ip, te) in raw.iter() {
+            let device = crate::shaped_devices_tracker::shaped_device_from_hashes_or_ip(
+                &shaped,
+                &shaped_cache,
+                xdp_ip,
+                te.device_hash,
+                te.circuit_hash,
+            );
+            let matches_desired = te.circuit_hash == Some(circuit_hash)
+                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            if !matches_desired {
                 continue;
             }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            if let Some(device_hash) = te.device_hash
-                && let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash)
-                && let Some(agg) = aggregates.get_mut(&id)
+            if let Some(id) = device.and_then(|device| {
+                shaped
+                    .devices
+                    .iter()
+                    .position(|candidate| std::ptr::eq(candidate, device))
+            }) && let Some(agg) = aggregates.get_mut(&id)
             {
                 // bytes_per_second -> later convert to bits
                 agg.bps_bytes += te.bytes_per_second;
@@ -1567,7 +1578,16 @@ async fn circuit_snapshot_streaming(
             if local.last_seen < five_minutes_ago {
                 continue;
             }
-            if local.circuit_hash != Some(circuit_hash) {
+            let device = crate::shaped_devices_tracker::shaped_device_from_hashes_or_ip(
+                &shaped,
+                &shaped_cache,
+                &key.local_ip,
+                local.device_hash,
+                local.circuit_hash,
+            );
+            let matches_desired = local.circuit_hash == Some(circuit_hash)
+                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            if !matches_desired {
                 continue;
             }
 

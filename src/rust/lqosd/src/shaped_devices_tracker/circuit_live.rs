@@ -8,8 +8,10 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{CIRCUIT_LIVE_LAST_REFRESH_SECS, CIRCUIT_LIVE_REFRESH_LOCK, CIRCUIT_LIVE_SNAPSHOT};
-use super::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES};
+use super::{
+    CIRCUIT_LIVE_LAST_REFRESH_SECS, CIRCUIT_LIVE_REFRESH_LOCK, CIRCUIT_LIVE_SNAPSHOT,
+    SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, shaped_device_from_hashes_or_ip,
+};
 
 /// Per-circuit live metrics aggregated from the device-level throughput tracker.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -108,15 +110,13 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
     let mut by_circuit_id: FxHashMap<String, CircuitAccumulator> = FxHashMap::default();
 
     for (ip_key, data) in THROUGHPUT_TRACKER.raw_data.lock().iter() {
-        let device = data
-            .device_hash
-            .and_then(|device_hash| cache.index_by_device_hash(&shaped_devices, device_hash))
-            .or_else(|| {
-                data.circuit_hash.and_then(|circuit_hash| {
-                    cache.index_by_circuit_hash(&shaped_devices, circuit_hash)
-                })
-            })
-            .and_then(|idx| shaped_devices.devices.get(idx));
+        let device = shaped_device_from_hashes_or_ip(
+            &shaped_devices,
+            &cache,
+            ip_key,
+            data.device_hash,
+            data.circuit_hash,
+        );
         let Some(device) = device else {
             continue;
         };

@@ -724,7 +724,11 @@ pub(crate) fn write_command_file(path: &Path, commands: &[Vec<String>]) -> Optio
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
-        error!("Failed to create output directory {}: {}", parent.display(), e);
+        error!(
+            "Failed to create output directory {}: {}",
+            parent.display(),
+            e
+        );
         return None;
     }
     let Ok(file) = File::create(path) else {
