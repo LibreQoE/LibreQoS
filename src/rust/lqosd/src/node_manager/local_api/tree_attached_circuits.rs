@@ -474,7 +474,7 @@ mod tests {
             ..ConfigShapedDevices::default()
         };
 
-        let rows = aggregate_attached_circuit_rows(&matcher, &shaped_devices);
+        let rows = aggregate_attached_circuit_rows(&matcher, shaped_devices.devices.iter());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].circuit_id, "circuit-1");
         assert_eq!(rows[0].circuit_name, "Circuit One");
