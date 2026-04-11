@@ -171,10 +171,12 @@ impl ThroughputTracker {
             return;
         }
 
-        let catalog = lqos_network_devices::shaped_devices_catalog();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let mut capacity_lookup: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
-        capacity_lookup.reserve(catalog.devices_len());
-        catalog.iter_devices().for_each(|device| {
+        capacity_lookup.reserve(
+            catalog.shaped_devices().devices_len() + catalog.dynamic_circuits().len(),
+        );
+        catalog.iter_all_devices().for_each(|device| {
             let entry = capacity_lookup
                 .entry(device.circuit_hash)
                 .or_insert((device.download_max_mbps, device.upload_max_mbps));
@@ -403,7 +405,7 @@ impl ThroughputTracker {
     }
 
     fn shaped_device_for_hashes(
-        catalog: &lqos_network_devices::ShapedDevicesCatalog,
+        catalog: &lqos_network_devices::NetworkDevicesCatalog,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
     ) -> Option<&lqos_config::ShapedDevice> {
@@ -411,7 +413,7 @@ impl ThroughputTracker {
     }
 
     fn lookup_network_parents_from_hashes(
-        catalog: &lqos_network_devices::ShapedDevicesCatalog,
+        catalog: &lqos_network_devices::NetworkDevicesCatalog,
         device_hash: Option<i64>,
         circuit_hash: Option<i64>,
         lock: &NetworkJson,
@@ -421,7 +423,7 @@ impl ThroughputTracker {
     }
 
     pub(crate) fn refresh_circuit_ids(&self, lock: &NetworkJson) {
-        let catalog = lqos_network_devices::shaped_devices_catalog();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let mut raw_data = self.raw_data.lock();
         raw_data.iter_mut().for_each(|(_key, data)| {
             let shaped_device =
@@ -444,16 +446,6 @@ impl ThroughputTracker {
     ) {
         const MAX_UNKNOWN_OBSERVATIONS_PER_TICK: usize = 256;
 
-        let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
-        let mut dynamic_device_hashes: FxHashSet<i64> = FxHashSet::default();
-        let mut dynamic_circuit_hashes: FxHashSet<i64> = FxHashSet::default();
-        dynamic_device_hashes.reserve(dynamic_snapshot.len());
-        dynamic_circuit_hashes.reserve(dynamic_snapshot.len());
-        for circuit in dynamic_snapshot.iter() {
-            dynamic_device_hashes.insert(circuit.shaped.device_hash);
-            dynamic_circuit_hashes.insert(circuit.shaped.circuit_hash);
-        }
-
         let mut reported_dynamic_device_hashes: FxHashSet<i64> = FxHashSet::default();
         let mut reported_dynamic_circuit_hashes: FxHashSet<i64> = FxHashSet::default();
         let mut observations: Vec<lqos_network_devices::CircuitObservation> = Vec::new();
@@ -461,7 +453,7 @@ impl ThroughputTracker {
         let mut changed_circuits = HashSet::new();
 
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
-        let catalog = lqos_network_devices::shaped_devices_catalog();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let mut raw_data = self.raw_data.lock();
 
         #[allow(clippy::too_many_arguments)]
@@ -469,18 +461,17 @@ impl ThroughputTracker {
             observations: &mut Vec<lqos_network_devices::CircuitObservation>,
             reported_dynamic_device_hashes: &mut FxHashSet<i64>,
             reported_dynamic_circuit_hashes: &mut FxHashSet<i64>,
-            dynamic_device_hashes: &FxHashSet<i64>,
-            dynamic_circuit_hashes: &FxHashSet<i64>,
+            catalog: &lqos_network_devices::NetworkDevicesCatalog,
             ip: XdpIpAddress,
             device_hash: Option<i64>,
             circuit_hash: Option<i64>,
         ) {
-            if dynamic_device_hashes.is_empty() && dynamic_circuit_hashes.is_empty() {
+            if catalog.dynamic_circuits().is_empty() {
                 return;
             }
 
             if let Some(device_hash) = device_hash
-                && dynamic_device_hashes.contains(&device_hash)
+                && catalog.is_dynamic_device_hash(device_hash)
                 && reported_dynamic_device_hashes.insert(device_hash)
             {
                 observations.push(lqos_network_devices::CircuitObservation {
@@ -492,7 +483,7 @@ impl ThroughputTracker {
             }
 
             if let Some(circuit_hash) = circuit_hash
-                && dynamic_circuit_hashes.contains(&circuit_hash)
+                && catalog.is_dynamic_circuit_hash(circuit_hash)
                 && reported_dynamic_circuit_hashes.insert(circuit_hash)
             {
                 observations.push(lqos_network_devices::CircuitObservation {
@@ -536,8 +527,7 @@ impl ThroughputTracker {
                             &mut observations,
                             &mut reported_dynamic_device_hashes,
                             &mut reported_dynamic_circuit_hashes,
-                            &dynamic_device_hashes,
-                            &dynamic_circuit_hashes,
+                            &catalog,
                             *xdp_ip,
                             entry.device_hash,
                             entry.circuit_hash,
@@ -562,8 +552,7 @@ impl ThroughputTracker {
                         &mut observations,
                         &mut reported_dynamic_device_hashes,
                         &mut reported_dynamic_circuit_hashes,
-                        &dynamic_device_hashes,
-                        &dynamic_circuit_hashes,
+                        &catalog,
                         *xdp_ip,
                         entry.device_hash,
                         entry.circuit_hash,
@@ -630,8 +619,7 @@ impl ThroughputTracker {
                     &mut observations,
                     &mut reported_dynamic_device_hashes,
                     &mut reported_dynamic_circuit_hashes,
-                    &dynamic_device_hashes,
-                    &dynamic_circuit_hashes,
+                    &catalog,
                     *xdp_ip,
                     device_hash,
                     circuit_hash,

@@ -76,6 +76,13 @@ pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
     let mut devices: Vec<ShapedDevice> = catalog.devices_for_circuit_id(&safe_id);
 
     if devices.is_empty() {
+        let catalog = lqos_network_devices::network_devices_catalog();
+        if let Some(device) = catalog.dynamic_device_by_circuit_id(&safe_id) {
+            devices.push(device.clone());
+        }
+    }
+
+    if devices.is_empty() {
         None
     } else {
         let parent_node = circuit_parent_node(&safe_id, &mut devices);

@@ -103,7 +103,7 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
     };
     let kernel_now: std::time::Duration = kernel_now.into();
 
-    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let mut by_circuit_id: FxHashMap<String, CircuitAccumulator> = FxHashMap::default();
 
     for (ip_key, data) in THROUGHPUT_TRACKER.raw_data.lock().iter() {

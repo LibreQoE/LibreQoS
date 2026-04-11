@@ -151,8 +151,16 @@ pub async fn apply_templates(
             let week_ago = now - (7 * 24 * 60 * 60);
             let fl = FIRST_LOAD.load(Relaxed);
             if fl != 0 && fl < week_ago {
-                let num_circuits =
-                    lqos_network_devices::shaped_devices_catalog().configured_circuit_count();
+                let catalog = lqos_network_devices::network_devices_catalog();
+                let mut circuits: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                for device in catalog.iter_all_devices() {
+                    let circuit_id = device.circuit_id.trim();
+                    if circuit_id.is_empty() {
+                        continue;
+                    }
+                    circuits.insert(circuit_id);
+                }
+                let num_circuits = circuits.len();
                 if num_circuits > 1_000 && !script_has_insight {
                     show_modal = "true";
                     show_modal_number = num_circuits.to_string();

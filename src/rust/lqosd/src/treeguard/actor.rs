@@ -277,7 +277,16 @@ fn current_topology_totals() -> (usize, usize) {
         })
     };
 
-    let total_circuits = lqos_network_devices::shaped_devices_catalog().configured_circuit_count();
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let mut circuit_ids: FxHashSet<&str> = FxHashSet::default();
+    for device in catalog.iter_all_devices() {
+        let circuit_id = device.circuit_id.trim();
+        if circuit_id.is_empty() {
+            continue;
+        }
+        circuit_ids.insert(circuit_id);
+    }
+    let total_circuits = circuit_ids.len();
 
     (total_nodes, total_circuits)
 }
@@ -295,10 +304,10 @@ fn direct_child_site_counts_by_node(nodes: &[NetworkJsonNode]) -> Vec<usize> {
 }
 
 fn direct_circuit_counts_by_node(
-    shaped_devices: &lqos_network_devices::ShapedDevicesCatalog,
+    shaped_devices: &lqos_network_devices::NetworkDevicesCatalog,
 ) -> FxHashMap<String, usize> {
     let mut circuits_by_node: FxHashMap<String, FxHashSet<&str>> = FxHashMap::default();
-    for device in shaped_devices.iter_devices() {
+    for device in shaped_devices.iter_all_devices() {
         let node_name = device.parent_node.trim();
         let circuit_id = device.circuit_id.trim();
         if node_name.is_empty() || circuit_id.is_empty() {
@@ -445,6 +454,7 @@ struct CircuitInventoryEntry {
 #[derive(Clone, Debug, Default)]
 struct CircuitInventory {
     shaped_devices_generation: u64,
+    dynamic_signature: u64,
     circuit_ids: Vec<String>,
     entries: FxHashMap<String, CircuitInventoryEntry>,
     all_device_ids: FxHashSet<String>,
@@ -598,23 +608,57 @@ fn select_link_virtualization_candidates(
 
 fn ensure_circuit_inventory(
     runtime_state: &mut TreeguardRuntimeState,
-    shaped: &lqos_network_devices::ShapedDevicesCatalog,
+    shaped: &lqos_network_devices::NetworkDevicesCatalog,
 ) {
-    let generation = shaped.generation();
-    if runtime_state.circuit_inventory.shaped_devices_generation == generation {
+    use std::hash::{Hash, Hasher};
+
+    fn dynamic_overlay_signature(dynamic: &[lqos_network_devices::DynamicCircuit]) -> u64 {
+        use fxhash::FxHasher;
+
+        let mut entry_sigs: Vec<u64> = Vec::with_capacity(dynamic.len());
+        for circuit in dynamic {
+            let dev = &circuit.shaped;
+            let mut h = FxHasher::default();
+            dev.circuit_id.trim().hash(&mut h);
+            dev.device_id.trim().hash(&mut h);
+            dev.parent_node.trim().hash(&mut h);
+            dev.download_max_mbps.to_bits().hash(&mut h);
+            dev.upload_max_mbps.to_bits().hash(&mut h);
+            dev.sqm_override
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .hash(&mut h);
+            entry_sigs.push(h.finish());
+        }
+        entry_sigs.sort_unstable();
+
+        let mut outer = FxHasher::default();
+        entry_sigs.hash(&mut outer);
+        outer.finish()
+    }
+
+    let generation = shaped.shaped_devices().generation();
+    let dynamic_signature = dynamic_overlay_signature(shaped.dynamic_circuits());
+    if runtime_state.circuit_inventory.shaped_devices_generation == generation
+        && runtime_state.circuit_inventory.dynamic_signature == dynamic_signature
+    {
         return;
     }
 
-    runtime_state.circuit_inventory = build_circuit_inventory(shaped);
+    runtime_state.circuit_inventory = build_circuit_inventory(shaped, dynamic_signature);
     runtime_state.circuit_batch_cursor = 0;
 }
 
 fn build_circuit_inventory(
-    shaped: &lqos_network_devices::ShapedDevicesCatalog,
+    shaped: &lqos_network_devices::NetworkDevicesCatalog,
+    dynamic_signature: u64,
 ) -> CircuitInventory {
     let mut circuits_by_device_id: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
-    circuits_by_device_id.reserve(shaped.devices_len());
-    for device in shaped.iter_devices() {
+    circuits_by_device_id.reserve(
+        shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len(),
+    );
+    for device in shaped.iter_all_devices() {
         let device_id = device.device_id.trim();
         let circuit_id = device.circuit_id.trim();
         if device_id.is_empty() || circuit_id.is_empty() {
@@ -639,10 +683,10 @@ fn build_circuit_inventory(
         .collect();
 
     let mut by_circuit_id: FxHashMap<String, Vec<lqos_config::ShapedDevice>> = FxHashMap::default();
-    by_circuit_id.reserve(shaped.devices_len());
+    by_circuit_id.reserve(shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len());
     let mut all_device_ids = FxHashSet::default();
-    all_device_ids.reserve(shaped.devices_len());
-    for device in shaped.iter_devices() {
+    all_device_ids.reserve(shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len());
+    for device in shaped.iter_all_devices() {
         if device.circuit_id.trim().is_empty() {
             continue;
         }
@@ -718,7 +762,8 @@ fn build_circuit_inventory(
     }
 
     CircuitInventory {
-        shaped_devices_generation: shaped.generation(),
+        shaped_devices_generation: shaped.shaped_devices().generation(),
+        dynamic_signature,
         circuit_ids,
         entries,
         all_device_ids,
@@ -831,7 +876,7 @@ fn run_tick(
         return;
     }
 
-    let shaped = lqos_network_devices::shaped_devices_catalog();
+    let shaped = lqos_network_devices::network_devices_catalog();
     ensure_circuit_inventory(runtime_state, &shaped);
 
     let link_states = &mut runtime_state.link_states;

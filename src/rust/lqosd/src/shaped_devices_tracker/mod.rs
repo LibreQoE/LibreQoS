@@ -171,7 +171,7 @@ fn node_to_transport_with_summary(
 
 fn build_network_tree_summaries(
     nodes: &[NetworkJsonNode],
-    shaped_devices: &lqos_network_devices::ShapedDevicesCatalog,
+    shaped_devices: &lqos_network_devices::NetworkDevicesCatalog,
 ) -> Vec<NetworkTreeSummary> {
     let mut summaries = vec![NetworkTreeSummary::default(); nodes.len()];
     let mut direct_circuits = vec![FxHashSet::default(); nodes.len()];
@@ -182,7 +182,7 @@ fn build_network_tree_summaries(
         node_index_by_name.entry(node.name.as_str()).or_insert(idx);
     }
 
-    for device in shaped_devices.iter_devices() {
+    for device in shaped_devices.iter_all_devices() {
         let Some(node_idx) = node_index_by_name.get(device.parent_node.as_str()).copied() else {
             continue;
         };
@@ -217,7 +217,7 @@ fn build_network_tree_summaries(
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes_ref = net_json.get_nodes_when_ready();
-        let shaped_devices = lqos_network_devices::shaped_devices_catalog();
+        let shaped_devices = lqos_network_devices::network_devices_catalog();
         let summaries = build_network_tree_summaries(nodes_ref, &shaped_devices);
         if let Some(parent) = nodes_ref.get(parent_idx) {
             let mut nodes = vec![(
@@ -252,7 +252,7 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
 pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes = net_json.get_nodes_when_ready();
-        let shaped_devices = lqos_network_devices::shaped_devices_catalog();
+        let shaped_devices = lqos_network_devices::network_devices_catalog();
         let summaries = build_network_tree_summaries(nodes, &shaped_devices);
         nodes
             .iter()
@@ -347,7 +347,7 @@ pub fn get_full_network_map() -> BusResponse {
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes_ref = net_json.get_nodes_when_ready();
-        let shaped_devices = lqos_network_devices::shaped_devices_catalog();
+        let shaped_devices = lqos_network_devices::network_devices_catalog();
         let summaries = build_network_tree_summaries(nodes_ref, &shaped_devices);
         if let Some(parent) = nodes_ref.first() {
             let mut nodes = vec![(
@@ -493,7 +493,7 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
 
 pub fn get_all_circuits() -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
-        let catalog = lqos_network_devices::shaped_devices_catalog();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -604,7 +604,7 @@ pub fn get_all_circuits() -> BusResponse {
 pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
         let desired_hash = hash_to_i64(&desired_circuit_id);
-        let catalog = lqos_network_devices::shaped_devices_catalog();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()

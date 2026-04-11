@@ -32,9 +32,9 @@ impl From<&IpStats> for IpStatsWithPlan {
         };
 
         if !result.circuit_id.is_empty() {
-            let catalog = lqos_network_devices::shaped_devices_catalog();
+            let catalog = lqos_network_devices::network_devices_catalog();
             if let Some(circuit) = catalog
-                .iter_devices()
+                .iter_all_devices()
                 .find(|sd| sd.circuit_id == result.circuit_id)
             {
                 let name = if circuit.circuit_name.chars().count() > 20 {

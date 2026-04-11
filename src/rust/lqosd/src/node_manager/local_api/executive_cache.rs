@@ -686,8 +686,18 @@ fn entity_snapshots(
 fn build_oversubscribed_sites(
     entities: &[ExecutiveEntitySnapshot],
 ) -> Vec<ExecutiveOversubscribedSiteRow> {
-    let circuit_caps =
+    let mut circuit_caps =
         lqos_network_devices::shaped_devices_catalog().circuit_rate_caps_by_circuit_id();
+    for circuit in lqos_network_devices::dynamic_circuits_snapshot().iter() {
+        let shaped = &circuit.shaped;
+        circuit_caps.entry(shaped.circuit_id.clone()).or_insert_with(|| {
+            lqos_network_devices::CircuitRateCaps {
+                parent_node: shaped.parent_node.clone(),
+                download_max_mbps: shaped.download_max_mbps,
+                upload_max_mbps: shaped.upload_max_mbps,
+            }
+        });
+    }
 
     let entity_map = entities
         .iter()

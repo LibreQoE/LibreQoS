@@ -7,6 +7,7 @@
 
 mod actor;
 mod catalog;
+mod combined_catalog;
 mod directory_watcher;
 mod dynamic;
 mod dynamic_store;
@@ -23,6 +24,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 pub use catalog::{CircuitRateCaps, ShapedDevicesCatalog};
+pub use combined_catalog::NetworkDevicesCatalog;
 pub use dynamic::{CircuitObservation, DynamicCircuit};
 pub use hash_cache::ShapedDeviceHashCache;
 pub use topology::{ResolvedParentNode, resolve_parent_node, resolve_parent_node_reference};
@@ -74,6 +76,14 @@ pub fn shaped_devices_snapshot() -> Arc<ConfigShapedDevices> {
 /// fetching the hash cache snapshot.
 pub fn shaped_devices_catalog() -> ShapedDevicesCatalog {
     state::shaped_devices_catalog()
+}
+
+/// Returns a combined catalog snapshot for both shaped devices and dynamic circuits.
+pub fn network_devices_catalog() -> NetworkDevicesCatalog {
+    NetworkDevicesCatalog::from_snapshots(
+        state::shaped_devices_catalog(),
+        state::dynamic_circuits_snapshot(),
+    )
 }
 
 /// Returns the current in-memory shaped-device hash cache snapshot.

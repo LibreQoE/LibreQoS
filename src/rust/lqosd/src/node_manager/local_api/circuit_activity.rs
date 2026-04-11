@@ -163,13 +163,13 @@ fn sanitized_plan_ceiling_bps(plan_mbps: f32) -> u32 {
 }
 
 fn circuit_display_rate_ceiling_bps(
-    catalog: &lqos_network_devices::ShapedDevicesCatalog,
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
     circuit_hash: i64,
 ) -> Option<DownUpOrder<u32>> {
     let mut max_down_mbps = 0.0_f32;
     let mut max_up_mbps = 0.0_f32;
 
-    for device in catalog.iter_devices() {
+    for device in catalog.iter_all_devices() {
         if device.circuit_hash != circuit_hash {
             continue;
         }
@@ -219,7 +219,7 @@ fn flow_qoo(local: &FlowbeeLocalData) -> DownUpOrder<Option<f32>> {
 
 fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
     let circuit_hash = hash_to_i64(circuit_id);
-    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let display_rate_ceiling = circuit_display_rate_ceiling_bps(&catalog, circuit_hash);
     let Ok(now) = time_since_boot() else {
         return Vec::new();

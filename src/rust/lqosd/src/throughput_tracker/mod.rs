@@ -453,9 +453,9 @@ pub fn circuit_heatmaps() -> BusResponse {
         return BusResponse::CircuitHeatmaps(Vec::new());
     }
 
-    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let mut circuit_meta: FxHashMap<i64, (String, String)> = FxHashMap::default();
-    catalog.iter_devices().for_each(|device| {
+    catalog.iter_all_devices().for_each(|device| {
         circuit_meta
             .entry(device.circuit_hash)
             .or_insert_with(|| (device.circuit_id.clone(), device.circuit_name.clone()));
@@ -892,13 +892,14 @@ fn current_host_counts() -> (u32, u32) {
 
 /// Gather headline metrics for the Executive Summary header cards.
 pub fn executive_summary_header() -> BusResponse {
-    let catalog = lqos_network_devices::shaped_devices_catalog();
-    let circuit_count = catalog
-        .iter_devices()
-        .map(|device| device.circuit_hash)
-        .collect::<FxHashSet<_>>()
-        .len() as u64;
-    let device_count = catalog.devices_len() as u64;
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let mut circuits: FxHashSet<i64> = FxHashSet::default();
+    let mut device_count = 0_u64;
+    for device in catalog.iter_all_devices() {
+        device_count = device_count.saturating_add(1);
+        circuits.insert(device.circuit_hash);
+    }
+    let circuit_count = circuits.len() as u64;
 
     let site_count = lqos_network_devices::with_network_json_read(|net_json| {
         let total_nodes = net_json.get_nodes_when_ready().len();
@@ -1108,7 +1109,7 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
         }
     }
 
-    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let throughput = THROUGHPUT_TRACKER.raw_data.lock();
 
     let result = table
@@ -1172,7 +1173,7 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
         let ip = XdpIpAddress::from_ip(ip);
         let lock = ALL_FLOWS.lock();
         let throughput = THROUGHPUT_TRACKER.raw_data.lock();
-        let catalog = lqos_network_devices::shaped_devices_catalog();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let (circuit_id, circuit_name) = {
             let mut circuit_id = String::new();
             let mut circuit_name = String::new();
