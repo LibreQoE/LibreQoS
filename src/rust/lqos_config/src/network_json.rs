@@ -48,7 +48,7 @@ impl NetworkJson {
 
     fn path_for_config(cfg: &crate::Config) -> PathBuf {
         let base_path = Path::new(&cfg.lqos_directory);
-        let effective_path = base_path.join("network.effective.json");
+        let effective_path = cfg.topology_state_read_path("network.effective.json");
         let integration_ingress_enabled = cfg.uisp_integration.enable_uisp
             || cfg.splynx_integration.enable_splynx
             || cfg
@@ -68,7 +68,7 @@ impl NetworkJson {
         if effective_path.exists() {
             effective_path
         } else if integration_ingress_enabled {
-            base_path.join("network.effective.json")
+            cfg.topology_state_file_path("network.effective.json")
         } else if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
             let tmp_path = base_path.join("network.insight.json");
             if tmp_path.exists() {
@@ -737,6 +737,7 @@ mod test {
         let temp = unique_temp_dir("network-json-integration-effective");
         let mut config = crate::Config {
             lqos_directory: temp.display().to_string(),
+            state_directory: None,
             ..crate::Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -750,6 +751,7 @@ mod test {
         let temp = unique_temp_dir("network-json-diy");
         let config = crate::Config {
             lqos_directory: temp.display().to_string(),
+            state_directory: None,
             ..crate::Config::default()
         };
 
@@ -766,6 +768,7 @@ mod test {
         std::fs::write(temp.join("network.json"), "{}").expect("legacy tree should write");
         let mut config = crate::Config {
             lqos_directory: temp.display().to_string(),
+            state_directory: None,
             ..crate::Config::default()
         };
         config.long_term_stats.enable_insight_topology = Some(true);

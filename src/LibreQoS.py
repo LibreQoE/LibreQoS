@@ -64,6 +64,11 @@ except Exception:
     def calculate_topology_source_generation():
         return None
 
+try:
+    from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+    _get_state_dir_native = None
+
 
 class RefreshFailure(Exception):
     pass
@@ -114,9 +119,37 @@ def get_shaped_devices_path():
     # Either insight not enabled, or file doesn't exist
     return os.path.join(base_dir, "ShapedDevices.csv")
 
+def get_state_directory():
+    if _get_state_dir_native is not None:
+        return _get_state_dir_native()
+    base_dir = get_libreqos_directory()
+    if os.path.basename(base_dir.rstrip("/")) == "src":
+        parent = os.path.dirname(base_dir.rstrip("/"))
+        if parent:
+            return os.path.join(parent, "state")
+    return os.path.join(base_dir, "state")
+
+
+def get_state_path(category, filename):
+    return os.path.join(get_state_directory(), category, filename)
+
+
+def get_existing_state_path(category, filename):
+    preferred = get_state_path(category, filename)
+    if os.path.exists(preferred):
+        return preferred
+    return os.path.join(get_libreqos_directory(), filename)
+
+
+def ensure_parent_dir(path):
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+
 def get_network_json_path():
     base_dir = get_libreqos_directory()
-    effective_path = os.path.join(base_dir, "network.effective.json")
+    effective_path = get_existing_state_path("topology", "network.effective.json")
 
     if os.path.exists(effective_path):
         return effective_path
@@ -134,15 +167,51 @@ def get_network_json_path():
 
 
 def get_shaping_inputs_path():
-    return os.path.join(get_libreqos_directory(), "shaping_inputs.json")
+    return get_existing_state_path("shaping", "shaping_inputs.json")
 
 
 def get_circuit_anchors_path():
-    return os.path.join(get_libreqos_directory(), "circuit_anchors.json")
+    return get_existing_state_path("topology", "circuit_anchors.json")
 
 
 def get_planner_state_path():
-    return os.path.join(get_libreqos_directory(), "planner_state.json")
+    return get_existing_state_path("shaping", "planner_state.json")
+
+
+def get_topology_runtime_status_path():
+    return get_existing_state_path("topology", "topology_runtime_status.json")
+
+
+def get_queuing_structure_path():
+    return get_existing_state_path("shaping", "queuingStructure.json")
+
+
+def get_last_run_path():
+    return get_existing_state_path("stats", "lastRun.txt")
+
+
+def get_last_good_config_json_path():
+    return get_existing_state_path("shaping", "lastGoodConfig.json")
+
+
+def get_last_good_config_csv_path():
+    return get_existing_state_path("shaping", "lastGoodConfig.csv")
+
+
+def get_last_loaded_shaped_devices_path():
+    return get_existing_state_path("shaping", "ShapedDevices.lastLoaded.csv")
+
+
+def get_stats_by_circuit_path():
+    return get_existing_state_path("stats", "statsByCircuit.json")
+
+
+def get_stats_by_parent_node_path():
+    return get_existing_state_path("stats", "statsByParentNode.json")
+
+
+def get_linux_tc_path():
+    return get_state_path("debug", "linux_tc.txt")
 
 
 def observe_mode_enabled():
@@ -298,7 +367,7 @@ def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
     if current_generation is None:
         return False
 
-    status_path = os.path.join(get_libreqos_directory(), 'topology_runtime_status.json')
+    status_path = get_topology_runtime_status_path()
     try:
         with open(status_path, 'r', encoding='utf-8') as handle:
             status = json.load(handle)
@@ -551,7 +620,7 @@ def planner_circuit_identity_key(circuit):
 
 def load_minor_state_from_queuing_structure(path=None):
     if path is None:
-        path = os.path.join(get_libreqos_directory(), "queuingStructure.json")
+        path = get_queuing_structure_path()
     data = _load_json_dict(path)
     network = data.get("Network")
     if not isinstance(network, dict):
@@ -666,8 +735,9 @@ def shellReturn(command):
     return returnableString
 
 def checkIfFirstRunSinceBoot():
-    if os.path.isfile("lastRun.txt"):
-        with open("lastRun.txt", 'r') as file:
+    last_run_path = get_last_run_path()
+    if os.path.isfile(last_run_path):
+        with open(last_run_path, 'r') as file:
             lastRun = datetime.strptime(file.read(), "%d-%b-%Y (%H:%M:%S.%f)")
         systemRunningSince = datetime.fromtimestamp(psutil.boot_time())
         if systemRunningSince > lastRun:
@@ -1207,8 +1277,12 @@ def refreshShapers():
     print("Validating input files '" + shapedDevicesFile + "' and '" + networkJSONfile + "'")
     if (validateNetworkAndDevices() == True):
         if os.path.isfile(shapedDevicesFile):
-            shutil.copyfile(shapedDevicesFile, 'lastGoodConfig.csv')
-        shutil.copyfile(networkJSONfile, 'lastGoodConfig.json')
+            last_good_csv_path = get_state_path("shaping", "lastGoodConfig.csv")
+            ensure_parent_dir(last_good_csv_path)
+            shutil.copyfile(shapedDevicesFile, last_good_csv_path)
+        last_good_json_path = get_state_path("shaping", "lastGoodConfig.json")
+        ensure_parent_dir(last_good_json_path)
+        shutil.copyfile(networkJSONfile, last_good_json_path)
         if os.path.isfile(shapedDevicesFile):
             print("Backed up good config as lastGoodConfig.csv and lastGoodConfig.json")
         else:
@@ -1223,8 +1297,8 @@ def refreshShapers():
             safeToRunRefresh = False
         else:
             warnings.warn("Validation failed. However - because this is the first run since boot - will load queues from last good config", stacklevel=2)
-            shapedDevicesFile = 'lastGoodConfig.csv'
-            networkJSONfile = 'lastGoodConfig.json'
+            shapedDevicesFile = get_last_good_config_csv_path()
+            networkJSONfile = get_last_good_config_json_path()
             safeToRunRefresh = True
 
     if safeToRunRefresh == True:
@@ -2576,7 +2650,9 @@ def refreshShapers():
         queuingStructure['generatedPNs'] = generatedPNs
         queuingStructure['logical_to_physical_node'] = logical_to_physical_node
         queuingStructure['virtual_nodes'] = virtual_nodes
-        with open('queuingStructure.json', 'w') as infile:
+        queuing_structure_path = get_state_path("shaping", "queuingStructure.json")
+        ensure_parent_dir(queuing_structure_path)
+        with open(queuing_structure_path, 'w') as infile:
             json.dump(queuingStructure, infile, indent=4)
 
 
@@ -2628,7 +2704,9 @@ def refreshShapers():
         # print("Executing linux TC class/qdisc commands")
         if observe_mode:
             linuxTCcommands = []
-        with open('linux_tc.txt', 'w') as f:
+        linux_tc_path = get_linux_tc_path()
+        ensure_parent_dir(linux_tc_path)
+        with open(linux_tc_path, 'w') as f:
             for command in linuxTCcommands:
                 logging.info(command)
                 f.write(f"{command}\n")
@@ -2710,18 +2788,26 @@ def refreshShapers():
         # Built-in integrations no longer emit ShapedDevices.csv, so skip the legacy
         # snapshot there instead of failing the whole scheduler refresh.
         if os.path.isfile(shapedDevicesFile):
-            shutil.copyfile(shapedDevicesFile, 'ShapedDevices.lastLoaded.csv')
+            last_loaded_path = get_state_path("shaping", "ShapedDevices.lastLoaded.csv")
+            ensure_parent_dir(last_loaded_path)
+            shutil.copyfile(shapedDevicesFile, last_loaded_path)
 
         # Save for stats
-        with open('statsByCircuit.json', 'w') as f:
+        stats_by_circuit_path = get_state_path("stats", "statsByCircuit.json")
+        ensure_parent_dir(stats_by_circuit_path)
+        with open(stats_by_circuit_path, 'w') as f:
             f.write(json.dumps(subscriberCircuits, indent=4))
-        with open('statsByParentNode.json', 'w') as f:
+        stats_by_parent_node_path = get_state_path("stats", "statsByParentNode.json")
+        ensure_parent_dir(stats_by_parent_node_path)
+        with open(stats_by_parent_node_path, 'w') as f:
             f.write(json.dumps(parentNodes, indent=4))
 
 
         # Record time this run completed at
         # filename = os.path.join(_here, 'lastRun.txt')
-        with open("lastRun.txt", 'w') as file:
+        last_run_path = get_state_path("stats", "lastRun.txt")
+        ensure_parent_dir(last_run_path)
+        with open(last_run_path, 'w') as file:
             file.write(datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)"))
 
 
@@ -2765,8 +2851,9 @@ def refreshShapersUpdateOnly():
         networkChanged = False
         devicesChanged = False
         # Check for changes to network.json
-        if os.path.isfile('lastGoodConfig.json'):
-            with open('lastGoodConfig.json', 'r') as j:
+        last_good_config_json_path = get_last_good_config_json_path()
+        if os.path.isfile(last_good_config_json_path):
+            with open(last_good_config_json_path, 'r') as j:
                 originalNetwork = json.loads(j.read())
             with open(networkJSONfile, 'r') as j:
                 newestNetwork = json.loads(j.read())
@@ -2776,7 +2863,7 @@ def refreshShapersUpdateOnly():
 
         # Check for changes to ShapedDevices.csv
         newlyUpdatedSubscriberCircuits,	newlyUpdatedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits(shapedDevicesFile)
-        lastLoadedSubscriberCircuits, lastLoadedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits('ShapedDevices.lastLoaded.csv')
+        lastLoadedSubscriberCircuits, lastLoadedDictForCircuitsWithoutParentNodes = loadSubscriberCircuits(get_last_loaded_shaped_devices_path())
 
         newlyUpdatedSubscriberCircuitsByID = {}
         for circuit in newlyUpdatedSubscriberCircuits:

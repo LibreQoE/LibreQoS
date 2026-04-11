@@ -168,9 +168,7 @@ pub struct CircuitsQuery {
 
 fn queuing_structure_path() -> Option<PathBuf> {
     let cfg = lqos_config::load_config().ok()?;
-    let mut p = PathBuf::from(cfg.lqos_directory.clone());
-    p.push("queuingStructure.json");
-    Some(p)
+    Some(cfg.shaping_state_read_path("queuingStructure.json"))
 }
 
 fn parse_hex_u32(s: &str) -> Option<u32> {

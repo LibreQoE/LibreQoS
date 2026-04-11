@@ -24,6 +24,11 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 import os.path
 import os
 
+try:
+    from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+    _get_state_dir_native = None
+
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 shaping_runtime_hash = 0
 topology_runtime_process = None
@@ -34,6 +39,28 @@ TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
 SCHEDULER_STARTUP_STEP_COUNT = 5
 SCHEDULER_REFRESH_STEP_COUNT = 4
 scheduler_status_bus_enabled = True
+
+
+def get_state_directory():
+    if _get_state_dir_native is not None:
+        return _get_state_dir_native()
+    base_dir = get_libreqos_directory()
+    if os.path.basename(base_dir.rstrip("/")) == "src":
+        parent = os.path.dirname(base_dir.rstrip("/"))
+        if parent:
+            return os.path.join(parent, "state")
+    return os.path.join(base_dir, "state")
+
+
+def get_state_path(category: str, filename: str) -> str:
+    return os.path.join(get_state_directory(), category, filename)
+
+
+def get_existing_state_path(category: str, filename: str) -> str:
+    preferred = get_state_path(category, filename)
+    if os.path.exists(preferred):
+        return preferred
+    return os.path.join(get_libreqos_directory(), filename)
 
 
 def set_scheduler_status_bus_enabled(enabled: bool):
@@ -737,7 +764,7 @@ def load_network_json(path: str):
 
 
 def topology_canonical_state_path() -> str:
-    return os.path.join(get_libreqos_directory(), "topology_canonical_state.json")
+    return get_existing_state_path("topology", "topology_canonical_state.json")
 
 
 def load_topology_canonical_state(path: str):
@@ -751,6 +778,7 @@ def load_topology_canonical_state(path: str):
 
 
 def write_topology_canonical_state(path: str, canonical_state: dict):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(json.dumps(canonical_state, indent=4))
 
@@ -994,18 +1022,17 @@ def topology_runtime_binary_path():
 
 
 def topology_runtime_output_paths():
-    base_dir = get_libreqos_directory()
     return [
-        os.path.join(base_dir, "topology_attachment_health_state.json"),
-        os.path.join(base_dir, "topology_effective_state.json"),
-        os.path.join(base_dir, "network.effective.json"),
-        os.path.join(base_dir, "shaping_inputs.json"),
-        os.path.join(base_dir, "topology_runtime_status.json"),
+        get_existing_state_path("topology", "topology_attachment_health_state.json"),
+        get_existing_state_path("topology", "topology_effective_state.json"),
+        get_existing_state_path("topology", "network.effective.json"),
+        get_existing_state_path("shaping", "shaping_inputs.json"),
+        get_existing_state_path("topology", "topology_runtime_status.json"),
     ]
 
 
 def topology_runtime_status_path():
-    return os.path.join(get_libreqos_directory(), "topology_runtime_status.json")
+    return get_existing_state_path("topology", "topology_runtime_status.json")
 
 
 def _load_topology_runtime_status():

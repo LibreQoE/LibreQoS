@@ -59,11 +59,14 @@ pub struct CircuitAnchorsFile {
 ///
 /// This function is pure: it has no side effects.
 pub fn circuit_anchors_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(CIRCUIT_ANCHORS_FILENAME)
+    config.topology_state_read_path(CIRCUIT_ANCHORS_FILENAME)
 }
 
 fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), CircuitAnchorsError> {
     let raw = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
     file.write_all(raw.as_bytes())?;
@@ -89,6 +92,9 @@ impl CircuitAnchorsFile {
     ///
     /// Side effects: writes `circuit_anchors.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), CircuitAnchorsError> {
-        atomic_write_json(&circuit_anchors_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(CIRCUIT_ANCHORS_FILENAME),
+            self,
+        )
     }
 }

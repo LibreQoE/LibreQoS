@@ -22,7 +22,7 @@ use std::fmt::Write as _;
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
 };
 mod blocking;
 use anyhow::{Error, Result};
@@ -907,7 +907,7 @@ fn write_compiled_topology_outputs(
             "Unable to write topology canonical state snapshot: {e}"
         ))
     })?;
-    let anchors_path = lqos_config::circuit_anchors_path(config);
+    let anchors_path = config.legacy_runtime_file_path(lqos_config::CIRCUIT_ANCHORS_FILENAME);
     if let Err(err) = remove_file(&anchors_path)
         && err.kind() != std::io::ErrorKind::NotFound
     {
@@ -1040,6 +1040,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_tree_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
+    m.add_function(wrap_pyfunction!(get_libreqos_state_directory, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices_effective, m)?)?;
     m.add_function(wrap_pyfunction!(
@@ -2791,6 +2792,13 @@ pub fn get_libreqos_directory() -> PyResult<String> {
 }
 
 #[pyfunction]
+/// Returns the configured LibreQoS machine-managed state directory.
+pub fn get_libreqos_state_directory() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.resolved_state_directory().display().to_string())
+}
+
+#[pyfunction]
 /// Returns `true` when the loaded network graph contains only a single root node.
 pub fn is_network_flat() -> PyResult<bool> {
     Ok(lqos_config::NetworkJson::load()
@@ -3043,11 +3051,10 @@ fn calculate_hash() -> PyResult<i64> {
     let Ok(config) = lqos_config::load_config() else {
         return Ok(0);
     };
-    let base_path = Path::new(&config.lqos_directory);
     let nj_path = if config_uses_topology_import_ingress(config.as_ref()) {
-        base_path.join("network.effective.json")
+        config.topology_state_read_path("network.effective.json")
     } else {
-        base_path.join("network.json")
+        Path::new(&config.lqos_directory).join("network.json")
     };
     let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
 
@@ -3120,8 +3127,17 @@ fn first_existing_path<'a>(paths: &'a [&'a Path]) -> Option<&'a Path> {
     paths.iter().copied().find(|path| path.exists())
 }
 
+fn state_or_legacy_path(base_path: &Path, category: &str, filename: &str) -> PathBuf {
+    let preferred = base_path.join("state").join(category).join(filename);
+    if preferred.exists() {
+        preferred
+    } else {
+        base_path.join(filename)
+    }
+}
+
 fn topology_runtime_shaping_generation(base_path: &Path) -> Option<String> {
-    let status_path = base_path.join("topology_runtime_status.json");
+    let status_path = state_or_legacy_path(base_path, "topology", "topology_runtime_status.json");
     if let Ok(status_raw) = read_to_string(&status_path)
         && let Ok(status) =
             serde_json::from_str::<lqos_config::TopologyRuntimeStatusFile>(&status_raw)
@@ -3131,7 +3147,7 @@ fn topology_runtime_shaping_generation(base_path: &Path) -> Option<String> {
         return Some(status.shaping_generation);
     }
 
-    let shaping_inputs_path = base_path.join("shaping_inputs.json");
+    let shaping_inputs_path = state_or_legacy_path(base_path, "shaping", "shaping_inputs.json");
     let shaping_raw = read_to_string(&shaping_inputs_path).ok()?;
     let shaping_inputs =
         serde_json::from_str::<lqos_config::TopologyShapingInputsFile>(&shaping_raw).ok()?;
@@ -3156,10 +3172,10 @@ fn calculate_shaping_runtime_hash_for_base(
         return lqos_utils::hash_to_i64(&combined);
     }
 
-    let effective_path = base_path.join("network.effective.json");
+    let effective_path = state_or_legacy_path(base_path, "topology", "network.effective.json");
     let network_json_path = base_path.join("network.json");
     let network_insight_path = base_path.join("network.insight.json");
-    let shaping_inputs_path = base_path.join("shaping_inputs.json");
+    let shaping_inputs_path = state_or_legacy_path(base_path, "shaping", "shaping_inputs.json");
     let shaped_devices_path = base_path.join("ShapedDevices.csv");
     let shaped_devices_insight_path = base_path.join("ShapedDevices.insight.csv");
 

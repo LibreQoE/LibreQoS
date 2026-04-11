@@ -11,7 +11,22 @@ import warnings
 import argparse
 import logging
 from liblqos_python import interface_a, interface_b, enable_actual_shell_commands, upstream_bandwidth_capacity_download_mbps, \
-	upstream_bandwidth_capacity_upload_mbps, generated_pn_download_mbps, generated_pn_upload_mbps
+	upstream_bandwidth_capacity_upload_mbps, generated_pn_download_mbps, generated_pn_upload_mbps, get_libreqos_directory
+
+try:
+	from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+	_get_state_dir_native = None
+
+def get_state_directory():
+	if _get_state_dir_native is not None:
+		return _get_state_dir_native()
+	base_dir = get_libreqos_directory()
+	if os.path.basename(base_dir.rstrip("/")) == "src":
+		parent = os.path.dirname(base_dir.rstrip("/"))
+		if parent:
+			return os.path.join(parent, "state")
+	return os.path.join(base_dir, "state")
 
 def shell(command):
 	if enable_actual_shell_commands():
@@ -41,7 +56,10 @@ def safeShell(command):
 def getQdiscForIPaddress(ipAddress):
 	qDiscID = ''
 	foundQdisc = False
-	with open('statsByCircuit.json', 'r') as j:
+	state_path = os.path.join(get_state_directory(), 'stats', 'statsByCircuit.json')
+	legacy_path = os.path.join(get_libreqos_directory(), 'statsByCircuit.json')
+	path = state_path if os.path.isfile(state_path) else legacy_path
+	with open(path, 'r') as j:
 		subscriberCircuits = json.loads(j.read())
 	for circuit in subscriberCircuits:
 		for device in circuit['devices']:

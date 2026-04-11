@@ -12,9 +12,10 @@ PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
 PKGVERSION="${PACKAGE}_${VERSION}"
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-APT_DEPENDENCIES="python3-pip, nano, graphviz, curl, ca-certificates"
+APT_DEPENDENCIES="python3-pip, nano, curl, ca-certificates"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
+LQOS_STATE_DIR=$DPKG_DIR/opt/libreqos/state
 ETC_DIR=$DPKG_DIR/etc
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
@@ -81,6 +82,7 @@ rm -rf dist
 
 # Create the basic directory structure
 mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
+mkdir -p "$LQOS_STATE_DIR"/topology "$LQOS_STATE_DIR"/shaping "$LQOS_STATE_DIR"/stats "$LQOS_STATE_DIR"/cache "$LQOS_STATE_DIR"/debug "$LQOS_STATE_DIR"/quarantine
 
 # shellcheck disable=SC2086
 mkdir -p $MOTD_DIR

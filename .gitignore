@@ -166,6 +166,7 @@ src/network.large.json
 /src/planner_state.json
 
 # Local runtime / topology state
+/state/
 /src/.systemd_hotfix_installed
 /src/bakery_qdisc_handles.json
 /src/circuit_ethernet_metadata.json

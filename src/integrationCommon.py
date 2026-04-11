@@ -6,12 +6,31 @@ from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_downloa
 	circuit_name_use_address, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	find_ipv6_using_mikrotik, exclude_sites, bandwidth_overhead_factor, committed_bandwidth_multiplier, \
 	exception_cpes, promote_to_root_list, client_bandwidth_multiplier, \
-	write_compiled_topology_from_python_graph_payload
+	write_compiled_topology_from_python_graph_payload, get_libreqos_directory
 import ipaddress
 import enum
 import json
 import os
 import time
+
+try:
+	from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+	_get_state_dir_native = None
+
+def _state_directory():
+	if _get_state_dir_native is not None:
+		return _get_state_dir_native()
+	base_dir = get_libreqos_directory()
+	if os.path.basename(base_dir.rstrip("/")) == "src":
+		parent = os.path.dirname(base_dir.rstrip("/"))
+		if parent:
+			return os.path.join(parent, "state")
+	return os.path.join(base_dir, "state")
+
+
+def _state_path(category, filename):
+	return os.path.join(_state_directory(), category, filename)
 
 def isInAllowedSubnets(inputIP):
 	# Check whether an IP address occurs inside the allowedSubnets list
@@ -221,6 +240,13 @@ class NetworkGraph:
 		# If a site is excluded (via excludedSites in lqos.conf)
 		# it won't be added
 		if not node.displayName in self.excludeSites:
+			if node.parentId == "":
+				exception_parent = self.exceptionCPEs.get(node.id)
+				if exception_parent is None:
+					exception_parent = self.exceptionCPEs.get(node.displayName)
+				if exception_parent:
+					node.parentId = exception_parent
+
 			# Add to main list
 			idx = len(self.nodes)
 			self.nodes.append(node)
@@ -608,7 +634,9 @@ class NetworkGraph:
 		with open('ShapedDevices.csv', 'w', newline='') as csvfile:
 			csvfile.write(shaped_devices_csv)
 
-		with open('circuit_anchors.json', 'w', encoding='utf-8') as anchorfile:
+		anchor_path = _state_path("topology", "circuit_anchors.json")
+		os.makedirs(os.path.dirname(anchor_path), exist_ok=True)
+		with open(anchor_path, 'w', encoding='utf-8') as anchorfile:
 			json.dump(circuit_anchor_file, anchorfile, indent=2)
 			anchorfile.write('\n')
 
@@ -994,43 +1022,3 @@ class NetworkGraph:
 			parent_candidates_json,
 			native_editor_json,
 		)
-
-	def plotNetworkGraph(self, showClients=False):
-		# Requires `pip install graphviz` to function.
-		# You also need to install graphviz on your PC.
-		# In Ubuntu, apt install graphviz will do it.
-		# Plots the network graph to a PDF file, allowing
-		# visual verification that the graph makes sense.
-		# Could potentially be useful in a future
-		# web interface.
-		import importlib.util
-		if (spec := importlib.util.find_spec('graphviz')) is None:
-			return
-
-		import graphviz
-		dot = graphviz.Digraph(
-			'network', comment="Network Graph", engine="dot", graph_attr={'rankdir':'LR'})
-
-		if not self._cache_valid:
-			self._buildChildrenCache()
-
-		for i, node in enumerate(self.nodes):
-			if ((node.type != NodeType.client and node.type != NodeType.device) or showClients):
-				color = "white"
-				match node.type:
-					case NodeType.root: color = "green"
-					case NodeType.site: color = "red"
-					case NodeType.ap: color = "blue"
-					case NodeType.clientWithChildren: color = "magenta"
-					case NodeType.device: color = "white"
-					case default: color = "grey"
-				dot.node("N" + str(i), node.displayName, color=color)
-				
-				# O(1) lookup of children
-				children = self._children_cache.get(i, [])
-				for child in children:
-					if child != i:
-						if (self.nodes[child].type != NodeType.client and self.nodes[child].type != NodeType.device) or showClients:
-							dot.edge("N" + str(i), "N" + str(child))
-		dot = dot.unflatten(stagger=3)#, fanout=True)
-		dot.render("network")

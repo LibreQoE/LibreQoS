@@ -5,7 +5,6 @@ use lqos_config::{
     EthernetPortObservation, EthernetRateDecision, RequestedCircuitRates,
     apply_ethernet_rate_cap as apply_shared_ethernet_rate_cap,
 };
-use std::path::Path;
 use tracing::error;
 
 /// Applies a negotiated-Ethernet cap to a circuit and returns the adjusted rates plus advisory.
@@ -66,7 +65,7 @@ pub fn write_ethernet_advisories(
     config: &Config,
     advisories: &[CircuitEthernetMetadata],
 ) -> Result<(), UispIntegrationError> {
-    let path = Path::new(&config.lqos_directory).join(CIRCUIT_ETHERNET_METADATA_FILENAME);
+    let path = config.topology_state_file_path(CIRCUIT_ETHERNET_METADATA_FILENAME);
     let payload = serde_json::to_vec_pretty(&lqos_config::CircuitEthernetMetadataFile {
         circuits: advisories
             .iter()
@@ -78,6 +77,12 @@ pub fn write_ethernet_advisories(
         error!("Unable to serialize circuit Ethernet metadata: {e:?}");
         UispIntegrationError::CsvError
     })?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            error!("Unable to create circuit Ethernet metadata directory: {e:?}");
+            UispIntegrationError::CsvError
+        })?;
+    }
     std::fs::write(path, payload).map_err(|e| {
         error!("Unable to write circuit Ethernet metadata: {e:?}");
         UispIntegrationError::CsvError

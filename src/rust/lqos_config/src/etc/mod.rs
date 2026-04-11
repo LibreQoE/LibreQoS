@@ -427,6 +427,13 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
         final_config.lqos_directory = lqos_dir;
     }
+    crate::runtime_state_migration::migrate_legacy_runtime_state(&final_config).map_err(|e| {
+        error!("Unable to migrate legacy runtime state: {e:?}");
+        LibreQoSConfigError::MigrationFailed {
+            path: final_config.lqos_directory.clone(),
+            details: e.to_string(),
+        }
+    })?;
 
     debug!("Set cached version of config file");
     let new_config = Arc::new(final_config);

@@ -1,5 +1,6 @@
 version = "1.5"
 lqos_directory = "/opt/libreqos/src"
+state_directory = "/opt/libreqos/state"
 node_id = "0000-0000-0000"
 node_name = "Example Node"
 packet_capture_time = 10

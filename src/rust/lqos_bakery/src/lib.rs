@@ -2656,7 +2656,7 @@ fn migration_target_label(migration: &Migration) -> String {
 
 fn runtime_network_json_path(config: &Config) -> std::path::PathBuf {
     let base_path = Path::new(&config.lqos_directory);
-    let effective_path = base_path.join("network.effective.json");
+    let effective_path = config.topology_state_read_path("network.effective.json");
     let integration_ingress_enabled = config.uisp_integration.enable_uisp
         || config.splynx_integration.enable_splynx
         || config
@@ -10055,7 +10055,7 @@ fn process_batch(
         .flatten()
         .collect::<Vec<Vec<String>>>();
 
-    let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
+    let path = config.debug_state_file_path("linux_tc_rust.txt");
     write_command_file(&path, &commands);
     let build_duration_ms = build_started.elapsed().as_millis() as u64;
     let (total_tc_commands, class_commands, qdisc_commands) = count_tc_command_types(&commands);
@@ -10164,6 +10164,7 @@ mod tests {
 
             let config = lqos_config::Config {
                 lqos_directory: runtime_dir.display().to_string(),
+                state_directory: None,
                 bridge: Some(lqos_config::BridgeConfig {
                     use_xdp_bridge: false,
                     to_internet: "lo".to_string(),
@@ -11913,6 +11914,7 @@ mod tests {
         reset_bakery_test_state();
 
         let cfg = Config {
+            state_directory: None,
             bridge: Some(lqos_config::BridgeConfig {
                 use_xdp_bridge: false,
                 to_internet: "__bakery-missing-wan__".to_string(),

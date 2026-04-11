@@ -19,6 +19,7 @@ mod network_json;
 mod planner;
 mod program_control;
 mod qoo_profiles;
+mod runtime_state_migration;
 mod shaped_devices;
 mod topology_canonical_state;
 mod topology_editor_state;
@@ -32,6 +33,7 @@ pub use circuit_anchors::{
 };
 pub use circuit_ethernet_metadata::{
     CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
+    circuit_ethernet_metadata_path,
 };
 pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,

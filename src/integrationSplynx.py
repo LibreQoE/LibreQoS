@@ -490,7 +490,6 @@ def run_splynx_pipeline(strategy_name: str):
 
 	# Finalize
 	net.prepareTree()
-	net.plotNetworkGraph(False)
 	net.materializeCompiledTopology("python/splynx", splynx_strategy())
 
 def buildHeaders():

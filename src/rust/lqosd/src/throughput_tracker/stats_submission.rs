@@ -30,7 +30,7 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
 }
 
 fn insight_topology_debug_path(config: &lqos_config::Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join("network.insight.debug.json")
+    config.debug_state_file_path("network.insight.debug.json")
 }
 
 fn write_insight_topology_debug_snapshot(
@@ -38,6 +38,9 @@ fn write_insight_topology_debug_snapshot(
     raw_json: &str,
 ) -> anyhow::Result<()> {
     let path = insight_topology_debug_path(config);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = std::fs::File::create(&temp_path)?;
     file.write_all(raw_json.as_bytes())?;

@@ -64,7 +64,7 @@ pub struct TopologyParentCandidatesFile {
 ///
 /// This function is pure: it has no side effects.
 pub fn topology_parent_candidates_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_PARENT_CANDIDATES_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_PARENT_CANDIDATES_FILENAME)
 }
 
 fn atomic_write_json<T: Serialize>(
@@ -72,6 +72,9 @@ fn atomic_write_json<T: Serialize>(
     value: &T,
 ) -> Result<(), TopologyParentCandidatesError> {
     let raw = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
     file.write_all(raw.as_bytes())?;
@@ -97,7 +100,10 @@ impl TopologyParentCandidatesFile {
     ///
     /// Side effects: writes `topology_parent_candidates.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyParentCandidatesError> {
-        atomic_write_json(&topology_parent_candidates_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_PARENT_CANDIDATES_FILENAME),
+            self,
+        )
     }
 
     /// Finds candidate-parent metadata for `node_id`.

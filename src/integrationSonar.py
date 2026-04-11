@@ -776,7 +776,6 @@ def createShaper():
       net.addRawNode(libre_device)
 
   net.prepareTree()
-  net.plotNetworkGraph(False)
   mode = sonar_strategy()
   print(f"Using Sonar topology mode: {mode}")
   net.materializeCompiledTopology("python/sonar", mode)

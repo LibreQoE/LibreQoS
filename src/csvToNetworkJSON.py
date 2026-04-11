@@ -42,7 +42,6 @@ def csvToNetworkJSONfile():
 						   parentId=parentID, download=download, upload=upload, address=None, customerName=None)
 		net.addRawNode(node)
 	net.prepareTree()
-	net.plotNetworkGraph(False)
 	if net.doesNetworkJsonExist():
 		print("network.json already exists. Leaving it in place; DIY/manual inputs are operator-owned.")
 	else:

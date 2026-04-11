@@ -9,6 +9,10 @@ import types
 import unittest
 from unittest.mock import patch
 
+_STUBBED_MODULES = ("pythonCheck", "liblqos_python", "LibreQoS")
+_ORIGINAL_MODULES = {name: sys.modules.get(name) for name in _STUBBED_MODULES}
+LibreQoS = None
+
 
 def install_libreqos_stubs():
     python_check = types.ModuleType("pythonCheck")
@@ -71,9 +75,20 @@ def install_libreqos_stubs():
     lqlib.Bakery = DummyBakery
     sys.modules["liblqos_python"] = lqlib
 
+def setUpModule():
+    global LibreQoS
+    for name in _STUBBED_MODULES:
+        sys.modules.pop(name, None)
+    install_libreqos_stubs()
+    LibreQoS = importlib.import_module("LibreQoS")
 
-install_libreqos_stubs()
-LibreQoS = importlib.import_module("LibreQoS")
+
+def tearDownModule():
+    for name, module in _ORIGINAL_MODULES.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
 
 
 class TestLibreQoSShapingInputs(unittest.TestCase):

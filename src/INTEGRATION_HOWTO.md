@@ -144,10 +144,6 @@ net.createNetworkJson() # Create `network.json`
 net.createShapedDevices() # Create the `ShapedDevices.csv` file.
 ```
 
-You can also add a call to `net.plotNetworkGraph(False)` (use `True` to also include every customer; this can make for a HUGE file) to create a PDF file (currently named `network.pdf.pdf`) displaying your topology. The example shown here looks like this:
-
-![](testdata/network_new.png)
-
 ### Per‑Circuit SQM Overrides (Download/Upload)
 
 LibreQoS supports optional per‑circuit SQM overrides via the last column (`sqm`) of `ShapedDevices.csv`.

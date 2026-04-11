@@ -13,6 +13,9 @@ pub struct EtcLqos {
     /// The directory in which LibreQoS is installed.
     pub lqos_directory: String,
 
+    /// Optional directory in which LibreQoS stores machine-managed runtime state.
+    pub state_directory: Option<String>,
+
     /// How frequently should `lqosd` read the `tc show qdisc` data?
     /// In ms.
     pub queue_check_period_ms: u64,

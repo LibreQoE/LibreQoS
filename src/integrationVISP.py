@@ -21,6 +21,11 @@ from liblqos_python import (
     visp_timeout_secs,
 )
 
+try:
+    from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+    _get_state_dir_native = None
+
 from integrationCommon import (
     NetworkGraph,
     NetworkNode,
@@ -32,6 +37,17 @@ from integrationCommon import (
 
 TOKEN_URL = "https://data.visp.net/token"
 GRAPHQL_URL = "https://integrations.visp.net/graphql"
+
+
+def _state_directory() -> str:
+    if _get_state_dir_native is not None:
+        return _get_state_dir_native()
+    base_dir = get_libreqos_directory()
+    if os.path.basename(base_dir.rstrip("/")) == "src":
+        parent = os.path.dirname(base_dir.rstrip("/"))
+        if parent:
+            return os.path.join(parent, "state")
+    return os.path.join(base_dir, "state")
 
 
 def _unit_to_mbps(value: Any, unit: Any) -> Optional[float]:
@@ -113,7 +129,8 @@ class VispClient:
         self.timeout_secs: int = max(10, int(visp_timeout_secs() or 20))
 
     def _token_cache_path(self) -> str:
-        base = get_libreqos_directory()
+        base = os.path.join(_state_directory(), "cache")
+        os.makedirs(base, exist_ok=True)
         h = hashlib.sha256((self.client_id + "|" + self.username).encode("utf-8")).hexdigest()[:16]
         return os.path.join(base, f".visp_token_cache_{h}.json")
 

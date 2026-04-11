@@ -77,7 +77,11 @@ pub struct PythonMigration {
     pub influx_dbtoken: String,
     #[serde(rename = "circuitNameUseAddress")]
     pub circuit_name_use_address: bool,
-    #[serde(rename = "overwriteNetworkJSONalways")]
+    #[serde(
+        default,
+        rename = "overwriteNetworkJSONalways",
+        alias = "always_overwrite_network_json"
+    )]
     pub overwrite_network_jsonalways: bool,
     #[serde(rename = "ignoreSubnets")]
     pub ignore_subnets: Vec<String>,
@@ -171,5 +175,91 @@ impl PythonMigration {
         } else {
             Err(PythonMigrationError::ConfigFileNotFound)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PythonMigration;
+
+    fn minimal_python_migration_json() -> &'static str {
+        r#"{
+            "sqm": "cake diffserv4",
+            "monitorOnlyMode": false,
+            "upstreamBandwidthCapacityDownloadMbps": 1000,
+            "upstreamBandwidthCapacityUploadMbps": 1000,
+            "generatedPNDownloadMbps": 1000,
+            "generatedPNUploadMbps": 1000,
+            "interfaceA": "ens20",
+            "interfaceB": "ens19",
+            "queueRefreshIntervalMins": 30,
+            "OnAStick": false,
+            "StickVlanA": 0,
+            "StickVlanB": 0,
+            "enableActualShellCommands": true,
+            "runShellCommandsAsSudo": false,
+            "queuesAvailableOverride": 0,
+            "useBinPackingToBalanceCPU": false,
+            "influxEnabled": false,
+            "influxDBurl": "http://localhost:8086",
+            "influxDBBucket": "libreqos",
+            "influxDBOrg": "libreqos",
+            "influxDBtoken": "",
+            "circuitNameUseAddress": false,
+            "ignoreSubnets": ["192.168.0.0/16"],
+            "allowedSubnets": ["100.64.0.0/10"],
+            "excludeSites": [],
+            "findIPv6usingMikrotikAPI": false,
+            "automaticImportSplynx": false,
+            "splynx_api_key": "",
+            "splynx_api_secret": "",
+            "splynx_api_url": "",
+            "automaticImportNetzur": false,
+            "netzur_api_key": "",
+            "netzur_api_url": "",
+            "netzur_api_timeout": 60,
+            "automaticImportUISP": false,
+            "uispAuthToken": "",
+            "UISPbaseURL": "",
+            "uispSite": "",
+            "uispStrategy": "full",
+            "uispSuspendedStrategy": "none",
+            "airMax_capacity": 1.0,
+            "ltu_capacity": 1.0,
+            "bandwidthOverheadFactor": 1.0,
+            "committedBandwidthMultiplier": 0.98,
+            "exceptionCPEs": {},
+            "apiUsername": "",
+            "apiPassword": "",
+            "apiHostIP": "127.0.0.1",
+            "apiHostPost": 5000,
+            "automaticImportPowercode": false,
+            "powercode_api_key": "",
+            "powercode_api_url": "",
+            "automaticImportSonar": false,
+            "sonar_api_key": "",
+            "sonar_api_url": "",
+            "snmp_community": "public",
+            "sonar_active_status_ids": [],
+            "sonar_airmax_ap_model_ids": [],
+            "sonar_ltu_ap_model_ids": []
+        }"#
+    }
+
+    #[test]
+    fn python_migration_defaults_missing_deprecated_overwrite_flag() {
+        let parsed: PythonMigration =
+            serde_json::from_str(minimal_python_migration_json()).expect("json should parse");
+        assert!(!parsed.overwrite_network_jsonalways);
+    }
+
+    #[test]
+    fn python_migration_accepts_snake_case_deprecated_overwrite_flag_alias() {
+        let raw = minimal_python_migration_json().replace(
+            "\"circuitNameUseAddress\": false,",
+            "\"circuitNameUseAddress\": false,\n            \"always_overwrite_network_json\": true,",
+        );
+        let parsed: PythonMigration = serde_json::from_str(&raw).expect("json should parse");
+        assert!(parsed.overwrite_network_jsonalways);
     }
 }

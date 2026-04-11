@@ -397,6 +397,9 @@ fn atomic_write_json<T: Serialize>(
     value: &T,
 ) -> Result<(), TopologyRuntimeStateError> {
     let raw = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
     file.write_all(raw.as_bytes())?;
@@ -407,37 +410,37 @@ fn atomic_write_json<T: Serialize>(
 
 /// Returns the path of the runtime attachment-health state file.
 pub fn topology_attachment_health_state_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME)
 }
 
 /// Returns the path of the effective topology state file.
 pub fn topology_effective_state_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_EFFECTIVE_STATE_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_EFFECTIVE_STATE_FILENAME)
 }
 
 /// Returns the path of the effective runtime network tree file.
 pub fn topology_effective_network_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME)
 }
 
 /// Returns the path of the topology import artifact file.
 pub fn topology_import_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_IMPORT_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_IMPORT_FILENAME)
 }
 
 /// Returns the path of the runtime shaping-input snapshot file.
 pub fn topology_shaping_inputs_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_SHAPING_INPUTS_FILENAME)
+    config.shaping_state_read_path(TOPOLOGY_SHAPING_INPUTS_FILENAME)
 }
 
 /// Returns the path of the topology runtime readiness status file.
 pub fn topology_runtime_status_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_RUNTIME_STATUS_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_RUNTIME_STATUS_FILENAME)
 }
 
 /// Returns the path of the integration compiled-shaping artifact.
 pub fn topology_compiled_shaping_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_COMPILED_SHAPING_FILENAME)
+    config.shaping_state_read_path(TOPOLOGY_COMPILED_SHAPING_FILENAME)
 }
 
 fn file_exists_with_nonempty_nodes(path: &Path) -> Result<bool, TopologyRuntimeStateError> {
@@ -482,15 +485,15 @@ fn hash_file_state(
 pub fn compute_topology_source_generation(
     config: &Config,
 ) -> Result<String, TopologyRuntimeStateError> {
-    let base = Path::new(&config.lqos_directory);
-    let canonical_path = base.join(TOPOLOGY_CANONICAL_STATE_FILENAME);
-    let editor_path = base.join(TOPOLOGY_EDITOR_STATE_FILENAME);
-    let topology_import_path = base.join(TOPOLOGY_IMPORT_FILENAME);
-    let topology_compiled_shaping_path = base.join(TOPOLOGY_COMPILED_SHAPING_FILENAME);
+    let canonical_path = config.topology_state_read_path(TOPOLOGY_CANONICAL_STATE_FILENAME);
+    let editor_path = config.topology_state_read_path(TOPOLOGY_EDITOR_STATE_FILENAME);
+    let topology_import_path = config.topology_state_read_path(TOPOLOGY_IMPORT_FILENAME);
+    let topology_compiled_shaping_path =
+        config.shaping_state_read_path(TOPOLOGY_COMPILED_SHAPING_FILENAME);
     let use_topology_import = topology_import_ingress_enabled(config);
-    let network_path = base.join("network.json");
-    let shaped_devices_path = base.join("ShapedDevices.csv");
-    let circuit_anchors_path = base.join(CIRCUIT_ANCHORS_FILENAME);
+    let network_path = config.legacy_runtime_file_path("network.json");
+    let shaped_devices_path = config.legacy_runtime_file_path("ShapedDevices.csv");
+    let circuit_anchors_path = config.topology_state_read_path(CIRCUIT_ANCHORS_FILENAME);
 
     let canonical_active = if file_exists_with_nonempty_nodes(&canonical_path)? {
         let canonical = TopologyCanonicalStateFile::load(config)
@@ -591,7 +594,10 @@ impl TopologyAttachmentHealthStateFile {
 
     /// Saves the transient attachment-health state file atomically.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_attachment_health_state_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME),
+            self,
+        )
     }
 }
 
@@ -608,7 +614,10 @@ impl TopologyEffectiveStateFile {
 
     /// Saves the effective topology state file atomically.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_effective_state_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_EFFECTIVE_STATE_FILENAME),
+            self,
+        )
     }
 }
 
@@ -625,7 +634,10 @@ impl TopologyShapingInputsFile {
 
     /// Saves the runtime shaping-input snapshot.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_shaping_inputs_path(config), self)
+        atomic_write_json(
+            &config.shaping_state_file_path(TOPOLOGY_SHAPING_INPUTS_FILENAME),
+            self,
+        )
     }
 
     /// Returns a copy normalized for semantic comparisons and stable generation hashing.
@@ -668,7 +680,10 @@ impl TopologyRuntimeStatusFile {
 
     /// Saves the topology runtime status file atomically.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_runtime_status_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_RUNTIME_STATUS_FILENAME),
+            self,
+        )
     }
 }
 
@@ -718,6 +733,7 @@ mod tests {
         write_required_inputs(&lqos_directory);
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -750,6 +766,7 @@ mod tests {
         .expect("network json should write");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
 
@@ -817,6 +834,7 @@ mod tests {
         .expect("topology_import.json should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -849,6 +867,7 @@ mod tests {
         write_required_inputs(&lqos_directory);
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -907,6 +926,7 @@ mod tests {
         .expect("topology import should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.splynx_integration.enable_splynx = true;
@@ -986,6 +1006,7 @@ mod tests {
         .expect("compiled shaping should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -1068,6 +1089,7 @@ mod tests {
         .expect("topology import should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -1108,6 +1130,7 @@ mod tests {
         .expect("network json should write");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
 
@@ -1168,6 +1191,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-config-topology-status-roundtrip");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         let status = TopologyRuntimeStatusFile {

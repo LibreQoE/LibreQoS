@@ -322,9 +322,8 @@ pub(crate) fn current_topology_ingress_identity(
     Ok(topology_ingress_fingerprint_for_network_json(&network))
 }
 
-fn quarantine_target_path(path: &Path, stamp: u64, attempt: usize) -> PathBuf {
-    let quarantine_directory =
-        topology_stale_directory_path(path.parent().unwrap_or_else(|| Path::new(".")));
+fn quarantine_target_path(config: &Config, path: &Path, stamp: u64, attempt: usize) -> PathBuf {
+    let quarantine_directory = topology_stale_directory_path(config);
     let filename = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -336,44 +335,42 @@ fn quarantine_target_path(path: &Path, stamp: u64, attempt: usize) -> PathBuf {
     }
 }
 
-fn topology_stale_directory_path(base: &Path) -> PathBuf {
-    base.join(".topology_stale")
+fn topology_stale_directory_path(config: &Config) -> PathBuf {
+    config.quarantine_state_directory_path()
 }
 
 pub(crate) fn quarantine_stale_topology_state(
     config: &Config,
     reason: &str,
 ) -> Result<(), TopologyCanonicalStateError> {
-    let base = Path::new(&config.lqos_directory);
-    let quarantine_directory = topology_stale_directory_path(base);
+    let quarantine_directory = topology_stale_directory_path(config);
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     let mut moved = Vec::new();
-    let filenames = [
-        TOPOLOGY_CANONICAL_STATE_FILENAME,
-        TOPOLOGY_EDITOR_STATE_FILENAME,
-        TOPOLOGY_COMPILED_SHAPING_FILENAME,
-        TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME,
-        TOPOLOGY_EFFECTIVE_NETWORK_FILENAME,
-        TOPOLOGY_EFFECTIVE_STATE_FILENAME,
-        TOPOLOGY_RUNTIME_STATUS_FILENAME,
-        TOPOLOGY_SHAPING_INPUTS_FILENAME,
+    let paths = [
+        config.topology_state_read_path(TOPOLOGY_CANONICAL_STATE_FILENAME),
+        config.topology_state_read_path(TOPOLOGY_EDITOR_STATE_FILENAME),
+        config.shaping_state_read_path(TOPOLOGY_COMPILED_SHAPING_FILENAME),
+        config.topology_state_read_path(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME),
+        config.topology_state_read_path(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME),
+        config.topology_state_read_path(TOPOLOGY_EFFECTIVE_STATE_FILENAME),
+        config.topology_state_read_path(TOPOLOGY_RUNTIME_STATUS_FILENAME),
+        config.shaping_state_read_path(TOPOLOGY_SHAPING_INPUTS_FILENAME),
     ];
 
     std::fs::create_dir_all(&quarantine_directory)?;
 
-    for filename in filenames {
-        let path = base.join(filename);
+    for path in paths {
         if !path.exists() {
             continue;
         }
 
         let mut attempt = 0usize;
         loop {
-            let target = quarantine_target_path(&path, stamp, attempt);
+            let target = quarantine_target_path(config, &path, stamp, attempt);
             if target.exists() {
                 attempt += 1;
                 continue;
@@ -382,7 +379,8 @@ pub(crate) fn quarantine_stale_topology_state(
             moved.push((
                 path.file_name()
                     .and_then(|name| name.to_str())
-                    .unwrap_or(filename)
+                    .or_else(|| path.to_str())
+                    .unwrap_or_default()
                     .to_string(),
                 target
                     .file_name()
@@ -564,6 +562,9 @@ fn atomic_write_json<T: Serialize>(
     value: &T,
 ) -> Result<(), TopologyCanonicalStateError> {
     let raw = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
     file.write_all(raw.as_bytes())?;
@@ -808,7 +809,7 @@ fn import_legacy_network_children(
 ///
 /// This function is pure: it has no side effects.
 pub fn topology_canonical_state_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_CANONICAL_STATE_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_CANONICAL_STATE_FILENAME)
 }
 
 impl TopologyCanonicalStateFile {
@@ -870,7 +871,10 @@ impl TopologyCanonicalStateFile {
     ///
     /// Side effects: writes `topology_canonical_state.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyCanonicalStateError> {
-        atomic_write_json(&topology_canonical_state_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            self,
+        )
     }
 
     /// Finds canonical metadata for `node_id`.
@@ -1463,6 +1467,7 @@ mod tests {
 
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
 
@@ -1609,6 +1614,7 @@ mod tests {
 
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
 
@@ -1699,6 +1705,7 @@ mod tests {
 
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -1729,6 +1736,7 @@ mod tests {
 
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -1758,6 +1766,7 @@ mod tests {
 
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;

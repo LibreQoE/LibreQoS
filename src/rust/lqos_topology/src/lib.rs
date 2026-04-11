@@ -4031,6 +4031,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-runtime-status-transition");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         let generation = "generation-1";
@@ -4087,6 +4088,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-circuit-anchors");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4166,6 +4168,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-runtime-overrides");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.splynx_integration.enable_splynx = true;
@@ -4342,6 +4345,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-import-shaped-devices");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -4470,6 +4474,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-attachment-anchor-remap");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4603,6 +4608,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-resolution");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4659,6 +4665,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-virtual");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4739,6 +4746,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-missing-anchor");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4814,6 +4822,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-flat-summary");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.topology.compile_mode = "flat".to_string();

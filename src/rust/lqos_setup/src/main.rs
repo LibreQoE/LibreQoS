@@ -374,6 +374,11 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
     }
     event_log.push("Configuration updated".to_string());
 
+    let state_root = config.resolved_state_directory();
+    for category in ["topology", "shaping", "stats", "cache", "debug", "quarantine"] {
+        std::fs::create_dir_all(state_root.join(category)).expect("Unable to create state directory");
+    }
+
     // Does network.json exist?
     if !network_json_exists() {
         let path = Path::new(&config.lqos_directory).join("network.json");
@@ -415,6 +420,7 @@ mod test {
     fn configured_bridge_config(lqos_directory: String) -> lqos_config::Config {
         let mut config = lqos_config::Config {
             lqos_directory,
+            state_directory: None,
             bridge: Some(lqos_config::BridgeConfig {
                 use_xdp_bridge: true,
                 to_internet: "wan0".to_string(),

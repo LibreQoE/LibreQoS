@@ -131,6 +131,7 @@ mod tests {
     fn config_for_dir(dir: &Path) -> Config {
         Config {
             lqos_directory: dir.to_string_lossy().into_owned(),
+            state_directory: None,
             ..Config::default()
         }
     }
