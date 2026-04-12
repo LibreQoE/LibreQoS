@@ -4,6 +4,8 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 
 For the full logical-topology versus queue-topology file flow, see [Topology Data Flow](topology-data-flow.md).
 
+For the current circuit RTT/QoE calculation method used by circuit-focused experience views, see [Circuit QoE and RTT Methodology](qoe-rtt-methodology.md).
+
 ## Core Views
 
 ### Dashboard

@@ -45,6 +45,33 @@ Nota de topología:
 Lea esto primero antes de cambios en producción:
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 
+## Perfiles de QoE (`qoo_profiles.json`)
+
+LibreQoS muestra QoE como una estimación de la calidad de Internet basada en latencia y pérdida.
+
+Para la metodología actual de cálculo de RTT/QoE por circuito usada en las vistas de experiencia por circuito de la WebUI, consulte [Metodología de QoE y RTT por circuito](qoe-rtt-methodology-es.md).
+
+### Dónde vive el archivo
+
+`<lqos_directory>/qoo_profiles.json`
+
+### Selección de perfil
+
+- **WebUI**: `Configuration -> General -> QoE Profile`
+- **Archivo de configuración**: configure `qoo_profile_id` en `/etc/lqos.conf`
+
+Ejemplo:
+
+```toml
+# /etc/lqos.conf
+qoo_profile_id = "web_browsing"
+```
+
+### Aplicar cambios
+
+- Los cambios a `qoo_profiles.json` se detectan automáticamente.
+- Si cambia `/etc/lqos.conf`, reinicie `lqosd`.
+
 ## ¿Necesita cambios por CLI o por archivos?
 
 Para edición directa de archivos (`/etc/lqos.conf`, `network.json`, `ShapedDevices.csv`), overrides y material de referencia profundo sobre topología/circuitos, use:
@@ -56,5 +83,6 @@ Para edición directa de archivos (`/etc/lqos.conf`, `network.json`, `ShapedDevi
 - [Quickstart](quickstart-es.md)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 - [Integraciones CRM/NMS](integrations-es.md)
+- [Metodología de QoE y RTT por circuito](qoe-rtt-methodology-es.md)
 - [Referencia avanzada de configuración](configuration-advanced-es.md)
 - [Solución de problemas](troubleshooting-es.md)

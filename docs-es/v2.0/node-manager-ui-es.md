@@ -2,6 +2,8 @@
 
 Esta página documenta las vistas clave de la WebUI (Node Manager) y su comportamiento operativo en la interfaz local (`http://ip_del_shaper:9123`).
 
+Para la metodología actual de cálculo de RTT/QoE por circuito usada por las vistas enfocadas en experiencia de circuito, consulte [Metodología de QoE y RTT por circuito](qoe-rtt-methodology-es.md).
+
 ## Vistas principales
 
 ### Dashboard

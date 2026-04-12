@@ -29,6 +29,7 @@ Welcome to the LibreQoS documentation
    docs/v2.0/integrations
    docs/v2.0/components
    docs/v2.0/node-manager-ui
+   docs/v2.0/qoe-rtt-methodology
    docs/v2.0/scale-topology
    docs/v2.0/stormguard
    docs/v2.0/treeguard

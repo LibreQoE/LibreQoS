@@ -55,6 +55,8 @@ Read this first before production changes:
 
 LibreQoS displays QoE as an estimate of internet quality based on latency and loss.
 
+For the current circuit RTT/QoE calculation method used in WebUI circuit experience views, see [Circuit QoE and RTT Methodology](qoe-rtt-methodology.md).
+
 ### Where the file lives
 
 `<lqos_directory>/qoo_profiles.json`
@@ -87,5 +89,6 @@ For direct file editing (`/etc/lqos.conf`, `network.json`, `ShapedDevices.csv`),
 - [Quickstart](quickstart.md)
 - [Operating Modes and Source of Truth](operating-modes.md)
 - [CRM/NMS Integrations](integrations.md)
+- [Circuit QoE and RTT Methodology](qoe-rtt-methodology.md)
 - [Advanced Configuration Reference](configuration-advanced.md)
 - [Troubleshooting](troubleshooting.md)

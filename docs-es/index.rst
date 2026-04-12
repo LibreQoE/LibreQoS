@@ -25,6 +25,7 @@ Bienvenido a la documentación de LibreQoS
    v2.0/integrations-es
    v2.0/components-es
    v2.0/node-manager-ui-es
+   v2.0/qoe-rtt-methodology-es
    v2.0/stormguard-es
    v2.0/treeguard-es
    v2.0/high-availability-es
