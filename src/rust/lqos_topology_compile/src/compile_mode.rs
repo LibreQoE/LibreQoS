@@ -1025,6 +1025,8 @@ mod tests {
             nodes: vec![TopologyEditorNode {
                 node_id: "ap-north".to_string(),
                 node_name: "Wrong Name".to_string(),
+                latitude: None,
+                longitude: None,
                 current_parent_node_id: Some("missing-site".to_string()),
                 current_parent_node_name: Some("Missing Site".to_string()),
                 current_attachment_id: Some("missing-attachment".to_string()),
@@ -1159,6 +1161,8 @@ mod tests {
                 nodes: vec![TopologyEditorNode {
                     node_id: "site-beta".to_string(),
                     node_name: "Site Beta".to_string(),
+                    latitude: None,
+                    longitude: None,
                     current_parent_node_id: Some("site-alpha".to_string()),
                     current_parent_node_name: Some("Site Alpha".to_string()),
                     current_attachment_id: Some("ap-alpha".to_string()),
@@ -1262,6 +1266,8 @@ mod tests {
                     TopologyEditorNode {
                         node_id: "site-west".to_string(),
                         node_name: "WestRedd".to_string(),
+                        latitude: None,
+                        longitude: None,
                         current_parent_node_id: None,
                         current_parent_node_name: None,
                         current_attachment_id: None,
@@ -1277,6 +1283,8 @@ mod tests {
                     TopologyEditorNode {
                         node_id: "aviat-west".to_string(),
                         node_name: "AVIAT_WestRedd".to_string(),
+                        latitude: None,
+                        longitude: None,
                         current_parent_node_id: Some("site-west".to_string()),
                         current_parent_node_name: Some("WestRedd".to_string()),
                         current_attachment_id: Some("site-west".to_string()),
