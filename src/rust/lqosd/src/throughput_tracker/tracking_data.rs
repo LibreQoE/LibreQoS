@@ -1,5 +1,5 @@
 use super::{
-    RETIRE_AFTER_SECONDS,
+    CIRCUIT_REPRESENTATIVE_METRICS, CircuitRepresentativeMetrics, RETIRE_AFTER_SECONDS,
     flow_data::{
         ALL_FLOWS, AsnAggregate, FlowAnalysis, FlowbeeLocalData, RttBuffer, RttData,
         get_flowbee_event_count_and_reset, update_asn_heatmaps,
@@ -8,7 +8,9 @@ use super::{
 };
 use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
 use crate::{
-    shaped_devices_tracker::{SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
+    shaped_devices_tracker::{
+        SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, shaped_device_from_hashes_or_ip,
+    },
     stats::HIGH_WATERMARK,
     throughput_tracker::flow_data::{FlowbeeEffectiveDirection, expire_rtt_flows, flowbee_rtt_map},
 };
@@ -28,7 +30,7 @@ use lqos_utils::{
 };
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
-use std::{sync::atomic::AtomicU64, time::Duration};
+use std::{sync::Arc, sync::atomic::AtomicU64, time::Duration};
 use tracing::{debug, info, warn};
 
 // Maximum number of flows to track simultaneously
@@ -36,7 +38,8 @@ use tracing::{debug, info, warn};
 const MAX_FLOWS: usize = 1_000_000;
 
 pub const MAX_RETRY_TIMES: usize = 128;
-const MIN_QOO_FLOW_BYTES: u64 = 1_000_000;
+pub(crate) const MIN_QOO_FLOW_BYTES: u64 = 1_000_000;
+const REPRESENTATIVE_MIN_FLOW_BYTES: u64 = 128 * 1024;
 
 pub(crate) struct FlowApplyContext<'a> {
     pub(crate) timeout_seconds: u64,
@@ -72,6 +75,337 @@ struct CircuitHeatmapAggregate {
     upload_bytes: u64,
     tcp_retransmits: DownUpOrder<u64>,
     tcp_packets: DownUpOrder<u64>,
+}
+
+#[derive(Default)]
+struct RepresentativeAsnAggregate {
+    total_bps: DownUpOrder<u64>,
+    rtt_visible_bps: DownUpOrder<u64>,
+    tcp_packets: DownUpOrder<u64>,
+    tcp_retransmits: DownUpOrder<u64>,
+    rtt: RttBuffer,
+}
+
+const REPRESENTATIVE_MAX_ASN_SHARE: f64 = 0.15;
+
+fn representative_weight(total_bps: u64, visible_bps: u64) -> Option<f64> {
+    if total_bps == 0 || visible_bps == 0 {
+        return None;
+    }
+    let confidence = visible_bps as f64 / total_bps as f64;
+    Some((total_bps as f64).ln_1p() * confidence)
+}
+
+fn accumulate_representative_direction(
+    bucket: &mut RepresentativeAsnAggregate,
+    rtt: &RttBuffer,
+    direction: FlowbeeEffectiveDirection,
+    rate_estimate_bps: u32,
+    bytes_sent: u64,
+) {
+    if bytes_sent < REPRESENTATIVE_MIN_FLOW_BYTES {
+        return;
+    }
+
+    bucket.rtt.accumulate_direction(rtt, direction);
+    if rtt.percentile(RttBucket::Current, direction, 50).is_none() {
+        return;
+    }
+
+    match direction {
+        FlowbeeEffectiveDirection::Download => {
+            bucket.rtt_visible_bps.down = bucket
+                .rtt_visible_bps
+                .down
+                .saturating_add(rate_estimate_bps as u64);
+        }
+        FlowbeeEffectiveDirection::Upload => {
+            bucket.rtt_visible_bps.up = bucket
+                .rtt_visible_bps
+                .up
+                .saturating_add(rate_estimate_bps as u64);
+        }
+    }
+}
+
+fn capped_normalized_weights(raw_weights: &[f64], max_share: f64) -> Vec<f64> {
+    if raw_weights.is_empty() {
+        return Vec::new();
+    }
+    let max_share = max_share.clamp(0.0, 1.0);
+    if max_share <= 0.0 {
+        return vec![0.0; raw_weights.len()];
+    }
+    if max_share >= 1.0 {
+        let total: f64 = raw_weights.iter().copied().sum();
+        if total <= 0.0 {
+            return vec![0.0; raw_weights.len()];
+        }
+        return raw_weights.iter().map(|weight| *weight / total).collect();
+    }
+
+    let active_count = raw_weights.iter().filter(|weight| **weight > 0.0).count();
+    if active_count == 0 {
+        return vec![0.0; raw_weights.len()];
+    }
+    if (active_count as f64) * max_share < 1.0 {
+        let total: f64 = raw_weights.iter().copied().sum();
+        if total <= 0.0 {
+            return vec![0.0; raw_weights.len()];
+        }
+        return raw_weights.iter().map(|weight| *weight / total).collect();
+    }
+
+    let mut normalized = vec![0.0; raw_weights.len()];
+    let mut active: Vec<usize> = raw_weights
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, weight)| (*weight > 0.0).then_some(idx))
+        .collect();
+    let mut remaining_mass = 1.0;
+    let mut remaining_weight: f64 = active.iter().map(|idx| raw_weights[*idx]).sum();
+
+    while !active.is_empty() && remaining_mass > 0.0 && remaining_weight > 0.0 {
+        let max_raw_for_remaining = max_share * remaining_weight / remaining_mass;
+        let mut capped_any = false;
+        active.retain(|idx| {
+            if raw_weights[*idx] > max_raw_for_remaining {
+                normalized[*idx] = max_share;
+                remaining_mass -= max_share;
+                remaining_weight -= raw_weights[*idx];
+                capped_any = true;
+                false
+            } else {
+                true
+            }
+        });
+        if !capped_any {
+            for idx in active {
+                normalized[idx] = raw_weights[idx] * remaining_mass / remaining_weight;
+            }
+            break;
+        }
+    }
+
+    normalized
+}
+
+fn weighted_median_u64(values: &mut Vec<(u64, f64)>) -> Option<u64> {
+    values.retain(|(_, weight)| *weight > 0.0);
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by_key(|(value, _)| *value);
+    let normalized_weights = capped_normalized_weights(
+        &values.iter().map(|(_, weight)| *weight).collect::<Vec<_>>(),
+        REPRESENTATIVE_MAX_ASN_SHARE,
+    );
+    let total_weight: f64 = normalized_weights.iter().sum();
+    if total_weight <= 0.0 {
+        return None;
+    }
+    let threshold = total_weight / 2.0;
+    let mut running = 0.0;
+    for ((value, _), weight) in values.iter().zip(normalized_weights.iter()) {
+        running += *weight;
+        if running >= threshold {
+            return Some(*value);
+        }
+    }
+    values.last().map(|(value, _)| *value)
+}
+
+fn weighted_average_f32(values: &[(f32, f64)]) -> Option<f32> {
+    let normalized_weights = capped_normalized_weights(
+        &values.iter().map(|(_, weight)| *weight).collect::<Vec<_>>(),
+        REPRESENTATIVE_MAX_ASN_SHARE,
+    );
+    let mut weighted_sum = 0.0;
+    let mut total_weight = 0.0;
+    for ((value, _), weight) in values.iter().zip(normalized_weights.iter()) {
+        if *weight <= 0.0 {
+            continue;
+        }
+        weighted_sum += *value as f64 * *weight;
+        total_weight += *weight;
+    }
+    (total_weight > 0.0).then(|| (weighted_sum / total_weight) as f32)
+}
+
+fn build_circuit_representative_metrics(
+    qoo_profile: Option<&lqos_utils::qoo::QooProfile>,
+) -> FxHashMap<i64, CircuitRepresentativeMetrics> {
+    let Ok(now) = time_since_boot() else {
+        return FxHashMap::default();
+    };
+    let recent_cutoff = Duration::from(now)
+        .as_nanos()
+        .saturating_sub((RETIRE_AFTER_SECONDS as u128) * 1_000_000_000)
+        as u64;
+    let shaped = SHAPED_DEVICES.load();
+    let cache = SHAPED_DEVICE_HASH_CACHE.load();
+
+    let mut buckets: FxHashMap<(i64, u32), RepresentativeAsnAggregate> = FxHashMap::default();
+    let all_flows = ALL_FLOWS.lock();
+    for (key, (local, analysis)) in all_flows.flow_data.iter() {
+        if local.last_seen < recent_cutoff {
+            continue;
+        }
+
+        let device = shaped_device_from_hashes_or_ip(
+            &shaped,
+            &cache,
+            &key.local_ip,
+            local.device_hash,
+            local.circuit_hash,
+        );
+        let circuit_hash = local
+            .circuit_hash
+            .or_else(|| device.map(|device| device.circuit_hash));
+        let Some(circuit_hash) = circuit_hash else {
+            continue;
+        };
+        if crate::rtt_exclusions::is_excluded_hash(circuit_hash) {
+            continue;
+        }
+
+        let bucket = buckets
+            .entry((circuit_hash, analysis.asn_id.0))
+            .or_default();
+        bucket.total_bps.checked_add_direct(
+            local.rate_estimate_bps.down as u64,
+            local.rate_estimate_bps.up as u64,
+        );
+
+        let Some(tcp_info) = local.tcp_info.as_ref() else {
+            continue;
+        };
+        bucket
+            .tcp_packets
+            .checked_add_direct(local.packets_sent.down, local.packets_sent.up);
+        bucket.tcp_retransmits.checked_add_direct(
+            local.tcp_retransmits.down as u64,
+            local.tcp_retransmits.up as u64,
+        );
+
+        accumulate_representative_direction(
+            bucket,
+            &tcp_info.rtt,
+            FlowbeeEffectiveDirection::Download,
+            local.rate_estimate_bps.down,
+            local.bytes_sent.down,
+        );
+        accumulate_representative_direction(
+            bucket,
+            &tcp_info.rtt,
+            FlowbeeEffectiveDirection::Upload,
+            local.rate_estimate_bps.up,
+            local.bytes_sent.up,
+        );
+    }
+
+    let mut by_circuit: FxHashMap<i64, Vec<RepresentativeAsnAggregate>> = FxHashMap::default();
+    for ((circuit_hash, _asn), bucket) in buckets {
+        by_circuit.entry(circuit_hash).or_default().push(bucket);
+    }
+
+    build_circuit_representative_metrics_from_buckets(by_circuit, qoo_profile)
+}
+
+fn build_circuit_representative_metrics_from_buckets(
+    by_circuit: FxHashMap<i64, Vec<RepresentativeAsnAggregate>>,
+    qoo_profile: Option<&lqos_utils::qoo::QooProfile>,
+) -> FxHashMap<i64, CircuitRepresentativeMetrics> {
+    let mut results = FxHashMap::default();
+    for (circuit_hash, buckets) in by_circuit {
+        let mut rtt_down = Vec::new();
+        let mut rtt_up = Vec::new();
+        let mut rtt_p90_down = Vec::new();
+        let mut rtt_p90_up = Vec::new();
+        let mut qoo_down = Vec::new();
+        let mut qoo_up = Vec::new();
+
+        for bucket in &buckets {
+            if let Some(rtt) = bucket
+                .rtt
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                .map(|rtt| rtt.as_nanos())
+                && let Some(weight) =
+                    representative_weight(bucket.total_bps.down, bucket.rtt_visible_bps.down)
+            {
+                rtt_down.push((rtt, weight));
+            }
+            if let Some(rtt) = bucket
+                .rtt
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90)
+                .map(|rtt| rtt.as_nanos())
+                && let Some(weight) =
+                    representative_weight(bucket.total_bps.down, bucket.rtt_visible_bps.down)
+            {
+                rtt_p90_down.push((rtt, weight));
+            }
+            if let Some(rtt) = bucket
+                .rtt
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                .map(|rtt| rtt.as_nanos())
+                && let Some(weight) =
+                    representative_weight(bucket.total_bps.up, bucket.rtt_visible_bps.up)
+            {
+                rtt_up.push((rtt, weight));
+            }
+            if let Some(rtt) = bucket
+                .rtt
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
+                .map(|rtt| rtt.as_nanos())
+                && let Some(weight) =
+                    representative_weight(bucket.total_bps.up, bucket.rtt_visible_bps.up)
+            {
+                rtt_p90_up.push((rtt, weight));
+            }
+
+            let Some(profile) = qoo_profile else {
+                continue;
+            };
+            let scores = compute_qoq_scores(
+                profile,
+                &bucket.rtt,
+                tcp_retransmit_loss_proxy(bucket.tcp_retransmits.down, bucket.tcp_packets.down),
+                tcp_retransmit_loss_proxy(bucket.tcp_retransmits.up, bucket.tcp_packets.up),
+            );
+            if let Some(score) = scores.download_total_f32()
+                && let Some(weight) =
+                    representative_weight(bucket.total_bps.down, bucket.rtt_visible_bps.down)
+            {
+                qoo_down.push((score, weight));
+            }
+            if let Some(score) = scores.upload_total_f32()
+                && let Some(weight) =
+                    representative_weight(bucket.total_bps.up, bucket.rtt_visible_bps.up)
+            {
+                qoo_up.push((score, weight));
+            }
+        }
+
+        results.insert(
+            circuit_hash,
+            CircuitRepresentativeMetrics {
+                rtt_current_p50_nanos: DownUpOrder {
+                    down: weighted_median_u64(&mut rtt_down),
+                    up: weighted_median_u64(&mut rtt_up),
+                },
+                rtt_current_p90_nanos: DownUpOrder {
+                    down: weighted_median_u64(&mut rtt_p90_down),
+                    up: weighted_median_u64(&mut rtt_p90_up),
+                },
+                qoo: DownUpOrder {
+                    down: weighted_average_f32(&qoo_down),
+                    up: weighted_average_f32(&qoo_up),
+                },
+            },
+        );
+    }
+
+    results
 }
 
 struct ReducedHostCounters {
@@ -193,6 +527,8 @@ impl ThroughputTracker {
         let mut total_retransmits: DownUpOrder<u64> = DownUpOrder::zeroed();
         let mut total_tcp_packets: DownUpOrder<u64> = DownUpOrder::zeroed();
         let circuit_rtt_snapshot = CIRCUIT_RTT_BUFFERS.load();
+        let representative_snapshot = build_circuit_representative_metrics(qoo_profile.as_deref());
+        CIRCUIT_REPRESENTATIVE_METRICS.store(Arc::new(representative_snapshot.clone()));
         {
             let raw_data = self.raw_data.lock();
             for entry in raw_data.values() {
@@ -251,8 +587,6 @@ impl ThroughputTracker {
         heatmaps.retain(|circuit_hash, _| capacity_lookup.contains_key(circuit_hash));
         let mut qoq_heatmaps = self.circuit_qoq_heatmaps.lock();
         qoq_heatmaps.retain(|circuit_hash, _| capacity_lookup.contains_key(circuit_hash));
-        let empty_rtt = RttBuffer::default();
-
         for (circuit_hash, aggregate) in aggregates {
             let (max_down_mbps, max_up_mbps) = capacity_lookup
                 .get(&circuit_hash)
@@ -263,30 +597,19 @@ impl ThroughputTracker {
                 utilization_percent(aggregate.download_bytes, max_down_mbps).unwrap_or(0.0);
             let upload_util =
                 utilization_percent(aggregate.upload_bytes, max_up_mbps).unwrap_or(0.0);
-            let rtt_p50_down = circuit_rtt_snapshot
-                .get(&circuit_hash)
-                .and_then(|rtt| {
-                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
-                })
-                .map(|rtt| rtt.as_millis() as f32);
-            let rtt_p50_up = circuit_rtt_snapshot
-                .get(&circuit_hash)
-                .and_then(|rtt| {
-                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
-                })
-                .map(|rtt| rtt.as_millis() as f32);
-            let rtt_p90_down = circuit_rtt_snapshot
-                .get(&circuit_hash)
-                .and_then(|rtt| {
-                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 90)
-                })
-                .map(|rtt| rtt.as_millis() as f32);
-            let rtt_p90_up = circuit_rtt_snapshot
-                .get(&circuit_hash)
-                .and_then(|rtt| {
-                    rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
-                })
-                .map(|rtt| rtt.as_millis() as f32);
+            let representative = representative_snapshot.get(&circuit_hash);
+            let rtt_p50_down = representative
+                .and_then(|metrics| metrics.rtt_current_p50_nanos.down)
+                .map(|rtt| RttData::from_nanos(rtt).as_millis() as f32);
+            let rtt_p50_up = representative
+                .and_then(|metrics| metrics.rtt_current_p50_nanos.up)
+                .map(|rtt| RttData::from_nanos(rtt).as_millis() as f32);
+            let rtt_p90_down = representative
+                .and_then(|metrics| metrics.rtt_current_p90_nanos.down)
+                .map(|rtt| RttData::from_nanos(rtt).as_millis() as f32);
+            let rtt_p90_up = representative
+                .and_then(|metrics| metrics.rtt_current_p90_nanos.up)
+                .map(|rtt| RttData::from_nanos(rtt).as_millis() as f32);
             let retransmit_down =
                 retransmit_percent(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
             let retransmit_up =
@@ -304,22 +627,11 @@ impl ThroughputTracker {
                 retransmit_up,
             );
 
-            let rtt = circuit_rtt_snapshot
-                .get(&circuit_hash)
-                .unwrap_or(&empty_rtt);
-            let loss_download = tcp_retransmit_loss_proxy(
-                aggregate.tcp_retransmits.down,
-                aggregate.tcp_packets.down,
-            );
-            let loss_upload =
-                tcp_retransmit_loss_proxy(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
-            let scores = if let Some(profile) = qoo_profile.as_ref() {
-                compute_qoq_scores(profile.as_ref(), rtt, loss_download, loss_upload)
-            } else {
-                QoqScores::default()
-            };
             let qoq_heatmap = qoq_heatmaps.entry(circuit_hash).or_default();
-            qoq_heatmap.add_sample(scores.download_total_f32(), scores.upload_total_f32());
+            qoq_heatmap.add_sample(
+                representative.and_then(|metrics| metrics.qoo.down),
+                representative.and_then(|metrics| metrics.qoo.up),
+            );
         }
 
         let mut global_rtt_buffer = RttBuffer::default();
@@ -1303,7 +1615,7 @@ fn combine_rtt_ms(rtts: [RttData; 2]) -> Option<f32> {
     median(&mut samples)
 }
 
-fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
+pub(crate) fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
     if packets == 0 {
         return None;
     }
@@ -1321,9 +1633,17 @@ fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasu
 
 #[cfg(test)]
 mod tests {
-    use super::ThroughputTracker;
+    use super::{
+        REPRESENTATIVE_MAX_ASN_SHARE, REPRESENTATIVE_MIN_FLOW_BYTES, RepresentativeAsnAggregate,
+        ThroughputTracker, accumulate_representative_direction,
+        build_circuit_representative_metrics_from_buckets, capped_normalized_weights,
+        representative_weight,
+    };
     use crate::shaped_devices_tracker::ShapedDeviceHashCache;
+    use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, RttData};
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
+    use lqos_utils::rtt::RttBucket;
+    use lqos_utils::rtt::RttBuffer;
     use lqos_utils::{XdpIpAddress, hash_to_i64};
     use std::net::Ipv4Addr;
 
@@ -1346,5 +1666,183 @@ mod tests {
 
         assert_eq!(matched.circuit_hash, hash_to_i64("circuit-1"));
         assert_eq!(matched.device_hash, hash_to_i64("device-1"));
+    }
+
+    #[test]
+    fn representative_weight_penalizes_low_visibility() {
+        let high_visibility =
+            representative_weight(100_000_000, 100_000_000).expect("weight should exist");
+        let low_visibility =
+            representative_weight(100_000_000, 10_000_000).expect("weight should exist");
+
+        assert!(high_visibility > low_visibility);
+    }
+
+    #[test]
+    fn representative_weight_growth_is_flatter_than_square_root() {
+        let medium = representative_weight(10_000_000, 10_000_000).expect("weight should exist");
+        let large =
+            representative_weight(1_000_000_000, 1_000_000_000).expect("weight should exist");
+
+        assert!(large > medium);
+        assert!(large / medium < 2.0);
+    }
+
+    #[test]
+    fn representative_direction_ignores_tiny_rtt_bearing_flows() {
+        let mut bucket = RepresentativeAsnAggregate::default();
+        let mut rtt = RttBuffer::default();
+        rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+
+        accumulate_representative_direction(
+            &mut bucket,
+            &rtt,
+            FlowbeeEffectiveDirection::Download,
+            750_000,
+            REPRESENTATIVE_MIN_FLOW_BYTES - 1,
+        );
+
+        assert_eq!(bucket.rtt_visible_bps.down, 0);
+        assert!(
+            bucket
+                .rtt
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn representative_direction_counts_flows_over_minimum_floor() {
+        let mut bucket = RepresentativeAsnAggregate::default();
+        let mut rtt = RttBuffer::default();
+        rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+
+        accumulate_representative_direction(
+            &mut bucket,
+            &rtt,
+            FlowbeeEffectiveDirection::Download,
+            750_000,
+            REPRESENTATIVE_MIN_FLOW_BYTES,
+        );
+
+        assert_eq!(bucket.rtt_visible_bps.down, 750_000);
+        assert!(
+            bucket
+                .rtt
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn capped_normalized_weights_limit_single_asn_share() {
+        let normalized = capped_normalized_weights(
+            &[100.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
+            REPRESENTATIVE_MAX_ASN_SHARE,
+        );
+
+        assert_eq!(normalized.len(), 7);
+        assert!(
+            normalized
+                .iter()
+                .all(|weight| *weight <= REPRESENTATIVE_MAX_ASN_SHARE + 0.0000001)
+        );
+        let total: f64 = normalized.iter().sum();
+        assert!((total - 1.0).abs() < 0.000001);
+    }
+
+    #[test]
+    fn capped_normalized_weights_fall_back_when_cap_is_infeasible() {
+        let normalized =
+            capped_normalized_weights(&[100.0, 10.0, 10.0, 10.0], REPRESENTATIVE_MAX_ASN_SHARE);
+
+        assert_eq!(normalized.len(), 4);
+        let total: f64 = normalized.iter().sum();
+        assert!((total - 1.0).abs() < 0.000001);
+        assert!(normalized[0] > REPRESENTATIVE_MAX_ASN_SHARE);
+    }
+
+    #[test]
+    fn representative_metrics_cap_single_dominant_asn() {
+        let mut trusted = RepresentativeAsnAggregate::default();
+        trusted.total_bps.down = 10_000_000;
+        trusted.rtt_visible_bps.down = 10_000_000;
+        trusted.rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        trusted.rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+
+        let mut trusted2 = RepresentativeAsnAggregate::default();
+        trusted2.total_bps.down = 10_000_000;
+        trusted2.rtt_visible_bps.down = 10_000_000;
+        trusted2.rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        trusted2.rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+
+        let mut trusted3 = RepresentativeAsnAggregate::default();
+        trusted3.total_bps.down = 10_000_000;
+        trusted3.rtt_visible_bps.down = 10_000_000;
+        trusted3.rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        trusted3.rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+
+        let mut noisy = RepresentativeAsnAggregate::default();
+        noisy.total_bps.down = 500_000_000;
+        noisy.rtt_visible_bps.down = 500_000_000;
+        noisy.rtt.push(
+            RttData::from_nanos(999_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        noisy.rtt.push(
+            RttData::from_nanos(999_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+
+        let mut by_circuit = fxhash::FxHashMap::default();
+        by_circuit.insert(1_i64, vec![trusted, trusted2, trusted3, noisy]);
+        let metrics = build_circuit_representative_metrics_from_buckets(by_circuit, None);
+        let circuit = metrics.get(&1_i64).expect("circuit should exist");
+
+        assert_eq!(circuit.rtt_current_p50_nanos.down, Some(35_000_000));
     }
 }

@@ -93,8 +93,8 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">QoO Profiles</h5>
-                    <div class="lqos-config-panel-subtitle">Choose the default Quality of Outcome profile and review the profile catalog currently available on disk.</div>
+                    <h5 class="lqos-config-panel-title">QoE Profiles</h5>
+                    <div class="lqos-config-panel-subtitle">Choose the default Quality of Experience profile and review the profile catalog currently available on disk.</div>
                 </div>
             </div>
 
@@ -102,23 +102,23 @@
                 <div class="col-12 col-xl-4">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Profile Selection</h6>
-                        <div class="lqos-config-section-subtitle">Set the profile used for QoO and QoQ scoring throughout the WebUI.</div>
+                        <div class="lqos-config-section-subtitle">Set the profile used for QoE and QoQ scoring throughout the WebUI.</div>
 
                         <div class="mb-3">
-                            <label for="qooProfileId" class="form-label">QoO Profile</label>
+                            <label for="qooProfileId" class="form-label">QoE Profile</label>
                             <select class="form-select" id="qooProfileId"></select>
                             <div class="form-text">Choose (default) to use the configured default profile.</div>
                         </div>
 
                         <div class="lqos-config-note" role="note">
-                            QoO profiles are defined in <code id="qooProfilesPath">qoo_profiles.json</code>. Edit that file to add or change profiles, then reload this page.
+                            QoE profiles are defined in <code id="qooProfilesPath">qoo_profiles.json</code>. Edit that file to add or change profiles, then reload this page.
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-8">
                     <div class="card h-100">
-                        <div class="card-header">Available QoO Profiles</div>
+                        <div class="card-header">Available QoE Profiles</div>
                         <div class="card-body">
                             <div id="qooProfilesLoadAlert"></div>
                             <div class="table-responsive lqos-table-wrap">

@@ -23,7 +23,7 @@ export class QooScoreGauge extends DashboardGraph {
             },
             xAxis: {
                 type: 'category',
-                data: ['QoO'],
+                data: ['QoE'],
                 axisLine: { show: false },
                 axisTick: { show: false },
                 axisLabel: { show: false },
@@ -63,7 +63,7 @@ export class QooScoreGauge extends DashboardGraph {
                     left: 'center',
                     top: 0,
                     style: {
-                        text: 'QoO',
+                        text: 'QoE',
                         fill: '#aaa',
                         fontSize: 11,
                         fontWeight: 'bold',
@@ -117,4 +117,3 @@ export class QooScoreGauge extends DashboardGraph {
         this.chart.setOption(this.option);
     }
 }
-

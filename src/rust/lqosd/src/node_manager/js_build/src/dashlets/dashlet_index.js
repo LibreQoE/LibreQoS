@@ -125,7 +125,7 @@ export const DashletMenu = [
     { name: "Median RTT Heatmap", tag: "executiveHeatmapRtt", size: 6, category: "Executive" },
     { name: "TCP Retransmits Heatmap", tag: "executiveHeatmapRetrans", size: 6, category: "Executive" },
     { name: "Utilization Heatmap", tag: "executiveHeatmapDownload", size: 6, category: "Executive" },
-    { name: "QoO Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
+    { name: "QoE Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
 ];
 
 export function widgetFactory(widgetName, count) {

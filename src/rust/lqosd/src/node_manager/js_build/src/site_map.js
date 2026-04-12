@@ -1882,7 +1882,7 @@ class SiteMapPage {
                 <div class="text-muted mb-2">${escapeHtml(String(props.nodeType || "").toUpperCase())}</div>
                 <div><strong>Throughput:</strong> ${escapeHtml(formatBitsPerSecond(props.throughputCombined))}</div>
                 ${attachedApCount > 0 ? `<div><strong>Attached APs:</strong> ${escapeHtml(String(attachedApCount))}</div>` : ""}
-                <div><strong>${this.mode === "qoo" ? "QoO" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>
+                <div><strong>${this.mode === "qoo" ? "QoE" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>
             </div>`;
     }
 
@@ -1973,8 +1973,8 @@ class SiteMapPage {
             props.nodeType === "site"
                 ? this.metricCard("Attached APs", String(attachedAps.length))
                 : this.metricCard("Coordinate source", props.inheritedCoords ? "Inherited from site" : "Explicit"),
-            this.metricCard("QoO download", formatPercent(props.qooDown)),
-            this.metricCard("QoO upload", formatPercent(props.qooUp)),
+            this.metricCard("QoE download", formatPercent(props.qooDown)),
+            this.metricCard("QoE upload", formatPercent(props.qooUp)),
             this.metricCard("RTT download", formatMs(props.rttDownMs)),
             this.metricCard("RTT upload", formatMs(props.rttUpMs)),
         ].join("");
@@ -2037,8 +2037,8 @@ class SiteMapPage {
             this.legendGradient.style.background = isColorBlindMode()
                 ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"
                 : "linear-gradient(90deg, #ff0000 0%, #bf4000 25%, #808000 50%, #40bf00 75%, #00ff00 100%)";
-            this.legendLow.textContent = "Poor QoO";
-            this.legendHigh.textContent = "Healthy QoO";
+            this.legendLow.textContent = "Poor QoE";
+            this.legendHigh.textContent = "Healthy QoE";
         } else {
             this.legendGradient.style.background = isColorBlindMode()
                 ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"

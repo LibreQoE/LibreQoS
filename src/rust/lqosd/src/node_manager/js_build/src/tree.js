@@ -45,10 +45,9 @@ var nodeTopologyOverrideState = {
 var nodeOverrideInputsDirty = false;
 var nodeOverrideLastSeedSignature = null;
 const wsClient = get_ws_client();
-const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
-    "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
-    "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
-    "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
+const QOO_TOOLTIP_HTML = "<h5>Quality of Experience (QoE)</h5>" +
+    "<p>Quality of Experience (QoE) summarizes latency and loss across active destinations.<br>" +
+    "Higher scores are better.</p>";
 const THROUGHPUT_COMPARE_EPSILON_MBPS = 0.01;
 const NODE_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator override. Will be applied to generated network.json on the next scheduler run.";
 const TOPOLOGY_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator topology override. The selected parent will be applied on the next scheduler run.";
@@ -1360,7 +1359,7 @@ function renderTree() {
     thead.appendChild(theading("⬇️"));
     thead.appendChild(theading("⬆️"));
     thead.appendChild(theading("RTT", 2, "<h5>TCP Round-Trip Time</h5><p>Current median TCP round-trip time. Time taken for a full send-acknowledge round trip. Low numbers generally equate to a smoother user experience.</p>", "tts_retransmits"));
-    thead.appendChild(theading("QoO", 2, QOO_TOOLTIP_HTML, "tts_qoo"));
+    thead.appendChild(theading("QoE", 2, QOO_TOOLTIP_HTML, "tts_qoo"));
     thead.appendChild(theading("Retr", 2, "<h5>TCP Retransmits</h5><p>Number of TCP retransmits in the last second.</p>", "tts_retransmits"));
     thead.appendChild(theading("Marks", 2, "<h5>Cake Marks</h5><p>Number of times the Cake traffic manager has applied ECN marks to avoid congestion.</p>", "tts_marks"));
     thead.appendChild(theading("Drops", 2, "<h5>Cake Drops</h5><p>Number of times the Cake traffic manager has dropped packets to avoid congestion.</p>", "tts_drops"));

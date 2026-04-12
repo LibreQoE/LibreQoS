@@ -1734,7 +1734,7 @@ function renderTopAsnTab() {
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
     thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
-    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
+    thead.appendChild(createSortableHeader("QoE (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("Flows", "flows"));
     table.appendChild(thead);
@@ -1820,7 +1820,7 @@ function renderTrafficTab() {
     thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
     thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
-    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
+    thead.appendChild(createSortableHeader("QoE (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Remote IP", "ip"));

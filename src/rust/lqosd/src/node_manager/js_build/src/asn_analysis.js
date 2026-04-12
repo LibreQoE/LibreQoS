@@ -350,7 +350,7 @@ function rankRationale(row) {
         reasons.push("higher RTT");
     }
     if (!reasons.length) {
-        reasons.push("balanced impact across current QoO signals");
+        reasons.push("balanced impact across current QoE signals");
     }
     return `Within the current top-20 traffic and throughput ASNs, this one stands out due to ${reasons.join(" + ")}.`;
 }
@@ -432,13 +432,13 @@ function renderSelectedAsnSummary() {
     const badgeStyle = qooBadgeClass(row.qooScore);
     kpis.innerHTML = `
         <div class="asn-analysis-kpi">
-            <label>QoO Status</label>
+            <label>QoE Status</label>
             <strong>
                 <span class="asn-analysis-qoo-badge" style="background:${badgeStyle.background};color:${badgeStyle.color};border-color:${badgeStyle.borderColor}">
                     ${row.qooStatus} · ${row.qooScore}
                 </span>
             </strong>
-            <small>Traffic-aware QoO impact score</small>
+            <small>Traffic-aware QoE impact score</small>
         </div>
         <div class="asn-analysis-kpi">
             <label>Median RTT</label>
@@ -545,7 +545,7 @@ function renderBubbleChart() {
                         <div>Median RTT: ${formatRttMs(row.medianRtt)}</div>
                         <div>Median Retransmit: ${formatRetransPct(toNumber(row.medianRetrans, 0))}</div>
                         <div>Recent Flows: ${formatFlowCount(row.flowCount)}</div>
-                        <div>QoO: ${row.qooStatus} · ${row.qooScore}</div>
+                        <div>QoE: ${row.qooStatus} · ${row.qooScore}</div>
                     </div>
                 `;
             },
@@ -646,7 +646,7 @@ function renderRetransmitChart() {
                         <div>Retransmit: ${formatRetransPct(toNumber(row.medianRetrans, 0))}</div>
                         <div>Traffic: ${formatVolume(row.totalBytes)} (${formatTrafficRateMbps(row.avgMbps)})</div>
                         <div>Median RTT: ${formatRttMs(row.medianRtt)}</div>
-                        <div>QoO: ${row.qooStatus} · ${row.qooScore}</div>
+                        <div>QoE: ${row.qooStatus} · ${row.qooScore}</div>
                     </div>
                 `;
             },

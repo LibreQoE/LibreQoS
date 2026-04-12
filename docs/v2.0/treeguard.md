@@ -32,12 +32,12 @@ Upgraded installs are also migrated to disable `treeguard.links.enabled` and `tr
 
 ## Circuit SQM Switching Model
 
-TreeGuard evaluates utilization, RTT freshness, CPU guardrails, and optional QoO guardrails.
+TreeGuard evaluates utilization, RTT freshness, CPU guardrails, and optional QoE guardrails.
 
 High-level behavior:
 
 1. For sustained low-load conditions, TreeGuard may switch a direction from `cake` to `fq_codel`.
-2. If utilization rises, QoO guardrails are unsafe, or revert conditions are met, TreeGuard switches back toward the circuit's base SQM policy.
+2. If utilization rises, QoE guardrails are unsafe, or revert conditions are met, TreeGuard switches back toward the circuit's base SQM policy.
 3. Decisions can be independent per direction when `independent_directions = true`.
 
 This gives a dynamic profile where loaded directions favor `cake diffserv4`, while low-load directions can use `fq_codel` when conditions are safe.
@@ -58,7 +58,7 @@ TreeGuard config lives under `[treeguard]` and sub-sections:
 2. `[treeguard.cpu]`: CPU-aware vs traffic/RTT mode and thresholds.
 3. `[treeguard.links]`: node virtualization enrollment and guardrails.
 4. `[treeguard.circuits]`: circuit enrollment and SQM switching guardrails.
-5. `[treeguard.qoo]`: optional QoO protection threshold.
+5. `[treeguard.qoo]`: optional QoE protection threshold.
 
 Current default behavior:
 
@@ -88,7 +88,7 @@ independent_directions = true
 enabled = true
 ```
 
-TreeGuard circuit behavior is CPU-aware by default. Traffic, RTT, and QoO remain important safety
+TreeGuard circuit behavior is CPU-aware by default. Traffic, RTT, and QoE remain important safety
 and restore signals for circuit SQM decisions. Upgraded installs from older defaults are also
 migrated from `traffic_rtt_only` to `cpu_aware`, with a visible notice in logs/UI.
 
@@ -127,7 +127,7 @@ TreeGuard also refuses to manage nodes that are already marked `"virtual": true`
 
 For circuit SQM management, TreeGuard treats duplicate `device_id` values as unsafe identity collisions. If the same `device_id` appears in more than one circuit in `ShapedDevices.csv`, TreeGuard skips those affected circuits and clears any TreeGuard-owned SQM overrides for those duplicate device IDs.
 
-If RTT telemetry is temporarily unavailable after a restart, TreeGuard does not treat missing RTT alone as evidence that it should revert `fq_codel` directions. Other guardrails such as utilization, QoO, and CPU pressure still apply.
+If RTT telemetry is temporarily unavailable after a restart, TreeGuard does not treat missing RTT alone as evidence that it should revert `fq_codel` directions. Other guardrails such as utilization, QoE, and CPU pressure still apply.
 
 TreeGuard also applies a conservative global per-tick circuit SQM change budget. On very large enrolled populations, excess circuit SQM changes are deferred to later ticks instead of stampeding Bakery in one pass.
 

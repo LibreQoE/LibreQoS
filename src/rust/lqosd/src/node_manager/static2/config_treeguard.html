@@ -310,7 +310,7 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">QoO Guardrail</h5>
+                    <h5 class="lqos-config-panel-title">QoE Guardrail</h5>
                     <div class="lqos-config-panel-subtitle">Prevent CPU-saving actions when quality is already degraded.</div>
                 </div>
             </div>
@@ -319,18 +319,18 @@
                 <div class="col-12 col-lg-6">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Guardrail Policy</h6>
-                        <div class="lqos-config-section-subtitle">Use QoO as a veto when service quality is already below the desired threshold.</div>
+                        <div class="lqos-config-section-subtitle">Use QoE as a veto when service quality is already below the desired threshold.</div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="qooEnabled">
-                            <label class="form-check-label" for="qooEnabled">Enable QoO Guardrail</label>
-                            <div class="form-text">If QoO is available and below the threshold, do not take CPU-saving actions.</div>
+                            <label class="form-check-label" for="qooEnabled">Enable QoE Guardrail</label>
+                            <div class="form-text">If QoE is available and below the threshold, do not take CPU-saving actions.</div>
                         </div>
 
                         <div class="mb-0">
-                            <label for="minScore" class="form-label">Minimum QoO Score</label>
+                            <label for="minScore" class="form-label">Minimum QoE Score</label>
                             <input type="number" class="form-control" id="minScore" min="0" max="100" step="0.1" value="70.0">
-                            <div class="form-text">0 to 100; enforced only when QoO is available.</div>
+                            <div class="form-text">0 to 100; enforced only when QoE is available.</div>
                         </div>
                     </div>
                 </div>

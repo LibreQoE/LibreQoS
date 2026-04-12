@@ -421,7 +421,7 @@ function validateConfig() {
     if (!validateNonNegativeInt("Max Switches Per Hour", maxSwitchesPerHour)) return false;
 
     const minScore = parseFloat(document.getElementById("minScore").value);
-    if (!validatePercent("Minimum QoO Score", minScore)) return false;
+    if (!validatePercent("Minimum QoE Score", minScore)) return false;
 
     return true;
 }

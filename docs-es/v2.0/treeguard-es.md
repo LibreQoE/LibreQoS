@@ -27,12 +27,12 @@ Si prefiere un comportamiento fijo/manual, deshabilite TreeGuard o reduzca sus l
 
 ## Modelo de Conmutación SQM por Circuito
 
-TreeGuard evalúa utilización, frescura de RTT, guardrails de CPU y guardrails opcionales de QoO.
+TreeGuard evalúa utilización, frescura de RTT, guardrails de CPU y guardrails opcionales de QoE.
 
 Comportamiento de alto nivel:
 
 1. Bajo condiciones sostenidas de baja carga, TreeGuard puede cambiar una dirección de `cake` a `fq_codel`.
-2. Si sube la utilización, los guardrails de QoO no son seguros o se cumplen condiciones de reversión, TreeGuard vuelve hacia la política SQM base del circuito.
+2. Si sube la utilización, los guardrails de QoE no son seguros o se cumplen condiciones de reversión, TreeGuard vuelve hacia la política SQM base del circuito.
 3. Las decisiones pueden ser independientes por dirección cuando `independent_directions = true`.
 
 Esto crea un perfil dinámico en el que direcciones cargadas favorecen `cake diffserv4`, mientras direcciones de baja carga pueden usar `fq_codel` cuando las condiciones son seguras.
@@ -53,7 +53,7 @@ La configuración de TreeGuard vive bajo `[treeguard]` y sus sub-secciones:
 2. `[treeguard.cpu]`: modo basado en CPU vs tráfico/RTT y umbrales.
 3. `[treeguard.links]`: enrolamiento de virtualización de nodos y guardrails.
 4. `[treeguard.circuits]`: enrolamiento de circuitos y guardrails de conmutación SQM.
-5. `[treeguard.qoo]`: umbral opcional de protección QoO.
+5. `[treeguard.qoo]`: umbral opcional de protección QoE.
 
 Comportamiento por defecto actual:
 
@@ -84,7 +84,7 @@ enabled = true
 ```
 
 La virtualización de nodos en TreeGuard está pensada para ser basada en CPU por defecto. El
-tráfico, RTT y QoO siguen siendo señales importantes de seguridad y restauración, pero la nueva
+tráfico, RTT y QoE siguen siendo señales importantes de seguridad y restauración, pero la nueva
 virtualización automática debe ocurrir cuando la presión de CPU indica que el ahorro de HTB vale
 la pena. Las instalaciones actualizadas desde defaults antiguos se migran silenciosamente de
 `traffic_rtt_only` a `cpu_aware`, con un aviso visible en logs/UI.
@@ -128,7 +128,7 @@ TreeGuard también se niega a gestionar nodos que ya estén marcados con `"virtu
 
 Para la gestión SQM por circuito, TreeGuard trata los valores duplicados de `device_id` como colisiones de identidad inseguras. Si el mismo `device_id` aparece en más de un circuito dentro de `ShapedDevices.csv`, TreeGuard omite esos circuitos afectados y limpia cualquier override SQM de TreeGuard asociado a esos `device_id` duplicados.
 
-Si la telemetría RTT no está disponible temporalmente después de un reinicio, TreeGuard no trata la ausencia de RTT por sí sola como evidencia para revertir direcciones en `fq_codel`. Siguen aplicando otros guardrails como utilización, QoO y presión de CPU.
+Si la telemetría RTT no está disponible temporalmente después de un reinicio, TreeGuard no trata la ausencia de RTT por sí sola como evidencia para revertir direcciones en `fq_codel`. Siguen aplicando otros guardrails como utilización, QoE y presión de CPU.
 
 TreeGuard también aplica un presupuesto global conservador de cambios SQM por tick. En poblaciones muy grandes de circuitos enrolados, los cambios SQM excedentes se difieren a ticks posteriores en lugar de saturar Bakery en una sola pasada.
 

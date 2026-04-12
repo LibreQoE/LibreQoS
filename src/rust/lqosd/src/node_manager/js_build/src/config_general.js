@@ -211,7 +211,7 @@ loadConfig(() => {
                     if (selectedId && !qooProfiles.profiles.some(p => p.id === selectedId)) {
                         setQooProfilesAlert(
                             "warning",
-                            `Selected QoO profile '${selectedId}' was not found in ${profilesPath}.`,
+                            `Selected QoE profile '${selectedId}' was not found in ${profilesPath}.`,
                         );
                     } else {
                         setQooProfilesAlert("", "");
@@ -234,7 +234,7 @@ loadConfig(() => {
                     if (!known) {
                         setQooProfilesAlert(
                             "warning",
-                            `Configured QoO profile '${configuredId}' was not found in ${profilesPath}.`,
+                            `Configured QoE profile '${configuredId}' was not found in ${profilesPath}.`,
                         );
                     }
                 }
@@ -245,7 +245,7 @@ loadConfig(() => {
                 renderQooProfilesTable();
                 setQooProfilesAlert(
                     "warning",
-                    `Unable to load QoO profiles. Create or fix ${profilesPath}, then reload this page.`,
+                    `Unable to load QoE profiles. Create or fix ${profilesPath}, then reload this page.`,
                 );
             },
         );

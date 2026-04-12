@@ -28,7 +28,7 @@ For the full logical-topology versus queue-topology file flow, see [Topology Dat
 - Useful for spotting bottlenecks and parent/child utilization patterns.
 - Tree detail pages show a breadcrumb path, branch counts, and status indicators for the selected node.
 - `Node Details` summarizes the selected node’s configured rates, override state, and effective rate.
-- `Node Snapshot` provides a quick visual summary of throughput and QoO for the selected node.
+- `Node Snapshot` provides a quick visual summary of throughput and QoE for the selected node.
 - Attached circuits are shown in a dedicated table for the selected node.
 - The attached-circuits table is attachment-aware, not traffic-aware: idle circuits remain visible even when they have no current throughput, with live columns left empty or zeroed until traffic appears.
 - The attached-circuits IP column keeps rows compact by showing one address inline and collapsing additional addresses as `+X`, with the full list still available on hover.
@@ -110,7 +110,7 @@ Practical meaning:
 
 ### Site Map
 - Flat operational map of Sites and APs using imported node geodata.
-- Defaults to QoO coloring with an RTT toggle, while marker size reflects recent combined throughput.
+- Defaults to QoE coloring with an RTT toggle, while marker size reflects recent combined throughput.
 - APs can inherit parent site coordinates for display when explicit AP coordinates are missing.
 - Nearby site markers cluster and expand as the operator zooms or selects a cluster.
 - APs without explicit coordinates are represented through their parent site and can be expanded temporarily around the selected site for inspection.

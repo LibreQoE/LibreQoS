@@ -15,9 +15,9 @@ import {
 } from "./executive_heatmap_shared";
 
 const QOO_TOOLTIP_HTML = [
-    `Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).`,
-    `https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/`,
-    `LibreQoS implements a latency- and loss-based model to estimate Quality of Outcome.`,
+    `Quality of Experience (QoE) summarizes latency and loss across active destinations.`,
+    `Higher scores are better.`,
+    `LibreQoS uses QoE throughout these score-based views.`,
 ].join("<br>");
 
 function escapeAttr(value) {
@@ -38,7 +38,7 @@ function escapeHtml(value) {
 
 function qooInfoIconHtml() {
     const title = escapeAttr(QOO_TOOLTIP_HTML);
-    return `<span class="ms-1 text-muted" role="button" tabindex="0" aria-label="QoO information" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" title="${title}"><i class="fas fa-info-circle"></i></span>`;
+    return `<span class="ms-1 text-muted" role="button" tabindex="0" aria-label="QoE information" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-html="true" title="${title}"><i class="fas fa-info-circle"></i></span>`;
 }
 
 function qoqHeatmapRow(blocks, colorFn) {
@@ -56,7 +56,7 @@ function qoqHeatmapRow(blocks, colorFn) {
             (dlTotal === null || dlTotal === undefined) &&
             (ulTotal === null || ulTotal === undefined);
         if (allMissing) {
-            cells += `<div class="exec-heat-cell empty" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title="${escapeAttr(`<div class=&quot;fw-semibold&quot;>15-minute block ${i + 1}</div><div>No data</div><div>This block has no QoO/QoQ totals yet.</div>`)}" aria-label="${escapeAttr(`15-minute block ${i + 1}. No data. This block has no QoO/QoQ totals yet.`)}"></div>`;
+            cells += `<div class="exec-heat-cell empty" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-container="body" data-bs-trigger="hover focus" data-bs-html="true" tabindex="0" title="${escapeAttr(`<div class=&quot;fw-semibold&quot;>15-minute block ${i + 1}</div><div>No data</div><div>This block has no QoE/QoQ totals yet.</div>`)}" aria-label="${escapeAttr(`15-minute block ${i + 1}. No data. This block has no QoE/QoQ totals yet.`)}"></div>`;
             continue;
         }
 
@@ -277,7 +277,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
             return;
         }
         const rows = [
-            { kind: "qoo", label: "Overall QoO", labelHtml: `Overall QoO${qooInfoIconHtml()}`, badge: "Global", blocks: globalQoq },
+            { kind: "qoo", label: "Overall QoE", labelHtml: `Overall QoE${qooInfoIconHtml()}`, badge: "Global", blocks: globalQoq },
             { kind: "rtt", label: "RTT (p50/p90)", badge: "Global", blocks: global },
             { kind: "retransmit", label: "TCP Retransmits", badge: "Global", blocks: global, color: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))), format: (v) => formatLatest(v, "%", 1) },
             { kind: "utilization", label: "Utilization", badge: "Global", blocks: global, color: colorByCapacity, format: (v) => formatLatest(v, "%") },
@@ -423,7 +423,7 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
             : "";
         const isQooMetric = this.config.metricKey === "qoo";
         const titleLabel = isQooMetric
-            ? `QoO${qooInfoIconHtml()} Heatmap`
+            ? `QoE${qooInfoIconHtml()} Heatmap`
             : this.config.title;
         const titleHtml = this.config.link
             ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}${linkIcon}</a>`
@@ -514,7 +514,7 @@ export class ExecutiveDownloadHeatmapDashlet extends ExecutiveMetricHeatmapBase 
 export class ExecutiveUploadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "QoO Heatmap",
+            title: "QoE Heatmap",
             icon: "fa-bullseye",
             metricKey: "qoo",
             colorFn: colorByQoqScore,
@@ -525,5 +525,5 @@ export class ExecutiveUploadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             minSamples: 3,
         });
     }
-    title() { return "QoO Heatmap"; }
+    title() { return "QoE Heatmap"; }
 }

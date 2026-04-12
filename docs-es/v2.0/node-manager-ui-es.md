@@ -26,7 +26,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Útil para identificar cuellos de botella y patrones de utilización padre/hijo.
 - Las páginas de detalle del árbol muestran una ruta tipo breadcrumb, conteos de rama e indicadores de estado para el nodo seleccionado.
 - `Node Details` resume las velocidades configuradas del nodo seleccionado, el estado de overrides y la velocidad efectiva.
-- `Node Snapshot` ofrece un resumen visual rápido del throughput y el QoO del nodo seleccionado.
+- `Node Snapshot` ofrece un resumen visual rápido del throughput y el QoE del nodo seleccionado.
 - Los circuitos adjuntos se muestran en una tabla dedicada para el nodo seleccionado.
 - La columna de IP de circuitos adjuntos mantiene las filas compactas mostrando una dirección inline y colapsando las adicionales como `+X`, mientras la lista completa sigue disponible al pasar el cursor.
 - Los circuitos adjuntos limitados por Ethernet pueden mostrar insignias `10M`, `100M` o `1G` junto al valor de `Plan (Mbps)`; al pasar el cursor se explica el auto-cap y al hacer clic en la insignia se abre la página dedicada de revisión Ethernet.
@@ -61,7 +61,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 
 ### Site Map
 - Mapa operativo plano de sitios y APs usando geodatos importados de nodos.
-- Usa QoO por defecto con un selector alternativo para RTT, mientras el tamaño del marcador refleja el throughput combinado reciente.
+- Usa QoE por defecto con un selector alternativo para RTT, mientras el tamaño del marcador refleja el throughput combinado reciente.
 - Los APs pueden heredar coordenadas del sitio padre solo para visualización cuando faltan coordenadas explícitas.
 - Los marcadores de sitios cercanos se agrupan y se expanden al acercar el mapa o seleccionar un grupo.
 - Los APs sin coordenadas explícitas se representan a través de su sitio padre y pueden desplegarse temporalmente alrededor del sitio seleccionado para inspección.

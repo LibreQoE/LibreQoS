@@ -51,9 +51,9 @@ Queue-mode note:
 Read this first before production changes:
 - [Operating Modes and Source of Truth](operating-modes.md)
 
-## QoO (Quality of Outcome) profiles (`qoo_profiles.json`)
+## QoE (Quality of Experience) profiles (`qoo_profiles.json`)
 
-LibreQoS displays QoO as an estimate of internet quality based on latency and loss.
+LibreQoS displays QoE as an estimate of internet quality based on latency and loss.
 
 ### Where the file lives
 
@@ -61,7 +61,7 @@ LibreQoS displays QoO as an estimate of internet quality based on latency and lo
 
 ### Selecting a profile
 
-- **WebUI**: Configuration -> General -> QoO Profile
+- **WebUI**: Configuration -> General -> QoE Profile
 - **Config file**: set `qoo_profile_id` in `/etc/lqos.conf`
 
 Example:

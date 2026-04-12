@@ -22,10 +22,9 @@ let circuitMetricsWatchSignature = null;
 const wsClient = get_ws_client();
 
 const QOO_TOOLTIP_HTML =
-    "<h5>Quality of Outcome (QoO)</h5>" +
-    "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
-    "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
-    "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
+    "<h5>Quality of Experience (QoE)</h5>" +
+    "<p>Quality of Experience (QoE) summarizes latency and loss across active destinations.<br>" +
+    "Higher scores are better.</p>";
 
 function sendWsRequest(responseEvent, request) {
     return new Promise((resolve, reject) => {
@@ -370,7 +369,7 @@ function buildDeviceCard(device) {
     registerMetricEl(device.circuit_id, "rttUp", rttUp);
 
     const qooLabelWrap = document.createElement("span");
-    qooLabelWrap.innerHTML = "QoO <i class='fas fa-info-circle'></i>";
+    qooLabelWrap.innerHTML = "QoE <i class='fas fa-info-circle'></i>";
     qooLabelWrap.setAttribute("data-bs-toggle", "tooltip");
     qooLabelWrap.setAttribute("data-bs-placement", "top");
     qooLabelWrap.setAttribute("data-bs-html", "true");
