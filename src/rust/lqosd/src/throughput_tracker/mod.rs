@@ -26,6 +26,7 @@ use lqos_bus::{
 };
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, queue_stats_stale};
 use lqos_sys::flowbee_data::FlowbeeKey;
+use lqos_utils::rtt::RttBucket;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample, down_up_retransmit_sample};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
@@ -42,6 +43,38 @@ const RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS: u64 = 5;
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
 pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
     Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
+
+/// Returns the current per-circuit RTT p50 values from the shared circuit RTT buffers.
+pub(crate) fn circuit_current_rtt_p50_nanos(circuit_hash: i64) -> DownUpOrder<Option<u64>> {
+    let snapshot = CIRCUIT_RTT_BUFFERS.load();
+    let rtt = snapshot.get(&circuit_hash);
+
+    DownUpOrder {
+        down: rtt
+            .and_then(|rtt| {
+                rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+            })
+            .map(|rtt| rtt.as_nanos()),
+        up: rtt
+            .and_then(|rtt| {
+                rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+            })
+            .map(|rtt| rtt.as_nanos()),
+    }
+}
+
+/// Returns the current per-circuit QoO values from the shared circuit QoO heatmaps.
+pub(crate) fn circuit_current_qoo(circuit_hash: i64) -> DownUpOrder<Option<f32>> {
+    let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
+    let Some(heatmap) = qoq_heatmaps.get(&circuit_hash) else {
+        return DownUpOrder::default();
+    };
+    let blocks = heatmap.blocks();
+    DownUpOrder {
+        down: blocks.download_total.last().copied().flatten(),
+        up: blocks.upload_total.last().copied().flatten(),
+    }
+}
 
 fn shaped_device_for_entry<'a>(
     shaped: &'a lqos_config::ConfigShapedDevices,
@@ -1391,17 +1424,24 @@ pub struct Lts2Device {
 
 #[cfg(test)]
 mod compatibility_tests {
-    use super::{Lts2Circuit, resolve_circuit_metadata_for_entry};
+    use super::{
+        CIRCUIT_RTT_BUFFERS, Lts2Circuit, circuit_current_qoo, circuit_current_rtt_p50_nanos,
+        resolve_circuit_metadata_for_entry,
+    };
     use crate::shaped_devices_tracker::ShapedDeviceHashCache;
-    use crate::throughput_tracker::flow_data::RttData;
+    use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, RttData};
     use crate::throughput_tracker::throughput_entry::ThroughputEntry;
+    use fxhash::FxHashMap;
     use lqos_bus::TcHandle;
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_utils::XdpIpAddress;
     use lqos_utils::qoo::QoqScores;
+    use lqos_utils::qoq_heatmap::TemporalQoqHeatmap;
+    use lqos_utils::rtt::RttBuffer;
     use lqos_utils::units::DownUpOrder;
     use serde::Deserialize;
     use std::net::Ipv4Addr;
+    use std::sync::Arc;
 
     #[allow(dead_code)]
     #[derive(Debug, Deserialize)]
@@ -1507,5 +1547,66 @@ mod compatibility_tests {
 
         assert_eq!(circuit_id, "circuit-1");
         assert_eq!(circuit_name, "Circuit Alpha");
+    }
+
+    #[test]
+    fn circuit_current_rtt_p50_nanos_reads_from_shared_circuit_buffer() {
+        let old_rtt = CIRCUIT_RTT_BUFFERS.load_full();
+
+        let mut rtt = RttBuffer::default();
+        rtt.push(
+            RttData::from_nanos(11_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        rtt.push(
+            RttData::from_nanos(11_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            1,
+        );
+        rtt.push(
+            RttData::from_nanos(31_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            1,
+        );
+
+        let mut rtt_map = FxHashMap::default();
+        rtt_map.insert(123_i64, rtt);
+        CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_map));
+
+        let result = circuit_current_rtt_p50_nanos(123);
+
+        assert_eq!(result.down, Some(12_000_000));
+        assert_eq!(result.up, Some(35_000_000));
+
+        CIRCUIT_RTT_BUFFERS.store(old_rtt);
+    }
+
+    #[test]
+    fn circuit_current_qoo_reads_from_shared_circuit_heatmap() {
+        let mut heatmap = TemporalQoqHeatmap::new();
+        heatmap.add_sample(Some(88.0), Some(77.0));
+
+        let mut qoq_heatmaps = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .circuit_qoq_heatmaps
+            .lock();
+        let old_qoq = qoq_heatmaps.clone();
+        qoq_heatmaps.clear();
+        qoq_heatmaps.insert(456_i64, heatmap);
+        drop(qoq_heatmaps);
+
+        let result = circuit_current_qoo(456);
+        assert_eq!(result.down, Some(88.0));
+        assert_eq!(result.up, Some(77.0));
+
+        let mut qoq_heatmaps = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .circuit_qoq_heatmaps
+            .lock();
+        *qoq_heatmaps = old_qoq;
     }
 }

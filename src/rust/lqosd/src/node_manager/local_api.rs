@@ -23,6 +23,7 @@ pub(crate) mod scheduler;
 pub(crate) mod search;
 pub(crate) mod shaped_device_api;
 pub(crate) mod shaped_devices_page;
+pub(crate) mod throughput_attribution_debug;
 pub(crate) mod topology_manager;
 pub(crate) mod topology_probes;
 pub(crate) mod tree_attached_circuits;
@@ -39,6 +40,10 @@ use tower_http::cors::CorsLayer;
 pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
+        .route(
+            "/throughputAttributionDebug",
+            get(throughput_attribution_debug::throughput_attribution_debug),
+        )
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))

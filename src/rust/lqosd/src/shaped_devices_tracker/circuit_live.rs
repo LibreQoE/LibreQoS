@@ -1,6 +1,7 @@
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
+use crate::throughput_tracker::{
+    THROUGHPUT_TRACKER, circuit_current_qoo, circuit_current_rtt_p50_nanos,
+};
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample, down_up_retransmit_sample};
 use lqos_utils::unix_time::time_since_boot;
 use serde::{Deserialize, Serialize};
@@ -37,14 +38,13 @@ pub struct CircuitLiveSnapshot {
 
 #[derive(Default)]
 struct CircuitAccumulator {
+    circuit_hash: Option<i64>,
     circuit_name: String,
     parent_node: String,
     device_names: FxHashSet<String>,
     ip_addrs: FxHashSet<String>,
     plan_mbps: DownUpOrder<f32>,
     bytes_per_second: DownUpOrder<u64>,
-    rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
-    qoo: DownUpOrder<Option<f32>>,
     tcp_packets: DownUpOrder<u64>,
     tcp_retransmits: DownUpOrder<u64>,
     last_seen_nanos: Option<u64>,
@@ -55,24 +55,6 @@ fn current_epoch_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
-}
-
-fn max_opt_u64(left: Option<u64>, right: Option<u64>) -> Option<u64> {
-    match (left, right) {
-        (Some(a), Some(b)) => Some(a.max(b)),
-        (Some(a), None) => Some(a),
-        (None, Some(b)) => Some(b),
-        (None, None) => None,
-    }
-}
-
-fn min_opt_f32(left: Option<f32>, right: Option<f32>) -> Option<f32> {
-    match (left, right) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (Some(a), None) => Some(a),
-        (None, Some(b)) => Some(b),
-        (None, None) => None,
-    }
 }
 
 fn sort_string_set(values: FxHashSet<String>) -> Vec<String> {
@@ -125,6 +107,9 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
         }
 
         let entry = by_circuit_id.entry(device.circuit_id.clone()).or_default();
+        if entry.circuit_hash.is_none() {
+            entry.circuit_hash = Some(device.circuit_hash);
+        }
         if entry.circuit_name.is_empty() {
             entry.circuit_name = device.circuit_name.clone();
         }
@@ -147,20 +132,6 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
             Some(current) => current.min(kernel_age_from_last_seen(kernel_now, data.last_seen)),
             None => kernel_age_from_last_seen(kernel_now, data.last_seen),
         });
-        entry.rtt_current_p50_nanos.down = max_opt_u64(
-            entry.rtt_current_p50_nanos.down,
-            data.rtt_buffer
-                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
-                .map(|rtt| rtt.as_nanos()),
-        );
-        entry.rtt_current_p50_nanos.up = max_opt_u64(
-            entry.rtt_current_p50_nanos.up,
-            data.rtt_buffer
-                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
-                .map(|rtt| rtt.as_nanos()),
-        );
-        entry.qoo.down = min_opt_f32(entry.qoo.down, data.qoq.download_total_f32());
-        entry.qoo.up = min_opt_f32(entry.qoo.up, data.qoq.upload_total_f32());
     }
 
     let mut finalized: FxHashMap<String, CircuitLiveRollup> = FxHashMap::default();
@@ -169,6 +140,14 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
             .map(|parent| parent.name)
             .filter(|name| !name.trim().is_empty())
             .unwrap_or(value.parent_node);
+        let rtt_current_p50_nanos = value
+            .circuit_hash
+            .map(circuit_current_rtt_p50_nanos)
+            .unwrap_or_else(DownUpOrder::default);
+        let qoo = value
+            .circuit_hash
+            .map(circuit_current_qoo)
+            .unwrap_or_default();
         finalized.insert(
             circuit_id.clone(),
             CircuitLiveRollup {
@@ -179,8 +158,8 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
                 ip_addrs: sort_string_set(value.ip_addrs),
                 plan_mbps: value.plan_mbps,
                 bytes_per_second: value.bytes_per_second,
-                rtt_current_p50_nanos: value.rtt_current_p50_nanos,
-                qoo: value.qoo,
+                rtt_current_p50_nanos,
+                qoo,
                 tcp_retransmit_sample: down_up_retransmit_sample(
                     value.tcp_retransmits,
                     value.tcp_packets,

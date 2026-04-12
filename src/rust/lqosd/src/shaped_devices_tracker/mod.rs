@@ -109,6 +109,13 @@ pub static CIRCUIT_LIVE_REFRESH_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(
 pub static EFFECTIVE_CIRCUIT_PARENTS: Lazy<ArcSwap<FxHashMap<String, RuntimeCircuitParent>>> =
     Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ShapedDeviceMatchSource {
+    DeviceHash,
+    CircuitHash,
+    IpFallback,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeCircuitParent {
     pub name: String,
@@ -123,6 +130,32 @@ pub(crate) fn invalidate_executive_cache_snapshot() {
     crate::node_manager::invalidate_executive_cache_snapshot();
 }
 
+pub(crate) fn shaped_device_match_from_hashes_or_ip<'a>(
+    shaped: &'a ConfigShapedDevices,
+    cache: &ShapedDeviceHashCache,
+    ip: &XdpIpAddress,
+    device_hash: Option<i64>,
+    circuit_hash: Option<i64>,
+) -> Option<(&'a ShapedDevice, ShapedDeviceMatchSource)> {
+    if let Some(device_hash) = device_hash
+        && let Some(idx) = cache.index_by_device_hash(shaped, device_hash)
+        && let Some(device) = shaped.devices.get(idx)
+    {
+        return Some((device, ShapedDeviceMatchSource::DeviceHash));
+    }
+
+    if let Some(circuit_hash) = circuit_hash
+        && let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash)
+        && let Some(device) = shaped.devices.get(idx)
+    {
+        return Some((device, ShapedDeviceMatchSource::CircuitHash));
+    }
+
+    shaped
+        .get_device_from_ip(ip)
+        .map(|device| (device, ShapedDeviceMatchSource::IpFallback))
+}
+
 pub(crate) fn shaped_device_from_hashes_or_ip<'a>(
     shaped: &'a ConfigShapedDevices,
     cache: &ShapedDeviceHashCache,
@@ -130,11 +163,8 @@ pub(crate) fn shaped_device_from_hashes_or_ip<'a>(
     device_hash: Option<i64>,
     circuit_hash: Option<i64>,
 ) -> Option<&'a ShapedDevice> {
-    device_hash
-        .and_then(|hash| cache.index_by_device_hash(shaped, hash))
-        .or_else(|| circuit_hash.and_then(|hash| cache.index_by_circuit_hash(shaped, hash)))
-        .and_then(|idx| shaped.devices.get(idx))
-        .or_else(|| shaped.get_device_from_ip(ip))
+    shaped_device_match_from_hashes_or_ip(shaped, cache, ip, device_hash, circuit_hash)
+        .map(|(device, _)| device)
 }
 
 fn normalize_circuit_id_key(circuit_id: &str) -> Option<String> {
@@ -1263,6 +1293,78 @@ mod tests {
 
         assert_eq!(device.circuit_id, "circuit-1");
         assert_eq!(device.circuit_name, "Circuit Alpha");
+    }
+
+    #[test]
+    fn shaped_device_match_prefers_device_hash() {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit Alpha".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            ..Default::default()
+        }]);
+        let cache = ShapedDeviceHashCache::from_devices(&shaped.devices);
+        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
+
+        let (_device, source) = shaped_device_match_from_hashes_or_ip(
+            &shaped,
+            &cache,
+            &ip,
+            Some(hash_to_i64("device-1")),
+            None,
+        )
+        .expect("match");
+
+        assert_eq!(source, ShapedDeviceMatchSource::DeviceHash);
+    }
+
+    #[test]
+    fn shaped_device_match_uses_circuit_hash_when_device_hash_missing() {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit Alpha".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            ..Default::default()
+        }]);
+        let cache = ShapedDeviceHashCache::from_devices(&shaped.devices);
+        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
+
+        let (_device, source) = shaped_device_match_from_hashes_or_ip(
+            &shaped,
+            &cache,
+            &ip,
+            None,
+            Some(hash_to_i64("circuit-1")),
+        )
+        .expect("match");
+
+        assert_eq!(source, ShapedDeviceMatchSource::CircuitHash);
+    }
+
+    #[test]
+    fn shaped_device_match_reports_ip_fallback() {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit Alpha".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            ..Default::default()
+        }]);
+        let cache = ShapedDeviceHashCache::from_devices(&shaped.devices);
+        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
+
+        let (_device, source) =
+            shaped_device_match_from_hashes_or_ip(&shaped, &cache, &ip, None, None).expect("match");
+
+        assert_eq!(source, ShapedDeviceMatchSource::IpFallback);
     }
 
     #[test]
