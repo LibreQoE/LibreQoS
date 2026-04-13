@@ -29,12 +29,6 @@
                             <input type="number" class="form-control" id="dynamicCircuitsTtlSeconds" min="1" step="1" value="300">
                             <div class="form-text">How long dynamic circuit state remains valid without being seen.</div>
                         </div>
-
-                        <div class="mb-0 form-check">
-                            <input type="checkbox" class="form-check-input" id="unknownIpPromotionEnabled">
-                            <label class="form-check-label" for="unknownIpPromotionEnabled">Enable Unknown IP Promotion</label>
-                            <div class="form-text">Allow unknown IPs to be promoted into dynamic circuits when a range rule matches.</div>
-                        </div>
                     </div>
                 </div>
 
@@ -42,6 +36,12 @@
                     <div class="lqos-config-section">
                         <h6 class="lqos-config-section-title">Range Rules</h6>
                         <div class="lqos-config-section-subtitle">Define the IP networks that should receive default rates and an optional topology attachment.</div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="unknownIpPromotionEnabled">
+                            <label class="form-check-label" for="unknownIpPromotionEnabled">Enable Unknown IP Promotion</label>
+                            <div class="form-text">When enabled, unknown IP traffic is evaluated against the range rules below.</div>
+                        </div>
 
                         <datalist id="networkNodesDatalist"></datalist>
 
@@ -80,4 +80,3 @@
 </div>
 
 <script src="config_dynamic_circuits.js%CACHEBUSTERS%"></script>
-
