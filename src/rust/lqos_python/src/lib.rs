@@ -2820,7 +2820,7 @@ pub fn get_libreqos_state_directory() -> PyResult<String> {
 #[pyfunction]
 /// Returns `true` when the loaded network graph contains only a single root node.
 pub fn is_network_flat() -> PyResult<bool> {
-    Ok(lqos_config::NetworkJson::load()
+    Ok(lqos_network_devices::load_network_json()
         .unwrap()
         .get_nodes_when_ready()
         .len()

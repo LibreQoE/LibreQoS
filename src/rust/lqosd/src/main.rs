@@ -4,11 +4,13 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
+mod dynamic_circuits;
 mod file_lock;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
 pub mod lts2_sys;
+mod network_devices_hooks;
 mod node_manager;
 mod preflight_checks;
 mod probe_provider;
@@ -230,6 +232,9 @@ fn main() -> Result<()> {
     } else {
         info!("Insight client started successfully");
     }
+    lqos_network_devices::start_daemon_mode(Some(std::sync::Arc::new(
+        network_devices_hooks::LqosdNetworkDevicesHooks,
+    )))?;
     let system_usage_tx = system_stats::start_system_stats()?;
 
     // Handle signals
@@ -251,6 +256,7 @@ fn main() -> Result<()> {
         .spawn(move || {
             let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
+                .thread_stack_size(8 * 1024 * 1024)
                 .build()
             else {
                 error!("Unable to start Tokio runtime. Not much is going to work");
@@ -375,8 +381,6 @@ fn main() -> Result<()> {
                                 let _ = throughput_tracker::flow_data::setup_flow_analysis();
                                 start_heimdall()?;
                                 spawn_queue_structure_monitor()?;
-                                shaped_devices_tracker::shaped_devices_watcher()?;
-                                shaped_devices_tracker::network_json_watcher()?;
                                 shaped_devices_tracker::shaping_inputs_watcher()?;
                                 throughput_tracker::spawn_throughput_monitor(
                                     flow_tx,
@@ -493,7 +497,7 @@ fn memory_debug() {
             // fb.visit_root(&*THROUGHPUT_TRACKER);
             // fb.visit_root(&*ALL_FLOWS);
             // fb.visit_root(&*RECENT_FLOWS);
-            //fb.visit_root(&*NETWORK_JSON);
+            // lqos_network_devices::with_network_json_read(|net_json| fb.visit_root(net_json));
             let flamegraph_src = fb.finish();
             let flamegraph_src = flamegraph_src.flamegraph();
             let Ok(mut file) = std::fs::File::create("/tmp/lqosd-mem.svg") else {
@@ -621,6 +625,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     let _ = stick::recompute_stick_offset(&cfg);
                 }
                 BusResponse::Ack
+            }
+            BusRequest::CreateDynamicCircuit { shaped_device } => {
+                crate::dynamic_circuits::create_dynamic_circuit((**shaped_device).clone())
+            }
+            BusRequest::RemoveDynamicCircuit { circuit_id } => {
+                crate::dynamic_circuits::remove_dynamic_circuit(circuit_id)
             }
             BusRequest::InvalidateAuthCache => {
                 crate::node_manager::invalidate_auth_cache();
@@ -1215,7 +1225,6 @@ fn queue_stats_total_data() -> lqos_bus::QueueStatsTotal {
 }
 
 fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
-    use crate::shaped_devices_tracker::SHAPED_DEVICES;
     use crate::throughput_tracker::THROUGHPUT_TRACKER;
     use lqos_utils::units::DownUpOrder;
     use std::collections::HashMap;
@@ -1250,13 +1259,12 @@ fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
             }
         });
 
-    let shaped_devices = SHAPED_DEVICES.load();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     circuits
         .iter()
         .filter_map(|(circuit_id, accumulator)| {
-            shaped_devices
-                .devices
-                .iter()
+            catalog
+                .iter_devices()
                 .find(|sd| sd.circuit_id == *circuit_id)
                 .map(|device| {
                     let down_mbps = (accumulator.bytes.down as f64 * 8.0) / 1_000_000.0;
@@ -1276,42 +1284,41 @@ fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
 }
 
 fn tree_capacity_data() -> Vec<lqos_bus::NodeCapacity> {
-    use crate::shaped_devices_tracker::NETWORK_JSON;
-
-    let net_json = NETWORK_JSON.read();
-    net_json
-        .get_nodes_when_ready()
-        .iter()
-        .enumerate()
-        .map(|(id, node)| {
-            let node = crate::shaped_devices_tracker::node_to_transport(node);
-            let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
-            let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
-            let effective_max = node.effective_max_throughput.unwrap_or(node.max_throughput);
-            let max_down = effective_max.0;
-            let max_up = effective_max.1;
-            let median_rtt = if node.rtts.is_empty() {
-                0.0
-            } else {
-                let n = node.rtts.len() / 2;
-                if node.rtts.len().is_multiple_of(2) {
-                    (node.rtts[n - 1] + node.rtts[n]) / 2.0
+    lqos_network_devices::with_network_json_read(|net_json| {
+        net_json
+            .get_nodes_when_ready()
+            .iter()
+            .enumerate()
+            .map(|(id, node)| {
+                let node = crate::shaped_devices_tracker::node_to_transport(node);
+                let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
+                let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
+                let effective_max = node.effective_max_throughput.unwrap_or(node.max_throughput);
+                let max_down = effective_max.0;
+                let max_up = effective_max.1;
+                let median_rtt = if node.rtts.is_empty() {
+                    0.0
                 } else {
-                    node.rtts[n]
-                }
-            };
+                    let n = node.rtts.len() / 2;
+                    if node.rtts.len().is_multiple_of(2) {
+                        (node.rtts[n - 1] + node.rtts[n]) / 2.0
+                    } else {
+                        node.rtts[n]
+                    }
+                };
 
-            lqos_bus::NodeCapacity {
-                id,
-                name: node.name.clone(),
-                down,
-                up,
-                max_down,
-                max_up,
-                median_rtt,
-            }
-        })
-        .collect()
+                lqos_bus::NodeCapacity {
+                    id,
+                    name: node.name.clone(),
+                    down,
+                    up,
+                    max_down,
+                    max_up,
+                    median_rtt,
+                }
+            })
+            .collect()
+    })
 }
 
 fn retransmit_summary_data() -> lqos_bus::RetransmitSummary {
@@ -1325,37 +1332,39 @@ fn retransmit_summary_data() -> lqos_bus::RetransmitSummary {
 }
 
 fn tree_summary_l2_data() -> Vec<(usize, Vec<(usize, lqos_config::NetworkJsonTransport)>)> {
-    use crate::shaped_devices_tracker::NETWORK_JSON;
     use std::collections::BTreeMap;
 
-    let net_json = NETWORK_JSON.read();
-    let nodes = net_json.get_nodes_when_ready();
-    let mut candidates: Vec<(usize, usize, lqos_config::NetworkJsonTransport, u64)> = Vec::new();
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let mut candidates: Vec<(usize, usize, lqos_config::NetworkJsonTransport, u64)> =
+            Vec::new();
 
-    for (p_idx, p_node) in nodes.iter().enumerate() {
-        if p_node.immediate_parent == Some(0) {
-            for (c_idx, c_node) in nodes.iter().enumerate() {
-                if c_node.immediate_parent == Some(p_idx) {
-                    let t = crate::shaped_devices_tracker::node_to_transport(c_node);
-                    let total = t.current_throughput.0 + t.current_throughput.1;
-                    candidates.push((p_idx, c_idx, t, total));
+        for (p_idx, p_node) in nodes.iter().enumerate() {
+            if p_node.immediate_parent == Some(0) {
+                for (c_idx, c_node) in nodes.iter().enumerate() {
+                    if c_node.immediate_parent == Some(p_idx) {
+                        let t = crate::shaped_devices_tracker::node_to_transport(c_node);
+                        let total = t.current_throughput.0 + t.current_throughput.1;
+                        candidates.push((p_idx, c_idx, t, total));
+                    }
                 }
             }
         }
-    }
 
-    candidates.sort_by(|a, b| b.3.cmp(&a.3));
-    let n: usize = 10;
-    if candidates.len() > n {
-        candidates.truncate(n);
-    }
+        candidates.sort_by(|a, b| b.3.cmp(&a.3));
+        let n: usize = 10;
+        if candidates.len() > n {
+            candidates.truncate(n);
+        }
 
-    let mut map: BTreeMap<usize, Vec<(usize, lqos_config::NetworkJsonTransport)>> = BTreeMap::new();
-    for (p_idx, c_idx, t, _total) in candidates.into_iter() {
-        map.entry(p_idx).or_default().push((c_idx, t));
-    }
+        let mut map: BTreeMap<usize, Vec<(usize, lqos_config::NetworkJsonTransport)>> =
+            BTreeMap::new();
+        for (p_idx, c_idx, t, _total) in candidates.into_iter() {
+            map.entry(p_idx).or_default().push((c_idx, t));
+        }
 
-    map.into_iter().collect()
+        map.into_iter().collect()
+    })
 }
 
 fn search_result_to_bus(entry: node_manager::SearchResult) -> lqos_bus::SearchResultEntry {

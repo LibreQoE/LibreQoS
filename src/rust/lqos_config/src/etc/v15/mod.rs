@@ -4,6 +4,7 @@ mod top_config;
 pub use top_config::Config;
 pub use top_config::RttThresholds;
 mod bridge;
+mod dynamic_circuits;
 mod flows;
 pub mod influxdb;
 mod integration_common;
@@ -24,6 +25,7 @@ mod visp_integration;
 mod wispgate;
 
 pub use bridge::*;
+pub use dynamic_circuits::*;
 pub use integration_common::IntegrationConfig;
 pub use long_term_stats::LongTermStats;
 pub use mikrotik_ipv6::MikrotikIpv6Config;

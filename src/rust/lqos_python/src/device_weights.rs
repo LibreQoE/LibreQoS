@@ -13,7 +13,7 @@
 
 use anyhow::Result;
 use lqos_bus::{BusRequest, BusResponse};
-use lqos_config::{ConfigShapedDevices, ShapedDevice, load_config};
+use lqos_config::{ShapedDevice, load_config};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -84,7 +84,7 @@ fn get_weights_from_lts(
 
 /// This function is used to get the device weights from the ShapedDevices.csv file
 fn get_weights_from_shaped_devices() -> Result<Vec<DeviceWeightResponse>> {
-    let mut devices_list = ConfigShapedDevices::load()?.devices;
+    let mut devices_list = lqos_network_devices::load_shaped_devices()?.devices;
     devices_list.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
     let mut result = vec![];
     let mut prev_id = String::new();
@@ -211,9 +211,9 @@ pub struct NetworkNodeWeight {
 /// Calculate the top-level network tree nodes and then
 /// calculate the weights for each node
 pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
-    let device_list = ConfigShapedDevices::load()?.devices;
+    let device_list = lqos_network_devices::load_shaped_devices()?.devices;
     let device_weights = get_weights_rust()?;
-    let network = lqos_config::NetworkJson::load()?;
+    let network = lqos_network_devices::load_network_json()?;
     let root_index = network
         .get_nodes_when_ready()
         .iter()

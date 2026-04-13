@@ -1,17 +1,15 @@
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::treeguard::actor::is_runtime_virtualized_node;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{
     ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice,
-    TopologyRuntimeStatusFile, TopologyShapingInputsFile, load_config, topology_import_path,
-    topology_runtime_status_path,
+    TopologyRuntimeStatusFile, TopologyShapingInputsFile, load_config,
+    topology_runtime_status_path, topology_shaping_inputs_path,
 };
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
-use lqos_topology_compile::TopologyImportFile;
-use lqos_utils::XdpIpAddress;
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::hash_to_i64;
 use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
@@ -26,95 +24,16 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-// Removed rate_for_plan() function - no longer needed with f32 plan structures
-const SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS: u64 = 500;
-const SHAPED_DEVICES_RELOAD_ATTEMPTS: usize = 2;
-
 pub mod circuit_live;
-mod netjson;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 pub use circuit_live::CircuitLiveSnapshot;
-pub use netjson::*;
 
-pub static SHAPED_DEVICES: Lazy<ArcSwap<ConfigShapedDevices>> =
-    Lazy::new(|| ArcSwap::new(Arc::new(ConfigShapedDevices::default())));
-
-#[derive(Debug, Default)]
-pub struct ShapedDeviceHashCache {
-    by_device_hash: FxHashMap<i64, usize>,
-    by_circuit_hash: FxHashMap<i64, usize>,
-}
-
-impl ShapedDeviceHashCache {
-    fn from_devices(devices: &[ShapedDevice]) -> Self {
-        let mut by_device_hash = FxHashMap::default();
-        by_device_hash.reserve(devices.len());
-        let mut by_circuit_hash = FxHashMap::default();
-        by_circuit_hash.reserve(devices.len());
-        for (idx, dev) in devices.iter().enumerate() {
-            by_device_hash.insert(dev.device_hash, idx);
-            by_circuit_hash.entry(dev.circuit_hash).or_insert(idx);
-        }
-        Self {
-            by_device_hash,
-            by_circuit_hash,
-        }
-    }
-
-    pub fn index_by_device_hash(
-        &self,
-        shaped: &ConfigShapedDevices,
-        device_hash: i64,
-    ) -> Option<usize> {
-        if let Some(idx) = self.by_device_hash.get(&device_hash).copied()
-            && shaped
-                .devices
-                .get(idx)
-                .is_some_and(|d| d.device_hash == device_hash)
-        {
-            return Some(idx);
-        }
-        shaped
-            .devices
-            .iter()
-            .position(|d| d.device_hash == device_hash)
-    }
-
-    pub fn index_by_circuit_hash(
-        &self,
-        shaped: &ConfigShapedDevices,
-        circuit_hash: i64,
-    ) -> Option<usize> {
-        if let Some(idx) = self.by_circuit_hash.get(&circuit_hash).copied()
-            && shaped
-                .devices
-                .get(idx)
-                .is_some_and(|d| d.circuit_hash == circuit_hash)
-        {
-            return Some(idx);
-        }
-        shaped
-            .devices
-            .iter()
-            .position(|d| d.circuit_hash == circuit_hash)
-    }
-}
-
-pub static SHAPED_DEVICE_HASH_CACHE: Lazy<ArcSwap<ShapedDeviceHashCache>> =
-    Lazy::new(|| ArcSwap::new(Arc::new(ShapedDeviceHashCache::default())));
 pub static CIRCUIT_LIVE_SNAPSHOT: Lazy<ArcSwap<CircuitLiveSnapshot>> =
     Lazy::new(|| ArcSwap::new(Arc::new(CircuitLiveSnapshot::default())));
 pub static CIRCUIT_LIVE_LAST_REFRESH_SECS: AtomicU64 = AtomicU64::new(0);
 pub static CIRCUIT_LIVE_REFRESH_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 pub static EFFECTIVE_CIRCUIT_PARENTS: Lazy<ArcSwap<FxHashMap<String, RuntimeCircuitParent>>> =
     Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ShapedDeviceMatchSource {
-    DeviceHash,
-    CircuitHash,
-    IpFallback,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeCircuitParent {
@@ -128,43 +47,6 @@ pub(crate) fn invalidate_circuit_live_snapshot() {
 
 pub(crate) fn invalidate_executive_cache_snapshot() {
     crate::node_manager::invalidate_executive_cache_snapshot();
-}
-
-pub(crate) fn shaped_device_match_from_hashes_or_ip<'a>(
-    shaped: &'a ConfigShapedDevices,
-    cache: &ShapedDeviceHashCache,
-    ip: &XdpIpAddress,
-    device_hash: Option<i64>,
-    circuit_hash: Option<i64>,
-) -> Option<(&'a ShapedDevice, ShapedDeviceMatchSource)> {
-    if let Some(device_hash) = device_hash
-        && let Some(idx) = cache.index_by_device_hash(shaped, device_hash)
-        && let Some(device) = shaped.devices.get(idx)
-    {
-        return Some((device, ShapedDeviceMatchSource::DeviceHash));
-    }
-
-    if let Some(circuit_hash) = circuit_hash
-        && let Some(idx) = cache.index_by_circuit_hash(shaped, circuit_hash)
-        && let Some(device) = shaped.devices.get(idx)
-    {
-        return Some((device, ShapedDeviceMatchSource::CircuitHash));
-    }
-
-    shaped
-        .get_device_from_ip(ip)
-        .map(|device| (device, ShapedDeviceMatchSource::IpFallback))
-}
-
-pub(crate) fn shaped_device_from_hashes_or_ip<'a>(
-    shaped: &'a ConfigShapedDevices,
-    cache: &ShapedDeviceHashCache,
-    ip: &XdpIpAddress,
-    device_hash: Option<i64>,
-    circuit_hash: Option<i64>,
-) -> Option<&'a ShapedDevice> {
-    shaped_device_match_from_hashes_or_ip(shaped, cache, ip, device_hash, circuit_hash)
-        .map(|(device, _)| device)
 }
 
 fn normalize_circuit_id_key(circuit_id: &str) -> Option<String> {
@@ -224,6 +106,26 @@ fn active_runtime_shaping_inputs_path(config: &lqos_config::Config) -> Result<Op
         return Ok(None);
     }
     Ok(Some(PathBuf::from(path)))
+}
+
+fn load_active_runtime_shaping_inputs(
+    config: &lqos_config::Config,
+) -> Result<Option<TopologyShapingInputsFile>> {
+    if let Some(active_path) = active_runtime_shaping_inputs_path(config)? {
+        if active_path.exists() {
+            let raw = std::fs::read_to_string(&active_path)?;
+            let shaping_inputs = serde_json::from_str(&raw)?;
+            return Ok(Some(shaping_inputs));
+        }
+    }
+
+    let fallback_path = topology_shaping_inputs_path(config);
+    if !fallback_path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&fallback_path)?;
+    let shaping_inputs = serde_json::from_str(&raw)?;
+    Ok(Some(shaping_inputs))
 }
 
 fn parse_ipv4_entry(value: &str) -> Option<(Ipv4Addr, u32)> {
@@ -306,6 +208,89 @@ fn shaped_devices_from_runtime_inputs(
     let mut shaped = ConfigShapedDevices::default();
     shaped.replace_with_new_data(devices);
     shaped
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShapedDevicesLoadSource {
+    RuntimeShapingInputs,
+    TopologyImport,
+    ShapedDevicesCsv,
+}
+
+fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
+    config.uisp_integration.enable_uisp
+        || config.splynx_integration.enable_splynx
+        || config
+            .netzur_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_netzur)
+        || config
+            .visp_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_visp)
+        || config.powercode_integration.enable_powercode
+        || config.sonar_integration.enable_sonar
+        || config
+            .wispgate_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_wispgate)
+}
+
+fn load_ready_runtime_shaping_inputs(
+    config: &lqos_config::Config,
+) -> Result<Option<TopologyShapingInputsFile>> {
+    let Some(active_path) = active_runtime_shaping_inputs_path(config)? else {
+        return Ok(None);
+    };
+    if !active_path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&active_path)
+        .with_context(|| format!("Unable to read shaping inputs at {}", active_path.display()))?;
+    let shaping_inputs = serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "Unable to decode shaping inputs JSON at {}",
+            active_path.display()
+        )
+    })?;
+    Ok(Some(shaping_inputs))
+}
+
+fn load_shaped_devices_from_preferred_source(
+    config: &lqos_config::Config,
+) -> Result<(ConfigShapedDevices, ShapedDevicesLoadSource)> {
+    if let Some(shaping_inputs) = load_ready_runtime_shaping_inputs(config)? {
+        return Ok((
+            shaped_devices_from_runtime_inputs(&shaping_inputs),
+            ShapedDevicesLoadSource::RuntimeShapingInputs,
+        ));
+    }
+
+    if integration_ingress_enabled(config) {
+        match lqos_topology_compile::TopologyImportFile::load(config) {
+            Ok(Some(topology_import)) => {
+                let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
+                if !shaped_devices.devices.is_empty() {
+                    return Ok((shaped_devices, ShapedDevicesLoadSource::TopologyImport));
+                }
+                debug!(
+                    "topology_import.json contained 0 shaped devices; falling back to ShapedDevices.csv"
+                );
+            }
+            Ok(None) => {
+                debug!("topology_import.json missing; falling back to ShapedDevices.csv");
+            }
+            Err(err) => {
+                debug!(
+                    "Unable to load topology_import.json ({err}); falling back to ShapedDevices.csv"
+                );
+            }
+        }
+    }
+
+    let shaped_devices = ConfigShapedDevices::load_for_config(config)
+        .context("Unable to load ShapedDevices.csv")?;
+    Ok((shaped_devices, ShapedDevicesLoadSource::ShapedDevicesCsv))
 }
 
 fn load_shaping_inputs() {
@@ -393,7 +378,7 @@ fn node_to_transport_with_summary(
 
 fn build_network_tree_summaries(
     nodes: &[NetworkJsonNode],
-    shaped_devices: &ConfigShapedDevices,
+    shaped_devices: &lqos_network_devices::NetworkDevicesCatalog,
 ) -> Vec<NetworkTreeSummary> {
     let mut summaries = vec![NetworkTreeSummary::default(); nodes.len()];
     let mut direct_circuits = vec![FxHashSet::default(); nodes.len()];
@@ -404,7 +389,7 @@ fn build_network_tree_summaries(
         node_index_by_name.entry(node.name.as_str()).or_insert(idx);
     }
 
-    for device in &shaped_devices.devices {
+    for device in shaped_devices.iter_all_devices() {
         let Some(node_idx) = node_index_by_name.get(device.parent_node.as_str()).copied() else {
             continue;
         };
@@ -436,226 +421,61 @@ fn build_network_tree_summaries(
     summaries
 }
 
-fn publish_shaped_devices(new_file: ConfigShapedDevices) {
-    debug!("ShapedDevices.csv loaded");
-    let cache = ShapedDeviceHashCache::from_devices(&new_file.devices);
-    SHAPED_DEVICES.store(Arc::new(new_file));
-    SHAPED_DEVICE_HASH_CACHE.store(Arc::new(cache));
-    invalidate_circuit_live_snapshot();
-    invalidate_executive_cache_snapshot();
-    let nj = NETWORK_JSON.read();
-    crate::throughput_tracker::THROUGHPUT_TRACKER.refresh_circuit_ids(&nj);
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ShapedDevicesLoadSource {
-    RuntimeShapingInputs,
-    TopologyImport,
-    ShapedDevicesCsv,
-}
-
-impl ShapedDevicesLoadSource {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::RuntimeShapingInputs => "runtime shaping inputs",
-            Self::TopologyImport => "topology_import.json",
-            Self::ShapedDevicesCsv => "ShapedDevices.csv",
-        }
-    }
-}
-
-fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
-}
-
-fn load_active_runtime_shaping_inputs(
-    config: &lqos_config::Config,
-) -> Result<Option<TopologyShapingInputsFile>> {
-    let Some(active_path) = active_runtime_shaping_inputs_path(config)? else {
-        return Ok(None);
-    };
-    if !active_path.exists() {
-        return Ok(None);
-    }
-
-    let raw = std::fs::read_to_string(&active_path)?;
-    let shaping_inputs = serde_json::from_str(&raw)?;
-    Ok(Some(shaping_inputs))
-}
-
-fn load_shaped_devices_from_preferred_source(
-    config: &lqos_config::Config,
-) -> Result<(ConfigShapedDevices, ShapedDevicesLoadSource)> {
-    if let Some(shaping_inputs) = load_active_runtime_shaping_inputs(config)? {
-        return Ok((
-            shaped_devices_from_runtime_inputs(&shaping_inputs),
-            ShapedDevicesLoadSource::RuntimeShapingInputs,
-        ));
-    }
-
-    if integration_ingress_enabled(config)
-        && let Some(topology_import) = TopologyImportFile::load(config)?
-    {
-        return Ok((
-            topology_import.into_imported_bundle().shaped_devices,
-            ShapedDevicesLoadSource::TopologyImport,
-        ));
-    }
-    Ok((
-        ConfigShapedDevices::load_for_config(config)?,
-        ShapedDevicesLoadSource::ShapedDevicesCsv,
-    ))
-}
-
-fn load_shaped_devices() {
-    debug!("Shaped-device ingress has changed. Attempting to load it.");
-    let Ok(config) = load_config() else {
-        warn!("Unable to load LibreQoS config while loading shaped devices");
-        return;
-    };
-    for attempt in 1..=SHAPED_DEVICES_RELOAD_ATTEMPTS {
-        match load_shaped_devices_from_preferred_source(config.as_ref()) {
-            Ok((new_file, source)) => {
-                debug!("Loaded shaped devices from {}", source.label());
-                publish_shaped_devices(new_file);
-                return;
-            }
-            Err(err) => {
-                if attempt < SHAPED_DEVICES_RELOAD_ATTEMPTS {
-                    warn!(
-                        "Shaped-device ingress reload attempt {attempt}/{} failed: {err}. Retrying after {} ms.",
-                        SHAPED_DEVICES_RELOAD_ATTEMPTS, SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS
-                    );
-                    std::thread::sleep(Duration::from_millis(SHAPED_DEVICES_RELOAD_RETRY_DELAY_MS));
-                } else {
-                    let current = SHAPED_DEVICES.load();
-                    warn!(
-                        "Shaped-device ingress reload failed after {} attempts: {err}. Keeping last-known-good data with {} devices.",
-                        SHAPED_DEVICES_RELOAD_ATTEMPTS,
-                        current.devices.len()
-                    );
-                }
-            }
-        }
-    }
-}
-
-pub fn shaped_devices_watcher() -> Result<()> {
-    std::thread::Builder::new()
-        .name("ShapedDevices Watcher".to_string())
-        .spawn(|| {
-            debug!("Watching for shaped-device ingress changes");
-            if let Err(e) = watch_for_shaped_devices_changing() {
-                error!("Error watching for shaped-device ingress: {:?}", e);
-            }
-        })?;
-    Ok(())
-}
-
-fn watch_shaped_devices_hint_path(watch_name: &str, watch_path: PathBuf) -> Result<()> {
-    let mut watcher = FileWatcher::new(watch_name, watch_path);
-    watcher.set_file_exists_callback(load_shaped_devices);
-    watcher.set_file_created_callback(load_shaped_devices);
-    watcher.set_file_changed_callback(load_shaped_devices);
-    loop {
-        let result = watcher.watch();
-        info!("{watch_name} watcher returned: {result:?}");
-    }
-}
-
-/// Watches runtime status and source-ingress hints, then reevaluates the preferred shaped-device
-/// source. The reload path always prefers active runtime shaping inputs over source ingress files.
-fn watch_for_shaped_devices_changing() -> Result<()> {
-    let config = load_config()?;
-    let runtime_status_path = topology_runtime_status_path(config.as_ref());
-    let csv_path = ConfigShapedDevices::path_for_config(config.as_ref());
-    let topology_import = topology_import_path(config.as_ref());
-
-    std::thread::Builder::new()
-        .name("ShapedDevices Runtime Watcher".to_string())
-        .spawn(move || {
-            if let Err(err) =
-                watch_shaped_devices_hint_path("topology_runtime_status.json", runtime_status_path)
-            {
-                error!("Error watching topology_runtime_status.json: {err:?}");
-            }
-        })?;
-
-    std::thread::Builder::new()
-        .name("ShapedDevices CSV Hint Watcher".to_string())
-        .spawn(move || {
-            if let Err(err) = watch_shaped_devices_hint_path("ShapedDevices.csv", csv_path) {
-                error!("Error watching ShapedDevices.csv: {err:?}");
-            }
-        })?;
-
-    watch_shaped_devices_hint_path("topology_import.json", topology_import)
-}
 
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
-    let net_json = NETWORK_JSON.read();
-    let nodes_ref = net_json.get_nodes_when_ready();
-    let shaped_devices = SHAPED_DEVICES.load();
-    let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
-    if let Some(parent) = nodes_ref.get(parent_idx) {
-        let mut nodes = vec![(
-            parent_idx,
-            node_to_transport_with_summary(
-                parent,
-                summaries.get(parent_idx).copied().unwrap_or_default(),
-            ),
-        )];
-        nodes.extend(
-            nodes_ref
-                .iter()
-                .enumerate()
-                .filter(|(_, node)| node.immediate_parent == Some(parent_idx))
-                .map(|(i, node)| {
-                    (
-                        i,
-                        node_to_transport_with_summary(
-                            node,
-                            summaries.get(i).copied().unwrap_or_default(),
-                        ),
-                    )
-                }),
-        );
-        BusResponse::NetworkMap(nodes)
-    } else {
-        BusResponse::Fail("No such node".to_string())
-    }
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes_ref = net_json.get_nodes_when_ready();
+        let shaped_devices = lqos_network_devices::network_devices_catalog();
+        let summaries = build_network_tree_summaries(nodes_ref, &shaped_devices);
+        if let Some(parent) = nodes_ref.get(parent_idx) {
+            let mut nodes = vec![(
+                parent_idx,
+                node_to_transport_with_summary(
+                    parent,
+                    summaries.get(parent_idx).copied().unwrap_or_default(),
+                ),
+            )];
+            nodes.extend(
+                nodes_ref
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, node)| node.immediate_parent == Some(parent_idx))
+                    .map(|(i, node)| {
+                        (
+                            i,
+                            node_to_transport_with_summary(
+                                node,
+                                summaries.get(i).copied().unwrap_or_default(),
+                            ),
+                        )
+                    }),
+            );
+            BusResponse::NetworkMap(nodes)
+        } else {
+            BusResponse::Fail("No such node".to_string())
+        }
+    })
 }
 
 pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
-    let nj = NETWORK_JSON.read();
-    let nodes = nj.get_nodes_when_ready();
-    let shaped_devices = SHAPED_DEVICES.load();
-    let summaries = build_network_tree_summaries(nodes, shaped_devices.as_ref());
-    nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| {
-            (
-                i,
-                node_to_transport_with_summary(n, summaries.get(i).copied().unwrap_or_default()),
-            )
-        })
-        .collect()
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let shaped_devices = lqos_network_devices::network_devices_catalog();
+        let summaries = build_network_tree_summaries(nodes, &shaped_devices);
+        nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                (
+                    i,
+                    node_to_transport_with_summary(
+                        n,
+                        summaries.get(i).copied().unwrap_or_default(),
+                    ),
+                )
+            })
+            .collect()
+    })
 }
 
 fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
@@ -718,13 +538,14 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
 /// Returns a lightweight live snapshot of the network tree for pages that do not need the full
 /// `NetworkJsonTransport` payload.
 pub fn full_network_map_lite_snapshot() -> Vec<(usize, NetworkTreeLiteNode)> {
-    let nj = NETWORK_JSON.read();
-    let nodes = nj.get_nodes_when_ready();
-    nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| (i, node_to_transport_lite(n)))
-        .collect()
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (i, node_to_transport_lite(n)))
+            .collect()
+    })
 }
 
 pub fn get_full_network_map() -> BusResponse {
@@ -732,209 +553,155 @@ pub fn get_full_network_map() -> BusResponse {
 }
 
 pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
-    let net_json = NETWORK_JSON.read();
-    let nodes_ref = net_json.get_nodes_when_ready();
-    let shaped_devices = SHAPED_DEVICES.load();
-    let summaries = build_network_tree_summaries(nodes_ref, shaped_devices.as_ref());
-    if let Some(parent) = nodes_ref.first() {
-        let mut nodes = vec![(
-            0,
-            node_to_transport_with_summary(parent, summaries.first().copied().unwrap_or_default()),
-        )];
-        nodes.extend(
-            nodes_ref
-                .iter()
-                .enumerate()
-                .filter(|(idx, node)| *idx != 0 && node.immediate_parent == Some(0))
-                .map(|(idx, node)| {
-                    (
-                        idx,
-                        node_to_transport_with_summary(
-                            node,
-                            summaries.get(idx).copied().unwrap_or_default(),
-                        ),
-                    )
-                }),
-        );
-        // Remove the top-level entry for root
-        nodes.remove(0);
-        // Sort by total bandwidth (up + down) descending
-        nodes.sort_by(|a, b| {
-            let total_a = a.1.current_throughput.0 + a.1.current_throughput.1;
-            let total_b = b.1.current_throughput.0 + b.1.current_throughput.1;
-            total_b.cmp(&total_a)
-        });
-        // Summarize everything after n_queues
-        if nodes.len() > n_queues {
-            let mut other_bw = (0, 0);
-            let mut other_packets = (0, 0);
-            let mut other_tcp_packets = (0, 0);
-            let mut other_tcp_retransmit_packets = (0, 0);
-            let mut other_udp_packets = (0, 0);
-            let mut other_icmp_packets = (0, 0);
-            let mut other_xmit = (0, 0);
-            let mut other_marks = (0, 0);
-            let mut other_drops = (0, 0);
-            nodes.drain(n_queues..).for_each(|n| {
-                other_bw.0 += n.1.current_throughput.0;
-                other_bw.1 += n.1.current_throughput.1;
-                other_packets.0 += n.1.current_packets.0;
-                other_packets.1 += n.1.current_packets.1;
-                other_tcp_packets.0 += n.1.current_tcp_packets.0;
-                other_tcp_packets.1 += n.1.current_tcp_packets.1;
-                other_tcp_retransmit_packets.0 += n.1.current_tcp_retransmit_packets.0;
-                other_tcp_retransmit_packets.1 += n.1.current_tcp_retransmit_packets.1;
-                other_udp_packets.0 += n.1.current_udp_packets.0;
-                other_udp_packets.1 += n.1.current_udp_packets.1;
-                other_icmp_packets.0 += n.1.current_icmp_packets.0;
-                other_icmp_packets.1 += n.1.current_icmp_packets.1;
-                other_xmit.0 += n.1.current_retransmits.0;
-                other_xmit.1 += n.1.current_retransmits.1;
-                other_marks.0 += n.1.current_marks.0;
-                other_marks.1 += n.1.current_marks.1;
-                other_drops.0 += n.1.current_drops.0;
-                other_drops.1 += n.1.current_drops.1;
-            });
-
-            nodes.push((
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes_ref = net_json.get_nodes_when_ready();
+        let shaped_devices = lqos_network_devices::network_devices_catalog();
+        let summaries = build_network_tree_summaries(nodes_ref, &shaped_devices);
+        if let Some(parent) = nodes_ref.first() {
+            let mut nodes = vec![(
                 0,
-                NetworkJsonTransport {
-                    name: "Others".into(),
-                    id: None,
-                    is_virtual: false,
-                    runtime_virtualized: false,
-                    max_throughput: (0.0, 0.0),
-                    configured_max_throughput: (0.0, 0.0),
-                    effective_max_throughput: None,
-                    current_throughput: other_bw,
-                    current_packets: other_packets,
-                    current_tcp_packets: other_tcp_packets,
-                    current_tcp_retransmit_packets: other_tcp_retransmit_packets,
-                    current_udp_packets: other_udp_packets,
-                    current_icmp_packets: other_icmp_packets,
-                    current_retransmits: other_xmit,
-                    current_marks: other_marks,
-                    current_drops: other_drops,
-                    rtts: Vec::new(),
-                    qoo: (None, None),
-                    parents: Vec::new(),
-                    immediate_parent: None,
-                    node_type: None,
-                    latitude: None,
-                    longitude: None,
-                    active_attachment_name: None,
-                    subtree_site_count: 0,
-                    subtree_circuit_count: 0,
-                    subtree_device_count: 0,
-                },
-            ));
+                node_to_transport_with_summary(
+                    parent,
+                    summaries.first().copied().unwrap_or_default(),
+                ),
+            )];
+            nodes.extend(
+                nodes_ref
+                    .iter()
+                    .enumerate()
+                    .filter(|(idx, node)| *idx != 0 && node.immediate_parent == Some(0))
+                    .map(|(idx, node)| {
+                        (
+                            idx,
+                            node_to_transport_with_summary(
+                                node,
+                                summaries.get(idx).copied().unwrap_or_default(),
+                            ),
+                        )
+                    }),
+            );
+            // Remove the top-level entry for root
+            nodes.remove(0);
+            // Sort by total bandwidth (up + down) descending
+            nodes.sort_by(|a, b| {
+                let total_a = a.1.current_throughput.0 + a.1.current_throughput.1;
+                let total_b = b.1.current_throughput.0 + b.1.current_throughput.1;
+                total_b.cmp(&total_a)
+            });
+            // Summarize everything after n_queues
+            if nodes.len() > n_queues {
+                let mut other_bw = (0, 0);
+                let mut other_packets = (0, 0);
+                let mut other_tcp_packets = (0, 0);
+                let mut other_tcp_retransmit_packets = (0, 0);
+                let mut other_udp_packets = (0, 0);
+                let mut other_icmp_packets = (0, 0);
+                let mut other_xmit = (0, 0);
+                let mut other_marks = (0, 0);
+                let mut other_drops = (0, 0);
+                nodes.drain(n_queues..).for_each(|n| {
+                    other_bw.0 += n.1.current_throughput.0;
+                    other_bw.1 += n.1.current_throughput.1;
+                    other_packets.0 += n.1.current_packets.0;
+                    other_packets.1 += n.1.current_packets.1;
+                    other_tcp_packets.0 += n.1.current_tcp_packets.0;
+                    other_tcp_packets.1 += n.1.current_tcp_packets.1;
+                    other_tcp_retransmit_packets.0 += n.1.current_tcp_retransmit_packets.0;
+                    other_tcp_retransmit_packets.1 += n.1.current_tcp_retransmit_packets.1;
+                    other_udp_packets.0 += n.1.current_udp_packets.0;
+                    other_udp_packets.1 += n.1.current_udp_packets.1;
+                    other_icmp_packets.0 += n.1.current_icmp_packets.0;
+                    other_icmp_packets.1 += n.1.current_icmp_packets.1;
+                    other_xmit.0 += n.1.current_retransmits.0;
+                    other_xmit.1 += n.1.current_retransmits.1;
+                    other_marks.0 += n.1.current_marks.0;
+                    other_marks.1 += n.1.current_marks.1;
+                    other_drops.0 += n.1.current_drops.0;
+                    other_drops.1 += n.1.current_drops.1;
+                });
+
+                nodes.push((
+                    0,
+                    NetworkJsonTransport {
+                        name: "Others".into(),
+                        id: None,
+                        is_virtual: false,
+                        runtime_virtualized: false,
+                        max_throughput: (0.0, 0.0),
+                        configured_max_throughput: (0.0, 0.0),
+                        effective_max_throughput: None,
+                        current_throughput: other_bw,
+                        current_packets: other_packets,
+                        current_tcp_packets: other_tcp_packets,
+                        current_tcp_retransmit_packets: other_tcp_retransmit_packets,
+                        current_udp_packets: other_udp_packets,
+                        current_icmp_packets: other_icmp_packets,
+                        current_retransmits: other_xmit,
+                        current_marks: other_marks,
+                        current_drops: other_drops,
+                        rtts: Vec::new(),
+                        qoo: (None, None),
+                        parents: Vec::new(),
+                        immediate_parent: None,
+                        node_type: None,
+                        latitude: None,
+                        longitude: None,
+                        active_attachment_name: None,
+                        subtree_site_count: 0,
+                        subtree_circuit_count: 0,
+                        subtree_device_count: 0,
+                    },
+                ));
+            }
+            BusResponse::NetworkMap(nodes)
+        } else {
+            BusResponse::Fail("No such node".to_string())
         }
-        BusResponse::NetworkMap(nodes)
-    } else {
-        BusResponse::Fail("No such node".to_string())
-    }
-}
-
-pub fn map_node_names(nodes: &[usize]) -> BusResponse {
-    let mut result = Vec::new();
-    let reader = NETWORK_JSON.read();
-    nodes.iter().for_each(|id| {
-        if let Some(node) = reader.get_nodes_when_ready().get(*id) {
-            result.push((*id, node.name.clone()));
-        }
-    });
-    BusResponse::NodeNames(result)
-}
-
-/// Canonical parent-node metadata resolved from `network.json`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ResolvedParentNode {
-    /// Canonical node name from `network.json`.
-    pub name: String,
-    /// Optional stable node identifier from `network.json` metadata.
-    pub id: Option<String>,
-}
-
-/// Resolve a shaped-device parent reference into canonical `network.json`
-/// parent metadata, preferring a stable node ID when one is available.
-pub fn resolve_parent_node_reference(
-    parent_node: &str,
-    parent_node_id: Option<&str>,
-) -> Option<ResolvedParentNode> {
-    let trimmed_id = parent_node_id.map(str::trim).filter(|id| !id.is_empty());
-    let trimmed = parent_node.trim();
-    if trimmed.is_empty() && trimmed_id.is_none() {
-        return None;
-    }
-
-    let reader = NETWORK_JSON.read();
-    let nodes = reader.get_nodes_when_ready();
-
-    if let Some(parent_node_id) = trimmed_id
-        && let Some(node) = nodes
-            .iter()
-            .find(|node| node.id.as_deref() == Some(parent_node_id))
-    {
-        return Some(ResolvedParentNode {
-            name: node.name.clone(),
-            id: node.id.clone(),
-        });
-    }
-
-    if let Some(node) = nodes.iter().find(|node| node.name == trimmed) {
-        return Some(ResolvedParentNode {
-            name: node.name.clone(),
-            id: node.id.clone(),
-        });
-    }
-
-    nodes.iter().find_map(|node| {
-        node.active_attachment_name
-            .as_deref()
-            .filter(|alias| alias.trim() == trimmed)
-            .map(|_| ResolvedParentNode {
-                name: node.name.clone(),
-                id: node.id.clone(),
-            })
     })
 }
 
-/// Resolve a shaped-device parent node or active attachment alias into canonical `network.json`
-/// parent metadata.
-pub fn resolve_parent_node(parent_node: &str) -> Option<ResolvedParentNode> {
-    resolve_parent_node_reference(parent_node, None)
+pub fn map_node_names(nodes: &[usize]) -> BusResponse {
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let mut result = Vec::new();
+        nodes.iter().for_each(|id| {
+            if let Some(node) = net_json.get_nodes_when_ready().get(*id) {
+                result.push((*id, node.name.clone()));
+            }
+        });
+        BusResponse::NodeNames(result)
+    })
 }
 
 pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
-    resolve_parent_node(parent_node).map(|resolved| resolved.name)
+    lqos_network_devices::resolve_parent_node(parent_node).map(|resolved| resolved.name)
 }
 
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
-    let reader = NETWORK_JSON.read();
-    if let Some(index) = reader.get_index_for_name(circuit_id) {
-        // Reverse the scanning order and skip the last entry (the parent)
-        let mut result = Vec::new();
-        for idx in reader.get_nodes_when_ready()[index]
-            .parents
-            .iter()
-            .rev()
-            .skip(1)
-        {
-            result.push((
-                *idx,
-                node_to_transport(&reader.get_nodes_when_ready()[*idx]),
-            ));
+    lqos_network_devices::with_network_json_read(|net_json| {
+        if let Some(index) = net_json.get_index_for_name(circuit_id) {
+            // Reverse the scanning order and skip the last entry (the parent)
+            let mut result = Vec::new();
+            for idx in net_json.get_nodes_when_ready()[index]
+                .parents
+                .iter()
+                .rev()
+                .skip(1)
+            {
+                result.push((
+                    *idx,
+                    node_to_transport(&net_json.get_nodes_when_ready()[*idx]),
+                ));
+            }
+            return BusResponse::NetworkMap(result);
         }
-        return BusResponse::NetworkMap(result);
-    }
 
-    BusResponse::Fail("Unknown Node".into())
+        BusResponse::Fail("Unknown Node".into())
+    })
 }
 
 pub fn get_all_circuits() -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
-        let devices = SHAPED_DEVICES.load();
-        let cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
@@ -957,13 +724,9 @@ pub fn get_all_circuits() -> BusResponse {
                 let mut parent_node = None;
                 // Plan is expressed in Mbps as f32
                 let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
-                let device = shaped_device_from_hashes_or_ip(
-                    &devices,
-                    &cache,
-                    k,
-                    v.device_hash,
-                    v.circuit_hash,
-                );
+                let device = catalog
+                    .device_by_hashes(v.device_hash, v.circuit_hash)
+                    .or_else(|| catalog.device_longest_match_for_ip(k).map(|(_, dev)| dev));
                 if let Some(device) = device {
                     if circuit_id.as_deref().unwrap_or_default().is_empty() {
                         circuit_id = Some(device.circuit_id.clone());
@@ -1053,22 +816,18 @@ pub fn get_all_circuits() -> BusResponse {
 pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
     if let Ok(kernel_now) = time_since_boot() {
         let desired_hash = hash_to_i64(&desired_circuit_id);
-        let devices = SHAPED_DEVICES.load();
-        let cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let catalog = lqos_network_devices::network_devices_catalog();
         let data = THROUGHPUT_TRACKER
             .raw_data
             .lock()
             .iter()
             .filter_map(|(k, v)| {
-                let device = shaped_device_from_hashes_or_ip(
-                    &devices,
-                    &cache,
-                    k,
-                    v.device_hash,
-                    v.circuit_hash,
-                );
+                let device = catalog
+                    .device_by_hashes(v.device_hash, v.circuit_hash)
+                    .or_else(|| catalog.device_longest_match_for_ip(k).map(|(_, dev)| dev));
                 let matches_desired = v.circuit_hash == Some(desired_hash)
                     || v.circuit_id.as_deref() == Some(desired_circuit_id.as_str())
+                    || device.is_some_and(|device| device.circuit_hash == desired_hash)
                     || device.is_some_and(|device| device.circuit_id == desired_circuit_id);
                 if !matches_desired {
                     return None;
@@ -1185,6 +944,7 @@ mod tests {
         TopologyShapingDeviceInput, TopologyShapingInputsFile,
     };
     use lqos_topology_compile::{ImportedTopologyBundle, TopologyImportFile};
+    use lqos_utils::XdpIpAddress;
     use serde_json::json;
     use std::fs;
     use std::net::Ipv4Addr;
@@ -1272,99 +1032,6 @@ mod tests {
 
         let map = build_effective_circuit_parent_map(&shaping_inputs);
         assert!(map.is_empty());
-    }
-
-    #[test]
-    fn shaped_device_from_hashes_or_ip_falls_back_to_ip() {
-        let mut shaped = ConfigShapedDevices::default();
-        shaped.replace_with_new_data(vec![ShapedDevice {
-            circuit_id: "circuit-1".to_string(),
-            circuit_name: "Circuit Alpha".to_string(),
-            device_id: "device-1".to_string(),
-            parent_node: "Parent-A".to_string(),
-            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
-            ..Default::default()
-        }]);
-        let cache = ShapedDeviceHashCache::default();
-        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
-
-        let device =
-            shaped_device_from_hashes_or_ip(&shaped, &cache, &ip, None, None).expect("match");
-
-        assert_eq!(device.circuit_id, "circuit-1");
-        assert_eq!(device.circuit_name, "Circuit Alpha");
-    }
-
-    #[test]
-    fn shaped_device_match_prefers_device_hash() {
-        let mut shaped = ConfigShapedDevices::default();
-        shaped.replace_with_new_data(vec![ShapedDevice {
-            circuit_id: "circuit-1".to_string(),
-            circuit_name: "Circuit Alpha".to_string(),
-            device_id: "device-1".to_string(),
-            parent_node: "Parent-A".to_string(),
-            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
-            ..Default::default()
-        }]);
-        let cache = ShapedDeviceHashCache::from_devices(&shaped.devices);
-        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
-
-        let (_device, source) = shaped_device_match_from_hashes_or_ip(
-            &shaped,
-            &cache,
-            &ip,
-            Some(hash_to_i64("device-1")),
-            None,
-        )
-        .expect("match");
-
-        assert_eq!(source, ShapedDeviceMatchSource::DeviceHash);
-    }
-
-    #[test]
-    fn shaped_device_match_uses_circuit_hash_when_device_hash_missing() {
-        let mut shaped = ConfigShapedDevices::default();
-        shaped.replace_with_new_data(vec![ShapedDevice {
-            circuit_id: "circuit-1".to_string(),
-            circuit_name: "Circuit Alpha".to_string(),
-            device_id: "device-1".to_string(),
-            parent_node: "Parent-A".to_string(),
-            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
-            ..Default::default()
-        }]);
-        let cache = ShapedDeviceHashCache::from_devices(&shaped.devices);
-        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
-
-        let (_device, source) = shaped_device_match_from_hashes_or_ip(
-            &shaped,
-            &cache,
-            &ip,
-            None,
-            Some(hash_to_i64("circuit-1")),
-        )
-        .expect("match");
-
-        assert_eq!(source, ShapedDeviceMatchSource::CircuitHash);
-    }
-
-    #[test]
-    fn shaped_device_match_reports_ip_fallback() {
-        let mut shaped = ConfigShapedDevices::default();
-        shaped.replace_with_new_data(vec![ShapedDevice {
-            circuit_id: "circuit-1".to_string(),
-            circuit_name: "Circuit Alpha".to_string(),
-            device_id: "device-1".to_string(),
-            parent_node: "Parent-A".to_string(),
-            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
-            ..Default::default()
-        }]);
-        let cache = ShapedDeviceHashCache::from_devices(&shaped.devices);
-        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
-
-        let (_device, source) =
-            shaped_device_match_from_hashes_or_ip(&shaped, &cache, &ip, None, None).expect("match");
-
-        assert_eq!(source, ShapedDeviceMatchSource::IpFallback);
     }
 
     #[test]
@@ -1611,5 +1278,51 @@ mod tests {
         assert_eq!(source, ShapedDevicesLoadSource::TopologyImport);
         assert_eq!(loaded.devices.len(), 1);
         assert_eq!(loaded.devices[0].circuit_id, "import-circuit");
+    }
+
+    #[test]
+    fn load_shaped_devices_falls_back_to_csv_when_topology_import_is_empty() {
+        let lqos_directory = unique_temp_dir("lqosd-shaped-devices-topology-import-empty");
+        let state_directory = lqos_directory.join("state");
+        fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
+
+        write_shaped_devices_csv(
+            &lqos_directory.join("ShapedDevices.csv"),
+            "csv-circuit",
+            "192.0.2.10/32",
+        );
+
+        let imported = ImportedTopologyBundle {
+            source: "test/import".to_string(),
+            generated_unix: Some(123),
+            ingress_identity: Some("import-base".to_string()),
+            native_canonical: None,
+            native_editor: None,
+            parent_candidates: None,
+            compatibility_network_json: json!({}),
+            shaped_devices: ConfigShapedDevices::default(),
+            circuit_anchors: CircuitAnchorsFile::default(),
+            ethernet_advisories: Vec::new(),
+        };
+        TopologyImportFile::from_imported_bundle(&imported, "full")
+            .save(&Config {
+                lqos_directory: lqos_directory.to_string_lossy().to_string(),
+                state_directory: Some(state_directory.to_string_lossy().to_string()),
+                ..Config::default()
+            })
+            .expect("topology import should save");
+
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: Some(state_directory.to_string_lossy().to_string()),
+            ..Config::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+
+        let (loaded, source) = load_shaped_devices_from_preferred_source(&config)
+            .expect("CSV fallback should load");
+        assert_eq!(source, ShapedDevicesLoadSource::ShapedDevicesCsv);
+        assert_eq!(loaded.devices.len(), 1);
+        assert_eq!(loaded.devices[0].circuit_id, "csv-circuit");
     }
 }

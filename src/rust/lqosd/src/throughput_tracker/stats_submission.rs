@@ -1,7 +1,4 @@
 use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
-use crate::shaped_devices_tracker::{
-    NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, shaped_device_from_hashes_or_ip,
-};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::ALL_FLOWS;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
@@ -79,13 +76,14 @@ fn queue_metrics_available(config: &lqos_config::Config) -> bool {
 }
 
 fn resolved_circuit_hash_for_submission(
-    shaped: &lqos_config::ConfigShapedDevices,
-    cache: &crate::shaped_devices_tracker::ShapedDeviceHashCache,
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
     ip: &XdpIpAddress,
     entry: &ThroughputEntry,
 ) -> Option<i64> {
     entry.circuit_hash.or_else(|| {
-        shaped_device_from_hashes_or_ip(shaped, cache, ip, entry.device_hash, entry.circuit_hash)
+        catalog
+            .device_by_hashes(entry.device_hash, entry.circuit_hash)
+            .or_else(|| catalog.device_longest_match_for_ip(ip).map(|(_, dev)| dev))
             .map(|device| device.circuit_hash)
     })
 }
@@ -321,23 +319,14 @@ pub(crate) fn submit_throughput_stats(
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
 
-        let shaped_devices = SHAPED_DEVICES.load();
-        let shaped_cache = SHAPED_DEVICE_HASH_CACHE.load();
+        let catalog = lqos_network_devices::network_devices_catalog();
         const CRAZY_LIMIT: u64 = 8; // 8x the max bandwidth
-        let plan_lookup: FxHashMap<i64, (u64, u64)> = shaped_devices
-            .devices
-            .iter()
-            // Bandwidth: mbps * 1_000_000 to bytes
-            .map(|d| {
-                (
-                    d.circuit_hash,
-                    (
-                        d.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
-                        d.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
-                    ),
-                )
-            })
-            .collect();
+        let mut plan_lookup: FxHashMap<i64, (u64, u64)> = FxHashMap::default();
+        for device in catalog.iter_all_devices() {
+            let entry = plan_lookup.entry(device.circuit_hash).or_insert((0, 0));
+            entry.0 = entry.0.max(device.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+            entry.1 = entry.1.max(device.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+        }
 
         THROUGHPUT_TRACKER
             .raw_data
@@ -345,7 +334,7 @@ pub(crate) fn submit_throughput_stats(
             .iter()
             .filter_map(|(ip, h)| {
                 let circuit_hash =
-                    resolved_circuit_hash_for_submission(&shaped_devices, &shaped_cache, ip, h)?;
+                    resolved_circuit_hash_for_submission(&catalog, ip, h)?;
                 h.actual_bytes_per_second
                     .not_zero()
                     .then_some((circuit_hash, h))
@@ -388,7 +377,7 @@ pub(crate) fn submit_throughput_stats(
             .iter()
             .filter_map(|(ip, h)| {
                 let circuit_hash =
-                    resolved_circuit_hash_for_submission(&shaped_devices, &shaped_cache, ip, h)?;
+                    resolved_circuit_hash_for_submission(&catalog, ip, h)?;
                 (h.tcp_retransmits.not_zero() && !crazy_values.contains(&circuit_hash))
                     .then_some((circuit_hash, h))
             })
@@ -496,10 +485,9 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Network tree stats
-        let tree = {
-            let reader = NETWORK_JSON.read();
-            reader.get_nodes_when_ready().clone()
-        };
+        let tree = lqos_network_devices::with_network_json_read(|net_json| {
+            net_json.get_nodes_when_ready().clone()
+        });
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();
         let mut site_retransmits: Vec<crate::lts2_sys::shared_types::SiteRetransmits> = Vec::new();
         let mut site_rtt: Vec<crate::lts2_sys::shared_types::SiteRtt> = Vec::new();
@@ -648,7 +636,24 @@ fn combined_devices_network_hash() -> anyhow::Result<i64> {
         let sd_path = std::path::Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
         read_to_string(sd_path)?
     };
-    let combined = format!("{}\n{}", nj_as_string, sd_as_string);
+    let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
+    let mut dynamic_devices: Vec<ShapedDevice> = dynamic_snapshot
+        .iter()
+        .map(|circuit| circuit.shaped.clone())
+        .collect();
+    dynamic_devices.sort_by(|a, b| {
+        (
+            a.circuit_id.trim().to_ascii_lowercase(),
+            a.device_id.trim().to_ascii_lowercase(),
+        )
+            .cmp(&(
+                b.circuit_id.trim().to_ascii_lowercase(),
+                b.device_id.trim().to_ascii_lowercase(),
+            ))
+    });
+    let dynamic_as_string = serde_json::to_string(&dynamic_devices)?;
+
+    let combined = format!("{}\n{}\n{}", nj_as_string, sd_as_string, dynamic_as_string);
     let hash = hash_to_i64(&combined);
 
     Ok(hash)
@@ -668,13 +673,13 @@ static LTS2_HASH: AtomicI64 = AtomicI64::new(0);
 /// transmission to Insight
 fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
     let cfg = load_config()?;
+    let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
     if integration_ingress_enabled(cfg.as_ref()) {
         let topology_import = TopologyImportFile::load(cfg.as_ref())?
             .ok_or_else(|| anyhow::anyhow!("topology_import.json does not exist"))?;
-        return Ok(topology_import
-            .into_imported_bundle()
-            .shaped_devices
-            .devices);
+        let mut devices = topology_import.into_imported_bundle().shaped_devices.devices;
+        devices.extend(dynamic_snapshot.iter().map(|circuit| circuit.shaped.clone()));
+        return Ok(devices);
     }
     let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
     if !sd_path.exists() {
@@ -695,6 +700,7 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
             anyhow::bail!("Error reading ShapedDevices.csv");
         }
     }
+    devices.extend(dynamic_snapshot.iter().map(|circuit| circuit.shaped.clone()));
     Ok(devices)
 }
 
@@ -723,10 +729,12 @@ mod tests {
     use crate::throughput_tracker::throughput_entry::ThroughputEntry;
     use lqos_bus::TcHandle;
     use lqos_config::{ConfigShapedDevices, QueueMode, ShapedDevice};
+    use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
     use lqos_utils::XdpIpAddress;
     use lqos_utils::qoo::QoqScores;
     use lqos_utils::units::DownUpOrder;
     use std::net::Ipv4Addr;
+    use std::sync::Arc;
 
     #[test]
     fn test_rate_for_submission_small_rates() {
@@ -793,9 +801,12 @@ mod tests {
             device_id: "device-1".to_string(),
             parent_node: "Parent-A".to_string(),
             ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            circuit_hash: hash_to_i64("circuit-1"),
+            device_hash: hash_to_i64("device-1"),
             ..Default::default()
         }]);
-        let cache = crate::shaped_devices_tracker::ShapedDeviceHashCache::default();
+        let shaped_catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
+        let catalog = NetworkDevicesCatalog::from_snapshots(shaped_catalog, Arc::new(Vec::new()));
         let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
         let entry = ThroughputEntry {
             circuit_id: Some("circuit-1".to_string()),
@@ -829,7 +840,7 @@ mod tests {
             qoq: QoqScores::default(),
         };
 
-        let circuit_hash = resolved_circuit_hash_for_submission(&shaped, &cache, &ip, &entry);
+        let circuit_hash = resolved_circuit_hash_for_submission(&catalog, &ip, &entry);
 
         assert_eq!(circuit_hash, Some(hash_to_i64("circuit-1")));
     }

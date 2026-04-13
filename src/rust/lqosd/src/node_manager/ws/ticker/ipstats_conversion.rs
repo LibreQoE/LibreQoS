@@ -1,6 +1,6 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_bus::{IpStats, TcHandle};
-use lqos_config::{ConfigShapedDevices, ShapedDevice};
+use lqos_config::ShapedDevice;
+use lqos_network_devices::NetworkDevicesCatalog;
 use lqos_utils::XdpIpAddress;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Serialize};
@@ -12,19 +12,20 @@ fn truncate_by_chars(input: &str, max_chars: usize) -> String {
 
 fn shaped_device_for_ip_stats<'a>(
     stat: &IpStats,
-    shaped_devices: &'a ConfigShapedDevices,
+    catalog: &'a NetworkDevicesCatalog,
 ) -> Option<&'a ShapedDevice> {
     if !stat.circuit_id.is_empty()
-        && let Some(circuit) = shaped_devices
-            .devices
-            .iter()
+        && let Some(circuit) = catalog
+            .iter_all_devices()
             .find(|sd| sd.circuit_id == stat.circuit_id)
     {
         return Some(circuit);
     }
 
     let ip = stat.ip_address.parse::<IpAddr>().ok()?;
-    shaped_devices.get_device_from_ip(&XdpIpAddress::from_ip(ip))
+    catalog
+        .device_longest_match_for_ip(&XdpIpAddress::from_ip(ip))
+        .map(|(_net, device)| device)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -52,8 +53,8 @@ impl From<&IpStats> for IpStatsWithPlan {
             tcp_retransmit_sample: i.tcp_retransmit_sample,
         };
 
-        let shaped_devices_reader = SHAPED_DEVICES.load();
-        if let Some(circuit) = shaped_device_for_ip_stats(i, &shaped_devices_reader) {
+        let catalog = lqos_network_devices::network_devices_catalog();
+        if let Some(circuit) = shaped_device_for_ip_stats(i, &catalog) {
             if result.circuit_id.is_empty() {
                 result.circuit_id = circuit.circuit_id.clone();
             }
@@ -80,6 +81,7 @@ mod tests {
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
     use std::net::Ipv4Addr;
+    use std::sync::Arc;
 
     #[test]
     fn truncates_ascii_to_exact_length() {
@@ -114,6 +116,13 @@ mod tests {
             ..Default::default()
         }]);
 
+        let shaped_catalog =
+            lqos_network_devices::ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
+        let catalog = lqos_network_devices::NetworkDevicesCatalog::from_snapshots(
+            shaped_catalog,
+            Arc::new(Vec::new()),
+        );
+
         let stat = IpStats {
             ip_address: "192.168.1.10".to_string(),
             circuit_id: String::new(),
@@ -127,7 +136,7 @@ mod tests {
             ),
         };
 
-        let matched = shaped_device_for_ip_stats(&stat, &shaped).expect("lookup should resolve");
+        let matched = shaped_device_for_ip_stats(&stat, &catalog).expect("lookup should resolve");
         assert_eq!(matched.circuit_id, "circuit-1");
     }
 }

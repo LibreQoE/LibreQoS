@@ -1,5 +1,6 @@
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
 use ip_network::IpNetwork;
+use ip_network::{Ipv4Network, Ipv6Network};
+use lqos_utils::XdpIpAddress;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr};
@@ -69,6 +70,53 @@ pub enum SearchResult {
     },
 }
 
+fn dynamic_longest_match_for_ip(
+    ip: IpAddr,
+    dynamic: &[lqos_network_devices::DynamicCircuit],
+) -> Option<(IpNetwork, &lqos_config::ShapedDevice)> {
+    let mut best: Option<(IpNetwork, &lqos_config::ShapedDevice, u8)> = None;
+
+    for circuit in dynamic {
+        let dev = &circuit.shaped;
+        match ip {
+            IpAddr::V4(ip4) => {
+                for (addr, prefix) in &dev.ipv4 {
+                    let Some(prefix_u8) = u8::try_from(*prefix).ok() else {
+                        continue;
+                    };
+                    let Ok(net) = Ipv4Network::new(*addr, prefix_u8) else {
+                        continue;
+                    };
+                    if !net.contains(ip4) {
+                        continue;
+                    }
+                    if best.as_ref().map(|(_, _, p)| *p).unwrap_or(0) < prefix_u8 {
+                        best = Some((IpNetwork::V4(net), dev, prefix_u8));
+                    }
+                }
+            }
+            IpAddr::V6(ip6) => {
+                for (addr, prefix) in &dev.ipv6 {
+                    let Some(prefix_u8) = u8::try_from(*prefix).ok() else {
+                        continue;
+                    };
+                    let Ok(net) = Ipv6Network::new(*addr, prefix_u8) else {
+                        continue;
+                    };
+                    if !net.contains(ip6) {
+                        continue;
+                    }
+                    if best.as_ref().map(|(_, _, p)| *p).unwrap_or(0) < prefix_u8 {
+                        best = Some((IpNetwork::V6(net), dev, prefix_u8));
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(net, dev, _)| (net, dev))
+}
+
 pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
     const MAX_RESULTS: usize = 50;
     let mut results: Vec<SearchResult> = Vec::new();
@@ -78,6 +126,8 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
     let term_lc = raw_term.to_lowercase();
     let exact_ip: Option<IpAddr> = raw_term.parse::<IpAddr>().ok();
     let looks_like_ip_prefix = raw_term.contains('.') || raw_term.contains(':');
+    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
 
     // Helper to add results with de-dup and cap
     fn push_result(
@@ -103,13 +153,20 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
 
     // First pass: exact IP matches using the LPM trie
     if let Some(ip) = exact_ip {
-        let sd_reader = SHAPED_DEVICES.load();
-        let query_v6 = match ip {
-            IpAddr::V4(v4) => v4.to_ipv6_mapped(),
-            IpAddr::V6(v6) => v6,
-        };
-        if let Some((net, &idx)) = sd_reader.trie.longest_match(query_v6)
-            && let Some(dev) = sd_reader.devices.get(idx)
+        let xdp_ip = XdpIpAddress::from_ip(ip);
+        if let Some((net, dev)) = catalog.device_longest_match_for_ip(&xdp_ip) {
+            let name = format!("{} ({})", dev.device_name, pretty_net(&net));
+            push_result(
+                &mut results,
+                &mut seen,
+                SearchResult::Device {
+                    circuit_id: dev.circuit_id.clone(),
+                    name,
+                    circuit_name: dev.circuit_name.clone(),
+                },
+                MAX_RESULTS,
+            );
+        } else if let Some((net, dev)) = dynamic_longest_match_for_ip(ip, dynamic_snapshot.as_ref())
         {
             let name = format!("{} ({})", dev.device_name, pretty_net(&net));
             push_result(
@@ -143,14 +200,11 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                     IpNetwork::V6(v6net) => Some(IpNetwork::V6(v6net)),
                 };
                 if let Some(query_v6) = net_v6.as_ref() {
-                    let sd_reader = SHAPED_DEVICES.load();
-                    for (n, &idx) in sd_reader.trie.iter() {
+                    for (n, dev) in catalog.iter_ip_mappings() {
                         if results.len() >= MAX_RESULTS {
                             break;
                         }
-                        if ipv6_overlap(&n, query_v6)
-                            && let Some(dev) = sd_reader.devices.get(idx)
-                        {
+                        if ipv6_overlap(&n, query_v6) {
                             let name = format!("{} ({})", dev.device_name, pretty_net(&n));
                             push_result(
                                 &mut results,
@@ -164,19 +218,79 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                             );
                         }
                     }
+                    for circuit in dynamic_snapshot.iter() {
+                        if results.len() >= MAX_RESULTS {
+                            break;
+                        }
+                        let dev = &circuit.shaped;
+                        for (addr, prefix) in &dev.ipv4 {
+                            if results.len() >= MAX_RESULTS {
+                                break;
+                            }
+                            let Some(prefix_u8) = u8::try_from(*prefix).ok() else {
+                                continue;
+                            };
+                            let Ok(v4net) = Ipv4Network::new(*addr, prefix_u8) else {
+                                continue;
+                            };
+                            let addr = v4net.network_address().to_ipv6_mapped();
+                            let mapped_pref = prefix_u8.saturating_add(96);
+                            let Ok(v6net) = Ipv6Network::new(addr, mapped_pref) else {
+                                continue;
+                            };
+                            let n = IpNetwork::V6(v6net);
+                            if ipv6_overlap(&n, query_v6) {
+                                let name =
+                                    format!("{} ({})", dev.device_name, pretty_net(&n));
+                                push_result(
+                                    &mut results,
+                                    &mut seen,
+                                    SearchResult::Device {
+                                        circuit_id: dev.circuit_id.clone(),
+                                        name,
+                                        circuit_name: dev.circuit_name.clone(),
+                                    },
+                                    MAX_RESULTS,
+                                );
+                            }
+                        }
+                        for (addr, prefix) in &dev.ipv6 {
+                            if results.len() >= MAX_RESULTS {
+                                break;
+                            }
+                            let Some(prefix_u8) = u8::try_from(*prefix).ok() else {
+                                continue;
+                            };
+                            let Ok(v6net) = Ipv6Network::new(*addr, prefix_u8) else {
+                                continue;
+                            };
+                            let n = IpNetwork::V6(v6net);
+                            if ipv6_overlap(&n, query_v6) {
+                                let name =
+                                    format!("{} ({})", dev.device_name, pretty_net(&n));
+                                push_result(
+                                    &mut results,
+                                    &mut seen,
+                                    SearchResult::Device {
+                                        circuit_id: dev.circuit_id.clone(),
+                                        name,
+                                        circuit_name: dev.circuit_name.clone(),
+                                    },
+                                    MAX_RESULTS,
+                                );
+                            }
+                        }
+                    }
                 }
             }
         } else {
             // Fallback: textual prefix (e.g., "10.1.")
-            let sd_reader = SHAPED_DEVICES.load();
-            for (n, &idx) in sd_reader.trie.iter() {
+            for (n, dev) in catalog.iter_ip_mappings() {
                 if results.len() >= MAX_RESULTS {
                     break;
                 }
                 let s = pretty_net(&n);
-                if s.starts_with(raw_term)
-                    && let Some(dev) = sd_reader.devices.get(idx)
-                {
+                if s.starts_with(raw_term) {
                     let name = format!("{} ({})", dev.device_name, s);
                     push_result(
                         &mut results,
@@ -190,16 +304,108 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                     );
                 }
             }
+            for circuit in dynamic_snapshot.iter() {
+                if results.len() >= MAX_RESULTS {
+                    break;
+                }
+                let dev = &circuit.shaped;
+                for (addr, prefix) in &dev.ipv4 {
+                    if results.len() >= MAX_RESULTS {
+                        break;
+                    }
+                    let Some(prefix_u8) = u8::try_from(*prefix).ok() else {
+                        continue;
+                    };
+                    let Ok(net) = Ipv4Network::new(*addr, prefix_u8) else {
+                        continue;
+                    };
+                    let n = IpNetwork::V4(net);
+                    let s = pretty_net(&n);
+                    if s.starts_with(raw_term) {
+                        let name = format!("{} ({})", dev.device_name, s);
+                        push_result(
+                            &mut results,
+                            &mut seen,
+                            SearchResult::Device {
+                                circuit_id: dev.circuit_id.clone(),
+                                name,
+                                circuit_name: dev.circuit_name.clone(),
+                            },
+                            MAX_RESULTS,
+                        );
+                    }
+                }
+                for (addr, prefix) in &dev.ipv6 {
+                    if results.len() >= MAX_RESULTS {
+                        break;
+                    }
+                    let Some(prefix_u8) = u8::try_from(*prefix).ok() else {
+                        continue;
+                    };
+                    let Ok(net) = Ipv6Network::new(*addr, prefix_u8) else {
+                        continue;
+                    };
+                    let n = IpNetwork::V6(net);
+                    let s = pretty_net(&n);
+                    if s.starts_with(raw_term) {
+                        let name = format!("{} ({})", dev.device_name, s);
+                        push_result(
+                            &mut results,
+                            &mut seen,
+                            SearchResult::Device {
+                                circuit_id: dev.circuit_id.clone(),
+                                name,
+                                circuit_name: dev.circuit_name.clone(),
+                            },
+                            MAX_RESULTS,
+                        );
+                    }
+                }
+            }
         }
     }
 
     // Third pass: Circuit/Device name substring matches
     if results.len() < MAX_RESULTS && term_lc.len() >= 3 {
-        let sd_reader = SHAPED_DEVICES.load();
-        for sd in sd_reader.devices.iter() {
+        for sd in catalog.iter_devices() {
             if results.len() >= MAX_RESULTS {
                 break;
             }
+            let circuit_name_lc = sd.circuit_name.to_lowercase();
+            if circuit_name_lc.contains(&term_lc) {
+                push_result(
+                    &mut results,
+                    &mut seen,
+                    SearchResult::Circuit {
+                        id: sd.circuit_id.clone(),
+                        name: sd.circuit_name.clone(),
+                    },
+                    MAX_RESULTS,
+                );
+            }
+            if results.len() >= MAX_RESULTS {
+                break;
+            }
+            let device_name_lc = sd.device_name.to_lowercase();
+            if device_name_lc.contains(&term_lc) {
+                push_result(
+                    &mut results,
+                    &mut seen,
+                    SearchResult::Device {
+                        circuit_id: sd.circuit_id.clone(),
+                        name: sd.device_name.clone(),
+                        circuit_name: sd.circuit_name.clone(),
+                    },
+                    MAX_RESULTS,
+                );
+            }
+        }
+
+        for circuit in dynamic_snapshot.iter() {
+            if results.len() >= MAX_RESULTS {
+                break;
+            }
+            let sd = &circuit.shaped;
             let circuit_name_lc = sd.circuit_name.to_lowercase();
             if circuit_name_lc.contains(&term_lc) {
                 push_result(
@@ -233,23 +439,24 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
 
     // Fourth pass: Site name substring matches
     if results.len() < MAX_RESULTS && term_lc.len() >= 3 {
-        let net_reader = NETWORK_JSON.read();
-        for (idx, n) in net_reader.get_nodes_when_ready().iter().enumerate() {
-            if results.len() >= MAX_RESULTS {
-                break;
+        lqos_network_devices::with_network_json_read(|net_reader| {
+            for (idx, n) in net_reader.get_nodes_when_ready().iter().enumerate() {
+                if results.len() >= MAX_RESULTS {
+                    break;
+                }
+                if n.name.to_lowercase().contains(&term_lc) {
+                    push_result(
+                        &mut results,
+                        &mut seen,
+                        SearchResult::Site {
+                            idx,
+                            name: n.name.clone(),
+                        },
+                        MAX_RESULTS,
+                    );
+                }
             }
-            if n.name.to_lowercase().contains(&term_lc) {
-                push_result(
-                    &mut results,
-                    &mut seen,
-                    SearchResult::Site {
-                        idx,
-                        name: n.name.clone(),
-                    },
-                    MAX_RESULTS,
-                );
-            }
-        }
+        });
     }
 
     results

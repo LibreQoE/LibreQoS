@@ -1,4 +1,3 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_config::ShapedDevice;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
@@ -30,6 +29,16 @@ pub struct ShapedDevicesPageQuery {
     pub page_size: Option<usize>,
     #[serde(default, deserialize_with = "deserialize_optional_string")]
     pub search: Option<String>,
+    /// Which inventory surface to display.
+    #[serde(default)]
+    pub kind: Option<ShapedDevicesPageKind>,
+}
+
+/// Which shaped-device inventory source to query.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ShapedDevicesPageKind {
+    Static,
+    Dynamic,
 }
 
 /// A server-paged slice of shaped devices plus total result counts.
@@ -53,37 +62,48 @@ pub fn shaped_devices_page(query: ShapedDevicesPageQuery) -> ShapedDevicesPage {
     let page = query.page.unwrap_or(0);
     let page_size = normalized_page_size(&query);
     let search = query.search.as_deref().unwrap_or("").trim().to_lowercase();
-    let devices = SHAPED_DEVICES.load();
+    let kind = query.kind.clone().unwrap_or(ShapedDevicesPageKind::Static);
 
-    let mut filtered: Vec<ShapedDevice> = devices
-        .devices
-        .iter()
-        .filter(|device| {
-            if search.is_empty() {
-                return true;
-            }
-            device.device_name.to_lowercase().contains(&search)
-                || device.circuit_name.to_lowercase().contains(&search)
-                || device.parent_node.to_lowercase().contains(&search)
-                || device.circuit_id.to_lowercase().contains(&search)
-                || device.device_id.to_lowercase().contains(&search)
-                || device.mac.to_lowercase().contains(&search)
-                || device.comment.to_lowercase().contains(&search)
-                || device
-                    .sqm_override
-                    .as_deref()
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .contains(&search)
-                || device.ipv4.iter().any(|(addr, prefix)| {
-                    format!("{addr}/{prefix}").to_lowercase().contains(&search)
-                })
-                || device.ipv6.iter().any(|(addr, prefix)| {
-                    format!("{addr}/{prefix}").to_lowercase().contains(&search)
-                })
-        })
-        .cloned()
-        .collect();
+    let matches_search = |device: &ShapedDevice| {
+        if search.is_empty() {
+            return true;
+        }
+        device.device_name.to_lowercase().contains(&search)
+            || device.circuit_name.to_lowercase().contains(&search)
+            || device.parent_node.to_lowercase().contains(&search)
+            || device.circuit_id.to_lowercase().contains(&search)
+            || device.device_id.to_lowercase().contains(&search)
+            || device.mac.to_lowercase().contains(&search)
+            || device.comment.to_lowercase().contains(&search)
+            || device
+                .sqm_override
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&search)
+            || device
+                .ipv4
+                .iter()
+                .any(|(addr, prefix)| format!("{addr}/{prefix}").to_lowercase().contains(&search))
+            || device
+                .ipv6
+                .iter()
+                .any(|(addr, prefix)| format!("{addr}/{prefix}").to_lowercase().contains(&search))
+    };
+
+    let mut filtered: Vec<ShapedDevice> = match kind {
+        ShapedDevicesPageKind::Static => lqos_network_devices::shaped_devices_catalog()
+            .iter_devices()
+            .filter(|device| matches_search(device))
+            .cloned()
+            .collect(),
+        ShapedDevicesPageKind::Dynamic => lqos_network_devices::dynamic_circuits_snapshot()
+            .iter()
+            .map(|circuit| &circuit.shaped)
+            .filter(|device| matches_search(device))
+            .cloned()
+            .collect(),
+    };
     filtered.sort_by(|left, right| {
         left.circuit_name
             .cmp(&right.circuit_name)
@@ -114,6 +134,7 @@ pub fn shaped_devices_page(query: ShapedDevicesPageQuery) -> ShapedDevicesPage {
             } else {
                 query.search
             },
+            kind: Some(kind),
         },
         total_rows,
         total_circuits,

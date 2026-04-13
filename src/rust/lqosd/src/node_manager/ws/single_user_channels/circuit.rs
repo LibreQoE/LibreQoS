@@ -2,33 +2,32 @@ use crate::node_manager::local_api::circuit_activity::{CircuitSummaryData, circu
 use crate::node_manager::ws::messages::{CircuitDevicesResult, WsResponse, encode_ws_message};
 use crate::node_manager::ws::ticker::all_circuits;
 use crate::rtt_exclusions;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::{circuit_current_qoo, circuit_current_rtt_p50_nanos};
 use lqos_bus::{BusRequest, Circuit};
+use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tracing::info;
 
 fn qoo_score_for_circuit(circuit: &str) -> Option<f32> {
-    circuit_hash_for_id(circuit).and_then(|hash| {
-        let qoo = circuit_current_qoo(hash);
-        match (qoo.down, qoo.up) {
-            (Some(d), Some(u)) => Some(d.min(u)),
-            (Some(d), None) => Some(d),
-            (None, Some(u)) => Some(u),
-            (None, None) => None,
-        }
-    })
+    let circuit_hash = circuit_hash_for_id(circuit)?;
+    let qoo = circuit_current_qoo(circuit_hash);
+    match (qoo.down, qoo.up) {
+        (Some(d), Some(u)) => Some(d.min(u)),
+        (Some(d), None) => Some(d),
+        (None, Some(u)) => Some(u),
+        (None, None) => None,
+    }
 }
 
 fn circuit_hash_for_id(circuit: &str) -> Option<i64> {
-    let shaped = SHAPED_DEVICES.load();
-    shaped
-        .devices
-        .iter()
-        .find(|d| d.circuit_id == circuit)
-        .map(|d| d.circuit_hash)
+    let trimmed = circuit.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(hash_to_i64(trimmed))
+    }
 }
 
 fn summarize_circuit_devices(circuit: &str, devices: &[Circuit]) -> CircuitSummaryData {

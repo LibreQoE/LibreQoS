@@ -582,7 +582,7 @@ pub fn compute_topology_source_generation(
         hash_file_state(&mut hasher, TOPOLOGY_EDITOR_STATE_FILENAME, &editor_path)?;
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(crate::hex_encoding::encode_hex_lower(hasher.finalize()))
 }
 
 impl TopologyAttachmentHealthStateFile {
@@ -667,7 +667,7 @@ impl TopologyShapingInputsFile {
         hasher.update(b"topology-runtime-shaping-generation");
         hasher.update([0xff]);
         hasher.update(payload);
-        Ok(format!("{:x}", hasher.finalize()))
+        Ok(crate::hex_encoding::encode_hex_lower(hasher.finalize()))
     }
 }
 
@@ -702,7 +702,7 @@ pub fn compute_effective_network_generation(
     hasher.update(b"topology-runtime-effective-generation");
     hasher.update([0xff]);
     hasher.update(payload);
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(crate::hex_encoding::encode_hex_lower(hasher.finalize()))
 }
 
 impl TopologyRuntimeStatusFile {

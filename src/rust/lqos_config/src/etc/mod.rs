@@ -19,8 +19,9 @@ mod python_migration;
 pub mod test_data;
 mod v15;
 pub use v15::{
-    BridgeConfig, IntegrationConfig, LazyQueueMode, MikrotikIpv6Config, QueueMode, RttThresholds,
-    SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TopologyConfig,
+    BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
+    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
+    StormguardStrategy, TopologyConfig,
     TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig, Tunables,
 };

@@ -5,7 +5,6 @@ use crate::node_manager::ws::messages::{
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::shaped_devices_tracker::NETWORK_JSON;
 use lqos_bakery::{
     BakeryActivityEntry as BakeryActivitySnapshot, BakeryApplyType, BakeryMode,
     BakeryPreflightSnapshot, BakeryRuntimeNodeOperationAction, BakeryRuntimeNodeOperationStatus,
@@ -79,11 +78,12 @@ fn map_preflight(snapshot: BakeryPreflightSnapshot) -> BakeryPreflightData {
 }
 
 fn resolve_site_name(site_hash: i64) -> Option<String> {
-    let reader = NETWORK_JSON.read();
-    reader
-        .get_nodes_when_ready()
-        .iter()
-        .find_map(|node| (hash_to_i64(&node.name) == site_hash).then(|| node.name.clone()))
+    lqos_network_devices::with_network_json_read(|net_json| {
+        net_json
+            .get_nodes_when_ready()
+            .iter()
+            .find_map(|node| (hash_to_i64(&node.name) == site_hash).then(|| node.name.clone()))
+    })
 }
 
 fn resolve_runtime_site_name(site_hash: i64) -> Option<String> {

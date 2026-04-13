@@ -1,6 +1,5 @@
 use crate::node_manager::auth::LoginResult;
 use crate::node_manager::local_api::network_mode::NetworkModeInspection;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::shaping_runtime::ShapingRuntimeStatus;
 use axum::http::StatusCode;
 use default_net::get_interfaces;
@@ -10,7 +9,6 @@ use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::Arc;
 
 type TopologySourceIntegration = (&'static str, fn(&Config) -> bool);
 
@@ -382,7 +380,7 @@ pub fn network_json_data() -> Value {
 }
 
 pub fn all_shaped_devices_data() -> Vec<ShapedDevice> {
-    SHAPED_DEVICES.load().devices.clone()
+    lqos_network_devices::shaped_devices_catalog().clone_all_devices()
 }
 
 /// Returns the enabled integration names that act as the source of truth for
@@ -626,7 +624,11 @@ fn persist_shaped_devices(mut devices: Vec<ShapedDevice>) -> Result<(), String> 
     copied
         .write_csv("ShapedDevices.csv")
         .map_err(|e| format!("Unable to write ShapedDevices.csv: {e}"))?;
-    SHAPED_DEVICES.store(Arc::new(copied));
+    lqos_network_devices::apply_shaped_devices_snapshot(
+        "node_manager:persist_shaped_devices",
+        copied,
+    )
+    .map_err(|e| format!("Unable to publish ShapedDevices.csv snapshot: {e}"))?;
 
     Ok(())
 }
@@ -663,6 +665,8 @@ pub fn update_network_and_devices_data(
     ensure_topology_editor_unlocked()?;
     persist_network_json(&network_json)?;
     persist_shaped_devices(shaped_devices)?;
+    lqos_network_devices::request_reload_network_json("node_manager:update_network_and_devices")
+        .map_err(|e| format!("Unable to reload network.json: {e}"))?;
 
     Ok(())
 }
@@ -682,6 +686,8 @@ pub fn update_network_json_only_data(
     ensure_topology_editor_unlocked()?;
 
     persist_network_json(&network_json)?;
+    lqos_network_devices::request_reload_network_json("node_manager:update_network_json_only")
+        .map_err(|e| format!("Unable to reload network.json: {e}"))?;
 
     Ok(())
 }
@@ -696,10 +702,8 @@ pub fn get_shaped_device_data(
         return Err(StatusCode::FORBIDDEN);
     }
     let wanted = device_id.trim();
-    Ok(SHAPED_DEVICES
-        .load()
-        .devices
-        .iter()
+    Ok(lqos_network_devices::shaped_devices_catalog()
+        .iter_devices()
         .find(|device| device.device_id == wanted)
         .cloned())
 }
@@ -716,7 +720,7 @@ pub fn create_shaped_device_data(
         return Err("Unauthorized".to_string());
     }
     ensure_topology_editor_unlocked()?;
-    let mut devices = SHAPED_DEVICES.load().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     devices.push(device.clone());
     persist_shaped_devices(devices)?;
     let created = get_shaped_device_data(login, device.device_id.clone())
@@ -739,7 +743,7 @@ pub fn update_shaped_device_data(
         return Err("Unauthorized".to_string());
     }
     ensure_topology_editor_unlocked()?;
-    let mut devices = SHAPED_DEVICES.load().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     let wanted = original_device_id.trim();
     let Some(index) = devices.iter().position(|row| row.device_id == wanted) else {
         return Err("Not found".to_string());
@@ -763,7 +767,7 @@ pub fn delete_shaped_device_data(login: LoginResult, device_id: String) -> Resul
     }
     ensure_topology_editor_unlocked()?;
     let wanted = device_id.trim();
-    let mut devices = SHAPED_DEVICES.load().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     let before = devices.len();
     devices.retain(|device| device.device_id != wanted);
     if devices.len() == before {

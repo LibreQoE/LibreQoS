@@ -1,0 +1,100 @@
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Dynamic Circuits</h5>
+                    <div class="lqos-config-panel-subtitle">
+                        Configure dynamic circuit promotion and default shaping rates for unknown IPs. This section is optional and safe to omit on systems that do not use dynamic circuits yet.
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <h6 class="lqos-config-section-title">Operation</h6>
+                        <div class="lqos-config-section-subtitle">Enable the subsystem and choose retention and promotion behavior.</div>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-xl-6">
+                                <div class="mb-0 form-check form-switch">
+                                    <input type="checkbox" class="form-check-input" id="dynamicCircuitsEnabled">
+                                    <label class="form-check-label" for="dynamicCircuitsEnabled">Enable Dynamic Circuits</label>
+                                    <div class="form-text">Master switch for dynamic circuit tracking and promotion.</div>
+                                </div>
+                            </div>
+
+                            <div class="col-12 col-xl-6">
+                                <label for="dynamicCircuitsTtlSeconds" class="form-label">Time to Live</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="dynamicCircuitsTtlSeconds" min="1" step="1" value="300">
+                                    <span class="input-group-text">seconds</span>
+                                </div>
+                                <div class="form-text">How long dynamic circuit state remains valid without being seen.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <h6 class="lqos-config-section-title">Range Rules</h6>
+                        <div class="lqos-config-section-subtitle">Define the IP networks that should receive default rates and an optional topology attachment.</div>
+
+                        <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+                            <div class="form-check form-switch mb-0">
+                                <input type="checkbox" class="form-check-input" id="unknownIpPromotionEnabled">
+                                <label class="form-check-label" for="unknownIpPromotionEnabled">Enable Unknown IP Promotion</label>
+                                <div class="form-text">When enabled, unknown IP traffic is evaluated against the range rules below.</div>
+                            </div>
+
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" id="addDynamicRange" class="btn btn-outline-primary btn-sm">
+                                    <i class="fa fa-plus me-1"></i>Add Rule
+                                </button>
+                            </div>
+                        </div>
+
+                        <datalist id="networkNodesDatalist"></datalist>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover align-middle lqos-config-responsive-table">
+                                <thead>
+                                    <tr>
+                                        <th style="min-width: 9rem;">Name</th>
+                                        <th style="min-width: 10rem;">
+                                            IP Range
+                                            <span
+                                                class="ms-1 text-muted"
+                                                role="button"
+                                                tabindex="0"
+                                                aria-label="IP range help"
+                                                data-bs-toggle="tooltip"
+                                                data-bs-placement="top"
+                                                title="CIDR notation (for example 192.168.200.0/24). 0.0.0.0 and :: mean match-all."
+                                            ><i class="fas fa-info-circle"></i></span>
+                                        </th>
+                                        <th style="min-width: 9rem;">Min Mbps</th>
+                                        <th style="min-width: 9rem;">Max Mbps</th>
+                                        <th style="min-width: 11rem;">Attach To</th>
+                                        <th style="min-width: 5rem;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dynamicRangesBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="lqos-config-actions">
+            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+        </div>
+    </form>
+</div>
+
+<script src="config_dynamic_circuits.js%CACHEBUSTERS%"></script>

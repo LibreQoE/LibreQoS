@@ -218,6 +218,23 @@ pub enum BusRequest {
     /// Requests that the configuration be updated
     UpdateLqosdConfig(Box<lqos_config::Config>),
 
+    /// Create or update a runtime-only dynamic circuit overlay entry.
+    ///
+    /// This does **not** mutate `ShapedDevices.csv`. The daemon may ignore this request when
+    /// dynamic circuits are disabled in the configuration.
+    CreateDynamicCircuit {
+        /// Shaped-device-like definition for the dynamic circuit/device.
+        shaped_device: Box<lqos_config::ShapedDevice>,
+    },
+
+    /// Remove a runtime-only dynamic circuit overlay entry.
+    ///
+    /// The daemon may ignore this request when dynamic circuits are disabled in the configuration.
+    RemoveDynamicCircuit {
+        /// Stable circuit identifier to remove.
+        circuit_id: String,
+    },
+
     /// Invalidate cached Node Manager authentication state.
     InvalidateAuthCache,
 

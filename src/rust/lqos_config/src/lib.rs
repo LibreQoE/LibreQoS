@@ -15,6 +15,7 @@ mod circuit_ethernet_metadata;
 mod cpu_topology;
 mod etc;
 mod ethernet_port_limits;
+mod hex_encoding;
 mod mikrotik_ipv6_credentials;
 mod network_json;
 mod planner;
@@ -40,8 +41,9 @@ pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
 pub use etc::{
-    BridgeConfig, Config, LazyQueueMode, MikrotikIpv6Config, QueueMode, RttThresholds,
-    SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TopologyConfig,
+    BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode, QueueMode,
+    MikrotikIpv6Config, RttThresholds, SingleInterfaceConfig, StormguardConfig,
+    StormguardStrategy, TopologyConfig,
     TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge,
     enable_long_term_stats, load_config, treeguard_cpu_mode_migration_notice, update_config,

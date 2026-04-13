@@ -111,6 +111,12 @@ pub struct Config {
     /// IP Range definitions
     pub ip_ranges: super::ip_ranges::IpRanges,
 
+    /// Dynamic circuits configuration.
+    ///
+    /// Optional so older configs without this section still deserialize cleanly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic_circuits: Option<super::dynamic_circuits::DynamicCircuitsConfig>,
+
     /// Network flows configuration
     pub flows: Option<super::flows::FlowConfig>,
 
@@ -201,7 +207,7 @@ impl Config {
     pub fn calculate_node_id() -> String {
         if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
             let hash = sha2::Sha256::new().chain(machine_id).finalize();
-            format!("{:x}", hash)
+            crate::hex_encoding::encode_hex_lower(hash)
         } else {
             Uuid::new_v4().to_string()
         }
@@ -279,6 +285,9 @@ impl Config {
             stormguard.validate()?;
         }
         self.treeguard.validate()?;
+        if let Some(dynamic_circuits) = &self.dynamic_circuits {
+            dynamic_circuits.validate()?;
+        }
         Ok(())
     }
 
@@ -352,6 +361,7 @@ impl Default for Config {
             queues: super::queues::QueueConfig::default(),
             long_term_stats: super::long_term_stats::LongTermStats::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
+            dynamic_circuits: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
             topology: super::topology::TopologyConfig::default(),
             mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),

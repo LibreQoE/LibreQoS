@@ -9,10 +9,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{
-    CIRCUIT_LIVE_LAST_REFRESH_SECS, CIRCUIT_LIVE_REFRESH_LOCK, CIRCUIT_LIVE_SNAPSHOT,
-    SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, shaped_device_from_hashes_or_ip,
-};
+use super::{CIRCUIT_LIVE_LAST_REFRESH_SECS, CIRCUIT_LIVE_REFRESH_LOCK, CIRCUIT_LIVE_SNAPSHOT};
 
 /// Per-circuit live metrics aggregated from the device-level throughput tracker.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -87,18 +84,13 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
     };
     let kernel_now: std::time::Duration = kernel_now.into();
 
-    let shaped_devices = SHAPED_DEVICES.load();
-    let cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let mut by_circuit_id: FxHashMap<String, CircuitAccumulator> = FxHashMap::default();
 
     for (ip_key, data) in THROUGHPUT_TRACKER.raw_data.lock().iter() {
-        let device = shaped_device_from_hashes_or_ip(
-            &shaped_devices,
-            &cache,
-            ip_key,
-            data.device_hash,
-            data.circuit_hash,
-        );
+        let device = catalog
+            .device_by_hashes(data.device_hash, data.circuit_hash)
+            .or_else(|| catalog.device_longest_match_for_ip(ip_key).map(|(_, dev)| dev));
         let Some(device) = device else {
             continue;
         };

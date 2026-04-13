@@ -1,5 +1,4 @@
 use crate::node_manager::local_api::network_tree;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -85,10 +84,10 @@ pub fn circuit_directory_page(query: CircuitDirectoryQuery) -> CircuitDirectoryP
     let page = query.page.unwrap_or(0);
     let page_size = normalized_page_size(&query);
     let search = query.search.as_deref().unwrap_or("").trim().to_lowercase();
-    let devices = SHAPED_DEVICES.load();
+    let catalog = lqos_network_devices::network_devices_catalog();
 
     let mut circuits: BTreeMap<String, CircuitDirectoryRow> = BTreeMap::new();
-    for device in &devices.devices {
+    for device in catalog.iter_all_devices() {
         let circuit_id = device.circuit_id.trim().to_string();
         if circuit_id.is_empty() {
             continue;
@@ -210,10 +209,10 @@ pub fn treeguard_metadata_summary() -> TreeGuardMetadataSummary {
         })
         .count();
 
-    let devices = SHAPED_DEVICES.load();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let mut circuit_ids = BTreeSet::new();
     let mut fq_codel_circuit_ids = BTreeSet::new();
-    for device in &devices.devices {
+    for device in catalog.iter_all_devices() {
         let circuit_id = device.circuit_id.trim().to_string();
         if circuit_id.is_empty() {
             continue;

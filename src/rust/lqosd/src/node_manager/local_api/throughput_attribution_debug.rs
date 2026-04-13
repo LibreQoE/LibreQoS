@@ -1,13 +1,16 @@
-use crate::shaped_devices_tracker::{
-    SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, ShapedDeviceMatchSource,
-    shaped_device_match_from_hashes_or_ip,
-};
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use axum::Json;
 use serde::Serialize;
 use std::time::Duration;
 
 const RECENT_WINDOW_SECONDS: u64 = 5 * 60;
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+pub(crate) enum ShapedDeviceMatchSource {
+    DeviceHash,
+    CircuitHash,
+    IpFallback,
+}
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct ThroughputAttributionDebug {
@@ -61,8 +64,7 @@ pub(crate) fn throughput_attribution_debug_data() -> ThroughputAttributionDebug 
     let now = Duration::from(time_since_boot).as_nanos() as u64;
     let recent_cutoff_nanos = RECENT_WINDOW_SECONDS * 1_000_000_000;
 
-    let shaped = SHAPED_DEVICES.load();
-    let cache = SHAPED_DEVICE_HASH_CACHE.load();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let raw = THROUGHPUT_TRACKER.raw_data.lock();
 
     let mut stats = ThroughputAttributionDebug {
@@ -108,13 +110,7 @@ pub(crate) fn throughput_attribution_debug_data() -> ThroughputAttributionDebug 
             stats.recent_entries_missing_both_hashes += 1;
         }
 
-        match shaped_device_match_from_hashes_or_ip(
-            &shaped,
-            &cache,
-            ip,
-            entry.device_hash,
-            entry.circuit_hash,
-        ) {
+        match match_source_for_entry(&catalog, ip, entry.device_hash, entry.circuit_hash) {
             Some((_device, ShapedDeviceMatchSource::DeviceHash)) => {
                 stats.recent_entries_resolved_by_device_hash += 1;
             }
@@ -143,4 +139,27 @@ pub(crate) fn throughput_attribution_debug_data() -> ThroughputAttributionDebug 
     }
 
     stats
+}
+
+fn match_source_for_entry<'a>(
+    catalog: &'a lqos_network_devices::NetworkDevicesCatalog,
+    ip: &lqos_utils::XdpIpAddress,
+    device_hash: Option<i64>,
+    circuit_hash: Option<i64>,
+) -> Option<(&'a lqos_config::ShapedDevice, ShapedDeviceMatchSource)> {
+    if let Some(hash) = device_hash {
+        if let Some(device) = catalog.device_by_hashes(Some(hash), None) {
+            return Some((device, ShapedDeviceMatchSource::DeviceHash));
+        }
+    }
+
+    if let Some(hash) = circuit_hash {
+        if let Some(device) = catalog.device_by_hashes(None, Some(hash)) {
+            return Some((device, ShapedDeviceMatchSource::CircuitHash));
+        }
+    }
+
+    catalog
+        .device_longest_match_for_ip(ip)
+        .map(|(_net, device)| (device, ShapedDeviceMatchSource::IpFallback))
 }

@@ -1,5 +1,4 @@
 use crate::node_manager::local_api::unknown_ips::get_unknown_ips;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use serde::Serialize;
 use std::collections::BTreeSet;
 
@@ -11,16 +10,15 @@ pub struct DeviceCount {
 }
 
 pub fn device_count() -> DeviceCount {
-    let shaped_devices = SHAPED_DEVICES.load();
+    let shaped_devices = lqos_network_devices::shaped_devices_catalog();
     let mapped_circuits = shaped_devices
-        .devices
-        .iter()
+        .iter_devices()
         .map(|device| device.circuit_hash)
         .collect::<BTreeSet<_>>()
         .len();
 
     DeviceCount {
-        shaped_devices: shaped_devices.devices.len(),
+        shaped_devices: shaped_devices.devices_len(),
         unknown_ips: get_unknown_ips().len(),
         mapped_circuits,
     }

@@ -1464,17 +1464,16 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    // Load "shaped devices" snapshot and pick devices in the target circuit
-    let shaped = crate::shaped_devices_tracker::SHAPED_DEVICES.load();
-    let shaped_cache = crate::shaped_devices_tracker::SHAPED_DEVICE_HASH_CACHE.load();
-    let mut device_indexes: Vec<usize> = Vec::new();
-    for (idx, dev) in shaped.devices.iter().enumerate() {
-        if dev.circuit_hash == circuit_hash {
-            device_indexes.push(idx);
-        }
-    }
+    // Load network devices catalog and pick devices in the target circuit.
+    // This includes dynamic circuits so circuit streaming works consistently for runtime overlays.
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let circuit_devices = catalog
+        .iter_all_devices()
+        .filter(|dev| dev.circuit_hash == circuit_hash)
+        .cloned()
+        .collect::<Vec<_>>();
 
-    // Aggregation holders per device index
+    // Aggregation holders per device hash
     use lqos_utils::units::{DownUpOrder, down_up_divide};
     struct Agg {
         bps_bytes: DownUpOrder<u64>,
@@ -1482,18 +1481,7 @@ async fn circuit_snapshot_streaming(
         tcp_retries: DownUpOrder<u64>,
         rtts: Vec<f32>,
     }
-    let mut aggregates: std::collections::HashMap<usize, Agg> = std::collections::HashMap::new();
-    for idx in &device_indexes {
-        aggregates.insert(
-            *idx,
-            Agg {
-                bps_bytes: DownUpOrder::zeroed(),
-                tcp_packets: DownUpOrder::zeroed(),
-                tcp_retries: DownUpOrder::zeroed(),
-                rtts: Vec::new(),
-            },
-        );
-    }
+    let mut aggregates: std::collections::HashMap<i64, Agg> = std::collections::HashMap::new();
 
     // Walk raw throughput data and fold into devices of this circuit
     {
@@ -1501,34 +1489,32 @@ async fn circuit_snapshot_streaming(
             .raw_data
             .lock();
         for (xdp_ip, te) in raw.iter() {
-            let device = crate::shaped_devices_tracker::shaped_device_from_hashes_or_ip(
-                &shaped,
-                &shaped_cache,
-                xdp_ip,
-                te.device_hash,
-                te.circuit_hash,
-            );
-            let matches_desired = te.circuit_hash == Some(circuit_hash)
-                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            let device = catalog
+                .device_by_hashes(te.device_hash, te.circuit_hash)
+                .or_else(|| catalog.device_longest_match_for_ip(xdp_ip).map(|(_, device)| device));
+            let matches_desired =
+                te.circuit_hash == Some(circuit_hash)
+                    || device.is_some_and(|device| device.circuit_hash == circuit_hash);
             if !matches_desired {
                 continue;
             }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            if let Some(id) = device.and_then(|device| {
-                shaped
-                    .devices
-                    .iter()
-                    .position(|candidate| std::ptr::eq(candidate, device))
-            }) && let Some(agg) = aggregates.get_mut(&id)
-            {
-                // bytes_per_second -> later convert to bits
-                agg.bps_bytes += te.bytes_per_second;
-                agg.tcp_packets += te.tcp_packets;
-                agg.tcp_retries += te.tcp_retransmits;
-                if let Some(rtt) = te.median_latency() {
-                    agg.rtts.push(rtt);
-                }
+            let Some(device_hash) = device.map(|device| device.device_hash) else {
+                continue;
+            };
+            let agg = aggregates.entry(device_hash).or_insert_with(|| Agg {
+                bps_bytes: DownUpOrder::zeroed(),
+                tcp_packets: DownUpOrder::zeroed(),
+                tcp_retries: DownUpOrder::zeroed(),
+                rtts: Vec::new(),
+            });
+            // bytes_per_second -> later convert to bits
+            agg.bps_bytes += te.bytes_per_second;
+            agg.tcp_packets += te.tcp_packets;
+            agg.tcp_retries += te.tcp_retransmits;
+            if let Some(rtt) = te.median_latency() {
+                agg.rtts.push(rtt);
             }
         }
         // raw lock dropped here
@@ -1536,9 +1522,8 @@ async fn circuit_snapshot_streaming(
 
     // Build device snapshots
     let mut devices_out: Vec<DeviceSnapshot> = Vec::new();
-    for idx in device_indexes {
-        let dev = &shaped.devices[idx];
-        let agg = aggregates.remove(&idx).unwrap_or(Agg {
+    for dev in circuit_devices {
+        let agg = aggregates.remove(&dev.device_hash).unwrap_or(Agg {
             bps_bytes: DownUpOrder::zeroed(),
             tcp_packets: DownUpOrder::zeroed(),
             tcp_retries: DownUpOrder::zeroed(),
@@ -1607,15 +1592,16 @@ async fn circuit_snapshot_streaming(
             if local.last_seen < five_minutes_ago {
                 continue;
             }
-            let device = crate::shaped_devices_tracker::shaped_device_from_hashes_or_ip(
-                &shaped,
-                &shaped_cache,
-                &key.local_ip,
-                local.device_hash,
-                local.circuit_hash,
-            );
-            let matches_desired = local.circuit_hash == Some(circuit_hash)
-                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            let device = catalog
+                .device_by_hashes(local.device_hash, local.circuit_hash)
+                .or_else(|| {
+                    catalog
+                        .device_longest_match_for_ip(&key.local_ip)
+                        .map(|(_, device)| device)
+                });
+            let matches_desired =
+                local.circuit_hash == Some(circuit_hash)
+                    || device.is_some_and(|device| device.circuit_hash == circuit_hash);
             if !matches_desired {
                 continue;
             }
@@ -1696,32 +1682,34 @@ async fn tree_snapshot_streaming(
     }
 
     // Use the same data source as local_api::network_tree
-    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read();
-    let result: Vec<(usize, LiveNetworkTransport)> = net_json
-        .get_nodes_when_ready()
-        .iter()
-        .enumerate()
-        .map(|(i, n)| {
-            let t = n.clone_to_transit();
-            let mapped = LiveNetworkTransport {
-                name: t.name,
-                max_throughput: t.max_throughput,
-                current_throughput: t.current_throughput,
-                current_packets: t.current_packets,
-                current_tcp_packets: t.current_tcp_packets,
-                current_udp_packets: t.current_udp_packets,
-                current_icmp_packets: t.current_icmp_packets,
-                current_retransmits: t.current_retransmits,
-                current_marks: t.current_marks,
-                current_drops: t.current_drops,
-                rtts: t.rtts,
-                parents: t.parents,
-                immediate_parent: t.immediate_parent,
-                node_type: t.node_type,
-            };
-            (i, mapped)
-        })
-        .collect();
+    let result: Vec<(usize, LiveNetworkTransport)> =
+        lqos_network_devices::with_network_json_read(|net_json| {
+            net_json
+                .get_nodes_when_ready()
+                .iter()
+                .enumerate()
+                .map(|(i, n)| {
+                    let t = n.clone_to_transit();
+                    let mapped = LiveNetworkTransport {
+                        name: t.name,
+                        max_throughput: t.max_throughput,
+                        current_throughput: t.current_throughput,
+                        current_packets: t.current_packets,
+                        current_tcp_packets: t.current_tcp_packets,
+                        current_udp_packets: t.current_udp_packets,
+                        current_icmp_packets: t.current_icmp_packets,
+                        current_retransmits: t.current_retransmits,
+                        current_marks: t.current_marks,
+                        current_drops: t.current_drops,
+                        rtts: t.rtts,
+                        parents: t.parents,
+                        immediate_parent: t.immediate_parent,
+                        node_type: t.node_type,
+                    };
+                    (i, mapped)
+                })
+                .collect()
+        });
 
     let Ok(bytes) = serde_cbor::to_vec(&result) else {
         error!("Failed to serialize LiveNetworkTransport payload");

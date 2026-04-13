@@ -1,6 +1,3 @@
-use crate::shaped_devices_tracker::{
-    SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, shaped_device_from_hashes_or_ip,
-};
 use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowbeeLocalData, get_asn_name_and_country};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
@@ -166,13 +163,13 @@ fn sanitized_plan_ceiling_bps(plan_mbps: f32) -> u32 {
 }
 
 fn circuit_display_rate_ceiling_bps(
-    shaped: &lqos_config::ConfigShapedDevices,
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
     circuit_hash: i64,
 ) -> Option<DownUpOrder<u32>> {
     let mut max_down_mbps = 0.0_f32;
     let mut max_up_mbps = 0.0_f32;
 
-    for device in &shaped.devices {
+    for device in catalog.iter_all_devices() {
         if device.circuit_hash != circuit_hash {
             continue;
         }
@@ -222,9 +219,8 @@ fn flow_qoo(local: &FlowbeeLocalData) -> DownUpOrder<Option<f32>> {
 
 fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
     let circuit_hash = hash_to_i64(circuit_id);
-    let shaped = SHAPED_DEVICES.load();
-    let cache = SHAPED_DEVICE_HASH_CACHE.load();
-    let display_rate_ceiling = circuit_display_rate_ceiling_bps(&shaped, circuit_hash);
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let display_rate_ceiling = circuit_display_rate_ceiling_bps(&catalog, circuit_hash);
     let Ok(now) = time_since_boot() else {
         return Vec::new();
     };
@@ -239,13 +235,13 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
             if local.last_seen < recent_cutoff {
                 return None;
             }
-            let device = shaped_device_from_hashes_or_ip(
-                &shaped,
-                &cache,
-                &key.local_ip,
-                local.device_hash,
-                local.circuit_hash,
-            );
+            let device = catalog
+                .device_by_hashes(local.device_hash, local.circuit_hash)
+                .or_else(|| {
+                    catalog
+                        .device_longest_match_for_ip(&key.local_ip)
+                        .map(|(_, device)| device)
+                });
             let matches_desired = local.circuit_hash == Some(circuit_hash)
                 || device.is_some_and(|device| device.circuit_id == circuit_id);
             if !matches_desired {

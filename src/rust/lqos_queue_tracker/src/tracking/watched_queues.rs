@@ -4,7 +4,7 @@ use lqos_bus::TcHandle;
 use lqos_sys::num_possible_cpus;
 use lqos_utils::unix_time::unix_now;
 use once_cell::sync::Lazy;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub(crate) static WATCHED_QUEUES: Lazy<DashMap<String, WatchedQueue>> = Lazy::new(DashMap::new);
 
@@ -74,7 +74,7 @@ pub fn add_watched_queue(circuit_id: &str) {
             WATCHED_QUEUES.insert(circuit_id.to_string(), new_watch);
             //info!("Added {circuit_id} to watched queues. Now watching {} queues.", WATCHED_QUEUES.len());
         } else {
-            warn!("No circuit ID of {circuit_id}");
+            debug!("Circuit queue not found for watch request: {circuit_id}");
         }
     } else {
         warn!("Unable to access watched queue list. Try again later.");

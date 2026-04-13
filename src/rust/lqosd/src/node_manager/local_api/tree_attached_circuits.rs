@@ -1,10 +1,8 @@
 use crate::node_manager::local_api::ethernet_caps::{EthernetCapBadge, ethernet_cap_badge_map};
 use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
-use crate::shaped_devices_tracker::{
-    NETWORK_JSON, SHAPED_DEVICES, effective_parent_for_circuit, resolve_parent_node_reference,
-};
+use crate::shaped_devices_tracker::effective_parent_for_circuit;
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_config::{ConfigShapedDevices, ShapedDevice};
+use lqos_config::ShapedDevice;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -101,54 +99,55 @@ fn normalized_page_size(query: &TreeAttachedCircuitsQuery) -> usize {
         .clamp(1, MAX_ATTACHED_CIRCUITS_PAGE_SIZE)
 }
 
-fn resolve_selected_node_index(query: &TreeAttachedCircuitsQuery) -> Option<usize> {
-    let reader = NETWORK_JSON.read();
-    let nodes = reader.get_nodes_when_ready();
-
-    if let Some(node_id) = query.node_id.as_deref()
-        && let Some(node) = nodes
-            .iter()
-            .position(|node| node.id.as_deref() == Some(node_id))
-    {
-        return Some(node);
-    }
-
-    let node_path = query.node_path.as_ref()?;
-    if node_path.is_empty() {
-        return None;
-    }
-    nodes.iter().enumerate().find_map(|(idx, node)| {
-        let path = if node.name == "Root" {
-            vec!["Root".to_string()]
-        } else {
-            let parent_indexes = if node.parents.is_empty() {
-                vec![node.immediate_parent.unwrap_or(0)]
-            } else {
-                node.parents.clone()
-            };
-            let mut names = Vec::new();
-            for idx in parent_indexes {
-                let parent = nodes.get(idx)?;
-                names.push(parent.name.clone());
-            }
-            if names.last() != Some(&node.name) {
-                names.push(node.name.clone());
-            }
-            names
-        };
-        if &path == node_path { Some(idx) } else { None }
-    })
-}
-
 fn build_selected_node_matcher(query: &TreeAttachedCircuitsQuery) -> Option<SelectedNodeMatcher> {
-    let selected_idx = resolve_selected_node_index(query)?;
-    let reader = NETWORK_JSON.read();
-    let nodes = reader.get_nodes_when_ready();
-    let selected = nodes.get(selected_idx)?;
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
 
-    Some(SelectedNodeMatcher {
-        node_name: selected.name.clone(),
-        node_id: selected.id.clone(),
+        if let Some(node_id) = query.node_id.as_deref()
+            && let Some(node) = nodes
+                .iter()
+                .find(|node| node.id.as_deref() == Some(node_id))
+        {
+            return Some(SelectedNodeMatcher {
+                node_name: node.name.clone(),
+                node_id: node.id.clone(),
+            });
+        }
+
+        let node_path = query.node_path.as_ref()?;
+        if node_path.is_empty() {
+            return None;
+        }
+
+        nodes.iter().find_map(|node| {
+            let path = if node.name == "Root" {
+                vec!["Root".to_string()]
+            } else {
+                let parent_indexes = if node.parents.is_empty() {
+                    vec![node.immediate_parent.unwrap_or(0)]
+                } else {
+                    node.parents.clone()
+                };
+                let mut names = Vec::new();
+                for idx in parent_indexes {
+                    let parent = nodes.get(idx)?;
+                    names.push(parent.name.clone());
+                }
+                if names.last() != Some(&node.name) {
+                    names.push(node.name.clone());
+                }
+                names
+            };
+
+            if &path == node_path {
+                Some(SelectedNodeMatcher {
+                    node_name: node.name.clone(),
+                    node_id: node.id.clone(),
+                })
+            } else {
+                None
+            }
+        })
     })
 }
 
@@ -192,7 +191,10 @@ fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Optio
         return Some((runtime_parent.name, runtime_parent.id));
     }
 
-    resolve_parent_node_reference(&device.parent_node, device.parent_node_id.as_deref())
+    lqos_network_devices::resolve_parent_node_reference(
+        &device.parent_node,
+        device.parent_node_id.as_deref(),
+    )
         .map(|resolved| (resolved.name, resolved.id))
         .or_else(|| {
             let trimmed = device.parent_node.trim();
@@ -204,13 +206,13 @@ fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Optio
         })
 }
 
-fn aggregate_attached_circuit_rows(
+fn aggregate_attached_circuit_rows<'a>(
     matcher: &SelectedNodeMatcher,
-    shaped_devices: &ConfigShapedDevices,
+    shaped_devices: impl IntoIterator<Item = &'a ShapedDevice>,
 ) -> Vec<CircuitRowAccumulator> {
     let mut rows: FxHashMap<String, CircuitRowAccumulator> = FxHashMap::default();
 
-    for device in &shaped_devices.devices {
+    for device in shaped_devices {
         if device.circuit_id.trim().is_empty() {
             continue;
         }
@@ -271,11 +273,11 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
 
     let snapshot = fresh_circuit_live_snapshot();
     let ethernet_badges = ethernet_cap_badge_map();
-    let shaped_devices = SHAPED_DEVICES.load();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let mut rows: Vec<TreeAttachedCircuitRow> = matcher
         .as_ref()
         .map(|matcher| {
-            aggregate_attached_circuit_rows(matcher, &shaped_devices)
+            aggregate_attached_circuit_rows(matcher, catalog.iter_all_devices())
                 .into_iter()
                 .map(|row| {
                     let live = snapshot.by_circuit_id.get(&row.circuit_id);
@@ -391,6 +393,7 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
 mod tests {
     use super::*;
     use std::str::FromStr;
+    use lqos_config::ConfigShapedDevices;
 
     fn sample_device(
         circuit_id: &str,
@@ -471,7 +474,7 @@ mod tests {
             ..ConfigShapedDevices::default()
         };
 
-        let rows = aggregate_attached_circuit_rows(&matcher, &shaped_devices);
+        let rows = aggregate_attached_circuit_rows(&matcher, shaped_devices.devices.iter());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].circuit_id, "circuit-1");
         assert_eq!(rows[0].circuit_name, "Circuit One");

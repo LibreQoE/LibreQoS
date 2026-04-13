@@ -47,7 +47,7 @@ pub fn can_we_load_net_json(results: &mut Vec<SanityCheck>) {
 }
 
 pub fn can_we_parse_net_json(results: &mut Vec<SanityCheck>) {
-    match lqos_config::NetworkJson::load() {
+    match lqos_network_devices::load_network_json() {
         Ok(_json) => {
             results.push(SanityCheck {
                 name: "network.json is valid JSON".to_string(),

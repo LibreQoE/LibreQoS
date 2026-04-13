@@ -1,7 +1,5 @@
 use crate::node_manager::local_api::ethernet_caps::ethernet_advisory_for_circuit;
-use crate::shaped_devices_tracker::{
-    SHAPED_DEVICES, effective_parent_for_circuit, resolve_parent_node_reference,
-};
+use crate::shaped_devices_tracker::effective_parent_for_circuit;
 use lqos_config::{CircuitEthernetMetadata, ShapedDevice};
 use serde::{Deserialize, Serialize};
 
@@ -50,9 +48,10 @@ fn canonical_parent_node(devices: &mut [ShapedDevice]) -> Option<CircuitParentNo
     let mut resolved_parent = None;
 
     for device in devices.iter_mut() {
-        let Some(resolved) =
-            resolve_parent_node_reference(&device.parent_node, device.parent_node_id.as_deref())
-        else {
+        let Some(resolved) = lqos_network_devices::resolve_parent_node_reference(
+            &device.parent_node,
+            device.parent_node_id.as_deref(),
+        ) else {
             continue;
         };
         if resolved_parent.is_none() {
@@ -87,13 +86,15 @@ fn queue_stats_mode() -> CircuitQueueStatsMode {
 
 pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
     let safe_id = id.to_lowercase().trim().to_string();
-    let reader = SHAPED_DEVICES.load();
-    let mut devices: Vec<ShapedDevice> = reader
-        .devices
-        .iter()
-        .filter(|d| d.circuit_id.to_lowercase().trim() == safe_id)
-        .cloned()
-        .collect();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let mut devices: Vec<ShapedDevice> = catalog.devices_for_circuit_id(&safe_id);
+
+    if devices.is_empty() {
+        let catalog = lqos_network_devices::network_devices_catalog();
+        if let Some(device) = catalog.dynamic_device_by_circuit_id(&safe_id) {
+            devices.push(device.clone());
+        }
+    }
 
     if devices.is_empty() {
         None

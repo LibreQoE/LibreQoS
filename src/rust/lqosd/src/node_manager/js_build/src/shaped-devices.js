@@ -13,6 +13,7 @@ let shapedDevices = [];
 let devicesPerPage = 24;
 let page = 0;
 let searchTerm = "";
+let shapedDevicesKind = "Static";
 let metricElsByCircuitId = new Map();
 const latestByCircuitId = new Map();
 const planByCircuitId = new Map();
@@ -76,6 +77,52 @@ function formatPlanValue(value) {
 
 function countCircuits() {
     return totalCircuits;
+}
+
+function updateKindTabs() {
+    const staticTab = document.getElementById("sdTabStatic");
+    const dynamicTab = document.getElementById("sdTabDynamic");
+    if (!staticTab || !dynamicTab) {
+        return;
+    }
+    const isDynamic = shapedDevicesKind === "Dynamic";
+    staticTab.classList.toggle("active", !isDynamic);
+    dynamicTab.classList.toggle("active", isDynamic);
+    staticTab.setAttribute("aria-selected", (!isDynamic).toString());
+    dynamicTab.setAttribute("aria-selected", isDynamic.toString());
+}
+
+function renderCounts() {
+    const countEl = $("#count");
+    const circuitEl = $("#countCircuit");
+    if (shapedDevicesKind === "Dynamic") {
+        countEl.text(totalRows + " dynamic circuits");
+        circuitEl.text("");
+        circuitEl.addClass("d-none");
+    } else {
+        countEl.text(totalRows + " devices");
+        circuitEl.text(totalCircuits + " circuits");
+        circuitEl.removeClass("d-none");
+    }
+}
+
+function setShapedDevicesKind(kind) {
+    if (!kind || (kind !== "Static" && kind !== "Dynamic")) {
+        kind = "Static";
+    }
+    if (shapedDevicesKind === kind) {
+        return;
+    }
+    shapedDevicesKind = kind;
+    page = 0;
+    searchTerm = "";
+    const searchBox = document.getElementById("sdSearch");
+    if (searchBox) {
+        searchBox.value = "";
+    }
+    circuitMetricsWatchSignature = null;
+    updateKindTabs();
+    requestShapedDevicesPage();
 }
 
 function filterDevices() {
@@ -550,6 +597,7 @@ function currentShapedDevicesPageQuery() {
     const query = {
         page,
         page_size: devicesPerPage,
+        kind: shapedDevicesKind,
     };
     if (searchTerm && searchTerm.trim() !== "") {
         query.search = searchTerm;
@@ -610,13 +658,13 @@ async function requestShapedDevicesPage() {
         });
         renderCards();
         requestCircuitMetricsWatch(true);
-        $("#count").text(totalRows + " devices");
-        $("#countCircuit").text(totalCircuits + " circuits");
+        renderCounts();
     } catch (_error) {
         shapedDevices = [];
         totalRows = 0;
         totalCircuits = 0;
         renderCards();
+        renderCounts();
     }
 }
 
@@ -676,7 +724,16 @@ function handleCircuitMetrics(msg) {
 wsClient.on("CircuitMetricsSnapshot", handleCircuitMetrics);
 wsClient.on("CircuitMetricsUpdate", handleCircuitMetrics);
 wsClient.on("join", () => {
+    updateKindTabs();
     requestShapedDevicesPage();
 });
 
+document.getElementById("sdTabStatic")?.addEventListener("click", () => {
+    setShapedDevicesKind("Static");
+});
+document.getElementById("sdTabDynamic")?.addEventListener("click", () => {
+    setShapedDevicesKind("Dynamic");
+});
+
+updateKindTabs();
 requestShapedDevicesPage();
