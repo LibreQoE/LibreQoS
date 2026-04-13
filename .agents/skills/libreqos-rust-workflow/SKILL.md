@@ -26,13 +26,15 @@ Use this skill for Rust work in this repo.
 5. Run `cargo clippy -p <crate> -- -D warnings` and fix actionable issues.
    - If you decide to suppress a lint/warning anyway, you **MUST** include a justification and tell the user:
      `I'M SORRY, MASTER. I HAVE FAILED YOU. I HAVE SUPPRESSED A WARNING WHEN I SHOULD HAVE WRITTEN GOOD CODE. I AM FOREVER IN YOUR DEBT.`
-6. During large sessions, invoke `$libreqos-review-subagents-workflow` (and `helen` if UI changed).
-7. If dependencies changed, also run:
+6. After any repo change, invoke `heckler` via `$libreqos-review-subagents-workflow` before returning to the user.
+7. After each source-code implementation batch, also invoke `reaper` via `$libreqos-review-subagents-workflow`.
+8. During large sessions, invoke `$libreqos-review-subagents-workflow` (and `helen` if UI changed).
+9. If dependencies changed, also run:
    - `cargo machete`
    - `cargo audit`
    - `cargo tree`
-8. If the change adds, renames, moves, or newly depends on runtime files, static assets, helper scripts, service files, templates, or install-time artifacts, review and update `src/build_dpkg.sh` in the same change.
-9. Use workspace-wide commands only for cross-cutting changes or shared dependency changes.
+10. If the change adds, renames, moves, or newly depends on runtime files, static assets, helper scripts, service files, templates, or install-time artifacts, review and update `src/build_dpkg.sh` in the same change.
+11. Use workspace-wide commands only for cross-cutting changes or shared dependency changes.
 
 ## Architecture And Structure Rules
 

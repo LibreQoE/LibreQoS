@@ -44,6 +44,8 @@ When changing any part of that chain, treat the whole chain as one linked surfac
 5. Run `cargo check -p lqos_sys`.
 6. Run relevant tests for touched Rust mirror types and map readers.
 7. If runtime attach/detach behavior changed, state clearly whether live root validation was performed.
+8. After any repo change, invoke `heckler` via `$libreqos-review-subagents-workflow` before returning to the user.
+9. After each source-code implementation batch, also invoke `reaper` via `$libreqos-review-subagents-workflow`.
 
 ## Mirror Types To Check
 
