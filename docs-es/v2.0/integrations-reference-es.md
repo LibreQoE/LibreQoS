@@ -128,13 +128,11 @@ Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
 ### Sobrescrituras de Splynx
 
-También puede modificar el archivo `integrationSplynxBandwidths.csv` para sobrescribir los anchos de banda predeterminados de cada Nodo (Sitio, AP).
+Use las sobrescrituras de la interfaz web de LibreQoS para cambiar la velocidad configurada de un Sitio o AP.
 
-Hay una plantilla disponible en la carpeta `/opt/libreqos/src`. Para usarla, copie el archivo `integrationSplynxBandwidths.template.csv` (eliminando la parte `.template` del nombre) y edítelo con la información correspondiente. Por ejemplo, si desea cambiar el bando de ancha de un sitio, ejecutaría:
-```
-sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
-```
-Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
+Abra el nodo correspondiente en la vista de árbol o de topología y guarde allí el ancho de banda deseado. LibreQoS conservará esa sobrescritura del operador en futuras actualizaciones de Splynx.
+
+No cree ni dependa de archivos heredados `integrationSplynxBandwidths*.csv` en implementaciones nuevas. El flujo compatible es el sistema normal de sobrescrituras desde la interfaz web.
 
 ## Integración con Netzur
 
