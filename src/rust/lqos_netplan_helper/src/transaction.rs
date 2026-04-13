@@ -1006,12 +1006,35 @@ esac
         write_config_to_path(path, config).expect("write config");
     }
 
+    fn test_interfaces() -> (String, String) {
+        let interfaces = system_interfaces();
+        let primary = interfaces
+            .iter()
+            .find(|iface| iface.as_str() != "lo")
+            .cloned()
+            .or_else(|| interfaces.iter().next().cloned())
+            .expect("test host should expose at least one interface");
+        let secondary = interfaces
+            .iter()
+            .find(|iface| iface.as_str() != primary && iface.as_str() != "lo")
+            .cloned()
+            .or_else(|| {
+                interfaces
+                    .iter()
+                    .find(|iface| iface.as_str() != primary)
+                    .cloned()
+            })
+            .expect("test host should expose a second distinct interface");
+        (primary, secondary)
+    }
+
     fn linux_bridge_config() -> Config {
+        let (to_internet, to_network) = test_interfaces();
         Config {
             bridge: Some(lqos_config::BridgeConfig {
                 use_xdp_bridge: false,
-                to_internet: "ens19".to_string(),
-                to_network: "ens20".to_string(),
+                to_internet,
+                to_network,
             }),
             single_interface: None,
             ..Config::default()
@@ -1086,7 +1109,7 @@ esac
 
         let mut next = existing.clone();
         next.single_interface = Some(lqos_config::SingleInterfaceConfig {
-            interface: "ens19".to_string(),
+            interface: test_interfaces().0,
             internet_vlan: 2,
             network_vlan: 3,
         });
@@ -1121,7 +1144,7 @@ esac
             &paths.config_path,
             &Config {
                 single_interface: Some(lqos_config::SingleInterfaceConfig {
-                    interface: "ens31".to_string(),
+                    interface: test_interfaces().1,
                     internet_vlan: 10,
                     network_vlan: 11,
                 }),
@@ -1202,7 +1225,7 @@ esac
 
         let mut next = existing.clone();
         next.single_interface = Some(lqos_config::SingleInterfaceConfig {
-            interface: "ens19".to_string(),
+            interface: test_interfaces().0,
             internet_vlan: 2,
             network_vlan: 3,
         });
