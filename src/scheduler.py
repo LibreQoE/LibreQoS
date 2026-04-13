@@ -56,8 +56,11 @@ def configure_scheduler_stdio():
             continue
         try:
             reconfigure(line_buffering=True, write_through=True)
-        except Exception:
-            continue
+        except Exception as exc:
+            print(
+                f"Warning: unable to enable line-buffered scheduler {stream_name}: {exc}",
+                file=sys.stderr,
+            )
 
 
 def get_state_directory():
