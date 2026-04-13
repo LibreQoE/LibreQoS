@@ -32,6 +32,7 @@ function validateConfig() {
 function updateConfig() {
     // Update only the tuning section
     window.config.tuning = {
+        set_cpu_governor_performance: document.getElementById("setCpuGovernorPerformance").checked,
         stop_irq_balance: document.getElementById("stopIrqBalance").checked,
         netdev_budget_usecs: parseInt(document.getElementById("netdevBudgetUsecs").value),
         netdev_budget_packets: parseInt(document.getElementById("netdevBudgetPackets").value),
@@ -52,10 +53,12 @@ renderConfigMenu('tuning');
 loadConfig(() => {
     // window.config now contains the configuration.
     // Populate form fields with config values
-    if (window.config && window.config.tuning) {
-        const tunables = window.config.tuning;
-        
+    if (window.config) {
+        const tunables = window.config.tuning ?? {};
+        window.config.tuning = tunables;
+
         // Boolean fields
+        document.getElementById("setCpuGovernorPerformance").checked = tunables.set_cpu_governor_performance ?? true;
         document.getElementById("stopIrqBalance").checked = tunables.stop_irq_balance ?? false;
         document.getElementById("disableRxVlan").checked = tunables.disable_rxvlan ?? false;
         document.getElementById("disableTxVlan").checked = tunables.disable_txvlan ?? false;
@@ -80,6 +83,6 @@ loadConfig(() => {
             }
         });
     } else {
-        console.error("Tuning configuration not found in window.config");
+        console.error("Configuration not found in window.config");
     }
 });

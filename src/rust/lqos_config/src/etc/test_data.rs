@@ -14,6 +14,7 @@ send_anonymous = true
 anonymous_server = \"127.0.0.1:9125\"
 
 [tuning]
+set_cpu_governor_performance = true
 # IRQ balance breaks XDP_Redirect, which we use. Recommended to leave as true.
 stop_irq_balance = false
 netdev_budget_usecs = 8000

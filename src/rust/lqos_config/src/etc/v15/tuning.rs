@@ -3,10 +3,18 @@
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool {
+    true
+}
+
 /// Represents a set of `sysctl` and `ethtool` tweaks that may be
 /// applied (in place of the previous version's offload service)
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct Tunables {
+    /// Should LibreQoS set the CPU governor to `performance` during tuning?
+    #[serde(default = "default_true")]
+    pub set_cpu_governor_performance: bool,
+
     /// Should the `irq_balance` system service be stopped?
     pub stop_irq_balance: bool,
 
@@ -36,6 +44,7 @@ pub struct Tunables {
 impl Default for Tunables {
     fn default() -> Self {
         Self {
+            set_cpu_governor_performance: true,
             stop_irq_balance: true,
             netdev_budget_usecs: 8000,
             netdev_budget_packets: 300,

@@ -10,6 +10,7 @@ enable_site_heatmaps = true
 enable_asn_heatmaps = true
 
 [tuning]
+set_cpu_governor_performance = true
 stop_irq_balance = true
 netdev_budget_usecs = 8000
 netdev_budget_packets = 300
