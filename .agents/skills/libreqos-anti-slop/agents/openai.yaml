@@ -1,0 +1,5 @@
+interface:
+  display_name: "LibreQoS Anti-Slop"
+  short_description: "Heckler slop review + cleanup rules"
+  default_prompt: "Use $libreqos-anti-slop to avoid AI slop and invoke `heckler` after any repo changes."
+
