@@ -10,10 +10,14 @@
 
 ## CPU and IRQ Baseline
 
-Set CPU frequency governor to performance on bare metal/hypervisor hosts:
+LibreQoS now attempts to set the CPU frequency governor to `performance` automatically during startup tuning on bare metal and hypervisor hosts.
+
+This behavior is enabled by default through `[tuning].set_cpu_governor_performance = true`. Disable it only if your platform requires a different governor policy.
+
+If you need to verify the current governor manually:
 
 ```bash
-sudo cpupower frequency-set --governor performance
+cpupower frequency-info | grep 'current policy'
 ```
 
 Confirm NIC queue count and CPU distribution are sensible for your hardware:

@@ -719,6 +719,29 @@ mod test {
     }
 
     #[test]
+    fn tuning_cpu_governor_defaults_to_true_when_missing() {
+        let raw = include_str!("example.toml")
+            .lines()
+            .filter(|line| !line.trim().starts_with("set_cpu_governor_performance"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = Config::load_from_string(&raw)
+            .expect("Config without tuning governor flag should load");
+        assert!(config.tuning.set_cpu_governor_performance);
+    }
+
+    #[test]
+    fn tuning_cpu_governor_explicit_false_deserializes() {
+        let raw = include_str!("example.toml").replace(
+            "set_cpu_governor_performance = true",
+            "set_cpu_governor_performance = false",
+        );
+        let config =
+            Config::load_from_string(&raw).expect("Config with tuning governor flag should load");
+        assert!(!config.tuning.set_cpu_governor_performance);
+    }
+
+    #[test]
     fn rtt_thresholds_default_matches_executive_ramp() {
         let d = RttThresholds::default();
         assert_eq!(d.green_ms, 0);

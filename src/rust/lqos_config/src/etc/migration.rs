@@ -156,6 +156,7 @@ fn migrate_top_level(old_config: &EtcLqos, new_config: &mut Config) -> Result<()
 
 fn migrate_tunables(old_config: &EtcLqos, new_config: &mut Config) -> Result<(), MigrationError> {
     if let Some(tunables) = &old_config.tuning {
+        new_config.tuning.set_cpu_governor_performance = tunables.set_cpu_governor_performance;
         new_config.tuning.stop_irq_balance = tunables.stop_irq_balance;
         new_config.tuning.netdev_budget_packets = tunables.netdev_budget_packets;
         new_config.tuning.netdev_budget_usecs = tunables.netdev_budget_usecs;
@@ -334,4 +335,35 @@ fn migrate_influx(
         new_config.influxdb = Some(cfg);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::etc::test_data::OLD_CONFIG;
+
+    #[test]
+    fn legacy_migration_defaults_cpu_governor_to_true_when_missing() {
+        let old_raw = OLD_CONFIG
+            .lines()
+            .filter(|line| !line.trim().starts_with("set_cpu_governor_performance"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let old_config = EtcLqos::load_from_string(&old_raw).expect("Legacy config should parse");
+        let python_config = PythonMigration {
+            sqm: "cake diffserv4".to_string(),
+            upstream_bandwidth_capacity_download_mbps: 1000,
+            upstream_bandwidth_capacity_upload_mbps: 1000,
+            generated_pndownload_mbps: 1000,
+            generated_pnupload_mbps: 1000,
+            interface_a: "veth_tointernal".to_string(),
+            interface_b: "veth_toexternal".to_string(),
+            enable_actual_shell_commands: true,
+            ..Default::default()
+        };
+
+        let migrated =
+            do_migration_14_to_15(&old_config, &python_config).expect("Migration should succeed");
+        assert!(migrated.tuning.set_cpu_governor_performance);
+    }
 }
