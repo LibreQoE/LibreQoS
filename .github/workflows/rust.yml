@@ -20,8 +20,9 @@ jobs:
           python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
           pkg-config libbpf-dev mold unzip linux-tools-generic
 
-        BPFTOOL_BIN="$(find /usr/lib/linux-tools -type f -name bpftool | sort -V | tail -n1)"
+        BPFTOOL_BIN="$(find /usr/lib/linux-tools -name bpftool | sort -V | tail -n1)"
         test -n "${BPFTOOL_BIN}"
+        BPFTOOL_BIN="$(readlink -f "${BPFTOOL_BIN}")"
 
         sudo install -m 0755 "${BPFTOOL_BIN}" /usr/local/bin/bpftool
         command -v bpftool
