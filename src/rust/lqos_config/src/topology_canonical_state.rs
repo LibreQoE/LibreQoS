@@ -1488,7 +1488,7 @@ mod tests {
                 .exists()
         );
 
-        let quarantine_directory = lqos_directory.join(".topology_stale");
+        let quarantine_directory = config.quarantine_state_directory_path();
         let quarantined = fs::read_dir(&quarantine_directory)
             .expect("directory should read")
             .filter_map(|entry| entry.ok())
@@ -1628,7 +1628,7 @@ mod tests {
                 .exists()
         );
         assert!(lqos_directory.join(TOPOLOGY_EDITOR_STATE_FILENAME).exists());
-        let quarantine_directory = lqos_directory.join(".topology_stale");
+        let quarantine_directory = config.quarantine_state_directory_path();
         let quarantined = if quarantine_directory.exists() {
             fs::read_dir(&quarantine_directory)
                 .expect("directory should read")

@@ -1,8 +1,7 @@
 //! Provides an Axum layer that applies templates to static HTML
 //! files.
 
-use crate::node_manager::auth::{FIRST_LOAD, get_username};
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::node_manager::auth::get_username;
 use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
@@ -10,11 +9,8 @@ use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
-use itertools::Itertools;
 use lqos_config::{RttThresholds, load_config};
-use lqos_utils::unix_time::unix_now;
 use std::path::Path;
-use std::sync::atomic::Ordering::Relaxed;
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
@@ -122,7 +118,7 @@ pub async fn apply_templates(
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.mappedCircuitLimit = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
             js_tf(capabilities.can_view_insight_ui),
             js_tf(capabilities.can_view_insight_ui),
             js_tf(capabilities.can_use_support_tickets),
@@ -133,32 +129,13 @@ pub async fn apply_templates(
                 .unwrap_or_else(|_| "\"Unknown\"".to_string()),
             serde_json::to_string(&capabilities.authority_label)
                 .unwrap_or_else(|_| "\"Unknown\"".to_string()),
+            serde_json::to_string(&capabilities.mapped_circuit_limit)
+                .unwrap_or_else(|_| "null".to_string()),
             node_id_js,
             rtt_thresholds.green_ms,
             rtt_thresholds.yellow_ms,
             rtt_thresholds.red_ms,
         );
-
-        // First Login
-        let mut show_modal = "false";
-        let mut show_modal_number = "0".to_string();
-        if let Ok(now) = unix_now() {
-            let week_ago = now - (7 * 24 * 60 * 60);
-            let fl = FIRST_LOAD.load(Relaxed);
-            if fl != 0 && fl < week_ago {
-                let sd = SHAPED_DEVICES.load();
-                let num_circuits = sd
-                    .devices
-                    .iter()
-                    .sorted_by(|a, b| a.circuit_hash.cmp(&b.circuit_hash))
-                    .dedup()
-                    .count();
-                if num_circuits > 1_000 && !capabilities.can_view_insight_ui {
-                    show_modal = "true";
-                    show_modal_number = num_circuits.to_string();
-                }
-            }
-        }
 
         let (mut res_parts, res_body) = res.into_parts();
         let bytes = to_bytes(res_body, 1_000_000)
@@ -171,9 +148,7 @@ pub async fn apply_templates(
             .replace("%%VERSION%%", version_string)
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
-            .replace("%%%LTS_SCRIPT%%%", &lts_script)
-            .replace("%%MODAL%%", show_modal)
-            .replace("%%MODAL_NUM%%", &show_modal_number);
+            .replace("%%%LTS_SCRIPT%%%", &lts_script);
         // Handle API_LINK placeholder (require service + valid Insight)
         let api_link = if is_api_available() && capabilities.can_use_api_link {
             API_LINK_ACTIVE
