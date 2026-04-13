@@ -119,7 +119,7 @@ function renderRangesTable() {
     if (!Array.isArray(ranges) || ranges.length === 0) {
         const empty = document.createElement("tr");
         const cell = document.createElement("td");
-        cell.colSpan = 8;
+        cell.colSpan = 6;
         cell.className = "text-muted";
         cell.textContent = "No rules configured.";
         empty.appendChild(cell);
@@ -150,49 +150,91 @@ function renderRangesTable() {
             return input;
         };
 
-        const addCell = (child) => {
+        const mkRatePair = (
+            downValue,
+            onDownChange,
+            upValue,
+            onUpChange,
+        ) => {
+            const container = document.createElement("div");
+            container.className = "d-grid gap-1";
+
+            const mkDir = (icon, ariaLabel, value, onChange) => {
+                const group = document.createElement("div");
+                group.className = "input-group input-group-sm";
+
+                const prefix = document.createElement("span");
+                prefix.className = "input-group-text";
+                const i = document.createElement("i");
+                i.className = `fa ${icon}`;
+                prefix.appendChild(i);
+
+                const input = mkNumber(value, onChange);
+                input.setAttribute("aria-label", ariaLabel);
+
+                group.appendChild(prefix);
+                group.appendChild(input);
+                return group;
+            };
+
+            container.appendChild(mkDir("fa-arrow-down", "Down Mbps", downValue, onDownChange));
+            container.appendChild(mkDir("fa-arrow-up", "Up Mbps", upValue, onUpChange));
+            return container;
+        };
+
+        const addCell = (label, child) => {
             const td = document.createElement("td");
+            td.dataset.label = label;
             td.appendChild(child);
             tr.appendChild(td);
         };
 
         addCell(
+            "Name",
             mkText(rule.name, (v) => {
                 window.config.dynamic_circuits.ranges[index].name = v;
             }, "Rule name"),
         );
         addCell(
+            "IP Range",
             mkText(rule.ip_range, (v) => {
                 window.config.dynamic_circuits.ranges[index].ip_range = v;
             }, "192.168.0.0/24"),
         );
         addCell(
-            mkNumber(rule.download_min_mbps, (v) => {
-                window.config.dynamic_circuits.ranges[index].download_min_mbps = v;
-            }),
+            "Min Mbps",
+            mkRatePair(
+                rule.download_min_mbps,
+                (v) => {
+                    window.config.dynamic_circuits.ranges[index].download_min_mbps = v;
+                },
+                rule.upload_min_mbps,
+                (v) => {
+                    window.config.dynamic_circuits.ranges[index].upload_min_mbps = v;
+                },
+            ),
         );
         addCell(
-            mkNumber(rule.upload_min_mbps, (v) => {
-                window.config.dynamic_circuits.ranges[index].upload_min_mbps = v;
-            }),
-        );
-        addCell(
-            mkNumber(rule.download_max_mbps, (v) => {
-                window.config.dynamic_circuits.ranges[index].download_max_mbps = v;
-            }),
-        );
-        addCell(
-            mkNumber(rule.upload_max_mbps, (v) => {
-                window.config.dynamic_circuits.ranges[index].upload_max_mbps = v;
-            }),
+            "Max Mbps",
+            mkRatePair(
+                rule.download_max_mbps,
+                (v) => {
+                    window.config.dynamic_circuits.ranges[index].download_max_mbps = v;
+                },
+                rule.upload_max_mbps,
+                (v) => {
+                    window.config.dynamic_circuits.ranges[index].upload_max_mbps = v;
+                },
+            ),
         );
         const attach = mkText(rule.attach_to, (v) => {
             window.config.dynamic_circuits.ranges[index].attach_to = v;
         }, "network.json node (optional)");
         attach.setAttribute("list", "networkNodesDatalist");
-        addCell(attach);
+        addCell("Attach To", attach);
 
         const removeTd = document.createElement("td");
+        removeTd.dataset.label = "Actions";
         const removeBtn = document.createElement("button");
         removeBtn.type = "button";
         removeBtn.className = "btn btn-sm btn-outline-danger";

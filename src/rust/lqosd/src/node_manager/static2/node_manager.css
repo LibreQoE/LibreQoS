@@ -1903,6 +1903,54 @@ table tr td a {
     color: var(--bs-secondary-color) !important;
 }
 
+/* Responsive inline tables for config editors */
+
+@media (max-width: 767.98px) {
+    .lqos-config-responsive-table thead {
+        display: none;
+    }
+
+    .lqos-config-responsive-table tbody tr {
+        display: block;
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+        background: color-mix(in srgb, var(--lqos-surface) 70%, transparent);
+        padding: 0.65rem 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .lqos-config-responsive-table tbody td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.35rem 0;
+        border: 0;
+    }
+
+    .lqos-config-responsive-table tbody td::before {
+        content: attr(data-label);
+        flex: 0 0 7.25rem;
+        color: var(--bs-secondary-color);
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .lqos-config-responsive-table tbody td > * {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .lqos-config-responsive-table tbody td[colspan] {
+        display: block;
+        padding: 0.25rem 0;
+    }
+
+    .lqos-config-responsive-table tbody td[colspan]::before {
+        content: "";
+    }
+}
+
 .lqos-config-network-editor {
     display: grid;
     gap: 0.9rem;
