@@ -586,6 +586,15 @@ impl ThroughputTracker {
                         entry.device_hash,
                         entry.circuit_hash,
                     );
+                    if shaped_device.is_none()
+                        && observations.len() < MAX_UNKNOWN_OBSERVATIONS_PER_TICK
+                    {
+                        observations.push(lqos_network_devices::CircuitObservation {
+                            ip: *xdp_ip,
+                            device_hash: entry.device_hash,
+                            circuit_hash: entry.circuit_hash,
+                        });
+                    }
 
                     if let Some(parents) = &entry.network_json_parents {
                         net_json_calc.add_throughput_cycle(
@@ -661,8 +670,7 @@ impl ThroughputTracker {
                     device_hash,
                     circuit_hash,
                 );
-                if shaped_device.is_none() && observations.len() < MAX_UNKNOWN_OBSERVATIONS_PER_TICK
-                {
+                if shaped_device.is_none() && observations.len() < MAX_UNKNOWN_OBSERVATIONS_PER_TICK {
                     observations.push(lqos_network_devices::CircuitObservation {
                         ip: *xdp_ip,
                         device_hash,
