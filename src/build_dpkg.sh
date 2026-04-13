@@ -38,7 +38,6 @@ LQOS_FILES=(
   network.example.json
   pythonCheck.py
   qoo_profiles.json
-  README.md
   scheduler.py
   ShapedDevices.example.csv
   shaping_skip_report.py
