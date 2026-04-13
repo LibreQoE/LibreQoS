@@ -83,7 +83,10 @@ pub fn load_shaped_devices() -> Result<ConfigShapedDevices> {
             .context("Unable to load topology_import.json")?
         {
             Some(topology_import) => Ok(topology_import.into_imported_bundle().shaped_devices),
-            None => Ok(ConfigShapedDevices::default()),
+            None => {
+                debug!("topology_import.json missing; falling back to ShapedDevices.csv");
+                ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
+            }
         }
     } else {
         ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
