@@ -7,6 +7,7 @@ license = "GPL-2.0-only"
 [dependencies]
 cursive = "0.21.1"
 lqos_config = { path = "../lqos_config" }
+lqos_netplan_helper = { path = "../lqos_netplan_helper" }
 nix.workspace = true
 anyhow.workspace = true
 once_cell = { workspace = true}

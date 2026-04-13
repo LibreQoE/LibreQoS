@@ -222,11 +222,14 @@ function submitComment() {
 }
 
 function initSupportTickets() {
-    const hasInsight = typeof window.hasInsight !== "undefined" ? !!window.hasInsight : false;
     const hasSupportTickets =
         typeof window.hasSupportTickets !== "undefined"
             ? !!window.hasSupportTickets
-            : hasInsight;
+            : false;
+    const liveControlAvailable =
+        typeof window.liveControlAvailable !== "undefined"
+            ? !!window.liveControlAvailable
+            : false;
     const noInsight = document.getElementById("ticketGateNoInsight");
     const yesInsight = document.getElementById("ticketGateInsight");
     const btnNew = document.getElementById("btnNewTicket");
@@ -243,8 +246,12 @@ function initSupportTickets() {
 
     if (noInsight) noInsight.classList.add("d-none");
     if (yesInsight) yesInsight.classList.remove("d-none");
-    if (btnNew) btnNew.disabled = false;
-    if (btnRefresh) btnRefresh.disabled = false;
+    if (btnNew) btnNew.disabled = !liveControlAvailable;
+    if (btnRefresh) btnRefresh.disabled = !liveControlAvailable;
+
+    if (!liveControlAvailable) {
+        setAlert("ticketListAlert", "license valid, control service unavailable");
+    }
 
     wsClient = get_ws_client();
     wsClient.on("SupportTicketListResult", (msg) => {
@@ -278,8 +285,8 @@ function initSupportTickets() {
     wsClient.on("Error", (msg) => {
         const message = msg && msg.message ? String(msg.message) : "Unknown error";
         if (
-            message.includes("Support tickets require an Insight subscription") ||
-            message.includes("Insight not enabled")
+            message.includes("Support tickets require an entitled license.") ||
+            message.includes("license valid, control service unavailable")
         ) {
             if (noInsight) noInsight.classList.remove("d-none");
             if (yesInsight) yesInsight.classList.add("d-none");

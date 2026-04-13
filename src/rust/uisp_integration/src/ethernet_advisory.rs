@@ -406,11 +406,12 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("lqos-ethernet-writer-{unique}"));
         fs::create_dir_all(&temp_dir).expect("temp dir should be created");
         config.lqos_directory = temp_dir.to_string_lossy().to_string();
+        config.state_directory = Some(temp_dir.join("state").to_string_lossy().to_string());
 
         write_ethernet_advisories(&config, &[capped.clone(), observed])
             .expect("writer should succeed");
 
-        let payload = fs::read(temp_dir.join(CIRCUIT_ETHERNET_METADATA_FILENAME))
+        let payload = fs::read(config.topology_state_file_path(CIRCUIT_ETHERNET_METADATA_FILENAME))
             .expect("metadata file should exist");
         let parsed: CircuitEthernetMetadataFile =
             serde_json::from_slice(&payload).expect("metadata file should parse");

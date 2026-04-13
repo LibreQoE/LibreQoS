@@ -323,7 +323,7 @@ function renderOverview() {
     if (!window.hasInsight) {
         const promo = document.createElement("div");
         promo.className = "cpu-affinity-inline-note mb-3";
-        promo.innerHTML = 'Enable <a href="lts_trial.html">Insight</a> to improve CPU planning with historical data.';
+        promo.innerHTML = 'Enable historical services in <a href="config_lts.html">License &amp; Services</a> to improve CPU planning.';
         body.appendChild(promo);
     }
 

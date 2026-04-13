@@ -922,7 +922,7 @@ mod test {
         config.uisp_integration.enable_uisp = true;
 
         let selected = NetworkJson::path_for_config(&config);
-        assert_eq!(selected, temp.join("network.effective.json"));
+        assert_eq!(selected, config.topology_state_file_path("network.effective.json"));
     }
 
     #[test]

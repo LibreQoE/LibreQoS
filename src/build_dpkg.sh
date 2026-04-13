@@ -38,7 +38,6 @@ LQOS_FILES=(
   network.example.json
   pythonCheck.py
   qoo_profiles.json
-  README.md
   scheduler.py
   ShapedDevices.example.csv
   shaping_skip_report.py
@@ -60,6 +59,7 @@ LQOS_BIN_FILES=(
 
 RUSTPROGS=(
   lqosd
+  lqos_netplan_helper
   lqtop
   xdp_iphash_to_cpu_cmdline
   xdp_pping
@@ -107,6 +107,7 @@ pushd rust > /dev/null || exit
 # Build only required binaries and artifacts (exclude lqos_support_tool executable)
 cargo build --release \
   -p lqosd \
+  -p lqos_netplan_helper \
   -p lqtop \
   -p xdp_iphash_to_cpu_cmdline \
   -p xdp_pping \
@@ -160,9 +161,12 @@ sudo chown -R root:root /opt/libreqos
 install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 install -m 0644 /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+/bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
+/bin/systemctl stop lqos_netplan_helper || true
+/bin/systemctl disable lqos_netplan_helper || true
 /bin/systemctl enable lqosd lqos_scheduler lqos_api || true
 /bin/systemctl restart lqosd lqos_scheduler lqos_api || true
 popd > /dev/null
@@ -172,8 +176,9 @@ EOF
 cat <<EOF > postrm
 #!/bin/bash
 set +e
-/bin/systemctl stop lqosd lqos_scheduler lqos_api || true
-/bin/systemctl disable lqosd lqos_scheduler lqos_api || true
+/bin/systemctl stop lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
+/bin/systemctl disable lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
+/bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 exit 0
 EOF

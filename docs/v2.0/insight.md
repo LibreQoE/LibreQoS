@@ -119,13 +119,13 @@ Operational notes:
 
 ### Mapped circuit limits and license state
 
-`ShapedDevices.csv` can contain unlimited entries. In current v2.0 builds, admission into active shaping state depends on valid Insight license state.
+`ShapedDevices.csv` can contain unlimited entries. In current v2.0 builds, admission into active shaping state depends on valid entitled license/grant state.
 
-Without a valid Insight subscription/license, LibreQoS admits only the first 1000 valid mapped circuits into active shaping state. Additional valid mapped circuits remain outside active shaping until valid Insight licensing is restored.
+Without a valid Insight or Local license/grant state, LibreQoS admits only the first 1000 valid mapped circuits into active shaping state. Additional valid mapped circuits remain outside active shaping until valid entitled licensing is restored.
 
-A valid Insight subscription/license enables mapped-circuit counts above the default 1000 limit.
+A valid entitled license/grant state enables mapped-circuit counts above the default 1000 limit.
 
-The default 1000-limit behavior applies when Insight is:
+The default 1000-limit behavior applies when license/grant state is:
 - missing
 - expired
 - otherwise invalid
@@ -139,6 +139,6 @@ When the limit is reached, operators will typically see:
   - `Bakery mapped circuit cap enforced`
 
 When this occurs, check:
-1. Insight license status in the UI.
+1. License status in the `License & Services` page.
 2. `journalctl -u lqosd` for requested/allowed/dropped mapped counts.
-3. Whether your node is operating at the default 1000 mapped-circuit limit because the current Insight/license state is invalid.
+3. Whether your node is operating at the default 1000 mapped-circuit limit because the current license/grant state is invalid.

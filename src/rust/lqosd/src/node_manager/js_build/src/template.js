@@ -792,7 +792,7 @@ function saveQueueModeAndReload(nextMode) {
 
     const confirmed = window.confirm(
         nextMode === "observe"
-            ? "Switch LibreQoS to Observe mode? This reload will remove the active LibreQoS shaping tree so you can gather a true baseline. It may briefly interrupt traffic."
+            ? "Switch LibreQoS to Observe mode? LibreQoS will reload without the active shaping tree so you can gather a true baseline. Traffic may briefly pause during the reload, typically for about 5 seconds."
             : "Switch LibreQoS to Shape mode? This reload will apply the LibreQoS shaping tree and begin active shaping. It may briefly interrupt traffic."
     );
     if (!confirmed) {

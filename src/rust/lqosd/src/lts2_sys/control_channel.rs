@@ -10,6 +10,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
+use crate::lts2_sys::capabilities;
 use crate::lts2_sys::license_grant;
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
 use lqos_probe::ProbeClass;
@@ -277,16 +278,24 @@ async fn persistent_connection(
 ) -> std::result::Result<(), String> {
     let mut sleep_seconds = 60;
     'reconnect: loop {
+        if !capabilities::can_open_control_channel() {
+            capabilities::set_control_service_reachable(false);
+            capabilities::wait_for_control_channel_retry(Duration::from_secs(sleep_seconds)).await;
+            continue 'reconnect;
+        }
+
         if let Ok(mut socket) = connect().await {
             let mut permitted = false;
             // Preamble - get connected
             if let Err(e) = send_magic_number(&mut socket).await {
                 warn!("Failed to send magic number: {}", e);
+                capabilities::set_control_service_reachable(false);
                 tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
                 continue 'reconnect;
             }
             if let Err(e) = send_license(&mut socket).await {
                 warn!("Failed to send license info: {}", e);
+                capabilities::set_control_service_reachable(false);
                 tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
                 continue 'reconnect;
             }
@@ -793,6 +802,8 @@ async fn persistent_connection(
                                                 license_type: license_state,
                                                 trial_expires: expiration_date as i32,
                                             });
+                                            capabilities::clear_bootstrap_suppression();
+                                            capabilities::set_control_service_reachable(true);
                                             permitted = true;
                                             sleep_seconds = 60;
                                             // Flush any pending chatbot messages now that we're permitted
@@ -825,10 +836,19 @@ async fn persistent_connection(
                                                 license_type: 0,
                                                 trial_expires: -1,
                                             });
-                                            permitted = false;
+                                            capabilities::set_control_service_reachable(false);
+                                            if let Ok(config) = lqos_config::load_config()
+                                                && let Some(license_key) =
+                                                    config.long_term_stats.license_key.as_deref()
+                                            {
+                                                capabilities::suppress_bootstrap_for_license_key(
+                                                    license_key,
+                                                );
+                                            }
                                             if let Err(e) = license_grant::invalidate_license_grant() {
                                                 warn!("Failed to invalidate stored license grant: {e:?}");
                                             }
+                                            break 'message_pump;
                                         }
                                     }
                                     messages::WsMessage::InsightPublicKey { public_key } => {
@@ -869,7 +889,15 @@ async fn persistent_connection(
                                         }
                                     }
                                     messages::WsMessage::RemoteCommands { commands } => {
-                                        crate::lts2_sys::lts2_client::enqueue(commands);
+                                        if crate::lts2_sys::current_capabilities()
+                                            .can_receive_remote_commands
+                                        {
+                                            crate::lts2_sys::lts2_client::enqueue(commands);
+                                        } else {
+                                            warn!(
+                                                "Ignoring remote commands because the current license tier does not permit them"
+                                            );
+                                        }
                                     }
                                     messages::WsMessage::ChatbotChunk { request_id, data } => {
                                         if let Some(tx) = chatbot_streams.get(&request_id) {
@@ -1113,8 +1141,9 @@ async fn persistent_connection(
                 }
             }
         }
+        capabilities::set_control_service_reachable(false);
         debug!("Sleeping before reconnecting the persistent channel");
-        tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
+        capabilities::wait_for_control_channel_retry(Duration::from_secs(sleep_seconds)).await;
         sleep_seconds = 60;
     }
 }

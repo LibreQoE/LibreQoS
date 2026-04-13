@@ -11,7 +11,6 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
-use crate::lts2_sys::shared_types::LtsStatus;
 use lqos_utils::unix_time::unix_now;
 
 #[cfg(unix)]
@@ -212,31 +211,20 @@ pub fn current_license_summary() -> (Option<Uuid>, Option<u64>) {
     (grant.license_uuid, grant.max_circuits)
 }
 
-pub fn current_license_limits() -> (bool, Option<u64>) {
-    let Some(state) = GRANT_STATE.get() else {
-        return current_license_limits_from_status();
-    };
+pub fn current_valid_grant() -> Option<LicenseGrant> {
+    let state = GRANT_STATE.get()?;
     let guard = state.lock();
-    let Some(grant) = guard.as_ref() else {
-        return current_license_limits_from_status();
-    };
+    let grant = guard.as_ref()?;
     let now = unix_now().unwrap_or(0) as i64;
-    if grant.grant_expires <= now {
-        return current_license_limits_from_status();
-    }
-    (true, grant.max_circuits)
+    (grant.grant_expires > now).then(|| grant.clone())
 }
 
-fn current_license_limits_from_status() -> (bool, Option<u64>) {
-    let (status, _) = crate::lts2_sys::get_lts_license_status();
-    let licensed = !matches!(
-        status,
-        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
-    );
-    if licensed {
-        (true, None)
-    } else {
+pub fn current_license_limits() -> (bool, Option<u64>) {
+    let caps = crate::lts2_sys::capabilities::current_capabilities();
+    if caps.mapped_circuit_limit == Some(1000) {
         (false, None)
+    } else {
+        (true, caps.mapped_circuit_limit)
     }
 }
 

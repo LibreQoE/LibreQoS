@@ -138,11 +138,11 @@ network:
       nameservers:
         addresses: [1.1.1.1, 8.8.8.8]
     ens19:
-      dhcp4: no
-      dhcp6: no
+      dhcp4: false
+      dhcp6: false
     ens20:
-      dhcp4: no
-      dhcp6: no
+      dhcp4: false
+      dhcp6: false
 ```
 
 Then configure bridge behavior per [Configure Shaping Bridge](bridge.md).

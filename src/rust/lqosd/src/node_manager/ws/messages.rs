@@ -61,7 +61,9 @@ use crate::throughput_tracker::TcpRetransmitTotal;
 use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry,
 };
-use lqos_bus::{Circuit, FlowbeeSummaryData, QueueStoreTransit, StormguardDebugEntry};
+use lqos_bus::{
+    Circuit, FlowbeeSummaryData, LtsCapabilitiesSummary, QueueStoreTransit, StormguardDebugEntry,
+};
 use lqos_config::QooProfileInfo;
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
 use lqos_utils::units::DownUpOrder;
@@ -144,6 +146,8 @@ pub enum WsRequest {
     LtsTrialConfig,
     CircuitCount,
     LtsStartSignup,
+    LtsCapabilities,
+    LtsRetryLicenseCheck,
     LtsSignUp {
         license_key: String,
     },
@@ -777,6 +781,9 @@ pub enum WsResponse {
     },
     CircuitCountResult {
         data: CircuitCount,
+    },
+    LtsCapabilitiesResult {
+        data: LtsCapabilitiesSummary,
     },
     LtsStartSignupResult {
         claim_id: String,

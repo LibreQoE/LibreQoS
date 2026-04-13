@@ -1,6 +1,5 @@
 import { get_ws_client } from "../pubsub/ws";
 
-const sponsorBtn = "<a href=\"https://github.com/sponsors/LibreQoE/\" target='_blank' class='text-primary-emphasis'><i class=\"fa fa-heart\"></i> Sponsor Us on GitHub</a>";
 const sponsorMessages = [
     "LibreQoS handles shaping. Insight adds history, dashboards, and alerts so you catch issues before tickets arrive.",
     "Need proof before or after changes? Insight keeps latency, retransmit, and flow history in one place.",
@@ -12,21 +11,54 @@ const sponsorMessages = [
     "See circuit and site behavior over time, not just right now. Insight gives you historical context.",
 ];
 
-export function sponsorTag(parentId) {
-    if (!window.hasLts) {
-        const client = get_ws_client();
-        const handler = () => {
-            if (!window.hasLts) {
-                let div = document.createElement("div");
-                let random = Math.floor(Math.random() * sponsorMessages.length);
-                div.innerHTML = sponsorMessages[random];
-                div.classList.add("alert", "alert-warning", "toasty");
-                let parent = document.getElementById(parentId);
-                parent.appendChild(div);
-            }
-            client.off("DeviceCount", handler);
-        };
-        client.on("DeviceCount", handler);
-        client.send({ DeviceCount: {} });
+function getSponsorState(mappedCircuits) {
+    if (window.mappedCircuitLimit !== 1000) {
+        return null;
     }
+
+    if (mappedCircuits > 1000) {
+        return {
+            message: "This deployment is above the unlicensed 1,000 mapped circuit limit; add a license to remove the cap.",
+            alertClass: "alert-danger",
+        };
+    }
+
+    if (mappedCircuits >= 800) {
+        return {
+            message: "Unlicensed deployments are limited to 1,000 mapped circuits, and this system is approaching that limit.",
+            alertClass: "alert-warning",
+        };
+    }
+
+    return {
+        message: sponsorMessages[Math.floor(Math.random() * sponsorMessages.length)],
+        alertClass: "alert-success",
+    };
+}
+
+export function sponsorTag(parentId) {
+    const client = get_ws_client();
+    const handler = (msg) => {
+        client.off("DeviceCount", handler);
+
+        const parent = document.getElementById(parentId);
+        if (!parent) {
+            return;
+        }
+
+        const mappedCircuits = Number(msg?.data?.mapped_circuits ?? 0);
+        const sponsorState = getSponsorState(mappedCircuits);
+        if (!sponsorState) {
+            return;
+        }
+
+        const div = document.createElement("div");
+        div.textContent = sponsorState.message;
+        div.classList.add("alert", sponsorState.alertClass, "toasty");
+        div.setAttribute("role", "alert");
+        parent.appendChild(div);
+    };
+
+    client.on("DeviceCount", handler);
+    client.send({ DeviceCount: {} });
 }

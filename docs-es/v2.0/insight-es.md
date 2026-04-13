@@ -124,13 +124,13 @@ Notas operativas:
 
 ### Límites de circuitos mapeados y estado de licencia
 
-`ShapedDevices.csv` puede contener entradas ilimitadas. En compilaciones v2.0 actuales, la admisión al estado de shaping activo depende del estado válido de la licencia Insight.
+`ShapedDevices.csv` puede contener entradas ilimitadas. En compilaciones v2.0 actuales, la admisión al estado de shaping activo depende de un estado válido de licencia/grant con derecho.
 
-Sin una suscripción/licencia Insight válida, LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Los circuitos mapeados válidos adicionales permanecen fuera del shaping activo hasta que se restaure una licencia Insight válida.
+Sin un estado válido de licencia/grant de Insight o Local, LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Los circuitos mapeados válidos adicionales permanecen fuera del shaping activo hasta que se restaure una licencia válida con derecho.
 
-Una suscripción/licencia Insight válida habilita conteos de circuitos mapeados por encima del límite predeterminado de 1000.
+Un estado válido de licencia/grant con derecho habilita conteos de circuitos mapeados por encima del límite predeterminado de 1000.
 
-El comportamiento predeterminado del límite de 1000 aplica cuando Insight está:
+El comportamiento predeterminado del límite de 1000 aplica cuando el estado de licencia/grant está:
 - ausente
 - expirado
 - inválido por cualquier motivo
@@ -145,6 +145,6 @@ Cuando se alcanza el límite, los operadores normalmente verán:
 
 Cuando ocurra:
 
-1. Revise estado de licencia Insight en la UI.
+1. Revise el estado de licencia en la página `License & Services`.
 2. Revise `journalctl -u lqosd` para conteos requested/allowed/dropped.
-3. Verifique si el nodo está operando con el límite predeterminado de 1000 circuitos mapeados porque el estado actual de Insight/licencia es inválido.
+3. Verifique si el nodo está operando con el límite predeterminado de 1000 circuitos mapeados porque el estado actual de licencia/grant es inválido.
