@@ -79,18 +79,27 @@ fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
 pub fn load_shaped_devices() -> Result<ConfigShapedDevices> {
     let config = lqos_config::load_config().context("Unable to load /etc/lqos.conf")?;
     if integration_ingress_enabled(config.as_ref()) {
-        match lqos_topology_compile::TopologyImportFile::load(config.as_ref())
-            .context("Unable to load topology_import.json")?
-        {
-            Some(topology_import) => Ok(topology_import.into_imported_bundle().shaped_devices),
-            None => {
+        match lqos_topology_compile::TopologyImportFile::load(config.as_ref()) {
+            Ok(Some(topology_import)) => {
+                let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
+                if !shaped_devices.devices.is_empty() {
+                    return Ok(shaped_devices);
+                }
+                debug!(
+                    "topology_import.json contained 0 shaped devices; falling back to ShapedDevices.csv"
+                );
+            }
+            Ok(None) => {
                 debug!("topology_import.json missing; falling back to ShapedDevices.csv");
-                ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
+            }
+            Err(err) => {
+                debug!(
+                    "Unable to load topology_import.json ({err}); falling back to ShapedDevices.csv"
+                );
             }
         }
-    } else {
-        ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
     }
+    ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
 }
 
 /// Loads `network.json` from disk.
