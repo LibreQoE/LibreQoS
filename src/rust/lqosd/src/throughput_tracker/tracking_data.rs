@@ -414,7 +414,6 @@ impl ThroughputTracker {
             return Some(device);
         }
         catalog
-            .shaped_devices()
             .device_longest_match_for_ip(ip)
             .map(|(_net, device)| device)
     }

@@ -50,16 +50,12 @@ fn catalog_device_by_hashes_prefers_device_hash() {
     let a = ShapedDevice {
         circuit_id: "circuit-a".into(),
         device_id: "device-a".into(),
-        circuit_hash: 10,
-        device_hash: 100,
         ..Default::default()
     };
 
     let b = ShapedDevice {
         circuit_id: "circuit-b".into(),
         device_id: "device-b".into(),
-        circuit_hash: 20,
-        device_hash: 200,
         ..Default::default()
     };
 
@@ -68,13 +64,16 @@ fn catalog_device_by_hashes_prefers_device_hash() {
 
     let catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
 
+    let a_device_hash = lqos_utils::hash_to_i64(&a.device_id);
+    let b_circuit_hash = lqos_utils::hash_to_i64(&b.circuit_id);
+
     let resolved = catalog
-        .device_by_hashes(Some(a.device_hash), Some(b.circuit_hash))
+        .device_by_hashes(Some(a_device_hash), Some(b_circuit_hash))
         .expect("Expected shaped device match");
     assert_eq!(resolved.device_id, a.device_id);
 
     let fallback = catalog
-        .device_by_hashes(Some(999), Some(b.circuit_hash))
+        .device_by_hashes(Some(999), Some(b_circuit_hash))
         .expect("Expected circuit-hash fallback match");
     assert_eq!(fallback.device_id, b.device_id);
 }

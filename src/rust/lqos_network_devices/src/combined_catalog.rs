@@ -1,7 +1,11 @@
 use crate::{DynamicCircuit, ShapedDevicesCatalog};
 use fxhash::FxHashMap;
+use ip_network::IpNetwork;
+use ip_network_table::IpNetworkTable;
 use lqos_config::ShapedDevice;
+use lqos_utils::XdpIpAddress;
 use std::sync::Arc;
+use std::net::IpAddr;
 
 fn normalize_circuit_id_key(circuit_id: &str) -> String {
     circuit_id.trim().to_ascii_lowercase()
@@ -11,13 +15,19 @@ fn normalize_circuit_id_key(circuit_id: &str) -> String {
 ///
 /// This catalog is intended for read-heavy paths (dashboards, APIs) that need to
 /// treat dynamic circuits as first-class circuits alongside `ShapedDevices.csv`.
-#[derive(Clone)]
 pub struct NetworkDevicesCatalog {
     shaped: ShapedDevicesCatalog,
     dynamic: Arc<Vec<DynamicCircuit>>,
     dyn_by_device_hash: FxHashMap<i64, usize>,
     dyn_by_circuit_hash: FxHashMap<i64, usize>,
     dyn_by_circuit_id: FxHashMap<String, usize>,
+    dyn_ip_table: IpNetworkTable<usize>,
+}
+
+impl Clone for NetworkDevicesCatalog {
+    fn clone(&self) -> Self {
+        Self::from_snapshots(self.shaped.clone(), self.dynamic.clone())
+    }
 }
 
 impl NetworkDevicesCatalog {
@@ -29,11 +39,26 @@ impl NetworkDevicesCatalog {
         let mut dyn_by_device_hash = FxHashMap::default();
         let mut dyn_by_circuit_hash = FxHashMap::default();
         let mut dyn_by_circuit_id = FxHashMap::default();
+        let mut dyn_ip_table = IpNetworkTable::new();
 
         for (idx, circuit) in dynamic.iter().enumerate() {
             dyn_by_device_hash.insert(circuit.shaped.device_hash, idx);
             dyn_by_circuit_hash.insert(circuit.shaped.circuit_hash, idx);
             dyn_by_circuit_id.insert(normalize_circuit_id_key(&circuit.shaped.circuit_id), idx);
+
+            for (ipv4, prefix) in &circuit.shaped.ipv4 {
+                let prefix = prefix.saturating_add(96).min(128);
+                if let Ok(net) = IpNetwork::new(ipv4.to_ipv6_mapped(), prefix as u8) {
+                    dyn_ip_table.insert(net, idx);
+                }
+            }
+            for (ipv6, prefix) in &circuit.shaped.ipv6 {
+                if *prefix <= 128 {
+                    if let Ok(net) = IpNetwork::new(*ipv6, *prefix as u8) {
+                        dyn_ip_table.insert(net, idx);
+                    }
+                }
+            }
         }
 
         Self {
@@ -42,6 +67,7 @@ impl NetworkDevicesCatalog {
             dyn_by_device_hash,
             dyn_by_circuit_hash,
             dyn_by_circuit_id,
+            dyn_ip_table,
         }
     }
 
@@ -68,6 +94,25 @@ impl NetworkDevicesCatalog {
     /// Iterates over both static and dynamic shaped-device rows.
     pub fn iter_all_devices(&self) -> impl Iterator<Item = &ShapedDevice> {
         self.iter_static_devices().chain(self.iter_dynamic_devices())
+    }
+
+    /// Returns the longest-prefix match entry for an IP address.
+    ///
+    /// This prefers static shaped devices, then falls back to dynamic circuits.
+    pub fn device_longest_match_for_ip(
+        &self,
+        ip: &XdpIpAddress,
+    ) -> Option<(IpNetwork, &ShapedDevice)> {
+        if let Some((net, device)) = self.shaped.device_longest_match_for_ip(ip) {
+            return Some((net, device));
+        }
+
+        let lookup = match ip.as_ip() {
+            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+            IpAddr::V6(ip) => ip,
+        };
+        let (net, idx) = self.dyn_ip_table.longest_match(lookup)?;
+        self.dynamic.get(*idx).map(|circuit| (net, &circuit.shaped))
     }
 
     /// Returns true if the device hash is currently tracked as a dynamic circuit.
