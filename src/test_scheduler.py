@@ -287,6 +287,32 @@ class TestSchedulerErrorReporting(unittest.TestCase):
         )
         self.assertEqual(mock_scheduler_output.call_args_list, [(( "",),)])
 
+
+class TestSchedulerLogging(unittest.TestCase):
+    def test_configure_scheduler_stdio_enables_line_buffering_when_supported(self):
+        class FakeStream:
+            def __init__(self):
+                self.calls = []
+
+            def reconfigure(self, **kwargs):
+                self.calls.append(kwargs)
+
+        fake_stdout = FakeStream()
+        fake_stderr = FakeStream()
+
+        with patch.object(scheduler.sys, "stdout", fake_stdout):
+            with patch.object(scheduler.sys, "stderr", fake_stderr):
+                scheduler.configure_scheduler_stdio()
+
+        expected = [{"line_buffering": True, "write_through": True}]
+        self.assertEqual(fake_stdout.calls, expected)
+        self.assertEqual(fake_stderr.calls, expected)
+
+    def test_configure_scheduler_stdio_ignores_streams_without_reconfigure(self):
+        with patch.object(scheduler.sys, "stdout", object()):
+            with patch.object(scheduler.sys, "stderr", object()):
+                scheduler.configure_scheduler_stdio()
+
     def test_run_scheduler_main_stays_alive_on_startup_refresh_failure(self):
         fake_ads = Mock()
 
