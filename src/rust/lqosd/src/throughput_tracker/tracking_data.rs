@@ -23,7 +23,7 @@ use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use lqos_utils::{
     qoq_heatmap::TemporalQoqHeatmap,
     rtt::RttBucket,
-    temporal_heatmap::TemporalHeatmap,
+    temporal_heatmap::{TemporalHeatmap, executive_retransmit_percent},
     units::{AtomicDownUp, DownUpOrder},
 };
 use parking_lot::Mutex;
@@ -287,10 +287,14 @@ impl ThroughputTracker {
                     rtt.percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
                 })
                 .map(|rtt| rtt.as_millis() as f32);
-            let retransmit_down =
-                retransmit_percent(aggregate.tcp_retransmits.down, aggregate.tcp_packets.down);
-            let retransmit_up =
-                retransmit_percent(aggregate.tcp_retransmits.up, aggregate.tcp_packets.up);
+            let retransmit_down = executive_retransmit_percent(
+                aggregate.tcp_retransmits.down,
+                aggregate.tcp_packets.down,
+            );
+            let retransmit_up = executive_retransmit_percent(
+                aggregate.tcp_retransmits.up,
+                aggregate.tcp_packets.up,
+            );
 
             let heatmap = heatmaps.entry(circuit_hash).or_default();
             heatmap.add_sample(
@@ -341,8 +345,9 @@ impl ThroughputTracker {
 
         let mut global_heatmap = self.global_heatmap.lock();
         let global_retransmit_down =
-            retransmit_percent(total_retransmits.down, total_tcp_packets.down);
-        let global_retransmit_up = retransmit_percent(total_retransmits.up, total_tcp_packets.up);
+            executive_retransmit_percent(total_retransmits.down, total_tcp_packets.down);
+        let global_retransmit_up =
+            executive_retransmit_percent(total_retransmits.up, total_tcp_packets.up);
         global_heatmap.add_sample(
             utilization_percent(total_download_bytes, global_down_mbps).unwrap_or(0.0),
             utilization_percent(total_upload_bytes, global_up_mbps).unwrap_or(0.0),
@@ -1271,14 +1276,6 @@ fn utilization_percent(bytes: u64, max_mbps: f32) -> Option<f32> {
     Some(((bits_per_second / capacity_bps) * 100.0) as f32)
 }
 
-fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
-    if retransmits == 0 || packets < 10 {
-        return None;
-    }
-    let value = (retransmits as f32 / packets as f32) * 100.0;
-    if value > 50.0 { None } else { Some(value) }
-}
-
 fn median(values: &mut [f32]) -> Option<f32> {
     if values.is_empty() {
         return None;
@@ -1321,11 +1318,136 @@ fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasu
 
 #[cfg(test)]
 mod tests {
-    use super::ThroughputTracker;
-    use crate::shaped_devices_tracker::ShapedDeviceHashCache;
+    use super::{ThroughputEntry, ThroughputTracker};
+    use crate::shaped_devices_tracker::{SHAPED_DEVICES, ShapedDeviceHashCache};
+    use crate::test_support::runtime_config_test_lock;
+    use lqos_bus::TcHandle;
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_utils::{XdpIpAddress, hash_to_i64};
+    use std::ffi::OsString;
     use std::net::Ipv4Addr;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Arc, MutexGuard};
+
+    use crate::throughput_tracker::flow_data::{RttBuffer, RttData};
+    use lqos_utils::qoo::QoqScores;
+    use lqos_utils::units::DownUpOrder;
+
+    fn test_runtime_dir(name: &str) -> PathBuf {
+        let unique = format!(
+            "{}-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("thread"),
+            name
+        )
+        .replace(['/', ' '], "-");
+        let dir = std::env::temp_dir().join(format!("libreqos-tracking-data-{unique}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp runtime dir should be created");
+        dir
+    }
+
+    fn write_test_config(runtime_dir: &Path) -> PathBuf {
+        let config_path = runtime_dir.join("lqos.test.toml");
+        let raw = include_str!("../../../lqos_config/src/etc/v15/example.toml").replace(
+            "lqos_directory = \"/opt/libreqos/src\"",
+            &format!("lqos_directory = \"{}\"", runtime_dir.display()),
+        );
+        std::fs::write(&config_path, raw).expect("test config should be written");
+        config_path
+    }
+
+    struct HeatmapTestContext {
+        _guard: MutexGuard<'static, ()>,
+        old_lqos_config: Option<OsString>,
+        old_lqos_directory: Option<OsString>,
+        old_shaped: Arc<ConfigShapedDevices>,
+    }
+
+    impl HeatmapTestContext {
+        fn new(name: &str) -> Self {
+            let guard = runtime_config_test_lock()
+                .lock()
+                .expect("heatmap test lock should not be poisoned");
+            let runtime_dir = test_runtime_dir(name);
+            let config_path = write_test_config(&runtime_dir);
+            let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+            let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
+            let old_shaped = SHAPED_DEVICES.load_full();
+            unsafe {
+                std::env::set_var("LQOS_CONFIG", &config_path);
+                std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
+            }
+            lqos_config::clear_cached_config();
+            Self {
+                _guard: guard,
+                old_lqos_config,
+                old_lqos_directory,
+                old_shaped,
+            }
+        }
+    }
+
+    impl Drop for HeatmapTestContext {
+        fn drop(&mut self) {
+            match &self.old_lqos_config {
+                Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+                None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+            }
+            match &self.old_lqos_directory {
+                Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
+                None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
+            }
+            SHAPED_DEVICES.store(self.old_shaped.clone());
+            lqos_config::clear_cached_config();
+        }
+    }
+
+    fn make_entry(circuit_hash: i64, retransmits_down: u64, packets_down: u64) -> ThroughputEntry {
+        ThroughputEntry {
+            circuit_id: None,
+            circuit_hash: Some(circuit_hash),
+            device_hash: None,
+            network_json_parents: None,
+            first_cycle: 0,
+            most_recent_cycle: 0,
+            bytes: DownUpOrder {
+                down: 12_500_000,
+                up: 0,
+            },
+            actual_bytes: DownUpOrder {
+                down: 12_500_000,
+                up: 0,
+            },
+            packets: DownUpOrder::zeroed(),
+            tcp_packets: DownUpOrder::zeroed(),
+            udp_packets: DownUpOrder::zeroed(),
+            icmp_packets: DownUpOrder::zeroed(),
+            prev_bytes: DownUpOrder::zeroed(),
+            prev_actual_bytes: DownUpOrder::zeroed(),
+            prev_packets: DownUpOrder::zeroed(),
+            prev_tcp_packets: DownUpOrder::zeroed(),
+            prev_udp_packets: DownUpOrder::zeroed(),
+            prev_icmp_packets: DownUpOrder::zeroed(),
+            bytes_per_second: DownUpOrder::zeroed(),
+            actual_bytes_per_second: DownUpOrder::zeroed(),
+            packets_per_second: DownUpOrder::zeroed(),
+            tc_handle: TcHandle::from_u32(0),
+            rtt_buffer: RttBuffer::default(),
+            recent_rtt_data: [RttData::from_nanos(0); 60],
+            last_fresh_rtt_data_cycle: 0,
+            last_seen: 0,
+            tcp_retransmits: DownUpOrder {
+                down: retransmits_down,
+                up: 0,
+            },
+            tcp_retransmit_packets: DownUpOrder {
+                down: packets_down,
+                up: 0,
+            },
+            qoq: QoqScores::default(),
+        }
+    }
 
     #[test]
     fn shaped_device_lookup_falls_back_to_ip_when_hashes_missing() {
@@ -1346,5 +1468,97 @@ mod tests {
 
         assert_eq!(matched.circuit_hash, hash_to_i64("circuit-1"));
         assert_eq!(matched.device_hash, hash_to_i64("device-1"));
+    }
+
+    #[test]
+    fn circuit_and_global_heatmaps_suppress_low_confidence_retransmits() {
+        let _ctx = HeatmapTestContext::new("retransmit-suppressed");
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            download_max_mbps: 100.0,
+            upload_max_mbps: 100.0,
+            ..Default::default()
+        }]);
+        let circuit_hash = shaped.devices[0].circuit_hash;
+        SHAPED_DEVICES.store(Arc::new(shaped));
+
+        let tracker = ThroughputTracker::new();
+        tracker.raw_data.lock().insert(
+            XdpIpAddress::from_ip("192.168.1.11".parse().expect("test IP should parse")),
+            make_entry(circuit_hash, 1, 99),
+        );
+
+        tracker.record_circuit_heatmaps();
+
+        let circuit_blocks = tracker
+            .circuit_heatmaps
+            .lock()
+            .get(&circuit_hash)
+            .expect("circuit heatmap should exist")
+            .blocks();
+        assert_eq!(
+            circuit_blocks.retransmit_down.last().copied().flatten(),
+            None
+        );
+        assert_eq!(
+            tracker
+                .global_heatmap
+                .lock()
+                .blocks()
+                .retransmit_down
+                .last()
+                .copied()
+                .flatten(),
+            None
+        );
+    }
+
+    #[test]
+    fn circuit_and_global_heatmaps_keep_qualified_retransmits() {
+        let _ctx = HeatmapTestContext::new("retransmit-qualified");
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-2".to_string(),
+            device_id: "device-2".to_string(),
+            parent_node: "Parent-B".to_string(),
+            download_max_mbps: 100.0,
+            upload_max_mbps: 100.0,
+            ..Default::default()
+        }]);
+        let circuit_hash = shaped.devices[0].circuit_hash;
+        SHAPED_DEVICES.store(Arc::new(shaped));
+
+        let tracker = ThroughputTracker::new();
+        tracker.raw_data.lock().insert(
+            XdpIpAddress::from_ip("192.168.1.12".parse().expect("test IP should parse")),
+            make_entry(circuit_hash, 2, 100),
+        );
+
+        tracker.record_circuit_heatmaps();
+
+        let circuit_retransmit = tracker
+            .circuit_heatmaps
+            .lock()
+            .get(&circuit_hash)
+            .expect("circuit heatmap should exist")
+            .blocks()
+            .retransmit_down
+            .last()
+            .copied()
+            .flatten();
+        let global_retransmit = tracker
+            .global_heatmap
+            .lock()
+            .blocks()
+            .retransmit_down
+            .last()
+            .copied()
+            .flatten();
+
+        assert_eq!(circuit_retransmit, Some(2.0));
+        assert_eq!(global_retransmit, Some(2.0));
     }
 }

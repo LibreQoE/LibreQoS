@@ -489,18 +489,18 @@ mod tests {
     use super::migrate_legacy_runtime_state;
     use crate::Config;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_path(label: &str) -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock should be after UNIX_EPOCH")
             .as_nanos();
         std::env::temp_dir().join(format!("libreqos-state-migration-{label}-{stamp}"))
     }
 
-    fn test_config(root: &PathBuf) -> Config {
+    fn test_config(root: &Path) -> Config {
         Config {
             lqos_directory: root.join("src").display().to_string(),
             state_directory: Some(root.join("state").display().to_string()),
@@ -512,24 +512,30 @@ mod tests {
     fn migrates_legacy_runtime_files_into_state_directory() {
         let root = temp_path("migrate-files");
         let src = root.join("src");
-        fs::create_dir_all(&src).unwrap();
-        fs::write(src.join("lastGoodConfig.csv"), "legacy-csv\n").unwrap();
-        fs::write(src.join("lastRun.txt"), "legacy-run\n").unwrap();
-        fs::write(src.join("cpu_topology_cache.json"), "{}\n").unwrap();
+        fs::create_dir_all(&src).expect("test should create src dir");
+        fs::write(src.join("lastGoodConfig.csv"), "legacy-csv\n")
+            .expect("test should write legacy shaping csv");
+        fs::write(src.join("lastRun.txt"), "legacy-run\n")
+            .expect("test should write legacy stats file");
+        fs::write(src.join("cpu_topology_cache.json"), "{}\n")
+            .expect("test should write legacy cache file");
 
         let config = test_config(&root);
-        migrate_legacy_runtime_state(&config).unwrap();
+        migrate_legacy_runtime_state(&config).expect("legacy runtime files should migrate");
 
         assert_eq!(
-            fs::read_to_string(root.join("state/shaping/lastGoodConfig.csv")).unwrap(),
+            fs::read_to_string(root.join("state/shaping/lastGoodConfig.csv"))
+                .expect("migrated shaping file should be readable"),
             "legacy-csv\n"
         );
         assert_eq!(
-            fs::read_to_string(root.join("state/stats/lastRun.txt")).unwrap(),
+            fs::read_to_string(root.join("state/stats/lastRun.txt"))
+                .expect("migrated stats file should be readable"),
             "legacy-run\n"
         );
         assert_eq!(
-            fs::read_to_string(root.join("state/cache/cpu_topology_cache.json")).unwrap(),
+            fs::read_to_string(root.join("state/cache/cpu_topology_cache.json"))
+                .expect("migrated cache file should be readable"),
             "{}\n"
         );
         assert!(!src.join("lastGoodConfig.csv").exists());
@@ -544,17 +550,21 @@ mod tests {
         let root = temp_path("duplicate");
         let src = root.join("src");
         let state = root.join("state/shaping");
-        fs::create_dir_all(&src).unwrap();
-        fs::create_dir_all(&state).unwrap();
-        fs::write(src.join("lastGoodConfig.csv"), "legacy\n").unwrap();
-        fs::write(state.join("lastGoodConfig.csv"), "state\n").unwrap();
+        fs::create_dir_all(&src).expect("test should create src dir");
+        fs::create_dir_all(&state).expect("test should create state dir");
+        fs::write(src.join("lastGoodConfig.csv"), "legacy\n")
+            .expect("test should write legacy file");
+        fs::write(state.join("lastGoodConfig.csv"), "state\n")
+            .expect("test should write destination file");
 
         let config = test_config(&root);
-        migrate_legacy_runtime_state(&config).unwrap();
+        migrate_legacy_runtime_state(&config)
+            .expect("duplicate legacy file should be removed safely");
 
         assert!(!src.join("lastGoodConfig.csv").exists());
         assert_eq!(
-            fs::read_to_string(state.join("lastGoodConfig.csv")).unwrap(),
+            fs::read_to_string(state.join("lastGoodConfig.csv"))
+                .expect("state file should still be readable"),
             "state\n"
         );
 
@@ -565,17 +575,20 @@ mod tests {
     fn quarantines_obsolete_backups_and_moves_stale_directory() {
         let root = temp_path("quarantine");
         let src = root.join("src");
-        fs::create_dir_all(src.join(".topology_stale")).unwrap();
+        fs::create_dir_all(src.join(".topology_stale"))
+            .expect("test should create stale topology dir");
         fs::write(
             src.join("network.json.treeguard-polluted.20260322T014345Z.bak"),
             "polluted\n",
         )
-        .unwrap();
-        fs::write(src.join("network.json.pre_50k_generator.bak"), "backup\n").unwrap();
-        fs::write(src.join(".topology_stale/stale.json"), "{}\n").unwrap();
+        .expect("test should write polluted backup");
+        fs::write(src.join("network.json.pre_50k_generator.bak"), "backup\n")
+            .expect("test should write backup file");
+        fs::write(src.join(".topology_stale/stale.json"), "{}\n")
+            .expect("test should write stale topology file");
 
         let config = test_config(&root);
-        migrate_legacy_runtime_state(&config).unwrap();
+        migrate_legacy_runtime_state(&config).expect("obsolete backups should be quarantined");
 
         assert!(
             root.join(
@@ -605,18 +618,19 @@ mod tests {
     fn migrates_visp_token_cache_files() {
         let root = temp_path("visp-cache");
         let src = root.join("src");
-        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&src).expect("test should create src dir");
         fs::write(
             src.join(".visp_token_cache_deadbeef.json"),
             "{\"token\":1}\n",
         )
-        .unwrap();
+        .expect("test should write legacy visp cache");
 
         let config = test_config(&root);
-        migrate_legacy_runtime_state(&config).unwrap();
+        migrate_legacy_runtime_state(&config).expect("visp cache should migrate");
 
         assert_eq!(
-            fs::read_to_string(root.join("state/cache/.visp_token_cache_deadbeef.json")).unwrap(),
+            fs::read_to_string(root.join("state/cache/.visp_token_cache_deadbeef.json"))
+                .expect("migrated visp cache should be readable"),
             "{\"token\":1}\n"
         );
         assert!(!src.join(".visp_token_cache_deadbeef.json").exists());

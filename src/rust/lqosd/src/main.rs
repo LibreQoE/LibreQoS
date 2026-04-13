@@ -21,6 +21,8 @@ mod shaping_runtime;
 mod stats;
 mod stick;
 mod system_stats;
+#[cfg(test)]
+mod test_support;
 mod throughput_tracker;
 mod tool_status;
 mod treeguard;
@@ -259,6 +261,10 @@ fn main() -> Result<()> {
                     lqos_probe::ProbeManager::spawn(lqos_probe::ProbeManagerConfig::default());
                 let probe_client_for_stormguard = probe_client.clone();
                 probe_provider::install_probe_client(probe_client.clone());
+
+                tokio::spawn(async {
+                    lqos_topology::start_topology().await;
+                });
 
                 tokio::spawn(async move {
                     match lts2_sys::control_channel::start_control_channel(control_channel).await {

@@ -2,6 +2,8 @@
 
 #![warn(missing_docs)]
 
+mod runtime;
+
 use anyhow::{Context, Result};
 use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, Config, ConfigShapedDevices, TOPOLOGY_ATTACHMENT_AUTO_ID,
@@ -31,6 +33,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME: &str = "topology_effective_publish.lock";
 type EffectiveQueueAliasMap = HashMap<String, (String, String)>;
+
+pub use runtime::start_topology;
 
 /// One unique probe pair emitted from topology state plus operator intent.
 #[derive(Clone, Debug, PartialEq, Eq)]

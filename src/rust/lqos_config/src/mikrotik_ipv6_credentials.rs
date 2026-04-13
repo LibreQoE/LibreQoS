@@ -335,40 +335,44 @@ mod tests {
     };
     use crate::Config;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_path(label: &str) -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .expect("system clock should be after UNIX_EPOCH")
             .as_nanos();
         std::env::temp_dir().join(format!("libreqos-mikrotik-{label}-{stamp}"))
     }
 
-    fn test_config(root: &PathBuf) -> Config {
-        let mut config = Config::default();
-        config.lqos_directory = root.join("src").display().to_string();
-        config.mikrotik_ipv6.config_path = root
-            .join("etc/libreqos/mikrotik_ipv6.toml")
-            .display()
-            .to_string();
-        config
+    fn test_config(root: &Path) -> Config {
+        Config {
+            lqos_directory: root.join("src").display().to_string(),
+            mikrotik_ipv6: crate::MikrotikIpv6Config {
+                config_path: root
+                    .join("etc/libreqos/mikrotik_ipv6.toml")
+                    .display()
+                    .to_string(),
+            },
+            ..Config::default()
+        }
     }
 
     #[test]
     fn migrates_legacy_csv_and_deletes_it() {
         let root = temp_path("migrate");
         let src = root.join("src");
-        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&src).expect("test should create legacy src dir");
         fs::write(
             src.join(LEGACY_MIKROTIK_CSV_FILENAME),
             "Router Name / ID,IP,API Username,API Password, API Port\nmain,100.64.0.1,admin,password,8728\n",
         )
-        .unwrap();
+        .expect("test should write legacy mikrotik csv");
 
         let config = test_config(&root);
-        let routers = load_mikrotik_ipv6_router_credentials(&config).unwrap();
+        let routers = load_mikrotik_ipv6_router_credentials(&config)
+            .expect("legacy csv should migrate into TOML");
 
         assert_eq!(routers.len(), 1);
         assert_eq!(routers[0].name, "main");
@@ -376,7 +380,8 @@ mod tests {
         assert!(root.join("etc/libreqos/mikrotik_ipv6.toml").exists());
         assert!(!src.join(LEGACY_MIKROTIK_CSV_FILENAME).exists());
 
-        let saved = read_credentials_toml(&root.join("etc/libreqos/mikrotik_ipv6.toml")).unwrap();
+        let saved = read_credentials_toml(&root.join("etc/libreqos/mikrotik_ipv6.toml"))
+            .expect("migrated TOML should be readable");
         assert_eq!(saved.router, routers);
 
         let _ = fs::remove_dir_all(root);
@@ -387,21 +392,22 @@ mod tests {
         let root = temp_path("prefer-toml");
         let src = root.join("src");
         let etc = root.join("etc/libreqos");
-        fs::create_dir_all(&src).unwrap();
-        fs::create_dir_all(&etc).unwrap();
+        fs::create_dir_all(&src).expect("test should create src dir");
+        fs::create_dir_all(&etc).expect("test should create etc dir");
         fs::write(
             etc.join("mikrotik_ipv6.toml"),
             "version = 1\n\n[[router]]\nname = \"main\"\nhost = \"100.64.0.1\"\nport = 8728\nusername = \"admin\"\npassword = \"secret\"\nuse_ssl = false\nplaintext_login = true\n",
         )
-        .unwrap();
+        .expect("test should write current TOML");
         fs::write(
             src.join(LEGACY_MIKROTIK_CSV_FILENAME),
             "Router Name / ID,IP,API Username,API Password, API Port\nlegacy,100.64.0.2,user,pass,8728\n",
         )
-        .unwrap();
+        .expect("test should write legacy csv");
 
         let config = test_config(&root);
-        let routers = load_mikrotik_ipv6_router_credentials(&config).unwrap();
+        let routers = load_mikrotik_ipv6_router_credentials(&config)
+            .expect("current TOML should take precedence");
 
         assert_eq!(routers.len(), 1);
         assert_eq!(routers[0].name, "main");

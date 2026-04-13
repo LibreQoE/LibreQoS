@@ -3,7 +3,6 @@ import datetime
 import csv
 import io
 import json
-import atexit
 import chardet
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
@@ -31,8 +30,6 @@ except Exception:
 
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 shaping_runtime_hash = 0
-topology_runtime_process = None
-topology_runtime_missing_reported = False
 INTEGRATION_FAILURE_PREVIEW_LINES = 30
 INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
 TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
@@ -1039,20 +1036,6 @@ def importAndShapePartialReload():
     publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
 
 
-def topology_runtime_binary_path():
-    return os.path.join(get_libreqos_directory(), "bin", "lqos_topology")
-
-
-def topology_runtime_output_paths():
-    return [
-        get_existing_state_path("topology", "topology_attachment_health_state.json"),
-        get_existing_state_path("topology", "topology_effective_state.json"),
-        get_existing_state_path("topology", "network.effective.json"),
-        get_existing_state_path("shaping", "shaping_inputs.json"),
-        get_existing_state_path("topology", "topology_runtime_status.json"),
-    ]
-
-
 def topology_runtime_status_path():
     return get_existing_state_path("topology", "topology_runtime_status.json")
 
@@ -1143,86 +1126,20 @@ def report_topology_runtime_not_ready(context: str, *, phase_label: str, step_co
     )
 
 
-def clear_topology_runtime_outputs():
-    for path in topology_runtime_output_paths():
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            continue
-        except Exception as e:
-            print(f"Failed to remove topology runtime artifact {path}: {e}")
-
-
-def stop_topology_runtime_process():
-    global topology_runtime_process
-    process = topology_runtime_process
-    topology_runtime_process = None
-    if process is None:
-        return
-    if process.poll() is not None:
-        return
-    try:
-        process.terminate()
-        process.wait(timeout=5)
-    except Exception:
-        try:
-            process.kill()
-        except Exception:
-            pass
-
-
 def wait_for_topology_runtime_ready(timeout_seconds=8.0):
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         ready, _, _ = topology_runtime_readiness_detail()
         if ready:
             return True
-        process = topology_runtime_process
-        if process is not None and process.poll() is not None:
-            return False
         time.sleep(0.1)
     return False
 
 
 def ensure_topology_runtime_process(wait_for_outputs=False):
-    global topology_runtime_process
-    global topology_runtime_missing_reported
-
-    binary = topology_runtime_binary_path()
-    if not os.path.isfile(binary):
-        if not topology_runtime_missing_reported:
-            print(f"Topology runtime helper is unavailable at {binary}. Rain suppression is disabled.")
-            topology_runtime_missing_reported = True
-        clear_topology_runtime_outputs()
-        topology_runtime_process = None
-        return False
-
-    topology_runtime_missing_reported = False
-
-    if topology_runtime_process is not None:
-        code = topology_runtime_process.poll()
-        if code is None:
-            if wait_for_outputs:
-                return wait_for_topology_runtime_ready()
-            return True
-        print(f"Topology runtime helper exited with code {code}. Restarting it.")
-        clear_topology_runtime_outputs()
-        topology_runtime_process = None
-
-    try:
-        topology_runtime_process = subprocess.Popen(
-            [binary],
-            cwd=get_libreqos_directory(),
-        )
-        print("Started topology runtime helper.")
-        if wait_for_outputs:
-            return wait_for_topology_runtime_ready()
-        return True
-    except Exception as e:
-        print(f"Failed to start topology runtime helper: {e}")
-        clear_topology_runtime_outputs()
-        topology_runtime_process = None
-        return False
+    if wait_for_outputs:
+        return wait_for_topology_runtime_ready()
+    return True
 
 
 def topology_runtime_refresh_tick():
@@ -1259,7 +1176,6 @@ def ensure_bus_ready():
 def run_scheduler_main():
     global shaping_runtime_hash
 
-    atexit.register(stop_topology_runtime_process)
     set_scheduler_status_bus_enabled(False)
     ensure_bus_ready()
     set_scheduler_status_bus_enabled(True)
