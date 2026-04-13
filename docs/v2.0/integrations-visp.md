@@ -17,9 +17,10 @@ timeout_secs = 20
 ```
 
 Notes:
-- VISP import is GraphQL-based and currently defaults to a flat topology strategy.
-- The integration refreshes its shaping data every run.
-- `network.json` is for DIY/manual deployments; built-in integrations do not write it.
+- VISP import is GraphQL-based.
+- The importer prefers fast bulk service pulls and automatically backfills missing subscriber/service data from other VISP GraphQL queries when needed.
+- When VISP IRM upstream-device data is populated, the importer also builds site/upstream topology for imported subscribers instead of staying flat-only.
+- `network.json` is for DIY/manual deployments; built-in integrations do not overwrite it.
 - VISP auth tokens are cached in `<lqos_directory>/.visp_token_cache_*.json`.
 
 Run a manual import with:

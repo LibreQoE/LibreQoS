@@ -80,7 +80,7 @@ Current behavior:
 | Splynx | Yes | Network sites and AP/site topology nodes export generic `id`. |
 | Sonar | Yes | Site and AP topology nodes export generic `id`. |
 | Netzur | Partial | Exported only when the upstream zone data includes a stable zone ID. |
-| VISP | No | Current importer shapes services/devices but does not build topology nodes in `network.json`. |
+| VISP | Partial | Imports site/upstream topology and stable generic IDs when VISP IRM relationships are populated; subscribers without usable upstream mapping still fall back to flat attachment. |
 | Powercode | No | Current importer does not build topology nodes in `network.json`. |
 | WISPGate | No | Current importer does not build topology nodes from stable upstream topology identifiers. |
 

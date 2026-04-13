@@ -181,7 +181,9 @@ timeout_secs = 20
 
 Notas:
 
-- La importación VISP usa GraphQL y actualmente trabaja en estrategia `flat`.
+- La importación VISP usa GraphQL.
+- El importador prioriza consultas bulk rápidas y completa de forma selectiva los suscriptores/servicios que no estén cubiertos por esa ruta.
+- Cuando las relaciones IRM de dispositivo upstream están pobladas en VISP, el importador también construye topología de sitio/upstream para los suscriptores importados.
 - La integración reescribe `ShapedDevices.csv` en cada ejecución.
 - `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
 - Los tokens de VISP se cachean en `<lqos_directory>/.visp_token_cache_*.json`.
