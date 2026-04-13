@@ -2571,3 +2571,41 @@ table tr td a {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
+
+.btn-lqos-memorial {
+    color: #fff;
+    background: linear-gradient(135deg, #58667d 0%, #39475a 100%);
+    border-color: #39475a;
+    box-shadow: 0 0.35rem 0.9rem rgba(57, 71, 90, 0.18);
+}
+
+.btn-lqos-memorial:hover,
+.btn-lqos-memorial:focus,
+.btn-lqos-memorial:active,
+.btn-check:checked + .btn-lqos-memorial,
+.btn-check:active + .btn-lqos-memorial,
+.btn-lqos-memorial.show {
+    color: #fff;
+    background: linear-gradient(135deg, #4a576c 0%, #2f3c4d 100%);
+    border-color: #2f3c4d;
+}
+
+.btn-lqos-memorial:focus-visible {
+    box-shadow: 0 0 0 0.25rem rgba(88, 102, 125, 0.28);
+}
+
+html[data-bs-theme="dark"] .btn-lqos-memorial {
+    background: linear-gradient(135deg, #6b7d9a 0%, #4d5f79 100%);
+    border-color: #7d90ae;
+    box-shadow: 0 0.35rem 0.9rem rgba(5, 8, 15, 0.35);
+}
+
+html[data-bs-theme="dark"] .btn-lqos-memorial:hover,
+html[data-bs-theme="dark"] .btn-lqos-memorial:focus,
+html[data-bs-theme="dark"] .btn-lqos-memorial:active,
+html[data-bs-theme="dark"] .btn-check:checked + .btn-lqos-memorial,
+html[data-bs-theme="dark"] .btn-check:active + .btn-lqos-memorial,
+html[data-bs-theme="dark"] .btn-lqos-memorial.show {
+    background: linear-gradient(135deg, #7a8fb3 0%, #5d7290 100%);
+    border-color: #8ea3c4;
+}
