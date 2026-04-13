@@ -32,8 +32,13 @@ jobs:
 
         BPFTOOL_TARBALL="bpftool-v${BPFTOOL_VERSION}-${BPFTOOL_ARCH}.tar.gz"
         BPFTOOL_BASE_URL="https://github.com/libbpf/bpftool/releases/download/v${BPFTOOL_VERSION}"
-        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}"
-        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}.sha256sum"
+        download_with_retry() {
+          local url="$1"
+          curl --retry 5 --retry-delay 2 --retry-all-errors -fsSLO "${url}"
+        }
+
+        download_with_retry "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}"
+        download_with_retry "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}.sha256sum"
         sha256sum -c "${BPFTOOL_TARBALL}.sha256sum"
         tar -xzf "${BPFTOOL_TARBALL}"
         sudo install -m 0755 bpftool /usr/local/bin/bpftool
