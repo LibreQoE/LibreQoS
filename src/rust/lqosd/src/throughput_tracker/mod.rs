@@ -11,7 +11,6 @@ use self::throughput_entry::ThroughputEntry;
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
 use crate::{
-    lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::{FlowApplyContext, ThroughputTracker},
@@ -1015,10 +1014,7 @@ pub fn executive_summary_header() -> BusResponse {
     let queue_counts = ALL_QUEUE_SUMMARY.queue_counts();
     let bakery_reload_in_progress = full_reload_in_progress();
     let queue_stats_stale = queue_stats_stale() || bakery_reload_in_progress;
-    let insight_connected = !matches!(
-        get_lts_license_status().0,
-        LtsStatus::Invalid | LtsStatus::NotChecked
-    );
+    let insight_connected = crate::lts2_sys::current_capabilities().control_service_reachable;
 
     BusResponse::ExecutiveSummaryHeader(ExecutiveSummaryHeader {
         circuit_count,

@@ -1,5 +1,7 @@
 use crate::node_manager::auth::LoginResult;
+use crate::node_manager::local_api::network_mode::NetworkModeInspection;
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::shaping_runtime::ShapingRuntimeStatus;
 use axum::http::StatusCode;
 use default_net::get_interfaces;
 use lqos_bus::{BusRequest, bus_request};
@@ -156,6 +158,10 @@ pub struct ConfigView {
     pub config: Config,
     #[serde(default)]
     pub secret_state: ConfigSecretState,
+    #[serde(default)]
+    pub shaping_status: ShapingRuntimeStatus,
+    #[serde(default)]
+    pub network_mode_inspection: NetworkModeInspection,
 }
 
 pub fn admin_check_data(login: LoginResult) -> bool {
@@ -317,6 +323,9 @@ pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
             let mut config = (*config).clone();
             let secret_state = redact_config_secrets(&mut config);
             ConfigView {
+                shaping_status: crate::shaping_runtime::get_status(),
+                network_mode_inspection:
+                    crate::node_manager::local_api::network_mode::inspect_network_mode(&config),
                 config,
                 secret_state,
             }

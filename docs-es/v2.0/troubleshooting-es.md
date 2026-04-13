@@ -197,9 +197,9 @@ Si ve mensajes como:
 
 LibreQoS está aplicando un límite de circuitos mapeados.
 
-`ShapedDevices.csv` puede contener entradas ilimitadas, pero sin una suscripción/licencia Insight válida LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo.
+`ShapedDevices.csv` puede contener entradas ilimitadas, pero sin un estado válido de licencia/grant de Insight o Local LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo.
 
-El límite predeterminado de 1000 circuitos mapeados aplica cuando Insight está:
+El límite predeterminado de 1000 circuitos mapeados aplica cuando el estado de licencia/grant está:
 - ausente
 - expirado
 - inválido por cualquier motivo
@@ -213,7 +213,7 @@ Síntomas típicos visibles para el operador:
 
 Checks recomendados:
 
-1. Confirmar estado de licencia Insight en UI.
+1. Confirmar el estado de licencia en la página `License & Services`.
 2. Revisar logs de `lqosd` para requested/allowed/dropped.
 3. Reducir circuitos mapeados (corto plazo) o ajustar licencia/límites (largo plazo).
 

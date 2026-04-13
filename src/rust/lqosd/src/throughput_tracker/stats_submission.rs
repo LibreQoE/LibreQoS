@@ -1,5 +1,4 @@
-use crate::lts2_sys::get_lts_license_status;
-use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, LtsStatus};
+use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
 use crate::shaped_devices_tracker::{
     NETWORK_JSON, SHAPED_DEVICE_HASH_CACHE, SHAPED_DEVICES, shaped_device_from_hashes_or_ip,
 };
@@ -118,13 +117,7 @@ pub(crate) fn submit_throughput_stats(
         return;
     }
 
-    // Bail out if the license doesn't indicate that we're allowed to submit stats
-    let (license_status, _days_remaining) = get_lts_license_status();
-    let can_submit = !matches!(
-        license_status,
-        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
-    );
-    if !can_submit {
+    if !crate::lts2_sys::can_submit_long_term_stats() {
         return;
     }
 

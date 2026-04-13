@@ -1997,6 +1997,7 @@ table tr td a {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     padding: 1.1rem 1.15rem;
+    min-width: 0;
 }
 
 .lqos-config-panel-header {
@@ -2030,6 +2031,8 @@ table tr td a {
     background: color-mix(in srgb, var(--lqos-surface-2) 82%, transparent);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
     padding: 1rem 1rem 0.9rem;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .lqos-config-section-title {
@@ -2073,6 +2076,127 @@ table tr td a {
     align-items: center;
     gap: 0.75rem;
     margin-top: 1rem;
+}
+
+.lqos-config-actions-network-mode {
+    align-items: stretch;
+    flex-wrap: wrap;
+}
+
+.lqos-config-action-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: min(100%, 16rem);
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-md);
+    background: color-mix(in srgb, var(--lqos-surface-2) 82%, transparent);
+}
+
+.lqos-config-action-group-primary {
+    border-color: color-mix(in srgb, var(--bs-info) 32%, var(--lqos-border));
+    background: color-mix(in srgb, var(--bs-info-bg-subtle) 42%, var(--lqos-surface-2) 58%);
+}
+
+.lqos-config-action-label {
+    color: var(--bs-secondary-color);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.lqos-config-grid-compact {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.lqos-config-panel-wide {
+    grid-column: auto;
+}
+
+.lqos-config-tabbar {
+    gap: 0.5rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+}
+
+.lqos-config-tabbar .nav-link {
+    white-space: nowrap;
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-2) 78%, transparent);
+}
+
+.lqos-config-tabpanel {
+    min-width: 0;
+}
+
+.lqos-config-button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.lqos-config-button-row .btn {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+}
+
+.lqos-break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+#pendingChange,
+#lastBackup {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+#pendingChange code,
+#lastBackup code {
+    white-space: pre-wrap;
+}
+
+.lqos-backup-entry {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.lqos-config-disclosure {
+    border: 1px dashed color-mix(in srgb, var(--lqos-border) 85%, transparent);
+    border-radius: var(--lqos-radius-md);
+    padding: 0.7rem 0.85rem;
+    background: color-mix(in srgb, var(--lqos-surface-2) 72%, transparent);
+}
+
+.lqos-config-disclosure summary {
+    cursor: pointer;
+    color: var(--bs-secondary-color);
+    font-weight: 600;
+}
+
+.lqos-config-disclosure[open] summary {
+    margin-bottom: 0.35rem;
+}
+
+#lastBackup {
+    max-height: 13rem;
+    overflow: auto;
+    padding-right: 0.25rem;
+}
+
+@media (min-width: 1200px) {
+    .lqos-config-grid-compact {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .lqos-config-panel-wide {
+        grid-column: 1 / -1;
+    }
 }
 
 .lqos-config-panel .card {

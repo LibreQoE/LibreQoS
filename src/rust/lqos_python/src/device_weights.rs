@@ -114,11 +114,11 @@ fn use_lts_weights() -> bool {
     if !(config.long_term_stats.gather_stats && config.long_term_stats.license_key.is_some()) {
         return false;
     }
-    // Ask lqosd (via bus) whether Insight is actually enabled/licensed
-    if let Ok(responses) = crate::blocking::run_query(vec![BusRequest::CheckInsight]) {
+    // Ask lqosd (via bus) whether long-term stats submission is actually enabled/licensed
+    if let Ok(responses) = crate::blocking::run_query(vec![BusRequest::GetLtsCapabilities]) {
         for resp in responses.into_iter() {
-            if let BusResponse::InsightStatus(enabled) = resp {
-                return enabled;
+            if let BusResponse::LtsCapabilitiesSummary(summary) = resp {
+                return summary.can_submit_long_term_stats;
             }
         }
     }

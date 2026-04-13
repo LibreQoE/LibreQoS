@@ -3962,12 +3962,12 @@ fn treeguard_get_node_virtual_branch_state(
 #[pyfunction]
 /// Returns whether Insight features are currently enabled in `lqosd`.
 pub fn is_insight_enabled() -> PyResult<bool> {
-    let Ok(responses) = run_query(vec![BusRequest::CheckInsight]) else {
+    let Ok(responses) = run_query(vec![BusRequest::GetLtsCapabilities]) else {
         return Ok(false);
     };
     for resp in responses {
-        if let BusResponse::InsightStatus(enabled) = resp {
-            return Ok(enabled);
+        if let BusResponse::LtsCapabilitiesSummary(summary) = resp {
+            return Ok(summary.can_view_insight_ui);
         }
     }
     Ok(false)

@@ -43,6 +43,7 @@ members = [
     "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
     "lqos_topology", # Shared topology runtime domain logic and health/effective-state helper.
     "lqos_topology_compile", # Shared topology compilation and mode projection layer.
+    "lqos_netplan_helper", # Managed netplan inspection/transaction helper.
 ]
 
 [dependencies]

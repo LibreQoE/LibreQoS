@@ -1,7 +1,6 @@
 //! Provides an Axum layer that applies templates to static HTML
 //! files.
 
-use crate::lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::{FIRST_LOAD, get_username};
 use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::tool_status::is_api_available;
@@ -103,9 +102,6 @@ pub async fn apply_templates(
     let template_text = template_text.replace("%%USERNAME%%", &username);
 
     let res = next.run(req).await;
-    //let mut lts_script = "<script>window.hasLts = false;</script>";
-    let mut script_has_lts = false;
-    let mut script_has_insight = false;
     let new_version = crate::version_checks::new_version_available();
 
     if apply_template {
@@ -113,20 +109,10 @@ pub async fn apply_templates(
         let mut trial_link;
 
         // Change the LTS part of the template
-        let (lts_status, _) = crate::lts2_sys::get_lts_license_status_async().await;
+        let capabilities = crate::lts2_sys::current_capabilities();
         trial_link = INSIGHT_LINK_OFFER_TRIAL.to_string();
-        let script_has_support_tickets = matches!(
-            lts_status,
-            LtsStatus::AlwaysFree | LtsStatus::FreeTrial | LtsStatus::SelfHosted | LtsStatus::Full
-        );
-        match lts_status {
-            LtsStatus::Invalid | LtsStatus::NotChecked => {}
-            _ => {
-                // Link to it
-                trial_link = INSIGHT_LINK_ACTIVE.to_string();
-                script_has_insight = true;
-                script_has_lts = true;
-            }
+        if capabilities.can_view_insight_ui {
+            trial_link = INSIGHT_LINK_ACTIVE.to_string();
         }
 
         // Title and node_id
@@ -136,10 +122,17 @@ pub async fn apply_templates(
 
         // "LTS script" - which is increasingly becoming a misnomer
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
-            js_tf(script_has_lts),
-            js_tf(script_has_insight),
-            js_tf(script_has_support_tickets),
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
+            js_tf(capabilities.can_view_insight_ui),
+            js_tf(capabilities.can_view_insight_ui),
+            js_tf(capabilities.can_use_support_tickets),
+            js_tf(capabilities.can_use_chatbot),
+            js_tf(capabilities.can_use_api_link),
+            js_tf(capabilities.control_service_reachable),
+            serde_json::to_string(&capabilities.license_state_label)
+                .unwrap_or_else(|_| "\"Unknown\"".to_string()),
+            serde_json::to_string(&capabilities.authority_label)
+                .unwrap_or_else(|_| "\"Unknown\"".to_string()),
             node_id_js,
             rtt_thresholds.green_ms,
             rtt_thresholds.yellow_ms,
@@ -160,7 +153,7 @@ pub async fn apply_templates(
                     .sorted_by(|a, b| a.circuit_hash.cmp(&b.circuit_hash))
                     .dedup()
                     .count();
-                if num_circuits > 1_000 && !script_has_insight {
+                if num_circuits > 1_000 && !capabilities.can_view_insight_ui {
                     show_modal = "true";
                     show_modal_number = num_circuits.to_string();
                 }
@@ -182,7 +175,7 @@ pub async fn apply_templates(
             .replace("%%MODAL%%", show_modal)
             .replace("%%MODAL_NUM%%", &show_modal_number);
         // Handle API_LINK placeholder (require service + valid Insight)
-        let api_link = if is_api_available() && script_has_insight {
+        let api_link = if is_api_available() && capabilities.can_use_api_link {
             API_LINK_ACTIVE
         } else {
             API_LINK_INACTIVE

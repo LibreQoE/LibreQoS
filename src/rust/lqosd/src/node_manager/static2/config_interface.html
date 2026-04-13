@@ -1,29 +1,51 @@
 <div class="lqos-config-page">
     <div id="configMenuContainer"></div>
 
+    <div id="shapingBanner"></div>
+    <div id="networkRecoveryPanel" class="alert alert-warning d-none" role="alert">
+        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+            <div>
+                <div class="fw-semibold mb-1">Network Change In Progress</div>
+                <div id="networkRecoverySummary" class="mb-1">
+                    LibreQoS is waiting for you to confirm or revert the pending network change.
+                </div>
+                <div id="networkRecoveryDetail" class="small mb-0">
+                    Your browser may disconnect while the network change is being tested. This page will keep waiting for the box to come back.
+                </div>
+            </div>
+            <div class="d-flex flex-column align-items-lg-end gap-2">
+                <div id="networkRecoveryCountdown" class="small text-secondary">Waiting for pending change details...</div>
+                <div class="d-flex gap-2">
+                    <button type="button" id="recoveryConfirmButton" class="btn btn-success btn-sm" disabled>Confirm Network Change</button>
+                    <button type="button" id="recoveryRevertButton" class="btn btn-outline-danger btn-sm" disabled>Revert Network Change</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <form class="lqos-config-grid">
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Network Mode</h5>
-                    <div class="lqos-config-panel-subtitle">Choose how LibreQoS connects to the network, then configure the required interfaces or VLANs.</div>
+                    <h5 class="lqos-config-panel-title">Bridge &amp; Interface Mode</h5>
+                    <div class="lqos-config-panel-subtitle">Choose how LibreQoS connects to the network, then inspect the detected netplan state before applying a managed bridge workflow.</div>
                 </div>
             </div>
 
             <div class="lqos-config-section">
                 <h6 class="lqos-config-section-title">Operating Mode</h6>
-                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs.</div>
+                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs. XDP bridge mode remains manual.</div>
 
                 <div class="mb-3">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="networkMode" id="bridgeMode" value="bridge">
                         <label class="form-check-label" for="bridgeMode">Bridge Mode</label>
-                        <div class="form-text">Two physical interfaces: one facing the Internet and one facing the LAN.</div>
+                        <div class="form-text">Two physical interfaces: one facing the Internet and one facing the LAN. Linux bridge mode is the managed netplan path.</div>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="networkMode" id="singleInterfaceMode" value="single">
                         <label class="form-check-label" for="singleInterfaceMode">Single Interface Mode</label>
-                        <div class="form-text">Single physical interface using VLANs (on-a-stick).</div>
+                        <div class="form-text">Single physical interface using VLANs (on-a-stick). Managed netplan preview disables DHCP on the selected interface.</div>
                     </div>
                 </div>
             </div>
@@ -31,62 +53,184 @@
 
         <div id="bridgeConfig" style="display: none;">
             <section class="lqos-config-panel">
-                <div class="card">
-                    <div class="card-header">Bridge Mode Configuration</div>
-                    <div class="card-body">
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="useXdpBridge">
-                            <label class="form-check-label" for="useXdpBridge">Use XDP Bridge</label>
-                            <div class="form-text">Use the XDP bridge instead of the Linux Bridge (not compatible with the default configuration).</div>
-                        </div>
+                <div class="lqos-config-section">
+                    <h6 class="lqos-config-section-title">Bridge Mode Configuration</h6>
+                    <div class="lqos-config-section-subtitle">Choose the two shaping interfaces for the managed Linux bridge flow, or leave XDP enabled if you are intentionally handling Netplan outside this page.</div>
 
-                        <div class="mb-3">
-                            <label for="toInternet" class="form-label">Internet-Facing Interface</label>
-                            <input type="text" class="form-control" id="toInternet">
-                            <div class="form-text">Interface name facing the Internet (for example, <code>eth0</code>).</div>
-                        </div>
-
-                        <div class="mb-0">
-                            <label for="toNetwork" class="form-label">LAN-Facing Interface</label>
-                            <input type="text" class="form-control" id="toNetwork">
-                            <div class="form-text">Interface name facing the LAN (for example, <code>eth1</code>).</div>
-                        </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="useXdpBridge">
+                        <label class="form-check-label" for="useXdpBridge">Use XDP Bridge</label>
+                        <div class="form-text">Use the XDP bridge instead of the Linux Bridge. This remains a manual/power-user netplan workflow.</div>
                     </div>
+
+                    <div class="mb-3">
+                        <label for="toInternet" class="form-label">Internet-Facing Interface</label>
+                        <select class="form-select" id="toInternet">
+                            <option value="">Select an eligible interface</option>
+                        </select>
+                        <div class="form-text">Eligible non-management interfaces with LibreQoS-friendly queue support.</div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label for="toNetwork" class="form-label">LAN-Facing Interface</label>
+                        <select class="form-select" id="toNetwork">
+                            <option value="">Select an eligible interface</option>
+                        </select>
+                        <div class="form-text">Pick a different eligible interface for the LAN side.</div>
+                    </div>
+                    <div id="bridgeInterfaceHelp" class="small text-secondary"></div>
                 </div>
             </section>
         </div>
 
         <div id="singleInterfaceConfig" style="display: none;">
             <section class="lqos-config-panel">
-                <div class="card">
-                    <div class="card-header">Single Interface Mode Configuration</div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <label for="interface" class="form-label">Interface Name</label>
-                            <input type="text" class="form-control" id="interface">
-                            <div class="form-text">Physical interface name (for example, <code>eth0</code>).</div>
-                        </div>
+                <div class="lqos-config-section">
+                    <h6 class="lqos-config-section-title">Single Interface Mode Configuration</h6>
+                    <div class="lqos-config-section-subtitle">Pick the trunk interface and define the WAN and LAN VLAN IDs that LibreQoS should prepare in managed Netplan.</div>
 
-                        <div class="mb-3">
-                            <label for="internetVlan" class="form-label">Internet VLAN ID</label>
-                            <input type="number" class="form-control" id="internetVlan" min="1" max="4094">
-                            <div class="form-text">VLAN ID for Internet traffic.</div>
-                        </div>
-
-                        <div class="mb-0">
-                            <label for="networkVlan" class="form-label">LAN VLAN ID</label>
-                            <input type="number" class="form-control" id="networkVlan" min="1" max="4094">
-                            <div class="form-text">VLAN ID for LAN traffic.</div>
-                        </div>
+                    <div class="mb-3">
+                        <label for="interface" class="form-label">Interface Name</label>
+                        <select class="form-select" id="interface">
+                            <option value="">Select an eligible interface</option>
+                        </select>
+                        <div class="form-text">Eligible non-management physical interface for the trunk.</div>
                     </div>
+
+                    <div class="mb-3">
+                        <label for="internetVlan" class="form-label">Internet VLAN ID</label>
+                        <input type="number" class="form-control" id="internetVlan" min="1" max="4094">
+                        <div class="form-text">VLAN ID for Internet traffic.</div>
+                    </div>
+
+                    <div class="mb-0">
+                        <label for="networkVlan" class="form-label">LAN VLAN ID</label>
+                        <input type="number" class="form-control" id="networkVlan" min="1" max="4094">
+                        <div class="form-text">VLAN ID for LAN traffic.</div>
+                    </div>
+                    <div id="singleInterfaceHelp" class="small text-secondary mt-2"></div>
                 </div>
             </section>
         </div>
 
-        <div class="lqos-config-actions">
-            <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+        <div class="lqos-config-actions lqos-config-actions-network-mode">
+            <div class="lqos-config-action-group">
+                <div class="lqos-config-action-label">Draft</div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" id="saveButton" class="btn btn-outline-primary btn-sm">Save Bridge &amp; Interface Mode</button>
+                    <button type="button" id="inspectButton" class="btn btn-outline-secondary btn-sm">Inspect Current Netplan</button>
+                </div>
+            </div>
+            <div class="lqos-config-action-group lqos-config-action-group-primary">
+                <div class="lqos-config-action-label">Commit Candidate</div>
+                <button type="button" id="applyButton" class="btn btn-primary">Apply Network Changes</button>
+            </div>
+            <div class="lqos-config-action-group">
+                <div class="lqos-config-action-label">Import Existing Netplan</div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" id="adoptButton" class="btn btn-outline-primary btn-sm" disabled>Adopt into libreqos.yaml</button>
+                    <button type="button" id="takeoverButton" class="btn btn-outline-primary btn-sm" disabled>Take Over libreqos.yaml</button>
+                </div>
+            </div>
         </div>
     </form>
+
+    <div class="lqos-config-grid lqos-config-grid-compact mt-1">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header d-flex justify-content-between align-items-start gap-2">
+                <div>
+                    <h5 class="lqos-config-panel-title">Shaping Status</h5>
+                    <div class="lqos-config-panel-subtitle">Current shaping runtime state, degraded-mode detail, and whether manual intervention is still needed.</div>
+                </div>
+                <span id="shapingStatusBadge" class="badge text-bg-secondary">Loading</span>
+            </div>
+            <div class="lqos-config-section h-100">
+                <p id="shapingStatusSummary" class="mb-2 text-secondary">Loading shaping status...</p>
+                <pre id="shapingStatusDetail" class="small mb-0 d-none"></pre>
+                <div class="mt-3 d-flex justify-content-start">
+                    <button type="button" id="retryShapingButton" class="btn btn-outline-warning btn-sm d-none" disabled>Retry Shaping</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header d-flex justify-content-between align-items-start gap-2">
+                <div>
+                    <h5 class="lqos-config-panel-title">Bridge Status</h5>
+                    <div class="lqos-config-panel-subtitle">Detected Netplan ownership, compatibility warnings, and whether the current mode can be managed safely by LibreQoS.</div>
+                </div>
+                <span id="netplanStateBadge" class="badge text-bg-secondary">Loading</span>
+            </div>
+            <div class="lqos-config-section h-100">
+                <p id="netplanSummary" class="mb-2 text-secondary">Loading netplan inspection...</p>
+                <div id="netplanWarnings"></div>
+                <div id="netplanConflicts"></div>
+            </div>
+        </section>
+
+        <section class="lqos-config-panel lqos-config-panel-wide">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Review Candidate</h5>
+                    <div class="lqos-config-panel-subtitle">Use the tabs below to review detected files, the managed candidate LibreQoS will write, and the exact diff before you commit a network change.</div>
+                </div>
+            </div>
+            <div class="lqos-config-section">
+                <div class="nav nav-pills lqos-config-tabbar mb-3" role="tablist" aria-label="Network mode review sections">
+                    <button type="button" class="nav-link active" data-review-tab="files" aria-selected="true">Detected Files</button>
+                    <button type="button" class="nav-link" data-review-tab="managed" aria-selected="false">Managed Preview</button>
+                    <button type="button" class="nav-link" data-review-tab="diff" aria-selected="false">Diff Preview</button>
+                </div>
+
+                <div class="lqos-config-tabpanel" data-review-pane="files">
+                    <div class="small text-secondary mb-2">Each relevant file is classified so you can see whether LibreQoS can adopt it, must leave it alone, or treats it as conflicting.</div>
+                    <div id="netplanFiles" class="small text-secondary">Loading detected netplan files...</div>
+                </div>
+
+                <div class="lqos-config-tabpanel d-none" data-review-pane="managed">
+                    <div id="managedPreviewMeta" class="small text-secondary mb-2"></div>
+                    <div id="managedPreviewNote"></div>
+                    <pre id="managedPreview" class="mb-0"></pre>
+                </div>
+
+                <div class="lqos-config-tabpanel d-none" data-review-pane="diff">
+                    <div id="diffPreviewMeta" class="small text-secondary mb-2"></div>
+                    <pre id="diffPreview" class="mb-0 text-secondary">No diff preview available.</pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Pending Change</h5>
+                    <div class="lqos-config-panel-subtitle">Use these controls to explicitly confirm or revert a staged network change before the rollback window expires.</div>
+                </div>
+            </div>
+            <div class="lqos-config-section h-100">
+                <div id="pendingChange" class="text-secondary">No pending network change.</div>
+                <div class="mt-3 lqos-config-button-row">
+                    <button type="button" id="confirmPendingButton" class="btn btn-success btn-sm" disabled>Confirm Pending Change</button>
+                    <button type="button" id="revertPendingButton" class="btn btn-outline-danger btn-sm" disabled>Revert Pending Change</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Last Backup</h5>
+                    <div class="lqos-config-panel-subtitle">Restore the most recent LibreQoS-managed backup if you need to return to the previous committed network configuration.</div>
+                </div>
+            </div>
+            <div class="lqos-config-section h-100">
+                <div id="lastBackup" class="text-secondary">No helper backup recorded yet.</div>
+                <div class="mt-3 lqos-config-button-row">
+                    <button type="button" id="restoreLatestBackupButton" class="btn btn-outline-secondary btn-sm" disabled>Restore Previous Managed Config</button>
+                </div>
+            </div>
+        </section>
+    </div>
 </div>
 
 <script src="config_interface.js%CACHEBUSTERS%"></script>

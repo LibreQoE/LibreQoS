@@ -3,7 +3,7 @@ import { get_ws_client } from "../pubsub/ws";
 const wsClient = get_ws_client();
 const secretBindings = [];
 
-function sendWsRequest(responseEvent, request, onComplete, onError) {
+export function sendWsRequest(responseEvent, request, onComplete, onError) {
     let done = false;
     const responseHandler = (msg) => {
         if (done) return;
@@ -632,11 +632,11 @@ export function renderConfigMenu(currentPage) {
         { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
         { href: "config_rtt.html", icon: "fa-stopwatch", text: "RTT Thresholds", id: "rtt" },
         { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
-        { href: "config_interface.html", icon: "fa-chain", text: "Network Mode", id: "interface" },
+        { href: "config_interface.html", icon: "fa-chain", text: "Bridge & Interface Mode", id: "interface" },
         { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
         { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
         { href: "config_treeguard.html", icon: "fa-shield-halved", text: "TreeGuard", id: "treeguard" },
-        { href: "config_lts.html", icon: "fa-line-chart", text: "LibreQoS Insight", id: "lts" },
+        { href: "config_lts.html", icon: "fa-line-chart", text: "License & Services", id: "lts" },
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },

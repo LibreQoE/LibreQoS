@@ -178,6 +178,22 @@ impl PrivateState {
             return;
         }
 
+        let capabilities = crate::lts2_sys::current_capabilities();
+        if !capabilities.can_use_chatbot || !capabilities.control_service_reachable {
+            let message = if capabilities.can_use_chatbot {
+                "license valid, control service unavailable"
+            } else {
+                "Libby requires an entitled license."
+            };
+            let response = WsResponse::Error {
+                message: message.to_string(),
+            };
+            if let Ok(payload) = encode_ws_message(&response) {
+                let _ = self.tx.send(payload).await;
+            }
+            return;
+        }
+
         let request_id = rand::random::<u64>();
         self.chatbot_request = Some(request_id);
         let (stream_tx, mut stream_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);

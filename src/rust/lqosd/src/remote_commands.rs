@@ -20,6 +20,10 @@ pub fn start_remote_commands() {
 }
 
 fn run_command(command: RemoteCommand) {
+    if !crate::lts2_sys::current_capabilities().can_receive_remote_commands {
+        warn!("Ignoring remote command because current license tier does not permit it");
+        return;
+    }
     match command {
         RemoteCommand::Log(msg) => {
             warn!("Message from Insight: {}", msg);

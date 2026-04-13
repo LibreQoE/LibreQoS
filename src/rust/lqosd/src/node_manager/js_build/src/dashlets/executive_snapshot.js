@@ -102,7 +102,7 @@ export class ExecutiveSnapshotDashlet extends BaseDashlet {
                     <div class="d-flex align-items-center gap-3">
                         <span class="exec-icon ${value ? "text-success" : "text-danger"}"><i class="fas fa-satellite-dish"></i></span>
                         <div>
-                            <div class="text-secondary small">Insight</div>
+                            <div class="text-secondary small">Control Service</div>
                             <div class="exec-metric-value text-secondary">${badge}</div>
                         </div>
                     </div>

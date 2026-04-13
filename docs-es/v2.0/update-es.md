@@ -7,7 +7,7 @@ Si usas el puente XDP, el tráfico dejará de pasar por el puente mientras lqosd
 ## Si instalaste el .deb
 
 ```{important}
-Desde v2.0, la ingesta de circuitos mapeados depende del estado válido de la licencia Insight. Sin una suscripción/licencia Insight válida, LibreQoS solo lee los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Esto incluye estado local de grant/licencia expirado o inválido por cualquier motivo. Vea [Comportamiento de licenciamiento de Insight](insight-es.md#límites-de-circuitos-mapeados-y-estado-de-licencia) y [Solución de problemas](troubleshooting-es.md).
+Desde v2.0, la ingesta de circuitos mapeados depende de un estado válido de licencia/grant con derecho. Sin un estado válido de licencia/grant de Insight o Local, LibreQoS solo lee los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Esto incluye estado local de grant/licencia expirado o inválido por cualquier motivo. Vea [Comportamiento de licenciamiento de Insight](insight-es.md#límites-de-circuitos-mapeados-y-estado-de-licencia) y [Solución de problemas](troubleshooting-es.md).
 ```
 
 Ejecuta:

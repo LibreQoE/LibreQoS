@@ -7,7 +7,7 @@ If you use the XDP bridge, traffic will briefly stop passing through the bridge 
 ## If you installed the .deb
 
 ```{important}
-Starting in v2.0, mapped-circuit ingest depends on valid Insight license state. Without a valid Insight subscription/license, LibreQoS reads only the first 1000 valid mapped circuits into active shaping state. This includes expired or otherwise invalid local grant/license state. See [Insight Licensing Behavior](insight.md#mapped-circuit-limits-and-license-state) and [Troubleshooting](troubleshooting.md).
+Starting in v2.0, mapped-circuit ingest depends on valid entitled license/grant state. Without a valid Insight or Local license/grant state, LibreQoS reads only the first 1000 valid mapped circuits into active shaping state. This includes expired or otherwise invalid local grant/license state. See [Insight Licensing Behavior](insight.md#mapped-circuit-limits-and-license-state) and [Troubleshooting](troubleshooting.md).
 ```
 
 Run:
