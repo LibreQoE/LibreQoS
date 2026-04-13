@@ -1447,10 +1447,18 @@ mod tests {
 
     fn write_test_config(runtime_dir: &Path) -> PathBuf {
         let config_path = runtime_dir.join("lqos.test.toml");
-        let raw = include_str!("../../../lqos_config/src/etc/v15/example.toml").replace(
-            "lqos_directory = \"/opt/libreqos/src\"",
-            &format!("lqos_directory = \"{}\"", runtime_dir.display()),
-        );
+        let raw = include_str!("../../../lqos_config/src/etc/v15/example.toml")
+            .replace(
+                "lqos_directory = \"/opt/libreqos/src\"",
+                &format!("lqos_directory = \"{}\"", runtime_dir.display()),
+            )
+            .replace(
+                "state_directory = \"/opt/libreqos/state\"",
+                &format!(
+                    "state_directory = \"{}\"",
+                    runtime_dir.join("state").display()
+                ),
+            );
         std::fs::write(&config_path, raw).expect("test config should be written");
         config_path
     }

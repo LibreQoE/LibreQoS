@@ -1,6 +1,6 @@
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::treeguard::actor::is_runtime_virtualized_node;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
@@ -208,6 +208,89 @@ fn shaped_devices_from_runtime_inputs(
     let mut shaped = ConfigShapedDevices::default();
     shaped.replace_with_new_data(devices);
     shaped
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShapedDevicesLoadSource {
+    RuntimeShapingInputs,
+    TopologyImport,
+    ShapedDevicesCsv,
+}
+
+fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
+    config.uisp_integration.enable_uisp
+        || config.splynx_integration.enable_splynx
+        || config
+            .netzur_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_netzur)
+        || config
+            .visp_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_visp)
+        || config.powercode_integration.enable_powercode
+        || config.sonar_integration.enable_sonar
+        || config
+            .wispgate_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_wispgate)
+}
+
+fn load_ready_runtime_shaping_inputs(
+    config: &lqos_config::Config,
+) -> Result<Option<TopologyShapingInputsFile>> {
+    let Some(active_path) = active_runtime_shaping_inputs_path(config)? else {
+        return Ok(None);
+    };
+    if !active_path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(&active_path)
+        .with_context(|| format!("Unable to read shaping inputs at {}", active_path.display()))?;
+    let shaping_inputs = serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "Unable to decode shaping inputs JSON at {}",
+            active_path.display()
+        )
+    })?;
+    Ok(Some(shaping_inputs))
+}
+
+fn load_shaped_devices_from_preferred_source(
+    config: &lqos_config::Config,
+) -> Result<(ConfigShapedDevices, ShapedDevicesLoadSource)> {
+    if let Some(shaping_inputs) = load_ready_runtime_shaping_inputs(config)? {
+        return Ok((
+            shaped_devices_from_runtime_inputs(&shaping_inputs),
+            ShapedDevicesLoadSource::RuntimeShapingInputs,
+        ));
+    }
+
+    if integration_ingress_enabled(config) {
+        match lqos_topology_compile::TopologyImportFile::load(config) {
+            Ok(Some(topology_import)) => {
+                let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
+                if !shaped_devices.devices.is_empty() {
+                    return Ok((shaped_devices, ShapedDevicesLoadSource::TopologyImport));
+                }
+                debug!(
+                    "topology_import.json contained 0 shaped devices; falling back to ShapedDevices.csv"
+                );
+            }
+            Ok(None) => {
+                debug!("topology_import.json missing; falling back to ShapedDevices.csv");
+            }
+            Err(err) => {
+                debug!(
+                    "Unable to load topology_import.json ({err}); falling back to ShapedDevices.csv"
+                );
+            }
+        }
+    }
+
+    let shaped_devices = ConfigShapedDevices::load_for_config(config)
+        .context("Unable to load ShapedDevices.csv")?;
+    Ok((shaped_devices, ShapedDevicesLoadSource::ShapedDevicesCsv))
 }
 
 fn load_shaping_inputs() {
@@ -1195,5 +1278,51 @@ mod tests {
         assert_eq!(source, ShapedDevicesLoadSource::TopologyImport);
         assert_eq!(loaded.devices.len(), 1);
         assert_eq!(loaded.devices[0].circuit_id, "import-circuit");
+    }
+
+    #[test]
+    fn load_shaped_devices_falls_back_to_csv_when_topology_import_is_empty() {
+        let lqos_directory = unique_temp_dir("lqosd-shaped-devices-topology-import-empty");
+        let state_directory = lqos_directory.join("state");
+        fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
+
+        write_shaped_devices_csv(
+            &lqos_directory.join("ShapedDevices.csv"),
+            "csv-circuit",
+            "192.0.2.10/32",
+        );
+
+        let imported = ImportedTopologyBundle {
+            source: "test/import".to_string(),
+            generated_unix: Some(123),
+            ingress_identity: Some("import-base".to_string()),
+            native_canonical: None,
+            native_editor: None,
+            parent_candidates: None,
+            compatibility_network_json: json!({}),
+            shaped_devices: ConfigShapedDevices::default(),
+            circuit_anchors: CircuitAnchorsFile::default(),
+            ethernet_advisories: Vec::new(),
+        };
+        TopologyImportFile::from_imported_bundle(&imported, "full")
+            .save(&Config {
+                lqos_directory: lqos_directory.to_string_lossy().to_string(),
+                state_directory: Some(state_directory.to_string_lossy().to_string()),
+                ..Config::default()
+            })
+            .expect("topology import should save");
+
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: Some(state_directory.to_string_lossy().to_string()),
+            ..Config::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+
+        let (loaded, source) = load_shaped_devices_from_preferred_source(&config)
+            .expect("CSV fallback should load");
+        assert_eq!(source, ShapedDevicesLoadSource::ShapedDevicesCsv);
+        assert_eq!(loaded.devices.len(), 1);
+        assert_eq!(loaded.devices[0].circuit_id, "csv-circuit");
     }
 }

@@ -4141,6 +4141,13 @@ mod tests {
                 "lqos_directory = \"/opt/libreqos/src\"",
                 &format!("lqos_directory = \"{}\"", runtime_dir.display()),
             )
+            .replace(
+                "state_directory = \"/opt/libreqos/state\"",
+                &format!(
+                    "state_directory = \"{}\"",
+                    runtime_dir.join("state").display()
+                ),
+            )
             .replace("use_xdp_bridge = true", "use_xdp_bridge = false")
             .replace(
                 "[treeguard.links]\nenabled = true",
