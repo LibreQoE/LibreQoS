@@ -243,8 +243,9 @@ fn check_config(cfg_doc: &mut DocumentMut, cfg: &mut EtcLqos) {
         && let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id")
     {
         let hash = sha2::Sha256::new().chain(machine_id).finalize();
-        cfg.node_id = Some(format!("{:x}", hash));
-        cfg_doc["node_id"] = value(format!("{:x}", hash));
+        let node_id = crate::hex_encoding::encode_hex_lower(hash);
+        cfg.node_id = Some(node_id.clone());
+        cfg_doc["node_id"] = value(node_id);
         println!("Updating");
         if let Err(e) = cfg.save(cfg_doc) {
             error!("Unable to save /etc/lqos.conf");

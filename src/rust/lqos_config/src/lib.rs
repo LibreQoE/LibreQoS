@@ -15,6 +15,7 @@ mod circuit_ethernet_metadata;
 mod cpu_topology;
 mod etc;
 mod ethernet_port_limits;
+mod hex_encoding;
 mod mikrotik_ipv6_credentials;
 mod network_json;
 mod planner;

@@ -221,7 +221,7 @@ where
         hasher.update([0]);
         hasher.update(identifier.as_bytes());
     }
-    Some(format!("{:x}", hasher.finalize()))
+    Some(crate::hex_encoding::encode_hex_lower(hasher.finalize()))
 }
 
 /// Returns a stable identity hash for imported topology facts and compile mode selection.
@@ -246,7 +246,7 @@ where
         hasher.update([0]);
         hasher.update(identifier.as_bytes());
     }
-    Some(format!("{:x}", hasher.finalize()))
+    Some(crate::hex_encoding::encode_hex_lower(hasher.finalize()))
 }
 
 fn collect_network_json_ingress_tokens(map: &Map<String, Value>, out: &mut Vec<String>) {

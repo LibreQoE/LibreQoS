@@ -207,7 +207,7 @@ impl Config {
     pub fn calculate_node_id() -> String {
         if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
             let hash = sha2::Sha256::new().chain(machine_id).finalize();
-            format!("{:x}", hash)
+            crate::hex_encoding::encode_hex_lower(hash)
         } else {
             Uuid::new_v4().to_string()
         }

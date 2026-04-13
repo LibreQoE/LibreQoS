@@ -285,7 +285,7 @@ impl WebUsers {
         let salted = format!("!x{password}{LEGACY_PASSWORD_PEPPER}");
         let mut sha256 = Sha256::new();
         sha256.update(salted);
-        format!("{:X}", sha256.finalize())
+        crate::hex_encoding::encode_hex_upper(sha256.finalize())
     }
 
     fn verify_password(
