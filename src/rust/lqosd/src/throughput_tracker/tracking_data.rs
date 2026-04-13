@@ -1320,22 +1320,18 @@ fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasu
 mod tests {
     use super::{ThroughputEntry, ThroughputTracker};
     use crate::shaped_devices_tracker::{SHAPED_DEVICES, ShapedDeviceHashCache};
+    use crate::test_support::runtime_config_test_lock;
     use lqos_bus::TcHandle;
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_utils::{XdpIpAddress, hash_to_i64};
     use std::ffi::OsString;
     use std::net::Ipv4Addr;
     use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+    use std::sync::{Arc, MutexGuard};
 
     use crate::throughput_tracker::flow_data::{RttBuffer, RttData};
     use lqos_utils::qoo::QoqScores;
     use lqos_utils::units::DownUpOrder;
-
-    fn heatmap_test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     fn test_runtime_dir(name: &str) -> PathBuf {
         let unique = format!(
@@ -1370,7 +1366,7 @@ mod tests {
 
     impl HeatmapTestContext {
         fn new(name: &str) -> Self {
-            let guard = heatmap_test_lock()
+            let guard = runtime_config_test_lock()
                 .lock()
                 .expect("heatmap test lock should not be poisoned");
             let runtime_dir = test_runtime_dir(name);
