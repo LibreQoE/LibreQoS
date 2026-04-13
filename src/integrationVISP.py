@@ -457,6 +457,13 @@ def _split_ipv4_candidates(*values: Any) -> List[str]:
     return out
 
 
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _bulk_ipv4_candidates(
     subscriber_row: Optional[Dict[str, Any]],
     service_row: Dict[str, Any],
@@ -762,9 +769,8 @@ def createShaper() -> None:
     subscribers = _subscribers(visp)
     counters["subscribers_rows"] = len(subscribers)
     for sub in subscribers:
-        try:
-            customer_id = int(sub.get("customer_id") or 0)
-        except Exception:
+        customer_id = _safe_int(sub.get("customer_id"))
+        if customer_id is None:
             continue
         if customer_id > 0:
             subscriber_by_customer_id[customer_id] = sub
@@ -962,17 +968,17 @@ def createShaper() -> None:
     # 2) Coverage-first backfill: discover active customers not present in the fast bulk
     # path, then selectively hydrate only the missing internet services.
     for sub in subscribers:
-        try:
-            customer_id = int(sub.get("customer_id") or 0)
-        except Exception:
+        customer_id = _safe_int(sub.get("customer_id"))
+        if customer_id is None:
             continue
         if customer_id <= 0 or customer_id in bulk_customers:
             continue
         counters["backfill_customers"] += 1
+        customer_services: List[Dict[str, Any]] = []
         try:
             customer_services = _customer_services(visp, customer_id)
-        except Exception:
-            continue
+        except Exception as exc:
+            print(f"[VISP] Skipping customer_id={customer_id}: customerServices lookup failed: {exc}")
         if not customer_services:
             continue
 
