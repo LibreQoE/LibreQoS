@@ -37,6 +37,7 @@ Use this skill for packaging and shipped-file work.
 
 - Run `bash -n` on changed shell scripts.
 - If node_manager assets are involved, run `src/rust/lqosd/src/node_manager/js_build/test-build-contract.sh`.
+- During large sessions, invoke `$libreqos-review-subagents-workflow` (and `helen` if UI changed).
 - If you did not run a full package build, say so explicitly.
 - Before finishing, answer this directly: "Does `src/build_dpkg.sh` include every new required file?"
 

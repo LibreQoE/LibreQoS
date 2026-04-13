@@ -19,12 +19,14 @@ Use this skill for Rust work in this repo.
 2. Identify whether the touched crate is a workspace member.
 3. Validate the touched crate with `cargo check -p <crate>` when possible.
 4. Run relevant tests.
-5. Run `cargo clippy` for the touched crate and fix actionable issues.
-6. If dependencies changed, also run:
+5. Run `cargo clippy -p <crate> -- -D warnings` when practical and fix actionable issues.
+6. During large sessions, invoke `$libreqos-review-subagents-workflow` (and `helen` if UI changed).
+7. If dependencies changed, also run:
    - `cargo machete`
    - `cargo audit`
    - `cargo tree`
-7. If the change adds, renames, moves, or newly depends on runtime files, static assets, helper scripts, service files, templates, or install-time artifacts, review and update `src/build_dpkg.sh` in the same change.
+8. If the change adds, renames, moves, or newly depends on runtime files, static assets, helper scripts, service files, templates, or install-time artifacts, review and update `src/build_dpkg.sh` in the same change.
+9. Use workspace-wide commands only for cross-cutting changes or shared dependency changes.
 
 ## Preferred Rust Direction
 
@@ -42,4 +44,9 @@ Use this skill for Rust work in this repo.
 - Existing code does not fully match all preferred conventions yet. Treat these as direction for new and touched code, not as a reason to perform unrelated cleanup.
 - Build/package scripts live under `src/`, not repo root.
 - `src/build_dpkg.sh` is a functional packaging manifest for shipped installs. Forgetting to update it is a common failure mode; treat package-content drift as a bug.
-- For Insight/LTS2 integrations, preserve the existing external protocol and identity values unless the task explicitly covers coordinated changes on both sides. Unilateral protocol drift is a breaking change.
+- Treat protocol and identity surfaces as compatibility boundaries:
+  - Prefer additive-only changes (new optional fields, `#[serde(default)]` where applicable).
+  - Assume rolling upgrades where old/new binaries may coexist unless a coordinated restart is explicitly planned.
+  - Do not rename fields, change types, or change semantics without explicit versioning and a coordinated rollout plan.
+  - Keep compatibility shims at the boundary, make them explicit, and test them; avoid “fallbacks everywhere”.
+  - Avoid per-request `info!` logging in hot paths; prefer `debug!`, sampling, or aggregate counters.

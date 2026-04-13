@@ -40,6 +40,7 @@ Use this skill for Python work under `src/`.
   - `python3 -m unittest test_virtual_tree_nodes.py`
 - If changing scheduler/helpers, prefer the smallest focused unittest set that covers the touched logic.
 - If changing generated file behavior, review both the writer and the reader side in the same change.
+- During large sessions, invoke `$libreqos-review-subagents-workflow` (and `helen` if UI changed).
 
 ## References
 

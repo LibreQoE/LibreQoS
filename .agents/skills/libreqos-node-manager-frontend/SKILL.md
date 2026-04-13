@@ -61,6 +61,9 @@ If the page is served through the templated/authenticated router, use `%CACHEBUS
 - Run `src/rust/lqosd/src/node_manager/js_build/test-build-contract.sh`
 - Run `src/rust/lqosd/src/node_manager/js_build/esbuild.sh`
 - For broader local iteration, run `src/rust/lqosd/dev_build.sh`
+- Check the affected page in both dark and light themes.
+- Check the affected page in a narrow/mobile layout if the structure changed.
+- After UI changes, invoke `$libreqos-review-subagents-workflow` (include `helen`).
 
 ## Notes
 

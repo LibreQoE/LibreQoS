@@ -1,0 +1,4 @@
+interface:
+  display_name: "LibreQoS Review Sub-Agents"
+  short_description: "Thomas, Helen, Beck, and Jonas workflow"
+  default_prompt: "Use $libreqos-review-subagents-workflow to invoke the local review sub-agents during implementation and before final completion."
