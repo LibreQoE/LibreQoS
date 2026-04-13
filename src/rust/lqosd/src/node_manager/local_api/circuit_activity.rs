@@ -235,13 +235,21 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
             if local.last_seen < recent_cutoff {
                 return None;
             }
-            if local.circuit_hash != Some(circuit_hash) {
+            let device = catalog
+                .device_by_hashes(local.device_hash, local.circuit_hash)
+                .or_else(|| {
+                    catalog
+                        .device_longest_match_for_ip(&key.local_ip)
+                        .map(|(_, device)| device)
+                });
+            let matches_desired = local.circuit_hash == Some(circuit_hash)
+                || device.is_some_and(|device| device.circuit_id == circuit_id);
+            if !matches_desired {
                 return None;
             }
 
-            let device_name = catalog
-                .device_by_hashes(local.device_hash, local.circuit_hash)
-                .map(|device| device.device_name.clone())
+            let device_name = device
+                .map(|d| d.device_name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
 
             let geo = get_asn_name_and_country(key.remote_ip.as_ip());

@@ -4154,11 +4154,6 @@ mod tests {
         config_path
     }
 
-    fn treeguard_test_lock() -> &'static std::sync::Mutex<()> {
-        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| std::sync::Mutex::new(()))
-    }
-
     struct LiveBakeryTestContext {
         _guard: std::sync::MutexGuard<'static, ()>,
         old_lqos_config: Option<OsString>,
@@ -4168,7 +4163,7 @@ mod tests {
 
     impl LiveBakeryTestContext {
         fn new(name: &str) -> Self {
-            let guard = treeguard_test_lock()
+            let guard = crate::test_support::runtime_config_test_lock()
                 .lock()
                 .expect("treeguard test lock should not be poisoned");
             let runtime_dir = test_runtime_dir(name);

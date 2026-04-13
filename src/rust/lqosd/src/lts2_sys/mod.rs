@@ -1,6 +1,7 @@
 //! Provides an interface with Insight/LTS2
 
 use parking_lot::Mutex;
+pub mod capabilities;
 pub mod license_grant;
 pub(crate) mod lts2_client;
 pub mod shared_types;
@@ -12,6 +13,9 @@ use anyhow::Result;
 use once_cell::sync::Lazy;
 pub use shared_types::RemoteCommand;
 pub mod control_channel;
+pub use capabilities::{
+    can_open_control_channel, can_submit_long_term_stats, current_capabilities,
+};
 
 pub fn start_lts2(
     control_tx: tokio::sync::mpsc::Sender<control_channel::ControlChannelCommand>,

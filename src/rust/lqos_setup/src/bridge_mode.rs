@@ -17,11 +17,11 @@ pub fn bridge_mode(s: &mut Cursive) {
     });
     let mut linux_btn = group.button(
         BridgeMode::Linux,
-        "Linux Bridge (2 interfaces) - Please set up the bridge in your netplan",
+        "Linux Bridge (2 interfaces) - LibreQoS will inspect and stage the managed Netplan change",
     );
     let mut xdp_btn = group.button(
         BridgeMode::XDP,
-        "XDP Bridge   (2 interfaces) - Please DO NOT have a bridge in your netplan",
+        "XDP Bridge   (2 interfaces) - Manual Netplan workflow; do not create a bridge in Netplan",
     );
     let mut single_btn = group.button(BridgeMode::Single, "Single Interface (1 interface)");
 

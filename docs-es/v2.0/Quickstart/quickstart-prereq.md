@@ -48,11 +48,11 @@ Assuming your interfaces are ens19 and ens20, here is what your file would look 
 network:
     ethernets:
         ens19:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
         ens20:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
     bridges:
         br0:
             interfaces:
@@ -64,7 +64,7 @@ network:
 Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
 ```
 
-By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
+By setting `dhcp4: false` and `dhcp6: false`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
 
 Then run
 
@@ -88,18 +88,18 @@ Assuming your interfaces are ens19 and ens20, here is what your file would look 
 network:
     ethernets:
         ens19:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
         ens20:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
     version: 2
 ```
 ```{note}
 Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
 ```
 
-By setting `dhcp4: no` and `dhcp6: no`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
+By setting `dhcp4: false` and `dhcp6: false`, the interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
 
 Then run
 

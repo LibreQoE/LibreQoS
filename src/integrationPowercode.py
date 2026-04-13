@@ -110,7 +110,6 @@ def createShaper():
 			net.addRawNode(newDevice)
 	print("Imported " + str(len(devicesByCustomerID)) + " customers")
 	net.prepareTree()
-	net.plotNetworkGraph(False)
 	net.materializeCompiledTopology("python/powercode", "full")
 
 def importFromPowercode():

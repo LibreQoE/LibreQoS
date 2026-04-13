@@ -5,7 +5,6 @@ use lqos_config::{
     EthernetPortObservation, EthernetRateDecision, RequestedCircuitRates,
     apply_ethernet_rate_cap as apply_shared_ethernet_rate_cap,
 };
-use std::path::Path;
 use tracing::error;
 
 /// Applies a negotiated-Ethernet cap to a circuit and returns the adjusted rates plus advisory.
@@ -66,7 +65,7 @@ pub fn write_ethernet_advisories(
     config: &Config,
     advisories: &[CircuitEthernetMetadata],
 ) -> Result<(), UispIntegrationError> {
-    let path = Path::new(&config.lqos_directory).join(CIRCUIT_ETHERNET_METADATA_FILENAME);
+    let path = config.topology_state_file_path(CIRCUIT_ETHERNET_METADATA_FILENAME);
     let payload = serde_json::to_vec_pretty(&lqos_config::CircuitEthernetMetadataFile {
         circuits: advisories
             .iter()
@@ -78,6 +77,12 @@ pub fn write_ethernet_advisories(
         error!("Unable to serialize circuit Ethernet metadata: {e:?}");
         UispIntegrationError::CsvError
     })?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            error!("Unable to create circuit Ethernet metadata directory: {e:?}");
+            UispIntegrationError::CsvError
+        })?;
+    }
     std::fs::write(path, payload).map_err(|e| {
         error!("Unable to write circuit Ethernet metadata: {e:?}");
         UispIntegrationError::CsvError
@@ -401,11 +406,12 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("lqos-ethernet-writer-{unique}"));
         fs::create_dir_all(&temp_dir).expect("temp dir should be created");
         config.lqos_directory = temp_dir.to_string_lossy().to_string();
+        config.state_directory = Some(temp_dir.join("state").to_string_lossy().to_string());
 
         write_ethernet_advisories(&config, &[capped.clone(), observed])
             .expect("writer should succeed");
 
-        let payload = fs::read(temp_dir.join(CIRCUIT_ETHERNET_METADATA_FILENAME))
+        let payload = fs::read(config.topology_state_file_path(CIRCUIT_ETHERNET_METADATA_FILENAME))
             .expect("metadata file should exist");
         let parsed: CircuitEthernetMetadataFile =
             serde_json::from_slice(&payload).expect("metadata file should parse");

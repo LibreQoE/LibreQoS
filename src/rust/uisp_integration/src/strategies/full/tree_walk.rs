@@ -3,7 +3,6 @@ use crate::strategies::full::routes_override::RouteOverride;
 use crate::uisp_types::{UispSite, UispSiteType};
 use lqos_config::Config;
 use std::collections::HashSet;
-use std::io::Write;
 use std::sync::Arc;
 
 /// Walks the tree to determine the best route for each site
@@ -20,9 +19,6 @@ pub fn walk_tree_for_routing(
     root_site: &str,
     overrides: &Vec<RouteOverride>,
 ) -> Result<(), UispIntegrationError> {
-    // Initialize the visualization
-    let mut dot_graph = "digraph G {\n  graph [ ranksep=2.0 overlap=false ]\n".to_string();
-
     // Make sure we know where the root is
     let Some(root_idx) = sites.iter().position(|s| s.name == root_site) else {
         tracing::error!("Unable to build a path-weights graph because I can't find the root node");
@@ -77,31 +73,6 @@ pub fn walk_tree_for_routing(
             // Sort to find the lowest exit
             site.route_weights.sort_by(|a, b| a.1.cmp(&b.1));
             site.selected_parent = Some(site.route_weights[0].0);
-        }
-
-        // Plot it
-        for (i, (idx, weight)) in site.route_weights.iter().enumerate() {
-            let from = site_index.get(idx).unwrap().clone();
-            let to = site.name.clone();
-            if i == 0 {
-                dot_graph.push_str(&format!(
-                    "\"{}\" -> \"{}\" [label=\"{}\" color=\"red\"] \n",
-                    from, to, weight
-                ));
-            } else {
-                dot_graph.push_str(&format!(
-                    "\"{}\" -> \"{}\" [label=\"{}\"] \n",
-                    from, to, weight
-                ));
-            }
-        }
-    }
-
-    dot_graph.push_str("}\n");
-    {
-        let graph_file = std::fs::File::create("graph.dot");
-        if let Ok(mut file) = graph_file {
-            let _ = file.write_all(dot_graph.as_bytes());
         }
     }
 

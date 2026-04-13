@@ -1,4 +1,46 @@
+import os
+import sys
+import types
 import unittest
+
+_STUBBED_MODULES = ("liblqos_python",)
+_ORIGINAL_MODULES = {name: sys.modules.get(name) for name in _STUBBED_MODULES}
+
+
+def install_graph_stubs():
+    lqlib = types.ModuleType("liblqos_python")
+    lqlib.allowed_subnets = lambda: ["0.0.0.0/0", "::/0"]
+    lqlib.ignore_subnets = lambda: []
+    lqlib.generated_pn_download_mbps = lambda: 1000
+    lqlib.generated_pn_upload_mbps = lambda: 1000
+    lqlib.circuit_name_use_address = lambda: False
+    lqlib.upstream_bandwidth_capacity_download_mbps = lambda: 1000
+    lqlib.upstream_bandwidth_capacity_upload_mbps = lambda: 1000
+    lqlib.find_ipv6_using_mikrotik = lambda: False
+    lqlib.exclude_sites = lambda: []
+    lqlib.bandwidth_overhead_factor = lambda: 1.0
+    lqlib.committed_bandwidth_multiplier = lambda: 1.0
+    lqlib.exception_cpes = lambda: {}
+    lqlib.promote_to_root_list = lambda: []
+    lqlib.client_bandwidth_multiplier = lambda: 1.0
+    lqlib.write_compiled_topology_from_python_graph_payload = lambda *_args, **_kwargs: None
+    lqlib.get_libreqos_directory = lambda: os.getcwd()
+    sys.modules["liblqos_python"] = lqlib
+
+def setUpModule():
+    sys.modules.pop("integrationCommon", None)
+    for name in _STUBBED_MODULES:
+        sys.modules.pop(name, None)
+    install_graph_stubs()
+
+
+def tearDownModule():
+    sys.modules.pop("integrationCommon", None)
+    for name, module in _ORIGINAL_MODULES.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
 
 class TestGraph(unittest.TestCase):
     def test_empty_graph(self):
@@ -327,7 +369,7 @@ class TestGraph(unittest.TestCase):
         net.createNetworkJson()
         with open('network.json') as file:
             newFile = json.load(file)
-        with open('src/network.example.json') as file:
+        with open('network.example.json') as file:
             exampleFile = json.load(file)
         self.assertEqual(newFile, exampleFile)
 
@@ -426,10 +468,10 @@ class TestGraph(unittest.TestCase):
             finally:
                 os.chdir(old_cwd)
 
-        self.assertEqual(rows[1][8], "1")
-        self.assertEqual(rows[1][9], "1")
-        self.assertEqual(rows[1][10], "150.0")
-        self.assertEqual(rows[1][11], "75.0")
+        self.assertEqual(rows[1][10], "1")
+        self.assertEqual(rows[1][11], "1")
+        self.assertEqual(rows[1][12], "150.0")
+        self.assertEqual(rows[1][13], "75.0")
 
     def test_site_exclusion(self):
         from integrationCommon import NetworkGraph, NetworkNode, NodeType
@@ -688,37 +730,6 @@ class TestGraph(unittest.TestCase):
             [candidate["node_id"] for candidate in candidate_by_id["splynx:ap:child"]["candidate_parents"]],
             ["splynx:site:gateway-a", "splynx:site:gateway-b", "splynx:site:gateway-c"],
         )
-
-    def test_graph_render_to_pdf(self):
-        """
-        Requires that graphviz be installed with
-        pip install graphviz
-        And also the associated graphviz package for
-        your platform.
-        See: https://www.graphviz.org/download/
-        Test that it creates a graphic
-        """
-        import importlib.util
-        if (spec := importlib.util.find_spec('graphviz')) is None:
-            return
-
-        from integrationCommon import NetworkGraph, NetworkNode, NodeType
-        net = NetworkGraph()
-        net.addRawNode(NetworkNode("Site_1", "Site_1", "", NodeType.site, 1000, 1000))
-        net.addRawNode(NetworkNode("Site_2", "Site_2", "", NodeType.site, 500, 500))
-        net.addRawNode(NetworkNode("AP_A", "AP_A", "Site_1", NodeType.ap, 500, 500))
-        net.addRawNode(NetworkNode("Site_3", "Site_3", "Site_1", NodeType.site, 500, 500))
-        net.addRawNode(NetworkNode("PoP_5", "PoP_5", "Site_3", NodeType.site, 200, 200))        
-        net.addRawNode(NetworkNode("AP_9", "AP_9", "PoP_5", NodeType.ap, 120, 120))
-        net.addRawNode(NetworkNode("PoP_6", "PoP_6", "PoP_5", NodeType.site, 60, 60))
-        net.addRawNode(NetworkNode("AP_11", "AP_11", "PoP_6", NodeType.ap, 30, 30))
-        net.addRawNode(NetworkNode("PoP_1", "PoP_1", "Site_2", NodeType.site, 200, 200))
-        net.addRawNode(NetworkNode("AP_7", "AP_7", "PoP_1", NodeType.ap, 100, 100))
-        net.addRawNode(NetworkNode("AP_1", "AP_1", "Site_2", NodeType.ap, 150, 150))
-        net.prepareTree()
-        net.plotNetworkGraph(False)
-        from os.path import exists
-        self.assertEqual(exists("network.pdf.pdf"), True)
 
 if __name__ == '__main__':
     unittest.main()

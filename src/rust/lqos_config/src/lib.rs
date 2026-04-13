@@ -15,10 +15,12 @@ mod circuit_ethernet_metadata;
 mod cpu_topology;
 mod etc;
 mod ethernet_port_limits;
+mod mikrotik_ipv6_credentials;
 mod network_json;
 mod planner;
 mod program_control;
 mod qoo_profiles;
+mod runtime_state_migration;
 mod shaped_devices;
 mod topology_canonical_state;
 mod topology_editor_state;
@@ -32,13 +34,15 @@ pub use circuit_anchors::{
 };
 pub use circuit_ethernet_metadata::{
     CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
+    circuit_ethernet_metadata_path,
 };
 pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
 pub use etc::{
     BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode, QueueMode,
-    RttThresholds, SingleInterfaceConfig, StormguardConfig, StormguardStrategy, TopologyConfig,
+    MikrotikIpv6Config, RttThresholds, SingleInterfaceConfig, StormguardConfig,
+    StormguardStrategy, TopologyConfig,
     TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge,
     enable_long_term_stats, load_config, treeguard_cpu_mode_migration_notice, update_config,
@@ -46,6 +50,10 @@ pub use etc::{
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
     EthernetRateDecision, RequestedCircuitRates, apply_ethernet_rate_cap, usable_ethernet_cap_mbps,
+};
+pub use mikrotik_ipv6_credentials::{
+    MikrotikIpv6CredentialError, MikrotikIpv6CredentialsFile, MikrotikIpv6RouterCredential,
+    load_mikrotik_ipv6_router_credentials, migrate_legacy_mikrotik_ipv6_credentials,
 };
 pub use network_json::{NetworkJson, NetworkJsonNode, NetworkJsonTransport};
 pub use planner::{
@@ -86,7 +94,8 @@ pub use topology_runtime_state::{
     TopologyAttachmentHealthStateFile, TopologyEffectiveAttachmentState,
     TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStateError,
     TopologyRuntimeStatusFile, TopologyShapingCircuitInput, TopologyShapingDeviceInput,
-    TopologyShapingInputsFile, TopologyShapingResolutionSource, compute_topology_source_generation,
+    TopologyShapingInputsFile, TopologyShapingResolutionSource,
+    compute_effective_network_generation, compute_topology_source_generation,
     topology_attachment_health_state_path, topology_compiled_shaping_path,
     topology_effective_network_path, topology_effective_state_path, topology_import_path,
     topology_runtime_status_path, topology_shaping_inputs_path,

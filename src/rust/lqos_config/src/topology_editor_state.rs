@@ -260,6 +260,9 @@ fn default_topology_editor_schema_version() -> u32 {
 
 fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), TopologyEditorStateError> {
     let raw = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
     file.write_all(raw.as_bytes())?;
@@ -272,7 +275,7 @@ fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), Topolog
 ///
 /// This function is pure: it has no side effects.
 pub fn topology_editor_state_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_EDITOR_STATE_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_EDITOR_STATE_FILENAME)
 }
 
 impl TopologyEditorStateFile {
@@ -332,7 +335,10 @@ impl TopologyEditorStateFile {
     ///
     /// Side effects: writes `topology_editor_state.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyEditorStateError> {
-        atomic_write_json(&topology_editor_state_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_EDITOR_STATE_FILENAME),
+            self,
+        )
     }
 
     /// Returns a stable fingerprint of the topology ingress this editor state represents.

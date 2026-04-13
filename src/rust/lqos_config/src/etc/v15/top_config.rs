@@ -7,6 +7,7 @@ use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
+use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 use uuid::Uuid;
 
@@ -66,6 +67,10 @@ pub struct Config {
     /// Directory in which LibreQoS is installed
     pub lqos_directory: String,
 
+    /// Directory in which LibreQoS stores machine-managed runtime state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_directory: Option<String>,
+
     /// Node ID - uniquely identifies this shaper.
     pub node_id: String,
 
@@ -122,6 +127,10 @@ pub struct Config {
     /// Shared topology compiler settings.
     #[serde(default)]
     pub topology: super::topology::TopologyConfig,
+
+    /// Dedicated Mikrotik IPv6 enrichment secrets/config path.
+    #[serde(default)]
+    pub mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config,
 
     /// Splynx Integration configuration. Optional so older configs without this
     /// section still deserialize cleanly.
@@ -220,6 +229,16 @@ impl Config {
         }
         if self.node_id.is_empty() {
             return Err("Node ID must be set".to_string());
+        }
+        if self
+            .state_directory
+            .as_deref()
+            .is_some_and(|path| path.trim().is_empty())
+        {
+            return Err("state_directory must not be empty when configured".to_string());
+        }
+        if self.mikrotik_ipv6.config_path.trim().is_empty() {
+            return Err("mikrotik_ipv6.config_path must not be empty".to_string());
         }
         if let Some(rtt) = &self.rtt_thresholds {
             if rtt.red_ms == 0 {
@@ -331,6 +350,7 @@ impl Default for Config {
         Self {
             version: "1.5".to_string(),
             lqos_directory: "/opt/libreqos/src".to_string(),
+            state_directory: Some("/opt/libreqos/state".to_string()),
             node_id: Self::calculate_node_id(),
             node_name: "LibreQoS".to_string(),
             qoo_profile_id: None,
@@ -344,6 +364,7 @@ impl Default for Config {
             dynamic_circuits: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
             topology: super::topology::TopologyConfig::default(),
+            mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
             visp_integration: Some(super::visp_integration::VispIntegration::default()),
@@ -369,6 +390,117 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Returns the resolved state-directory path for machine-managed runtime files.
+    pub fn resolved_state_directory(&self) -> PathBuf {
+        self.state_directory
+            .as_deref()
+            .filter(|path| !path.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Self::default_state_directory_for(&self.lqos_directory))
+    }
+
+    fn default_state_directory_for(lqos_directory: &str) -> PathBuf {
+        let base = Path::new(lqos_directory);
+        if base
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == "src")
+            && let Some(parent) = base.parent()
+        {
+            return parent.join("state");
+        }
+        base.join("state")
+    }
+
+    /// Returns the configured Mikrotik IPv6 secrets/config path.
+    pub fn resolved_mikrotik_ipv6_config_path(&self) -> PathBuf {
+        PathBuf::from(self.mikrotik_ipv6.config_path.trim())
+    }
+
+    /// Returns the preferred topology-state path for `filename`.
+    pub fn topology_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory()
+            .join("topology")
+            .join(filename)
+    }
+
+    /// Returns the preferred shaping-state path for `filename`.
+    pub fn shaping_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory()
+            .join("shaping")
+            .join(filename)
+    }
+
+    /// Returns the preferred stats-state path for `filename`.
+    pub fn stats_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory().join("stats").join(filename)
+    }
+
+    /// Returns the preferred cache-state path for `filename`.
+    pub fn cache_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory().join("cache").join(filename)
+    }
+
+    /// Returns the preferred debug-state path for `filename`.
+    pub fn debug_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory().join("debug").join(filename)
+    }
+
+    /// Returns the quarantine directory for stale runtime artifacts.
+    pub fn quarantine_state_directory_path(&self) -> PathBuf {
+        self.resolved_state_directory().join("quarantine")
+    }
+
+    /// Returns the quarantine directory for legacy runtime artifacts encountered during upgrade.
+    pub fn legacy_quarantine_directory_path(&self) -> PathBuf {
+        self.quarantine_state_directory_path().join("legacy")
+    }
+
+    /// Returns the legacy root path for a machine-managed runtime file.
+    pub fn legacy_runtime_file_path(&self, filename: &str) -> PathBuf {
+        Path::new(&self.lqos_directory).join(filename)
+    }
+
+    /// Returns the preferred read path for a topology runtime file, with legacy fallback.
+    pub fn topology_state_read_path(&self, filename: &str) -> PathBuf {
+        let preferred = self.topology_state_file_path(filename);
+        if preferred.exists() {
+            preferred
+        } else {
+            self.legacy_runtime_file_path(filename)
+        }
+    }
+
+    /// Returns the preferred read path for a shaping runtime file, with legacy fallback.
+    pub fn shaping_state_read_path(&self, filename: &str) -> PathBuf {
+        let preferred = self.shaping_state_file_path(filename);
+        if preferred.exists() {
+            preferred
+        } else {
+            self.legacy_runtime_file_path(filename)
+        }
+    }
+
+    /// Returns the preferred read path for a stats runtime file, with legacy fallback.
+    pub fn stats_state_read_path(&self, filename: &str) -> PathBuf {
+        let preferred = self.stats_state_file_path(filename);
+        if preferred.exists() {
+            preferred
+        } else {
+            self.legacy_runtime_file_path(filename)
+        }
+    }
+
+    /// Returns the preferred read path for a cache runtime file, with legacy fallback.
+    pub fn cache_state_read_path(&self, filename: &str) -> PathBuf {
+        let preferred = self.cache_state_file_path(filename);
+        if preferred.exists() {
+            preferred
+        } else {
+            self.legacy_runtime_file_path(filename)
+        }
+    }
+
     /// Returns the explicitly configured shared topology compile mode, when set.
     pub fn shared_topology_compile_mode(&self) -> Option<&'static str> {
         super::topology::normalize_topology_compile_mode(&self.topology.compile_mode)

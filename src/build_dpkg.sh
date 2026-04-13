@@ -12,10 +12,12 @@ PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
 PKGVERSION="${PACKAGE}_${VERSION}"
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-APT_DEPENDENCIES="python3-pip, nano, graphviz, curl, ca-certificates"
+APT_DEPENDENCIES="python3-pip, nano, curl, ca-certificates"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
+LQOS_STATE_DIR=$DPKG_DIR/opt/libreqos/state
 ETC_DIR=$DPKG_DIR/etc
+ETC_LIBREQOS_DIR=$DPKG_DIR/etc/libreqos
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
   csvToNetworkJSON.py
@@ -32,20 +34,16 @@ LQOS_FILES=(
   lqos.example
   lqTools.py
   mikrotikFindIPv6.py
+  mikrotik_ipv6.example.toml
   network.example.json
   pythonCheck.py
   qoo_profiles.json
-  README.md
   scheduler.py
   ShapedDevices.example.csv
   shaping_skip_report.py
   systemd_hotfix.sh
   virtual_tree_nodes.py
-  mikrotikDHCPRouterList.template.csv
-  integrationUISPbandwidths.template.csv
   manualNetwork.template.csv
-  integrationUISProutes.template.csv
-  integrationSplynxBandwidths.template.csv
   ../requirements.txt
   update_api.sh
 )
@@ -58,6 +56,7 @@ LQOS_BIN_FILES=(
 
 RUSTPROGS=(
   lqosd
+  lqos_netplan_helper
   lqtop
   xdp_iphash_to_cpu_cmdline
   xdp_pping
@@ -80,7 +79,8 @@ rm -rf dist
 # The Debian Packaging Bit
 
 # Create the basic directory structure
-mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
+mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$ETC_LIBREQOS_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
+mkdir -p "$LQOS_STATE_DIR"/topology "$LQOS_STATE_DIR"/shaping "$LQOS_STATE_DIR"/stats "$LQOS_STATE_DIR"/cache "$LQOS_STATE_DIR"/debug "$LQOS_STATE_DIR"/quarantine
 
 # shellcheck disable=SC2086
 mkdir -p $MOTD_DIR
@@ -104,6 +104,7 @@ pushd rust > /dev/null || exit
 # Build only required binaries and artifacts (exclude lqos_support_tool executable)
 cargo build --release \
   -p lqosd \
+  -p lqos_netplan_helper \
   -p lqtop \
   -p xdp_iphash_to_cpu_cmdline \
   -p xdp_pping \
@@ -157,9 +158,12 @@ sudo chown -R root:root /opt/libreqos
 install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 install -m 0644 /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+/bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
+/bin/systemctl stop lqos_netplan_helper || true
+/bin/systemctl disable lqos_netplan_helper || true
 /bin/systemctl enable lqosd lqos_scheduler lqos_api || true
 /bin/systemctl restart lqosd lqos_scheduler lqos_api || true
 popd > /dev/null
@@ -169,8 +173,9 @@ EOF
 cat <<EOF > postrm
 #!/bin/bash
 set +e
-/bin/systemctl stop lqosd lqos_scheduler lqos_api || true
-/bin/systemctl disable lqosd lqos_scheduler lqos_api || true
+/bin/systemctl stop lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
+/bin/systemctl disable lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
+/bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 exit 0
 EOF
@@ -179,12 +184,21 @@ popd > /dev/null || exit
 
 # Copy files into the LibreQoS directory
 for file in "${LQOS_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "Missing packaged file: $file" >&2
+    exit 1
+  fi
+done
+
+for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR"
 done
 
 if [ -f deb-requirements-constraints.txt ]; then
   cp deb-requirements-constraints.txt "$LQOS_DIR"
 fi
+
+cp mikrotik_ipv6.example.toml "$ETC_LIBREQOS_DIR"/mikrotik_ipv6.example.toml
 
 # Ensure helper scripts are executable in the package
 if [ -f "$LQOS_DIR/update_api.sh" ]; then

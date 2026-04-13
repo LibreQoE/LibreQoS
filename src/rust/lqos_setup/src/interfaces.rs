@@ -216,6 +216,7 @@ pub fn interface_menu(s: &mut Cursive) {
             .title("Select Interfaces")
             .button("OK", |s| {
                 s.pop_layer();
+                crate::preview_selected_network_mode(s);
             })
             .full_screen(),
     );

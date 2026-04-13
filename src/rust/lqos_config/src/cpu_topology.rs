@@ -516,7 +516,7 @@ fn detect_hybrid_topology(
 }
 
 fn cache_file_path(cfg: &Config) -> PathBuf {
-    Path::new(&cfg.lqos_directory).join(CPU_TOPOLOGY_CACHE_FILE)
+    cfg.cache_state_read_path(CPU_TOPOLOGY_CACHE_FILE)
 }
 
 fn read_cpuinfo_identity() -> (
@@ -593,7 +593,7 @@ fn store_topology_cache(
     fingerprint: &CpuTopologyFingerprint,
     topology: &ResolvedHybridCpuTopology,
 ) {
-    let path = cache_file_path(cfg);
+    let path = cfg.cache_state_file_path(CPU_TOPOLOGY_CACHE_FILE);
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
@@ -832,6 +832,7 @@ mod tests {
     fn topology_cache_round_trip() {
         let cfg = Config {
             lqos_directory: temp_dir("cpu-topology-cache").display().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         let path = cache_file_path(&cfg);
@@ -867,6 +868,7 @@ mod tests {
             lqos_directory: temp_dir("cpu-topology-cache-mismatch")
                 .display()
                 .to_string(),
+            state_directory: None,
             ..Config::default()
         };
         let path = cache_file_path(&cfg);
@@ -904,10 +906,12 @@ mod tests {
 
         let cfg_a = Config {
             lqos_directory: temp_dir("cpu-topology-cache-a").display().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         let cfg_b = Config {
             lqos_directory: temp_dir("cpu-topology-cache-b").display().to_string(),
+            state_directory: None,
             ..Config::default()
         };
 

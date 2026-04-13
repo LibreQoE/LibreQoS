@@ -11,6 +11,14 @@ El puente regular de Linux es recomendado para la mayoría de las instalaciones.
 
 A continuación, se encuentran las instrucciones para configurar Netplan, ya sea usando el puente de Linux o el puente Bifrost con XDP:
 
+```{note}
+La página Network Mode en la interfaz web de LibreQoS ahora inspecciona los archivos actuales de Netplan, ofrece en menús desplegables las interfaces elegibles que no forman parte de la ruta de gestión, prepara cambios administrados para `libreqos.yaml` en los modos puente de Linux y de interfaz única, los aplica con una ventana temporizada de reversión manejada por LibreQoS y le permite confirmar o revertir el cambio pendiente. También puede restaurar desde esa página la copia de seguridad administrada anterior. El modo puente XDP sigue siendo un flujo manual de Netplan.
+```
+
+```{note}
+Si un cambio temporizado de Netplan interrumpe brevemente la sesión del navegador, vuelva a la página Network Mode cuando regrese la conectividad. LibreQoS retomará automáticamente desde esa página el flujo pendiente de confirmar o revertir.
+```
+
 ## Opción A: Configuración de Netplan para un puente regular de Linux (Recomendado)
 
 Ubuntu Server utiliza Netplan, el cual se basa en archivos .yaml ubicados en /etc/netplan para determinar la configuración de interfaces.
@@ -26,11 +34,11 @@ Asumiendo que sus interfaces de regulación son ens19 y ens20, su archivo se ver
 network:
     ethernets:
         ens19:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
         ens20:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
     bridges:
         br0:
             interfaces:
@@ -42,7 +50,7 @@ network:
 Asegurese de reemplazar `ens19` y `ens20` en el ejemplo anterior con las interfaces reales que utilizará para regular el tráfico. El orden de las interfaces no importa en esta sección.
 ```
 
-Al establecer `dhcp4: no` y `dhcp6: no`, las interfaces de regulación se activarán como parte del ciclo normal de arranque, aunque no tengan direcciones IP asignadas.
+Al establecer `dhcp4: false` y `dhcp6: false`, las interfaces de regulación se activarán como parte del ciclo normal de arranque, aunque no tengan direcciones IP asignadas.
 
 Después ejecute:
 
@@ -66,18 +74,18 @@ Asumiendo que sus interfaces de regulación son ens19 y ens20, su archivo se ver
 network:
     ethernets:
         ens19:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
         ens20:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
     version: 2
 ```
 ```{note}
 Asegurese de reemplazar `ens19` y `ens20` en el ejemplo anterior con las interfaces reales que utilizará para regular el tráfico. El orden de las interfaces no importa en esta sección.
 ```
 
-Al establecer `dhcp4: no` y `dhcp6: no`, las interfaces de regulación se activarán como parte del ciclo normal de arranque, aunque no tengan direcciones IP asignadas.
+Al establecer `dhcp4: false` y `dhcp6: false`, las interfaces de regulación se activarán como parte del ciclo normal de arranque, aunque no tengan direcciones IP asignadas.
 
 Después ejecute:
 

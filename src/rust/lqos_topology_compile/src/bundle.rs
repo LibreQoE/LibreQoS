@@ -14,6 +14,9 @@ fn default_topology_import_schema_version() -> u32 {
 
 fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> anyhow::Result<()> {
     let raw = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
     file.write_all(raw.as_bytes())?;
@@ -138,7 +141,10 @@ impl TopologyCompiledShapingFile {
     ///
     /// Side effects: writes `topology_compiled_shaping.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> anyhow::Result<()> {
-        atomic_write_json(&topology_compiled_shaping_path(config), self)
+        atomic_write_json(
+            &config.shaping_state_file_path(lqos_config::TOPOLOGY_COMPILED_SHAPING_FILENAME),
+            self,
+        )
     }
 
     /// Returns the shaping-device rows and circuit anchors for integration ingress.
@@ -379,7 +385,10 @@ impl TopologyImportFile {
     ///
     /// Side effects: writes `topology_import.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> anyhow::Result<()> {
-        atomic_write_json(&topology_import_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(lqos_config::TOPOLOGY_IMPORT_FILENAME),
+            self,
+        )
     }
 }
 

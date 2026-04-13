@@ -50,13 +50,11 @@ Once set, run `sudo systemctl restart lqos_scheduler`.
 
 ### Splynx Overrides
 
-You can also modify the the file `integrationSplynxBandwidths.csv` to override the default bandwidths for each Node (Site, AP).
+Use the LibreQoS Web UI override system to change the configured rate for a Site or AP.
 
-A template is available in the `/opt/libreqos/src` folder. To utilize the template, copy the file `integrationSplynxBandwidths.template.csv` (removing the `.template` part of the filename) and set the appropriate information inside each file. For example, if you want to change the set bandwidth for a site, you would do:
-```
-sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
-```
-And edit the CSV using LibreOffice or your preferred CSV editor.
+Open the relevant node in the tree or topology views and save the desired bandwidth there. LibreQoS will preserve that operator override across future Splynx refreshes.
+
+Do not create or depend on legacy `integrationSplynxBandwidths*.csv` template files for new deployments. The supported workflow is the regular UI-based override system.
 
 ## UISP Integration
 
@@ -101,7 +99,7 @@ ltu_capacity = 1.0
 exclude_sites = []
 
 # If you use DHCPv6, and want to pull in IPv6 CIDRs corresponding to each customer's IPv4
-# address, you can do so with this. If enabled, be sure to fill out mikrotikDHCPRouterList.csv
+# address, you can do so with this. If enabled, configure `/etc/libreqos/mikrotik_ipv6.toml`
 # and run `python3 mikrotikFindIPv6.py` to test its functionality.
 ipv6_with_mikrotik = false
 

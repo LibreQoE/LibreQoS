@@ -3,7 +3,6 @@ import datetime
 import csv
 import io
 import json
-import atexit
 import chardet
 from LibreQoS import refreshShapers, refreshShapersUpdateOnly
 import subprocess
@@ -24,16 +23,63 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 import os.path
 import os
 
+try:
+    from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+    _get_state_dir_native = None
+
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 shaping_runtime_hash = 0
-topology_runtime_process = None
-topology_runtime_missing_reported = False
 INTEGRATION_FAILURE_PREVIEW_LINES = 30
 INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
 TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
 SCHEDULER_STARTUP_STEP_COUNT = 5
 SCHEDULER_REFRESH_STEP_COUNT = 4
 scheduler_status_bus_enabled = True
+
+
+def configure_scheduler_stdio():
+    """
+    Enable line-buffered scheduler logs when running under systemd.
+
+    Side effects: reconfigures `sys.stdout` and `sys.stderr` when the active
+    stream supports `reconfigure()`. This keeps periodic scheduler messages from
+    sitting in Python's block buffer for hours before journald sees them.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(line_buffering=True, write_through=True)
+        except Exception as exc:
+            print(
+                f"Warning: unable to enable line-buffered scheduler {stream_name}: {exc}",
+                file=sys.stderr,
+            )
+
+
+def get_state_directory():
+    if _get_state_dir_native is not None:
+        return _get_state_dir_native()
+    base_dir = get_libreqos_directory()
+    if os.path.basename(base_dir.rstrip("/")) == "src":
+        parent = os.path.dirname(base_dir.rstrip("/"))
+        if parent:
+            return os.path.join(parent, "state")
+    return os.path.join(base_dir, "state")
+
+
+def get_state_path(category: str, filename: str) -> str:
+    return os.path.join(get_state_directory(), category, filename)
+
+
+def get_existing_state_path(category: str, filename: str) -> str:
+    preferred = get_state_path(category, filename)
+    if os.path.exists(preferred):
+        return preferred
+    return os.path.join(get_libreqos_directory(), filename)
 
 
 def set_scheduler_status_bus_enabled(enabled: bool):
@@ -737,7 +783,7 @@ def load_network_json(path: str):
 
 
 def topology_canonical_state_path() -> str:
-    return os.path.join(get_libreqos_directory(), "topology_canonical_state.json")
+    return get_existing_state_path("topology", "topology_canonical_state.json")
 
 
 def load_topology_canonical_state(path: str):
@@ -751,6 +797,7 @@ def load_topology_canonical_state(path: str):
 
 
 def write_topology_canonical_state(path: str, canonical_state: dict):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', encoding='utf-8') as f:
         f.write(json.dumps(canonical_state, indent=4))
 
@@ -989,23 +1036,8 @@ def importAndShapePartialReload():
     publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
 
 
-def topology_runtime_binary_path():
-    return os.path.join(get_libreqos_directory(), "bin", "lqos_topology")
-
-
-def topology_runtime_output_paths():
-    base_dir = get_libreqos_directory()
-    return [
-        os.path.join(base_dir, "topology_attachment_health_state.json"),
-        os.path.join(base_dir, "topology_effective_state.json"),
-        os.path.join(base_dir, "network.effective.json"),
-        os.path.join(base_dir, "shaping_inputs.json"),
-        os.path.join(base_dir, "topology_runtime_status.json"),
-    ]
-
-
 def topology_runtime_status_path():
-    return os.path.join(get_libreqos_directory(), "topology_runtime_status.json")
+    return get_existing_state_path("topology", "topology_runtime_status.json")
 
 
 def _load_topology_runtime_status():
@@ -1094,86 +1126,20 @@ def report_topology_runtime_not_ready(context: str, *, phase_label: str, step_co
     )
 
 
-def clear_topology_runtime_outputs():
-    for path in topology_runtime_output_paths():
-        try:
-            os.remove(path)
-        except FileNotFoundError:
-            continue
-        except Exception as e:
-            print(f"Failed to remove topology runtime artifact {path}: {e}")
-
-
-def stop_topology_runtime_process():
-    global topology_runtime_process
-    process = topology_runtime_process
-    topology_runtime_process = None
-    if process is None:
-        return
-    if process.poll() is not None:
-        return
-    try:
-        process.terminate()
-        process.wait(timeout=5)
-    except Exception:
-        try:
-            process.kill()
-        except Exception:
-            pass
-
-
 def wait_for_topology_runtime_ready(timeout_seconds=8.0):
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         ready, _, _ = topology_runtime_readiness_detail()
         if ready:
             return True
-        process = topology_runtime_process
-        if process is not None and process.poll() is not None:
-            return False
         time.sleep(0.1)
     return False
 
 
 def ensure_topology_runtime_process(wait_for_outputs=False):
-    global topology_runtime_process
-    global topology_runtime_missing_reported
-
-    binary = topology_runtime_binary_path()
-    if not os.path.isfile(binary):
-        if not topology_runtime_missing_reported:
-            print(f"Topology runtime helper is unavailable at {binary}. Rain suppression is disabled.")
-            topology_runtime_missing_reported = True
-        clear_topology_runtime_outputs()
-        topology_runtime_process = None
-        return False
-
-    topology_runtime_missing_reported = False
-
-    if topology_runtime_process is not None:
-        code = topology_runtime_process.poll()
-        if code is None:
-            if wait_for_outputs:
-                return wait_for_topology_runtime_ready()
-            return True
-        print(f"Topology runtime helper exited with code {code}. Restarting it.")
-        clear_topology_runtime_outputs()
-        topology_runtime_process = None
-
-    try:
-        topology_runtime_process = subprocess.Popen(
-            [binary],
-            cwd=get_libreqos_directory(),
-        )
-        print("Started topology runtime helper.")
-        if wait_for_outputs:
-            return wait_for_topology_runtime_ready()
-        return True
-    except Exception as e:
-        print(f"Failed to start topology runtime helper: {e}")
-        clear_topology_runtime_outputs()
-        topology_runtime_process = None
-        return False
+    if wait_for_outputs:
+        return wait_for_topology_runtime_ready()
+    return True
 
 
 def topology_runtime_refresh_tick():
@@ -1210,7 +1176,6 @@ def ensure_bus_ready():
 def run_scheduler_main():
     global shaping_runtime_hash
 
-    atexit.register(stop_topology_runtime_process)
     set_scheduler_status_bus_enabled(False)
     ensure_bus_ready()
     set_scheduler_status_bus_enabled(True)
@@ -1242,6 +1207,7 @@ def run_scheduler_main():
 
 if __name__ == '__main__':
     try:
+        configure_scheduler_stdio()
         run_scheduler_main()
     except Exception as e:
         print(f"Error starting scheduler: {e}")

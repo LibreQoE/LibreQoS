@@ -5,41 +5,71 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
-                    <h5 class="lqos-config-panel-title">Insight</h5>
-                    <div class="lqos-config-panel-subtitle">Control Insight statistics collection, licensing, and optional self-hosted endpoint settings.</div>
+                    <h5 class="lqos-config-panel-title">License &amp; Services</h5>
+                    <div class="lqos-config-panel-subtitle">Review effective license state, control bootstrap behavior, and manage Insight or Local service settings from one place.</div>
                 </div>
             </div>
 
             <div class="row g-3">
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Collection and License</h6>
-                        <div class="lqos-config-section-subtitle">Enable Insight data gathering and define the cadence used for aggregation and reporting.</div>
+                        <h6 class="lqos-config-section-title">Effective Status</h6>
+                        <div class="lqos-config-section-subtitle">This reflects the current license authority in use, not just what is configured locally.</div>
 
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="gatherStats">
-                            <label class="form-check-label" for="gatherStats">Gather Insight Statistics</label>
-                            <div class="form-text">Enable collection of Insight performance data.</div>
+                        <div class="card border-0 bg-body-tertiary mb-3">
+                            <div class="card-body p-3">
+                                <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                                    <div>
+                                        <div class="text-secondary small text-uppercase">License State</div>
+                                        <div class="fs-5 fw-semibold" id="licenseStateLabel">Loading...</div>
+                                    </div>
+                                    <span class="badge text-bg-secondary" id="licenseAuthorityBadge">Loading</span>
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6">
+                                        <div class="small text-secondary">Control Service</div>
+                                        <div class="fw-semibold" id="controlServiceStatus">Checking...</div>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <div class="small text-secondary">Mapped Circuits</div>
+                                        <div class="fw-semibold" id="mappedCircuitLimit">Checking...</div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="small text-secondary">Capabilities</div>
+                                    <div class="d-flex flex-wrap gap-2 mt-2" id="licenseCapabilityBadges"></div>
+                                </div>
+                                <div class="alert alert-warning d-none mt-3 mb-0" id="licenseAvailabilityAlert" role="alert"></div>
+                            </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label for="collationPeriod" class="form-label">Collation Period (seconds)</label>
-                            <input type="number" class="form-control" id="collationPeriod" min="1">
-                            <div class="form-text">How frequently to aggregate statistics into Insight records.</div>
-                        </div>
-
-                        <div class="mb-0">
-                            <label for="licenseKey" class="form-label">License Key</label>
-                            <input type="text" class="form-control" id="licenseKey">
-                            <div class="form-text">License key for LibreQoS Insight, when applicable.</div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" id="retryLicenseCheck" class="btn btn-outline-secondary">
+                                <i class="fa fa-rotate-right me-1"></i> Retry License Check
+                            </button>
+                            <span class="text-secondary small align-self-center" id="retryLicenseHint">
+                                Use this after correcting a key or when you want to force a fresh control-channel attempt.
+                            </span>
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Endpoints and Reporting</h6>
-                        <div class="lqos-config-section-subtitle">Set reporting cadence for UISP synchronization and optionally point LibreQoS at a self-hosted Insight service.</div>
+                        <h6 class="lqos-config-section-title">Collection and Endpoint Settings</h6>
+                        <div class="lqos-config-section-subtitle">Enable long-term stats for entitled tiers and define optional self-hosted service settings.</div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="gatherStats">
+                            <label class="form-check-label" for="gatherStats">Gather Long-Term Statistics</label>
+                            <div class="form-text">Enable collection and submission of long-term performance data when the active license tier permits it.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="collationPeriod" class="form-label">Collation Period (seconds)</label>
+                            <input type="number" class="form-control" id="collationPeriod" min="1">
+                            <div class="form-text">How frequently to aggregate statistics into long-term records.</div>
+                        </div>
 
                         <div class="mb-3">
                             <label for="uispInterval" class="form-label">UISP Reporting Interval (seconds)</label>
@@ -51,6 +81,31 @@
                             <label for="ltsUrl" class="form-label">Custom Insight Server URL</label>
                             <input type="text" class="form-control" id="ltsUrl">
                             <div class="form-text">URL for a self-hosted Insight server. Leave blank to use the default service.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <h6 class="lqos-config-section-title">License Key</h6>
+                        <div class="lqos-config-section-subtitle">Configured locally for control-channel bootstrap and entitlement refresh.</div>
+
+                        <div class="row g-3 align-items-end">
+                            <div class="col-12 col-lg-8">
+                            <label for="licenseKey" class="form-label">License Key</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="licenseKey" autocomplete="off" spellcheck="false">
+                                    <button type="button" class="btn btn-outline-secondary" id="toggleLicenseKey" aria-label="Reveal license key">
+                                        <i class="fa fa-eye"></i>
+                                    </button>
+                                </div>
+                                <div class="form-text" id="licenseKeyHelp">Configured license key for Insight or Local service entitlement, when applicable.</div>
+                            </div>
+                            <div class="col-12 col-lg-4">
+                                <button type="button" id="clearLicenseKey" class="btn btn-outline-danger w-100">
+                                    <i class="fa fa-trash me-1"></i> Clear License Key
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

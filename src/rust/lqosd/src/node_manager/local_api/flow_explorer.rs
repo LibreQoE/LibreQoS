@@ -3,6 +3,7 @@ use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowAnalysis, FlowbeeLocalData,
     RECENT_FLOWS, RttData,
 };
+use crate::throughput_tracker::resolve_circuit_metadata_for_ip;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::{time_since_boot, unix_now};
@@ -54,8 +55,6 @@ fn all_flows_to_transport(
     boot_time: u64,
     all_flows_for_asn: Vec<(FlowbeeKey, FlowbeeLocalData, FlowAnalysis)>,
 ) -> Vec<FlowTimeline> {
-    let catalog = lqos_network_devices::shaped_devices_catalog();
-    let throughput = THROUGHPUT_TRACKER.raw_data.lock();
     all_flows_for_asn
         .iter()
         .filter(|flow| {
@@ -63,20 +62,7 @@ fn all_flows_to_transport(
             flow.1.last_seen - flow.1.start_time > 2_000_000_000
         })
         .map(|flow| {
-            let mut circuit_id = String::new();
-            let mut circuit_name = String::new();
-            if let Some(te) = throughput.get(&flow.0.local_ip) {
-                if let Some(id) = &te.circuit_id {
-                    circuit_id = id.clone();
-                }
-                let shaped_device = catalog.device_by_hashes(te.device_hash, te.circuit_hash);
-                if let Some(device) = shaped_device {
-                    if circuit_id.is_empty() {
-                        circuit_id = device.circuit_id.clone();
-                    }
-                    circuit_name = device.circuit_name.clone();
-                }
-            }
+            let (circuit_id, mut circuit_name) = resolve_circuit_metadata_for_ip(&flow.0.local_ip);
             if circuit_name.is_empty() {
                 circuit_name = flow.0.local_ip.as_ip().to_string();
             }

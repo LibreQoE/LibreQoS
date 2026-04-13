@@ -714,19 +714,32 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::SupportTicketList => {
-            if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+        WsRequest::SupportTicketList => match lts::support_ticket_gate().await {
+            Err(StatusCode::FORBIDDEN) => {
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: "Support tickets require an entitled license.".to_string(),
                     },
                 )
                 .await
                 {
                     return true;
                 }
-            } else {
+            }
+            Err(StatusCode::SERVICE_UNAVAILABLE) => {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "license valid, control service unavailable".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            }
+            _ => {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
                 let control_tx = request_state.private_state.control_tx();
                 if control_tx
@@ -741,7 +754,7 @@ async fn receive_channel_message(
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -749,8 +762,8 @@ async fn receive_channel_message(
                         return true;
                     }
                 } else {
-                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
-                        .await;
+                    let result =
+                        tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx).await;
                     match result {
                         Ok(Ok(Ok(tickets))) => {
                             if send_ws_response(&tx, WsResponse::SupportTicketListResult { tickets })
@@ -774,20 +787,33 @@ async fn receive_channel_message(
                     }
                 }
             }
-        }
-        WsRequest::SupportTicketGet { ticket_id } => {
-            if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+        },
+        WsRequest::SupportTicketGet { ticket_id } => match lts::support_ticket_gate().await {
+            Err(StatusCode::FORBIDDEN) => {
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: "Support tickets require an entitled license.".to_string(),
                     },
                 )
                 .await
                 {
                     return true;
                 }
-            } else {
+            }
+            Err(StatusCode::SERVICE_UNAVAILABLE) => {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "license valid, control service unavailable".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            }
+            _ => {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
                 let control_tx = request_state.private_state.control_tx();
                 if control_tx
@@ -803,7 +829,7 @@ async fn receive_channel_message(
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -836,7 +862,7 @@ async fn receive_channel_message(
                     }
                 }
             }
-        }
+        },
         WsRequest::SupportTicketCreate {
             subject,
             priority,
@@ -854,11 +880,16 @@ async fn receive_channel_message(
                 {
                     return true;
                 }
-            } else if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+            } else if let Err(status) = lts::support_ticket_gate().await {
+                let message = match status {
+                    StatusCode::FORBIDDEN => "Support tickets require an entitled license.",
+                    StatusCode::SERVICE_UNAVAILABLE => "license valid, control service unavailable",
+                    _ => "Support tickets unavailable",
+                };
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: message.to_string(),
                     },
                 )
                 .await
@@ -884,7 +915,7 @@ async fn receive_channel_message(
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -934,11 +965,16 @@ async fn receive_channel_message(
                 {
                     return true;
                 }
-            } else if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+            } else if let Err(status) = lts::support_ticket_gate().await {
+                let message = match status {
+                    StatusCode::FORBIDDEN => "Support tickets require an entitled license.",
+                    StatusCode::SERVICE_UNAVAILABLE => "license valid, control service unavailable",
+                    _ => "Support tickets unavailable",
+                };
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: message.to_string(),
                     },
                 )
                 .await
@@ -968,7 +1004,7 @@ async fn receive_channel_message(
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -1049,6 +1085,56 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::LtsCapabilities => match lts::lts_capabilities_data(*request_state.login) {
+            Ok(data) => {
+                let response = WsResponse::LtsCapabilitiesResult { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load license status".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
+        WsRequest::LtsRetryLicenseCheck => {
+            match lts::retry_license_check_data(*request_state.login) {
+                Ok(data) => {
+                    let response = WsResponse::LtsCapabilitiesResult { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to retry license check".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
         WsRequest::LtsStartSignup => {
             let result = lts::lts_trial_start_signup_data().await;
             match result {
@@ -1107,7 +1193,7 @@ async fn receive_channel_message(
             }
             Err(StatusCode::FORBIDDEN) => {
                 let response = WsResponse::Error {
-                    message: "Insight not enabled".to_string(),
+                    message: "This page requires an entitled license.".to_string(),
                 };
                 if send_ws_response(&tx, response).await {
                     return true;
@@ -1132,7 +1218,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1158,7 +1244,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1185,7 +1271,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1212,7 +1298,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1238,7 +1324,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1264,7 +1350,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1292,7 +1378,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1318,7 +1404,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1345,7 +1431,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1371,7 +1457,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1397,7 +1483,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;

@@ -22,7 +22,7 @@ use std::fmt::Write as _;
 use std::{
     fs::{File, read_to_string, remove_file},
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
 };
 mod blocking;
 use anyhow::{Error, Result};
@@ -907,7 +907,7 @@ fn write_compiled_topology_outputs(
             "Unable to write topology canonical state snapshot: {e}"
         ))
     })?;
-    let anchors_path = lqos_config::circuit_anchors_path(config);
+    let anchors_path = config.legacy_runtime_file_path(lqos_config::CIRCUIT_ANCHORS_FILENAME);
     if let Err(err) = remove_file(&anchors_path)
         && err.kind() != std::io::ErrorKind::NotFound
     {
@@ -976,6 +976,8 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(circuit_name_use_address, m)?)?;
     m.add_function(wrap_pyfunction!(find_ipv6_using_mikrotik, m)?)?;
     m.add_function(wrap_pyfunction!(integration_common_use_mikrotik_ipv6, m)?)?;
+    m.add_function(wrap_pyfunction!(mikrotik_ipv6_config_path, m)?)?;
+    m.add_function(wrap_pyfunction!(load_mikrotik_ipv6_routers_json, m)?)?;
     m.add_function(wrap_pyfunction!(exclude_sites, m)?)?;
     m.add_function(wrap_pyfunction!(bandwidth_overhead_factor, m)?)?;
     m.add_function(wrap_pyfunction!(committed_bandwidth_multiplier, m)?)?;
@@ -1040,6 +1042,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_tree_weights, m)?)?;
     m.add_function(wrap_pyfunction!(get_libreqos_directory, m)?)?;
+    m.add_function(wrap_pyfunction!(get_libreqos_state_directory, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices, m)?)?;
     m.add_function(wrap_pyfunction!(overrides_persistent_devices_effective, m)?)?;
     m.add_function(wrap_pyfunction!(
@@ -2199,6 +2202,23 @@ fn integration_common_use_mikrotik_ipv6() -> PyResult<bool> {
 }
 
 #[pyfunction]
+fn mikrotik_ipv6_config_path() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config
+        .resolved_mikrotik_ipv6_config_path()
+        .display()
+        .to_string())
+}
+
+#[pyfunction]
+fn load_mikrotik_ipv6_routers_json() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    let routers = lqos_config::load_mikrotik_ipv6_router_credentials(&config)
+        .map_err(|e| PyOSError::new_err(e.to_string()))?;
+    serde_json::to_string(&routers).map_err(|e| PyOSError::new_err(e.to_string()))
+}
+
+#[pyfunction]
 fn exclude_sites() -> PyResult<Vec<String>> {
     let config = lqos_config::load_config().unwrap();
     Ok(config.uisp_integration.exclude_sites.clone())
@@ -2791,6 +2811,13 @@ pub fn get_libreqos_directory() -> PyResult<String> {
 }
 
 #[pyfunction]
+/// Returns the configured LibreQoS machine-managed state directory.
+pub fn get_libreqos_state_directory() -> PyResult<String> {
+    let config = lqos_config::load_config().unwrap();
+    Ok(config.resolved_state_directory().display().to_string())
+}
+
+#[pyfunction]
 /// Returns `true` when the loaded network graph contains only a single root node.
 pub fn is_network_flat() -> PyResult<bool> {
     Ok(lqos_network_devices::load_network_json()
@@ -3043,11 +3070,10 @@ fn calculate_hash() -> PyResult<i64> {
     let Ok(config) = lqos_config::load_config() else {
         return Ok(0);
     };
-    let base_path = Path::new(&config.lqos_directory);
     let nj_path = if config_uses_topology_import_ingress(config.as_ref()) {
-        base_path.join("network.effective.json")
+        config.topology_state_read_path("network.effective.json")
     } else {
-        base_path.join("network.json")
+        Path::new(&config.lqos_directory).join("network.json")
     };
     let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
 
@@ -3120,8 +3146,27 @@ fn first_existing_path<'a>(paths: &'a [&'a Path]) -> Option<&'a Path> {
     paths.iter().copied().find(|path| path.exists())
 }
 
-fn topology_runtime_shaping_generation(base_path: &Path) -> Option<String> {
-    let status_path = base_path.join("topology_runtime_status.json");
+fn state_or_legacy_path(
+    base_path: &Path,
+    state_base_path: &Path,
+    category: &str,
+    filename: &str,
+) -> PathBuf {
+    let preferred = state_base_path.join(category).join(filename);
+    if preferred.exists() {
+        preferred
+    } else {
+        base_path.join(filename)
+    }
+}
+
+fn topology_runtime_shaping_generation(base_path: &Path, state_base_path: &Path) -> Option<String> {
+    let status_path = state_or_legacy_path(
+        base_path,
+        state_base_path,
+        "topology",
+        "topology_runtime_status.json",
+    );
     if let Ok(status_raw) = read_to_string(&status_path)
         && let Ok(status) =
             serde_json::from_str::<lqos_config::TopologyRuntimeStatusFile>(&status_raw)
@@ -3131,7 +3176,8 @@ fn topology_runtime_shaping_generation(base_path: &Path) -> Option<String> {
         return Some(status.shaping_generation);
     }
 
-    let shaping_inputs_path = base_path.join("shaping_inputs.json");
+    let shaping_inputs_path =
+        state_or_legacy_path(base_path, state_base_path, "shaping", "shaping_inputs.json");
     let shaping_raw = read_to_string(&shaping_inputs_path).ok()?;
     let shaping_inputs =
         serde_json::from_str::<lqos_config::TopologyShapingInputsFile>(&shaping_raw).ok()?;
@@ -3142,24 +3188,66 @@ fn topology_runtime_shaping_generation(base_path: &Path) -> Option<String> {
     }
 }
 
+fn topology_runtime_effective_generation(
+    base_path: &Path,
+    state_base_path: &Path,
+) -> Option<String> {
+    let status_path = state_or_legacy_path(
+        base_path,
+        state_base_path,
+        "topology",
+        "topology_runtime_status.json",
+    );
+    if let Ok(status_raw) = read_to_string(&status_path)
+        && let Ok(status) =
+            serde_json::from_str::<lqos_config::TopologyRuntimeStatusFile>(&status_raw)
+        && status.ready
+        && !status.effective_generation.is_empty()
+    {
+        return Some(status.effective_generation);
+    }
+
+    let effective_path = state_or_legacy_path(
+        base_path,
+        state_base_path,
+        "topology",
+        "network.effective.json",
+    );
+    let effective_raw = read_to_string(&effective_path).ok()?;
+    let effective_network = serde_json::from_str::<serde_json::Value>(&effective_raw).ok()?;
+    lqos_config::compute_effective_network_generation(&effective_network).ok()
+}
+
 fn calculate_shaping_runtime_hash_for_base(
     base_path: &Path,
+    state_base_path: &Path,
     uses_topology_import_ingress: bool,
     insight_topology_enabled: bool,
     runtime_sqm_fingerprint: &str,
 ) -> i64 {
     if uses_topology_import_ingress {
-        let Some(shaping_generation) = topology_runtime_shaping_generation(base_path) else {
+        let Some(shaping_generation) =
+            topology_runtime_shaping_generation(base_path, state_base_path)
+        else {
             return 0;
         };
-        let combined = format!("{shaping_generation}\n{runtime_sqm_fingerprint}");
+        let effective_generation =
+            topology_runtime_effective_generation(base_path, state_base_path).unwrap_or_default();
+        let combined =
+            format!("{shaping_generation}\n{effective_generation}\n{runtime_sqm_fingerprint}");
         return lqos_utils::hash_to_i64(&combined);
     }
 
-    let effective_path = base_path.join("network.effective.json");
+    let effective_path = state_or_legacy_path(
+        base_path,
+        state_base_path,
+        "topology",
+        "network.effective.json",
+    );
     let network_json_path = base_path.join("network.json");
     let network_insight_path = base_path.join("network.insight.json");
-    let shaping_inputs_path = base_path.join("shaping_inputs.json");
+    let shaping_inputs_path =
+        state_or_legacy_path(base_path, state_base_path, "shaping", "shaping_inputs.json");
     let shaped_devices_path = base_path.join("ShapedDevices.csv");
     let shaped_devices_insight_path = base_path.join("ShapedDevices.insight.csv");
 
@@ -3208,11 +3296,13 @@ fn calculate_shaping_runtime_hash() -> PyResult<i64> {
         return Ok(0);
     };
     let base_path = Path::new(&config.lqos_directory);
+    let state_base_path = config.resolved_state_directory();
     let Ok(runtime_sqm_fingerprint) = shaping_runtime_sqm_fingerprint() else {
         return Ok(0);
     };
     Ok(calculate_shaping_runtime_hash_for_base(
         base_path,
+        state_base_path.as_path(),
         config_uses_topology_import_ingress(config.as_ref()),
         config
             .long_term_stats
@@ -3872,12 +3962,12 @@ fn treeguard_get_node_virtual_branch_state(
 #[pyfunction]
 /// Returns whether Insight features are currently enabled in `lqosd`.
 pub fn is_insight_enabled() -> PyResult<bool> {
-    let Ok(responses) = run_query(vec![BusRequest::CheckInsight]) else {
+    let Ok(responses) = run_query(vec![BusRequest::GetLtsCapabilities]) else {
         return Ok(false);
     };
     for resp in responses {
-        if let BusResponse::InsightStatus(enabled) = resp {
-            return Ok(enabled);
+        if let BusResponse::LtsCapabilitiesSummary(summary) = resp {
+            return Ok(summary.can_view_insight_ui);
         }
     }
     Ok(false)
@@ -3925,7 +4015,7 @@ mod tests {
         )
         .expect("shaping inputs should write");
 
-        let first = calculate_shaping_runtime_hash_for_base(base, true, false, "");
+        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
         assert_ne!(first, 0);
 
         fs::write(
@@ -3933,7 +4023,7 @@ mod tests {
             r#"{"shaping_generation":"shape-b","circuits":[]}"#,
         )
         .expect("updated shaping inputs should write");
-        let second = calculate_shaping_runtime_hash_for_base(base, true, false, "");
+        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
         assert_ne!(second, 0);
         assert_ne!(first, second);
     }
@@ -3952,7 +4042,7 @@ mod tests {
         )
         .expect("shaping inputs should write");
 
-        let first = calculate_shaping_runtime_hash_for_base(base, true, false, "");
+        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
         assert_ne!(first, 0);
 
         fs::write(
@@ -3965,7 +4055,108 @@ mod tests {
         )
         .expect("updated shaping inputs should write");
 
-        let second = calculate_shaping_runtime_hash_for_base(base, true, false, "");
+        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn shaping_runtime_hash_changes_when_effective_network_rates_change() {
+        let temp = tempdir().expect("tempdir should exist");
+        let base = temp.path();
+        fs::write(
+            base.join("shaping_inputs.json"),
+            r#"{"shaping_generation":"shape-1","circuits":[]}"#,
+        )
+        .expect("shaping inputs should write");
+        fs::write(
+            base.join("network.effective.json"),
+            r#"{
+                "Root": {
+                    "children": {
+                        "AP A": {
+                            "id": "ap-a",
+                            "downloadBandwidthMbps": 204,
+                            "uploadBandwidthMbps": 58
+                        }
+                    }
+                }
+            }"#,
+        )
+        .expect("effective network should write");
+
+        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        assert_ne!(first, 0);
+
+        fs::write(
+            base.join("network.effective.json"),
+            r#"{
+                "Root": {
+                    "children": {
+                        "AP A": {
+                            "id": "ap-a",
+                            "downloadBandwidthMbps": 218,
+                            "uploadBandwidthMbps": 57
+                        }
+                    }
+                }
+            }"#,
+        )
+        .expect("updated effective network should write");
+
+        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        assert_ne!(second, 0);
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn shaping_runtime_hash_ignores_effective_network_key_order_only_changes() {
+        let temp = tempdir().expect("tempdir should exist");
+        let base = temp.path();
+        fs::write(
+            base.join("shaping_inputs.json"),
+            r#"{"shaping_generation":"shape-1","circuits":[]}"#,
+        )
+        .expect("shaping inputs should write");
+        fs::write(
+            base.join("network.effective.json"),
+            r#"{
+                "Root": {
+                    "children": {
+                        "AP A": {
+                            "id": "ap-a",
+                            "downloadBandwidthMbps": 204,
+                            "uploadBandwidthMbps": 58
+                        }
+                    },
+                    "downloadBandwidthMbps": 1000,
+                    "uploadBandwidthMbps": 1000
+                }
+            }"#,
+        )
+        .expect("effective network should write");
+
+        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        assert_ne!(first, 0);
+
+        fs::write(
+            base.join("network.effective.json"),
+            r#"{
+                "Root": {
+                    "uploadBandwidthMbps": 1000,
+                    "downloadBandwidthMbps": 1000,
+                    "children": {
+                        "AP A": {
+                            "uploadBandwidthMbps": 58,
+                            "downloadBandwidthMbps": 204,
+                            "id": "ap-a"
+                        }
+                    }
+                }
+            }"#,
+        )
+        .expect("reordered effective network should write");
+
+        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
         assert_eq!(first, second);
     }
 
@@ -3981,7 +4172,40 @@ mod tests {
         )
         .expect("shaped devices should write");
 
-        let hash = calculate_shaping_runtime_hash_for_base(base, false, false, "");
+        let hash = calculate_shaping_runtime_hash_for_base(base, base, false, false, "");
+        assert_ne!(hash, 0);
+    }
+
+    #[test]
+    fn shaping_runtime_hash_uses_resolved_state_directory_when_runtime_files_live_outside_src() {
+        let temp = tempdir().expect("tempdir should exist");
+        let base = temp.path().join("src");
+        let state = temp.path().join("state");
+        fs::create_dir_all(state.join("topology")).expect("topology state dir should exist");
+        fs::create_dir_all(state.join("shaping")).expect("shaping state dir should exist");
+
+        fs::write(
+            state.join("shaping").join("shaping_inputs.json"),
+            r#"{"shaping_generation":"shape-1","circuits":[]}"#,
+        )
+        .expect("shaping inputs should write");
+        fs::write(
+            state.join("topology").join("network.effective.json"),
+            r#"{
+                "Root": {
+                    "children": {
+                        "AP A": {
+                            "id": "ap-a",
+                            "downloadBandwidthMbps": 204,
+                            "uploadBandwidthMbps": 58
+                        }
+                    }
+                }
+            }"#,
+        )
+        .expect("effective network should write");
+
+        let hash = calculate_shaping_runtime_hash_for_base(&base, &state, true, false, "");
         assert_ne!(hash, 0);
     }
 }

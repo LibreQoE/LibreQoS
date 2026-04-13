@@ -20,8 +20,8 @@ pub mod test_data;
 mod v15;
 pub use v15::{
     BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
-    QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig, StormguardStrategy,
-    TopologyConfig,
+    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
+    StormguardStrategy, TopologyConfig,
     TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig, Tunables,
 };
@@ -428,6 +428,23 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
         final_config.lqos_directory = lqos_dir;
     }
+    crate::runtime_state_migration::migrate_legacy_runtime_state(&final_config).map_err(|e| {
+        error!("Unable to migrate legacy runtime state: {e:?}");
+        LibreQoSConfigError::MigrationFailed {
+            path: final_config.lqos_directory.clone(),
+            details: e.to_string(),
+        }
+    })?;
+    crate::migrate_legacy_mikrotik_ipv6_credentials(&final_config).map_err(|e| {
+        error!("Unable to migrate legacy Mikrotik IPv6 credentials: {e:?}");
+        LibreQoSConfigError::MigrationFailed {
+            path: final_config
+                .resolved_mikrotik_ipv6_config_path()
+                .display()
+                .to_string(),
+            details: e.to_string(),
+        }
+    })?;
 
     debug!("Set cached version of config file");
     let new_config = Arc::new(final_config);

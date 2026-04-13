@@ -10,6 +10,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
+use crate::lts2_sys::capabilities;
 use crate::lts2_sys::license_grant;
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
 use lqos_probe::ProbeClass;
@@ -277,16 +278,24 @@ async fn persistent_connection(
 ) -> std::result::Result<(), String> {
     let mut sleep_seconds = 60;
     'reconnect: loop {
+        if !capabilities::can_open_control_channel() {
+            capabilities::set_control_service_reachable(false);
+            capabilities::wait_for_control_channel_retry(Duration::from_secs(sleep_seconds)).await;
+            continue 'reconnect;
+        }
+
         if let Ok(mut socket) = connect().await {
             let mut permitted = false;
             // Preamble - get connected
             if let Err(e) = send_magic_number(&mut socket).await {
                 warn!("Failed to send magic number: {}", e);
+                capabilities::set_control_service_reachable(false);
                 tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
                 continue 'reconnect;
             }
             if let Err(e) = send_license(&mut socket).await {
                 warn!("Failed to send license info: {}", e);
+                capabilities::set_control_service_reachable(false);
                 tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
                 continue 'reconnect;
             }
@@ -793,6 +802,8 @@ async fn persistent_connection(
                                                 license_type: license_state,
                                                 trial_expires: expiration_date as i32,
                                             });
+                                            capabilities::clear_bootstrap_suppression();
+                                            capabilities::set_control_service_reachable(true);
                                             permitted = true;
                                             sleep_seconds = 60;
                                             // Flush any pending chatbot messages now that we're permitted
@@ -825,10 +836,19 @@ async fn persistent_connection(
                                                 license_type: 0,
                                                 trial_expires: -1,
                                             });
-                                            permitted = false;
+                                            capabilities::set_control_service_reachable(false);
+                                            if let Ok(config) = lqos_config::load_config()
+                                                && let Some(license_key) =
+                                                    config.long_term_stats.license_key.as_deref()
+                                            {
+                                                capabilities::suppress_bootstrap_for_license_key(
+                                                    license_key,
+                                                );
+                                            }
                                             if let Err(e) = license_grant::invalidate_license_grant() {
                                                 warn!("Failed to invalidate stored license grant: {e:?}");
                                             }
+                                            break 'message_pump;
                                         }
                                     }
                                     messages::WsMessage::InsightPublicKey { public_key } => {
@@ -869,7 +889,15 @@ async fn persistent_connection(
                                         }
                                     }
                                     messages::WsMessage::RemoteCommands { commands } => {
-                                        crate::lts2_sys::lts2_client::enqueue(commands);
+                                        if crate::lts2_sys::current_capabilities()
+                                            .can_receive_remote_commands
+                                        {
+                                            crate::lts2_sys::lts2_client::enqueue(commands);
+                                        } else {
+                                            warn!(
+                                                "Ignoring remote commands because the current license tier does not permit them"
+                                            );
+                                        }
                                     }
                                     messages::WsMessage::ChatbotChunk { request_id, data } => {
                                         if let Some(tx) = chatbot_streams.get(&request_id) {
@@ -1113,8 +1141,9 @@ async fn persistent_connection(
                 }
             }
         }
+        capabilities::set_control_service_reachable(false);
         debug!("Sleeping before reconnecting the persistent channel");
-        tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
+        capabilities::wait_for_control_channel_retry(Duration::from_secs(sleep_seconds)).await;
         sleep_seconds = 60;
     }
 }
@@ -1435,10 +1464,11 @@ async fn circuit_snapshot_streaming(
         }
     }
 
-    // Load shaped-devices catalog and pick devices in the target circuit.
-    let catalog = lqos_network_devices::shaped_devices_catalog();
+    // Load network devices catalog and pick devices in the target circuit.
+    // This includes dynamic circuits so circuit streaming works consistently for runtime overlays.
+    let catalog = lqos_network_devices::network_devices_catalog();
     let circuit_devices = catalog
-        .iter_devices()
+        .iter_all_devices()
         .filter(|dev| dev.circuit_hash == circuit_hash)
         .cloned()
         .collect::<Vec<_>>();
@@ -1458,14 +1488,19 @@ async fn circuit_snapshot_streaming(
         let raw = crate::throughput_tracker::THROUGHPUT_TRACKER
             .raw_data
             .lock();
-        for (_xdp_ip, te) in raw.iter() {
-            // Only consider entries known to belong to this circuit and are fresh enough
-            if te.circuit_hash != Some(circuit_hash) {
+        for (xdp_ip, te) in raw.iter() {
+            let device = catalog
+                .device_by_hashes(te.device_hash, te.circuit_hash)
+                .or_else(|| catalog.device_longest_match_for_ip(xdp_ip).map(|(_, device)| device));
+            let matches_desired =
+                te.circuit_hash == Some(circuit_hash)
+                    || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            if !matches_desired {
                 continue;
             }
             // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
             // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            let Some(device_hash) = te.device_hash else {
+            let Some(device_hash) = device.map(|device| device.device_hash) else {
                 continue;
             };
             let agg = aggregates.entry(device_hash).or_insert_with(|| Agg {
@@ -1557,7 +1592,17 @@ async fn circuit_snapshot_streaming(
             if local.last_seen < five_minutes_ago {
                 continue;
             }
-            if local.circuit_hash != Some(circuit_hash) {
+            let device = catalog
+                .device_by_hashes(local.device_hash, local.circuit_hash)
+                .or_else(|| {
+                    catalog
+                        .device_longest_match_for_ip(&key.local_ip)
+                        .map(|(_, device)| device)
+                });
+            let matches_desired =
+                local.circuit_hash == Some(circuit_hash)
+                    || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            if !matches_desired {
                 continue;
             }
 

@@ -1,7 +1,7 @@
 use lqos_config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::{debug, warn};
 
 /// Root MQ handle major reserved by LibreQoS.
@@ -408,7 +408,7 @@ fn advance_handle_candidate(handle: u16) -> u16 {
 }
 
 fn state_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(QDISC_HANDLE_FILE)
+    config.shaping_state_read_path(QDISC_HANDLE_FILE)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,6 @@
 version = "1.5"
 lqos_directory = "/opt/libreqos/src"
+state_directory = "/opt/libreqos/state"
 node_id = "0000-0000-0000"
 node_name = "Example Node"
 packet_capture_time = 10
@@ -70,6 +71,9 @@ do_not_track_subnets = [ "192.168.66.0/24" ]
 circuit_name_as_address = false
 queue_refresh_interval_mins = 30
 use_mikrotik_ipv6 = false
+
+[mikrotik_ipv6]
+config_path = "/etc/libreqos/mikrotik_ipv6.toml"
 
 [splynx_integration]
 enable_splynx = false

@@ -1,8 +1,8 @@
-use crate::lts2_sys::get_lts_license_status;
-use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, LtsStatus};
+use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::ALL_FLOWS;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use crate::throughput_tracker::throughput_entry::ThroughputEntry;
 use crate::throughput_tracker::{
     CIRCUIT_RTT_BUFFERS, Lts2Circuit, Lts2Device, RawNetJs, THROUGHPUT_TRACKER, min_max_median_rtt,
     min_max_median_tcp_retransmits,
@@ -10,8 +10,10 @@ use crate::throughput_tracker::{
 use csv::ReaderBuilder;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_config::{ShapedDevice, TopologyCanonicalStateFile, load_config};
+use lqos_queue_tracker::queue_stats_stale;
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
 use lqos_topology_compile::TopologyImportFile;
+use lqos_utils::XdpIpAddress;
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
@@ -29,7 +31,7 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
 }
 
 fn insight_topology_debug_path(config: &lqos_config::Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join("network.insight.debug.json")
+    config.debug_state_file_path("network.insight.debug.json")
 }
 
 fn write_insight_topology_debug_snapshot(
@@ -37,6 +39,9 @@ fn write_insight_topology_debug_snapshot(
     raw_json: &str,
 ) -> anyhow::Result<()> {
     let path = insight_topology_debug_path(config);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = std::fs::File::create(&temp_path)?;
     file.write_all(raw_json.as_bytes())?;
@@ -66,6 +71,23 @@ fn rate_for_submission(rate_mbps: f32) -> u32 {
     }
 }
 
+fn queue_metrics_available(config: &lqos_config::Config) -> bool {
+    !config.queues.queue_mode.is_observe() && !queue_stats_stale()
+}
+
+fn resolved_circuit_hash_for_submission(
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+    ip: &XdpIpAddress,
+    entry: &ThroughputEntry,
+) -> Option<i64> {
+    entry.circuit_hash.or_else(|| {
+        catalog
+            .device_by_hashes(entry.device_hash, entry.circuit_hash)
+            .or_else(|| catalog.device_longest_match_for_ip(ip).map(|(_, dev)| dev))
+            .map(|device| device.circuit_hash)
+    })
+}
+
 pub(crate) fn submit_throughput_stats(
     scale: f64,
     counter: u8,
@@ -75,6 +97,7 @@ pub(crate) fn submit_throughput_stats(
     let Ok(config) = load_config() else {
         return;
     };
+    let queue_metrics_available = queue_metrics_available(config.as_ref());
 
     // Bail out if we don't have gather stats or a license key
     if !config.long_term_stats.gather_stats {
@@ -92,13 +115,7 @@ pub(crate) fn submit_throughput_stats(
         return;
     }
 
-    // Bail out if the license doesn't indicate that we're allowed to submit stats
-    let (license_status, _days_remaining) = get_lts_license_status();
-    let can_submit = !matches!(
-        license_status,
-        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
-    );
-    if !can_submit {
+    if !crate::lts2_sys::can_submit_long_term_stats() {
         return;
     }
 
@@ -122,15 +139,13 @@ pub(crate) fn submit_throughput_stats(
     let bits_per_second = THROUGHPUT_TRACKER.actual_bits_per_second();
 
     // Check that the stats haven't gone wonky and don't submit obviously bad data.
-    if let Ok(config) = load_config() {
-        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
-        }
-        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
-        }
+    if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
+        debug!("Spike detected - not submitting LTS");
+        return; // Do not submit these stats
+    }
+    if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
+        debug!("Spike detected - not submitting LTS");
+        return; // Do not submit these stats
     }
 
     /////////////////////////////////////////////////////////////////
@@ -261,10 +276,26 @@ pub(crate) fn submit_throughput_stats(
             median_rtt,
             tcp_retransmits_down: tcp_retransmits.down,
             tcp_retransmits_up: tcp_retransmits.up,
-            cake_marks_down: TOTAL_QUEUE_STATS.marks.get_down() as i32,
-            cake_marks_up: TOTAL_QUEUE_STATS.marks.get_up() as i32,
-            cake_drops_down: TOTAL_QUEUE_STATS.drops.get_down() as i32,
-            cake_drops_up: TOTAL_QUEUE_STATS.drops.get_up() as i32,
+            cake_marks_down: if queue_metrics_available {
+                TOTAL_QUEUE_STATS.marks.get_down() as i32
+            } else {
+                0
+            },
+            cake_marks_up: if queue_metrics_available {
+                TOTAL_QUEUE_STATS.marks.get_up() as i32
+            } else {
+                0
+            },
+            cake_drops_down: if queue_metrics_available {
+                TOTAL_QUEUE_STATS.drops.get_down() as i32
+            } else {
+                0
+            },
+            cake_drops_up: if queue_metrics_available {
+                TOTAL_QUEUE_STATS.drops.get_up() as i32
+            } else {
+                0
+            },
         })
         .is_err()
         {
@@ -288,40 +319,39 @@ pub(crate) fn submit_throughput_stats(
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
 
-        let catalog = lqos_network_devices::shaped_devices_catalog();
+        let catalog = lqos_network_devices::network_devices_catalog();
         const CRAZY_LIMIT: u64 = 8; // 8x the max bandwidth
-        let plan_lookup: FxHashMap<i64, (u64, u64)> = catalog
-            .iter_devices()
-            // Bandwidth: mbps * 1_000_000 to bytes
-            .map(|d| {
-                (
-                    d.circuit_hash,
-                    (
-                        d.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
-                        d.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
-                    ),
-                )
-            })
-            .collect();
+        let mut plan_lookup: FxHashMap<i64, (u64, u64)> = FxHashMap::default();
+        for device in catalog.iter_all_devices() {
+            let entry = plan_lookup.entry(device.circuit_hash).or_insert((0, 0));
+            entry.0 = entry.0.max(device.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+            entry.1 = entry.1.max(device.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+        }
 
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| h.circuit_id.is_some() && h.actual_bytes_per_second.not_zero())
-            .for_each(|(_k, h)| {
+            .filter_map(|(ip, h)| {
+                let circuit_hash =
+                    resolved_circuit_hash_for_submission(&catalog, ip, h)?;
+                h.actual_bytes_per_second
+                    .not_zero()
+                    .then_some((circuit_hash, h))
+            })
+            .for_each(|(circuit_hash, h)| {
                 let mut crazy = false;
-                if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
+                if let Some((dl, ul)) = plan_lookup.get(&circuit_hash)
                     && (h.actual_bytes_per_second.down > *dl || h.actual_bytes_per_second.up > *ul)
                 {
-                    crazy_values.insert(h.circuit_hash.unwrap_or(0));
+                    crazy_values.insert(circuit_hash);
                     crazy = true;
                 }
 
                 if crazy {
                     return;
                 }
-                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
+                if let Some(c) = circuit_throughput.get_mut(&circuit_hash) {
                     c.bytes += h.actual_bytes_per_second;
                     c.packets += h.packets_per_second;
                     c.tcp_packets += h.tcp_packets;
@@ -329,7 +359,7 @@ pub(crate) fn submit_throughput_stats(
                     c.icmp_packets += h.icmp_packets;
                 } else {
                     circuit_throughput.insert(
-                        h.circuit_hash.unwrap_or(0),
+                        circuit_hash,
                         CircuitThroughputTemp {
                             bytes: h.actual_bytes_per_second,
                             packets: h.packets_per_second,
@@ -345,16 +375,17 @@ pub(crate) fn submit_throughput_stats(
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| {
-                h.circuit_id.is_some()
-                    && h.tcp_retransmits.not_zero()
-                    && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
+            .filter_map(|(ip, h)| {
+                let circuit_hash =
+                    resolved_circuit_hash_for_submission(&catalog, ip, h)?;
+                (h.tcp_retransmits.not_zero() && !crazy_values.contains(&circuit_hash))
+                    .then_some((circuit_hash, h))
             })
-            .for_each(|(_k, h)| {
-                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap_or(0)) {
+            .for_each(|(circuit_hash, h)| {
+                if let Some(c) = circuit_retransmits.get_mut(&circuit_hash) {
                     *c += h.tcp_retransmits;
                 } else {
-                    circuit_retransmits.insert(h.circuit_hash.unwrap_or(0), h.tcp_retransmits);
+                    circuit_retransmits.insert(circuit_hash, h.tcp_retransmits);
                 }
             });
 
@@ -426,24 +457,26 @@ pub(crate) fn submit_throughput_stats(
         // Per host CAKE stats
         let mut cake_drops: Vec<CircuitCakeDrops> = Vec::new();
         let mut cake_marks: Vec<CircuitCakeMarks> = Vec::new();
-        ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
-            if drops.not_zero() {
-                cake_drops.push(CircuitCakeDrops {
-                    timestamp: now,
-                    circuit_hash,
-                    cake_drops_down: drops.get_down() as u32,
-                    cake_drops_up: drops.get_up() as u32,
-                });
-            }
-            if marks.not_zero() {
-                cake_marks.push(CircuitCakeMarks {
-                    timestamp: now,
-                    circuit_hash,
-                    cake_marks_down: marks.get_down() as u32,
-                    cake_marks_up: marks.get_up() as u32,
-                });
-            }
-        });
+        if queue_metrics_available {
+            ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
+                if drops.not_zero() {
+                    cake_drops.push(CircuitCakeDrops {
+                        timestamp: now,
+                        circuit_hash,
+                        cake_drops_down: drops.get_down() as u32,
+                        cake_drops_up: drops.get_up() as u32,
+                    });
+                }
+                if marks.not_zero() {
+                    cake_marks.push(CircuitCakeMarks {
+                        timestamp: now,
+                        circuit_hash,
+                        cake_marks_down: marks.get_down() as u32,
+                        cake_marks_up: marks.get_up() as u32,
+                    });
+                }
+            });
+        }
         if !cake_drops.is_empty() && crate::lts2_sys::circuit_cake_drops(&cake_drops).is_err() {
             warn!("Error sending message to LTS2.");
         }
@@ -486,7 +519,7 @@ pub(crate) fn submit_throughput_stats(
                     tcp_retransmits_up: node.current_tcp_retransmits.up as u32,
                 });
             }
-            if node.current_drops.not_zero() {
+            if queue_metrics_available && node.current_drops.not_zero() {
                 site_cake_drops.push(crate::lts2_sys::shared_types::SiteCakeDrops {
                     timestamp: now,
                     site_hash,
@@ -494,7 +527,7 @@ pub(crate) fn submit_throughput_stats(
                     cake_drops_up: node.current_drops.get_up() as u32,
                 });
             }
-            if node.current_marks.not_zero() {
+            if queue_metrics_available && node.current_marks.not_zero() {
                 site_cake_marks.push(crate::lts2_sys::shared_types::SiteCakeMarks {
                     timestamp: now,
                     site_hash,
@@ -538,12 +571,14 @@ pub(crate) fn submit_throughput_stats(
         if !site_rtt.is_empty() && crate::lts2_sys::site_rtt(&site_rtt).is_err() {
             warn!("Error sending message to LTS2.");
         }
-        if !site_cake_drops.is_empty()
+        if queue_metrics_available
+            && !site_cake_drops.is_empty()
             && crate::lts2_sys::site_cake_drops(&site_cake_drops).is_err()
         {
             warn!("Error sending message to LTS2.");
         }
-        if !site_cake_marks.is_empty()
+        if queue_metrics_available
+            && !site_cake_marks.is_empty()
             && crate::lts2_sys::site_cake_marks(&site_cake_marks).is_err()
         {
             warn!("Error sending message to LTS2.");
@@ -601,7 +636,24 @@ fn combined_devices_network_hash() -> anyhow::Result<i64> {
         let sd_path = std::path::Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
         read_to_string(sd_path)?
     };
-    let combined = format!("{}\n{}", nj_as_string, sd_as_string);
+    let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
+    let mut dynamic_devices: Vec<ShapedDevice> = dynamic_snapshot
+        .iter()
+        .map(|circuit| circuit.shaped.clone())
+        .collect();
+    dynamic_devices.sort_by(|a, b| {
+        (
+            a.circuit_id.trim().to_ascii_lowercase(),
+            a.device_id.trim().to_ascii_lowercase(),
+        )
+            .cmp(&(
+                b.circuit_id.trim().to_ascii_lowercase(),
+                b.device_id.trim().to_ascii_lowercase(),
+            ))
+    });
+    let dynamic_as_string = serde_json::to_string(&dynamic_devices)?;
+
+    let combined = format!("{}\n{}\n{}", nj_as_string, sd_as_string, dynamic_as_string);
     let hash = hash_to_i64(&combined);
 
     Ok(hash)
@@ -621,13 +673,13 @@ static LTS2_HASH: AtomicI64 = AtomicI64::new(0);
 /// transmission to Insight
 fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
     let cfg = load_config()?;
+    let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
     if integration_ingress_enabled(cfg.as_ref()) {
         let topology_import = TopologyImportFile::load(cfg.as_ref())?
             .ok_or_else(|| anyhow::anyhow!("topology_import.json does not exist"))?;
-        return Ok(topology_import
-            .into_imported_bundle()
-            .shaped_devices
-            .devices);
+        let mut devices = topology_import.into_imported_bundle().shaped_devices.devices;
+        devices.extend(dynamic_snapshot.iter().map(|circuit| circuit.shaped.clone()));
+        return Ok(devices);
     }
     let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
     if !sd_path.exists() {
@@ -648,6 +700,7 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
             anyhow::bail!("Error reading ShapedDevices.csv");
         }
     }
+    devices.extend(dynamic_snapshot.iter().map(|circuit| circuit.shaped.clone()));
     Ok(devices)
 }
 
@@ -673,6 +726,15 @@ fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::throughput_tracker::throughput_entry::ThroughputEntry;
+    use lqos_bus::TcHandle;
+    use lqos_config::{ConfigShapedDevices, QueueMode, ShapedDevice};
+    use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
+    use lqos_utils::XdpIpAddress;
+    use lqos_utils::qoo::QoqScores;
+    use lqos_utils::units::DownUpOrder;
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
 
     #[test]
     fn test_rate_for_submission_small_rates() {
@@ -721,5 +783,65 @@ mod tests {
         assert_eq!(rate_for_submission(5.0), 5);
         assert_eq!(rate_for_submission(10.0), 10);
         assert_eq!(rate_for_submission(100.0), 100);
+    }
+
+    #[test]
+    fn queue_metrics_disabled_in_observe_mode() {
+        let mut config = lqos_config::Config::default();
+        config.queues.set_queue_mode(QueueMode::Observe);
+        assert!(!queue_metrics_available(&config));
+    }
+
+    #[test]
+    fn resolved_circuit_hash_falls_back_to_ip_lookup() {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit Alpha".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            circuit_hash: hash_to_i64("circuit-1"),
+            device_hash: hash_to_i64("device-1"),
+            ..Default::default()
+        }]);
+        let shaped_catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
+        let catalog = NetworkDevicesCatalog::from_snapshots(shaped_catalog, Arc::new(Vec::new()));
+        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
+        let entry = ThroughputEntry {
+            circuit_id: Some("circuit-1".to_string()),
+            circuit_hash: None,
+            device_hash: None,
+            network_json_parents: None,
+            first_cycle: 0,
+            most_recent_cycle: 0,
+            bytes: DownUpOrder::zeroed(),
+            actual_bytes: DownUpOrder::zeroed(),
+            packets: DownUpOrder::zeroed(),
+            tcp_packets: DownUpOrder::zeroed(),
+            udp_packets: DownUpOrder::zeroed(),
+            icmp_packets: DownUpOrder::zeroed(),
+            prev_bytes: DownUpOrder::zeroed(),
+            prev_actual_bytes: DownUpOrder::zeroed(),
+            prev_packets: DownUpOrder::zeroed(),
+            prev_tcp_packets: DownUpOrder::zeroed(),
+            prev_udp_packets: DownUpOrder::zeroed(),
+            prev_icmp_packets: DownUpOrder::zeroed(),
+            bytes_per_second: DownUpOrder::zeroed(),
+            actual_bytes_per_second: DownUpOrder::zeroed(),
+            packets_per_second: DownUpOrder::zeroed(),
+            tc_handle: TcHandle::from_u32(0),
+            rtt_buffer: Default::default(),
+            recent_rtt_data: [crate::throughput_tracker::flow_data::RttData::from_nanos(0); 60],
+            last_fresh_rtt_data_cycle: 0,
+            last_seen: 0,
+            tcp_retransmits: DownUpOrder::zeroed(),
+            tcp_retransmit_packets: DownUpOrder::zeroed(),
+            qoq: QoqScores::default(),
+        };
+
+        let circuit_hash = resolved_circuit_hash_for_submission(&catalog, &ip, &entry);
+
+        assert_eq!(circuit_hash, Some(hash_to_i64("circuit-1")));
     }
 }

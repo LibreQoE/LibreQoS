@@ -41,6 +41,43 @@ pub struct InsightLicenseSummary {
     /// `None` means the license did not specify a max.
     pub max_circuits: Option<u64>,
 }
+
+/// Summary of the current effective LTS/license capabilities on this node.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct LtsCapabilitiesSummary {
+    /// Effective numeric license state after resolving live session or cached grant.
+    pub license_state: i32,
+    /// Human-readable effective license state label.
+    pub license_state_label: String,
+    /// Which source currently authorizes the effective state.
+    pub authority_label: String,
+    /// Whether the live control service is currently reachable and permitted.
+    pub control_service_reachable: bool,
+    /// Whether local bootstrap intent exists.
+    pub bootstrap_intent: bool,
+    /// Whether automatic bootstrap retries are currently suppressed.
+    pub bootstrap_suppressed: bool,
+    /// Whether a valid cached grant is currently available.
+    pub cached_grant_available: bool,
+    /// Whether the node may open the control channel.
+    pub can_open_control_channel: bool,
+    /// Whether Insight UI/history pages are entitled.
+    pub can_view_insight_ui: bool,
+    /// Whether the API docs/API link should be enabled.
+    pub can_use_api_link: bool,
+    /// Whether support tickets are entitled.
+    pub can_use_support_tickets: bool,
+    /// Whether chatbot/Libby is entitled.
+    pub can_use_chatbot: bool,
+    /// Whether remote commands are entitled.
+    pub can_receive_remote_commands: bool,
+    /// Whether long-term stats collection is enabled.
+    pub can_collect_long_term_stats: bool,
+    /// Whether long-term stats submission is enabled.
+    pub can_submit_long_term_stats: bool,
+    /// Effective mapped-circuit limit. `None` means unlimited.
+    pub mapped_circuit_limit: Option<u64>,
+}
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct BakeryStatsSnapshot {
@@ -683,8 +720,8 @@ pub enum BusResponse {
     /// Search results
     SearchResults(Vec<SearchResultEntry>),
 
-    /// Is Insight Enabled?
-    InsightStatus(bool),
+    /// Current local LTS/license capability summary.
+    LtsCapabilitiesSummary(LtsCapabilitiesSummary),
 
     /// Insight license summary (licensed + optional max circuits).
     InsightLicenseSummary(InsightLicenseSummary),

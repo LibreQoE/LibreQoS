@@ -1,10 +1,6 @@
-use lqos_config::{
-    CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
-    load_config,
-};
+use lqos_config::{CircuitEthernetMetadata, CircuitEthernetMetadataFile, load_config};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 
 const DEFAULT_ETHERNET_CAPS_PAGE_SIZE: usize = 100;
 const MAX_ETHERNET_CAPS_PAGE_SIZE: usize = 250;
@@ -136,7 +132,7 @@ fn advisory_to_badge(advisory: &CircuitEthernetMetadata) -> Option<EthernetCapBa
 
 fn load_advisory_file() -> Option<CircuitEthernetMetadataFile> {
     let cfg = load_config().ok()?;
-    let path = Path::new(&cfg.lqos_directory).join(CIRCUIT_ETHERNET_METADATA_FILENAME);
+    let path = lqos_config::circuit_ethernet_metadata_path(cfg.as_ref());
     let payload = std::fs::read(path).ok()?;
     serde_json::from_slice(&payload).ok()
 }

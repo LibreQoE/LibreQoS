@@ -23,7 +23,7 @@ do
 done
 
 # Check Pre-Requisites
-sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
+sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
 
 if ! rustup -V &> /dev/null
 then
@@ -61,6 +61,7 @@ rustup update
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
 PROGS=(
     lqosd
+    lqos_netplan_helper
     lqtop
     xdp_iphash_to_cpu_cmdline
     xdp_pping
@@ -73,6 +74,7 @@ PROGS=(
 )
 BUILD_PACKAGES=(
     lqosd
+    lqos_netplan_helper
     lqtop
     xdp_iphash_to_cpu_cmdline
     xdp_pping
@@ -192,6 +194,15 @@ if service_exists lqosd; then
     clear_pinned_maps_before_lqosd_restart
     echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqosd
+fi
+if service_exists lqos_netplan_helper; then
+    echo "lqos_netplan_helper is no longer run as a service. Stopping and disabling it."
+    sudo systemctl stop lqos_netplan_helper || true
+    sudo systemctl disable lqos_netplan_helper || true
+    if [ -f /etc/systemd/system/lqos_netplan_helper.service ]; then
+        sudo rm -f /etc/systemd/system/lqos_netplan_helper.service
+        sudo systemctl daemon-reload
+    fi
 fi
 if service_exists lqos_scheduler; then
     echo "lqos_scheduler is running as a service. Restarting it. You may need to enter your sudo password."

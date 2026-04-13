@@ -11,6 +11,14 @@ The regular Linux bridge is recommended for most installations. The Linux Bridge
 
 Below are the instructions to configure Netplan, whether using the Linux Bridge or Bifrost XDP bridge:
 
+```{note}
+The Network Mode page in the LibreQoS web UI now inspects the current Netplan files, offers eligible non-management interfaces in dropdowns, stages managed `libreqos.yaml` changes for Linux bridge and single-interface modes, applies them with a timed LibreQoS rollback window, and lets you confirm or revert the pending change. You can also restore the previous managed backup from that page. XDP bridge mode remains a manual Netplan workflow.
+```
+
+```{note}
+If a timed Netplan change briefly interrupts your browser session, return to the Network Mode page after connectivity comes back. LibreQoS will resume the pending confirm or revert flow from that page automatically.
+```
+
 ## Option A: Netplan config for a regular Linux bridge (Recommended)
 
 Ubuntu Server uses NetPlan, which uses .yaml files in /etc/netplan to determine interface settings.
@@ -26,11 +34,11 @@ Assuming your shaping interfaces are ens19 and ens20, here is what your file wou
 network:
     ethernets:
         ens19:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
         ens20:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
     bridges:
         br0:
             interfaces:
@@ -42,7 +50,7 @@ network:
 Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
 ```
 
-By setting `dhcp4: no` and `dhcp6: no`, the shaping interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
+By setting `dhcp4: false` and `dhcp6: false`, the shaping interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
 
 Then run
 
@@ -66,18 +74,18 @@ Assuming your shaping interfaces are ens19 and ens20, here is what your file wou
 network:
     ethernets:
         ens19:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
         ens20:
-            dhcp4: no
-            dhcp6: no
+            dhcp4: false
+            dhcp6: false
     version: 2
 ```
 ```{note}
 Please be sure to replace ens19 and ens20 in the example above with the correct shaping interfaces. The order of the interfaces does not matter for this section.
 ```
 
-By setting `dhcp4: no` and `dhcp6: no`, the shaping interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
+By setting `dhcp4: false` and `dhcp6: false`, the shaping interfaces will be brought up as part of the normal boot cycle, despite not having IP addresses assigned.
 
 Then run
 

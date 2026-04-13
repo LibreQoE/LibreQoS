@@ -27,10 +27,11 @@ mod tc_handle;
 pub use bus::response::{
     AsnHeatmapData, AsnListEntry, BakeryStatsSnapshot, CircuitCapacityRow, CircuitCount,
     CircuitHeatmapData, CountryListEntry, DeviceCounts, ExecutiveSummaryHeader, FlowMapPoint,
-    FlowTimelineEntry, InsightLicenseSummary, NodeCapacity, ProtocolListEntry, QueueStatsTotal,
-    RetransmitSummary, SchedulerDetails, SearchResultEntry, SiteHeatmapData,
-    StormguardDebugDirection, StormguardDebugEntry, TreeGuardRuntimeNodeBranchSnapshot,
-    TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue, WarningLevel,
+    FlowTimelineEntry, InsightLicenseSummary, LtsCapabilitiesSummary, NodeCapacity,
+    ProtocolListEntry, QueueStatsTotal, RetransmitSummary, SchedulerDetails, SearchResultEntry,
+    SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry,
+    TreeGuardRuntimeNodeBranchSnapshot, TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue,
+    WarningLevel,
 };
 pub use bus::{
     BUS_SOCKET_PATH, BakeryCapacityReportInterface, BlackboardSystem, BusClientError, BusReply,

@@ -137,7 +137,6 @@ def createShaper():
 				circuits_added_counter += 1
 	print("Imported " + "{:.0%}".format(circuits_added_counter/len(shaped_devices)) + " of known shaped devices from WISPGate.")
 	net.prepareTree()
-	net.plotNetworkGraph(False)
 	net.materializeCompiledTopology("python/wispgate", "full")
 
 def importFromWISPGate():

@@ -4,6 +4,7 @@ use crate::{
     TopologyEditorStateFile,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Write;
@@ -332,6 +333,9 @@ pub struct TopologyRuntimeStatusFile {
     /// Stable generation hash of the current shaping-relevant runtime output, when ready.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub shaping_generation: String,
+    /// Stable generation hash of the effective network export, when ready.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub effective_generation: String,
     /// Whether runtime outputs are ready for the source generation above.
     #[serde(default)]
     pub ready: bool,
@@ -397,6 +401,9 @@ fn atomic_write_json<T: Serialize>(
     value: &T,
 ) -> Result<(), TopologyRuntimeStateError> {
     let raw = serde_json::to_string_pretty(value)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
     file.write_all(raw.as_bytes())?;
@@ -407,37 +414,37 @@ fn atomic_write_json<T: Serialize>(
 
 /// Returns the path of the runtime attachment-health state file.
 pub fn topology_attachment_health_state_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME)
 }
 
 /// Returns the path of the effective topology state file.
 pub fn topology_effective_state_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_EFFECTIVE_STATE_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_EFFECTIVE_STATE_FILENAME)
 }
 
 /// Returns the path of the effective runtime network tree file.
 pub fn topology_effective_network_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME)
 }
 
 /// Returns the path of the topology import artifact file.
 pub fn topology_import_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_IMPORT_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_IMPORT_FILENAME)
 }
 
 /// Returns the path of the runtime shaping-input snapshot file.
 pub fn topology_shaping_inputs_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_SHAPING_INPUTS_FILENAME)
+    config.shaping_state_read_path(TOPOLOGY_SHAPING_INPUTS_FILENAME)
 }
 
 /// Returns the path of the topology runtime readiness status file.
 pub fn topology_runtime_status_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_RUNTIME_STATUS_FILENAME)
+    config.topology_state_read_path(TOPOLOGY_RUNTIME_STATUS_FILENAME)
 }
 
 /// Returns the path of the integration compiled-shaping artifact.
 pub fn topology_compiled_shaping_path(config: &Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(TOPOLOGY_COMPILED_SHAPING_FILENAME)
+    config.shaping_state_read_path(TOPOLOGY_COMPILED_SHAPING_FILENAME)
 }
 
 fn file_exists_with_nonempty_nodes(path: &Path) -> Result<bool, TopologyRuntimeStateError> {
@@ -482,15 +489,15 @@ fn hash_file_state(
 pub fn compute_topology_source_generation(
     config: &Config,
 ) -> Result<String, TopologyRuntimeStateError> {
-    let base = Path::new(&config.lqos_directory);
-    let canonical_path = base.join(TOPOLOGY_CANONICAL_STATE_FILENAME);
-    let editor_path = base.join(TOPOLOGY_EDITOR_STATE_FILENAME);
-    let topology_import_path = base.join(TOPOLOGY_IMPORT_FILENAME);
-    let topology_compiled_shaping_path = base.join(TOPOLOGY_COMPILED_SHAPING_FILENAME);
+    let canonical_path = config.topology_state_read_path(TOPOLOGY_CANONICAL_STATE_FILENAME);
+    let editor_path = config.topology_state_read_path(TOPOLOGY_EDITOR_STATE_FILENAME);
+    let topology_import_path = config.topology_state_read_path(TOPOLOGY_IMPORT_FILENAME);
+    let topology_compiled_shaping_path =
+        config.shaping_state_read_path(TOPOLOGY_COMPILED_SHAPING_FILENAME);
     let use_topology_import = topology_import_ingress_enabled(config);
-    let network_path = base.join("network.json");
-    let shaped_devices_path = base.join("ShapedDevices.csv");
-    let circuit_anchors_path = base.join(CIRCUIT_ANCHORS_FILENAME);
+    let network_path = config.legacy_runtime_file_path("network.json");
+    let shaped_devices_path = config.legacy_runtime_file_path("ShapedDevices.csv");
+    let circuit_anchors_path = config.topology_state_read_path(CIRCUIT_ANCHORS_FILENAME);
 
     let canonical_active = if file_exists_with_nonempty_nodes(&canonical_path)? {
         let canonical = TopologyCanonicalStateFile::load(config)
@@ -591,7 +598,10 @@ impl TopologyAttachmentHealthStateFile {
 
     /// Saves the transient attachment-health state file atomically.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_attachment_health_state_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME),
+            self,
+        )
     }
 }
 
@@ -608,7 +618,10 @@ impl TopologyEffectiveStateFile {
 
     /// Saves the effective topology state file atomically.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_effective_state_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_EFFECTIVE_STATE_FILENAME),
+            self,
+        )
     }
 }
 
@@ -625,7 +638,10 @@ impl TopologyShapingInputsFile {
 
     /// Saves the runtime shaping-input snapshot.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_shaping_inputs_path(config), self)
+        atomic_write_json(
+            &config.shaping_state_file_path(TOPOLOGY_SHAPING_INPUTS_FILENAME),
+            self,
+        )
     }
 
     /// Returns a copy normalized for semantic comparisons and stable generation hashing.
@@ -655,6 +671,40 @@ impl TopologyShapingInputsFile {
     }
 }
 
+fn normalized_json_value_for_generation(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries = map.iter().collect::<Vec<_>>();
+            entries.sort_unstable_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
+            let mut normalized = serde_json::Map::with_capacity(entries.len());
+            for (key, child) in entries {
+                normalized.insert(key.clone(), normalized_json_value_for_generation(child));
+            }
+            Value::Object(normalized)
+        }
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(normalized_json_value_for_generation)
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+
+/// Computes the stable effective-network generation for one runtime export payload.
+pub fn compute_effective_network_generation(
+    effective_network: &Value,
+) -> Result<String, TopologyRuntimeStateError> {
+    let normalized = normalized_json_value_for_generation(effective_network);
+    let payload = serde_json::to_vec(&normalized)?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"topology-runtime-effective-generation");
+    hasher.update([0xff]);
+    hasher.update(payload);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 impl TopologyRuntimeStatusFile {
     /// Loads the topology runtime status file if it exists.
     pub fn load(config: &Config) -> Result<Self, TopologyRuntimeStateError> {
@@ -668,7 +718,10 @@ impl TopologyRuntimeStatusFile {
 
     /// Saves the topology runtime status file atomically.
     pub fn save(&self, config: &Config) -> Result<(), TopologyRuntimeStateError> {
-        atomic_write_json(&topology_runtime_status_path(config), self)
+        atomic_write_json(
+            &config.topology_state_file_path(TOPOLOGY_RUNTIME_STATUS_FILENAME),
+            self,
+        )
     }
 }
 
@@ -678,7 +731,8 @@ mod tests {
         CIRCUIT_ANCHORS_FILENAME, Config, TOPOLOGY_CANONICAL_STATE_FILENAME,
         TOPOLOGY_COMPILED_SHAPING_FILENAME, TOPOLOGY_EDITOR_STATE_FILENAME,
         TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyRuntimeStatusFile,
-        TopologyShapingCircuitInput, TopologyShapingInputsFile, compute_topology_source_generation,
+        TopologyShapingCircuitInput, TopologyShapingInputsFile,
+        compute_effective_network_generation, compute_topology_source_generation,
         topology_runtime_status_path,
     };
     use crate::{
@@ -718,6 +772,7 @@ mod tests {
         write_required_inputs(&lqos_directory);
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -750,6 +805,7 @@ mod tests {
         .expect("network json should write");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
 
@@ -817,6 +873,7 @@ mod tests {
         .expect("topology_import.json should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -849,6 +906,7 @@ mod tests {
         write_required_inputs(&lqos_directory);
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -907,6 +965,7 @@ mod tests {
         .expect("topology import should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.splynx_integration.enable_splynx = true;
@@ -986,6 +1045,7 @@ mod tests {
         .expect("compiled shaping should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -1068,6 +1128,7 @@ mod tests {
         .expect("topology import should write");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -1108,6 +1169,7 @@ mod tests {
         .expect("network json should write");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
 
@@ -1168,12 +1230,14 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-config-topology-status-roundtrip");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         let status = TopologyRuntimeStatusFile {
             schema_version: 1,
             source_generation: "generation-1".to_string(),
             shaping_generation: "shape-1".to_string(),
+            effective_generation: "effective-1".to_string(),
             ready: true,
             generated_unix: Some(123),
             effective_state_path: "/tmp/effective.json".to_string(),
@@ -1191,7 +1255,10 @@ mod tests {
         assert_eq!(loaded, status);
         assert_eq!(
             topology_runtime_status_path(&config),
-            lqos_directory.join(TOPOLOGY_RUNTIME_STATUS_FILENAME)
+            lqos_directory
+                .join("state")
+                .join("topology")
+                .join(TOPOLOGY_RUNTIME_STATUS_FILENAME)
         );
     }
 
@@ -1226,6 +1293,81 @@ mod tests {
             second
                 .compute_shaping_generation()
                 .expect("generation should recompute")
+        );
+    }
+
+    #[test]
+    fn effective_generation_changes_when_effective_rates_change() {
+        let first = serde_json::json!({
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "AP A": {
+                        "id": "ap-a",
+                        "downloadBandwidthMbps": 204,
+                        "uploadBandwidthMbps": 58,
+                        "children": {}
+                    }
+                }
+            }
+        });
+        let second = serde_json::json!({
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "AP A": {
+                        "id": "ap-a",
+                        "downloadBandwidthMbps": 218,
+                        "uploadBandwidthMbps": 57,
+                        "children": {}
+                    }
+                }
+            }
+        });
+
+        let first_generation =
+            compute_effective_network_generation(&first).expect("generation should compute");
+        let second_generation =
+            compute_effective_network_generation(&second).expect("generation should compute");
+        assert_ne!(first_generation, second_generation);
+    }
+
+    #[test]
+    fn effective_generation_ignores_object_key_order_only_changes() {
+        let first = serde_json::json!({
+            "Root": {
+                "downloadBandwidthMbps": 1000,
+                "uploadBandwidthMbps": 1000,
+                "children": {
+                    "AP A": {
+                        "id": "ap-a",
+                        "downloadBandwidthMbps": 204,
+                        "uploadBandwidthMbps": 58,
+                        "children": {}
+                    }
+                }
+            }
+        });
+        let second = serde_json::json!({
+            "Root": {
+                "children": {
+                    "AP A": {
+                        "children": {},
+                        "uploadBandwidthMbps": 58,
+                        "downloadBandwidthMbps": 204,
+                        "id": "ap-a"
+                    }
+                },
+                "uploadBandwidthMbps": 1000,
+                "downloadBandwidthMbps": 1000
+            }
+        });
+
+        assert_eq!(
+            compute_effective_network_generation(&first).expect("generation should compute"),
+            compute_effective_network_generation(&second).expect("generation should compute"),
         );
     }
 }

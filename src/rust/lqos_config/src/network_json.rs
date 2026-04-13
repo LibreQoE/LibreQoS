@@ -6,13 +6,14 @@ use lqos_utils::{
     qoo::{LossMeasurement, QoqScores, compute_qoq_scores},
     qoq_heatmap::TemporalQoqHeatmap,
     rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
-    temporal_heatmap::TemporalHeatmap,
+    temporal_heatmap::{TemporalHeatmap, executive_retransmit_percent},
     units::DownUpOrder,
 };
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
 use serde_json::{Map, Value};
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -48,7 +49,7 @@ impl NetworkJson {
 
     fn path_for_config(cfg: &crate::Config) -> PathBuf {
         let base_path = Path::new(&cfg.lqos_directory);
-        let effective_path = base_path.join("network.effective.json");
+        let effective_path = cfg.topology_state_read_path("network.effective.json");
         let integration_ingress_enabled = cfg.uisp_integration.enable_uisp
             || cfg.splynx_integration.enable_splynx
             || cfg
@@ -68,7 +69,7 @@ impl NetworkJson {
         if effective_path.exists() {
             effective_path
         } else if integration_ingress_enabled {
-            base_path.join("network.effective.json")
+            cfg.topology_state_file_path("network.effective.json")
         } else if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
             let tmp_path = base_path.join("network.insight.json");
             if tmp_path.exists() {
@@ -181,6 +182,61 @@ impl NetworkJson {
     /// doing so will provide valid data.
     pub fn get_nodes_when_ready(&self) -> &Vec<NetworkJsonNode> {
         &self.nodes
+    }
+
+    /// Carry forward rolling site heatmaps from a previously loaded active tree.
+    ///
+    /// Matching prefers stable node identifiers when present. If no identifier is available,
+    /// this falls back to node name only when that name is unique in both trees to avoid
+    /// attaching history to the wrong node after a reload.
+    ///
+    /// Side effects: copies matched `heatmap` and `qoq_heatmap` values into `self`.
+    pub fn carry_forward_heatmaps_from(&mut self, previous: &Self) {
+        let mut previous_by_id: HashMap<
+            String,
+            (&Option<TemporalHeatmap>, &Option<TemporalQoqHeatmap>),
+        > = HashMap::new();
+        let mut previous_name_counts: HashMap<String, usize> = HashMap::new();
+        let mut current_name_counts: HashMap<String, usize> = HashMap::new();
+
+        for node in &previous.nodes {
+            if let Some(id) = node.id.as_deref() {
+                previous_by_id.insert(id.to_string(), (&node.heatmap, &node.qoq_heatmap));
+            }
+            *previous_name_counts.entry(node.name.clone()).or_default() += 1;
+        }
+
+        for node in &self.nodes {
+            *current_name_counts.entry(node.name.clone()).or_default() += 1;
+        }
+
+        let mut previous_by_unique_name: HashMap<
+            String,
+            (&Option<TemporalHeatmap>, &Option<TemporalQoqHeatmap>),
+        > = HashMap::new();
+        for node in &previous.nodes {
+            if previous_name_counts.get(&node.name) == Some(&1) {
+                previous_by_unique_name
+                    .insert(node.name.clone(), (&node.heatmap, &node.qoq_heatmap));
+            }
+        }
+
+        for node in &mut self.nodes {
+            let preserved = node
+                .id
+                .as_deref()
+                .and_then(|id| previous_by_id.get(id).copied())
+                .or_else(|| {
+                    (current_name_counts.get(&node.name) == Some(&1))
+                        .then(|| node.name.clone())
+                        .and_then(|name| previous_by_unique_name.get(&name).copied())
+                });
+
+            if let Some((heatmap, qoq_heatmap)) = preserved {
+                node.heatmap = heatmap.clone();
+                node.qoq_heatmap = qoq_heatmap.clone();
+            }
+        }
     }
 
     /// Sets all current throughput values to zero
@@ -311,11 +367,11 @@ impl NetworkJson {
                 .rtt_buffer
                 .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
                 .map(|rtt| rtt.as_millis() as f32);
-            let retransmit_down = retransmit_percent(
+            let retransmit_down = executive_retransmit_percent(
                 node.current_tcp_retransmits.down,
                 node.current_tcp_retransmit_packets.down,
             );
-            let retransmit_up = retransmit_percent(
+            let retransmit_up = executive_retransmit_percent(
                 node.current_tcp_retransmits.up,
                 node.current_tcp_retransmit_packets.up,
             );
@@ -458,14 +514,6 @@ fn utilization_percent_bytes(bytes: u64, max_mbps: f64) -> Option<f32> {
     let bits_per_second = bytes.saturating_mul(8) as f64;
     let capacity_bps = max_mbps * 1_000_000.0;
     Some(((bits_per_second / capacity_bps) * 100.0) as f32)
-}
-
-fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
-    // Ignore very small samples to avoid extreme ratios from tiny flows.
-    if retransmits == 0 || packets < 1_000 {
-        return None;
-    }
-    Some((retransmits as f32 / packets as f32) * 100.0)
 }
 
 fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
@@ -733,16 +781,143 @@ mod test {
     }
 
     #[test]
+    fn carry_forward_heatmaps_preserves_matching_node_history_by_id() {
+        let mut previous = parse_network_json_from_value(serde_json::json!({
+            "Parent A": {
+                "children": {
+                    "Site 1": {
+                        "id": "site-1",
+                        "children": {}
+                    }
+                }
+            }
+        }));
+        let mut next = parse_network_json_from_value(serde_json::json!({
+            "Parent B": {
+                "children": {
+                    "Site 1": {
+                        "id": "site-1",
+                        "children": {}
+                    }
+                }
+            }
+        }));
+
+        let previous_site = previous
+            .nodes
+            .iter_mut()
+            .find(|node| node.id.as_deref() == Some("site-1"))
+            .expect("previous Site 1 should exist");
+        let heatmap = previous_site
+            .heatmap
+            .get_or_insert_with(TemporalHeatmap::new);
+        heatmap.add_sample(
+            42.0,
+            24.0,
+            Some(10.0),
+            Some(20.0),
+            Some(15.0),
+            Some(25.0),
+            None,
+            None,
+        );
+        let qoq_heatmap = previous_site
+            .qoq_heatmap
+            .get_or_insert_with(TemporalQoqHeatmap::new);
+        qoq_heatmap.add_sample(Some(91.0), Some(82.0));
+
+        next.carry_forward_heatmaps_from(&previous);
+
+        let next_site = next
+            .nodes
+            .iter()
+            .find(|node| node.id.as_deref() == Some("site-1"))
+            .expect("next Site 1 should exist");
+        let blocks = next_site
+            .heatmap
+            .as_ref()
+            .expect("heatmap should carry forward")
+            .blocks();
+        let qoq_blocks = next_site
+            .qoq_heatmap
+            .as_ref()
+            .expect("QoQ heatmap should carry forward")
+            .blocks();
+
+        assert_eq!(blocks.download[14], Some(42.0));
+        assert_eq!(blocks.upload[14], Some(24.0));
+        assert_eq!(qoq_blocks.download_total[14], Some(91.0));
+        assert_eq!(qoq_blocks.upload_total[14], Some(82.0));
+    }
+
+    #[test]
+    fn carry_forward_heatmaps_falls_back_to_unique_name_without_id() {
+        let mut previous = parse_network_json_from_value(serde_json::json!({
+            "Tower A": {
+                "children": {}
+            }
+        }));
+        let mut next = parse_network_json_from_value(serde_json::json!({
+            "Tower A": {
+                "children": {}
+            },
+            "Tower B": {
+                "children": {}
+            }
+        }));
+
+        let previous_tower = previous
+            .nodes
+            .iter_mut()
+            .find(|node| node.name == "Tower A")
+            .expect("previous Tower A should exist");
+        let heatmap = previous_tower
+            .heatmap
+            .get_or_insert_with(TemporalHeatmap::new);
+        heatmap.add_sample(77.0, 33.0, None, None, None, None, Some(1.5), Some(2.5));
+
+        next.carry_forward_heatmaps_from(&previous);
+
+        let next_tower = next
+            .nodes
+            .iter()
+            .find(|node| node.name == "Tower A")
+            .expect("next Tower A should exist");
+        let blocks = next_tower
+            .heatmap
+            .as_ref()
+            .expect("heatmap should carry forward by unique name")
+            .blocks();
+
+        assert_eq!(blocks.download[14], Some(77.0));
+        assert_eq!(blocks.upload[14], Some(33.0));
+        assert_eq!(blocks.retransmit_down[14], Some(1.5));
+        assert_eq!(blocks.retransmit_up[14], Some(2.5));
+        assert!(
+            next.nodes
+                .iter()
+                .find(|node| node.name == "Tower B")
+                .expect("Tower B should exist")
+                .heatmap
+                .is_none()
+        );
+    }
+
+    #[test]
     fn path_for_config_prefers_runtime_effective_tree_for_integration_ingress() {
         let temp = unique_temp_dir("network-json-integration-effective");
         let mut config = crate::Config {
             lqos_directory: temp.display().to_string(),
+            state_directory: None,
             ..crate::Config::default()
         };
         config.uisp_integration.enable_uisp = true;
 
         let selected = NetworkJson::path_for_config(&config);
-        assert_eq!(selected, temp.join("network.effective.json"));
+        assert_eq!(
+            selected,
+            config.topology_state_file_path("network.effective.json")
+        );
     }
 
     #[test]
@@ -750,6 +925,7 @@ mod test {
         let temp = unique_temp_dir("network-json-diy");
         let config = crate::Config {
             lqos_directory: temp.display().to_string(),
+            state_directory: None,
             ..crate::Config::default()
         };
 
@@ -766,12 +942,77 @@ mod test {
         std::fs::write(temp.join("network.json"), "{}").expect("legacy tree should write");
         let mut config = crate::Config {
             lqos_directory: temp.display().to_string(),
+            state_directory: None,
             ..crate::Config::default()
         };
         config.long_term_stats.enable_insight_topology = Some(true);
 
         let selected = NetworkJson::path_for_config(&config);
         assert_eq!(selected, temp.join("network.effective.json"));
+    }
+
+    #[test]
+    fn site_heatmap_suppresses_low_confidence_retransmits() {
+        let mut parsed = parse_network_json_from_value(serde_json::json!({
+            "TinySite": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 100,
+                "children": {}
+            }
+        }));
+        let site = parsed
+            .nodes
+            .iter_mut()
+            .find(|node| node.name == "TinySite")
+            .expect("TinySite should be present");
+        site.current_throughput.down = 12_500_000;
+        site.current_tcp_retransmits.down = 1;
+        site.current_tcp_retransmit_packets.down = 99;
+
+        parsed.record_site_heatmaps(true);
+
+        let blocks = parsed
+            .nodes
+            .iter()
+            .find(|node| node.name == "TinySite")
+            .expect("TinySite should be present")
+            .heatmap
+            .as_ref()
+            .expect("site heatmap should exist")
+            .blocks();
+        assert_eq!(blocks.retransmit_down.last().copied().flatten(), None);
+    }
+
+    #[test]
+    fn site_heatmap_keeps_qualified_retransmits() {
+        let mut parsed = parse_network_json_from_value(serde_json::json!({
+            "BusySite": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 100,
+                "children": {}
+            }
+        }));
+        let site = parsed
+            .nodes
+            .iter_mut()
+            .find(|node| node.name == "BusySite")
+            .expect("BusySite should be present");
+        site.current_throughput.down = 12_500_000;
+        site.current_tcp_retransmits.down = 2;
+        site.current_tcp_retransmit_packets.down = 100;
+
+        parsed.record_site_heatmaps(true);
+
+        let blocks = parsed
+            .nodes
+            .iter()
+            .find(|node| node.name == "BusySite")
+            .expect("BusySite should be present")
+            .heatmap
+            .as_ref()
+            .expect("site heatmap should exist")
+            .blocks();
+        assert_eq!(blocks.retransmit_down.last().copied().flatten(), Some(2.0));
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {

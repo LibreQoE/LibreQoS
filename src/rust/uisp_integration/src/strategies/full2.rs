@@ -1,5 +1,4 @@
 mod directionality;
-mod dot;
 mod graph_mapping;
 mod link_mapping;
 mod net_json_parent;
@@ -12,7 +11,6 @@ use crate::strategies::common::UispData;
 use crate::strategies::full2::directionality::{
     build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
 };
-use crate::strategies::full2::dot::save_dot_file;
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
@@ -297,7 +295,6 @@ pub async fn build_imported_full2_bundle(
     }
 
     if debug_graph_output_enabled() {
-        save_dot_file(&graph)?;
         let _ = blackboard_blob("uisp-graph", vec![graph.clone()]).await;
     }
 

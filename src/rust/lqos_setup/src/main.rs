@@ -7,15 +7,22 @@ mod preflight;
 mod webusers;
 
 use std::path::Path;
+use std::sync::Arc;
 use std::{env, fmt::Write as _};
 
 use bandwidth::bandwidth_view;
 use config_builder::CURRENT_CONFIG;
 use cursive::{
     Rect, Vec2, View,
-    view::{Margins, Nameable, Resizable},
+    view::{Margins, Nameable, Resizable, Scrollable},
     views::{Checkbox, Dialog, EditView, FixedLayout, Layer, LinearLayout, OnLayoutView, TextView},
 };
+use lqos_netplan_helper::protocol::{ApplyMode, ApplyRequest};
+use lqos_netplan_helper::transaction::{
+    HelperPaths, PendingChildren, apply_transaction, confirm_transaction, inspect_with_paths,
+    revert_transaction,
+};
+use parking_lot::Mutex;
 
 const VERSION: &str = include_str!("../../../VERSION_STRING");
 const DEFAULT_NETWORK_JSON: &str = include_str!("../../../network.example.json");
@@ -253,6 +260,138 @@ fn main() {
     ui.run();
 }
 
+fn build_candidate_config(existing: Option<lqos_config::Config>) -> lqos_config::Config {
+    let mut config = existing.unwrap_or_default();
+    let new_config = CURRENT_CONFIG.lock();
+    config.node_name = new_config.node_name.clone();
+    config.queues.downlink_bandwidth_mbps = new_config.mbps_to_internet;
+    config.queues.uplink_bandwidth_mbps = new_config.mbps_to_network;
+    config.queues.generated_pn_download_mbps = new_config.mbps_to_internet;
+    config.queues.generated_pn_upload_mbps = new_config.mbps_to_network;
+    match new_config.bridge_mode {
+        config_builder::BridgeMode::Linux => {
+            config.single_interface = None;
+            config.bridge = Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: false,
+                to_internet: new_config.to_internet.clone(),
+                to_network: new_config.to_network.clone(),
+            });
+        }
+        config_builder::BridgeMode::XDP => {
+            config.single_interface = None;
+            config.bridge = Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: true,
+                to_internet: new_config.to_internet.clone(),
+                to_network: new_config.to_network.clone(),
+            });
+        }
+        config_builder::BridgeMode::Single => {
+            config.single_interface = Some(lqos_config::SingleInterfaceConfig {
+                interface: new_config.to_internet.clone(),
+                internet_vlan: new_config.internet_vlan,
+                network_vlan: new_config.network_vlan,
+            });
+            config.bridge = None;
+        }
+    }
+    config.ip_ranges.allow_subnets = new_config.allow_subnets.clone();
+    config
+}
+
+fn inspection_report(inspection: &lqos_netplan_helper::NetworkModeInspection) -> String {
+    let mut report = format!(
+        "State: {}\n{}\n",
+        inspection.inspector_state, inspection.summary
+    );
+    if !inspection.warnings.is_empty() {
+        report.push_str("\nWarnings:\n");
+        for warning in &inspection.warnings {
+            let _ = writeln!(&mut report, "- {warning}");
+        }
+    }
+    if !inspection.dangerous_changes.is_empty() {
+        report.push_str("\nStrong confirmations required:\n");
+        for warning in &inspection.dangerous_changes {
+            let _ = writeln!(&mut report, "- {warning}");
+        }
+    }
+    if !inspection.conflicts.is_empty() {
+        report.push_str("\nConflicts:\n");
+        for conflict in &inspection.conflicts {
+            let _ = writeln!(&mut report, "- {conflict}");
+        }
+    }
+    if let Some(preview) = &inspection.managed_preview_yaml {
+        report.push_str("\nManaged Preview:\n");
+        report.push_str(preview);
+    } else if let Some(note) = &inspection.preview_note {
+        report.push('\n');
+        report.push_str(note);
+    }
+    report
+}
+
+pub(crate) fn preview_selected_network_mode(s: &mut cursive::Cursive) {
+    let existing = lqos_config::load_config().ok().map(|cfg| (*cfg).clone());
+    let candidate = build_candidate_config(existing);
+    let inspection = inspect_with_paths(&HelperPaths::default(), &candidate);
+    s.add_layer(
+        Dialog::around(TextView::new(inspection_report(&inspection)).scrollable())
+            .title("Detected Netplan State")
+            .button("OK", |s| {
+                s.pop_layer();
+            })
+            .full_screen(),
+    );
+}
+
+fn finish_setup(
+    ui: &mut cursive::Cursive,
+    config: &lqos_config::Config,
+    mut event_log: Vec<String>,
+) {
+    let state_root = config.resolved_state_directory();
+    for category in [
+        "topology",
+        "shaping",
+        "stats",
+        "cache",
+        "debug",
+        "quarantine",
+    ] {
+        std::fs::create_dir_all(state_root.join(category))
+            .expect("Unable to create state directory");
+    }
+
+    if !network_json_exists() {
+        let path = Path::new(&config.lqos_directory).join("network.json");
+        std::fs::write(path, DEFAULT_NETWORK_JSON).expect("Unable to write file");
+        event_log.push("Network.json created.".to_string());
+    } else {
+        event_log.push("Network.json already exists - not updated.".to_string());
+    }
+
+    if !shaped_devices_exists() {
+        let path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
+        std::fs::write(path, DEFAULT_SHAPED_DEVICES).expect("Unable to write file");
+        event_log.push("ShapedDevices.csv created.".to_string());
+    } else {
+        event_log.push("ShapedDevices.csv already exists - not updated.".to_string());
+    }
+
+    let report = cursive::With::with(LinearLayout::vertical(), |layout| {
+        for line in &event_log {
+            layout.add_child(TextView::new(line));
+        }
+    });
+
+    ui.add_layer(
+        Dialog::around(report)
+            .title("Setup Complete")
+            .button("OK", |ui| ui.quit()),
+    );
+}
+
 fn finalize(ui: &mut cursive::Cursive) {
     // If we cannot load the config but a file exists, warn the user and
     // take a backup before proceeding to create a new config.
@@ -302,8 +441,7 @@ or Cancel to exit and investigate.",
 fn continue_finalize(ui: &mut cursive::Cursive) {
     let mut event_log = Vec::new();
 
-    // Update/Create the config file.
-    let mut config = if let Ok(config) = lqos_config::load_config() {
+    let existing_config = if let Ok(config) = lqos_config::load_config() {
         event_log.push("Loaded existing configuration".to_string());
         (*config).clone()
     } else {
@@ -326,85 +464,146 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
         event_log.push("Creating new configuration".to_string());
         lqos_config::Config::default()
     };
+    let config = build_candidate_config(Some(existing_config));
+    let using_helper = !matches!(
+        CURRENT_CONFIG.lock().bridge_mode,
+        config_builder::BridgeMode::XDP
+    );
 
-    let new_config = CURRENT_CONFIG.lock();
-    config.node_name = new_config.node_name.clone();
-    config.queues.downlink_bandwidth_mbps = new_config.mbps_to_internet;
-    config.queues.uplink_bandwidth_mbps = new_config.mbps_to_network;
-    config.queues.generated_pn_download_mbps = new_config.mbps_to_internet;
-    config.queues.generated_pn_upload_mbps = new_config.mbps_to_network;
-    match new_config.bridge_mode {
-        config_builder::BridgeMode::Linux => {
-            config.single_interface = None;
-            config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: false,
-                to_internet: new_config.to_internet.clone(),
-                to_network: new_config.to_network.clone(),
-            });
+    if !using_helper {
+        if let Err(e) = lqos_config::update_config(&config) {
+            event_log.push(format!("ERROR: Unable to write configuration: {e:?}"));
+            let msg = format!("ERROR: Unable to write configuration: {e:?}");
+            ui.add_layer(
+                Dialog::around(TextView::new(msg))
+                    .title("Error")
+                    .button("OK", |s| {
+                        s.pop_layer();
+                    }),
+            );
+            return;
         }
-        config_builder::BridgeMode::XDP => {
-            config.single_interface = None;
-            config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: true,
-                to_internet: new_config.to_internet.clone(),
-                to_network: new_config.to_network.clone(),
-            });
-        }
-        config_builder::BridgeMode::Single => {
-            config.single_interface = Some(lqos_config::SingleInterfaceConfig {
-                interface: new_config.to_internet.clone(),
-                internet_vlan: new_config.internet_vlan,
-                network_vlan: new_config.network_vlan,
-            });
-            config.bridge = None;
-        }
+        event_log.push("Configuration updated.".to_string());
+        event_log.push("XDP bridge mode remains a manual Netplan workflow.".to_string());
+        finish_setup(ui, &config, event_log);
+        return;
     }
-    config.ip_ranges.allow_subnets = new_config.allow_subnets.clone();
-    if let Err(e) = lqos_config::update_config(&config) {
-        event_log.push(format!("ERROR: Unable to write configuration: {e:?}"));
-        let msg = format!("ERROR: Unable to write configuration: {e:?}");
-        ui.add_layer(
-            Dialog::around(TextView::new(msg))
-                .title("Error")
+
+    let helper_paths = HelperPaths::default();
+    let pending_children = Arc::new(Mutex::new(PendingChildren::default()));
+    let inspection = inspect_with_paths(&helper_paths, &config);
+    let requires_confirmation = !inspection.dangerous_changes.is_empty();
+    let apply_mode = if inspection.can_take_over {
+        ApplyMode::TakeOver
+    } else if inspection.can_adopt {
+        ApplyMode::Adopt
+    } else {
+        ApplyMode::Apply
+    };
+    let apply_request = ApplyRequest {
+        config: config.clone(),
+        source: "setup".to_string(),
+        operator_username: None,
+        mode: apply_mode,
+        confirm_dangerous_changes: requires_confirmation,
+    };
+
+    let response = {
+        let mut pending = pending_children.lock();
+        apply_transaction(&helper_paths, &mut pending, apply_request)
+    };
+    let response = match response {
+        Ok(response) => response,
+        Err(err) => {
+            ui.add_layer(
+                Dialog::around(TextView::new(format!(
+                    "Unable to stage network-mode changes:\n{err:#}"
+                )))
+                .title("Helper Error")
                 .button("OK", |s| {
                     s.pop_layer();
                 }),
-        );
-        return;
-    }
-    event_log.push("Configuration updated".to_string());
-
-    // Does network.json exist?
-    if !network_json_exists() {
-        let path = Path::new(&config.lqos_directory).join("network.json");
-        std::fs::write(path, DEFAULT_NETWORK_JSON).expect("Unable to write file");
-        event_log.push("Network.json created.".to_string());
-    } else {
-        event_log.push("Network.json already exists - not updated.".to_string());
-    }
-
-    // Does ShapedDevices.csv exist?
-    if !shaped_devices_exists() {
-        let path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
-        std::fs::write(path, DEFAULT_SHAPED_DEVICES).expect("Unable to write file");
-        event_log.push("ShapedDevices.csv created.".to_string());
-    } else {
-        event_log.push("ShapedDevices.csv already exists - not updated.".to_string());
-    }
-
-    // Display final report
-    use cursive::views::{Dialog, LinearLayout, TextView};
-
-    let report = cursive::With::with(LinearLayout::vertical(), |layout| {
-        for line in &event_log {
-            layout.add_child(TextView::new(line));
+            );
+            return;
         }
-    });
+    };
+
+    let Some(operation) = response.operation.clone() else {
+        finish_setup(ui, &config, event_log);
+        return;
+    };
+
+    let confirm_paths = helper_paths.clone();
+    let confirm_pending = Arc::clone(&pending_children);
+    let confirm_config = config.clone();
+    let confirm_log = event_log.clone();
+    let confirm_operation_id = operation.operation_id.clone();
+    let revert_paths = helper_paths.clone();
+    let revert_pending = Arc::clone(&pending_children);
+    let revert_operation_id = operation.operation_id.clone();
 
     ui.add_layer(
-        Dialog::around(report)
-            .title("Setup Complete")
-            .button("OK", |ui| ui.quit()),
+        Dialog::around(TextView::new(format!(
+            "{}\n\n{}\n\nConfirm the change to keep the managed netplan update, or revert it now.",
+            response.message,
+            inspection_report(&inspection)
+        )))
+        .title("Confirm Netplan Change")
+        .button("Confirm", move |s| {
+            let result = {
+                let mut pending = confirm_pending.lock();
+                confirm_transaction(&confirm_paths, &mut pending, &confirm_operation_id)
+            };
+            match result {
+                Ok(confirm) => {
+                    let mut log = confirm_log.clone();
+                    log.push(confirm.message);
+                    s.pop_layer();
+                    finish_setup(s, &confirm_config, log);
+                }
+                Err(err) => {
+                    s.add_layer(
+                        Dialog::around(TextView::new(format!(
+                            "Unable to confirm the pending network change:\n{err:#}"
+                        )))
+                        .title("Helper Error")
+                        .button("OK", |s| {
+                            s.pop_layer();
+                        }),
+                    );
+                }
+            }
+        })
+        .button("Revert", move |s| {
+            let result = {
+                let mut pending = revert_pending.lock();
+                revert_transaction(&revert_paths, &mut pending, &revert_operation_id)
+            };
+            match result {
+                Ok(revert) => {
+                    s.add_layer(
+                        Dialog::around(TextView::new(revert.message))
+                            .title("Network Change Reverted")
+                            .button("OK", |s| {
+                                s.pop_layer();
+                                s.pop_layer();
+                            }),
+                    );
+                }
+                Err(err) => {
+                    s.add_layer(
+                        Dialog::around(TextView::new(format!(
+                            "Unable to revert the pending network change:\n{err:#}"
+                        )))
+                        .title("Helper Error")
+                        .button("OK", |s| {
+                            s.pop_layer();
+                        }),
+                    );
+                }
+            }
+        })
+        .full_screen(),
     );
 }
 
@@ -415,6 +614,7 @@ mod test {
     fn configured_bridge_config(lqos_directory: String) -> lqos_config::Config {
         let mut config = lqos_config::Config {
             lqos_directory,
+            state_directory: None,
             bridge: Some(lqos_config::BridgeConfig {
                 use_xdp_bridge: true,
                 to_internet: "wan0".to_string(),

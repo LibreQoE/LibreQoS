@@ -179,6 +179,9 @@ What this means:
 - Topology Manager uses logical topology, not the queue tree.
 - `network.effective.json` is the queue-visible runtime tree.
 - `shaping_inputs.json` is the shaping-ready runtime contract for scheduler/Bakery/TC.
+- Runtime consumers should prefer active runtime outputs such as `shaping_inputs.json`; ingress
+  files such as `ShapedDevices.csv` and `topology_import.json` are upstream inputs and fallback
+  sources when runtime outputs are not yet ready.
 - In built-in integration mode, `network.json` and `ShapedDevices.csv` are not the working source of truth.
 - Compatibility or legacy tree artifacts are downstream-only in integration mode.
 - Static virtual nodes remain visible logically/runtime for monitoring, but they do not consume physical HTB classes.

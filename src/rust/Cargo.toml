@@ -45,6 +45,7 @@ members = [
     "lqos_topology", # Shared topology runtime domain logic and health/effective-state helper.
     "lqos_topology_compile", # Shared topology compilation and mode projection layer.
     "lqos_support_tool", # Support/sanity-check CLI for gathering and submitting support dumps.
+    "lqos_netplan_helper", # Managed netplan inspection/transaction helper.
 ]
 
 [dependencies]

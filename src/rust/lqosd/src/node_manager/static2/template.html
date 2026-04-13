@@ -32,7 +32,6 @@
 <body>
 %%%LTS_SCRIPT%%%
 <script>window.LQOS_UI_VERSION = "%%VERSION%%";</script>
-<script>window.sm = %%MODAL%%; window.smn = "%%MODAL_NUM%%"</script>
 <div id="wrapper" class="lqos-shell"> <!-- Whole Page Wrapper -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastHolder"></div>
 
@@ -180,7 +179,7 @@
                             <button type="button" class="btn btn-outline-secondary" id="btnQueueModeObserve">Observe</button>
                             <button type="button" class="btn btn-outline-secondary" id="btnQueueModeShape">Shape</button>
                         </div>
-                        <div class="small text-secondary mt-2">Reload required. Switching modes may briefly interrupt traffic.</div>
+                        <div class="small text-secondary mt-2">Reload required. Switching modes typically cause a brief traffic pause of about 5 seconds.</div>
                         <hr />
                     </li>
                     <!-- User Info -->
@@ -239,7 +238,7 @@
                 <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
             </div>
             <div class='modal-body'>
-                <pre id='schedulerDetailsBody' style='overflow: auto; height: 60vh; width: 100%; white-space: pre-wrap;'></pre>
+                <div id='schedulerDetailsBody' class='lqos-scheduler-modal-body'></div>
             </div>
             <div class='modal-footer'>
                 <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>

@@ -19,9 +19,12 @@ mod remote_commands;
 mod rtt_exclusions;
 mod scheduler_control;
 mod shaped_devices_tracker;
+mod shaping_runtime;
 mod stats;
 mod stick;
 mod system_stats;
+#[cfg(test)]
+mod test_support;
 mod throughput_tracker;
 mod tool_status;
 mod treeguard;
@@ -67,8 +70,6 @@ use tracing::{error, info, warn};
 
 use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 
-use crate::lts2_sys::get_lts_license_status;
-use crate::lts2_sys::shared_types::LtsStatus;
 use crate::remote_commands::start_remote_commands;
 use lqos_stormguard::{STORMGUARD_DEBUG, STORMGUARD_STATS};
 use tracing::level_filters::LevelFilter;
@@ -157,6 +158,18 @@ fn normalize_mapping_request(
     Ok((base_tc_handle, base_cpu, false))
 }
 
+fn record_shaping_failure(
+    state: shaping_runtime::ShapingRuntimeState,
+    summary: impl Into<String>,
+    detail: impl Into<String>,
+) {
+    let summary = summary.into();
+    let detail = detail.into();
+    error!("{summary}: {detail}");
+    node_manager::add_global_warning(node_manager::WarningLevel::Error, summary.clone());
+    shaping_runtime::mark_error(state, summary, detail);
+}
+
 fn main() -> Result<()> {
     // Set up logging
     set_console_logging()?;
@@ -180,12 +193,10 @@ fn main() -> Result<()> {
     // Announce startup
     info!("LibreQoS Daemon Starting");
 
-    // Run preflight checks
-    preflight_checks::preflight_checks()?;
-
     // Load config
     let config = lqos_config::load_config()?;
-    let stick_offset = stick::recompute_stick_offset(&config)?;
+    let web_config = config.clone();
+    shaping_runtime::mark_starting("LibreQoS is starting the web UI and shaping services.");
 
     ensure_rustls_crypto_provider()?;
 
@@ -196,33 +207,17 @@ fn main() -> Result<()> {
     // Apply Tunings
     tuning::tune_lqosd_from_config_file()?;
 
-    // Start the flow tracking actor. This has to happen
-    // before the ringbuffer goes live.
-    FlowActor::start()?;
-
-    // Start the XDP/TC kernels
-    let kernels = if config.on_a_stick_mode() {
-        LibreQoSKernels::on_a_stick_mode(
-            config.internet_interface(),
-            config.stick_vlans().1 as u16,
-            config.stick_vlans().0 as u16,
-            stick_offset,
-            Some(heimdall_handle_events),
-            Some(flowbee_handle_events),
-        )?
-    } else {
-        LibreQoSKernels::new(
-            &config.internet_interface(),
-            &config.isp_interface(),
-            Some(heimdall_handle_events),
-            Some(flowbee_handle_events),
-        )?
-    };
-
     // Start the Bakery for TC command execution
-    let Ok(bakery_sender) = lqos_bakery::start_bakery() else {
-        error!("Failed to start Bakery, exiting.");
-        std::process::exit(1);
+    let bakery_sender = match lqos_bakery::start_bakery() {
+        Ok(sender) => Some(sender),
+        Err(err) => {
+            record_shaping_failure(
+                shaping_runtime::ShapingRuntimeState::Degraded,
+                "LibreQoS could not start the shaping worker.",
+                format!("{err:#}"),
+            );
+            None
+        }
     };
 
     // Spawn tracking sub-systems
@@ -237,33 +232,221 @@ fn main() -> Result<()> {
     } else {
         info!("Insight client started successfully");
     }
-    blackboard::start_blackboard();
-    start_remote_commands();
-    let flow_tx = setup_netflow_tracker()?;
-    let _ = throughput_tracker::flow_data::setup_flow_analysis();
-    start_heimdall()?;
-    spawn_queue_structure_monitor()?;
-    shaped_devices_tracker::shaping_inputs_watcher()?;
     lqos_network_devices::start_daemon_mode(Some(std::sync::Arc::new(
         network_devices_hooks::LqosdNetworkDevicesHooks,
     )))?;
     let system_usage_tx = system_stats::start_system_stats()?;
-    throughput_tracker::spawn_throughput_monitor(
-        flow_tx,
-        system_usage_tx.clone(),
-        bakery_sender.clone(),
-    )?;
-    spawn_queue_monitor()?;
-
-    if let Err(err) = treeguard::actor::start_treeguard_actor(system_usage_tx.clone()) {
-        warn!("Failed to start TreeGuard actor: {err}");
-    }
-
-    lqos_sys::bpf_garbage_collector();
-    version_checks::start_version_check()?;
 
     // Handle signals
     let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
+    let (stormguard_ready_tx, stormguard_ready_rx) = tokio::sync::oneshot::channel::<
+        Option<crossbeam_channel::Sender<lqos_bakery::BakeryCommands>>,
+    >();
+
+    // Create the socket server
+    let server = UnixSocketServer::new().expect("Unable to spawn server");
+
+    // Memory Debugging
+    memory_debug();
+
+    let control_tx_for_webserver = control_tx_for_web.clone();
+    let system_usage_tx_for_web = system_usage_tx.clone();
+    let handle = std::thread::Builder::new()
+        .name("Async Bus/Web".to_string())
+        .spawn(move || {
+            let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(8 * 1024 * 1024)
+                .build()
+            else {
+                error!("Unable to start Tokio runtime. Not much is going to work");
+                return;
+            };
+            tokio_runtime.block_on(async {
+                let probe_client =
+                    lqos_probe::ProbeManager::spawn(lqos_probe::ProbeManagerConfig::default());
+                let probe_client_for_stormguard = probe_client.clone();
+                probe_provider::install_probe_client(probe_client.clone());
+
+                tokio::spawn(async {
+                    lqos_topology::start_topology().await;
+                });
+
+                tokio::spawn(async move {
+                    match lts2_sys::control_channel::start_control_channel(control_channel).await {
+                        Ok(_) => info!("Insight control channel started successfully"),
+                        Err(e) => error!("Insight control channel failed to start: {:#}", e),
+                    }
+                });
+
+                tokio::spawn(async move {
+                    match stormguard_ready_rx.await {
+                        Ok(Some(bakery_sender_for_async)) => {
+                            use tokio::time::{Duration, sleep};
+                            for _ in 0..100u32 {
+                                if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
+                                    break;
+                                }
+                                sleep(Duration::from_millis(50)).await;
+                            }
+                            if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
+                                let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
+                            }
+
+                            match lqos_stormguard::start_stormguard(
+                                bakery_sender_for_async,
+                                shaped_devices_tracker::full_network_map_snapshot,
+                                probe_client_for_stormguard,
+                            )
+                            .await
+                            {
+                                Ok(_) => info!("StormGuard started successfully"),
+                                Err(e) => error!("StormGuard failed to start: {:#}", e),
+                            }
+                        }
+                        Ok(None) => {
+                            warn!("StormGuard not started because shaping is degraded.");
+                        }
+                        Err(_) => {
+                            warn!("StormGuard startup channel closed before shaping was ready.");
+                        }
+                    }
+                });
+
+                let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
+                    tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+                    BusRequest,
+                )>(100);
+
+                let webserver_disabled = web_config.disable_webserver.unwrap_or(false);
+                if !webserver_disabled {
+                    let control_tx_for_webserver = control_tx_for_webserver.clone();
+                    let probe_client_for_webserver = probe_client.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = node_manager::spawn_webserver(
+                            bus_tx,
+                            system_usage_tx_for_web,
+                            control_tx_for_webserver,
+                            probe_client_for_webserver,
+                        )
+                        .await
+                        {
+                            error!("Node Manager Failed: {e:?}");
+                        }
+                    });
+                } else {
+                    warn!("Webserver disabled by configuration");
+                }
+
+                if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
+                    error!("Bus stopped: {e:?}");
+                }
+            });
+        })?;
+
+    version_checks::start_version_check()?;
+
+    let mut kernels = None;
+    let stormguard_ready = if bakery_sender.is_none() {
+        false
+    } else {
+        match preflight_checks::preflight_checks() {
+            Ok(()) => match stick::recompute_stick_offset(&config) {
+                Ok(stick_offset) => match FlowActor::start() {
+                    Ok(()) => {
+                        let kernel_result = if config.on_a_stick_mode() {
+                            LibreQoSKernels::on_a_stick_mode(
+                                config.internet_interface(),
+                                config.stick_vlans().1 as u16,
+                                config.stick_vlans().0 as u16,
+                                stick_offset,
+                                Some(heimdall_handle_events),
+                                Some(flowbee_handle_events),
+                            )
+                        } else {
+                            LibreQoSKernels::new(
+                                &config.internet_interface(),
+                                &config.isp_interface(),
+                                Some(heimdall_handle_events),
+                                Some(flowbee_handle_events),
+                            )
+                        };
+
+                        match kernel_result {
+                            Ok(started_kernels) => {
+                                kernels = Some(started_kernels);
+                                blackboard::start_blackboard();
+                                start_remote_commands();
+                                let flow_tx = setup_netflow_tracker()?;
+                                let _ = throughput_tracker::flow_data::setup_flow_analysis();
+                                start_heimdall()?;
+                                spawn_queue_structure_monitor()?;
+                                shaped_devices_tracker::shaping_inputs_watcher()?;
+                                throughput_tracker::spawn_throughput_monitor(
+                                    flow_tx,
+                                    system_usage_tx.clone(),
+                                    bakery_sender.clone().expect("checked is_some"),
+                                )?;
+                                spawn_queue_monitor()?;
+
+                                if let Err(err) =
+                                    treeguard::actor::start_treeguard_actor(system_usage_tx.clone())
+                                {
+                                    warn!("Failed to start TreeGuard actor: {err}");
+                                }
+
+                                lqos_sys::bpf_garbage_collector();
+                                shaping_runtime::mark_active(
+                                    "LibreQoS shaping is active and the web UI is available.",
+                                );
+                                true
+                            }
+                            Err(err) => {
+                                record_shaping_failure(
+                                    shaping_runtime::ShapingRuntimeState::ErrorKernelAttach,
+                                    "LibreQoS started the web UI, but kernel attach failed.",
+                                    format!("{err:#}"),
+                                );
+                                false
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        record_shaping_failure(
+                            shaping_runtime::ShapingRuntimeState::Degraded,
+                            "LibreQoS started the web UI, but shaping runtime initialization failed.",
+                            format!("{err:#}"),
+                        );
+                        false
+                    }
+                },
+                Err(err) => {
+                    record_shaping_failure(
+                        shaping_runtime::ShapingRuntimeState::ErrorConfig,
+                        "LibreQoS started the web UI, but the shaping configuration is invalid.",
+                        format!("{err:#}"),
+                    );
+                    false
+                }
+            },
+            Err(err) => {
+                let detail = format!("{err:#}");
+                record_shaping_failure(
+                    shaping_runtime::classify_preflight_error(&detail),
+                    "LibreQoS started the web UI, but shaping preflight failed.",
+                    detail,
+                );
+                false
+            }
+        }
+    };
+
+    let _ = stormguard_ready_tx.send(if stormguard_ready {
+        bakery_sender.clone()
+    } else {
+        None
+    });
+
     std::thread::Builder::new()
         .name("Signal Handler".to_string())
         .spawn(move || {
@@ -294,97 +477,6 @@ fn main() -> Result<()> {
                     _ => warn!("No handler for signal: {sig}"),
                 }
             }
-        })?;
-
-    // Create the socket server
-    let server = UnixSocketServer::new().expect("Unable to spawn server");
-
-    // Memory Debugging
-    memory_debug();
-
-    let bakery_sender_for_async = bakery_sender.clone();
-    let control_tx_for_webserver = control_tx_for_web.clone();
-    let handle = std::thread::Builder::new()
-        .name("Async Bus/Web".to_string())
-        .spawn(move || {
-            let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .thread_stack_size(8 * 1024 * 1024)
-                .build()
-            else {
-                error!("Unable to start Tokio runtime. Not much is going to work");
-                return;
-            };
-            tokio_runtime.block_on(async {
-                // Notify bakery when the bus socket becomes available
-                tokio::spawn(async move {
-                    use tokio::time::{Duration, sleep};
-                    // Wait up to ~5 seconds for the socket to appear
-                    for _ in 0..100u32 {
-                        if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
-                            break;
-                        }
-                        sleep(Duration::from_millis(50)).await;
-                    }
-                    if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                        let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
-                    }
-                });
-
-                let probe_client =
-                    lqos_probe::ProbeManager::spawn(lqos_probe::ProbeManagerConfig::default());
-                let probe_client_for_stormguard = probe_client.clone();
-                probe_provider::install_probe_client(probe_client.clone());
-
-                tokio::spawn(async move {
-                    match lts2_sys::control_channel::start_control_channel(control_channel).await {
-                        Ok(_) => info!("Insight control channel started successfully"),
-                        Err(e) => error!("Insight control channel failed to start: {:#}", e),
-                    }
-
-                    match lqos_stormguard::start_stormguard(
-                        bakery_sender_for_async,
-                        shaped_devices_tracker::full_network_map_snapshot,
-                        probe_client_for_stormguard,
-                    )
-                    .await
-                    {
-                        Ok(_) => info!("StormGuard started successfully"),
-                        Err(e) => error!("StormGuard failed to start: {:#}", e),
-                    }
-                });
-
-                let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
-                    tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
-                    BusRequest,
-                )>(100);
-
-                // Webserver starting point
-                let webserver_disabled = config.disable_webserver.unwrap_or(false);
-                if !webserver_disabled {
-                    let control_tx_for_webserver = control_tx_for_webserver.clone();
-                    let probe_client_for_webserver = probe_client.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = node_manager::spawn_webserver(
-                            bus_tx,
-                            system_usage_tx,
-                            control_tx_for_webserver,
-                            probe_client_for_webserver,
-                        )
-                        .await
-                        {
-                            error!("Node Manager Failed: {e:?}");
-                        }
-                    });
-                } else {
-                    warn!("Webserver disabled by configuration");
-                }
-
-                // Main bus listen loop
-                if let Err(e) = server.listen(handle_bus_requests, bus_rx).await {
-                    error!("Bus stopped: {e:?}");
-                }
-            });
         })?;
     let _ = handle.join();
     warn!("Main thread exiting");
@@ -1078,12 +1170,8 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 .collect();
                 BusResponse::SearchResults(results)
             }
-            BusRequest::CheckInsight => {
-                let (status, _) = get_lts_license_status();
-                match status {
-                    LtsStatus::Invalid | LtsStatus::NotChecked => BusResponse::InsightStatus(false),
-                    _ => BusResponse::InsightStatus(true)
-                }
+            BusRequest::GetLtsCapabilities => {
+                BusResponse::LtsCapabilitiesSummary(crate::lts2_sys::current_capabilities())
             }
             BusRequest::GetInsightLicenseSummary => {
                 let (licensed, max_circuits) =

@@ -41,7 +41,7 @@ export class TcpRetransmitsDash extends DashletBaseInsight{
                 graph.id = this.graphDivId() + "_" + t;
                 graph.classList.add("dashgraph");
                 graph.style.display = "none";
-                graph.innerHTML = window.hasLts ? "Loading..." : "<p class='text-secondary small'>You need an active LibreQoS Insight account to view this data.</p>";
+                graph.innerHTML = window.hasLts ? "Loading..." : "<p class='text-secondary small'>You need an entitled license with history access to view this data.</p>";
                 this.graphDivs.push(graph);
                 controls.appendChild(this.makePeriodBtn(t));
             });

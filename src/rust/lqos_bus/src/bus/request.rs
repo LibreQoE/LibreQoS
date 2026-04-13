@@ -605,8 +605,8 @@ pub enum BusRequest {
     /// Retrieve current global warning list
     GetGlobalWarnings,
 
-    /// Is Insight Enabled?
-    CheckInsight,
+    /// Retrieve the current local LTS/license capability summary.
+    GetLtsCapabilities,
 
     /// Retrieve current Insight license summary (licensed + optional max circuits).
     GetInsightLicenseSummary,

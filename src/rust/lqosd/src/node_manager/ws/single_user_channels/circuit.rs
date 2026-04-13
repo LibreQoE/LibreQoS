@@ -2,7 +2,7 @@ use crate::node_manager::local_api::circuit_activity::{CircuitSummaryData, circu
 use crate::node_manager::ws::messages::{CircuitDevicesResult, WsResponse, encode_ws_message};
 use crate::node_manager::ws::ticker::all_circuits;
 use crate::rtt_exclusions;
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
+use crate::throughput_tracker::{circuit_current_qoo, circuit_current_rtt_p50_nanos};
 use lqos_bus::{BusRequest, Circuit};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
@@ -10,67 +10,23 @@ use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tracing::info;
 
-const QUEUING_ACTIVITY_RTT_FLOOR_BPS: u64 = 200_000;
-
 fn qoo_score_for_circuit(circuit: &str) -> Option<f32> {
-    let circuit_hash = hash_to_i64(circuit.trim());
-    let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
-    qoq_heatmaps.get(&circuit_hash).and_then(|heatmap| {
-        let blocks = heatmap.blocks();
-        let dl = blocks.download_total.last().copied().flatten();
-        let ul = blocks.upload_total.last().copied().flatten();
-        match (dl, ul) {
-            (Some(d), Some(u)) => Some(d.min(u)),
-            (Some(d), None) => Some(d),
-            (None, Some(u)) => Some(u),
-            (None, None) => None,
-        }
-    })
+    let circuit_hash = circuit_hash_for_id(circuit)?;
+    let qoo = circuit_current_qoo(circuit_hash);
+    match (qoo.down, qoo.up) {
+        (Some(d), Some(u)) => Some(d.min(u)),
+        (Some(d), None) => Some(d),
+        (None, Some(u)) => Some(u),
+        (None, None) => None,
+    }
 }
 
-fn weighted_directional_rtt_p50_nanos(
-    devices: &[Circuit],
-    direction: fn(&Circuit) -> (u64, Option<u64>),
-) -> Option<u64> {
-    let mut weighted_entries = Vec::new();
-    let mut fallback_values = Vec::new();
-
-    for device in devices {
-        let (throughput_bps, rtt_nanos_opt) = direction(device);
-        let Some(rtt_nanos) = rtt_nanos_opt else {
-            continue;
-        };
-        fallback_values.push(rtt_nanos);
-        if throughput_bps > QUEUING_ACTIVITY_RTT_FLOOR_BPS {
-            weighted_entries.push((rtt_nanos, throughput_bps));
-        }
-    }
-
-    if !weighted_entries.is_empty() {
-        weighted_entries.sort_by_key(|(rtt, _)| *rtt);
-        let total_weight: u128 = weighted_entries
-            .iter()
-            .map(|(_, weight)| *weight as u128)
-            .sum();
-        let threshold = total_weight / 2;
-        let mut running = 0_u128;
-        for (rtt, weight) in weighted_entries {
-            running += weight as u128;
-            if running >= threshold {
-                return Some(rtt);
-            }
-        }
-    }
-
-    if fallback_values.is_empty() {
-        return None;
-    }
-    fallback_values.sort_unstable();
-    let middle = fallback_values.len() / 2;
-    if fallback_values.len() % 2 == 1 {
-        Some(fallback_values[middle])
+fn circuit_hash_for_id(circuit: &str) -> Option<i64> {
+    let trimmed = circuit.trim();
+    if trimmed.is_empty() {
+        None
     } else {
-        Some((fallback_values[middle - 1] + fallback_values[middle]) / 2)
+        Some(hash_to_i64(trimmed))
     }
 }
 
@@ -114,20 +70,9 @@ fn summarize_circuit_devices(circuit: &str, devices: &[Circuit]) -> CircuitSumma
         },
     );
 
-    let rtt_current_p50_nanos = DownUpOrder {
-        down: weighted_directional_rtt_p50_nanos(devices, |device| {
-            (
-                device.bytes_per_second.down.saturating_mul(8),
-                device.rtt_current_p50_nanos.down,
-            )
-        }),
-        up: weighted_directional_rtt_p50_nanos(devices, |device| {
-            (
-                device.bytes_per_second.up.saturating_mul(8),
-                device.rtt_current_p50_nanos.up,
-            )
-        }),
-    };
+    let rtt_current_p50_nanos = circuit_hash_for_id(circuit)
+        .map(circuit_current_rtt_p50_nanos)
+        .unwrap_or_default();
 
     let (active_flow_count, active_asn_count) = circuit_flow_counts(circuit);
 

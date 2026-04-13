@@ -78,6 +78,7 @@ src/bin/webusers
 src/bin/lqusers
 src/bin/Rocket.toml
 src/bin/lqos_map_perf
+src/bin/lqos_netplan_helper
 
 # Ignore project folders for some IDEs
 .idea/
@@ -166,6 +167,8 @@ src/network.large.json
 /src/planner_state.json
 
 # Local runtime / topology state
+/state/
+/src/scale_test_data/
 /src/.systemd_hotfix_installed
 /src/bakery_qdisc_handles.json
 /src/circuit_ethernet_metadata.json

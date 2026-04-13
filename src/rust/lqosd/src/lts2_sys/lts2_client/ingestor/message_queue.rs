@@ -111,6 +111,11 @@ impl MessageQueue {
     }
 
     pub(crate) fn build_chunks(&mut self) -> Result<Vec<Vec<u8>>> {
+        if !crate::lts2_sys::can_submit_long_term_stats() {
+            self.clear();
+            return Ok(vec![]);
+        }
+
         // Gather the license info for bundling
         let (license_key, node_id, node_name) = {
             let Ok(lock) = load_config() else {
@@ -127,7 +132,6 @@ impl MessageQueue {
             )
         };
         let Ok(license_uuid) = Uuid::parse_str(&license_key.replace("-", "")) else {
-            warn!("Failed to parse license key");
             return Ok(vec![]);
         };
 

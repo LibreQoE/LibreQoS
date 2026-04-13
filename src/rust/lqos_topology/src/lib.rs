@@ -2,6 +2,8 @@
 
 #![warn(missing_docs)]
 
+mod runtime;
+
 use anyhow::{Context, Result};
 use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, Config, ConfigShapedDevices, TOPOLOGY_ATTACHMENT_AUTO_ID,
@@ -12,9 +14,9 @@ use lqos_config::{
     TopologyEffectiveAttachmentState, TopologyEffectiveNodeState, TopologyEffectiveStateFile,
     TopologyQueueVisibilityPolicy, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
     TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
-    circuit_anchors_path, detect_shaping_cpus, plan_top_level_assignments,
-    topology_effective_network_path, topology_effective_state_path, topology_runtime_status_path,
-    topology_shaping_inputs_path,
+    circuit_anchors_path, compute_effective_network_generation, detect_shaping_cpus,
+    plan_top_level_assignments, topology_effective_network_path, topology_effective_state_path,
+    topology_runtime_status_path, topology_shaping_inputs_path,
 };
 use lqos_overrides::{
     CircuitAdjustment, OverrideStore, TopologyAttachmentMode, TopologyOverridesFile,
@@ -31,6 +33,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME: &str = "topology_effective_publish.lock";
 type EffectiveQueueAliasMap = HashMap<String, (String, String)>;
+
+pub use runtime::start_topology;
 
 /// One unique probe pair emitted from topology state plus operator intent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1223,6 +1227,11 @@ pub fn publish_effective_topology_artifacts(
     }
 
     let effective_network_path = topology_effective_network_path(config);
+    let effective_generation = artifacts
+        .effective_network
+        .as_ref()
+        .map(compute_effective_network_generation)
+        .transpose()?;
     if let Some(effective_network) = artifacts.effective_network.as_ref() {
         let current_effective_network = read_json_value(&effective_network_path);
         if current_effective_network.as_ref() != Some(effective_network) {
@@ -1281,6 +1290,7 @@ pub fn publish_effective_topology_artifacts(
                 config,
                 source_generation,
                 Some(&shaping_inputs.shaping_generation),
+                effective_generation.as_deref(),
                 true,
                 None,
             )?;
@@ -1294,7 +1304,14 @@ pub fn publish_effective_topology_artifacts(
                     )
                 })?;
             }
-            publish_topology_runtime_status(config, source_generation, None, true, None)?;
+            publish_topology_runtime_status(
+                config,
+                source_generation,
+                None,
+                effective_generation.as_deref(),
+                true,
+                None,
+            )?;
         }
     }
 
@@ -1305,6 +1322,7 @@ fn topology_runtime_status_snapshot(
     config: &Config,
     source_generation: &str,
     shaping_generation: Option<&str>,
+    effective_generation: Option<&str>,
     ready: bool,
     error: Option<String>,
 ) -> TopologyRuntimeStatusFile {
@@ -1312,6 +1330,7 @@ fn topology_runtime_status_snapshot(
         schema_version: 1,
         source_generation: source_generation.to_string(),
         shaping_generation: shaping_generation.unwrap_or_default().to_string(),
+        effective_generation: effective_generation.unwrap_or_default().to_string(),
         ready,
         generated_unix: now_unix(),
         effective_state_path: topology_effective_state_path(config)
@@ -1334,6 +1353,7 @@ pub fn publish_topology_runtime_status(
     config: &Config,
     source_generation: &str,
     shaping_generation: Option<&str>,
+    effective_generation: Option<&str>,
     ready: bool,
     error: Option<String>,
 ) -> Result<()> {
@@ -1341,6 +1361,7 @@ pub fn publish_topology_runtime_status(
         config,
         source_generation,
         shaping_generation,
+        effective_generation,
         ready,
         error,
     );
@@ -1364,6 +1385,7 @@ pub fn publish_topology_runtime_error_status(
     publish_topology_runtime_status(
         config,
         source_generation,
+        None,
         None,
         false,
         Some(error.to_string()),
@@ -1707,14 +1729,54 @@ fn parent_has_attachment(parent: &TopologyAllowedParent, attachment_id: &str) ->
         .any(|option| option.attachment_id == attachment_id)
 }
 
-fn first_healthy_attachment_id(parent: &TopologyAllowedParent) -> Option<String> {
+fn attachment_selectable_for_auto(option: &TopologyAttachmentOption) -> bool {
+    option.attachment_id != TOPOLOGY_ATTACHMENT_AUTO_ID
+        && option.health_status != TopologyAttachmentHealthStatus::Suppressed
+}
+
+const fn attachment_rate_source_preference(source: TopologyAttachmentRateSource) -> u8 {
+    match source {
+        TopologyAttachmentRateSource::DynamicIntegration => 3,
+        TopologyAttachmentRateSource::Manual => 2,
+        TopologyAttachmentRateSource::Static => 1,
+        TopologyAttachmentRateSource::Unknown => 0,
+    }
+}
+
+const fn attachment_health_preference(status: TopologyAttachmentHealthStatus) -> u8 {
+    match status {
+        TopologyAttachmentHealthStatus::Healthy => 3,
+        TopologyAttachmentHealthStatus::Disabled => 2,
+        TopologyAttachmentHealthStatus::ProbeUnavailable => 1,
+        TopologyAttachmentHealthStatus::Suppressed => 0,
+    }
+}
+
+fn ranked_auto_attachment_id(
+    parent: &TopologyAllowedParent,
+    current_attachment_id: Option<&str>,
+) -> Option<String> {
     parent
         .attachment_options
         .iter()
-        .find(|option| {
-            option.attachment_id != TOPOLOGY_ATTACHMENT_AUTO_ID
-                && option.health_status == TopologyAttachmentHealthStatus::Healthy
+        .filter(|option| attachment_selectable_for_auto(option))
+        .max_by_key(|option| {
+            (
+                attachment_rate_source_preference(option.rate_source),
+                attachment_capacity_mbps(option).unwrap_or(0),
+                attachment_health_preference(option.health_status),
+                option.probeable,
+                current_attachment_id == Some(option.attachment_id.as_str()),
+            )
         })
+        .map(|option| option.attachment_id.clone())
+}
+
+fn first_selectable_attachment_id(parent: &TopologyAllowedParent) -> Option<String> {
+    parent
+        .attachment_options
+        .iter()
+        .find(|option| attachment_selectable_for_auto(option))
         .map(|option| option.attachment_id.clone())
 }
 
@@ -2048,22 +2110,24 @@ fn compute_effective_state_from_prepared(
                         })
                     })
             }
-            _ => node
-                .current_attachment_id
-                .clone()
-                .filter(|attachment_id| parent_has_attachment(&enriched_parent, attachment_id)),
+            _ => ranked_auto_attachment_id(&enriched_parent, node.current_attachment_id.as_deref())
+                .or_else(|| {
+                    node.current_attachment_id.clone().filter(|attachment_id| {
+                        parent_has_attachment(&enriched_parent, attachment_id)
+                    })
+                }),
         };
 
-        let healthy_ids = explicit_options
+        let selectable_ids = explicit_options
             .iter()
-            .filter(|option| option.health_status == TopologyAttachmentHealthStatus::Healthy)
+            .filter(|option| attachment_selectable_for_auto(option))
             .map(|option| option.attachment_id.clone())
             .collect::<HashSet<_>>();
 
         let mut fallback_reason = None;
         let effective_attachment_id = if explicit_options.is_empty() {
             None
-        } else if !healthy_ids.is_empty() {
+        } else if !selectable_ids.is_empty() {
             match override_entry {
                 Some(saved)
                     if saved.parent_node_id == selected_parent_id
@@ -2072,20 +2136,26 @@ fn compute_effective_state_from_prepared(
                     saved
                         .attachment_preference_ids
                         .iter()
-                        .find(|attachment_id| healthy_ids.contains(*attachment_id))
+                        .find(|attachment_id| selectable_ids.contains(*attachment_id))
                         .cloned()
                         .or_else(|| {
                             node.current_attachment_id
                                 .clone()
-                                .filter(|attachment_id| healthy_ids.contains(attachment_id))
+                                .filter(|attachment_id| selectable_ids.contains(attachment_id))
                         })
-                        .or_else(|| first_healthy_attachment_id(&enriched_parent))
+                        .or_else(|| {
+                            ranked_auto_attachment_id(
+                                &enriched_parent,
+                                node.current_attachment_id.as_deref(),
+                            )
+                        })
+                        .or_else(|| first_selectable_attachment_id(&enriched_parent))
                 }
-                _ => node
-                    .current_attachment_id
-                    .clone()
-                    .filter(|attachment_id| healthy_ids.contains(attachment_id))
-                    .or_else(|| first_healthy_attachment_id(&enriched_parent)),
+                _ => ranked_auto_attachment_id(
+                    &enriched_parent,
+                    node.current_attachment_id.as_deref(),
+                )
+                .or_else(|| first_selectable_attachment_id(&enriched_parent)),
             }
         } else {
             fallback_reason = Some(if enriched_parent.all_attachments_suppressed {
@@ -4031,6 +4101,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-runtime-status-transition");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         let generation = "generation-1";
@@ -4087,6 +4158,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-circuit-anchors");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4166,6 +4238,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-runtime-overrides");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.splynx_integration.enable_splynx = true;
@@ -4342,6 +4415,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-import-shaped-devices");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
@@ -4470,6 +4544,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-attachment-anchor-remap");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4603,6 +4678,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-resolution");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4659,6 +4735,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-virtual");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4739,6 +4816,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-missing-anchor");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         fs::write(
@@ -4814,6 +4892,7 @@ mod tests {
         let lqos_directory = unique_temp_dir("lqos-topology-flat-summary");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
             ..Config::default()
         };
         config.topology.compile_mode = "flat".to_string();
@@ -7041,6 +7120,84 @@ mod tests {
         assert!(child.preferred_attachment_id.is_none());
         assert!(child.effective_attachment_id.is_none());
         assert!(child.attachments.is_empty());
+    }
+
+    #[test]
+    fn compute_effective_state_auto_prefers_dynamic_attachment_when_probes_disabled() {
+        let config = Config::default();
+        let mut dynamic_attachment =
+            sample_attachment_option("dynamic-link", "WavePro-MREToRochester");
+        dynamic_attachment.rate_source = TopologyAttachmentRateSource::DynamicIntegration;
+        dynamic_attachment.capacity_mbps = Some(2700);
+        dynamic_attachment.download_bandwidth_mbps = Some(2700);
+        dynamic_attachment.upload_bandwidth_mbps = Some(2700);
+        dynamic_attachment.local_probe_ip = Some("100.126.0.226".to_string());
+        dynamic_attachment.probe_enabled = false;
+
+        let mut static_attachment = sample_attachment_option("static-link", "4600C_MRE_To_ROCH");
+        static_attachment.rate_source = TopologyAttachmentRateSource::Static;
+        static_attachment.capacity_mbps = Some(8000);
+        static_attachment.download_bandwidth_mbps = Some(8000);
+        static_attachment.upload_bandwidth_mbps = Some(8000);
+        static_attachment.local_probe_ip = Some("100.126.0.235".to_string());
+        static_attachment.remote_probe_ip = Some("100.126.0.234".to_string());
+        static_attachment.probe_enabled = false;
+
+        let canonical = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "site-mre".to_string(),
+                node_name: "MRE".to_string(),
+                latitude: None,
+                longitude: None,
+                current_parent_node_id: Some("site-rochester".to_string()),
+                current_parent_node_name: Some("7232 Rochester".to_string()),
+                current_attachment_id: Some("static-link".to_string()),
+                current_attachment_name: Some("4600C_MRE_To_ROCH".to_string()),
+                can_move: true,
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "site-rochester".to_string(),
+                    parent_node_name: "7232 Rochester".to_string(),
+                    attachment_options: vec![
+                        auto_attachment_option(),
+                        dynamic_attachment,
+                        static_attachment,
+                    ],
+                    all_attachments_suppressed: false,
+                    has_probe_unavailable_attachments: false,
+                }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
+                preferred_attachment_id: None,
+                preferred_attachment_name: None,
+                effective_attachment_id: None,
+                effective_attachment_name: None,
+            }],
+        };
+
+        let effective = compute_effective_state(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        );
+
+        let node = effective
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "site-mre")
+            .expect("MRE node should remain in effective state");
+        assert_eq!(
+            node.preferred_attachment_id.as_deref(),
+            Some("dynamic-link")
+        );
+        assert_eq!(
+            node.effective_attachment_id.as_deref(),
+            Some("dynamic-link")
+        );
+        assert!(node.fallback_reason.is_none());
     }
 
     #[test]

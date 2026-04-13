@@ -1,7 +1,14 @@
+use crate::Config;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Runtime metadata filename for circuit Ethernet advisories emitted by integrations.
 pub const CIRCUIT_ETHERNET_METADATA_FILENAME: &str = "circuit_ethernet_metadata.json";
+
+/// Returns the path of the circuit Ethernet advisory runtime file.
+pub fn circuit_ethernet_metadata_path(config: &Config) -> PathBuf {
+    config.topology_state_read_path(CIRCUIT_ETHERNET_METADATA_FILENAME)
+}
 
 /// Collection of circuit Ethernet advisories keyed by circuit identity.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
