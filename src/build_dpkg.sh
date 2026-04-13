@@ -43,10 +43,7 @@ LQOS_FILES=(
   shaping_skip_report.py
   systemd_hotfix.sh
   virtual_tree_nodes.py
-  integrationUISPbandwidths.template.csv
   manualNetwork.template.csv
-  integrationUISProutes.template.csv
-  integrationSplynxBandwidths.template.csv
   ../requirements.txt
   update_api.sh
 )
@@ -186,6 +183,13 @@ chmod a+x postinst postrm
 popd > /dev/null || exit
 
 # Copy files into the LibreQoS directory
+for file in "${LQOS_FILES[@]}"; do
+  if [ ! -f "$file" ]; then
+    echo "Missing packaged file: $file" >&2
+    exit 1
+  fi
+done
+
 for file in "${LQOS_FILES[@]}"; do
   cp "$file" "$LQOS_DIR"
 done

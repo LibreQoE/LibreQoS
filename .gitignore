@@ -78,6 +78,7 @@ src/bin/webusers
 src/bin/lqusers
 src/bin/Rocket.toml
 src/bin/lqos_map_perf
+src/bin/lqos_netplan_helper
 
 # Ignore project folders for some IDEs
 .idea/

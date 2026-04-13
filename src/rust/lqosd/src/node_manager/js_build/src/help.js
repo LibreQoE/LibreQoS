@@ -1,4 +1,3 @@
-import {displayDaveMemorial} from "./dave";
 import {get_ws_client} from "./pubsub/ws";
 
 function escapeHtml(str) {
@@ -307,7 +306,6 @@ function initSupportTickets() {
 }
 
 // Perform wireups
-$("#btnDave").click(displayDaveMemorial);
 $("#btnNewTicket").on("click", openNewTicketModal);
 $("#btnSubmitTicket").on("click", submitNewTicket);
 $("#btnRefreshTickets").on("click", () => refreshTickets());
