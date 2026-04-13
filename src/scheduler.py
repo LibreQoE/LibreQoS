@@ -41,6 +41,25 @@ SCHEDULER_REFRESH_STEP_COUNT = 4
 scheduler_status_bus_enabled = True
 
 
+def configure_scheduler_stdio():
+    """
+    Enable line-buffered scheduler logs when running under systemd.
+
+    Side effects: reconfigures `sys.stdout` and `sys.stderr` when the active
+    stream supports `reconfigure()`. This keeps periodic scheduler messages from
+    sitting in Python's block buffer for hours before journald sees them.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(line_buffering=True, write_through=True)
+        except Exception:
+            continue
+
+
 def get_state_directory():
     if _get_state_dir_native is not None:
         return _get_state_dir_native()
@@ -1269,6 +1288,7 @@ def run_scheduler_main():
 
 if __name__ == '__main__':
     try:
+        configure_scheduler_stdio()
         run_scheduler_main()
     except Exception as e:
         print(f"Error starting scheduler: {e}")
