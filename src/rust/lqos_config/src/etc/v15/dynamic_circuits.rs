@@ -143,6 +143,7 @@ impl DynamicCircuitsConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::etc::v15::Config;
 
     #[test]
     fn parses_default_ipv4_shorthand() {
@@ -168,5 +169,42 @@ mod tests {
         let parsed: Wrapper =
             toml::from_str(r#"ip_range = "::""#).expect("parse ip_range shorthand");
         assert_eq!(parsed.ip_range.to_string(), "::/0");
+    }
+
+    #[test]
+    fn config_roundtrips_with_dynamic_circuit_ranges() {
+        let mut config = Config::default();
+
+        let rule = DynamicCircuitRangeRule {
+            name: "Default".to_string(),
+            ip_range: "0.0.0.0/0"
+                .parse()
+                .expect("default ip network should parse"),
+            download_min_mbps: 10.0,
+            upload_min_mbps: 2.0,
+            download_max_mbps: 100.0,
+            upload_max_mbps: 20.0,
+            attach_to: String::new(),
+        };
+
+        config.dynamic_circuits = Some(DynamicCircuitsConfig {
+            enabled: true,
+            ttl_seconds: 300,
+            enable_unknown_ip_promotion: true,
+            ranges: vec![rule],
+        });
+
+        let raw = toml::to_string_pretty(&config).expect("config should serialize to TOML");
+        let parsed = Config::load_from_string(&raw).expect("config should deserialize");
+        assert!(parsed.dynamic_circuits.is_some());
+        assert_eq!(
+            parsed
+                .dynamic_circuits
+                .as_ref()
+                .expect("dynamic circuits should deserialize")
+                .ranges
+                .len(),
+            1
+        );
     }
 }

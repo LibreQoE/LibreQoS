@@ -309,6 +309,7 @@ fn main() -> Result<()> {
         .spawn(move || {
             let Ok(tokio_runtime) = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
+                .thread_stack_size(8 * 1024 * 1024)
                 .build()
             else {
                 error!("Unable to start Tokio runtime. Not much is going to work");
