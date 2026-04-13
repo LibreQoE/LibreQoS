@@ -15,12 +15,14 @@ jobs:
          echo ${{ env.VERSION }}
     - name: Install dependencies
       run: |
+        KERNEL_TOOLS_PKG="linux-tools-$(uname -r)"
+
         sudo /bin/apt-get update
         sudo /bin/apt-get install --no-install-recommends \
           python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
-          pkg-config libbpf-dev mold unzip linux-tools-common
+          pkg-config libbpf-dev mold unzip linux-tools-common "${KERNEL_TOOLS_PKG}"
 
-        sudo install -m 0755 /usr/sbin/bpftool /usr/local/bin/bpftool
+        sudo install -m 0755 "/usr/lib/linux-tools/$(uname -r)/bpftool" /usr/local/bin/bpftool
         command -v bpftool
         bpftool version
     - name: Build
