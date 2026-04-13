@@ -499,13 +499,15 @@ mod test {
         assert_eq!(config.devices[0].circuit_hash, hash_to_i64("circuit-1"));
         assert_eq!(config.devices[0].device_hash, hash_to_i64("device-1"));
         assert_eq!(config.devices[0].parent_hash, hash_to_i64("Parent-A"));
+        let test_ip = "192.168.1.10"
+            .parse()
+            .expect("test IP literal should parse");
         assert_eq!(
-            config
-                .get_circuit_hash_from_ip(&XdpIpAddress::from_ip("192.168.1.10".parse().unwrap())),
+            config.get_circuit_hash_from_ip(&XdpIpAddress::from_ip(test_ip)),
             Some(hash_to_i64("circuit-1"))
         );
         let matched = config
-            .get_device_from_ip(&XdpIpAddress::from_ip("192.168.1.10".parse().unwrap()))
+            .get_device_from_ip(&XdpIpAddress::from_ip(test_ip))
             .expect("device should resolve by IP");
         assert_eq!(matched.device_hash, hash_to_i64("device-1"));
         assert_eq!(matched.circuit_id, "circuit-1");

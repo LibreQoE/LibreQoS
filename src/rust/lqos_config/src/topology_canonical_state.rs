@@ -1320,8 +1320,8 @@ mod tests {
         let node = canonical
             .find_node("site-a")
             .expect("expected canonical node");
-        assert_eq!(node.latitude, Some(31.86102867126465_f32));
-        assert_eq!(node.longitude, Some(-106.5494613647461_f32));
+        assert_eq!(node.latitude, Some(31.861_029_f32));
+        assert_eq!(node.longitude, Some(-106.549_46_f32));
 
         let logical = canonical.insight_topology_network_json();
         let site = logical

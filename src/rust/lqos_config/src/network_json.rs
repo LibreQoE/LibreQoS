@@ -6,7 +6,7 @@ use lqos_utils::{
     qoo::{LossMeasurement, QoqScores, compute_qoq_scores},
     qoq_heatmap::TemporalQoqHeatmap,
     rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
-    temporal_heatmap::TemporalHeatmap,
+    temporal_heatmap::{TemporalHeatmap, executive_retransmit_percent},
     units::DownUpOrder,
 };
 pub use network_json_node::NetworkJsonNode;
@@ -367,11 +367,11 @@ impl NetworkJson {
                 .rtt_buffer
                 .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 90)
                 .map(|rtt| rtt.as_millis() as f32);
-            let retransmit_down = retransmit_percent(
+            let retransmit_down = executive_retransmit_percent(
                 node.current_tcp_retransmits.down,
                 node.current_tcp_retransmit_packets.down,
             );
-            let retransmit_up = retransmit_percent(
+            let retransmit_up = executive_retransmit_percent(
                 node.current_tcp_retransmits.up,
                 node.current_tcp_retransmit_packets.up,
             );
@@ -514,14 +514,6 @@ fn utilization_percent_bytes(bytes: u64, max_mbps: f64) -> Option<f32> {
     let bits_per_second = bytes.saturating_mul(8) as f64;
     let capacity_bps = max_mbps * 1_000_000.0;
     Some(((bits_per_second / capacity_bps) * 100.0) as f32)
-}
-
-fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
-    // Ignore very small samples to avoid extreme ratios from tiny flows.
-    if retransmits == 0 || packets < 1_000 {
-        return None;
-    }
-    Some((retransmits as f32 / packets as f32) * 100.0)
 }
 
 fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
@@ -922,7 +914,10 @@ mod test {
         config.uisp_integration.enable_uisp = true;
 
         let selected = NetworkJson::path_for_config(&config);
-        assert_eq!(selected, config.topology_state_file_path("network.effective.json"));
+        assert_eq!(
+            selected,
+            config.topology_state_file_path("network.effective.json")
+        );
     }
 
     #[test]
@@ -954,6 +949,70 @@ mod test {
 
         let selected = NetworkJson::path_for_config(&config);
         assert_eq!(selected, temp.join("network.effective.json"));
+    }
+
+    #[test]
+    fn site_heatmap_suppresses_low_confidence_retransmits() {
+        let mut parsed = parse_network_json_from_value(serde_json::json!({
+            "TinySite": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 100,
+                "children": {}
+            }
+        }));
+        let site = parsed
+            .nodes
+            .iter_mut()
+            .find(|node| node.name == "TinySite")
+            .expect("TinySite should be present");
+        site.current_throughput.down = 12_500_000;
+        site.current_tcp_retransmits.down = 1;
+        site.current_tcp_retransmit_packets.down = 99;
+
+        parsed.record_site_heatmaps(true);
+
+        let blocks = parsed
+            .nodes
+            .iter()
+            .find(|node| node.name == "TinySite")
+            .expect("TinySite should be present")
+            .heatmap
+            .as_ref()
+            .expect("site heatmap should exist")
+            .blocks();
+        assert_eq!(blocks.retransmit_down.last().copied().flatten(), None);
+    }
+
+    #[test]
+    fn site_heatmap_keeps_qualified_retransmits() {
+        let mut parsed = parse_network_json_from_value(serde_json::json!({
+            "BusySite": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 100,
+                "children": {}
+            }
+        }));
+        let site = parsed
+            .nodes
+            .iter_mut()
+            .find(|node| node.name == "BusySite")
+            .expect("BusySite should be present");
+        site.current_throughput.down = 12_500_000;
+        site.current_tcp_retransmits.down = 2;
+        site.current_tcp_retransmit_packets.down = 100;
+
+        parsed.record_site_heatmaps(true);
+
+        let blocks = parsed
+            .nodes
+            .iter()
+            .find(|node| node.name == "BusySite")
+            .expect("BusySite should be present")
+            .heatmap
+            .as_ref()
+            .expect("site heatmap should exist")
+            .blocks();
+        assert_eq!(blocks.retransmit_down.last().copied().flatten(), Some(2.0));
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
