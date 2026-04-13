@@ -51,7 +51,7 @@ LibreQoS soporta un campo genérico opcional `"id"` en los nodos de `network.jso
 | Splynx | Sí | Los nodos de topología de network sites y AP/site exportan `id` genérico. |
 | Sonar | Sí | Los nodos de topología de sitios y AP exportan `id` genérico. |
 | Netzur | Parcial | Se exporta solo cuando los datos upstream de zonas incluyen un ID de zona estable. |
-| VISP | No | El importador actual shapea servicios/dispositivos pero no construye nodos de topología en `network.json`. |
+| VISP | Parcial | Importa topología de sitio/upstream e IDs genéricos estables cuando VISP IRM tiene pobladas esas relaciones; los suscriptores sin mapeo usable siguen cayendo en adjunto plano. |
 | Powercode | No | El importador actual no construye nodos de topología en `network.json`. |
 | WISPGate | No | El importador actual no construye nodos de topología a partir de identificadores estables upstream. |
 
