@@ -400,8 +400,7 @@ fn inspect_png(body: &[u8]) -> Result<(u32, u32), CobrandUploadValidationError> 
 }
 
 fn rendered_cobrand_width_exceeds_sidebar(width: u32, height: u32) -> bool {
-    u64::from(width) * COBRAND_DISPLAY_HEIGHT_PX
-        > u64::from(height) * COBRAND_MAX_DISPLAY_WIDTH_PX
+    u64::from(width) * COBRAND_DISPLAY_HEIGHT_PX > u64::from(height) * COBRAND_MAX_DISPLAY_WIDTH_PX
 }
 
 fn persist_cobrand_png(body: &[u8]) -> Result<(), StatusCode> {
@@ -411,10 +410,7 @@ fn persist_cobrand_png(body: &[u8]) -> Result<(), StatusCode> {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
     std::fs::create_dir_all(parent_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let temp_root = parent_dir
-        .parent()
-        .unwrap_or(parent_dir)
-        .join(".tmp");
+    let temp_root = parent_dir.parent().unwrap_or(parent_dir).join(".tmp");
     std::fs::create_dir_all(&temp_root).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let mut temp_path = None;
     for attempt in 0..32 {
@@ -482,8 +478,12 @@ pub async fn upload_cobrand(
             "Cobrand image is too wide for the sidebar at 48px tall. Keep the rendered width at or below 176px.",
         ),
     })?;
-    persist_cobrand_png(&body)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Unable to save cobrand.png."))?;
+    persist_cobrand_png(&body).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unable to save cobrand.png.",
+        )
+    })?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1023,9 +1023,9 @@ pub struct UserRequest {
 #[cfg(test)]
 mod tests {
     use super::{
-        CobrandUploadValidationError, ConfigSecretClearRequest, apply_secret_updates,
-        cobrand_path, persist_cobrand_png, redact_config_secrets, upload_cobrand,
-        validate_cobrand_upload, validate_network_json,
+        CobrandUploadValidationError, ConfigSecretClearRequest, apply_secret_updates, cobrand_path,
+        persist_cobrand_png, redact_config_secrets, upload_cobrand, validate_cobrand_upload,
+        validate_network_json,
     };
     use crate::node_manager::auth::LoginResult;
     use crate::test_support::runtime_config_test_lock;
@@ -1034,16 +1034,16 @@ mod tests {
     use axum::http::HeaderMap;
     use lqos_config::Config;
     use serde_json::json;
-    use std::fs;
     use std::ffi::OsString;
+    use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     const VALID_PNG: &[u8] = &[
-        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H',
-        b'D', b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
-        0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, b'I', b'D', b'A', b'T', 0x78,
-        0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-        0x00, 0x00, 0x00, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
+        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H', b'D',
+        b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, b'I', b'D', b'A', b'T', 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, b'I',
+        b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
     ];
 
     fn encode_test_png(width: u32, height: u32) -> Vec<u8> {
@@ -1357,8 +1357,14 @@ mod tests {
     fn validate_cobrand_upload_accepts_boundary_dimensions() {
         let max_width = encode_test_png(176, 48);
         let max_height = encode_test_png(1, 4096);
-        assert_eq!(validate_cobrand_upload(Some("image/png"), &max_width), Ok(()));
-        assert_eq!(validate_cobrand_upload(Some("image/png"), &max_height), Ok(()));
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &max_width),
+            Ok(())
+        );
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &max_height),
+            Ok(())
+        );
     }
 
     #[tokio::test]

@@ -92,6 +92,28 @@ pub struct StatusSnapshot {
     pub hotfix_detail: String,
 }
 
+/// Service mode the package postinst should activate after installation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PostinstAction {
+    /// Stop before starting services because the Noble systemd hotfix is still required.
+    BlockForHotfix,
+    /// Start the runtime services and keep setup inside `lqosd`.
+    ActivateRuntime,
+    /// Start the dedicated setup service for a true first-run install.
+    ActivateSetup,
+}
+
+impl PostinstAction {
+    /// Stable token printed for package postinst shell logic.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::BlockForHotfix => "block_for_hotfix",
+            Self::ActivateRuntime => "activate_runtime",
+            Self::ActivateSetup => "activate_setup",
+        }
+    }
+}
+
 #[derive(Default, Deserialize)]
 struct AuthUsersFile {
     #[serde(default)]
@@ -186,6 +208,24 @@ fn display_status(setup_complete: bool) -> SetupStatus {
         SetupStatus::Incomplete
     } else {
         SetupStatus::Complete
+    }
+}
+
+fn legacy_runtime_install_detected() -> bool {
+    Path::new("/etc/lqos.conf").exists()
+}
+
+fn classify_postinst_action_from_inputs(
+    hotfix_required: bool,
+    runtime_ready: bool,
+    legacy_runtime_install: bool,
+) -> PostinstAction {
+    if hotfix_required {
+        PostinstAction::BlockForHotfix
+    } else if runtime_ready || legacy_runtime_install {
+        PostinstAction::ActivateRuntime
+    } else {
+        PostinstAction::ActivateSetup
     }
 }
 
@@ -443,6 +483,18 @@ pub fn runtime_services_should_start() -> Result<bool> {
         && !hotfix_status.required)
 }
 
+/// Classifies which service mode package postinst should activate.
+pub fn classify_postinst_action() -> Result<PostinstAction> {
+    let hotfix_required = hotfix::status()?.required;
+    let runtime_ready = runtime_services_should_start()?;
+    let legacy_runtime_install = legacy_runtime_install_detected();
+    Ok(classify_postinst_action_from_inputs(
+        hotfix_required,
+        runtime_ready,
+        legacy_runtime_install,
+    ))
+}
+
 /// Returns true when first-run setup has not yet been completed.
 pub fn setup_is_incomplete() -> Result<bool> {
     let live = collect_live_inputs();
@@ -487,7 +539,10 @@ fn yes_no(value: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{TOKEN_TTL, current_unix_seconds, new_bootstrap_token};
+    use super::{
+        PostinstAction, TOKEN_TTL, classify_postinst_action_from_inputs, current_unix_seconds,
+        new_bootstrap_token,
+    };
 
     #[test]
     fn bootstrap_tokens_expire_in_future() {
@@ -495,5 +550,29 @@ mod tests {
         let token = new_bootstrap_token();
         assert!(!token.token.is_empty());
         assert!(token.expires_at_unix >= now + TOKEN_TTL.as_secs() - 1);
+    }
+
+    #[test]
+    fn postinst_action_blocks_for_hotfix_before_services_restart() {
+        assert_eq!(
+            classify_postinst_action_from_inputs(true, true, true),
+            PostinstAction::BlockForHotfix
+        );
+    }
+
+    #[test]
+    fn postinst_action_keeps_existing_runtime_installs_on_runtime_services() {
+        assert_eq!(
+            classify_postinst_action_from_inputs(false, false, true),
+            PostinstAction::ActivateRuntime
+        );
+    }
+
+    #[test]
+    fn postinst_action_only_activates_setup_for_true_first_run() {
+        assert_eq!(
+            classify_postinst_action_from_inputs(false, false, false),
+            PostinstAction::ActivateSetup
+        );
     }
 }

@@ -140,16 +140,6 @@ else
 fi
 }
 
-should_activate_runtime_on_upgrade() {
-local previous_version="${2:-}"
-
-# Debian passes the previous package version as the second postinst argument on
-# upgrade. If an existing LibreQoS config is already present, keep runtime
-# services in charge of the main WebUI and let lqosd handle any follow-up
-# onboarding instead of launching the dedicated setup web service on port 9123.
-[ -n "$previous_version" ] && [ -f /etc/lqos.conf ]
-}
-
 # Install Python Dependencies
 pushd /opt/libreqos > /dev/null
 # - Setup Python dependencies as a post-install task. Use --ignore-installed so
@@ -175,14 +165,32 @@ install -m 0644 /opt/libreqos/src/bin/lqos_setup.service.example /etc/systemd/sy
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl stop lqos_netplan_helper || true
 /bin/systemctl disable lqos_netplan_helper || true
-if should_activate_runtime_on_upgrade "$@"; then
-/opt/libreqos/src/bin/lqos_setup activate-runtime
-elif /opt/libreqos/src/bin/lqos_setup is-ready; then
-/opt/libreqos/src/bin/lqos_setup activate-runtime
-else
-/opt/libreqos/src/bin/lqos_setup activate-setup
-/opt/libreqos/src/bin/lqos_setup print-link || true
-fi
+case "$(/opt/libreqos/src/bin/lqos_setup postinst-action)" in
+activate_runtime)
+  /opt/libreqos/src/bin/lqos_setup activate-runtime
+  ;;
+activate_setup)
+  /opt/libreqos/src/bin/lqos_setup activate-setup
+  /opt/libreqos/src/bin/lqos_setup print-link || true
+  ;;
+block_for_hotfix)
+  /opt/libreqos/src/bin/lqos_setup hotfix-status || true
+  cat <<'HOTFIX'
+
+Install the Noble systemd hotfix before package configuration can start LibreQoS services.
+
+Run:
+  sudo /opt/libreqos/src/systemd_hotfix.sh install
+
+Then re-run the LibreQoS package installation.
+HOTFIX
+  exit 1
+  ;;
+*)
+  echo "Unknown LibreQoS post-install action." >&2
+  exit 1
+  ;;
+esac
 popd > /dev/null
 EOF
 

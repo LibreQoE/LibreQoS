@@ -23,24 +23,19 @@
                         <p class="text-body-secondary">
                             Choose the system that already owns your subscribers and let LibreQoS reuse its existing integration page.
                         </p>
-                        <label for="runtimeIntegrationProvider" class="form-label mt-2">Integration Provider</label>
-                        <select class="form-select mb-3" id="runtimeIntegrationProvider">
-                            <option value="" disabled selected>Choose provider</option>
-                            <option value="config_uisp.html">UISP</option>
-                            <option value="config_splynx.html">Splynx</option>
-                            <option value="config_visp.html">VISP</option>
-                            <option value="config_netzur.html">Netzur</option>
-                            <option value="config_powercode.html">Powercode</option>
-                            <option value="config_sonar.html">Sonar</option>
-                            <option value="config_wispgate.html">WispGate</option>
-                        </select>
                         <div class="small text-body-secondary mb-3">
                             Save your provider settings there, then return here if the scheduler still says setup is required.
                         </div>
-                        <div class="mt-auto d-grid">
-                            <button type="button" class="btn btn-primary" id="btnOpenIntegrationProvider" disabled>
-                                <i class="fa fa-arrow-right"></i> Configure Provider
-                            </button>
+                        <div class="mt-auto d-grid gap-2">
+                            <a class="btn btn-primary" href="config_uisp.html">
+                                <i class="fa fa-arrow-right"></i> Configure UISP
+                            </a>
+                            <a class="btn btn-outline-primary" href="config_splynx.html">Configure Splynx</a>
+                            <a class="btn btn-outline-primary" href="config_visp.html">Configure VISP</a>
+                            <a class="btn btn-outline-primary" href="config_netzur.html">Configure Netzur</a>
+                            <a class="btn btn-outline-primary" href="config_powercode.html">Configure Powercode</a>
+                            <a class="btn btn-outline-primary" href="config_sonar.html">Configure Sonar</a>
+                            <a class="btn btn-outline-primary" href="config_wispgate.html">Configure WispGate</a>
                         </div>
                     </div>
                 </div>

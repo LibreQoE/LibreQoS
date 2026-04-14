@@ -6,17 +6,6 @@ function setText(id, text) {
     element.textContent = text;
 }
 
-function syncIntegrationAction() {
-    const button = document.getElementById("btnOpenIntegrationProvider");
-    const select = document.getElementById("runtimeIntegrationProvider");
-    if (!button || !select) return;
-
-    button.disabled = !select.value;
-    select.addEventListener("change", () => {
-        button.disabled = !select.value;
-    });
-}
-
 function setStatusAlert(state) {
     const element = document.getElementById("runtimeSetupStatus");
     if (!element) return;
@@ -48,28 +37,14 @@ function renderState(state) {
     );
     setText("runtimeNetworkJson", state?.network_json_present ? "Present" : "Missing");
     setText("runtimeShapedDevices", state?.shaped_devices_present ? "Present" : "Missing");
-    syncIntegrationAction();
-}
-
-function initActions() {
-    const button = document.getElementById("btnOpenIntegrationProvider");
-    const select = document.getElementById("runtimeIntegrationProvider");
-    if (!button || !select) return;
-    button.addEventListener("click", () => {
-        if (button.disabled) return;
-        window.location.href = select.value;
-    });
 }
 
 loadConfig((msg) => {
     renderState(msg?.data?.runtime_onboarding || {});
-    initActions();
 }, () => {
     setStatusAlert({
         required: true,
         status_label: "Setup Required",
         summary: "Unable to load runtime setup status right now.",
     });
-    syncIntegrationAction();
-    initActions();
 });

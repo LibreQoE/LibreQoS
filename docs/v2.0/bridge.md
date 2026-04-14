@@ -16,6 +16,10 @@ The Network Mode page in the LibreQoS web UI now inspects the current Netplan fi
 ```
 
 ```{note}
+Current first-run setup only offers Linux Bridge and Single Interface for new installs. If LibreQoS detects an existing XDP deployment, setup preserves that legacy XDP mode and warns before you migrate away from it.
+```
+
+```{note}
 If a timed Netplan change briefly interrupts your browser session, return to the Network Mode page after connectivity comes back. LibreQoS will resume the pending confirm or revert flow from that page automatically.
 ```
 

@@ -1,7 +1,7 @@
 //! Minimal setup-only web server for first-run LibreQoS configuration.
 
 use crate::{
-    config_builder::{BridgeMode, CURRENT_CONFIG},
+    config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_xdp},
     interfaces, service_handoff,
     setup_actions::{self, CommitOutcome},
 };
@@ -24,11 +24,6 @@ const BIND_ADDR: &str = "0.0.0.0:9123";
 struct SetupQuery {
     token: Option<String>,
     notice: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct CompletedQuery {
-    auto: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,7 +94,7 @@ pub(crate) fn run() -> Result<()> {
 
 async fn root() -> Redirect {
     let target = match bootstrap::status_snapshot() {
-        Ok(snapshot) if snapshot.state.setup_complete => "/setup/completed?auto=1",
+        Ok(snapshot) if snapshot.state.setup_complete => "/setup/completed",
         _ => "/setup",
     };
     Redirect::temporary(target)
@@ -112,9 +107,8 @@ async fn setup_page(Query(query): Query<SetupQuery>) -> Response {
     }
 }
 
-async fn completed_page(Query(query): Query<CompletedQuery>) -> Response {
-    let automatic = query.auto.as_deref() == Some("1");
-    match render_completed_page(automatic) {
+async fn completed_page() -> Response {
+    match render_completed_page() {
         Ok(html) => Html(html).into_response(),
         Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
     }
@@ -248,8 +242,10 @@ fn render_setup_page(
     let config = CURRENT_CONFIG.lock().clone();
     let mode_label = match config.bridge_mode {
         BridgeMode::Single => "single",
-        _ => "linux",
+        BridgeMode::XDP => "xdp",
+        BridgeMode::Linux => "linux",
     };
+    let persisted_xdp = existing_config_uses_xdp();
 
     let mut html = page_shell("LibreQoS Setup");
     html.push_str("<main class=\"setup-shell\">");
@@ -284,6 +280,16 @@ fn render_setup_page(
         yes_no(snapshot.hotfix_required)
     ));
     html.push_str("</ul></section>");
+
+    if persisted_xdp {
+        html.push_str("<section class=\"card\"><h2>Legacy XDP Mode Detected</h2>");
+        if config.bridge_mode == BridgeMode::XDP {
+            html.push_str("<p class=\"notice\">This system already uses legacy XDP bridge mode. LibreQoS no longer recommends XDP for new installs, but this page will preserve it if you leave the mode unchanged.</p>");
+        } else {
+            html.push_str("<p class=\"notice\">This system previously used legacy XDP bridge mode. Saving with Linux Bridge or Single Interface will migrate the node away from XDP.</p>");
+        }
+        html.push_str("<p class=\"muted\">Use Linux Bridge for long-term maintenance unless you intentionally need to keep the existing XDP deployment.</p></section>");
+    }
 
     if snapshot.hotfix_required {
         html.push_str("<section class=\"card\"><h2>Ubuntu 24.04 Hotfix Required</h2>");
@@ -328,13 +334,19 @@ fn render_setup_page(
             "<option value=\"linux\"{}>Linux Bridge</option>",
             selected(mode_label == "linux")
         ));
+        if persisted_xdp {
+            html.push_str(&format!(
+                "<option value=\"xdp\"{}>Legacy XDP Bridge (existing installs only)</option>",
+                selected(mode_label == "xdp")
+            ));
+        }
         html.push_str(&format!(
             "<option value=\"single\"{}>Single Interface</option>",
             selected(mode_label == "single")
         ));
         html.push_str("</select></label>");
-        html.push_str("<div class=\"mode-section\" data-mode=\"linux\">");
-        html.push_str("<p class=\"muted\">Recommended for most installs. Select the WAN-facing and subscriber-facing interfaces.</p>");
+        html.push_str("<div class=\"mode-section\" data-mode-section=\"bridge\">");
+        html.push_str("<p class=\"muted\">Linux Bridge is recommended for most installs. Select the WAN-facing and subscriber-facing interfaces below. Existing XDP installs use the same interface pair if you choose to preserve XDP.</p>");
         html.push_str("<label>To Internet<select name=\"to_internet\">");
         for iface in &interface_options {
             html.push_str(&format!(
@@ -357,7 +369,7 @@ fn render_setup_page(
         html.push_str("</select></label>");
         html.push_str("<p id=\"interfaceValidationMessage\" class=\"validation-message\" hidden>Internet and network interfaces must be different.</p>");
         html.push_str("</div>");
-        html.push_str("<div class=\"mode-section\" data-mode=\"single\">");
+        html.push_str("<div class=\"mode-section\" data-mode-section=\"single\">");
         html.push_str("<p class=\"muted\">Use this when a single interface carries both internet and subscriber traffic with optional VLAN tags.</p>");
         html.push_str("<label>Interface<select name=\"single_interface\">");
         for iface in &interface_options {
@@ -420,7 +432,8 @@ fn apply_form_to_current_config(form: &SaveForm) -> Result<()> {
     config.mbps_to_internet = downlink;
     config.mbps_to_network = uplink;
     config.allow_subnets = allow_subnets;
-    match form.bridge_mode.as_str() {
+    let allow_legacy_xdp = config.bridge_mode == BridgeMode::XDP || existing_config_uses_xdp();
+    match resolve_requested_bridge_mode(&form.bridge_mode, allow_legacy_xdp)? {
         "single" => {
             config.bridge_mode = BridgeMode::Single;
             let interface = form
@@ -434,7 +447,7 @@ fn apply_form_to_current_config(form: &SaveForm) -> Result<()> {
             config.internet_vlan = parse_vlan(form.internet_vlan.as_deref())?;
             config.network_vlan = parse_vlan(form.network_vlan.as_deref())?;
         }
-        "linux" => {
+        "linux" | "xdp" => {
             let to_network = form
                 .to_network
                 .as_deref()
@@ -444,7 +457,11 @@ fn apply_form_to_current_config(form: &SaveForm) -> Result<()> {
             if form.to_internet.trim() == to_network {
                 bail!("Internet and network interfaces must be different.");
             }
-            config.bridge_mode = BridgeMode::Linux;
+            config.bridge_mode = if form.bridge_mode == "xdp" {
+                BridgeMode::XDP
+            } else {
+                BridgeMode::Linux
+            };
             config.to_internet = form.to_internet.trim().to_string();
             config.to_network = to_network.to_string();
             config.internet_vlan = 0;
@@ -463,6 +480,14 @@ fn parse_vlan(raw: Option<&str>) -> Result<u32> {
     value
         .parse::<u32>()
         .with_context(|| format!("Invalid VLAN value: {value}"))
+}
+
+fn resolve_requested_bridge_mode(requested_mode: &str, allow_legacy_xdp: bool) -> Result<&str> {
+    match requested_mode {
+        "single" | "linux" => Ok(requested_mode),
+        "xdp" if allow_legacy_xdp => Ok("xdp"),
+        _ => bail!("Unsupported bridge mode."),
+    }
 }
 
 fn ensure_valid_setup_token(token: &str) -> Result<()> {
@@ -544,16 +569,16 @@ fn finalize_success_html(
         .as_ref()
         .is_some_and(|notice| notice.automatic)
     {
-        html.push_str("<p class=\"muted\">This setup page may stop while LibreQoS runtime services start. Refresh this address after the handoff if you want to load the normal runtime UI.</p>");
-        html.push_str(
-            "<script>if(window.history&&window.history.replaceState){window.history.replaceState({},'', '/');}setTimeout(function(){window.location.replace('/');},1500);</script>",
-        );
+        html.push_str("<p class=\"muted\">LibreQoS runtime services are starting now. This setup page may stop responding during the handoff. Use the link below after the handoff if you want to load the normal runtime UI.</p>");
     }
+    html.push_str(
+        "<div class=\"button-row\"><a class=\"button-link\" href=\"/\">Open LibreQoS</a></div>",
+    );
     html.push_str("</section></main></body></html>");
     Ok(html)
 }
 
-fn render_completed_page(automatic: bool) -> Result<String> {
+fn render_completed_page() -> Result<String> {
     let snapshot = bootstrap::status_snapshot()?;
     let report = bootstrap::load_setup_completion_report().unwrap_or_default();
     let mut html = page_shell("Setup Complete");
@@ -568,12 +593,10 @@ fn render_completed_page(automatic: bool) -> Result<String> {
             escape_html(&report)
         ));
     }
-    if automatic {
-        html.push_str("<p class=\"muted\">This setup page may stop while LibreQoS runtime services start. Refresh this address after the handoff if you want to load the normal runtime UI.</p>");
-        html.push_str(
-            "<script>setTimeout(function(){window.location.replace('/');},1500);</script>",
-        );
-    }
+    html.push_str("<p class=\"muted\">Use the button below after the handoff if you want to load the normal runtime UI.</p>");
+    html.push_str(
+        "<div class=\"button-row\"><a class=\"button-link\" href=\"/\">Open LibreQoS</a></div>",
+    );
     html.push_str("</section></main></body></html>");
     Ok(html)
 }
@@ -605,7 +628,7 @@ fn base_css() -> &'static str {
     input:focus,select:focus,textarea:focus{outline:none;border-color:rgba(37,99,235,.45);box-shadow:0 0 0 4px rgba(59,130,246,.16)}\
     button{margin-top:16px;background:linear-gradient(135deg,var(--lqos-primary),var(--lqos-accent));color:#fff;border:0;border-radius:999px;padding:11px 18px;font:inherit;font-weight:800;cursor:pointer;box-shadow:0 12px 24px rgba(37,99,235,.18)}\
     button[disabled]{opacity:.7;cursor:progress}\
-    button.secondary{background:linear-gradient(135deg,#64748b,#475569)}.button-row{display:flex;gap:12px;flex-wrap:wrap}.button-row form{margin:0}\
+    button.secondary{background:linear-gradient(135deg,#64748b,#475569)}.button-row{display:flex;gap:12px;flex-wrap:wrap}.button-row form{margin:0}.button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:linear-gradient(135deg,var(--lqos-primary),var(--lqos-accent));color:#fff;border-radius:999px;padding:11px 18px;font-weight:800;box-shadow:0 12px 24px rgba(37,99,235,.18)}\
     .muted{color:var(--lqos-muted)}.notice{background:#fff7d6;border:1px solid #e7d48b;padding:12px 14px;border-radius:12px}\
     .notice-details{margin-top:10px}.notice-details summary{cursor:pointer;font-weight:700}\
     .mode-section[hidden]{display:none}\
@@ -620,14 +643,15 @@ fn base_css() -> &'static str {
 }
 
 fn base_js() -> &'static str {
-    "function syncModeSections(){const mode=document.querySelector('select[name=\"bridge_mode\"]')?.value||'linux';document.querySelectorAll('.mode-section').forEach((section)=>{section.hidden=section.dataset.mode!==mode;});updateCoreSetupValidation();}\
+    "function bridgeSectionForMode(mode){return mode==='single'?'single':'bridge';}\
+    function syncModeSections(){const mode=document.querySelector('select[name=\"bridge_mode\"]')?.value||'linux';const visibleSection=bridgeSectionForMode(mode);document.querySelectorAll('.mode-section').forEach((section)=>{section.hidden=section.dataset.modeSection!==visibleSection;});updateCoreSetupValidation();}\
     function showBusy(message){const overlay=document.getElementById('busyOverlay');const target=document.getElementById('busyMessage');if(target&&message){target.textContent=message;}if(overlay){overlay.hidden=false;}}\
     function hideBusy(){const overlay=document.getElementById('busyOverlay');if(overlay){overlay.hidden=true;}}\
     function setSubmitDisabled(form,disabled){const button=form?.querySelector('button[type=\"submit\"]');if(button){button.disabled=!!disabled;}}\
     function submitWithProgress(form,message){setSubmitDisabled(form,true);showBusy(message);return true;}\
     function currentBridgeMode(){return document.querySelector('select[name=\"bridge_mode\"]')?.value||'linux';}\
     function linuxInterfacesAreDistinct(){const toInternet=document.querySelector('select[name=\"to_internet\"]')?.value||'';const toNetwork=document.querySelector('select[name=\"to_network\"]')?.value||'';return !toInternet||!toNetwork||toInternet!==toNetwork;}\
-    function updateCoreSetupValidation(){const form=document.getElementById('coreSetupForm');if(!form){return true;}const message=document.getElementById('interfaceValidationMessage');const invalid=currentBridgeMode()==='linux'&&!linuxInterfacesAreDistinct();if(message){message.hidden=!invalid;}setSubmitDisabled(form,invalid);return !invalid;}\
+    function updateCoreSetupValidation(){const form=document.getElementById('coreSetupForm');if(!form){return true;}const message=document.getElementById('interfaceValidationMessage');const invalid=currentBridgeMode()!=='single'&&!linuxInterfacesAreDistinct();if(message){message.hidden=!invalid;}setSubmitDisabled(form,invalid);return !invalid;}\
     function validateAndSubmitSetup(form){if(!updateCoreSetupValidation()){hideBusy();setSubmitDisabled(form,false);return false;}return submitWithProgress(form,'Saving setup and applying managed network changes...');}\
     function resetBusyState(){hideBusy();document.querySelectorAll('form').forEach((form)=>setSubmitDisabled(form,false));updateCoreSetupValidation();}\
     function setupPage(){const mode=document.querySelector('select[name=\"bridge_mode\"]');if(mode){mode.addEventListener('change',syncModeSections);}const toInternet=document.querySelector('select[name=\"to_internet\"]');if(toInternet){toInternet.addEventListener('change',updateCoreSetupValidation);}const toNetwork=document.querySelector('select[name=\"to_network\"]');if(toNetwork){toNetwork.addEventListener('change',updateCoreSetupValidation);}window.addEventListener('pageshow',resetBusyState);syncModeSections();resetBusyState();}"
@@ -656,4 +680,20 @@ fn yes_no(value: bool) -> &'static str {
 
 fn selected(value: bool) -> &'static str {
     if value { " selected" } else { "" }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_requested_bridge_mode;
+
+    #[test]
+    fn xdp_mode_is_preserved_for_existing_xdp_config() {
+        assert_eq!(resolve_requested_bridge_mode("xdp", true).unwrap(), "xdp");
+    }
+
+    #[test]
+    fn xdp_mode_is_not_available_for_new_installs() {
+        let error = resolve_requested_bridge_mode("xdp", false).unwrap_err();
+        assert!(error.to_string().contains("Unsupported bridge mode"));
+    }
 }

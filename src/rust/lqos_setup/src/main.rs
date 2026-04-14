@@ -46,6 +46,8 @@ enum Command {
     InstallHotfix,
     /// Exit 0 when runtime services should start, or 1 when setup is still required
     IsReady,
+    /// Internal helper: print the package postinst action token
+    PostinstAction,
     /// Internal helper: stop setup and activate runtime services now
     ActivateRuntime,
     /// Internal helper: stop runtime and activate the first-run setup service now
@@ -210,6 +212,13 @@ fn main() {
             Ok(false) => std::process::exit(1),
             Err(err) => {
                 eprintln!("Unable to determine setup readiness: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::PostinstAction) => match bootstrap::classify_postinst_action() {
+            Ok(action) => println!("{}", action.as_str()),
+            Err(err) => {
+                eprintln!("Unable to determine package postinst action: {err:#}");
                 std::process::exit(1);
             }
         },

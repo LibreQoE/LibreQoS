@@ -83,3 +83,10 @@ impl ConfigBuilder {
         }
     }
 }
+
+pub fn existing_config_uses_xdp() -> bool {
+    lqos_config::load_config()
+        .ok()
+        .and_then(|config| config.bridge.as_ref().map(|bridge| bridge.use_xdp_bridge))
+        .unwrap_or(false)
+}
