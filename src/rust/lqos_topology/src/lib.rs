@@ -69,6 +69,9 @@ fn now_unix() -> Option<u64> {
 }
 
 fn atomic_write_json_value(path: &Path, value: &Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let raw = serde_json::to_string_pretty(value)?;
     let temp_path = path.with_extension("tmp");
     let mut file = File::create(&temp_path)?;
@@ -4000,6 +4003,16 @@ mod tests {
         path
     }
 
+    fn write_runtime_json_fixture(path: PathBuf, value: &Value, label: &str) {
+        let parent = path.parent().expect("runtime fixture path should have parent");
+        fs::create_dir_all(parent).expect("runtime fixture parent should be creatable");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(value).expect("runtime fixture should serialize"),
+        )
+        .unwrap_or_else(|_| panic!("{label} should write"));
+    }
+
     fn runtime_tree_max_depth(value: &Value) -> usize {
         fn recurse(node: &Value, depth: usize) -> usize {
             let Some(map) = node.as_object() else {
@@ -4242,9 +4255,9 @@ mod tests {
             ..Config::default()
         };
         config.splynx_integration.enable_splynx = true;
-        fs::write(
-            lqos_directory.join("topology_import.json"),
-            serde_json::to_string_pretty(&json!({
+        write_runtime_json_fixture(
+            config.topology_state_file_path("topology_import.json"),
+            &json!({
                 "schema_version": 1,
                 "source": "splynx/full",
                 "generated_unix": 1,
@@ -4288,13 +4301,12 @@ mod tests {
                     },
                     "ethernet_advisories": []
                 }
-            }))
-            .expect("topology import should serialize"),
-        )
-        .expect("topology import should write");
-        fs::write(
-            lqos_directory.join("topology_compiled_shaping.json"),
-            serde_json::to_string_pretty(&json!({
+            }),
+            "topology import",
+        );
+        write_runtime_json_fixture(
+            config.shaping_state_file_path("topology_compiled_shaping.json"),
+            &json!({
                 "schema_version": 1,
                 "source": "splynx/full",
                 "compile_mode": "full",
@@ -4326,10 +4338,9 @@ mod tests {
                     "generated_unix": 1,
                     "anchors": []
                 }
-            }))
-            .expect("compiled shaping should serialize"),
-        )
-        .expect("compiled shaping should write");
+            }),
+            "compiled shaping",
+        );
         fs::write(
             lqos_directory.join("lqos_overrides.json"),
             serde_json::to_string_pretty(&json!({
@@ -4419,9 +4430,9 @@ mod tests {
             ..Config::default()
         };
         config.uisp_integration.enable_uisp = true;
-        fs::write(
-            lqos_directory.join("topology_import.json"),
-            serde_json::to_string_pretty(&json!({
+        write_runtime_json_fixture(
+            config.topology_state_file_path("topology_import.json"),
+            &json!({
                 "schema_version": 1,
                 "source": "uisp/full2",
                 "compile_mode": "full",
@@ -4460,13 +4471,12 @@ mod tests {
                     },
                     "ethernet_advisories": []
                 }
-            }))
-            .expect("topology import should serialize"),
-        )
-        .expect("topology_import.json should write");
-        fs::write(
-            lqos_directory.join("topology_compiled_shaping.json"),
-            serde_json::to_string_pretty(&json!({
+            }),
+            "topology import",
+        );
+        write_runtime_json_fixture(
+            config.shaping_state_file_path("topology_compiled_shaping.json"),
+            &json!({
                 "schema_version": 1,
                 "source": "uisp/full",
                 "compile_mode": "full",
@@ -4498,10 +4508,9 @@ mod tests {
                     "generated_unix": 1,
                     "anchors": []
                 }
-            }))
-            .expect("compiled shaping should serialize"),
-        )
-        .expect("topology_compiled_shaping.json should write");
+            }),
+            "compiled shaping",
+        );
 
         let artifacts = EffectiveTopologyArtifacts {
             effective: TopologyEffectiveStateFile {
