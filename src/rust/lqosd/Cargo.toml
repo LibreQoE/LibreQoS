@@ -68,6 +68,7 @@ ureq = { version = "2.12.1", features = ["json", "native-tls"] }
 csv = { workspace = true }
 parking_lot = { workspace = true }
 smallvec = "1"
+png = "0.17.16"
 
 # For memory debugging
 allocative.workspace = true

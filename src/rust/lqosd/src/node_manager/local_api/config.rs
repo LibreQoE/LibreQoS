@@ -2,7 +2,10 @@ use crate::node_manager::auth::LoginResult;
 use crate::node_manager::local_api::network_mode::NetworkModeInspection;
 use crate::node_manager::runtime_onboarding::RuntimeOnboardingState;
 use crate::shaping_runtime::ShapingRuntimeStatus;
+use axum::Extension;
+use axum::body::Bytes;
 use axum::http::StatusCode;
+use axum::http::header;
 use default_net::get_interfaces;
 use lqos_bus::{BusRequest, bus_request};
 use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, UserRole, WebUser, WebUsers};
@@ -10,6 +13,23 @@ use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::io::{Cursor, ErrorKind, Write};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const COBRAND_FILE_NAME: &str = "cobrand.png";
+const COBRAND_DISPLAY_HEIGHT_PX: u64 = 48;
+const COBRAND_MAX_DISPLAY_WIDTH_PX: u64 = 176;
+const COBRAND_MAX_DECODE_BYTES: usize = 64 * 1024 * 1024;
+const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CobrandUploadValidationError {
+    UnsupportedMediaType,
+    InvalidPng,
+    TooLarge,
+    TooWideForSidebar,
+}
 
 type TopologySourceIntegration = (&'static str, fn(&Config) -> bool);
 
@@ -334,6 +354,137 @@ pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
             }
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn cobrand_path(config: &Config) -> PathBuf {
+    Path::new(&config.lqos_directory)
+        .join("bin")
+        .join("static2")
+        .join(COBRAND_FILE_NAME)
+}
+
+fn validate_cobrand_upload(
+    content_type: Option<&str>,
+    body: &[u8],
+) -> Result<(), CobrandUploadValidationError> {
+    if content_type != Some("image/png") {
+        return Err(CobrandUploadValidationError::UnsupportedMediaType);
+    }
+    inspect_png(body)?;
+    Ok(())
+}
+
+fn inspect_png(body: &[u8]) -> Result<(u32, u32), CobrandUploadValidationError> {
+    if body.len() < PNG_SIGNATURE.len() || &body[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
+        return Err(CobrandUploadValidationError::InvalidPng);
+    }
+
+    let decoder = png::Decoder::new(Cursor::new(body));
+    let Ok(mut reader) = decoder.read_info() else {
+        return Err(CobrandUploadValidationError::InvalidPng);
+    };
+    let info = reader.info();
+    let (width, height) = (info.width, info.height);
+    let output_buffer_size = reader.output_buffer_size();
+    if output_buffer_size > COBRAND_MAX_DECODE_BYTES {
+        return Err(CobrandUploadValidationError::TooLarge);
+    }
+    if rendered_cobrand_width_exceeds_sidebar(width, height) {
+        return Err(CobrandUploadValidationError::TooWideForSidebar);
+    }
+    let mut output = vec![0; output_buffer_size];
+    reader
+        .next_frame(&mut output)
+        .map_err(|_| CobrandUploadValidationError::InvalidPng)?;
+    Ok((width, height))
+}
+
+fn rendered_cobrand_width_exceeds_sidebar(width: u32, height: u32) -> bool {
+    u64::from(width) * COBRAND_DISPLAY_HEIGHT_PX
+        > u64::from(height) * COBRAND_MAX_DISPLAY_WIDTH_PX
+}
+
+fn persist_cobrand_png(body: &[u8]) -> Result<(), StatusCode> {
+    let config = lqos_config::load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let target_path = cobrand_path(config.as_ref());
+    let Some(parent_dir) = target_path.parent() else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+    std::fs::create_dir_all(parent_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let temp_root = parent_dir
+        .parent()
+        .unwrap_or(parent_dir)
+        .join(".tmp");
+    std::fs::create_dir_all(&temp_root).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut temp_path = None;
+    for attempt in 0..32 {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let candidate = temp_root.join(format!(
+            "cobrand-upload-{}-{unique_suffix}-{attempt}.png",
+            std::process::id()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(mut file) => {
+                if file.write_all(body).is_err() {
+                    let _ = std::fs::remove_file(&candidate);
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+                temp_path = Some(candidate);
+                break;
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }
+    let Some(temp_path) = temp_path else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+    std::fs::rename(&temp_path, &target_path).map_err(|_| {
+        let _ = std::fs::remove_file(&temp_path);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(())
+}
+
+pub async fn upload_cobrand(
+    Extension(login): Extension<LoginResult>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    if login != LoginResult::Admin {
+        return Err((StatusCode::FORBIDDEN, "Administrator access is required."));
+    }
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim);
+    validate_cobrand_upload(content_type, &body).map_err(|error| match error {
+        CobrandUploadValidationError::UnsupportedMediaType => (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "Cobrand uploads must use Content-Type image/png.",
+        ),
+        CobrandUploadValidationError::InvalidPng => {
+            (StatusCode::BAD_REQUEST, "Uploaded file is not a valid PNG.")
+        }
+        CobrandUploadValidationError::TooLarge => (
+            StatusCode::BAD_REQUEST,
+            "Cobrand image is too large to validate safely.",
+        ),
+        CobrandUploadValidationError::TooWideForSidebar => (
+            StatusCode::BAD_REQUEST,
+            "Cobrand image is too wide for the sidebar at 48px tall. Keep the rendered width at or below 176px.",
+        ),
+    })?;
+    persist_cobrand_png(&body)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Unable to save cobrand.png."))?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub fn list_nics_data(login: LoginResult) -> Result<Vec<(String, String, String)>, StatusCode> {
@@ -872,11 +1023,41 @@ pub struct UserRequest {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigSecretClearRequest, apply_secret_updates, redact_config_secrets,
-        validate_network_json,
+        CobrandUploadValidationError, ConfigSecretClearRequest, apply_secret_updates,
+        cobrand_path, persist_cobrand_png, redact_config_secrets, upload_cobrand,
+        validate_cobrand_upload, validate_network_json,
     };
+    use crate::node_manager::auth::LoginResult;
+    use axum::Extension;
+    use axum::body::Bytes;
+    use axum::http::HeaderMap;
     use lqos_config::Config;
     use serde_json::json;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    const VALID_PNG: &[u8] = &[
+        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H',
+        b'D', b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+        0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, b'I', b'D', b'A', b'T', 0x78,
+        0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+        0x00, 0x00, 0x00, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    fn encode_test_png(width: u32, height: u32) -> Vec<u8> {
+        let mut png_bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_bytes, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().expect("write png header");
+            let pixel_count = usize::try_from(width)
+                .expect("width fits usize")
+                .saturating_mul(usize::try_from(height).expect("height fits usize"));
+            let data = vec![0u8; pixel_count.saturating_mul(4)];
+            writer.write_image_data(&data).expect("write png bytes");
+        }
+        png_bytes
+    }
 
     #[test]
     fn accepts_unique_node_names() {
@@ -1064,5 +1245,160 @@ mod tests {
             incoming.powercode_integration.powercode_api_key,
             "old-powercode"
         );
+    }
+
+    #[test]
+    fn validate_cobrand_upload_requires_exact_png_content_type() {
+        let body = VALID_PNG.to_vec();
+        assert_eq!(
+            validate_cobrand_upload(Some("image/jpeg"), &body),
+            Err(CobrandUploadValidationError::UnsupportedMediaType)
+        );
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), b"not-a-png"),
+            Err(CobrandUploadValidationError::InvalidPng)
+        );
+        let truncated_png = &VALID_PNG[..VALID_PNG.len() - 8];
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), truncated_png),
+            Err(CobrandUploadValidationError::InvalidPng)
+        );
+        assert_eq!(validate_cobrand_upload(Some("image/png"), &body), Ok(()));
+    }
+
+    #[test]
+    fn validate_cobrand_upload_rejects_pngs_too_wide_for_sidebar() {
+        let too_wide = encode_test_png(177, 48);
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &too_wide),
+            Err(CobrandUploadValidationError::TooWideForSidebar)
+        );
+    }
+
+    #[test]
+    fn validate_cobrand_upload_rejects_pngs_with_huge_dimensions() {
+        let too_large = encode_test_png(4097, 4096);
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &too_large),
+            Err(CobrandUploadValidationError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn validate_cobrand_upload_accepts_boundary_dimensions() {
+        let max_width = encode_test_png(176, 48);
+        let max_height = encode_test_png(1, 4096);
+        assert_eq!(validate_cobrand_upload(Some("image/png"), &max_width), Ok(()));
+        assert_eq!(validate_cobrand_upload(Some("image/png"), &max_height), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn upload_cobrand_requires_admin() {
+        let result = upload_cobrand(
+            Extension(LoginResult::ReadOnly),
+            HeaderMap::new(),
+            Bytes::from_static(VALID_PNG),
+        )
+        .await;
+
+        assert_eq!(
+            result,
+            Err((
+                axum::http::StatusCode::FORBIDDEN,
+                "Administrator access is required.",
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn upload_cobrand_accepts_admin_png_and_persists_file() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let runtime_dir = std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"));
+        fs::create_dir_all(&runtime_dir).expect("create runtime dir");
+        let config_path = runtime_dir.join("lqos.conf");
+        let runtime_dir_string = runtime_dir.display().to_string();
+        let state_dir_string = runtime_dir.join("state").display().to_string();
+        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
+            .replace("/opt/libreqos/src", &runtime_dir_string)
+            .replace("/opt/libreqos/state", &state_dir_string)
+            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
+        fs::write(&config_path, raw).expect("write config");
+        let previous = std::env::var_os("LQOS_CONFIG");
+        unsafe {
+            std::env::set_var("LQOS_CONFIG", &config_path);
+        }
+        lqos_config::clear_cached_config();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("image/png"),
+        );
+        let result = upload_cobrand(
+            Extension(LoginResult::Admin),
+            headers,
+            Bytes::from_static(VALID_PNG),
+        )
+        .await;
+
+        assert_eq!(result, Ok(axum::http::StatusCode::NO_CONTENT));
+        let config = lqos_config::load_config().expect("load config");
+        let path = cobrand_path(config.as_ref());
+        assert_eq!(fs::read(path).expect("read cobrand"), VALID_PNG);
+
+        match previous {
+            Some(value) => unsafe {
+                std::env::set_var("LQOS_CONFIG", value);
+            },
+            None => unsafe {
+                std::env::remove_var("LQOS_CONFIG");
+            },
+        }
+        lqos_config::clear_cached_config();
+        let _ = fs::remove_dir_all(runtime_dir);
+    }
+
+    #[test]
+    fn persist_cobrand_png_writes_runtime_static_file() {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let runtime_dir = std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"));
+        fs::create_dir_all(&runtime_dir).expect("create runtime dir");
+        let config_path = runtime_dir.join("lqos.conf");
+        let runtime_dir_string = runtime_dir.display().to_string();
+        let state_dir_string = runtime_dir.join("state").display().to_string();
+        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
+            .replace("/opt/libreqos/src", &runtime_dir_string)
+            .replace("/opt/libreqos/state", &state_dir_string)
+            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
+        fs::write(&config_path, raw).expect("write config");
+        let previous = std::env::var_os("LQOS_CONFIG");
+        unsafe {
+            std::env::set_var("LQOS_CONFIG", &config_path);
+        }
+        lqos_config::clear_cached_config();
+
+        let png_body = VALID_PNG.to_vec();
+        persist_cobrand_png(&png_body).expect("write cobrand");
+
+        let config = lqos_config::load_config().expect("load config");
+        let path = cobrand_path(config.as_ref());
+        assert_eq!(fs::read(path).expect("read cobrand"), png_body);
+
+        match previous {
+            Some(value) => unsafe {
+                std::env::set_var("LQOS_CONFIG", value);
+            },
+            None => unsafe {
+                std::env::remove_var("LQOS_CONFIG");
+            },
+        }
+        lqos_config::clear_cached_config();
+        let _ = fs::remove_dir_all(runtime_dir);
     }
 }

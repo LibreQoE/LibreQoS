@@ -47,6 +47,11 @@ Note: If you find that traffic is not being shaped when it should, please make s
 
 After changing any part of `/etc/lqos.conf` it is highly recommended to always restart lqosd, using `sudo systemctl restart lqosd`. This re-parses any new values in lqos.conf, making those new values accessible to both the Rust and Python sides of the code.
 
+Optional cobrand logo:
+- `display_cobrand` is an optional top-level boolean in `/etc/lqos.conf`.
+- If the key is omitted, LibreQoS treats it as `false`.
+- The WebUI only shows the operator logo when `display_cobrand = true` and `cobrand.png` exists in the runtime static assets directory.
+
 #### Netflow (optional)
 To enable netflow, add the following `[flows]` section to the `/etc/lqos.conf` configuration file, setting the appropriate `netflow_ip`:
 ```

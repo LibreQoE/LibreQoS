@@ -1321,6 +1321,10 @@ struct RawNetJsBody {
     download_bandwidth_mbps: u32,
     #[serde(rename = "uploadBandwidthMbps")]
     upload_bandwidth_mbps: u32,
+    #[serde(default)]
+    latitude: Option<f32>,
+    #[serde(default)]
+    longitude: Option<f32>,
     #[serde(rename = "type")]
     site_type: Option<String>,
     children: Option<RawNetJs>,
@@ -1333,6 +1337,10 @@ struct Lts2NetJs {
     site_type: Option<String>,
     download_bandwidth_mbps: u32,
     upload_bandwidth_mbps: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latitude: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    longitude: Option<f32>,
     children: Vec<Lts2NetJs>,
 }
 
@@ -1344,6 +1352,8 @@ impl RawNetJsBody {
             site_type: self.site_type.clone(),
             download_bandwidth_mbps: self.download_bandwidth_mbps,
             upload_bandwidth_mbps: self.upload_bandwidth_mbps,
+            latitude: self.latitude,
+            longitude: self.longitude,
             children: vec![],
         };
 
@@ -1395,8 +1405,8 @@ pub struct Lts2Device {
 #[cfg(test)]
 mod compatibility_tests {
     use super::{
-        CIRCUIT_RTT_BUFFERS, Lts2Circuit, circuit_current_qoo, circuit_current_rtt_p50_nanos,
-        resolve_circuit_metadata_for_entry,
+        CIRCUIT_RTT_BUFFERS, Lts2Circuit, RawNetJsBody, circuit_current_qoo,
+        circuit_current_rtt_p50_nanos, resolve_circuit_metadata_for_entry,
     };
     use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, RttData};
     use crate::throughput_tracker::throughput_entry::ThroughputEntry;
@@ -1410,6 +1420,7 @@ mod compatibility_tests {
     use lqos_utils::rtt::RttBuffer;
     use lqos_utils::units::DownUpOrder;
     use serde::Deserialize;
+    use serde_json::to_value;
     use std::net::Ipv4Addr;
     use std::sync::Arc;
 
@@ -1440,6 +1451,17 @@ mod compatibility_tests {
         devices: Vec<OldLts2Device>,
     }
 
+    #[allow(dead_code)]
+    #[derive(Debug, Deserialize)]
+    struct OldLts2NetJs {
+        name: String,
+        site_hash: i64,
+        site_type: Option<String>,
+        download_bandwidth_mbps: u32,
+        upload_bandwidth_mbps: u32,
+        children: Vec<OldLts2NetJs>,
+    }
+
     #[test]
     fn old_receivers_ignore_exact_rate_fields() {
         let current = Lts2Circuit {
@@ -1465,6 +1487,51 @@ mod compatibility_tests {
 
         assert_eq!(decoded.download_max_mbps, 7);
         assert_eq!(decoded.upload_max_mbps, 4);
+    }
+
+    #[test]
+    fn insight_topology_conversion_preserves_coordinates() {
+        let current = RawNetJsBody {
+            download_bandwidth_mbps: 900,
+            upload_bandwidth_mbps: 800,
+            latitude: Some(31.861_029),
+            longitude: Some(-106.549_46),
+            site_type: Some("Site".to_string()),
+            children: None,
+        }
+        .to_lts2("Site A");
+
+        let encoded = to_value(&current).expect("topology payload serializes");
+        assert_eq!(
+            encoded.get("latitude").and_then(|value| value.as_f64()),
+            Some(31.861_028_671_264_65_f64)
+        );
+        assert_eq!(
+            encoded.get("longitude").and_then(|value| value.as_f64()),
+            Some(-106.549_461_364_746_1_f64)
+        );
+    }
+
+    #[test]
+    fn old_receivers_ignore_topology_coordinate_fields() {
+        let current = RawNetJsBody {
+            download_bandwidth_mbps: 900,
+            upload_bandwidth_mbps: 800,
+            latitude: Some(31.861_029),
+            longitude: Some(-106.549_46),
+            site_type: Some("Site".to_string()),
+            children: None,
+        }
+        .to_lts2("Site A");
+
+        let bytes = serde_cbor::to_vec(&current).expect("current topology payload serializes");
+        let decoded: OldLts2NetJs =
+            serde_cbor::from_slice(&bytes).expect("legacy topology shape ignores extra fields");
+
+        assert_eq!(decoded.name, "Site A");
+        assert_eq!(decoded.download_bandwidth_mbps, 900);
+        assert_eq!(decoded.upload_bandwidth_mbps, 800);
+        assert_eq!(decoded.site_type.as_deref(), Some("Site"));
     }
 
     #[test]

@@ -59,8 +59,9 @@ function updateConfig() {
         downlink_bandwidth_mbps: parseInt(document.getElementById("downlinkBandwidth").value),
         generated_pn_download_mbps: parseInt(document.getElementById("generatedPnDownload").value),
         generated_pn_upload_mbps: parseInt(document.getElementById("generatedPnUpload").value),
-        dry_run: document.getElementById("dryRun").checked,
-        sudo: document.getElementById("sudo").checked,
+        // These legacy options are intentionally not user-configurable from the UI.
+        dry_run: false,
+        sudo: false,
         override_available_queues: document.getElementById("overrideQueues").value ? 
             parseInt(document.getElementById("overrideQueues").value) : null,
         use_binpacking: document.getElementById("useBinpacking").checked,
@@ -86,8 +87,6 @@ loadConfig(() => {
         document.getElementById("queueMode").value = queues.queue_mode ?? ((queues.monitor_only ?? false) ? "observe" : "shape");
 
         // Boolean fields
-        document.getElementById("dryRun").checked = queues.dry_run ?? false;
-        document.getElementById("sudo").checked = queues.sudo ?? false;
         document.getElementById("useBinpacking").checked = queues.use_binpacking ?? false;
         document.getElementById("lazyQueues").value = queues.lazy_queues ?? "No";
 

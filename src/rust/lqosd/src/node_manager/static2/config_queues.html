@@ -41,16 +41,8 @@
                             <div class="form-text">If unset, defaults to 1000. For circuits with download at or above this rate, fq_codel is preferred when no per-circuit override is set.</div>
                         </div>
 
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="dryRun">
-                            <label class="form-check-label" for="dryRun">Dry Run</label>
-                            <div class="form-text">Print commands without executing them.</div>
-                        </div>
-
-                        <div class="mb-0 form-check">
-                            <input type="checkbox" class="form-check-input" id="sudo">
-                            <label class="form-check-label" for="sudo">Use Sudo</label>
-                            <div class="form-text">Prefix commands with sudo.</div>
+                        <div class="mb-0">
+                            <div class="form-text">LibreQoS always applies queues directly from the daemon. Legacy dry-run and sudo toggles are no longer exposed here.</div>
                         </div>
                     </div>
                 </div>
