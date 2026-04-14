@@ -1,5 +1,6 @@
 use std::{
-    fs::read_to_string,
+    fs::{OpenOptions, read_to_string},
+    io::{ErrorKind, Write},
     path::{Path, PathBuf},
 };
 
@@ -145,7 +146,11 @@ fn ensure_exists_default(path: &Path) -> Result<()> {
     }
     let new_file = TopologyOverridesFile::default();
     let as_json = serde_json::to_string(&new_file)?;
-    std::fs::write(path, as_json.as_bytes())?;
+    match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(mut file) => file.write_all(as_json.as_bytes())?,
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
+        Err(err) => return Err(err.into()),
+    }
     Ok(())
 }
 
@@ -187,13 +192,10 @@ impl TopologyOverridesFile {
 
     /// Loads the operator-owned topology-manager overrides file, creating an empty file if missing.
     pub fn load() -> Result<Self> {
-        let lock = FileLock::new()?;
         let config = lqos_config::load_config()?;
         let path = topology_overrides_path(&config);
         ensure_exists_default(&path)?;
-        let as_json = load_from_path(&path)?;
-        drop(lock);
-        Ok(as_json)
+        load_from_path(&path)
     }
 
     /// Saves this value to the operator-owned topology-manager overrides file.
@@ -463,5 +465,46 @@ impl TopologyOverridesFile {
             !(entry.child_node_id == child_node_id && entry.parent_node_id == parent_node_id)
         });
         before.saturating_sub(self.manual_attachment_groups.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TopologyOverridesFile, ensure_exists_default, load_from_path};
+    use std::{
+        fs::remove_dir_all,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn unique_test_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "lqos-topology-overrides-test-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn ensure_exists_default_creates_default_file_once() {
+        let dir = unique_test_dir();
+        std::fs::create_dir_all(&dir).expect("failed to create temp test dir");
+        let path = dir.join("topology_overrides.json");
+
+        ensure_exists_default(&path).expect("failed to create default topology overrides file");
+        ensure_exists_default(&path).expect("second ensure_exists_default should be a no-op");
+
+        let loaded =
+            load_from_path(&path).expect("failed to read topology overrides file from temp path");
+        assert_eq!(loaded.schema_version, TopologyOverridesFile::default().schema_version);
+        assert!(loaded.overrides.is_empty());
+        assert!(loaded.attachment_probe_policies.is_empty());
+        assert!(loaded.manual_attachment_groups.is_empty());
+        assert!(loaded.attachment_rate_overrides.is_empty());
+
+        remove_dir_all(&dir).expect("failed to clean up temp test dir");
     }
 }
