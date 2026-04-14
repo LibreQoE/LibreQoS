@@ -15,5 +15,4 @@ clap = { workspace = true }
 lqos_config = { path = "../lqos_config" }
 lqos_utils = { path = "../lqos_utils" }
 serde_yaml = "0.9"
-libc = "0.2"
 tracing = { workspace = true }
