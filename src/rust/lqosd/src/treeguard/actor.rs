@@ -655,9 +655,8 @@ fn build_circuit_inventory(
     dynamic_signature: u64,
 ) -> CircuitInventory {
     let mut circuits_by_device_id: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
-    circuits_by_device_id.reserve(
-        shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len(),
-    );
+    circuits_by_device_id
+        .reserve(shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len());
     for device in shaped.iter_all_devices() {
         let device_id = device.device_id.trim();
         let circuit_id = device.circuit_id.trim();

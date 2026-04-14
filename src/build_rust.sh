@@ -179,6 +179,7 @@ SERVICE_UNITS_UPDATED=0
 refresh_service_unit lqosd
 refresh_service_unit lqos_scheduler
 refresh_service_unit lqos_api
+refresh_service_unit lqos_setup
 
 if [ "$SERVICE_UNITS_UPDATED" -eq 1 ]; then
     echo "Reloading systemd unit definitions."
@@ -211,6 +212,10 @@ fi
 if service_exists lqos_api; then
     echo "lqos_api is running as a service. Restarting it. You may need to enter your sudo password."
     sudo systemctl restart lqos_api
+fi
+if service_exists lqos_setup; then
+    echo "lqos_setup is running as a service. Restarting it. You may need to enter your sudo password."
+    sudo systemctl restart lqos_setup
 fi
 
 echo "-----------------------------------------------------------------"

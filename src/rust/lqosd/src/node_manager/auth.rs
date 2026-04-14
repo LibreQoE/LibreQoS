@@ -1,5 +1,6 @@
 //! Provides authentication for the Node Manager.
 
+use crate::node_manager::runtime_onboarding::runtime_onboarding_state;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -379,7 +380,7 @@ pub async fn login_page(jar: CookieJar) -> Response {
             Redirect::temporary("/first-run.html").into_response()
         }
         AuthBootstrapState::Ready => match session_from_cookie(&jar, &snapshot) {
-            Ok(Some(_)) => Redirect::temporary("/index.html").into_response(),
+            Ok(Some(_)) => Redirect::temporary(post_login_destination()).into_response(),
             Ok(None) => serve_standalone_page("login.html")
                 .unwrap_or_else(|status| (status, "Unable to serve login page").into_response()),
             Err(status) => (status, "Unable to validate login session").into_response(),
@@ -432,6 +433,33 @@ fn login_result_for_session(user: Option<SessionUser>, allow_anonymous: bool) ->
     }
 }
 
+fn post_login_destination() -> &'static str {
+    if runtime_onboarding_state().required {
+        "/setup_runtime.html"
+    } else {
+        "/index.html"
+    }
+}
+
+fn runtime_onboarding_exempt_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/setup_runtime.html"
+            | "/config_integration.html"
+            | "/config_splynx.html"
+            | "/config_netzur.html"
+            | "/config_visp.html"
+            | "/config_uisp.html"
+            | "/config_powercode.html"
+            | "/config_sonar.html"
+            | "/config_wispgate.html"
+            | "/config_network.html"
+            | "/config_devices.html"
+            | "/help.html"
+            | "/configuration.html"
+    )
+}
+
 /// Checks an incoming request for a `User-Token` cookie. If found,
 /// it validates the request against the signed session and current auth epoch.
 /// Missing or empty auth state redirects to first-run; invalid sessions redirect
@@ -460,6 +488,13 @@ pub async fn auth_layer(
     match login_result {
         LoginResult::Admin | LoginResult::ReadOnly => {
             record_first_login_timestamp_if_needed();
+            let path = req.uri().path().to_string();
+            if path.ends_with(".html")
+                && !runtime_onboarding_exempt_path(&path)
+                && runtime_onboarding_state().required
+            {
+                return Redirect::temporary("/setup_runtime.html").into_response();
+            }
             req.extensions_mut().insert(login_result);
             next.run(req).await
         }

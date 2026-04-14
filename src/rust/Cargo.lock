@@ -2280,13 +2280,21 @@ name = "lqos_setup"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "clap",
  "cursive",
  "ip_network",
+ "libc",
  "lqos_config",
  "lqos_netplan_helper",
  "nix",
  "once_cell",
  "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "uuid",
 ]
 
 [[package]]

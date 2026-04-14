@@ -52,6 +52,7 @@ LQOS_BIN_FILES=(
   lqos_scheduler.service.example
   lqosd.service.example
   lqos_api.service.example
+  lqos_setup.service.example
 )
 
 RUSTPROGS=(
@@ -123,21 +124,6 @@ cat <<'EOF' > postinst
 #!/bin/bash
 set -euo pipefail
 
-if /opt/libreqos/src/systemd_hotfix.sh should-offer >/dev/null 2>&1; then
-cat >&2 <<'HOTFIX'
-LibreQoS detected the Ubuntu 24.04 systemd-networkd hotfix requirement on this host.
-
-Run:
-  sudo /opt/libreqos/src/systemd_hotfix.sh install
-
-The hotfix installer bootstraps the LibreQoS APT repo at https://repo.libreqos.com and will offer to schedule a reboot.
-
-After the reboot, finish the LibreQoS package configuration with:
-  sudo dpkg --configure -a
-HOTFIX
-exit 1
-fi
-
 # Install Python Dependencies
 pushd /opt/libreqos > /dev/null
 # - Setup Python dependencies as a post-install task. Use --ignore-installed so
@@ -152,20 +138,23 @@ fi
 # Ensure folder permissions are correct post-install
 sudo chown -R root:root /opt/libreqos
 
-# - Run lqsetup
-/opt/libreqos/src/bin/lqos_setup --skip-if-ready
 # - Setup the services
 install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 install -m 0644 /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+install -m 0644 /opt/libreqos/src/bin/lqos_setup.service.example /etc/systemd/system/lqos_setup.service
 /bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl stop lqos_netplan_helper || true
 /bin/systemctl disable lqos_netplan_helper || true
-/bin/systemctl enable lqosd lqos_scheduler lqos_api || true
-/bin/systemctl restart lqosd lqos_scheduler lqos_api || true
+if /opt/libreqos/src/bin/lqos_setup is-ready; then
+/opt/libreqos/src/bin/lqos_setup activate-runtime
+else
+/opt/libreqos/src/bin/lqos_setup activate-setup
+/opt/libreqos/src/bin/lqos_setup print-link || true
+fi
 popd > /dev/null
 EOF
 
@@ -173,8 +162,8 @@ EOF
 cat <<EOF > postrm
 #!/bin/bash
 set +e
-/bin/systemctl stop lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
-/bin/systemctl disable lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
+/bin/systemctl stop lqos_netplan_helper lqosd lqos_scheduler lqos_api lqos_setup || true
+/bin/systemctl disable lqos_netplan_helper lqosd lqos_scheduler lqos_api lqos_setup || true
 /bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 exit 0

@@ -288,8 +288,8 @@ fn load_shaped_devices_from_preferred_source(
         }
     }
 
-    let shaped_devices = ConfigShapedDevices::load_for_config(config)
-        .context("Unable to load ShapedDevices.csv")?;
+    let shaped_devices =
+        ConfigShapedDevices::load_for_config(config).context("Unable to load ShapedDevices.csv")?;
     Ok((shaped_devices, ShapedDevicesLoadSource::ShapedDevicesCsv))
 }
 
@@ -420,7 +420,6 @@ fn build_network_tree_summaries(
 
     summaries
 }
-
 
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
@@ -1319,8 +1318,8 @@ mod tests {
         };
         config.uisp_integration.enable_uisp = true;
 
-        let (loaded, source) = load_shaped_devices_from_preferred_source(&config)
-            .expect("CSV fallback should load");
+        let (loaded, source) =
+            load_shaped_devices_from_preferred_source(&config).expect("CSV fallback should load");
         assert_eq!(source, ShapedDevicesLoadSource::ShapedDevicesCsv);
         assert_eq!(loaded.devices.len(), 1);
         assert_eq!(loaded.devices[0].circuit_id, "csv-circuit");

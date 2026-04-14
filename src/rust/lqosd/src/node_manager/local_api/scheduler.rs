@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use lqos_bus::SchedulerProgressReport;
 
+use crate::node_manager::runtime_onboarding::runtime_onboarding_state;
 use crate::tool_status::{
     is_scheduler_available, scheduler_error_message, scheduler_output_message,
     scheduler_progress_state,
@@ -68,6 +69,8 @@ pub struct SchedulerStatus {
     pub available: bool,
     pub error: Option<String>,
     pub progress: Option<SchedulerProgressReport>,
+    pub setup_required: bool,
+    pub setup_message: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -76,6 +79,8 @@ pub struct SchedulerDetails {
     pub error: Option<String>,
     pub output: Option<String>,
     pub progress: Option<SchedulerProgressReport>,
+    pub setup_required: bool,
+    pub setup_message: Option<String>,
     pub details: String,
 }
 
@@ -102,6 +107,17 @@ fn scheduler_output() -> Option<String> {
 }
 
 pub fn scheduler_status_data() -> SchedulerStatus {
+    let onboarding = runtime_onboarding_state();
+    if onboarding.required {
+        return SchedulerStatus {
+            available: false,
+            error: None,
+            progress: None,
+            setup_required: true,
+            setup_message: Some(onboarding.summary),
+        };
+    }
+
     let available = is_scheduler_available();
     let error = scheduler_error();
     let progress = scheduler_progress_state();
@@ -109,6 +125,8 @@ pub fn scheduler_status_data() -> SchedulerStatus {
         available,
         error,
         progress,
+        setup_required: false,
+        setup_message: None,
     }
 }
 
@@ -116,6 +134,26 @@ pub fn scheduler_details_data() -> SchedulerDetails {
     let status = scheduler_status_data();
     let output = scheduler_output();
     let mut body = String::new();
+    if status.setup_required {
+        let message = status.setup_message.clone().unwrap_or_else(|| {
+            "Choose a topology source in Complete Setup before expecting scheduler activity."
+                .to_string()
+        });
+        body.push_str("Scheduler status: setup required\n\n");
+        body.push_str("LibreQoS runtime onboarding is incomplete.\n");
+        body.push_str(&message);
+        body.push('\n');
+        return SchedulerDetails {
+            available: false,
+            error: None,
+            output: None,
+            progress: None,
+            setup_required: true,
+            setup_message: Some(message),
+            details: body,
+        };
+    }
+
     body.push_str(&format!("Scheduler available: {}\n\n", status.available));
     match status.progress.as_ref() {
         Some(progress) => {
@@ -165,6 +203,8 @@ pub fn scheduler_details_data() -> SchedulerDetails {
         error: status.error,
         output,
         progress: status.progress,
+        setup_required: false,
+        setup_message: None,
         details: body,
     }
 }

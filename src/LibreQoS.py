@@ -360,27 +360,30 @@ def _current_topology_source_generation():
 
 
 def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
-    if not topology_import_ingress_enabled():
-        return False
-
     current_generation = _current_topology_source_generation()
     if current_generation is None:
-        return False
+        return None
 
     status_path = get_topology_runtime_status_path()
     try:
         with open(status_path, 'r', encoding='utf-8') as handle:
             status = json.load(handle)
+    except FileNotFoundError:
+        return None
     except Exception:
-        return False
+        return None
 
     if not isinstance(status, dict):
-        return False
-    if not bool(status.get('ready')):
         return False
 
     status_generation = str(status.get('source_generation', '') or '').strip()
     if status_generation != current_generation:
+        return False
+    if not bool(status.get('ready')):
+        return False
+
+    status_shaping_generation = str(status.get('shaping_generation', '') or '').strip()
+    if status_shaping_generation == '':
         return False
 
     status_shaping_inputs_path = str(status.get('shaping_inputs_path', '') or '').strip()
@@ -390,6 +393,8 @@ def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
                 return False
         except Exception:
             return False
+        if not os.path.isfile(status_shaping_inputs_path):
+            return False
 
     return True
 
@@ -397,8 +402,11 @@ def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
 def _shaping_inputs_are_fresh(shaping_inputs_path, shaped_devices_file, network_json_file, circuit_anchors_file=None):
     if not os.path.isfile(shaping_inputs_path):
         return False
-    if _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
+    topology_runtime_ready = _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path)
+    if topology_runtime_ready is True:
         return True
+    if topology_runtime_ready is False:
+        return False
     try:
         shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
         if os.path.isfile(shaped_devices_file) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_file):

@@ -452,10 +452,15 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
 
     def test_ready_true_matching_status_allows_current_generation(self):
         with tempfile.TemporaryDirectory() as tempdir:
+            shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
             with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "source_generation": "generation-1",
+                        "shaping_generation": "shape-1",
+                        "shaping_inputs_path": shaping_inputs,
                         "ready": True,
                         "error": None,
                     },
@@ -472,6 +477,57 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
         self.assertTrue(ready)
         self.assertEqual(detail, "")
         self.assertEqual(generation, "generation-1")
+
+    def test_ready_true_without_shaping_generation_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-1",
+                        "shaping_inputs_path": shaping_inputs,
+                        "ready": True,
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("has not published shaping inputs", detail)
+
+    def test_ready_true_without_shaping_inputs_file_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            missing_path = os.path.join(tempdir, "shaping_inputs.json")
+            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-1",
+                        "shaping_generation": "shape-1",
+                        "shaping_inputs_path": missing_path,
+                        "ready": True,
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("shaping inputs are not available", detail)
 
 
 class TestTopologyRuntimeGating(unittest.TestCase):

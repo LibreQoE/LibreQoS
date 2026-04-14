@@ -139,6 +139,7 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
                 json.dump(
                     {
                         "source_generation": "test-generation",
+                        "shaping_generation": "shape-1",
                         "ready": True,
                         "shaping_inputs_path": shaping_inputs,
                     },
@@ -146,12 +147,11 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
                 )
 
             with patch.object(LibreQoS, "get_libreqos_directory", return_value=temp_dir):
-                with patch.object(LibreQoS, "topology_import_ingress_enabled", return_value=True):
-                    self.assertTrue(
-                        LibreQoS._shaping_inputs_are_fresh(
-                            shaping_inputs, shaped_devices, network_json
-                        )
+                self.assertTrue(
+                    LibreQoS._shaping_inputs_are_fresh(
+                        shaping_inputs, shaped_devices, network_json
                     )
+                )
 
     def test_shaping_inputs_freshness_rejects_stale_topology_runtime_status_generation(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -173,6 +173,7 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
                 json.dump(
                     {
                         "source_generation": "old-generation",
+                        "shaping_generation": "shape-1",
                         "ready": True,
                         "shaping_inputs_path": shaping_inputs,
                     },
@@ -180,12 +181,39 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
                 )
 
             with patch.object(LibreQoS, "get_libreqos_directory", return_value=temp_dir):
-                with patch.object(LibreQoS, "topology_import_ingress_enabled", return_value=True):
-                    self.assertFalse(
-                        LibreQoS._shaping_inputs_are_fresh(
-                            shaping_inputs, shaped_devices, network_json
-                        )
+                self.assertFalse(
+                    LibreQoS._shaping_inputs_are_fresh(
+                        shaping_inputs, shaped_devices, network_json
                     )
+                )
+
+    def test_shaping_inputs_freshness_rejects_ready_status_without_shaping_generation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
+            shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
+            network_json = os.path.join(temp_dir, "network.effective.json")
+            status_path = os.path.join(temp_dir, "topology_runtime_status.json")
+
+            for path in (shaping_inputs, shaped_devices, network_json):
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("{}\n")
+
+            with open(status_path, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "test-generation",
+                        "ready": True,
+                        "shaping_inputs_path": shaping_inputs,
+                    },
+                    handle,
+                )
+
+            with patch.object(LibreQoS, "get_libreqos_directory", return_value=temp_dir):
+                self.assertFalse(
+                    LibreQoS._shaping_inputs_are_fresh(
+                        shaping_inputs, shaped_devices, network_json
+                    )
+                )
 
     def test_load_subscriber_circuits_accepts_diy_id_alias(self):
         header = [

@@ -195,15 +195,15 @@ fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Optio
         &device.parent_node,
         device.parent_node_id.as_deref(),
     )
-        .map(|resolved| (resolved.name, resolved.id))
-        .or_else(|| {
-            let trimmed = device.parent_node.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some((trimmed.to_string(), device.parent_node_id.clone()))
-            }
-        })
+    .map(|resolved| (resolved.name, resolved.id))
+    .or_else(|| {
+        let trimmed = device.parent_node.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some((trimmed.to_string(), device.parent_node_id.clone()))
+        }
+    })
 }
 
 fn aggregate_attached_circuit_rows<'a>(
@@ -392,8 +392,8 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
     use lqos_config::ConfigShapedDevices;
+    use std::str::FromStr;
 
     fn sample_device(
         circuit_id: &str,

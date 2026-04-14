@@ -7,7 +7,7 @@ use cursive::{
 use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 
 pub fn bridge_mode(s: &mut Cursive) {
-    let mode = CURRENT_CONFIG.lock().bridge_mode;
+    let single_selected = CURRENT_CONFIG.lock().bridge_mode == BridgeMode::Single;
 
     // create the group and buttons
     let mut group = RadioGroup::new().on_change(|_s, mode| {
@@ -19,24 +19,19 @@ pub fn bridge_mode(s: &mut Cursive) {
         BridgeMode::Linux,
         "Linux Bridge (2 interfaces) - LibreQoS will inspect and stage the managed Netplan change",
     );
-    let mut xdp_btn = group.button(
-        BridgeMode::XDP,
-        "XDP Bridge   (2 interfaces) - Manual Netplan workflow; do not create a bridge in Netplan",
-    );
     let mut single_btn = group.button(BridgeMode::Single, "Single Interface (1 interface)");
 
     // mark the one we want as selected
-    match mode {
-        BridgeMode::Linux => linux_btn.select(),
-        BridgeMode::XDP => xdp_btn.select(),
-        BridgeMode::Single => single_btn.select(),
-    };
+    if single_selected {
+        single_btn.select();
+    } else {
+        linux_btn.select();
+    }
 
     // now add them (in any order) to your layout
     let layout = LinearLayout::vertical()
         .child(TextView::new("Select the bridge mode you want to use:"))
         .child(linux_btn)
-        .child(xdp_btn)
         .child(single_btn);
 
     s.add_layer(

@@ -1,5 +1,6 @@
 use crate::node_manager::auth::LoginResult;
 use crate::node_manager::local_api::network_mode::NetworkModeInspection;
+use crate::node_manager::runtime_onboarding::RuntimeOnboardingState;
 use crate::shaping_runtime::ShapingRuntimeStatus;
 use axum::http::StatusCode;
 use default_net::get_interfaces;
@@ -160,6 +161,8 @@ pub struct ConfigView {
     pub shaping_status: ShapingRuntimeStatus,
     #[serde(default)]
     pub network_mode_inspection: NetworkModeInspection,
+    #[serde(default)]
+    pub runtime_onboarding: RuntimeOnboardingState,
 }
 
 pub fn admin_check_data(login: LoginResult) -> bool {
@@ -324,6 +327,8 @@ pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
                 shaping_status: crate::shaping_runtime::get_status(),
                 network_mode_inspection:
                     crate::node_manager::local_api::network_mode::inspect_network_mode(&config),
+                runtime_onboarding:
+                    crate::node_manager::runtime_onboarding::runtime_onboarding_state(),
                 config,
                 secret_state,
             }

@@ -70,8 +70,8 @@ impl ConfigBuilder {
                 to_network: String::new(),
                 internet_vlan: 0,
                 network_vlan: 0,
-                mbps_to_internet: 1_000,
-                mbps_to_network: 1_000,
+                mbps_to_internet: 9_400,
+                mbps_to_network: 9_400,
                 allow_subnets: vec![
                     "172.16.0.0/12".to_string(),
                     "10.0.0.0/8".to_string(),

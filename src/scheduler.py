@@ -1104,6 +1104,28 @@ def topology_runtime_readiness_detail():
             current_generation,
         )
 
+    shaping_generation = str(status.get("shaping_generation") or "").strip()
+    if not shaping_generation:
+        return (
+            False,
+            "Topology runtime has not published shaping inputs for the current source generation.",
+            current_generation,
+        )
+
+    shaping_inputs_path = str(status.get("shaping_inputs_path") or "").strip()
+    if not shaping_inputs_path:
+        return (
+            False,
+            "Topology runtime did not publish a shaping inputs path for the current source generation.",
+            current_generation,
+        )
+    if not os.path.isfile(shaping_inputs_path):
+        return (
+            False,
+            f"Topology runtime shaping inputs are not available at {shaping_inputs_path}.",
+            current_generation,
+        )
+
     return (True, "", current_generation)
 
 
