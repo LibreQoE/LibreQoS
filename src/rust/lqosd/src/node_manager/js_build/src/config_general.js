@@ -11,6 +11,56 @@ function escapeHtml(value) {
         .replace(/'/g, "&#039;");
 }
 
+function setCobrandUploadStatus(kind, message) {
+    const holder = document.getElementById("cobrandUploadStatus");
+    if (!holder) return;
+    const safeKind = kind === "danger" || kind === "warning" || kind === "info" || kind === "success"
+        ? kind
+        : "secondary";
+    holder.innerHTML = `<div class="alert alert-${safeKind} mb-0">${message}</div>`;
+}
+
+function selectedCobrandFile() {
+    const input = document.getElementById("cobrandFile");
+    return input?.files?.[0] ?? null;
+}
+
+function selectedCobrandLooksLikePng(file) {
+    if (!file) return true;
+    const typeOk = file.type === "image/png";
+    const extensionOk = String(file.name || "").toLowerCase().endsWith(".png");
+    return typeOk || extensionOk;
+}
+
+async function uploadCobrandIfSelected() {
+    const file = selectedCobrandFile();
+    if (!file) {
+        return;
+    }
+    if (!selectedCobrandLooksLikePng(file)) {
+        throw new Error("Cobrand image must be a PNG file.");
+    }
+
+    setCobrandUploadStatus("info", "Uploading cobrand.png...");
+    const response = await fetch("/local-api/config/cobrand", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+            "Content-Type": "image/png",
+        },
+        body: file,
+    });
+
+    if (!response.ok) {
+        const detail = (await response.text().catch(() => "")).trim();
+        const message = detail || `Upload failed with HTTP ${response.status}.`;
+        throw new Error(message);
+    }
+
+    document.getElementById("cobrandFile").value = "";
+    setCobrandUploadStatus("success", "Uploaded cobrand.png. Saving configuration...");
+}
+
 function getProfilesPath() {
     const dir = window.config?.lqos_directory;
     if (!dir) return "qoo_profiles.json";
@@ -161,6 +211,7 @@ function updateConfig() {
     window.config.enable_circuit_heatmaps = document.getElementById("enableCircuitHeatmaps").checked;
     window.config.enable_site_heatmaps = document.getElementById("enableSiteHeatmaps").checked;
     window.config.enable_asn_heatmaps = document.getElementById("enableAsnHeatmaps").checked;
+    window.config.display_cobrand = document.getElementById("displayCobrand").checked;
 
     const selectedProfileId = selectedQooProfileId();
     window.config.qoo_profile_id = selectedProfileId ? selectedProfileId : null;
@@ -198,6 +249,33 @@ loadConfig(() => {
         document.getElementById("enableCircuitHeatmaps").checked = window.config.enable_circuit_heatmaps ?? true;
         document.getElementById("enableSiteHeatmaps").checked = window.config.enable_site_heatmaps ?? true;
         document.getElementById("enableAsnHeatmaps").checked = window.config.enable_asn_heatmaps ?? true;
+        document.getElementById("displayCobrand").checked = window.config.display_cobrand ?? false;
+        setCobrandUploadStatus(
+            "secondary",
+            "Leave blank to keep the current <code>cobrand.png</code>. Uploads are applied when you click Save Changes.",
+        );
+
+        const cobrandInput = document.getElementById("cobrandFile");
+        if (cobrandInput) {
+            cobrandInput.addEventListener("change", () => {
+                const file = selectedCobrandFile();
+                if (!file) {
+                    setCobrandUploadStatus(
+                        "secondary",
+                        "Leave blank to keep the current <code>cobrand.png</code>. Uploads are applied when you click Save Changes.",
+                    );
+                    return;
+                }
+                if (!selectedCobrandLooksLikePng(file)) {
+                    setCobrandUploadStatus("warning", "Selected file does not look like a PNG. Choose a .png file.");
+                    return;
+                }
+                setCobrandUploadStatus(
+                    "info",
+                    `Selected ${escapeHtml(file.name)}. It will be saved as <code>cobrand.png</code> when you click Save Changes.`,
+                );
+            });
+        }
 
         const profilesPath = getProfilesPath();
         const profilesPathEl = document.getElementById("qooProfilesPath");
@@ -251,12 +329,29 @@ loadConfig(() => {
         );
 
         // Add save button click handler
-        document.getElementById('saveButton').addEventListener('click', () => {
+        document.getElementById('saveButton').addEventListener('click', async () => {
             if (validateConfig()) {
-                updateConfig();
-                saveConfig(() => {
-                    alert("Configuration saved successfully!");
-                });
+                try {
+                    await uploadCobrandIfSelected();
+                    updateConfig();
+                    saveConfig((msg) => {
+                        if (!msg?.ok) {
+                            const message = msg?.message || "Configuration save failed.";
+                            setCobrandUploadStatus("danger", escapeHtml(message));
+                            return;
+                        }
+                        setCobrandUploadStatus(
+                            "success",
+                            "Cobrand settings saved. The sidebar will show the image when display is enabled and cobrand.png exists.",
+                        );
+                    }, (msg) => {
+                        const message = msg?.message || "Configuration save failed.";
+                        setCobrandUploadStatus("danger", escapeHtml(message));
+                    });
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : "Cobrand upload failed.";
+                    setCobrandUploadStatus("danger", escapeHtml(message));
+                }
             }
         });
     } else {

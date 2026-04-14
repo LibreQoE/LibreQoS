@@ -40,6 +40,12 @@ Cuando una integración está gestionando sus datos de shaping, los editores `Ne
 Nota de topología:
 - Los nombres de nodo en `network.json` deben ser globalmente únicos en todo el árbol. Los nombres duplicados ahora fallan la validación y no son aceptados por el guardado de la WebUI ni por `LibreQoS.py`.
 
+Nota sobre logo compartido:
+- `Configuration -> General` incluye un toggle opcional y una carga PNG para mostrar un logo del operador junto al logo de LibreQoS.
+- LibreQoS guarda el archivo subido como `cobrand.png` en el directorio de assets estáticos en tiempo de ejecución.
+- La opción de nivel superior `display_cobrand` en `/etc/lqos.conf` es opcional. Si no está presente, LibreQoS la trata como `false`.
+- La barra lateral muestra la imagen compartida con 48px de alto para igualar el logo de LibreQoS, con un ancho máximo de 176px dentro de la barra lateral.
+
 ## Modos de operación y fuente de verdad
 
 Lea esto primero antes de cambios en producción:

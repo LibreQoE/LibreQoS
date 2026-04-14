@@ -55,6 +55,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
             "/network-mode/retry-shaping",
             post(network_mode::retry_shaping),
         )
+        .route("/config/cobrand", post(config::upload_cobrand))
         .with_state(network_mode::NetworkModeApiState::default())
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())

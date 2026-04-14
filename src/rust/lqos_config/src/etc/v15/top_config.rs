@@ -169,6 +169,10 @@ pub struct Config {
     /// Listen options for the webserver
     pub webserver_listen: Option<String>,
 
+    /// Controls whether an operator-provided cobrand image should be shown in the WebUI.
+    #[serde(default)]
+    pub display_cobrand: bool,
+
     /// Support for Tornado/Auto-rate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stormguard: Option<stormguard::StormguardConfig>,
@@ -378,6 +382,7 @@ impl Default for Config {
             flows: None,
             disable_webserver: None,
             webserver_listen: None,
+            display_cobrand: false,
             stormguard: None,
             treeguard: treeguard::TreeguardConfig::default(),
             disable_icmp_ping: Some(false),
@@ -608,6 +613,16 @@ mod test {
         output.join("\n")
     }
 
+    fn remove_keys(raw: &str, keys: &[&str]) -> String {
+        raw.lines()
+            .filter(|line| {
+                let trimmed = line.trim_start();
+                !keys.iter().any(|key| trimmed.starts_with(&format!("{key} =")))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
     fn load_example() {
         let config = Config::load_from_string(include_str!("example.toml"))
@@ -810,6 +825,14 @@ mod test {
         let config = Config::load_from_string(&stripped)
             .expect("Config without stormguard should still deserialize");
         assert!(config.stormguard.is_none());
+    }
+
+    #[test]
+    fn display_cobrand_defaults_false_when_omitted() {
+        let stripped = remove_keys(include_str!("example.toml"), &["display_cobrand"]);
+        let config = Config::load_from_string(&stripped)
+            .expect("Config without display_cobrand should still deserialize");
+        assert!(!config.display_cobrand);
     }
 
     #[test]
