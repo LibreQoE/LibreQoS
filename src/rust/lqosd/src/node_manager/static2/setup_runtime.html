@@ -25,6 +25,7 @@
                         </p>
                         <label for="runtimeIntegrationProvider" class="form-label mt-2">Integration Provider</label>
                         <select class="form-select mb-3" id="runtimeIntegrationProvider">
+                            <option value="" disabled selected>Choose provider</option>
                             <option value="config_uisp.html">UISP</option>
                             <option value="config_splynx.html">Splynx</option>
                             <option value="config_visp.html">VISP</option>
@@ -37,7 +38,7 @@
                             Save your provider settings there, then return here if the scheduler still says setup is required.
                         </div>
                         <div class="mt-auto d-grid">
-                            <button type="button" class="btn btn-primary" id="btnOpenIntegrationProvider">
+                            <button type="button" class="btn btn-primary" id="btnOpenIntegrationProvider" disabled>
                                 <i class="fa fa-arrow-right"></i> Configure Provider
                             </button>
                         </div>

@@ -280,7 +280,7 @@ pub(crate) fn current_topology_ingress_identity(
 ) -> Result<Option<String>, TopologyCanonicalStateError> {
     let integration_ingress = topology_import_ingress_enabled(config);
     if integration_ingress {
-        let topology_import_path = Path::new(&config.lqos_directory).join(TOPOLOGY_IMPORT_FILENAME);
+        let topology_import_path = config.topology_state_file_path(TOPOLOGY_IMPORT_FILENAME);
         if topology_import_path.exists() {
             let raw = std::fs::read_to_string(topology_import_path)?;
             let imported = serde_json::from_str::<Value>(&raw)?;
@@ -1438,8 +1438,10 @@ mod tests {
             .expect("network json should serialize"),
         )
         .expect("network json should write");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            topology_state_dir.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
             serde_json::to_string_pretty(&TopologyCanonicalStateFile::from_legacy_network_json(
                 &json!({
                     "Old AP": {
@@ -1455,12 +1457,12 @@ mod tests {
         )
         .expect("canonical state should write");
         fs::write(
-            lqos_directory.join(TOPOLOGY_EDITOR_STATE_FILENAME),
+            topology_state_dir.join(TOPOLOGY_EDITOR_STATE_FILENAME),
             "{\"schema_version\":1,\"source\":\"legacy:test\",\"nodes\":[{\"node_id\":\"uisp:device:old-ap\",\"node_name\":\"Old AP\"}]}",
         )
         .expect("editor state should write");
         fs::write(
-            lqos_directory.join(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME),
+            topology_state_dir.join(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME),
             "{\"Old AP\":{\"children\":{}}}",
         )
         .expect("effective network should write");
@@ -1477,13 +1479,17 @@ mod tests {
         assert!(loaded.find_node("uisp:device:current-ap").is_some());
         assert!(loaded.find_node("uisp:device:old-ap").is_none());
         assert!(
-            !lqos_directory
+            !topology_state_dir
                 .join(TOPOLOGY_CANONICAL_STATE_FILENAME)
                 .exists()
         );
-        assert!(!lqos_directory.join(TOPOLOGY_EDITOR_STATE_FILENAME).exists());
         assert!(
-            !lqos_directory
+            !topology_state_dir
+                .join(TOPOLOGY_EDITOR_STATE_FILENAME)
+                .exists()
+        );
+        assert!(
+            !topology_state_dir
                 .join(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME)
                 .exists()
         );
@@ -1537,8 +1543,10 @@ mod tests {
             .expect("network json should serialize"),
         )
         .expect("network json should write");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_PARENT_CANDIDATES_FILENAME),
+            topology_state_dir.join(TOPOLOGY_PARENT_CANDIDATES_FILENAME),
             serde_json::to_string_pretty(&TopologyParentCandidatesFile {
                 source: "uisp/full2".to_string(),
                 ingress_identity: Some(ingress_identity.clone()),
@@ -1579,12 +1587,12 @@ mod tests {
             compatibility_network_json: json!({}),
         };
         fs::write(
-            lqos_directory.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            topology_state_dir.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
             serde_json::to_string_pretty(&canonical).expect("canonical should serialize"),
         )
         .expect("canonical should write");
         fs::write(
-            lqos_directory.join(TOPOLOGY_EDITOR_STATE_FILENAME),
+            topology_state_dir.join(TOPOLOGY_EDITOR_STATE_FILENAME),
             serde_json::to_string_pretty(&TopologyEditorStateFile {
                 schema_version: 1,
                 source: "uisp/ap_site".to_string(),
@@ -1623,11 +1631,15 @@ mod tests {
 
         assert!(loaded.find_node("uisp:device:current-ap").is_some());
         assert!(
-            lqos_directory
+            topology_state_dir
                 .join(TOPOLOGY_CANONICAL_STATE_FILENAME)
                 .exists()
         );
-        assert!(lqos_directory.join(TOPOLOGY_EDITOR_STATE_FILENAME).exists());
+        assert!(
+            topology_state_dir
+                .join(TOPOLOGY_EDITOR_STATE_FILENAME)
+                .exists()
+        );
         let quarantine_directory = config.quarantine_state_directory_path();
         let quarantined = if quarantine_directory.exists() {
             fs::read_dir(&quarantine_directory)
@@ -1653,8 +1665,10 @@ mod tests {
     #[test]
     fn current_topology_ingress_identity_prefers_topology_import_artifact() {
         let lqos_directory = unique_temp_dir("lqos-config-topology-import-identity");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_IMPORT_FILENAME),
+            topology_state_dir.join(TOPOLOGY_IMPORT_FILENAME),
             serde_json::to_string_pretty(&json!({
                 "schema_version": 1,
                 "source": "uisp/full2",

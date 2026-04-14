@@ -28,10 +28,8 @@ const TOKEN_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 pub enum SetupStatus {
     /// Setup is not complete yet.
     Incomplete,
-    /// Setup completed, but subscriber topology inputs are still missing.
-    CompleteWaitingForSubscriberData,
-    /// Setup completed and subscriber topology inputs exist.
-    CompleteShapingActive,
+    /// Setup completed and LibreQoS can hand off to runtime services.
+    Complete,
 }
 
 impl SetupStatus {
@@ -39,10 +37,7 @@ impl SetupStatus {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Incomplete => "Setup Incomplete",
-            Self::CompleteWaitingForSubscriberData => {
-                "Setup Complete, Waiting for Subscriber Data"
-            }
-            Self::CompleteShapingActive => "Setup Complete, Shaping Active",
+            Self::Complete => "Setup Complete",
         }
     }
 }
@@ -63,8 +58,6 @@ pub struct BootstrapState {
     pub version: u32,
     /// Whether setup has been completed.
     pub setup_complete: bool,
-    /// Whether runtime subscriber inputs exist and shaping can become active.
-    pub shaping_ready: bool,
     /// Whether an admin user exists.
     pub first_admin_exists: bool,
     /// Current setup token.
@@ -76,7 +69,6 @@ impl Default for BootstrapState {
         Self {
             version: BOOTSTRAP_STATE_VERSION,
             setup_complete: false,
-            shaping_ready: false,
             first_admin_exists: false,
             token: new_bootstrap_token(),
         }
@@ -92,10 +84,6 @@ pub struct StatusSnapshot {
     pub display_status: SetupStatus,
     /// Hostname and IP hints for the operator.
     pub host_hints: Vec<String>,
-    /// Whether `network.json` exists.
-    pub network_json_present: bool,
-    /// Whether `ShapedDevices.csv` exists.
-    pub shaped_devices_present: bool,
     /// Whether `/etc/lqos.conf` currently parses.
     pub config_loads: bool,
     /// Whether the Noble systemd hotfix is still required.
@@ -124,8 +112,6 @@ struct RuntimePaths {
 #[derive(Clone, Debug)]
 struct LiveInputs {
     config_loads: bool,
-    network_json_present: bool,
-    shaped_devices_present: bool,
     first_admin_exists: bool,
 }
 
@@ -191,19 +177,15 @@ fn collect_live_inputs() -> LiveInputs {
     let paths = runtime_paths();
     LiveInputs {
         config_loads: lqos_config::load_config().is_ok(),
-        network_json_present: paths.lqos_directory.join("network.json").exists(),
-        shaped_devices_present: paths.lqos_directory.join("ShapedDevices.csv").exists(),
         first_admin_exists: auth_file_has_admin(&paths.lqos_directory),
     }
 }
 
-fn display_status(setup_complete: bool, shaping_ready: bool) -> SetupStatus {
+fn display_status(setup_complete: bool) -> SetupStatus {
     if !setup_complete {
         SetupStatus::Incomplete
-    } else if shaping_ready {
-        SetupStatus::CompleteShapingActive
     } else {
-        SetupStatus::CompleteWaitingForSubscriberData
+        SetupStatus::Complete
     }
 }
 
@@ -264,10 +246,7 @@ fn build_setup_urls(token: &BootstrapToken) -> Vec<String> {
         .collect()
 }
 
-fn hydrate_state(
-    mut state: BootstrapState,
-    refresh_expired_token: bool,
-) -> BootstrapState {
+fn hydrate_state(mut state: BootstrapState, refresh_expired_token: bool) -> BootstrapState {
     if refresh_expired_token && state.token.expires_at_unix <= current_unix_seconds() {
         state.token = new_bootstrap_token();
     }
@@ -289,10 +268,6 @@ fn read_persisted_state() -> Result<BootstrapState> {
 fn bootstrap_state_from_live(live: &LiveInputs) -> BootstrapState {
     BootstrapState {
         setup_complete: live.config_loads && live.first_admin_exists,
-        shaping_ready: live.config_loads
-            && live.first_admin_exists
-            && live.network_json_present
-            && live.shaped_devices_present,
         first_admin_exists: live.first_admin_exists,
         ..BootstrapState::default()
     }
@@ -313,7 +288,10 @@ fn load_or_create_state() -> Result<BootstrapState> {
     {
         if path.exists() {
             return Err(err).with_context(|| {
-                format!("Unable to create setup state directory {}", parent.display())
+                format!(
+                    "Unable to create setup state directory {}",
+                    parent.display()
+                )
             });
         }
         return Ok(synced);
@@ -331,8 +309,12 @@ fn load_or_create_state() -> Result<BootstrapState> {
 pub fn save_state(state: &BootstrapState) -> Result<()> {
     let path = bootstrap_state_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Unable to create setup state directory {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "Unable to create setup state directory {}",
+                parent.display()
+            )
+        })?;
     }
     let raw = serde_json::to_string_pretty(state).context("Unable to serialize bootstrap state")?;
     fs::write(&path, raw)
@@ -345,7 +327,10 @@ pub fn store_setup_completion_report(report: &str) -> Result<()> {
     let path = completion_report_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| {
-            format!("Unable to create setup state directory {}", parent.display())
+            format!(
+                "Unable to create setup state directory {}",
+                parent.display()
+            )
         })?;
     }
     fs::write(&path, report)
@@ -365,14 +350,9 @@ pub fn record_setup_success(config: &Config) -> Result<BootstrapState> {
     let mut state = load_or_create_state()?;
     let live = LiveInputs {
         config_loads: true,
-        network_json_present: Path::new(&config.lqos_directory).join("network.json").exists(),
-        shaped_devices_present: Path::new(&config.lqos_directory)
-            .join("ShapedDevices.csv")
-            .exists(),
         first_admin_exists: auth_file_has_admin(Path::new(&config.lqos_directory)),
     };
     state.setup_complete = live.first_admin_exists;
-    state.shaping_ready = live.network_json_present && live.shaped_devices_present;
     state.first_admin_exists = live.first_admin_exists;
     state = hydrate_state(state, true);
     save_state(&state)?;
@@ -394,17 +374,13 @@ pub fn status_snapshot() -> Result<StatusSnapshot> {
         bootstrap_state_from_live(&live)
     };
     state.first_admin_exists = live.first_admin_exists;
-    state.shaping_ready =
-        state.setup_complete && live.network_json_present && live.shaped_devices_present;
     let host_hints = detect_host_hints();
-    let display_status = display_status(state.setup_complete, state.shaping_ready);
+    let display_status = display_status(state.setup_complete);
 
     Ok(StatusSnapshot {
         state,
         display_status,
         host_hints,
-        network_json_present: live.network_json_present,
-        shaped_devices_present: live.shaped_devices_present,
         config_loads: live.config_loads,
         hotfix_required: hotfix_status.required,
         hotfix_detail: hotfix_status.detail,
@@ -414,16 +390,15 @@ pub fn status_snapshot() -> Result<StatusSnapshot> {
 /// Renders a text report for `lqos_setup status`.
 pub fn render_status_report() -> Result<String> {
     let snapshot = status_snapshot()?;
-    let mut report = format!("lqos_setup status\n\nStatus: {}", snapshot.display_status.as_str());
+    let mut report = format!(
+        "lqos_setup status\n\nStatus: {}",
+        snapshot.display_status.as_str()
+    );
     report.push_str("\nSource: persisted setup state plus current runtime diagnostics");
 
     report.push_str(&format!(
         "\n- setup_complete: {}",
         yes_no(snapshot.state.setup_complete)
-    ));
-    report.push_str(&format!(
-        "\n- shaping_ready: {}",
-        yes_no(snapshot.state.shaping_ready)
     ));
     report.push_str(&format!(
         "\n- config_loads: {}",
@@ -434,28 +409,18 @@ pub fn render_status_report() -> Result<String> {
         yes_no(snapshot.state.first_admin_exists)
     ));
     report.push_str(&format!(
-        "\n- network.json present: {}",
-        yes_no(snapshot.network_json_present)
-    ));
-    report.push_str(&format!(
-        "\n- ShapedDevices.csv present: {}",
-        yes_no(snapshot.shaped_devices_present)
-    ));
-    report.push_str(&format!(
         "\n- hotfix required: {}",
         yes_no(snapshot.hotfix_required)
     ));
-    report.push_str(&format!(
-        "\n- hotfix detail: {}",
-        snapshot.hotfix_detail
-    ));
+    report.push_str(&format!("\n- hotfix detail: {}", snapshot.hotfix_detail));
 
     if !snapshot.state.setup_complete {
         report.push_str("\n\nHost hints:");
         for host in &snapshot.host_hints {
             report.push_str(&format!("\n- {host}"));
         }
-        report.push_str("\n\nRun `lqos_setup print-link` to print the current tokenized setup URL.");
+        report
+            .push_str("\n\nRun `lqos_setup print-link` to print the current tokenized setup URL.");
     }
 
     Ok(report)
@@ -472,12 +437,10 @@ pub fn runtime_services_should_start() -> Result<bool> {
     } else {
         bootstrap_state_from_live(&live)
     };
-    Ok(
-        state.setup_complete
-            && live.first_admin_exists
-            && live.config_loads
-            && !hotfix_status.required,
-    )
+    Ok(state.setup_complete
+        && live.first_admin_exists
+        && live.config_loads
+        && !hotfix_status.required)
 }
 
 /// Returns true when first-run setup has not yet been completed.

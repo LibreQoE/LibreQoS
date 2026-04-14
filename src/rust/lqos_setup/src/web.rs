@@ -2,8 +2,7 @@
 
 use crate::{
     config_builder::{BridgeMode, CURRENT_CONFIG},
-    interfaces,
-    service_handoff,
+    interfaces, service_handoff,
     setup_actions::{self, CommitOutcome},
 };
 use anyhow::{Context, Result, bail};
@@ -129,17 +128,21 @@ async fn create_admin(Form(form): Form<AdminForm>) -> Response {
         return error_response(StatusCode::BAD_REQUEST, "Passwords did not match.");
     }
     if form.username.trim().is_empty() || form.password.is_empty() {
-        return error_response(StatusCode::BAD_REQUEST, "Username and password are required.");
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Username and password are required.",
+        );
     }
 
     match WebUsers::load_or_create_in(&bootstrap::runtime_lqos_directory()).and_then(|mut users| {
         users.add_or_update_user(form.username.trim(), &form.password, UserRole::Admin)
     }) {
-        Ok(()) => match render_setup_page(Some(&form.token), Some("Admin account created."), None)
-        {
-            Ok(html) => Html(html).into_response(),
-            Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
-        },
+        Ok(()) => {
+            match render_setup_page(Some(&form.token), Some("Admin account created."), None) {
+                Ok(html) => Html(html).into_response(),
+                Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+            }
+        }
         Err(err) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             &format!("Unable to create admin user: {err}"),
@@ -153,8 +156,11 @@ async fn install_hotfix(Form(form): Form<HotfixForm>) -> Response {
     }
     match hotfix::install() {
         Ok(result) => {
-            match render_setup_page(Some(&form.token), Some(&result.summary), Some(&result.detail))
-            {
+            match render_setup_page(
+                Some(&form.token),
+                Some(&result.summary),
+                Some(&result.detail),
+            ) {
                 Ok(html) => Html(html).into_response(),
                 Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
             }
@@ -188,14 +194,18 @@ async fn save_setup(Form(form): Form<SaveForm>) -> Response {
     }
 
     match setup_actions::prepare_commit() {
-        Ok(CommitOutcome::Complete(success)) => match finalize_success_html(&success.config, success.event_log) {
-            Ok(html) => Html(html).into_response(),
-            Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
-        },
-        Ok(CommitOutcome::Pending(pending)) => {
-            Html(render_pending_page(&form.token, &pending.operation_id, &pending.prompt))
-                .into_response()
+        Ok(CommitOutcome::Complete(success)) => {
+            match finalize_success_html(&success.config, success.event_log) {
+                Ok(html) => Html(html).into_response(),
+                Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
+            }
         }
+        Ok(CommitOutcome::Pending(pending)) => Html(render_pending_page(
+            &form.token,
+            &pending.operation_id,
+            &pending.prompt,
+        ))
+        .into_response(),
         Err(err) => error_response(StatusCode::BAD_REQUEST, &err.to_string()),
     }
 }
@@ -270,14 +280,6 @@ fn render_setup_page(
         yes_no(snapshot.config_loads)
     ));
     html.push_str(&format!(
-        "<li>network.json present: {}</li>",
-        yes_no(snapshot.network_json_present)
-    ));
-    html.push_str(&format!(
-        "<li>ShapedDevices.csv present: {}</li>",
-        yes_no(snapshot.shaped_devices_present)
-    ));
-    html.push_str(&format!(
         "<li>Hotfix required: {}</li>",
         yes_no(snapshot.hotfix_required)
     ));
@@ -300,7 +302,9 @@ fn render_setup_page(
         html.push_str("<form method=\"post\" action=\"/setup/create-admin\" onsubmit=\"return submitWithProgress(this, 'Creating admin account...');\">");
         hidden_token(&mut html, token);
         html.push_str("<label>Username<input type=\"text\" name=\"username\" required></label>");
-        html.push_str("<label>Password<input type=\"password\" name=\"password\" required></label>");
+        html.push_str(
+            "<label>Password<input type=\"password\" name=\"password\" required></label>",
+        );
         html.push_str("<label>Confirm Password<input type=\"password\" name=\"confirm_password\" required></label>");
         html.push_str("<button type=\"submit\">Create Admin</button></form></section>");
     } else if !snapshot.hotfix_required {
@@ -378,7 +382,9 @@ fn render_setup_page(
             "<label>Allowed Subnets<textarea name=\"allow_subnets\" rows=\"6\">{}</textarea></label>",
             escape_html(&config.allow_subnets.join("\n"))
         ));
-        html.push_str("<button id=\"saveSetupButton\" type=\"submit\">Save Setup</button></form></section>");
+        html.push_str(
+            "<button id=\"saveSetupButton\" type=\"submit\">Save Setup</button></form></section>",
+        );
     }
 
     html.push_str("<section class=\"card\"><h2>Host Hints</h2><ul class=\"status-list\">");
@@ -463,7 +469,9 @@ fn ensure_valid_setup_token(token: &str) -> Result<()> {
     if bootstrap::validate_setup_token(token)? {
         Ok(())
     } else {
-        bail!("Setup token is missing, invalid, or expired. Run `lqos_setup print-link` for a current setup URL.");
+        bail!(
+            "Setup token is missing, invalid, or expired. Run `lqos_setup print-link` for a current setup URL."
+        );
     }
 }
 

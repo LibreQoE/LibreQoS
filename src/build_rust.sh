@@ -140,6 +140,24 @@ mv liblqos_python.so.new liblqos_python.so
 echo "Updating lqos_api binary..."
 bash ./update_api.sh || echo "Warning: Failed to update lqos_api (continuing)."
 
+set_libreqos_operator_permissions() {
+    local runtime_paths=()
+    [ -e /opt/libreqos/src ] && runtime_paths+=("/opt/libreqos/src")
+    [ -e /opt/libreqos/state ] && runtime_paths+=("/opt/libreqos/state")
+    [ ${#runtime_paths[@]} -eq 0 ] && return
+
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+        sudo chown -R "$SUDO_USER:$SUDO_USER" "${runtime_paths[@]}"
+        sudo chmod -R u+rwX "${runtime_paths[@]}" || true
+        echo "Granted $SUDO_USER ownership of /opt/libreqos/src and /opt/libreqos/state for SFTP editing."
+    else
+        echo "Unable to determine the installing operator account automatically."
+        echo "If you plan to edit LibreQoS files over SFTP, run: sudo chown -R <username>:<username> /opt/libreqos/src /opt/libreqos/state"
+    fi
+}
+
+set_libreqos_operator_permissions
+
 # If we're running systemd, we need to restart processes
 service_exists() {
     local n=$1

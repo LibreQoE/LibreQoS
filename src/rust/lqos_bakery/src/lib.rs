@@ -3170,38 +3170,7 @@ fn migration_target_label(migration: &Migration) -> String {
 }
 
 fn runtime_network_json_path(config: &Config) -> std::path::PathBuf {
-    let base_path = Path::new(&config.lqos_directory);
-    let effective_path = config.topology_state_read_path("network.effective.json");
-    let integration_ingress_enabled = config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate);
-    if effective_path.exists() || integration_ingress_enabled {
-        return effective_path;
-    }
-    if config
-        .long_term_stats
-        .enable_insight_topology
-        .unwrap_or(false)
-    {
-        let tmp_path = base_path.join("network.insight.json");
-        if tmp_path.exists() {
-            return tmp_path;
-        }
-    }
-    base_path.join("network.json")
+    lqos_config::NetworkJson::path_for_config(config)
 }
 
 fn runtime_hash_to_i64(text: &str) -> i64 {

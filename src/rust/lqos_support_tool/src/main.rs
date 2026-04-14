@@ -47,17 +47,17 @@ fn read_line() -> String {
 }
 
 fn get_lts_key() -> String {
-    if let Ok(cfg) = load_config() {
-        if let Some(key) = &cfg.long_term_stats.license_key {
-            return key.clone();
-        }
+    if let Ok(cfg) = load_config()
+        && let Some(key) = &cfg.long_term_stats.license_key
+    {
+        return key.clone();
     }
 
     println!();
     println!("{}", "No LTS Key Found!".bright_red());
     println!("We prioritize helping Long-Term Stats Subscribers and Donors.");
     println!("Please enter your LTS key (from your email), or ENTER for none:");
-    return read_line();
+    read_line()
 }
 
 fn get_name() -> String {
@@ -88,7 +88,7 @@ fn gather_dump() {
         .as_secs();
     let filename = format!("/tmp/libreqos_{}.support", timestamp);
     let path = Path::new(&filename);
-    std::fs::write(&path, dump.serialize_and_compress().unwrap()).unwrap();
+    std::fs::write(path, dump.serialize_and_compress().unwrap()).unwrap();
     lqos_support_tool::console::success(&format!("Dump written to {}", filename));
 }
 
@@ -97,13 +97,13 @@ fn summarize(filename: &str) {
     if !path.exists() {
         println!("Dump not found at {filename}");
     } else {
-        let bytes = std::fs::read(&path).unwrap();
+        let bytes = std::fs::read(path).unwrap();
         if let Ok(decoded) = SupportDump::from_bytes(&bytes) {
             println!("Sent by: {}", decoded.sender);
             println!("Comments: {}", decoded.comment);
             println!("LTS Key: {}", decoded.lts_key);
 
-            println!("{:50} {:10} {}", "Sanity Check", "Success?", "Comment");
+            println!("{:50} {:10} Comment", "Sanity Check", "Success?");
             for entry in decoded.sanity_checks.results.iter() {
                 println!("{:50} {:10} {}", entry.name, entry.success, entry.comments);
             }
@@ -148,7 +148,7 @@ fn expand(filename: &str, target: &str) {
     }
 
     // Load the data
-    let bytes = std::fs::read(&in_path).unwrap();
+    let bytes = std::fs::read(in_path).unwrap();
     if let Ok(decoded) = SupportDump::from_bytes(&bytes) {
         // Save the header
         let header = format!(
@@ -171,14 +171,8 @@ fn expand(filename: &str, target: &str) {
 
         // Save the files
         for (idx, dump) in decoded.entries.iter().enumerate() {
-            let trimmed = dump
-                .name
-                .trim()
-                .replace(' ', "")
-                .to_lowercase()
-                .replace('(', "")
-                .replace(')', "");
-            let dump_path = out_path.join(&format!("{idx:0>2}_{}", trimmed));
+            let trimmed = dump.name.trim().replace([' ', '(', ')'], "").to_lowercase();
+            let dump_path = out_path.join(format!("{idx:0>2}_{}", trimmed));
             std::fs::write(dump_path, dump.contents.as_bytes()).unwrap();
         }
     }

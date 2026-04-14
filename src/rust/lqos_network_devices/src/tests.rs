@@ -1,14 +1,23 @@
 use crate::{
-    DynamicCircuit, ShapedDevicesCatalog, resolve_parent_node_reference, with_network_json_write,
+    DynamicCircuit, ShapedDevicesCatalog, load_shaped_devices_for_config,
+    resolve_parent_node_reference, runtime_inputs, with_network_json_write,
 };
-use lqos_config::{ConfigShapedDevices, NetworkJsonNode, ShapedDevice};
+use lqos_config::{
+    CircuitAnchorsFile, Config, ConfigShapedDevices, NetworkJsonNode, ShapedDevice,
+    TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyShapingCircuitInput, TopologyShapingDeviceInput,
+    TopologyShapingInputsFile,
+};
+use lqos_topology_compile::{ImportedTopologyBundle, TopologyImportFile};
 use lqos_utils::rtt::RttBuffer;
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use serde_json::json;
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -41,6 +50,55 @@ fn make_node(
         heatmap: None,
         qoq_heatmap: None,
     }
+}
+
+fn unique_temp_dir(prefix: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock should be monotonic enough for tests")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("{prefix}-{unique}"));
+    std::fs::create_dir_all(&path).expect("temp directory should be creatable");
+    path
+}
+
+fn write_shaped_devices_csv(path: &std::path::Path, circuit_id: &str, ip: &str) {
+    std::fs::write(
+        path,
+        format!(
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,",
+                "Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"{}\",\"Circuit {}\",\"device-{}\",",
+                "\"Device {}\",\"Tower 1\",\"aa:bb:cc:dd:ee:ff\",\"{}\",\"\",",
+                "\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+            circuit_id, circuit_id, circuit_id, circuit_id, ip,
+        ),
+    )
+    .expect("ShapedDevices.csv should write");
+}
+
+fn write_runtime_status(
+    path: &std::path::Path,
+    ready: bool,
+    shaping_inputs_path: &std::path::Path,
+    source_generation: &str,
+) {
+    std::fs::write(
+        path,
+        serde_json::json!({
+            "schema_version": 1,
+            "ready": ready,
+            "shaping_inputs_path": shaping_inputs_path,
+            "effective_state_path": "",
+            "effective_network_path": "",
+            "source_generation": source_generation,
+            "shaping_generation": "shape-1",
+        })
+        .to_string(),
+    )
+    .expect("status should write");
 }
 
 #[test]
@@ -233,4 +291,295 @@ fn dynamic_circuit_is_superseded_when_shaped_devices_now_cover_it() {
         &dyn_circuit,
         &catalog
     ));
+}
+
+#[test]
+fn runtime_inputs_build_shaped_devices_from_effective_parent_data() {
+    let _guard = TEST_LOCK.lock();
+
+    let shaping_inputs = TopologyShapingInputsFile {
+        circuits: vec![TopologyShapingCircuitInput {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit Alpha".to_string(),
+            anchor_node_id: Some("anchor-1".to_string()),
+            effective_parent_node_name: "Parent-A".to_string(),
+            effective_parent_node_id: "parent-id-1".to_string(),
+            download_min_mbps: 10.0,
+            upload_min_mbps: 5.0,
+            download_max_mbps: 50.0,
+            upload_max_mbps: 10.0,
+            devices: vec![TopologyShapingDeviceInput {
+                device_id: "device-1".to_string(),
+                device_name: "Device Alpha".to_string(),
+                mac: "aa:bb:cc:dd:ee:ff".to_string(),
+                ipv4: vec!["192.168.1.10/32".to_string()],
+                comment: "device-comment".to_string(),
+                ..TopologyShapingDeviceInput::default()
+            }],
+            comment: "circuit-comment".to_string(),
+            ..TopologyShapingCircuitInput::default()
+        }],
+        ..TopologyShapingInputsFile::default()
+    };
+
+    let shaped = runtime_inputs::shaped_devices_from_runtime_inputs(&shaping_inputs);
+    assert_eq!(shaped.devices.len(), 1);
+    assert_eq!(shaped.devices[0].parent_node, "Parent-A");
+    assert_eq!(
+        shaped.devices[0].parent_node_id.as_deref(),
+        Some("parent-id-1")
+    );
+    assert_eq!(
+        shaped.devices[0].anchor_node_id.as_deref(),
+        Some("anchor-1")
+    );
+    assert_eq!(shaped.devices[0].comment, "device-comment");
+    assert_eq!(shaped.devices[0].circuit_id, "circuit-1");
+}
+
+#[test]
+fn load_shaped_devices_uses_topology_import_when_runtime_inputs_are_empty() {
+    let _guard = TEST_LOCK.lock();
+
+    let lqos_directory = unique_temp_dir("lqos-network-devices-runtime-empty");
+    let state_directory = lqos_directory.join("state");
+    std::fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
+    std::fs::create_dir_all(state_directory.join("shaping")).expect("shaping dir should exist");
+
+    let runtime_path = lqos_directory.join("runtime_shaping_inputs.json");
+    let status_path = state_directory
+        .join("topology")
+        .join(TOPOLOGY_RUNTIME_STATUS_FILENAME);
+    write_shaped_devices_csv(
+        &lqos_directory.join("ShapedDevices.csv"),
+        "csv-circuit",
+        "192.0.2.10/32",
+    );
+    std::fs::write(
+        &runtime_path,
+        serde_json::to_string_pretty(&TopologyShapingInputsFile::default())
+            .expect("empty shaping inputs should encode"),
+    )
+    .expect("runtime shaping inputs should write");
+    let mut import_devices = ConfigShapedDevices::default();
+    import_devices.replace_with_new_data(vec![ShapedDevice {
+        circuit_id: "import-circuit".to_string(),
+        circuit_name: "Import Circuit".to_string(),
+        device_id: "device-import".to_string(),
+        parent_node: "Tower Import".to_string(),
+        ipv4: vec![(Ipv4Addr::new(203, 0, 113, 10), 32)],
+        ..Default::default()
+    }]);
+    let imported = ImportedTopologyBundle {
+        source: "test/import".to_string(),
+        generated_unix: Some(123),
+        ingress_identity: Some("import-base".to_string()),
+        native_canonical: None,
+        native_editor: None,
+        parent_candidates: None,
+        compatibility_network_json: json!({}),
+        shaped_devices: import_devices,
+        circuit_anchors: CircuitAnchorsFile::default(),
+        ethernet_advisories: Vec::new(),
+    };
+    TopologyImportFile::from_imported_bundle(&imported, "full")
+        .save(&Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: Some(state_directory.to_string_lossy().to_string()),
+            ..Config::default()
+        })
+        .expect("topology import should save");
+
+    let mut config = Config {
+        lqos_directory: lqos_directory.to_string_lossy().to_string(),
+        state_directory: Some(state_directory.to_string_lossy().to_string()),
+        ..Config::default()
+    };
+    config.uisp_integration.enable_uisp = true;
+    let source_generation = lqos_config::compute_topology_source_generation(&config)
+        .expect("generation should compute");
+    write_runtime_status(&status_path, true, &runtime_path, &source_generation);
+
+    let loaded = load_shaped_devices_for_config(&config)
+        .expect("preferred shaped-device source should load");
+    assert_eq!(loaded.devices.len(), 1);
+    assert_eq!(loaded.devices[0].circuit_id, "import-circuit");
+}
+
+#[test]
+fn load_shaped_devices_uses_topology_import_when_runtime_is_not_ready() {
+    let _guard = TEST_LOCK.lock();
+
+    let lqos_directory = unique_temp_dir("lqos-network-devices-topology-import-fallback");
+    let state_directory = lqos_directory.join("state");
+    std::fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
+
+    let runtime_path = lqos_directory.join("runtime_shaping_inputs.json");
+    let status_path = state_directory
+        .join("topology")
+        .join(TOPOLOGY_RUNTIME_STATUS_FILENAME);
+    std::fs::write(
+        &runtime_path,
+        serde_json::to_string_pretty(&TopologyShapingInputsFile::default())
+            .expect("runtime shaping inputs should encode"),
+    )
+    .expect("runtime shaping inputs should write");
+    write_runtime_status(&status_path, false, &runtime_path, "gen-1");
+
+    let mut import_devices = ConfigShapedDevices::default();
+    import_devices.replace_with_new_data(vec![ShapedDevice {
+        circuit_id: "import-circuit".to_string(),
+        circuit_name: "Import Circuit".to_string(),
+        device_id: "device-import".to_string(),
+        parent_node: "Tower Import".to_string(),
+        ipv4: vec![(Ipv4Addr::new(203, 0, 113, 10), 32)],
+        ..Default::default()
+    }]);
+    let imported = ImportedTopologyBundle {
+        source: "test/import".to_string(),
+        generated_unix: Some(123),
+        ingress_identity: Some("import-base".to_string()),
+        native_canonical: None,
+        native_editor: None,
+        parent_candidates: None,
+        compatibility_network_json: json!({}),
+        shaped_devices: import_devices,
+        circuit_anchors: CircuitAnchorsFile::default(),
+        ethernet_advisories: Vec::new(),
+    };
+    TopologyImportFile::from_imported_bundle(&imported, "full")
+        .save(&Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: Some(state_directory.to_string_lossy().to_string()),
+            ..Config::default()
+        })
+        .expect("topology import should save");
+
+    let mut config = Config {
+        lqos_directory: lqos_directory.to_string_lossy().to_string(),
+        state_directory: Some(state_directory.to_string_lossy().to_string()),
+        ..Config::default()
+    };
+    config.uisp_integration.enable_uisp = true;
+
+    let loaded =
+        load_shaped_devices_for_config(&config).expect("topology import fallback should load");
+    assert_eq!(loaded.devices.len(), 1);
+    assert_eq!(loaded.devices[0].circuit_id, "import-circuit");
+}
+
+#[test]
+fn load_shaped_devices_stays_empty_when_topology_import_is_empty() {
+    let _guard = TEST_LOCK.lock();
+
+    let lqos_directory = unique_temp_dir("lqos-network-devices-topology-import-empty");
+    let state_directory = lqos_directory.join("state");
+    std::fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
+
+    let imported = ImportedTopologyBundle {
+        source: "test/import".to_string(),
+        generated_unix: Some(123),
+        ingress_identity: Some("import-base".to_string()),
+        native_canonical: None,
+        native_editor: None,
+        parent_candidates: None,
+        compatibility_network_json: json!({}),
+        shaped_devices: ConfigShapedDevices::default(),
+        circuit_anchors: CircuitAnchorsFile::default(),
+        ethernet_advisories: Vec::new(),
+    };
+    TopologyImportFile::from_imported_bundle(&imported, "full")
+        .save(&Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: Some(state_directory.to_string_lossy().to_string()),
+            ..Config::default()
+        })
+        .expect("topology import should save");
+
+    let mut config = Config {
+        lqos_directory: lqos_directory.to_string_lossy().to_string(),
+        state_directory: Some(state_directory.to_string_lossy().to_string()),
+        ..Config::default()
+    };
+    config.uisp_integration.enable_uisp = true;
+
+    let loaded =
+        load_shaped_devices_for_config(&config).expect("integration mode should stay empty");
+    assert!(loaded.devices.is_empty());
+}
+
+#[test]
+fn load_shaped_devices_ignores_stale_runtime_inputs_in_manual_mode() {
+    let _guard = TEST_LOCK.lock();
+
+    let lqos_directory = unique_temp_dir("lqos-network-devices-manual-mode");
+    let state_directory = lqos_directory.join("state");
+    std::fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
+    std::fs::create_dir_all(state_directory.join("shaping")).expect("shaping dir should exist");
+
+    let runtime_path = lqos_directory.join("runtime_shaping_inputs.json");
+    let status_path = state_directory
+        .join("topology")
+        .join(TOPOLOGY_RUNTIME_STATUS_FILENAME);
+    std::fs::write(
+        &runtime_path,
+        serde_json::to_string_pretty(&TopologyShapingInputsFile {
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "runtime-circuit".to_string(),
+                devices: vec![TopologyShapingDeviceInput {
+                    device_id: "runtime-device".to_string(),
+                    ipv4: vec!["198.51.100.10/32".to_string()],
+                    ..TopologyShapingDeviceInput::default()
+                }],
+                ..TopologyShapingCircuitInput::default()
+            }],
+            ..TopologyShapingInputsFile::default()
+        })
+        .expect("runtime shaping inputs should encode"),
+    )
+    .expect("runtime shaping inputs should write");
+    write_runtime_status(&status_path, true, &runtime_path, "stale-generation");
+    write_shaped_devices_csv(
+        &lqos_directory.join("ShapedDevices.csv"),
+        "csv-circuit",
+        "192.0.2.10/32",
+    );
+
+    let config = Config {
+        lqos_directory: lqos_directory.to_string_lossy().to_string(),
+        state_directory: Some(state_directory.to_string_lossy().to_string()),
+        ..Config::default()
+    };
+
+    let loaded =
+        load_shaped_devices_for_config(&config).expect("manual mode should use shaped devices csv");
+    assert_eq!(loaded.devices.len(), 1);
+    assert_eq!(loaded.devices[0].circuit_id, "csv-circuit");
+}
+
+#[test]
+fn load_shaped_devices_stays_empty_when_runtime_status_is_malformed() {
+    let _guard = TEST_LOCK.lock();
+
+    let lqos_directory = unique_temp_dir("lqos-network-devices-runtime-status-malformed");
+    let state_directory = lqos_directory.join("state");
+    std::fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
+    std::fs::write(
+        state_directory
+            .join("topology")
+            .join(TOPOLOGY_RUNTIME_STATUS_FILENAME),
+        "{not-json\n",
+    )
+    .expect("malformed runtime status should write");
+
+    let mut config = Config {
+        lqos_directory: lqos_directory.to_string_lossy().to_string(),
+        state_directory: Some(state_directory.to_string_lossy().to_string()),
+        ..Config::default()
+    };
+    config.uisp_integration.enable_uisp = true;
+
+    let loaded =
+        load_shaped_devices_for_config(&config).expect("malformed status should stay empty");
+    assert!(loaded.devices.is_empty());
 }

@@ -461,44 +461,24 @@ impl Config {
         Path::new(&self.lqos_directory).join(filename)
     }
 
-    /// Returns the preferred read path for a topology runtime file, with legacy fallback.
+    /// Returns the canonical read path for a topology runtime file.
     pub fn topology_state_read_path(&self, filename: &str) -> PathBuf {
-        let preferred = self.topology_state_file_path(filename);
-        if preferred.exists() {
-            preferred
-        } else {
-            self.legacy_runtime_file_path(filename)
-        }
+        self.topology_state_file_path(filename)
     }
 
-    /// Returns the preferred read path for a shaping runtime file, with legacy fallback.
+    /// Returns the canonical read path for a shaping runtime file.
     pub fn shaping_state_read_path(&self, filename: &str) -> PathBuf {
-        let preferred = self.shaping_state_file_path(filename);
-        if preferred.exists() {
-            preferred
-        } else {
-            self.legacy_runtime_file_path(filename)
-        }
+        self.shaping_state_file_path(filename)
     }
 
-    /// Returns the preferred read path for a stats runtime file, with legacy fallback.
+    /// Returns the canonical read path for a stats runtime file.
     pub fn stats_state_read_path(&self, filename: &str) -> PathBuf {
-        let preferred = self.stats_state_file_path(filename);
-        if preferred.exists() {
-            preferred
-        } else {
-            self.legacy_runtime_file_path(filename)
-        }
+        self.stats_state_file_path(filename)
     }
 
-    /// Returns the preferred read path for a cache runtime file, with legacy fallback.
+    /// Returns the canonical read path for a cache runtime file.
     pub fn cache_state_read_path(&self, filename: &str) -> PathBuf {
-        let preferred = self.cache_state_file_path(filename);
-        if preferred.exists() {
-            preferred
-        } else {
-            self.legacy_runtime_file_path(filename)
-        }
+        self.cache_state_file_path(filename)
     }
 
     /// Returns the explicitly configured shared topology compile mode, when set.

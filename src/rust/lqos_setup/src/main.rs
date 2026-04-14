@@ -12,7 +12,6 @@ mod webusers;
 use clap::{Parser, Subcommand};
 use lqos_setup::{bootstrap, hotfix};
 use std::path::Path;
-use std::{env, fmt::Write as _};
 
 use bandwidth::bandwidth_view;
 use config_builder::CURRENT_CONFIG;
@@ -21,13 +20,9 @@ use cursive::{
     view::{Margins, Nameable, Resizable, Scrollable},
     views::{Checkbox, Dialog, EditView, FixedLayout, Layer, LinearLayout, OnLayoutView, TextView},
 };
-use lqos_netplan_helper::transaction::{
-    HelperPaths, inspect_with_paths,
-};
+use lqos_netplan_helper::transaction::{HelperPaths, inspect_with_paths};
 
 const VERSION: &str = include_str!("../../../VERSION_STRING");
-const SKIP_IF_READY_FLAG: &str = "--skip-if-ready";
-
 #[derive(Parser)]
 #[command(about = "LibreQoS first-run setup")]
 struct Args {
@@ -68,117 +63,21 @@ fn can_load_config() -> bool {
     lqos_config::load_config().is_ok()
 }
 
-fn network_json_exists() -> bool {
-    let cfg = lqos_config::load_config().unwrap_or_default();
-    let path = Path::new(&cfg.lqos_directory).join("network.json");
-    path.exists()
-}
-
-fn shaped_devices_exists() -> bool {
-    let cfg = lqos_config::load_config().unwrap_or_default();
-    let path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
-    path.exists()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct UpgradeReadiness {
-    config_present: bool,
-    config_loads: bool,
-    interfaces_ready: bool,
-    bandwidth_ready: bool,
-    network_json_present: bool,
-    shaped_devices_present: bool,
-}
-
-impl UpgradeReadiness {
-    fn all_ready(&self) -> bool {
-        self.config_present
-            && self.config_loads
-            && self.interfaces_ready
-            && self.bandwidth_ready
-            && self.network_json_present
-            && self.shaped_devices_present
-    }
-
-    fn summary(&self) -> String {
-        let mut message = String::from("lqos_setup --skip-if-ready checklist:");
-        let checklist = [
-            ("config present", self.config_present),
-            ("config loads", self.config_loads),
-            ("interfaces chosen", self.interfaces_ready),
-            ("bandwidth configured", self.bandwidth_ready),
-            ("network.json present", self.network_json_present),
-            ("ShapedDevices.csv present", self.shaped_devices_present),
-        ];
-        for (label, ready) in checklist {
-            let _ = write!(
-                &mut message,
-                "\n- {}: {}",
-                label,
-                if ready { "yes" } else { "no" }
-            );
-        }
-        message
-    }
-}
-
-fn upgrade_readiness_for_config_with(
-    config_path_exists: bool,
-    config: Option<&lqos_config::Config>,
-    interface_ready: impl Fn(&str) -> bool,
-) -> UpgradeReadiness {
-    let Some(config) = config else {
-        return UpgradeReadiness {
-            config_present: config_path_exists,
-            config_loads: false,
-            interfaces_ready: false,
-            bandwidth_ready: false,
-            network_json_present: false,
-            shaped_devices_present: false,
-        };
-    };
-
-    let base = Path::new(&config.lqos_directory);
-    let interfaces_ready = if let Some(bridge) = &config.bridge {
-        !bridge.to_internet.trim().is_empty()
-            && !bridge.to_network.trim().is_empty()
-            && bridge.to_internet != bridge.to_network
-            && interface_ready(&bridge.to_internet)
-            && interface_ready(&bridge.to_network)
-    } else if let Some(single) = &config.single_interface {
-        !single.interface.trim().is_empty() && interface_ready(&single.interface)
-    } else {
-        false
-    };
-
-    UpgradeReadiness {
-        config_present: config_path_exists,
-        config_loads: true,
-        interfaces_ready,
-        bandwidth_ready: config.queues.downlink_bandwidth_mbps > 0
-            && config.queues.uplink_bandwidth_mbps > 0,
-        network_json_present: base.join("network.json").exists(),
-        shaped_devices_present: base.join("ShapedDevices.csv").exists(),
-    }
-}
-
-fn upgrade_readiness() -> UpgradeReadiness {
-    let config_path_exists = config_exists();
-    let loaded_config = lqos_config::load_config().ok();
-    upgrade_readiness_for_config_with(config_path_exists, loaded_config.as_deref(), |interface| {
-        interfaces::interface_supports_lqos(interface).is_ok()
-    })
-}
-
 fn run_tui(skip_if_ready: bool) {
     if skip_if_ready {
-        let readiness = upgrade_readiness();
-        println!("{}", readiness.summary());
-        if readiness.all_ready() {
-            println!("Existing LibreQoS install looks configured; skipping interactive setup.");
-            return;
+        match bootstrap::runtime_services_should_start() {
+            Ok(true) => {
+                println!("Existing LibreQoS install looks configured; skipping interactive setup.");
+                return;
+            }
+            Ok(false) => {
+                println!("Interactive setup still required.");
+            }
+            Err(err) => {
+                println!("Unable to determine setup readiness: {err}");
+                println!("Interactive setup still required.");
+            }
         }
-        println!("Interactive setup still required.");
     }
 
     preflight::preflight();
@@ -237,20 +136,10 @@ fn run_tui(skip_if_ready: bool) {
                             .child(
                                 Checkbox::new()
                                     .with_enabled(false)
-                                    .with_checked(network_json_exists())
-                                    .with_name("njs"),
+                                    .with_checked(bootstrap::first_admin_exists())
+                                    .with_name("admin_exists"),
                             )
-                            .child(TextView::new(" - Network.json exists?")),
-                    )
-                    .child(
-                        LinearLayout::horizontal()
-                            .child(
-                                Checkbox::new()
-                                    .with_enabled(false)
-                                    .with_checked(shaped_devices_exists())
-                                    .with_name("sd"),
-                            )
-                            .child(TextView::new(" - ShapedDevices.csv exists?")),
+                            .child(TextView::new(" - Admin user exists?")),
                     )
                     .child(TextView::new(" "))
                     .child(
@@ -288,15 +177,7 @@ fn run_tui(skip_if_ready: bool) {
 }
 
 fn main() {
-    let args = Args::parse_from(
-        env::args().map(|arg| {
-            if arg == SKIP_IF_READY_FLAG {
-                "--skip-if-ready".to_string()
-            } else {
-                arg
-            }
-        }),
-    );
+    let args = Args::parse();
 
     match args.command {
         Some(Command::Status) => match bootstrap::render_status_report() {
@@ -360,7 +241,9 @@ fn main() {
                     println!();
                     println!("============================================================");
                     println!("LibreQoS first-run setup is waiting for you.");
-                    println!("Click one of the LibreQoS Setup URLs below, or copy it into a web browser on another machine on the same network.");
+                    println!(
+                        "Click one of the LibreQoS Setup URLs below, or copy it into a web browser on another machine on the same network."
+                    );
                     println!();
                     for url in urls {
                         println!("  {url}");
@@ -495,7 +378,10 @@ fn show_hotfix_dialog(ui: &mut cursive::Cursive) {
     match hotfix::status() {
         Ok(status) => {
             let detail = if status.required {
-                format!("{}\n\nThe hotfix is required before setup can complete.", status.detail)
+                format!(
+                    "{}\n\nThe hotfix is required before setup can complete.",
+                    status.detail
+                )
             } else {
                 status.detail
             };
@@ -512,11 +398,13 @@ fn show_hotfix_dialog(ui: &mut cursive::Cursive) {
             ui.add_layer(dialog);
         }
         Err(err) => ui.add_layer(
-            Dialog::around(TextView::new(format!("Unable to determine hotfix status:\n{err:#}")))
-                .title("Systemd Hotfix")
-                .button("OK", |s| {
-                    s.pop_layer();
-                }),
+            Dialog::around(TextView::new(format!(
+                "Unable to determine hotfix status:\n{err:#}"
+            )))
+            .title("Systemd Hotfix")
+            .button("OK", |s| {
+                s.pop_layer();
+            }),
         ),
     }
 }
@@ -529,10 +417,10 @@ fn install_hotfix_from_tui(ui: &mut cursive::Cursive) {
                     "{}\n\nOpen the details only if you need the installer log.\n\n{}",
                     result.summary, result.detail
                 )))
-                    .title("Hotfix Installed")
-                    .button("OK", |s| {
-                        s.pop_layer();
-                    }),
+                .title("Hotfix Installed")
+                .button("OK", |s| {
+                    s.pop_layer();
+                }),
             );
         }
         Err(err) => {
@@ -558,8 +446,9 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
             ui.add_layer(
                 Dialog::around(TextView::new(pending.prompt))
                     .title("Confirm Netplan Change")
-                    .button("Confirm", move |s| {
-                        match setup_actions::confirm_pending_commit(&operation_id) {
+                    .button(
+                        "Confirm",
+                        move |s| match setup_actions::confirm_pending_commit(&operation_id) {
                             Ok(success) => {
                                 s.pop_layer();
                                 finish_setup(s, &success.config, success.event_log);
@@ -575,10 +464,11 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
                                     }),
                                 );
                             }
-                        }
-                    })
-                    .button("Revert", move |s| {
-                        match setup_actions::revert_pending_commit(&revert_operation_id) {
+                        },
+                    )
+                    .button(
+                        "Revert",
+                        move |s| match setup_actions::revert_pending_commit(&revert_operation_id) {
                             Ok(message) => {
                                 s.add_layer(
                                     Dialog::around(TextView::new(message))
@@ -600,8 +490,8 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
                                     }),
                                 );
                             }
-                        }
-                    })
+                        },
+                    )
                     .full_screen(),
             );
         }
@@ -614,84 +504,5 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
                     }),
             );
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::upgrade_readiness_for_config_with;
-
-    fn configured_bridge_config(lqos_directory: String) -> lqos_config::Config {
-        let mut config = lqos_config::Config {
-            lqos_directory,
-            state_directory: None,
-            bridge: Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: true,
-                to_internet: "wan0".to_string(),
-                to_network: "lan0".to_string(),
-            }),
-            single_interface: None,
-            ..lqos_config::Config::default()
-        };
-        config.queues.downlink_bandwidth_mbps = 1000;
-        config.queues.uplink_bandwidth_mbps = 1000;
-        config
-    }
-
-    #[test]
-    fn upgrade_ready_when_existing_install_is_configured() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("lqos-setup-upgrade-ready-{}", std::process::id()));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
-        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
-
-        let config = configured_bridge_config(temp_dir.display().to_string());
-        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
-        assert!(readiness.all_ready());
-
-        let _ = std::fs::remove_file(temp_dir.join("network.json"));
-        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn upgrade_not_ready_without_required_runtime_inputs() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "lqos-setup-upgrade-missing-files-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-
-        let config = configured_bridge_config(temp_dir.display().to_string());
-        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
-        assert!(!readiness.all_ready());
-        assert!(!readiness.network_json_present);
-        assert!(!readiness.shaped_devices_present);
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn upgrade_not_ready_when_bridge_interfaces_are_not_distinct() {
-        let temp_dir = std::env::temp_dir().join(format!(
-            "lqos-setup-upgrade-same-iface-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&temp_dir).unwrap();
-        std::fs::write(temp_dir.join("network.json"), "{}").unwrap();
-        std::fs::write(temp_dir.join("ShapedDevices.csv"), "Circuit ID\n").unwrap();
-
-        let mut config = configured_bridge_config(temp_dir.display().to_string());
-        if let Some(bridge) = config.bridge.as_mut() {
-            bridge.to_network = bridge.to_internet.clone();
-        }
-        let readiness = upgrade_readiness_for_config_with(true, Some(&config), |_| true);
-        assert!(!readiness.all_ready());
-        assert!(!readiness.interfaces_ready);
-
-        let _ = std::fs::remove_file(temp_dir.join("network.json"));
-        let _ = std::fs::remove_file(temp_dir.join("ShapedDevices.csv"));
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

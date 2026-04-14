@@ -6,13 +6,29 @@ function setText(id, text) {
     element.textContent = text;
 }
 
+function syncIntegrationAction() {
+    const button = document.getElementById("btnOpenIntegrationProvider");
+    const select = document.getElementById("runtimeIntegrationProvider");
+    if (!button || !select) return;
+
+    button.disabled = !select.value;
+    select.addEventListener("change", () => {
+        button.disabled = !select.value;
+    });
+}
+
 function setStatusAlert(state) {
     const element = document.getElementById("runtimeSetupStatus");
     if (!element) return;
 
     const label = state?.status_label || "Setup Required";
     const summary = state?.summary || "Choose a topology source before expecting scheduler activity.";
-    const alertClass = state?.required ? "alert-warning" : "alert-success";
+    const severity = state?.status_severity || (state?.required ? "warning" : "success");
+    const alertClass = severity === "danger"
+        ? "alert-danger"
+        : (severity === "warning"
+            ? "alert-warning"
+            : (severity === "info" ? "alert-info" : "alert-success"));
     element.className = `alert ${alertClass} mb-4`;
     element.innerHTML = `
         <div class="fw-semibold mb-1">${label}</div>
@@ -32,6 +48,7 @@ function renderState(state) {
     );
     setText("runtimeNetworkJson", state?.network_json_present ? "Present" : "Missing");
     setText("runtimeShapedDevices", state?.shaped_devices_present ? "Present" : "Missing");
+    syncIntegrationAction();
 }
 
 function initActions() {
@@ -39,6 +56,7 @@ function initActions() {
     const select = document.getElementById("runtimeIntegrationProvider");
     if (!button || !select) return;
     button.addEventListener("click", () => {
+        if (button.disabled) return;
         window.location.href = select.value;
     });
 }
@@ -52,5 +70,6 @@ loadConfig((msg) => {
         status_label: "Setup Required",
         summary: "Unable to load runtime setup status right now.",
     });
+    syncIntegrationAction();
     initActions();
 });

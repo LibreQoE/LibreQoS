@@ -2,6 +2,7 @@
 
 Centralized, shared access to LibreQoS topology inputs:
 
+- active runtime shaping inputs published through `topology_runtime_status.json`
 - `ShapedDevices.csv` (and `ShapedDevices.insight.csv`)
 - `network.json` (and `network.insight.json` / `network.effective.json`)
 
@@ -10,7 +11,8 @@ Centralized, shared access to LibreQoS topology inputs:
 In daemon mode, this crate starts:
 
 - A single-thread actor that owns reload/apply commands.
-- A config-directory watcher that coalesces filesystem events and requests reloads.
+- Watchers for the config directory and topology-state directory that coalesce
+  filesystem events and request reloads.
 
 Callers access state through public accessor functions; the underlying channel sender is kept in a
 private static.
@@ -50,12 +52,15 @@ Current (2026-04) call sites and update patterns:
 
 - Daemon startup: `lqosd` calls `start_daemon_mode()` once at boot and provides `DaemonHooks`.
 - Shaped-device updates:
-  - Directory watcher requests reload when `ShapedDevices.csv` or `ShapedDevices.insight.csv` changes.
+  - Directory watcher requests reload when `topology_runtime_status.json`,
+    `ShapedDevices.csv`, or `ShapedDevices.insight.csv` changes.
+  - Reload precedence is: ready runtime shaping inputs, then `topology_import.json`,
+    then `ShapedDevices.csv`.
   - Node manager admin edits write `ShapedDevices.csv` and immediately publish the new snapshot via
     `apply_shaped_devices_snapshot()`.
 - Network topology updates:
   - Directory watcher requests reload when `network.json`, `network.insight.json`, or
-    `network.effective.json` changes.
+    `network.effective.json` changes, including the runtime topology-state copy.
   - Node manager admin edits write `network.json` and request reload via `request_reload_network_json()`.
 - Hot-path reads (in-memory snapshots): node manager REST endpoints, throughput tracking, Insight/LTS2
   control-channel snapshotting, and shaped-device/circuit views.

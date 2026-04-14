@@ -147,16 +147,16 @@ fn match_source_for_entry<'a>(
     device_hash: Option<i64>,
     circuit_hash: Option<i64>,
 ) -> Option<(&'a lqos_config::ShapedDevice, ShapedDeviceMatchSource)> {
-    if let Some(hash) = device_hash {
-        if let Some(device) = catalog.device_by_hashes(Some(hash), None) {
-            return Some((device, ShapedDeviceMatchSource::DeviceHash));
-        }
+    if let Some(hash) = device_hash
+        && let Some(device) = catalog.device_by_hashes(Some(hash), None)
+    {
+        return Some((device, ShapedDeviceMatchSource::DeviceHash));
     }
 
-    if let Some(hash) = circuit_hash {
-        if let Some(device) = catalog.device_by_hashes(None, Some(hash)) {
-            return Some((device, ShapedDeviceMatchSource::CircuitHash));
-        }
+    if let Some(hash) = circuit_hash
+        && let Some(device) = catalog.device_by_hashes(None, Some(hash))
+    {
+        return Some((device, ShapedDeviceMatchSource::CircuitHash));
     }
 
     catalog

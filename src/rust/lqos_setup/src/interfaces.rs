@@ -1,7 +1,4 @@
-use std::{
-    path::Path,
-    process::Command,
-};
+use std::{path::Path, process::Command};
 
 use cursive::{
     Cursive,
@@ -120,7 +117,9 @@ fn interface_kind_label(interface: &str) -> Option<String> {
         return Some(port);
     }
 
-    let driver_path = Path::new("/sys/class/net").join(interface).join("device/driver");
+    let driver_path = Path::new("/sys/class/net")
+        .join(interface)
+        .join("device/driver");
     if let Ok(target) = std::fs::read_link(driver_path)
         && let Some(driver) = target.file_name().and_then(|name| name.to_str())
     {

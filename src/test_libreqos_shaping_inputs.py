@@ -124,7 +124,9 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
             shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
             network_json = os.path.join(temp_dir, "network.effective.json")
-            status_path = os.path.join(temp_dir, "topology_runtime_status.json")
+            topology_state = os.path.join(temp_dir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            status_path = os.path.join(topology_state, "topology_runtime_status.json")
 
             for path in (shaping_inputs, shaped_devices, network_json):
                 with open(path, "w", encoding="utf-8") as handle:
@@ -158,7 +160,9 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
             shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
             network_json = os.path.join(temp_dir, "network.effective.json")
-            status_path = os.path.join(temp_dir, "topology_runtime_status.json")
+            topology_state = os.path.join(temp_dir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            status_path = os.path.join(topology_state, "topology_runtime_status.json")
 
             for path in (shaping_inputs, shaped_devices, network_json):
                 with open(path, "w", encoding="utf-8") as handle:
@@ -192,7 +196,9 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
             shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
             network_json = os.path.join(temp_dir, "network.effective.json")
-            status_path = os.path.join(temp_dir, "topology_runtime_status.json")
+            topology_state = os.path.join(temp_dir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            status_path = os.path.join(topology_state, "topology_runtime_status.json")
 
             for path in (shaping_inputs, shaped_devices, network_json):
                 with open(path, "w", encoding="utf-8") as handle:

@@ -41,12 +41,12 @@ pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
 pub use etc::{
-    BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode, QueueMode,
-    MikrotikIpv6Config, RttThresholds, SingleInterfaceConfig, StormguardConfig,
-    StormguardStrategy, TopologyConfig,
-    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
-    TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge,
-    enable_long_term_stats, load_config, treeguard_cpu_mode_migration_notice, update_config,
+    BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode,
+    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
+    StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
+    TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
+    clear_cached_config, disable_xdp_bridge, enable_long_term_stats, load_config,
+    treeguard_cpu_mode_migration_notice, update_config,
 };
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
@@ -95,12 +95,57 @@ pub use topology_runtime_state::{
     TopologyAttachmentHealthStateFile, TopologyEffectiveAttachmentState,
     TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeStateError,
     TopologyRuntimeStatusFile, TopologyShapingCircuitInput, TopologyShapingDeviceInput,
-    TopologyShapingInputsFile, TopologyShapingResolutionSource,
+    TopologyShapingInputsFile, TopologyShapingResolutionSource, active_runtime_shaping_inputs_path,
     compute_effective_network_generation, compute_topology_source_generation,
-    topology_attachment_health_state_path, topology_compiled_shaping_path,
-    topology_effective_network_path, topology_effective_state_path, topology_import_path,
-    topology_runtime_status_path, topology_shaping_inputs_path,
+    load_active_runtime_shaping_inputs, topology_attachment_health_state_path,
+    topology_compiled_shaping_path, topology_effective_network_path, topology_effective_state_path,
+    topology_import_path, topology_runtime_status_path, topology_shaping_inputs_path,
 };
+
+/// Returns whether an integration-backed topology ingress is enabled in the
+/// current config.
+///
+/// This function is pure: it has no side effects.
+pub fn integration_ingress_enabled(config: &Config) -> bool {
+    config.uisp_integration.enable_uisp
+        || config.splynx_integration.enable_splynx
+        || config
+            .netzur_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_netzur)
+        || config
+            .visp_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_visp)
+        || config.powercode_integration.enable_powercode
+        || config.sonar_integration.enable_sonar
+        || config
+            .wispgate_integration
+            .as_ref()
+            .is_some_and(|integration| integration.enable_wispgate)
+}
+
+/// Returns whether the current integration import artifact advertises any shaped devices.
+///
+/// This is a lightweight readiness predicate used by migration and runtime callers that need to
+/// know whether integration publication has taken over from legacy manual files.
+///
+/// This function is pure: it has no side effects.
+pub fn topology_import_has_shaped_devices(config: &Config) -> bool {
+    let import_path = config.topology_state_file_path(TOPOLOGY_IMPORT_FILENAME);
+    let Ok(raw) = std::fs::read_to_string(&import_path) else {
+        return false;
+    };
+    let Ok(decoded) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+
+    decoded
+        .get("imported")
+        .and_then(|imported| imported.get("shaped_devices"))
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|devices| !devices.is_empty())
+}
 
 /// Used as a constant in determining buffer preallocation
 pub const SUPPORTED_CUSTOMERS: usize = 100_000;

@@ -208,3 +208,147 @@ pub fn scheduler_details_data() -> SchedulerDetails {
         details: body,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{scheduler_details_data, scheduler_status_data};
+    use crate::test_support::runtime_config_test_lock;
+    use crate::tool_status::{
+        scheduler_error, scheduler_output, scheduler_progress, scheduler_seen,
+    };
+    use lqos_bus::SchedulerProgressReport;
+    use std::ffi::OsString;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_dir(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "libreqos-scheduler-status-{label}-{}-{unique}",
+            std::process::id()
+        ))
+    }
+
+    fn write_scheduler_test_config(runtime_dir: &Path) -> PathBuf {
+        let config_path = runtime_dir.join("lqos.conf");
+        let runtime_dir_display = runtime_dir.to_string_lossy();
+        let state_dir_display = runtime_dir.join("state").to_string_lossy().into_owned();
+        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
+            .replacen(
+                "lqos_directory = \"/opt/libreqos/src\"",
+                &format!("lqos_directory = {:?}", runtime_dir_display),
+                1,
+            )
+            .replacen(
+                "state_directory = \"/opt/libreqos/state\"",
+                &format!("state_directory = {:?}", state_dir_display),
+                1,
+            )
+            .replacen("enable_splynx = false", "enable_splynx = true", 1);
+        fs::write(&config_path, raw).expect("write scheduler test config");
+        config_path
+    }
+
+    struct SchedulerStatusTestContext {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        old_lqos_config: Option<OsString>,
+        old_lqos_directory: Option<OsString>,
+        runtime_dir: PathBuf,
+    }
+
+    impl SchedulerStatusTestContext {
+        fn new(label: &str) -> Self {
+            let guard = runtime_config_test_lock()
+                .lock()
+                .expect("scheduler status test lock should not be poisoned");
+            let runtime_dir = unique_test_dir(label);
+            fs::create_dir_all(runtime_dir.join("state")).expect("create runtime state directory");
+            let config_path = write_scheduler_test_config(&runtime_dir);
+            let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+            let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
+            unsafe {
+                std::env::set_var("LQOS_CONFIG", &config_path);
+                std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
+            }
+            lqos_config::clear_cached_config();
+            Self {
+                _guard: guard,
+                old_lqos_config,
+                old_lqos_directory,
+                runtime_dir,
+            }
+        }
+    }
+
+    impl Drop for SchedulerStatusTestContext {
+        fn drop(&mut self) {
+            scheduler_error(None);
+            scheduler_output(None);
+            scheduler_progress(None);
+            match &self.old_lqos_config {
+                Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+                None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+            }
+            match &self.old_lqos_directory {
+                Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
+                None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
+            }
+            lqos_config::clear_cached_config();
+            let _ = fs::remove_dir_all(&self.runtime_dir);
+        }
+    }
+
+    #[test]
+    fn scheduler_status_surfaces_validation_failure_for_ui_contract() {
+        let _context = SchedulerStatusTestContext::new("validation-failure");
+        scheduler_seen();
+        scheduler_error(Some(
+            "Scheduled shaping refresh blocked by validation: duplicate IPv4".to_string(),
+        ));
+        scheduler_output(Some(
+            "Scheduled shaping refresh blocked by validation: duplicate IPv4".to_string(),
+        ));
+        scheduler_progress(Some(SchedulerProgressReport {
+            active: false,
+            phase: "validation_failed".to_string(),
+            phase_label: "Scheduler validation failed".to_string(),
+            step_index: 5,
+            step_count: 5,
+            percent: 100,
+            updated_unix: Some(1_234_567_890),
+        }));
+
+        let status = scheduler_status_data();
+        let details = scheduler_details_data();
+
+        assert!(status.available);
+        assert_eq!(
+            status.error.as_deref(),
+            Some("Scheduled shaping refresh blocked by validation: duplicate IPv4")
+        );
+        assert_eq!(
+            status
+                .progress
+                .as_ref()
+                .map(|progress| progress.phase.as_str()),
+            Some("validation_failed")
+        );
+        assert!(!status.setup_required);
+
+        assert!(details.available);
+        assert_eq!(
+            details.error.as_deref(),
+            Some("Scheduled shaping refresh blocked by validation: duplicate IPv4")
+        );
+        assert_eq!(
+            details.output.as_deref(),
+            Some("Scheduled shaping refresh blocked by validation: duplicate IPv4")
+        );
+        assert!(details.details.contains("Reported error:"));
+        assert!(details.details.contains("Scheduler validation failed"));
+    }
+}

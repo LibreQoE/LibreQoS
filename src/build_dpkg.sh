@@ -124,6 +124,22 @@ cat <<'EOF' > postinst
 #!/bin/bash
 set -euo pipefail
 
+set_libreqos_operator_permissions() {
+local runtime_paths=()
+[ -e /opt/libreqos/src ] && runtime_paths+=("/opt/libreqos/src")
+[ -e /opt/libreqos/state ] && runtime_paths+=("/opt/libreqos/state")
+[ ${#runtime_paths[@]} -eq 0 ] && return
+
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+    chown -R "$SUDO_USER:$SUDO_USER" "${runtime_paths[@]}"
+    chmod -R u+rwX "${runtime_paths[@]}" || true
+    echo "Granted $SUDO_USER ownership of /opt/libreqos/src and /opt/libreqos/state for SFTP editing."
+else
+    echo "Unable to determine the installing operator account automatically."
+    echo "If you plan to edit LibreQoS files over SFTP, run: sudo chown -R <username>:<username> /opt/libreqos/src /opt/libreqos/state"
+fi
+}
+
 # Install Python Dependencies
 pushd /opt/libreqos > /dev/null
 # - Setup Python dependencies as a post-install task. Use --ignore-installed so
@@ -136,7 +152,7 @@ PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --ignore-installed -r src/req
 fi
 
 # Ensure folder permissions are correct post-install
-sudo chown -R root:root /opt/libreqos
+set_libreqos_operator_permissions
 
 # - Setup the services
 install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service

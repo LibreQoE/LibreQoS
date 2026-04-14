@@ -99,7 +99,11 @@ fn switch_service_mode(
 pub(crate) fn activate_runtime_services() -> Result<String> {
     switch_service_mode(
         &["lqos_setup.service"],
-        &["lqosd.service", "lqos_scheduler.service", "lqos_api.service"],
+        &[
+            "lqosd.service",
+            "lqos_scheduler.service",
+            "lqos_api.service",
+        ],
         "Activated runtime services: lqosd, lqos_scheduler, and lqos_api.",
     )
 }

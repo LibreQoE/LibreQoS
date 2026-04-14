@@ -79,9 +79,7 @@ pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> l
     config
 }
 
-pub(crate) fn inspection_report(
-    inspection: &lqos_netplan_helper::NetworkModeInspection,
-) -> String {
+pub(crate) fn inspection_report(inspection: &lqos_netplan_helper::NetworkModeInspection) -> String {
     let mut report = format!(
         "State: {}\n{}\n",
         inspection.inspector_state, inspection.summary
@@ -135,8 +133,7 @@ pub(crate) fn prepare_commit() -> Result<CommitOutcome> {
 
     let helper_paths = HelperPaths::default();
     let inspection = inspect_with_paths(&helper_paths, &config);
-    let bootstrap_incomplete = lqos_setup::bootstrap::setup_is_incomplete()
-        .unwrap_or(true);
+    let bootstrap_incomplete = lqos_setup::bootstrap::setup_is_incomplete().unwrap_or(true);
     let apply_mode = if inspection.can_take_over {
         ApplyMode::TakeOver
     } else if inspection.can_adopt {
@@ -169,10 +166,7 @@ pub(crate) fn prepare_commit() -> Result<CommitOutcome> {
 
     PENDING_COMMITS.lock().insert(
         operation.operation_id.clone(),
-        PendingCommitState {
-            config,
-            event_log,
-        },
+        PendingCommitState { config, event_log },
     );
 
     Ok(CommitOutcome::Pending(PendingCommit {
@@ -231,20 +225,8 @@ pub(crate) fn persist_setup_success(
         })?;
     }
 
-    let state = lqos_setup::bootstrap::record_setup_success(config)?;
-    event_log.push(format!(
-        "Setup state updated: {}",
-        if state.shaping_ready {
-            "Setup Complete, Shaping Active"
-        } else {
-            "Setup Complete, Waiting for Subscriber Data"
-        }
-    ));
-    if !state.shaping_ready {
-        event_log.push(
-            "Subscriber topology inputs are still missing. Runtime will remain degraded until network.json and ShapedDevices.csv exist.".to_string(),
-        );
-    }
+    lqos_setup::bootstrap::record_setup_success(config)?;
+    event_log.push("Setup state updated: Setup Complete".to_string());
     Ok(())
 }
 

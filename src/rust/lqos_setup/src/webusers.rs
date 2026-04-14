@@ -4,10 +4,11 @@ use cursive::{
     view::{Nameable, Resizable},
     views::{Button, Dialog, EditView, LinearLayout, SelectView, TextView},
 };
-use lqos_setup::bootstrap;
 use lqos_config::{UserRole, WebUsers};
+use lqos_setup::bootstrap;
 
-fn load_or_create_setup_users() -> Result<WebUsers, lqos_config::authentication::AuthenticationError> {
+fn load_or_create_setup_users() -> Result<WebUsers, lqos_config::authentication::AuthenticationError>
+{
     WebUsers::load_or_create_in(&bootstrap::runtime_lqos_directory())
 }
 

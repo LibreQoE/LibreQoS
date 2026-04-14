@@ -22,6 +22,9 @@ scheduler = None
 
 def install_scheduler_stubs():
     libre = types.ModuleType("LibreQoS")
+    class ValidationFailure(Exception):
+        pass
+    libre.ValidationFailure = ValidationFailure
     libre.refreshShapers = Mock()
     libre.refreshShapersUpdateOnly = Mock()
     sys.modules["LibreQoS"] = libre
@@ -325,11 +328,10 @@ class TestSchedulerLogging(unittest.TestCase):
                 ):
                     with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
                         with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
-                            with patch.object(scheduler.atexit, "register"):
-                                with patch.object(scheduler, "not_dead_yet"):
-                                    with patch("traceback.print_exc"):
-                                        with patch("builtins.print"):
-                                            scheduler.run_scheduler_main()
+                            with patch.object(scheduler, "not_dead_yet"):
+                                with patch("traceback.print_exc"):
+                                    with patch("builtins.print"):
+                                        scheduler.run_scheduler_main()
 
         self.assertEqual(scheduler.shaping_runtime_hash, 0)
         mock_scheduler_error.assert_called_once_with(
@@ -366,6 +368,45 @@ class TestSchedulerLogging(unittest.TestCase):
             "Topology runtime refresh failed: bad runtime"
         )
 
+    def test_topology_runtime_refresh_tick_reports_validation_failure(self):
+        validation_exc = scheduler.ValidationFailure("Validation failed. Will now exit.")
+
+        with patch.object(scheduler, "ensure_topology_runtime_process"):
+            with patch.object(
+                scheduler,
+                "topology_runtime_readiness_detail",
+                return_value=(True, "", "generation-1"),
+            ):
+                with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=5):
+                    with patch.object(
+                        scheduler,
+                        "refreshShapers",
+                        side_effect=validation_exc,
+                    ):
+                        with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                            with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
+                                with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                                    with patch("builtins.print"):
+                                        scheduler.shaping_runtime_hash = 1
+                                        scheduler.topology_runtime_refresh_tick()
+
+        mock_scheduler_error.assert_called_once_with(
+            "Topology runtime refresh blocked by validation: Validation failed. Will now exit."
+        )
+        mock_scheduler_output.assert_called_once_with(
+            "Topology runtime refresh blocked by validation: Validation failed. Will now exit."
+        )
+        self.assertTrue(
+            any(
+                call.args[:3] == (
+                    False,
+                    "validation_failed",
+                    "Scheduler validation failed",
+                )
+                for call in mock_progress.call_args_list
+            )
+        )
+
     def test_topology_runtime_refresh_tick_skips_until_initial_shaping_succeeds(self):
         with patch.object(scheduler, "ensure_topology_runtime_process") as mock_ensure:
             with patch.object(scheduler, "calculate_shaping_runtime_hash") as mock_hash:
@@ -387,6 +428,88 @@ class TestSchedulerLogging(unittest.TestCase):
                                 scheduler.importAndShapeFullReload()
 
         self.assertTrue(scheduler.scheduler_status_bus_enabled)
+
+    def test_import_and_shape_full_reload_returns_false_when_topology_runtime_not_ready(self):
+        with patch.object(scheduler, "importFromCRM"):
+            with patch.object(scheduler, "ensure_topology_runtime_process", return_value=False):
+                with patch.object(scheduler, "report_topology_runtime_not_ready"):
+                    with patch.object(scheduler, "publish_scheduler_progress"):
+                        self.assertFalse(scheduler.importAndShapeFullReload())
+
+    def test_run_scheduler_main_reports_validation_failure_without_ready(self):
+        fake_ads = Mock()
+        validation_exc = scheduler.ValidationFailure("Validation failed. Because this is not the first run since boot (queues already set up) - will now exit.")
+
+        with patch.object(scheduler, "ads", fake_ads):
+            with patch.object(scheduler, "ensure_bus_ready"):
+                with patch.object(
+                    scheduler,
+                    "importAndShapeFullReload",
+                    side_effect=validation_exc,
+                ):
+                    with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                        with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
+                            with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                                with patch.object(scheduler, "not_dead_yet"):
+                                    with patch("builtins.print"):
+                                        scheduler.run_scheduler_main()
+
+        mock_scheduler_error.assert_called_once_with(
+            "Scheduler startup shaping refresh blocked by validation: Validation failed. Because this is not the first run since boot (queues already set up) - will now exit."
+        )
+        mock_scheduler_output.assert_called_once_with(
+            "Scheduler startup shaping refresh blocked by validation: Validation failed. Because this is not the first run since boot (queues already set up) - will now exit."
+        )
+        self.assertTrue(
+            any(
+                call.args[:3] == (
+                    False,
+                    "validation_failed",
+                    "Scheduler validation failed",
+                )
+                for call in mock_progress.call_args_list
+            )
+        )
+        self.assertFalse(
+            any(
+                call.args[:3] == (
+                    False,
+                    "ready",
+                    "Scheduler ready",
+                )
+                for call in mock_progress.call_args_list
+            )
+        )
+
+    def test_partial_reload_reports_validation_failure(self):
+        validation_exc = scheduler.ValidationFailure("Validation failed. Will now exit.")
+
+        with patch.object(scheduler, "importFromCRM"):
+            with patch.object(scheduler, "ensure_topology_runtime_process", return_value=True):
+                with patch.object(scheduler, "calculate_shaping_runtime_hash", side_effect=[2]):
+                    with patch.object(scheduler, "shaping_runtime_hash", 1):
+                        with patch.object(scheduler, "refreshShapers", side_effect=validation_exc):
+                            with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
+                                with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
+                                    with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                                        scheduler.importAndShapePartialReload()
+
+        mock_scheduler_error.assert_called_once_with(
+            "Scheduled shaping refresh blocked by validation: Validation failed. Will now exit."
+        )
+        mock_scheduler_output.assert_called_once_with(
+            "Scheduled shaping refresh blocked by validation: Validation failed. Will now exit."
+        )
+        self.assertTrue(
+            any(
+                call.args[:3] == (
+                    False,
+                    "validation_failed",
+                    "Scheduler validation failed",
+                )
+                for call in mock_progress.call_args_list
+            )
+        )
 
 
 class TestTopologyRuntimeReadiness(unittest.TestCase):
@@ -428,7 +551,9 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
 
     def test_ready_false_status_blocks_current_generation(self):
         with tempfile.TemporaryDirectory() as tempdir:
-            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+            topology_state = os.path.join(tempdir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "source_generation": "generation-1",
@@ -453,9 +578,11 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
     def test_ready_true_matching_status_allows_current_generation(self):
         with tempfile.TemporaryDirectory() as tempdir:
             shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            topology_state = os.path.join(tempdir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
             with open(shaping_inputs, "w", encoding="utf-8") as handle:
                 handle.write("{}\n")
-            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+            with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "source_generation": "generation-1",
@@ -481,9 +608,11 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
     def test_ready_true_without_shaping_generation_is_not_ready(self):
         with tempfile.TemporaryDirectory() as tempdir:
             shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            topology_state = os.path.join(tempdir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
             with open(shaping_inputs, "w", encoding="utf-8") as handle:
                 handle.write("{}\n")
-            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+            with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "source_generation": "generation-1",
@@ -507,7 +636,9 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
     def test_ready_true_without_shaping_inputs_file_is_not_ready(self):
         with tempfile.TemporaryDirectory() as tempdir:
             missing_path = os.path.join(tempdir, "shaping_inputs.json")
-            with open(os.path.join(tempdir, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+            topology_state = os.path.join(tempdir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "source_generation": "generation-1",
@@ -762,12 +893,15 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
 
         self.assertEqual(rows[0][6], "uisp:site:site-93")
 
-    def test_topology_runtime_output_paths_include_shaping_inputs(self):
+    def test_runtime_state_path_includes_shaping_inputs(self):
         # Test-only fake install root.
         with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
-            paths = scheduler.topology_runtime_output_paths()
+            shaping_inputs_path = scheduler.get_runtime_state_path("shaping", "shaping_inputs.json")
 
-        self.assertIn("/tmp/libreqos/shaping_inputs.json", paths)  # nosec B108
+        self.assertEqual(
+            shaping_inputs_path,
+            "/tmp/libreqos/state/shaping/shaping_inputs.json",
+        )  # nosec B108
 
     def test_apply_network_adjustments_uses_materialized_adjustments(self):
         network = {

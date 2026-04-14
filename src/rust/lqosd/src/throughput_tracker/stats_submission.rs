@@ -718,22 +718,7 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
 }
 
 fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
+    lqos_config::integration_ingress_enabled(config)
 }
 
 #[cfg(test)]

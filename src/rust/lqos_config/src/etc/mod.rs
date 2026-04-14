@@ -21,9 +21,8 @@ mod v15;
 pub use v15::{
     BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
     MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
-    StormguardStrategy, TopologyConfig,
-    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
-    TreeguardLinksConfig, TreeguardQooConfig, Tunables,
+    StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
+    TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));

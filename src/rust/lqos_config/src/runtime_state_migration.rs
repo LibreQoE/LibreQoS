@@ -79,6 +79,7 @@ pub(crate) fn migrate_legacy_runtime_state(
 
     migrate_legacy_token_caches(config, &mut migrated, &mut removed_duplicate_legacy)?;
     quarantine_legacy_backups(config, &mut quarantined)?;
+    quarantine_stale_manual_source_files(config, &mut quarantined)?;
 
     if !migrated.is_empty() {
         info!(
@@ -360,6 +361,35 @@ fn quarantine_legacy_backups(
     Ok(())
 }
 
+fn quarantine_stale_manual_source_files(
+    config: &Config,
+    quarantined: &mut Vec<String>,
+) -> Result<(), RuntimeStateMigrationError> {
+    if !integration_topology_import_is_ready(config) {
+        return Ok(());
+    }
+
+    for name in ["network.json", "ShapedDevices.csv"] {
+        let source = config.legacy_runtime_file_path(name);
+        if !source.is_file() {
+            continue;
+        }
+        let destination = unique_quarantine_destination(config, name);
+        move_path(&source, &destination)?;
+        quarantined.push(format!(
+            "{} -> {} (integration ingress active)",
+            source.display(),
+            destination.display()
+        ));
+    }
+
+    Ok(())
+}
+
+fn integration_topology_import_is_ready(config: &Config) -> bool {
+    crate::integration_ingress_enabled(config) && crate::topology_import_has_shaped_devices(config)
+}
+
 fn is_obsolete_legacy_backup(name: &str) -> bool {
     (name.starts_with("network.json.treeguard-polluted.") && name.ends_with(".bak"))
         || name.starts_with("network.json.pre_")
@@ -487,7 +517,7 @@ fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), RuntimeStateMig
 #[cfg(test)]
 mod tests {
     use super::migrate_legacy_runtime_state;
-    use crate::Config;
+    use crate::{Config, TOPOLOGY_IMPORT_FILENAME};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -634,6 +664,83 @@ mod tests {
             "{\"token\":1}\n"
         );
         assert!(!src.join(".visp_token_cache_deadbeef.json").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn quarantines_stale_manual_source_files_when_topology_import_is_ready() {
+        let root = temp_path("integration-source-quarantine");
+        let src = root.join("src");
+        fs::create_dir_all(&src).expect("test should create src dir");
+        fs::write(src.join("network.json"), "{\"Root\":{}}\n")
+            .expect("test should write legacy network source file");
+        fs::write(src.join("ShapedDevices.csv"), "Circuit ID,Device ID\n")
+            .expect("test should write legacy shaped devices source file");
+
+        let mut config = test_config(&root);
+        config.uisp_integration.enable_uisp = true;
+        let topology_state = config.resolved_state_directory().join("topology");
+        fs::create_dir_all(&topology_state).expect("test should create topology state dir");
+        fs::write(
+            topology_state.join(TOPOLOGY_IMPORT_FILENAME),
+            serde_json::json!({
+                "schema_version": 1,
+                "source": "test/import",
+                "compile_mode": "full",
+                "imported": {
+                    "source": "test/import",
+                    "compatibility_network_json": {},
+                    "shaped_devices": [
+                        {
+                            "circuit_id": "circuit-1",
+                            "device_id": "device-1"
+                        }
+                    ],
+                    "circuit_anchors": { "anchors": [] },
+                    "ethernet_advisories": []
+                }
+            })
+            .to_string(),
+        )
+        .expect("test should write topology import artifact");
+
+        migrate_legacy_runtime_state(&config).expect("stale manual source files should quarantine");
+
+        assert!(!src.join("network.json").exists());
+        assert!(!src.join("ShapedDevices.csv").exists());
+        assert!(root.join("state/quarantine/legacy/network.json").exists());
+        assert!(
+            root.join("state/quarantine/legacy/ShapedDevices.csv")
+                .exists()
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn keeps_manual_source_files_in_place_when_topology_import_is_missing() {
+        let root = temp_path("manual-source-preserved");
+        let src = root.join("src");
+        fs::create_dir_all(&src).expect("test should create src dir");
+        fs::write(src.join("network.json"), "{\"Root\":{}}\n")
+            .expect("test should write manual network source file");
+        fs::write(src.join("ShapedDevices.csv"), "Circuit ID,Device ID\n")
+            .expect("test should write manual shaped devices source file");
+
+        let mut config = test_config(&root);
+        config.uisp_integration.enable_uisp = true;
+        migrate_legacy_runtime_state(&config)
+            .expect("manual source files should remain until integration publishes data");
+
+        assert!(src.join("network.json").exists());
+        assert!(src.join("ShapedDevices.csv").exists());
+        assert!(!root.join("state/quarantine/legacy/network.json").exists());
+        assert!(
+            !root
+                .join("state/quarantine/legacy/ShapedDevices.csv")
+                .exists()
+        );
 
         let _ = fs::remove_dir_all(root);
     }

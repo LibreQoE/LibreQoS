@@ -34,6 +34,8 @@ pub(crate) struct RuntimeOnboardingState {
     pub network_json_present: bool,
     /// Whether `ShapedDevices.csv` exists in the configured LibreQoS directory.
     pub shaped_devices_present: bool,
+    /// Alert severity for the onboarding status banner.
+    pub status_severity: String,
 }
 
 fn topology_files_present(config: &Config) -> (bool, bool) {
@@ -54,15 +56,16 @@ fn from_config(config: &Config) -> RuntimeOnboardingState {
     if !active_integrations.is_empty() {
         return RuntimeOnboardingState {
             required: false,
-            status_label: "Ready".to_string(),
+            status_label: "Configured".to_string(),
             summary: format!(
-                "Topology source is configured through {}.",
+                "Topology source is configured through {}. Topology data may still be publishing.",
                 active_integrations.join(", ")
             ),
             source_kind: RuntimeTopologySourceKind::Integration,
             active_integrations,
             network_json_present,
             shaped_devices_present,
+            status_severity: "info".to_string(),
         };
     }
 
@@ -75,6 +78,7 @@ fn from_config(config: &Config) -> RuntimeOnboardingState {
             active_integrations,
             network_json_present,
             shaped_devices_present,
+            status_severity: "success".to_string(),
         };
     }
 
@@ -100,31 +104,37 @@ fn from_config(config: &Config) -> RuntimeOnboardingState {
         active_integrations,
         network_json_present,
         shaped_devices_present,
+        status_severity: "warning".to_string(),
+    }
+}
+
+fn config_error_state() -> RuntimeOnboardingState {
+    RuntimeOnboardingState {
+        required: true,
+        status_label: "Config Error".to_string(),
+        summary: "Unable to load LibreQoS configuration. Resolve the config error before continuing runtime setup.".to_string(),
+        source_kind: RuntimeTopologySourceKind::None,
+        active_integrations: Vec::new(),
+        network_json_present: false,
+        shaped_devices_present: false,
+        status_severity: "danger".to_string(),
     }
 }
 
 /// Loads the current runtime onboarding state from config and topology files.
 ///
-/// On config-read failure this returns a conservative non-blocking state so the
-/// UI does not loop on an internal error.
+/// On config-read failure this returns a blocking error state so the UI does not
+/// present an internal problem as a successful topology setup.
 pub(crate) fn runtime_onboarding_state() -> RuntimeOnboardingState {
     match load_config() {
         Ok(config) => from_config(config.as_ref()),
-        Err(_) => RuntimeOnboardingState {
-            required: false,
-            status_label: "Unknown".to_string(),
-            summary: "Unable to determine topology onboarding state.".to_string(),
-            source_kind: RuntimeTopologySourceKind::None,
-            active_integrations: Vec::new(),
-            network_json_present: false,
-            shaped_devices_present: false,
-        },
+        Err(_) => config_error_state(),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimeTopologySourceKind, from_config};
+    use super::{RuntimeTopologySourceKind, config_error_state, from_config};
     use lqos_config::Config;
     use std::fs;
     use std::path::PathBuf;
@@ -146,8 +156,10 @@ mod tests {
     #[test]
     fn requires_setup_when_no_integrations_or_manual_files_exist() {
         let dir = test_dir("missing");
-        let mut config = Config::default();
-        config.lqos_directory = dir.to_string_lossy().into_owned();
+        let config = Config {
+            lqos_directory: dir.to_string_lossy().into_owned(),
+            ..Config::default()
+        };
 
         let state = from_config(&config);
 
@@ -166,8 +178,10 @@ mod tests {
         fs::write(dir.join("ShapedDevices.csv"), "Circuit ID,Device ID\n")
             .expect("write shaped devices");
 
-        let mut config = Config::default();
-        config.lqos_directory = dir.to_string_lossy().into_owned();
+        let config = Config {
+            lqos_directory: dir.to_string_lossy().into_owned(),
+            ..Config::default()
+        };
 
         let state = from_config(&config);
 
@@ -180,10 +194,12 @@ mod tests {
     }
 
     #[test]
-    fn enabled_integration_counts_as_ready_topology_source() {
+    fn enabled_integration_is_configured_but_not_marked_ready() {
         let dir = test_dir("integration");
-        let mut config = Config::default();
-        config.lqos_directory = dir.to_string_lossy().into_owned();
+        let mut config = Config {
+            lqos_directory: dir.to_string_lossy().into_owned(),
+            ..Config::default()
+        };
         config.splynx_integration.enable_splynx = true;
 
         let state = from_config(&config);
@@ -191,7 +207,17 @@ mod tests {
         assert!(!state.required);
         assert_eq!(state.source_kind, RuntimeTopologySourceKind::Integration);
         assert_eq!(state.active_integrations, vec!["Splynx".to_string()]);
+        assert_eq!(state.status_label, "Configured");
+        assert_eq!(state.status_severity, "info");
 
         fs::remove_dir_all(dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn config_error_state_blocks_runtime_onboarding() {
+        let state = config_error_state();
+        assert!(state.required);
+        assert_eq!(state.status_label, "Config Error");
+        assert_eq!(state.status_severity, "danger");
     }
 }
