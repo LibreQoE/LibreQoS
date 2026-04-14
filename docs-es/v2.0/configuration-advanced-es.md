@@ -45,6 +45,11 @@ Nota: Si observa que el tráfico no se está regulando cuando debería, asegúre
 
 Después de cambiar cualquier parte de `/etc/lqos.conf`, se recomienda reiniciar siempre lqosd usando: `sudo systemctl restart lqosd`. Esto integra los nuevos valores en lqos.conf, haciéndolos accesibles tanto para el código en Rust como en Python.
 
+Logo compartido opcional:
+- `display_cobrand` es un booleano opcional de nivel superior en `/etc/lqos.conf`.
+- Si la clave no está presente, LibreQoS la trata como `false`.
+- La WebUI solo muestra el logo del operador cuando `display_cobrand = true` y `cobrand.png` existe en el directorio de assets estáticos en runtime.
+
 ### Netflow (opcional)
 Para habilitar Netflow, agregue la siguiente sección `[flows]` al archivo de configuración `/etc/lqos.conf`, configurando el `netflow_ip` adecuado:
 ```

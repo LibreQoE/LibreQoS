@@ -46,6 +46,12 @@ Topology note:
 Queue-mode note:
 - Current builds use `queue_mode` with `shape` and `observe` values. Older `monitor_only` wording is a compatibility alias rather than the primary operator-facing setting.
 
+Cobrand logo note:
+- `Configuration -> General` includes an optional cobrand image toggle and PNG upload.
+- LibreQoS saves the uploaded file as `cobrand.png` in the runtime static assets directory.
+- The top-level `display_cobrand` setting in `/etc/lqos.conf` is optional. If it is omitted, LibreQoS treats it as `false`.
+- The sidebar renders the cobrand image at 48px tall to match the LibreQoS logo, with a maximum sidebar width of 176px.
+
 ## Operating Modes and Source of Truth
 
 Read this first before production changes:

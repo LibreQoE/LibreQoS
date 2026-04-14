@@ -140,6 +140,47 @@
             </div>
         </section>
 
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Cobrand Image</h5>
+                    <div class="lqos-config-panel-subtitle">Optionally show an operator PNG next to the LibreQoS logo in the sidebar.</div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Display</h6>
+                        <div class="lqos-config-section-subtitle">The image is shown only when this setting is enabled and <code>cobrand.png</code> exists.</div>
+
+                        <div class="mb-0 form-check">
+                            <input type="checkbox" class="form-check-input" id="displayCobrand">
+                            <label class="form-check-label" for="displayCobrand">Display Cobrand Image</label>
+                            <div class="form-text">If <code>display_cobrand</code> is omitted from <code>/etc/lqos.conf</code>, LibreQoS defaults it to off.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                    <div class="lqos-config-section h-100">
+                        <h6 class="lqos-config-section-title">Upload PNG</h6>
+                        <div class="lqos-config-section-subtitle">Uploaded images are saved as <code>cobrand.png</code> in the runtime static assets directory and overwrite any existing file.</div>
+
+                        <div class="mb-3">
+                            <label for="cobrandFile" class="form-label">Cobrand PNG</label>
+                            <input type="file" class="form-control" id="cobrandFile" accept="image/png,.png">
+                            <div class="form-text">Rendered size: 48px tall to match the existing LibreQoS logo, with a maximum sidebar width of 176px.</div>
+                        </div>
+
+                        <div id="cobrandUploadStatus" class="lqos-config-note" aria-live="polite">
+                            Leave blank to keep the current <code>cobrand.png</code>. Uploads are applied when you click Save Changes.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <div class="lqos-config-actions">
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
         </div>
