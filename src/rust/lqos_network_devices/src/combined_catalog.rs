@@ -53,10 +53,10 @@ impl NetworkDevicesCatalog {
                 }
             }
             for (ipv6, prefix) in &circuit.shaped.ipv6 {
-                if *prefix <= 128 {
-                    if let Ok(net) = IpNetwork::new(*ipv6, *prefix as u8) {
-                        dyn_ip_table.insert(net, idx);
-                    }
+                if *prefix <= 128
+                    && let Ok(net) = IpNetwork::new(*ipv6, *prefix as u8)
+                {
+                    dyn_ip_table.insert(net, idx);
                 }
             }
         }

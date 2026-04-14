@@ -11,7 +11,6 @@ use self::throughput_entry::ThroughputEntry;
 use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
 use crate::{
-    lts2_sys::{get_lts_license_status, shared_types::LtsStatus},
     stats::TIME_TO_POLL_HOSTS,
     throughput_tracker::tracking_data::{FlowApplyContext, ThroughputTracker},
 };

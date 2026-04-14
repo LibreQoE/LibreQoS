@@ -1,4 +1,3 @@
-use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowAnalysis, FlowbeeLocalData,
     RECENT_FLOWS, RttData,

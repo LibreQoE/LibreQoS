@@ -1,13 +1,12 @@
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::treeguard::actor::is_runtime_virtualized_node;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{
-    ConfigShapedDevices, NetworkJsonNode, NetworkJsonTransport, ShapedDevice,
-    TopologyRuntimeStatusFile, TopologyShapingInputsFile, load_config,
-    topology_runtime_status_path, topology_shaping_inputs_path,
+    NetworkJsonNode, NetworkJsonTransport, TopologyRuntimeStatusFile, TopologyShapingInputsFile,
+    load_config, topology_runtime_status_path, topology_shaping_inputs_path,
 };
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
 use lqos_utils::file_watcher::FileWatcher;
@@ -17,12 +16,18 @@ use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
+
+#[cfg(test)]
+use anyhow::Context;
+#[cfg(test)]
+use lqos_config::{ConfigShapedDevices, ShapedDevice};
+#[cfg(test)]
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub mod circuit_live;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
@@ -111,12 +116,12 @@ fn active_runtime_shaping_inputs_path(config: &lqos_config::Config) -> Result<Op
 fn load_active_runtime_shaping_inputs(
     config: &lqos_config::Config,
 ) -> Result<Option<TopologyShapingInputsFile>> {
-    if let Some(active_path) = active_runtime_shaping_inputs_path(config)? {
-        if active_path.exists() {
-            let raw = std::fs::read_to_string(&active_path)?;
-            let shaping_inputs = serde_json::from_str(&raw)?;
-            return Ok(Some(shaping_inputs));
-        }
+    if let Some(active_path) = active_runtime_shaping_inputs_path(config)?
+        && active_path.exists()
+    {
+        let raw = std::fs::read_to_string(&active_path)?;
+        let shaping_inputs = serde_json::from_str(&raw)?;
+        return Ok(Some(shaping_inputs));
     }
 
     let fallback_path = topology_shaping_inputs_path(config);
@@ -128,6 +133,7 @@ fn load_active_runtime_shaping_inputs(
     Ok(Some(shaping_inputs))
 }
 
+#[cfg(test)]
 fn parse_ipv4_entry(value: &str) -> Option<(Ipv4Addr, u32)> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -141,6 +147,7 @@ fn parse_ipv4_entry(value: &str) -> Option<(Ipv4Addr, u32)> {
     Some((ip.parse().ok()?, cidr))
 }
 
+#[cfg(test)]
 fn parse_ipv6_entry(value: &str) -> Option<(Ipv6Addr, u32)> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -154,6 +161,7 @@ fn parse_ipv6_entry(value: &str) -> Option<(Ipv6Addr, u32)> {
     Some((ip.parse().ok()?, cidr))
 }
 
+#[cfg(test)]
 fn parse_ipv4_list(values: &[String]) -> Vec<(Ipv4Addr, u32)> {
     values
         .iter()
@@ -161,6 +169,7 @@ fn parse_ipv4_list(values: &[String]) -> Vec<(Ipv4Addr, u32)> {
         .collect()
 }
 
+#[cfg(test)]
 fn parse_ipv6_list(values: &[String]) -> Vec<(Ipv6Addr, u32)> {
     values
         .iter()
@@ -168,6 +177,7 @@ fn parse_ipv6_list(values: &[String]) -> Vec<(Ipv6Addr, u32)> {
         .collect()
 }
 
+#[cfg(test)]
 fn shaped_devices_from_runtime_inputs(
     shaping_inputs: &TopologyShapingInputsFile,
 ) -> ConfigShapedDevices {
@@ -211,12 +221,14 @@ fn shaped_devices_from_runtime_inputs(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 enum ShapedDevicesLoadSource {
     RuntimeShapingInputs,
     TopologyImport,
     ShapedDevicesCsv,
 }
 
+#[cfg(test)]
 fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
     config.uisp_integration.enable_uisp
         || config.splynx_integration.enable_splynx
@@ -236,6 +248,7 @@ fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
             .is_some_and(|integration| integration.enable_wispgate)
 }
 
+#[cfg(test)]
 fn load_ready_runtime_shaping_inputs(
     config: &lqos_config::Config,
 ) -> Result<Option<TopologyShapingInputsFile>> {
@@ -256,6 +269,7 @@ fn load_ready_runtime_shaping_inputs(
     Ok(Some(shaping_inputs))
 }
 
+#[cfg(test)]
 fn load_shaped_devices_from_preferred_source(
     config: &lqos_config::Config,
 ) -> Result<(ConfigShapedDevices, ShapedDevicesLoadSource)> {
