@@ -10771,6 +10771,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lqos-bakery-{name}-{ts}"));
         std::fs::create_dir_all(&dir).expect("temp runtime dir");
         cfg.lqos_directory = dir.display().to_string();
+        // Keep Bakery qdisc-handle state under the per-test runtime directory so
+        // these allocator tests do not share `/opt/libreqos/state` across
+        // parallel test threads.
+        cfg.state_directory = None;
         Arc::new(cfg)
     }
 

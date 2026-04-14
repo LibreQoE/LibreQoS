@@ -1,6 +1,6 @@
 //! Shared setup commit/apply helpers used by both Cursive and the setup WebUI.
 
-use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
+use crate::config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_load_error};
 use anyhow::{Context, Result, bail};
 use lqos_netplan_helper::protocol::{ApplyMode, ApplyRequest};
 use lqos_netplan_helper::transaction::{
@@ -11,7 +11,6 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::path::Path;
 
 static PENDING_CHILDREN: Lazy<Mutex<PendingChildren>> =
     Lazy::new(|| Mutex::new(PendingChildren::default()));
@@ -236,20 +235,51 @@ fn load_existing_or_default(event_log: &mut Vec<String>) -> Result<lqos_config::
         return Ok((*config).clone());
     }
 
-    let config_path = Path::new("/etc/lqos.conf");
-    if config_path.exists() {
-        let backup_path = "/etc/lqos.conf.setupbackup";
-        std::fs::copy(config_path, backup_path).with_context(|| {
-            format!(
-                "Existing /etc/lqos.conf could not be loaded and could not be backed up to {backup_path}"
-            )
-        })?;
-        event_log.push(format!(
-            "Existing /etc/lqos.conf could not be loaded. Backup saved to {backup_path}."
-        ));
-    } else {
-        event_log.push("Creating new configuration".to_string());
+    if let Some(message) = existing_config_load_error() {
+        bail!("{message}");
     }
 
+    event_log.push("Creating new configuration".to_string());
     Ok(lqos_config::Config::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_existing_or_default;
+    use once_cell::sync::Lazy;
+    use parking_lot::Mutex;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static CONFIG_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    #[test]
+    fn existing_unreadable_config_blocks_default_fallback() {
+        let _guard = CONFIG_ENV_LOCK.lock();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "libreqos-setup-actions-invalid-config-{}-{unique}.toml",
+            std::process::id()
+        ));
+        fs::write(&path, "not valid toml = [\n").expect("write invalid config");
+        let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+        unsafe {
+            std::env::set_var("LQOS_CONFIG", &path);
+        }
+        lqos_config::clear_cached_config();
+
+        let error = load_existing_or_default(&mut Vec::new()).expect_err("should block");
+
+        assert!(error.to_string().contains("could not be loaded"));
+
+        match old_lqos_config {
+            Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+            None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+        }
+        lqos_config::clear_cached_config();
+        fs::remove_file(path).expect("remove temp config");
+    }
 }

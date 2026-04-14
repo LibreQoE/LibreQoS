@@ -183,6 +183,9 @@ async fn save_setup(Form(form): Form<SaveForm>) -> Response {
             "Create the first admin account before saving setup settings.",
         );
     }
+    if let Some(message) = CURRENT_CONFIG.lock().config_load_error.clone() {
+        return error_response(StatusCode::BAD_REQUEST, &message);
+    }
     if let Err(err) = apply_form_to_current_config(&form) {
         return error_response(StatusCode::BAD_REQUEST, &err.to_string());
     }
@@ -313,6 +316,13 @@ fn render_setup_page(
         );
         html.push_str("<label>Confirm Password<input type=\"password\" name=\"confirm_password\" required></label>");
         html.push_str("<button type=\"submit\">Create Admin</button></form></section>");
+    } else if let Some(config_error) = config.config_load_error.as_ref() {
+        html.push_str("<section class=\"card\"><h2>Existing Config Needs Repair</h2>");
+        html.push_str(&format!(
+            "<p class=\"notice\">{}</p>",
+            escape_html(config_error)
+        ));
+        html.push_str("<p class=\"muted\">LibreQoS will not save setup changes until the existing configuration file can be loaded again.</p></section>");
     } else if !snapshot.hotfix_required {
         html.push_str("<section class=\"card\"><h2>Core Setup</h2>");
         html.push_str("<form id=\"coreSetupForm\" method=\"post\" action=\"/setup/save\" onsubmit=\"return validateAndSubmitSetup(this);\">");

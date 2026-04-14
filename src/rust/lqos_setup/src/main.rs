@@ -14,7 +14,7 @@ use lqos_setup::{bootstrap, hotfix};
 use std::path::Path;
 
 use bandwidth::bandwidth_view;
-use config_builder::CURRENT_CONFIG;
+use config_builder::{CURRENT_CONFIG, existing_config_load_error};
 use cursive::{
     Rect, Vec2, View,
     view::{Margins, Nameable, Resizable, Scrollable},
@@ -353,26 +353,11 @@ fn finalize(ui: &mut cursive::Cursive) {
         }
     }
 
-    // If we cannot load the config but a file exists, warn the user that
-    // continuing will replace it after saving a backup.
-    let config_path = Path::new("/etc/lqos.conf");
-    let load_result = lqos_config::load_config();
-    if load_result.is_err() && config_path.exists() {
-        let msg = "An existing configuration file was found at /etc/lqos.conf,\n\
-but it could not be read or parsed.\n\n\
-Press Continue to replace it with a new configuration using defaults.\n\
-LibreQoS will first try to save a backup to /etc/lqos.conf.setupbackup.\n\n\
-Press Cancel to exit and investigate."
-            .to_string();
-
+    if let Some(message) = existing_config_load_error() {
         ui.add_layer(
-            Dialog::around(TextView::new(msg))
+            Dialog::around(TextView::new(message))
                 .title("Existing Config Unreadable")
-                .button("Continue", |s| {
-                    s.pop_layer();
-                    continue_finalize(s);
-                })
-                .button("Cancel", |s| {
+                .button("OK", |s| {
                     s.pop_layer();
                 }),
         );
