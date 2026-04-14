@@ -1028,12 +1028,15 @@ mod tests {
         validate_cobrand_upload, validate_network_json,
     };
     use crate::node_manager::auth::LoginResult;
+    use crate::test_support::runtime_config_test_lock;
     use axum::Extension;
     use axum::body::Bytes;
     use axum::http::HeaderMap;
     use lqos_config::Config;
     use serde_json::json;
     use std::fs;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     const VALID_PNG: &[u8] = &[
         0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H',
@@ -1057,6 +1060,72 @@ mod tests {
             writer.write_image_data(&data).expect("write png bytes");
         }
         png_bytes
+    }
+
+    fn cobrand_test_runtime_dir() -> PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"))
+    }
+
+    fn write_cobrand_test_config(runtime_dir: &std::path::Path) -> PathBuf {
+        fs::create_dir_all(runtime_dir).expect("create runtime dir");
+        let config_path = runtime_dir.join("lqos.conf");
+        let runtime_dir_string = runtime_dir.display().to_string();
+        let state_dir_string = runtime_dir.join("state").display().to_string();
+        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
+            .replace("/opt/libreqos/src", &runtime_dir_string)
+            .replace("/opt/libreqos/state", &state_dir_string)
+            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
+        fs::write(&config_path, raw).expect("write config");
+        config_path
+    }
+
+    struct CobrandTestContext {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        old_lqos_config: Option<OsString>,
+        old_lqos_directory: Option<OsString>,
+        runtime_dir: PathBuf,
+    }
+
+    impl CobrandTestContext {
+        fn new() -> Self {
+            let guard = runtime_config_test_lock()
+                .lock()
+                .expect("cobrand test lock should not be poisoned");
+            let runtime_dir = cobrand_test_runtime_dir();
+            let config_path = write_cobrand_test_config(&runtime_dir);
+            let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+            let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
+            unsafe {
+                std::env::set_var("LQOS_CONFIG", &config_path);
+                std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
+            }
+            lqos_config::clear_cached_config();
+            Self {
+                _guard: guard,
+                old_lqos_config,
+                old_lqos_directory,
+                runtime_dir,
+            }
+        }
+    }
+
+    impl Drop for CobrandTestContext {
+        fn drop(&mut self) {
+            match &self.old_lqos_config {
+                Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+                None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+            }
+            match &self.old_lqos_directory {
+                Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
+                None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
+            }
+            lqos_config::clear_cached_config();
+            let _ = fs::remove_dir_all(&self.runtime_dir);
+        }
     }
 
     #[test]
@@ -1312,25 +1381,7 @@ mod tests {
 
     #[tokio::test]
     async fn upload_cobrand_accepts_admin_png_and_persists_file() {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should move forward")
-            .as_nanos();
-        let runtime_dir = std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"));
-        fs::create_dir_all(&runtime_dir).expect("create runtime dir");
-        let config_path = runtime_dir.join("lqos.conf");
-        let runtime_dir_string = runtime_dir.display().to_string();
-        let state_dir_string = runtime_dir.join("state").display().to_string();
-        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
-            .replace("/opt/libreqos/src", &runtime_dir_string)
-            .replace("/opt/libreqos/state", &state_dir_string)
-            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
-        fs::write(&config_path, raw).expect("write config");
-        let previous = std::env::var_os("LQOS_CONFIG");
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &config_path);
-        }
-        lqos_config::clear_cached_config();
+        let _context = CobrandTestContext::new();
 
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -1348,40 +1399,11 @@ mod tests {
         let config = lqos_config::load_config().expect("load config");
         let path = cobrand_path(config.as_ref());
         assert_eq!(fs::read(path).expect("read cobrand"), VALID_PNG);
-
-        match previous {
-            Some(value) => unsafe {
-                std::env::set_var("LQOS_CONFIG", value);
-            },
-            None => unsafe {
-                std::env::remove_var("LQOS_CONFIG");
-            },
-        }
-        lqos_config::clear_cached_config();
-        let _ = fs::remove_dir_all(runtime_dir);
     }
 
     #[test]
     fn persist_cobrand_png_writes_runtime_static_file() {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should move forward")
-            .as_nanos();
-        let runtime_dir = std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"));
-        fs::create_dir_all(&runtime_dir).expect("create runtime dir");
-        let config_path = runtime_dir.join("lqos.conf");
-        let runtime_dir_string = runtime_dir.display().to_string();
-        let state_dir_string = runtime_dir.join("state").display().to_string();
-        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
-            .replace("/opt/libreqos/src", &runtime_dir_string)
-            .replace("/opt/libreqos/state", &state_dir_string)
-            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
-        fs::write(&config_path, raw).expect("write config");
-        let previous = std::env::var_os("LQOS_CONFIG");
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &config_path);
-        }
-        lqos_config::clear_cached_config();
+        let _context = CobrandTestContext::new();
 
         let png_body = VALID_PNG.to_vec();
         persist_cobrand_png(&png_body).expect("write cobrand");
@@ -1389,16 +1411,5 @@ mod tests {
         let config = lqos_config::load_config().expect("load config");
         let path = cobrand_path(config.as_ref());
         assert_eq!(fs::read(path).expect("read cobrand"), png_body);
-
-        match previous {
-            Some(value) => unsafe {
-                std::env::set_var("LQOS_CONFIG", value);
-            },
-            None => unsafe {
-                std::env::remove_var("LQOS_CONFIG");
-            },
-        }
-        lqos_config::clear_cached_config();
-        let _ = fs::remove_dir_all(runtime_dir);
     }
 }
