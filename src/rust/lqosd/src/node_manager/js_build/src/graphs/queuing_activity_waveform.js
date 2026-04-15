@@ -57,6 +57,20 @@ function maskedEnqueuedSeriesData(enqueuedData, throughputData) {
     return points;
 }
 
+function directionalSeriesBaseData(samples, direction, valueKey, fallback = 0) {
+    if (!samples || samples.length === 0) {
+        return [];
+    }
+
+    const points = samples.map((sample) => ([
+        sample.timestamp,
+        toNumber(sample?.[valueKey]?.[direction], fallback),
+    ]));
+    const lastPoint = points[points.length - 1];
+    points.push([lastPoint[0], lastPoint[1]]);
+    return points;
+}
+
 function getWaveformTheme(direction = "down") {
     const isDark = document.documentElement.getAttribute("data-bs-theme") !== "light";
     const throughputColor = throughputPaletteColor(direction, direction === "up" ? "#32d3bd" : "#4992ff");
@@ -127,113 +141,12 @@ function normalizeRttThresholds(rawThresholds) {
     };
 }
 
-function directionalSeriesData(samples, direction, valueKey, windowStart, windowEnd, fallback = 0) {
-    if (!samples || samples.length === 0) {
-        return [];
+function syncTrailingPoint(points, windowEnd) {
+    if (!Array.isArray(points) || points.length === 0) {
+        return points;
     }
-
-    const points = [];
-    let previous = null;
-    let next = null;
-
-    for (const sample of samples) {
-        if (sample.timestamp < windowStart) {
-            previous = sample;
-            continue;
-        }
-        if (sample.timestamp > windowEnd) {
-            next = sample;
-            break;
-        }
-        points.push([
-            sample.timestamp,
-            toNumber(sample?.[valueKey]?.[direction], fallback),
-        ]);
-    }
-
-    if (previous) {
-        points.unshift([
-            windowStart,
-            toNumber(previous?.[valueKey]?.[direction], fallback),
-        ]);
-    }
-    if (next) {
-        points.push([
-            Math.min(next.timestamp, windowEnd),
-            toNumber(next?.[valueKey]?.[direction], fallback),
-        ]);
-    } else if (points.length > 0) {
-        points.push([
-            windowEnd,
-            points[points.length - 1][1],
-        ]);
-    }
-
+    points[points.length - 1][0] = windowEnd;
     return points;
-}
-
-function scalarSeriesData(samples, valueKey, windowStart, windowEnd) {
-    if (!samples || samples.length === 0) {
-        return [];
-    }
-
-    const points = [];
-    let previous = null;
-    let next = null;
-
-    for (const sample of samples) {
-        if (sample.timestamp < windowStart) {
-            previous = sample;
-            continue;
-        }
-        if (sample.timestamp > windowEnd) {
-            next = sample;
-            break;
-        }
-        points.push([
-            sample.timestamp,
-            sample?.[valueKey] ?? null,
-        ]);
-    }
-
-    if (previous) {
-        points.unshift([
-            windowStart,
-            previous?.[valueKey] ?? null,
-        ]);
-    }
-    if (next) {
-        points.push([
-            Math.min(next.timestamp, windowEnd),
-            next?.[valueKey] ?? null,
-        ]);
-    } else if (points.length > 0) {
-        points.push([
-            windowEnd,
-            points[points.length - 1][1],
-        ]);
-    }
-
-    return points;
-}
-
-function ceilingSeriesData(samples, direction, windowStart, windowEnd) {
-    const ceilingData = directionalSeriesData(samples, direction, "ceilingBps", windowStart, windowEnd);
-
-    const pointCount = ceilingData.length;
-    const base = [];
-    for (let i = 0; i < pointCount; i++) {
-        const timestamp = ceilingData[i][0];
-        const nextTimestamp = i + 1 < pointCount ? ceilingData[i + 1][0] : windowEnd;
-        const ceilingBps = toNumber(ceilingData[i][1], 0);
-
-        if (base.length === 0) {
-            base.push([timestamp, ceilingBps]);
-        }
-
-        base.push([nextTimestamp, ceilingBps]);
-    }
-    return base;
 }
 
 function rttMarkAreas(colors, thresholds, chartMax) {
@@ -293,6 +206,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.renderNow = Date.now();
         this.renderRaf = null;
         this.lastRenderTimestamp = 0;
+        this.renderingEnabled = true;
         this.rttThresholds = normalizeRttThresholds();
 
         this.option = {
@@ -572,8 +486,15 @@ export class QueuingActivityWaveform extends DashboardGraph {
     }
 
     scheduleRenderLoop() {
+        if (!this.renderingEnabled || this.renderRaf !== null) {
+            return;
+        }
         const step = (timestamp) => {
             if (!this.chart) {
+                this.renderRaf = null;
+                return;
+            }
+            if (!this.renderingEnabled) {
                 this.renderRaf = null;
                 return;
             }
@@ -610,6 +531,24 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.rebuildCachedSeries();
         this.applyThemeColors();
         this.chart.setOption(this.option);
+        this.render();
+    }
+
+    setRenderingEnabled(enabled) {
+        const nextEnabled = !!enabled;
+        if (this.renderingEnabled === nextEnabled) {
+            return;
+        }
+        this.renderingEnabled = nextEnabled;
+        if (!this.renderingEnabled) {
+            if (this.renderRaf) {
+                window.cancelAnimationFrame(this.renderRaf);
+                this.renderRaf = null;
+            }
+            return;
+        }
+        this.lastRenderTimestamp = 0;
+        this.scheduleRenderLoop();
         this.render();
     }
 
@@ -668,11 +607,49 @@ export class QueuingActivityWaveform extends DashboardGraph {
         if (!this.samples.length) {
             this.cachedSeries = {
                 direction: this.direction,
+                throughputData: [],
+                actualThroughputData: [],
+                enqueuedOverlayData: [],
+                rttData: [],
+                ceilingSeries: [],
+                observedRttMax: 0,
             };
             return;
         }
+        const throughputData = directionalSeriesBaseData(
+            this.samples,
+            this.direction,
+            "throughputBps",
+            0,
+        );
+        const actualThroughputData = directionalSeriesBaseData(
+            this.samples,
+            this.direction,
+            "actualThroughputBps",
+            0,
+        );
+        const rttData = directionalSeriesBaseData(
+            this.samples,
+            this.direction,
+            "rttP50Ms",
+            null,
+        );
         this.cachedSeries = {
             direction: this.direction,
+            throughputData,
+            actualThroughputData,
+            enqueuedOverlayData: maskedEnqueuedSeriesData(throughputData, actualThroughputData),
+            rttData,
+            ceilingSeries: directionalSeriesBaseData(
+                this.samples,
+                this.direction,
+                "ceilingBps",
+                0,
+            ),
+            observedRttMax: rttData.reduce((max, point) => {
+                const value = toNumber(point?.[1], NaN);
+                return Number.isFinite(value) ? Math.max(max, value) : max;
+            }, 0),
         };
     }
 
@@ -703,40 +680,15 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.renderNow = Date.now();
         const displayNow = this.renderNow - DISPLAY_LAG_MS;
         const windowStart = displayNow - WINDOW_MS;
-        const throughputData = directionalSeriesData(
-            this.samples,
-            this.direction,
-            "throughputBps",
-            windowStart,
-            displayNow,
+        const throughputData = syncTrailingPoint(this.cachedSeries.throughputData || [], displayNow);
+        const actualThroughputData = syncTrailingPoint(this.cachedSeries.actualThroughputData || [], displayNow);
+        const enqueuedOverlayData = syncTrailingPoint(this.cachedSeries.enqueuedOverlayData || [], displayNow);
+        const rttData = syncTrailingPoint(this.cachedSeries.rttData || [], displayNow);
+        const ceilingSeries = syncTrailingPoint(this.cachedSeries.ceilingSeries || [], displayNow);
+        const rttAxisMaxValue = rttAxisMax(
+            this.rttThresholds,
+            this.cachedSeries.observedRttMax || 0,
         );
-        const actualThroughputData = directionalSeriesData(
-            this.samples,
-            this.direction,
-            "actualThroughputBps",
-            windowStart,
-            displayNow,
-        );
-        const enqueuedOverlayData = maskedEnqueuedSeriesData(throughputData, actualThroughputData);
-        const rttData = directionalSeriesData(
-            this.samples,
-            this.direction,
-            "rttP50Ms",
-            windowStart,
-            displayNow,
-            null,
-        );
-        const ceilingSeries = ceilingSeriesData(
-            this.samples,
-            this.direction,
-            windowStart,
-            displayNow,
-        );
-        const observedRttMax = rttData.reduce((max, point) => {
-            const value = toNumber(point?.[1], NaN);
-            return Number.isFinite(value) ? Math.max(max, value) : max;
-        }, 0);
-        const rttAxisMaxValue = rttAxisMax(this.rttThresholds, observedRttMax);
         const patch = {
             xAxis: [
                 {
