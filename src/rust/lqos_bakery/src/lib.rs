@@ -2437,8 +2437,13 @@ fn planned_qdisc_identity(argv: &[String]) -> Option<(String, String)> {
     if let Some(handle) = find_arg_value(argv, "handle") {
         return Some((dev, format!("handle:{handle}")));
     }
-    let parent = find_arg_value(argv, "parent")?.to_string();
-    Some((dev, format!("parent:{parent}")))
+    if let Some(parent) = find_arg_value(argv, "parent") {
+        return Some((dev, format!("parent:{parent}")));
+    }
+    if argv.iter().any(|arg| arg == "root") {
+        return Some((dev, "root".to_string()));
+    }
+    None
 }
 
 /// Estimates total qdisc usage for the current full-reload builder queue.
