@@ -1,6 +1,7 @@
 mod auth;
 pub(crate) mod local_api;
 mod run;
+mod runtime_onboarding;
 mod shaper_queries_actor;
 mod static_pages;
 mod template;

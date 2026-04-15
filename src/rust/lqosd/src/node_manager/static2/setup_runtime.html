@@ -1,0 +1,118 @@
+<div class="lqos-config-page">
+    <section class="lqos-config-panel">
+        <div class="lqos-config-panel-header">
+            <div>
+                <h5 class="lqos-config-panel-title">Complete Setup</h5>
+                <div class="lqos-config-panel-subtitle">LibreQoS is running, but it still needs a topology source before the scheduler can build subscriber queues.</div>
+            </div>
+            <a class="btn btn-outline-secondary" href="help.html">
+                <i class="fa fa-question-circle"></i> Help
+            </a>
+        </div>
+
+        <div id="runtimeSetupStatus" class="alert alert-warning mb-4" role="alert">
+            Loading runtime setup status...
+        </div>
+
+        <div class="row g-4">
+            <div class="col-12 col-xl-4">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body d-flex flex-column">
+                        <span class="badge text-bg-primary mb-3">Recommended for CRM/NMS</span>
+                        <h5 class="card-title mb-2">CRM / NMS Integration</h5>
+                        <p class="text-body-secondary">
+                            Choose the system that already owns your subscribers and let LibreQoS reuse its existing integration page.
+                        </p>
+                        <div class="small text-body-secondary mb-3">
+                            Save your provider settings there, then return here if the scheduler still says setup is required.
+                        </div>
+                        <div class="mt-auto d-grid gap-2">
+                            <a class="btn btn-primary" href="config_uisp.html">
+                                <i class="fa fa-arrow-right"></i> Configure UISP
+                            </a>
+                            <a class="btn btn-outline-primary" href="config_splynx.html">Configure Splynx</a>
+                            <a class="btn btn-outline-primary" href="config_visp.html">Configure VISP</a>
+                            <a class="btn btn-outline-primary" href="config_netzur.html">Configure Netzur</a>
+                            <a class="btn btn-outline-primary" href="config_powercode.html">Configure Powercode</a>
+                            <a class="btn btn-outline-primary" href="config_sonar.html">Configure Sonar</a>
+                            <a class="btn btn-outline-primary" href="config_wispgate.html">Configure WispGate</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-4">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body d-flex flex-column">
+                        <span class="badge text-bg-info mb-3">Custom importer workflow</span>
+                        <h5 class="card-title mb-2">My Own In-House Integration</h5>
+                        <p class="text-body-secondary">
+                            Use this if another internal process writes <code>network.json</code> and <code>ShapedDevices.csv</code> for LibreQoS.
+                        </p>
+                        <ul class="small text-body-secondary mb-3">
+                            <li>Set shared topology behavior under Integration - Common.</li>
+                            <li>Write both files into the LibreQoS directory.</li>
+                            <li>Reload the scheduler after your importer publishes data.</li>
+                        </ul>
+                        <div class="mt-auto d-grid gap-2">
+                            <a class="btn btn-outline-primary" href="config_integration.html">
+                                <i class="fa fa-gears"></i> Integration - Common
+                            </a>
+                            <a class="btn btn-outline-secondary" href="config_network.html">
+                                <i class="fa fa-diagram-project"></i> Review Network Layout
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-4">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body d-flex flex-column">
+                        <span class="badge text-bg-secondary mb-3">Manual editing</span>
+                        <h5 class="card-title mb-2">Manually Edit Subscriber List</h5>
+                        <p class="text-body-secondary">
+                            Build and maintain the topology directly in LibreQoS with the existing network and shaped-device editors.
+                        </p>
+                        <div class="mt-auto d-grid gap-2">
+                            <a class="btn btn-outline-primary" href="config_network.html">
+                                <i class="fa fa-sitemap"></i> Edit network.json
+                            </a>
+                            <a class="btn btn-outline-primary" href="config_devices.html">
+                                <i class="fa fa-user-circle"></i> Edit Shaped Devices
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mt-4">
+            <div class="card-body">
+                <h6 class="card-title mb-3">Detected Runtime State</h6>
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="text-uppercase small text-body-secondary mb-1">Active Integrations</div>
+                            <div id="runtimeActiveIntegrations" class="fw-semibold">Loading...</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="text-uppercase small text-body-secondary mb-1">network.json</div>
+                            <div id="runtimeNetworkJson" class="fw-semibold">Loading...</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="text-uppercase small text-body-secondary mb-1">ShapedDevices.csv</div>
+                            <div id="runtimeShapedDevices" class="fw-semibold">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script src="setup_runtime.js%CACHEBUSTERS%"></script>

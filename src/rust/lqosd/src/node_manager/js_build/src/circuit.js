@@ -80,6 +80,7 @@ let topAsnPollTimer = null;
 let topAsnRequestInFlight = false;
 let trafficPollTimer = null;
 let trafficRequestInFlight = false;
+let queuingActivityVisibilityHandler = null;
 const DEFAULT_RTT_THRESHOLDS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
 let currentRttThresholds = { ...DEFAULT_RTT_THRESHOLDS };
 const wsClient = get_ws_client();
@@ -425,8 +426,24 @@ function ensureQueuingActivityGraph() {
         queuingActivityGraph = new QueuingActivityWaveform("queuingActivityGraph");
         queuingActivityGraph.setDirection(queuingActivityDirection);
         queuingActivityGraph.setRttThresholds(currentRttThresholds);
+        updateQueuingActivityRenderingState();
         pushQueuingActivitySample();
     });
+}
+
+function isQueuingTabActive() {
+    return document.getElementById("queuing-tab")?.classList.contains("active") ?? false;
+}
+
+function shouldRenderQueuingActivity() {
+    return isQueuingTabActive() && document.visibilityState === "visible";
+}
+
+function updateQueuingActivityRenderingState() {
+    if (!queuingActivityGraph) {
+        return;
+    }
+    queuingActivityGraph.setRenderingEnabled(shouldRenderQueuingActivity());
 }
 
 function initQueuingActivityControls() {
@@ -1004,10 +1021,12 @@ function initTabLifecycle(parentNode) {
                 const target = tab.getAttribute("data-bs-target");
                 if (target === "#queuing") {
                     ensureQueuingActivityGraph();
+                    updateQueuingActivityRenderingState();
                     updateQueuingActivityCards();
                     syncCircuitDetailSubscriptions();
                     return;
                 }
+                updateQueuingActivityRenderingState();
                 if (target === "#devs") {
                     ensureDeviceGraphs();
                     syncCircuitDetailSubscriptions();
@@ -1048,8 +1067,16 @@ function initTabLifecycle(parentNode) {
         });
     });
 
+    if (!queuingActivityVisibilityHandler) {
+        queuingActivityVisibilityHandler = () => {
+            updateQueuingActivityRenderingState();
+        };
+        document.addEventListener("visibilitychange", queuingActivityVisibilityHandler);
+    }
+
     window.requestAnimationFrame(() => {
         ensureQueuingActivityGraph();
+        updateQueuingActivityRenderingState();
         updateQueuingActivityCards();
         syncCircuitDetailSubscriptions();
     });
@@ -2446,6 +2473,10 @@ function loadInitial() {
 }
 
 function cleanupCircuitPage() {
+    if (queuingActivityVisibilityHandler) {
+        document.removeEventListener("visibilitychange", queuingActivityVisibilityHandler);
+        queuingActivityVisibilityHandler = null;
+    }
     if (channelLink) {
         wsClient.send({ Private: { StopCircuitWatcher: null } });
         channelLink.close();

@@ -1,22 +1,29 @@
-# Quickstart: Ruta de Despliegue para ISP
+# Inicio rápido: ruta de despliegue por WebUI
 
-Use esta página para pasar de instalación a piloto seguro con mínima ambigüedad.
+Use esta página para pasar de la instalación del paquete a un piloto seguro con la menor cantidad posible de ambigüedad.
+
+Siga esta página en orden:
+1. Complete la base común de instalación.
+2. Abra la WebUI y cree el primer usuario administrador si hace falta.
+3. Use `Complete Setup` para elegir de dónde vendrán la topología y los suscriptores.
+4. Pase la verificación de salud de 10 minutos.
+5. Comience con tráfico piloto limitado antes de ampliar el despliegue.
 
 ¿Necesita definiciones de términos clave? Vea el [Glosario](glossary-es.md).
 
-## 1) Base de instalación común
+## 1) Base común de instalación
 
-Complete esto una vez:
+Complete esto una sola vez antes de intentar regular tráfico en producción:
 
 1. Revise arquitectura y dimensionamiento:
 - [Escenarios de Despliegue](design-es.md)
 - [Requisitos del Sistema](requirements-es.md)
 
-2. Prepare host y sistema operativo:
+2. Prepare el host y el sistema operativo:
 - [Configuración del Servidor - Prerrequisitos](prereq-es.md)
 - [Instalar Ubuntu Server 24.04](ubuntu-server-es.md)
 
-3. Configure el modo de puente:
+3. Configure cómo pasará el tráfico por el equipo LibreQoS:
 - [Configurar Puente de Regulación](bridge-es.md)
 
 4. Instale LibreQoS (`.deb` recomendado):
@@ -29,7 +36,7 @@ wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 
-Usar `/tmp` evita problemas de permisos con `.deb` locales cuando `apt` no puede acceder al paquete almacenado en un directorio home privado con el usuario `_apt`.
+Usar `/tmp` evita problemas de permisos con `.deb` locales cuando `apt` no puede leer un paquete guardado en un directorio home privado con el usuario `_apt`.
 
 ### Hotfix de Ubuntu 24.04 si la instalación del `.deb` se detiene
 
@@ -52,11 +59,75 @@ wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 
-5. Abra WebUI en `http://your_shaper_ip:9123`.
+## 2) Abra la WebUI y complete el primer inicio de sesión
 
-## 2) Puerta de salud en 10 minutos (obligatoria antes del piloto)
+1. Abra la WebUI en `http://your_shaper_ip:9123`.
+2. Si todavía no existen usuarios de WebUI, LibreQoS redirige a `first-run.html`.
+3. Cree el usuario administrador inicial si se lo pide.
+4. Inicie sesión y confirme que carga el Dashboard.
 
-Ejecute:
+En este punto, que la WebUI responda no demuestra todavía que LibreQoS ya esté listo para hacer shaping de suscriptores.
+
+Si Scheduler Status muestra `Setup Required`, eso es normal hasta que elija una fuente de topología y publique datos válidos de shaping.
+
+## 3) Use `Complete Setup` para elegir la fuente de topología
+
+Después de poder iniciar sesión, abra `Complete Setup`.
+
+Esta página es donde la mayoría de los ISP deben tomar la siguiente decisión. Elija una sola fuente de verdad para los cambios permanentes de shaping:
+
+| Si esto describe su caso | Use esta ruta | Dónde deben hacerse los cambios permanentes |
+|---|---|---|
+| Usa un CRM/NMS soportado como UISP, Splynx, VISP, Netzur, Powercode, Sonar o WispGate | Integración incluida | Su sistema de integración y su configuración de LibreQoS |
+| Ya tiene su propio importador interno | Importador personalizado | Su script o proceso externo |
+| Quiere mantener los archivos manualmente de forma intencional | Archivos manuales | `network.json` y `ShapedDevices.csv` |
+
+Regla: elija un solo lugar para los cambios permanentes. No mezcle ediciones manuales con refrescos programados de integración salvo que realmente quiera esa complejidad.
+
+### Integración incluida
+
+Esta es la ruta recomendada para la mayoría de los ISP.
+
+Haga esto ahora:
+1. Abra desde `Complete Setup` la página de su proveedor.
+2. Guarde la configuración de la integración.
+3. Ejecute la sincronización inicial o espere la primera importación programada.
+4. Vuelva a Scheduler Status y confirme que LibreQoS ya no está esperando la configuración inicial.
+
+Siguiente:
+- [Integraciones CRM/NMS](integrations-es.md)
+- [Solución de problemas](troubleshooting-es.md)
+
+### Importador personalizado
+
+Elija esta opción solo si otro proceso interno ya escribe archivos compatibles con LibreQoS.
+
+Haga esto ahora:
+1. Configure el comportamiento compartido de topología en `Integration - Common`.
+2. Publique `network.json` y `ShapedDevices.csv` desde su propio proceso.
+3. Recargue o espere al scheduler para que LibreQoS valide y use esos archivos.
+
+Siguiente:
+- [Modos de operación y fuente de verdad](operating-modes-es.md)
+- [Referencia avanzada de configuración](configuration-advanced-es.md)
+
+### Archivos manuales
+
+Elija esta opción solo si quiere que LibreQoS mantenga directamente esos archivos.
+
+Haga esto ahora:
+1. Construya `network.json`.
+2. Construya `ShapedDevices.csv`.
+3. Manténgalos con los editores de WebUI o con su flujo basado en archivos.
+4. Confirme que el scheduler acepta los datos y que aparece la topología esperada.
+
+Siguiente:
+- [Referencia avanzada de configuración](configuration-advanced-es.md)
+- [Solución de problemas](troubleshooting-es.md)
+
+## 4) Verificación de salud de 10 minutos
+
+Después de terminar `Complete Setup` y de que su fuente elegida haya publicado datos válidos, ejecute:
 
 ```bash
 sudo systemctl status lqosd lqos_scheduler
@@ -64,96 +135,48 @@ journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
 ```
 
 Confirme:
-- Carga WebUI Dashboard.
-- Scheduler Status está saludable.
-- No hay errores urgentes/fatales de arranque en logs.
+- El Dashboard carga.
+- `lqosd` y `lqos_scheduler` están activos.
+- Scheduler Status ya no muestra `Setup Required`.
+- Scheduler Status está saludable, o muestra trabajo activo esperado sin errores de validación ni de arranque.
+- No aparecen problemas urgentes o fatales de inicio en los logs.
+- La topología o la lista esperada de suscriptores/dispositivos aparece en WebUI.
 
-Si falla esto, vaya a [Solución de problemas](troubleshooting-es.md) antes de continuar.
+Si esto falla, vaya a [Solución de problemas](troubleshooting-es.md) antes de pasar tráfico piloto.
 
-## 3) Decisión A: Etapa de despliegue
+## 5) Comience con un piloto limitado
 
-Elija una:
+No empiece con un despliegue inline amplio.
 
-- **Laboratorio primero**: validar comportamiento en entorno controlado antes de tráfico inline.
-- **Piloto inline ahora**: avanzar directo con alcance limitado de tráfico productivo.
+Empiece con un piloto pequeño y confirme:
+- un suscriptor o dispositivo de prueba hace shaping como se espera
+- aparecen los nodos padre y la profundidad de jerarquía esperados
+- Scheduler Status se mantiene saludable después de los refrescos
+- no aparecen nuevos errores urgentes en logs después de los primeros ciclos
 
-Si elige laboratorio primero:
-1. Arme topología de laboratorio.
-2. Genere tráfico de prueba.
-3. Valide Dashboard, Tree, Flow, Scheduler Status y Urgent Issues.
-4. Continúe a la Decisión B.
+Amplíe solo después de tener una base conocida y estable.
 
-## 4) Decisión B: Elija dónde hará los cambios permanentes
+## 6) Errores comunes al inicio
 
-| Si esto describe su caso | Modo | Dónde deben hacerse los cambios permanentes |
-|---|---|---|
-| Usa integración CRM/NMS soportada | Modo integración incluida | Jobs de integración |
-| Genera `network.json` y `ShapedDevices.csv` con scripts propios | Modo fuente de verdad personalizada | Sus scripts |
-| Mantiene archivos manualmente en red pequeña/simple | Modo archivos manuales | Edición manual |
+- Suponer que `Dashboard loads` significa que el shaping ya está listo.
+- Ignorar `Setup Required` y asumir que el scheduler ya está regulando clientes.
+- Mezclar datos controlados por integración con ediciones manuales de archivos.
+- Cambiar demasiados detalles de topología antes de una verificación limpia.
+- Empezar un despliegue amplio antes de validar un piloto pequeño.
 
-Regla: mantenga un solo lugar para los cambios permanentes de shaping.
+## 7) El día 1 termina cuando
 
-## 5) Tarjetas de ruta
+- Puede iniciar sesión correctamente.
+- El Dashboard carga.
+- `Complete Setup` quedó terminado para el flujo elegido.
+- Scheduler Status ya no muestra `Setup Required`.
+- No quedan problemas urgentes o fatales de arranque.
+- Aparece la topología o la lista de suscriptores esperada.
+- Un suscriptor o dispositivo piloto se comporta como se espera.
 
-### Modo Integración Incluida
+## 8) Páginas relacionadas
 
-Cuándo elegir:
-- Su CRM/NMS está soportado por integraciones incluidas.
-
-Haga esto ahora:
-1. Configure integración en WebUI.
-2. Ejecute sincronización inicial y valide datos importados de shaping/topología.
-3. Coloque LibreQoS inline para tráfico piloto.
-4. Valide Scheduler Status, Urgent Issues y vistas de topología/flujo.
-5. Expanda alcance del piloto tras estabilidad.
-
-Siguiente:
-- [Integraciones CRM/NMS](integrations-es.md)
-- [Solución de problemas](troubleshooting-es.md)
-
-### Modo Fuente de Verdad Personalizada (Sus Scripts)
-
-Cuándo elegir:
-- Su CRM/NMS no está soportado y usted generará `network.json` + `ShapedDevices.csv` con su pipeline propio.
-
-Haga esto ahora:
-1. Implemente script/proceso para generar y refrescar archivos de shaping.
-2. Trate las salidas del script como el lugar donde hará los cambios permanentes.
-3. Coloque LibreQoS inline para tráfico piloto.
-4. Use WebUI para checks operativos y ajustes de corto plazo.
-5. Mantenga cambios permanentes en su flujo externo de scripts.
-
-Referencia de formato:
-- Vea las secciones `network.json` y `ShapedDevices.csv` en [Referencia avanzada de configuración](configuration-advanced-es.md).
-
-Siguiente:
-- [Modos de operación y fuente de verdad](operating-modes-es.md)
-- [Solución de problemas](troubleshooting-es.md)
-
-### Modo Archivos Manuales (<100 suscriptores)
-
-Cuándo elegir:
-- Mantiene intencionalmente `network.json` + `ShapedDevices.csv` sin sincronización CRM/NMS.
-
-Haga esto ahora:
-1. Construya y mantenga archivos de shaping directamente.
-2. Coloque LibreQoS inline para tráfico piloto.
-3. Valide shaping y estado del scheduler en WebUI.
-4. Mantenga disciplina estricta de cambios manuales.
-5. Planifique migración a integración soportada o scripts si crece escala/volumen de cambios.
-
-Siguiente:
-- [Referencia avanzada de configuración](configuration-advanced-es.md)
-- [Solución de problemas](troubleshooting-es.md)
-
-## 6) Errores comunes en primera puesta en marcha
-
-- No decidir con claridad dónde hará los cambios permanentes.
-- Cambiar profundidad topológica antes de pasar la puerta de salud.
-- Omitir validación de servicios/logs antes de tráfico piloto.
-
-## 7) Páginas relacionadas
-
+- [Configurar LibreQoS](configuration-es.md)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 - [Integraciones CRM/NMS](integrations-es.md)
 - [Referencia avanzada de configuración](configuration-advanced-es.md)

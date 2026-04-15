@@ -47,28 +47,17 @@ impl NetworkJson {
         (self.nodes.len(), self.nodes.capacity())
     }
 
-    fn path_for_config(cfg: &crate::Config) -> PathBuf {
+    /// Resolves the active `network.json` path for one concrete config snapshot.
+    ///
+    /// When an integration-backed topology ingress is enabled, this prefers the
+    /// runtime-generated effective tree under `state/topology/`. When integration
+    /// ingress is disabled, this uses the operator-owned manual tree and ignores
+    /// any stale runtime effective export.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn path_for_config(cfg: &crate::Config) -> PathBuf {
         let base_path = Path::new(&cfg.lqos_directory);
-        let effective_path = cfg.topology_state_read_path("network.effective.json");
-        let integration_ingress_enabled = cfg.uisp_integration.enable_uisp
-            || cfg.splynx_integration.enable_splynx
-            || cfg
-                .netzur_integration
-                .as_ref()
-                .is_some_and(|integration| integration.enable_netzur)
-            || cfg
-                .visp_integration
-                .as_ref()
-                .is_some_and(|integration| integration.enable_visp)
-            || cfg.powercode_integration.enable_powercode
-            || cfg.sonar_integration.enable_sonar
-            || cfg
-                .wispgate_integration
-                .as_ref()
-                .is_some_and(|integration| integration.enable_wispgate);
-        if effective_path.exists() {
-            effective_path
-        } else if integration_ingress_enabled {
+        if crate::integration_ingress_enabled(cfg) {
             cfg.topology_state_file_path("network.effective.json")
         } else if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
             let tmp_path = base_path.join("network.insight.json");
@@ -936,7 +925,9 @@ mod test {
     #[test]
     fn path_for_config_prefers_runtime_effective_tree_over_other_tree_inputs() {
         let temp = unique_temp_dir("network-json-effective-priority");
-        std::fs::write(temp.join("network.effective.json"), "{}")
+        let state_topology = temp.join("state/topology");
+        std::fs::create_dir_all(&state_topology).expect("state topology dir should exist");
+        std::fs::write(state_topology.join("network.effective.json"), "{}")
             .expect("effective tree should write");
         std::fs::write(temp.join("network.insight.json"), "{}").expect("insight tree should write");
         std::fs::write(temp.join("network.json"), "{}").expect("legacy tree should write");
@@ -945,10 +936,30 @@ mod test {
             state_directory: None,
             ..crate::Config::default()
         };
+        config.uisp_integration.enable_uisp = true;
         config.long_term_stats.enable_insight_topology = Some(true);
 
         let selected = NetworkJson::path_for_config(&config);
-        assert_eq!(selected, temp.join("network.effective.json"));
+        assert_eq!(selected, state_topology.join("network.effective.json"));
+    }
+
+    #[test]
+    fn path_for_config_ignores_stale_runtime_effective_tree_in_manual_mode() {
+        let temp = unique_temp_dir("network-json-manual-ignores-stale-effective");
+        let state_topology = temp.join("state/topology");
+        std::fs::create_dir_all(&state_topology).expect("state topology dir should exist");
+        std::fs::write(state_topology.join("network.effective.json"), "{}")
+            .expect("effective tree should write");
+        std::fs::write(temp.join("network.json"), "{}").expect("manual tree should write");
+
+        let config = crate::Config {
+            lqos_directory: temp.display().to_string(),
+            state_directory: None,
+            ..crate::Config::default()
+        };
+
+        let selected = NetworkJson::path_for_config(&config);
+        assert_eq!(selected, temp.join("network.json"));
     }
 
     #[test]

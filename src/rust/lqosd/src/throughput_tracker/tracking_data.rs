@@ -173,9 +173,8 @@ impl ThroughputTracker {
 
         let catalog = lqos_network_devices::network_devices_catalog();
         let mut capacity_lookup: FxHashMap<i64, (f32, f32)> = FxHashMap::default();
-        capacity_lookup.reserve(
-            catalog.shaped_devices().devices_len() + catalog.dynamic_circuits().len(),
-        );
+        capacity_lookup
+            .reserve(catalog.shaped_devices().devices_len() + catalog.dynamic_circuits().len());
         catalog.iter_all_devices().for_each(|device| {
             let entry = capacity_lookup
                 .entry(device.circuit_hash)
@@ -675,7 +674,8 @@ impl ThroughputTracker {
                     device_hash,
                     circuit_hash,
                 );
-                if shaped_device.is_none() && observations.len() < MAX_UNKNOWN_OBSERVATIONS_PER_TICK {
+                if shaped_device.is_none() && observations.len() < MAX_UNKNOWN_OBSERVATIONS_PER_TICK
+                {
                     observations.push(lqos_network_devices::CircuitObservation {
                         ip: *xdp_ip,
                         device_hash,
@@ -1423,9 +1423,9 @@ mod tests {
     use lqos_bus::TcHandle;
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
-    use lqos_utils::{XdpIpAddress, hash_to_i64};
     use lqos_utils::qoo::QoqScores;
     use lqos_utils::units::DownUpOrder;
+    use lqos_utils::{XdpIpAddress, hash_to_i64};
     use std::ffi::OsString;
     use std::net::Ipv4Addr;
     use std::path::{Path, PathBuf};

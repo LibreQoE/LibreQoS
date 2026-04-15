@@ -73,6 +73,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_uisp.html",
         "config_powercode.html",
         "config_sonar.html",
+        "setup_runtime.html",
         "config_interface.html",
         "config_network.html",
         "config_devices.html",

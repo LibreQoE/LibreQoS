@@ -308,8 +308,8 @@ mod test {
             .filter(|line| !line.trim().starts_with("set_cpu_governor_performance"))
             .collect::<Vec<_>>()
             .join("\n");
-        let config = super::EtcLqos::load_from_string(&raw)
-            .expect("Unable to read legacy config fixture");
+        let config =
+            super::EtcLqos::load_from_string(&raw).expect("Unable to read legacy config fixture");
         assert!(
             config
                 .tuning

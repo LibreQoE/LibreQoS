@@ -4,8 +4,8 @@ use ip_network::IpNetwork;
 use ip_network_table::IpNetworkTable;
 use lqos_config::ShapedDevice;
 use lqos_utils::XdpIpAddress;
-use std::sync::Arc;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 fn normalize_circuit_id_key(circuit_id: &str) -> String {
     circuit_id.trim().to_ascii_lowercase()
@@ -32,10 +32,7 @@ impl Clone for NetworkDevicesCatalog {
 
 impl NetworkDevicesCatalog {
     /// Builds a combined catalog from explicit snapshots.
-    pub fn from_snapshots(
-        shaped: ShapedDevicesCatalog,
-        dynamic: Arc<Vec<DynamicCircuit>>,
-    ) -> Self {
+    pub fn from_snapshots(shaped: ShapedDevicesCatalog, dynamic: Arc<Vec<DynamicCircuit>>) -> Self {
         let mut dyn_by_device_hash = FxHashMap::default();
         let mut dyn_by_circuit_hash = FxHashMap::default();
         let mut dyn_by_circuit_id = FxHashMap::default();
@@ -93,7 +90,8 @@ impl NetworkDevicesCatalog {
 
     /// Iterates over both static and dynamic shaped-device rows.
     pub fn iter_all_devices(&self) -> impl Iterator<Item = &ShapedDevice> {
-        self.iter_static_devices().chain(self.iter_dynamic_devices())
+        self.iter_static_devices()
+            .chain(self.iter_dynamic_devices())
     }
 
     /// Returns the longest-prefix match entry for an IP address.

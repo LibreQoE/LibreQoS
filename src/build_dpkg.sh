@@ -52,6 +52,7 @@ LQOS_BIN_FILES=(
   lqos_scheduler.service.example
   lqosd.service.example
   lqos_api.service.example
+  lqos_setup.service.example
 )
 
 RUSTPROGS=(
@@ -123,20 +124,21 @@ cat <<'EOF' > postinst
 #!/bin/bash
 set -euo pipefail
 
-if /opt/libreqos/src/systemd_hotfix.sh should-offer >/dev/null 2>&1; then
-cat >&2 <<'HOTFIX'
-LibreQoS detected the Ubuntu 24.04 systemd-networkd hotfix requirement on this host.
+set_libreqos_operator_permissions() {
+local runtime_paths=()
+[ -e /opt/libreqos/src ] && runtime_paths+=("/opt/libreqos/src")
+[ -e /opt/libreqos/state ] && runtime_paths+=("/opt/libreqos/state")
+[ ${#runtime_paths[@]} -eq 0 ] && return
 
-Run:
-  sudo /opt/libreqos/src/systemd_hotfix.sh install
-
-The hotfix installer bootstraps the LibreQoS APT repo at https://repo.libreqos.com and will offer to schedule a reboot.
-
-After the reboot, finish the LibreQoS package configuration with:
-  sudo dpkg --configure -a
-HOTFIX
-exit 1
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+    chown -R "$SUDO_USER:$SUDO_USER" "${runtime_paths[@]}"
+    chmod -R u+rwX "${runtime_paths[@]}" || true
+    echo "Granted $SUDO_USER ownership of /opt/libreqos/src and /opt/libreqos/state for SFTP editing."
+else
+    echo "Unable to determine the installing operator account automatically."
+    echo "If you plan to edit LibreQoS files over SFTP, run: sudo chown -R <username>:<username> /opt/libreqos/src /opt/libreqos/state"
 fi
+}
 
 # Install Python Dependencies
 pushd /opt/libreqos > /dev/null
@@ -150,22 +152,45 @@ PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --ignore-installed -r src/req
 fi
 
 # Ensure folder permissions are correct post-install
-sudo chown -R root:root /opt/libreqos
+set_libreqos_operator_permissions
 
-# - Run lqsetup
-/opt/libreqos/src/bin/lqos_setup --skip-if-ready
 # - Setup the services
 install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 install -m 0644 /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+install -m 0644 /opt/libreqos/src/bin/lqos_setup.service.example /etc/systemd/system/lqos_setup.service
 /bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 /bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
 /bin/systemctl stop lqos_netplan_helper || true
 /bin/systemctl disable lqos_netplan_helper || true
-/bin/systemctl enable lqosd lqos_scheduler lqos_api || true
-/bin/systemctl restart lqosd lqos_scheduler lqos_api || true
+case "$(/opt/libreqos/src/bin/lqos_setup postinst-action)" in
+activate_runtime)
+  /opt/libreqos/src/bin/lqos_setup activate-runtime
+  ;;
+activate_setup)
+  /opt/libreqos/src/bin/lqos_setup activate-setup
+  /opt/libreqos/src/bin/lqos_setup print-link || true
+  ;;
+block_for_hotfix)
+  /opt/libreqos/src/bin/lqos_setup hotfix-status || true
+  cat <<'HOTFIX'
+
+Install the Noble systemd hotfix before package configuration can start LibreQoS services.
+
+Run:
+  sudo /opt/libreqos/src/systemd_hotfix.sh install
+
+Then re-run the LibreQoS package installation.
+HOTFIX
+  exit 1
+  ;;
+*)
+  echo "Unknown LibreQoS post-install action." >&2
+  exit 1
+  ;;
+esac
 popd > /dev/null
 EOF
 
@@ -173,8 +198,8 @@ EOF
 cat <<EOF > postrm
 #!/bin/bash
 set +e
-/bin/systemctl stop lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
-/bin/systemctl disable lqos_netplan_helper lqosd lqos_scheduler lqos_api || true
+/bin/systemctl stop lqos_netplan_helper lqosd lqos_scheduler lqos_api lqos_setup || true
+/bin/systemctl disable lqos_netplan_helper lqosd lqos_scheduler lqos_api lqos_setup || true
 /bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 exit 0

@@ -1491,10 +1491,13 @@ async fn circuit_snapshot_streaming(
         for (xdp_ip, te) in raw.iter() {
             let device = catalog
                 .device_by_hashes(te.device_hash, te.circuit_hash)
-                .or_else(|| catalog.device_longest_match_for_ip(xdp_ip).map(|(_, device)| device));
-            let matches_desired =
-                te.circuit_hash == Some(circuit_hash)
-                    || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+                .or_else(|| {
+                    catalog
+                        .device_longest_match_for_ip(xdp_ip)
+                        .map(|(_, device)| device)
+                });
+            let matches_desired = te.circuit_hash == Some(circuit_hash)
+                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
             if !matches_desired {
                 continue;
             }
@@ -1599,9 +1602,8 @@ async fn circuit_snapshot_streaming(
                         .device_longest_match_for_ip(&key.local_ip)
                         .map(|(_, device)| device)
                 });
-            let matches_desired =
-                local.circuit_hash == Some(circuit_hash)
-                    || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            let matches_desired = local.circuit_hash == Some(circuit_hash)
+                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
             if !matches_desired {
                 continue;
             }

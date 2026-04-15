@@ -100,10 +100,7 @@ impl DirectoryWatcher {
     }
 }
 
-fn collect_paths(
-    event: Result<Event, notify::Error>,
-    changed_paths: &mut BTreeSet<PathBuf>,
-) {
+fn collect_paths(event: Result<Event, notify::Error>, changed_paths: &mut BTreeSet<PathBuf>) {
     match event {
         Ok(event) => {
             changed_paths.extend(event.paths);

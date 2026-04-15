@@ -1,15 +1,13 @@
-# Quickstart: ISP Deployment Path
+# Quickstart: WebUI Deployment Path
 
-Use this page to move from install to a safe pilot.
+Use this page to move from package install to a safe pilot with the fewest moving parts.
 
-Most ISPs, should use a LibreQoS built-in integration.
-
-Use this page in order:
-1. Complete install and bridge setup.
-2. Complete first-run WebUI access.
-3. Pass the 10-minute health check.
-4. Choose one system to manage your shaping data.
-5. Follow the recommended path for that system.
+Follow this page in order:
+1. Complete the common install foundation.
+2. Open the WebUI and create the first admin user if needed.
+3. Use `Complete Setup` to choose where subscriber and topology data will come from.
+4. Pass the 10-minute health check.
+5. Start with limited pilot traffic before broad rollout.
 
 Need definitions for key terms? See the [Glossary](glossary.md).
 
@@ -21,14 +19,12 @@ Complete this once before trying to shape live traffic:
 - [Deployment Scenarios](design.md)
 - [System Requirements](requirements.md)
 
-2. Prepare host and OS:
+2. Prepare the host and operating system:
 - [Server Setup - Prerequisites](prereq.md)
 - [Install Ubuntu Server 24.04](ubuntu-server.md)
 
 3. Configure how traffic will pass through the LibreQoS box:
 - [Configure Shaping Bridge](bridge.md)
-
-This step is required before production use. If bridge/interface setup is wrong, later WebUI and shaping checks will be misleading.
 
 4. Install LibreQoS (`.deb` recommended):
 
@@ -40,7 +36,7 @@ wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 
-Using `/tmp` avoids local `.deb` permission issues where `apt` cannot access a package stored in a private home directory as user `_apt`.
+Using `/tmp` avoids local `.deb` permission problems where `apt` cannot read a package stored in a private home directory as user `_apt`.
 
 ### Ubuntu 24.04 hotfix if the `.deb` install stops
 
@@ -63,18 +59,75 @@ wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
 
-5. Open WebUI at `http://your_shaper_ip:9123`.
+## 2) Open WebUI And Complete First Login
 
-If no WebUI users exist yet, current builds redirect you to the first-run setup page automatically instead of presenting a normal login flow.
+1. Open the WebUI at `http://your_shaper_ip:9123`.
+2. If no WebUI users exist yet, LibreQoS redirects you to `first-run.html`.
+3. Create the initial WebUI admin user if prompted.
+4. Sign in and confirm the Dashboard opens.
 
-6. Complete first-run access:
-- Create the initial WebUI user if prompted.
-- Confirm you can sign in.
-- Confirm the Dashboard opens before doing any integration or topology work.
+At this point, the WebUI being available does not yet prove that LibreQoS is ready to shape subscribers.
 
-## 2) 10-Minute Health Check
+If Scheduler Status says `Setup Required`, that is expected until you choose a topology source and publish usable shaping data.
 
-Run:
+## 3) Use `Complete Setup` To Choose Your Topology Source
+
+After you can sign in, open `Complete Setup`.
+
+This page is where most ISPs should make the next decision. Choose one source of truth for persistent shaping changes:
+
+| If this describes you | Use this path | Where permanent shaping changes belong |
+|---|---|---|
+| You use a supported CRM/NMS such as UISP, Splynx, VISP, Netzur, Powercode, Sonar, or WispGate | Built-in integration | Your integration system and its LibreQoS integration settings |
+| You already have your own internal importer | Custom importer | Your external script or process |
+| You intentionally maintain files by hand | Manual files | `network.json` and `ShapedDevices.csv` |
+
+Rule: pick one place for permanent shaping changes. Do not mix manual edits with scheduled integration refreshes unless you intentionally want that complexity.
+
+### Built-in Integration
+
+This is the recommended path for most ISPs.
+
+Do this now:
+1. Open the provider page from `Complete Setup`.
+2. Save the integration settings.
+3. Run the initial sync or wait for the first scheduled import.
+4. Return to Scheduler Status and confirm LibreQoS is no longer waiting on setup.
+
+Next:
+- [CRM/NMS Integrations](integrations.md)
+- [Troubleshooting](troubleshooting.md)
+
+### Custom Importer
+
+Choose this only if another internal process already writes LibreQoS-compatible shaping files.
+
+Do this now:
+1. Configure shared topology behavior under `Integration - Common`.
+2. Publish `network.json` and `ShapedDevices.csv` from your own process.
+3. Reload or wait for the scheduler so LibreQoS can validate and use those files.
+
+Next:
+- [Operating Modes and Source of Truth](operating-modes.md)
+- [Advanced Configuration Reference](configuration-advanced.md)
+
+### Manual Files
+
+Choose this only if you intentionally want LibreQoS to own the files directly.
+
+Do this now:
+1. Build `network.json`.
+2. Build `ShapedDevices.csv`.
+3. Use the WebUI editors or file-based workflow to maintain them.
+4. Confirm the scheduler accepts the data and the expected topology appears.
+
+Next:
+- [Advanced Configuration Reference](configuration-advanced.md)
+- [Troubleshooting](troubleshooting.md)
+
+## 4) 10-Minute Health Check
+
+After `Complete Setup` is finished and your chosen data source has published usable data, run:
 
 ```bash
 sudo systemctl status lqosd lqos_scheduler
@@ -82,120 +135,48 @@ journalctl -u lqosd -u lqos_scheduler --since "10 minutes ago"
 ```
 
 Confirm:
-- WebUI Dashboard loads.
-- Scheduler Status is healthy.
-- No urgent/fatal startup errors in logs.
-- You can sign in successfully after first-run setup.
+- The Dashboard loads.
+- `lqosd` and `lqos_scheduler` are active.
+- Scheduler Status is no longer `Setup Required`.
+- Scheduler Status is healthy, or clearly shows expected active work without validation or startup errors.
+- No urgent or fatal startup problems appear in the logs.
+- The expected topology or subscriber/device list appears in WebUI.
 
-If this fails, go to [Troubleshooting](troubleshooting.md) before proceeding.
+If this fails, go to [Troubleshooting](troubleshooting.md) before pilot traffic.
 
-## 3) Choose One System To Manage Your Shaping Data
+## 5) Start With A Limited Pilot
 
-This is the most important early decision.
+Do not begin with broad inline rollout.
 
-On this page, "source of truth" just means the place where permanent shaping changes should be made.
+Start with a small pilot and confirm:
+- one test subscriber/device shapes as expected
+- expected parent nodes and hierarchy depth appear
+- Scheduler Status stays healthy after refreshes
+- no new urgent errors appear in logs after the first shaping cycles
 
-If you make persistent changes somewhere else, they may be overwritten later.
+Expand only after you have one known-good baseline.
 
-Choose one:
+## 6) Common Early Mistakes
 
-| If this describes you | Mode | Where permanent shaping changes belong |
-|---|---|---|
-| You use a supported LibreQoS CRM/NMS integration | Built-In Integration Mode | Integration jobs |
-| You generate `network.json` and `ShapedDevices.csv` with your own automation | Custom Source of Truth Mode | Your scripts |
-| You intentionally maintain files by hand | Manual Files Mode | Manual edits |
+- Treating `Dashboard loads` as proof that shaping is ready.
+- Ignoring `Setup Required` and assuming the scheduler is already shaping customers.
+- Mixing integration-owned data with manual file edits.
+- Changing too many topology details before one clean health check.
+- Starting a broad rollout before validating a small pilot.
 
-Rule: pick one place for permanent shaping changes.
+## 7) Day 1 Is Done When
 
-Most operators should stop here and choose **Built-In Integration Mode**.
-
-Only choose the other two modes if you already know why.
-
-## 4) Recommended Path: Built-In Integration Mode
-
-This is the default path for most ISPs, including most small ISPs.
-
-When to choose:
-- Your CRM/NMS is supported by built-in integrations.
-
-Do this now:
-1. Configure integration settings in WebUI.
-2. Run the initial sync.
-3. Confirm Scheduler Status is healthy.
-4. Confirm Network Tree reflects the expected hierarchy depth for your chosen integration strategy.
-5. Confirm there are no urgent or fatal issues that block shaping.
-6. Only then move to limited pilot traffic or inline use.
-
-Do not do this:
-- Do not hand-edit files that your integration refreshes as part of your normal workflow.
-- Do not mix manual file edits with scheduled integration syncs unless you intentionally want that extra complexity.
-
-Next:
-- [CRM/NMS Integrations](integrations.md)
-- [Troubleshooting](troubleshooting.md)
-
-## 5) Other Paths
-
-### Custom Source of Truth Mode
-
-When to choose:
-- Your CRM/NMS is unsupported and you already generate `network.json` + `ShapedDevices.csv` with your own pipeline.
-
-Do this now:
-1. Implement script/process to generate and refresh shaping files.
-2. Treat your script outputs as the place for permanent shaping changes.
-3. Place LibreQoS inline for pilot traffic.
-4. Use WebUI for operational checks and short-term adjustments.
-5. Keep permanent changes in your external script workflow.
-
-Format reference:
-- See `network.json` and `ShapedDevices.csv` sections in [Advanced Configuration Reference](configuration-advanced.md).
-
-Next:
-- [Operating Modes and Source of Truth](operating-modes.md)
-- [Troubleshooting](troubleshooting.md)
-
-### Manual Files Mode
-
-When to choose:
-- You intentionally maintain `network.json` + `ShapedDevices.csv` without CRM/NMS synchronization.
-- Your network is small/simple enough that manual discipline is realistic.
-- You are doing a temporary pilot or working around an unsupported system.
-
-Do this now:
-1. Build `network.json`.
-2. Build `ShapedDevices.csv`.
-3. Restart or validate services.
-4. Confirm the expected topology and devices appear in WebUI.
-5. Validate shaping and scheduler status before adding more complexity.
-6. Maintain strict manual change discipline.
-
-This is not the normal recommendation for operators who already use a supported LibreQoS integration.
-
-Next:
-- [Advanced Configuration Reference](configuration-advanced.md)
-- [Troubleshooting](troubleshooting.md)
-
-## 6) Common First-Run Mistakes
-
-- Not deciding where permanent shaping changes should be made.
-- Hand-editing files even though your integration is supposed to own them.
-- Changing topology depth before passing the health gate.
-- Skipping post-change service/log validation before pilot traffic.
-- Treating low-data or cold-start pages as proof that shaping is broken.
-- Changing too many things before you have one known-good baseline.
-
-## 7) Done For Day 1 When
-
-- You can sign in to WebUI successfully.
-- Dashboard loads.
-- Scheduler Status is healthy.
-- No urgent/fatal startup errors are present.
-- The expected topology or devices appear.
-- One test subscriber/device behaves as expected.
+- You can sign in successfully.
+- The Dashboard loads.
+- `Complete Setup` is finished for your chosen workflow.
+- Scheduler Status is no longer `Setup Required`.
+- No urgent or fatal startup issues remain.
+- The expected topology or subscriber list appears.
+- One pilot subscriber/device behaves as expected.
 
 ## 8) Related Pages
 
+- [Configure LibreQoS](configuration.md)
 - [Operating Modes and Source of Truth](operating-modes.md)
 - [CRM/NMS Integrations](integrations.md)
 - [Advanced Configuration Reference](configuration-advanced.md)

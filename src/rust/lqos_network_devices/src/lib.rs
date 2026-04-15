@@ -12,6 +12,7 @@ mod directory_watcher;
 mod dynamic;
 mod dynamic_store;
 mod hash_cache;
+mod runtime_inputs;
 mod state;
 mod topology;
 
@@ -19,7 +20,7 @@ mod topology;
 mod tests;
 
 use anyhow::{Context, Result};
-use lqos_config::{ConfigShapedDevices, NetworkJson};
+use lqos_config::{Config, ConfigShapedDevices, NetworkJson, TopologyShapingInputsFile};
 use std::sync::Arc;
 use tracing::debug;
 
@@ -53,23 +54,61 @@ pub fn start_daemon_mode(hooks: Option<Arc<dyn DaemonHooks>>) -> Result<()> {
     directory_watcher::start_network_devices_directory_watch()
 }
 
-fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
+/// Loads the currently active runtime shaping inputs for integration-backed topologies.
+///
+/// Returns `Ok(None)` when integration ingress is disabled or when no ready runtime shaping
+/// inputs have been published yet.
+pub fn load_runtime_shaping_inputs_for_config(
+    config: &Config,
+) -> Result<Option<TopologyShapingInputsFile>> {
+    if !lqos_config::integration_ingress_enabled(config) {
+        return Ok(None);
+    }
+    runtime_inputs::load_ready_runtime_shaping_inputs(config)
+}
+
+fn load_shaped_devices_for_config(config: &lqos_config::Config) -> Result<ConfigShapedDevices> {
+    if lqos_config::integration_ingress_enabled(config) {
+        if let Some(shaping_inputs) = load_runtime_shaping_inputs_for_config(config)? {
+            let shaped_devices =
+                runtime_inputs::shaped_devices_from_runtime_inputs(&shaping_inputs);
+            if !shaped_devices.devices.is_empty() {
+                return Ok(shaped_devices);
+            }
+            debug!(
+                "Active runtime shaping inputs contained 0 shaped devices; checking other integration sources"
+            );
+        }
+        if !lqos_config::topology_import_has_shaped_devices(config) {
+            debug!(
+                "topology_import.json is missing or contains 0 shaped devices; keeping integration mode empty until topology is published"
+            );
+            return Ok(ConfigShapedDevices::default());
+        }
+        match lqos_topology_compile::TopologyImportFile::load(config) {
+            Ok(Some(topology_import)) => {
+                let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
+                if !shaped_devices.devices.is_empty() {
+                    return Ok(shaped_devices);
+                }
+                debug!(
+                    "topology_import.json advertised shaped devices but loaded empty; keeping integration mode empty until topology is published"
+                );
+            }
+            Ok(None) => {
+                debug!(
+                    "topology_import.json advertised shaped devices but loader returned no bundle; keeping integration mode empty until topology is published"
+                );
+            }
+            Err(err) => {
+                debug!(
+                    "Unable to load topology_import.json ({err}); keeping integration mode empty until topology is published"
+                );
+            }
+        }
+        return Ok(ConfigShapedDevices::default());
+    }
+    ConfigShapedDevices::load_for_config(config).context("Unable to load ShapedDevices.csv")
 }
 
 /// Loads shaped-device configuration from disk.
@@ -78,28 +117,7 @@ fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
 /// active `topology_import.json` bundle. Otherwise, it loads `ShapedDevices.csv`.
 pub fn load_shaped_devices() -> Result<ConfigShapedDevices> {
     let config = lqos_config::load_config().context("Unable to load /etc/lqos.conf")?;
-    if integration_ingress_enabled(config.as_ref()) {
-        match lqos_topology_compile::TopologyImportFile::load(config.as_ref()) {
-            Ok(Some(topology_import)) => {
-                let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
-                if !shaped_devices.devices.is_empty() {
-                    return Ok(shaped_devices);
-                }
-                debug!(
-                    "topology_import.json contained 0 shaped devices; falling back to ShapedDevices.csv"
-                );
-            }
-            Ok(None) => {
-                debug!("topology_import.json missing; falling back to ShapedDevices.csv");
-            }
-            Err(err) => {
-                debug!(
-                    "Unable to load topology_import.json ({err}); falling back to ShapedDevices.csv"
-                );
-            }
-        }
-    }
-    ConfigShapedDevices::load().context("Unable to load ShapedDevices.csv")
+    load_shaped_devices_for_config(config.as_ref())
 }
 
 /// Loads `network.json` from disk.

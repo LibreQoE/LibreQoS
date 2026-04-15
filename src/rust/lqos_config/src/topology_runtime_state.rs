@@ -360,25 +360,6 @@ fn default_runtime_schema_version() -> u32 {
     1
 }
 
-fn topology_import_ingress_enabled(config: &Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
-}
-
 fn operator_overrides_path(config: &Config) -> PathBuf {
     Path::new(&config.lqos_directory).join(OPERATOR_OVERRIDES_FILENAME)
 }
@@ -435,6 +416,44 @@ pub fn topology_import_path(config: &Config) -> PathBuf {
 /// Returns the path of the runtime shaping-input snapshot file.
 pub fn topology_shaping_inputs_path(config: &Config) -> PathBuf {
     config.shaping_state_read_path(TOPOLOGY_SHAPING_INPUTS_FILENAME)
+}
+
+/// Returns the currently active runtime shaping-inputs path when the topology
+/// runtime has published a ready generation that matches the current source
+/// inputs.
+///
+/// This function is pure: it has no side effects.
+pub fn active_runtime_shaping_inputs_path(
+    config: &Config,
+) -> Result<Option<PathBuf>, TopologyRuntimeStateError> {
+    let current_generation = compute_topology_source_generation(config)?;
+    let status = TopologyRuntimeStatusFile::load(config)?;
+    if !status.ready {
+        return Ok(None);
+    }
+    if status.shaping_generation.trim().is_empty() {
+        return Ok(None);
+    }
+    if status.source_generation.trim() != current_generation {
+        return Ok(None);
+    }
+    let path = status.shaping_inputs_path.trim();
+    if path.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(PathBuf::from(path)))
+}
+
+/// Loads the currently active runtime shaping-inputs file when the topology
+/// runtime has published one.
+pub fn load_active_runtime_shaping_inputs(
+    config: &Config,
+) -> Result<Option<TopologyShapingInputsFile>, TopologyRuntimeStateError> {
+    let Some(path) = active_runtime_shaping_inputs_path(config)? else {
+        return Ok(None);
+    };
+    let raw = std::fs::read_to_string(&path)?;
+    Ok(Some(serde_json::from_str(&raw)?))
 }
 
 /// Returns the path of the topology runtime readiness status file.
@@ -494,7 +513,7 @@ pub fn compute_topology_source_generation(
     let topology_import_path = config.topology_state_read_path(TOPOLOGY_IMPORT_FILENAME);
     let topology_compiled_shaping_path =
         config.shaping_state_read_path(TOPOLOGY_COMPILED_SHAPING_FILENAME);
-    let use_topology_import = topology_import_ingress_enabled(config);
+    let use_topology_import = crate::integration_ingress_enabled(config);
     let network_path = config.legacy_runtime_file_path("network.json");
     let shaped_devices_path = config.legacy_runtime_file_path("ShapedDevices.csv");
     let circuit_anchors_path = config.topology_state_read_path(CIRCUIT_ANCHORS_FILENAME);
@@ -812,8 +831,15 @@ mod tests {
         let before = compute_topology_source_generation(&config)
             .expect("generation should compute before source change");
 
+        let circuit_anchors_path = config.topology_state_file_path(CIRCUIT_ANCHORS_FILENAME);
+        fs::create_dir_all(
+            circuit_anchors_path
+                .parent()
+                .expect("circuit anchors path should have a parent"),
+        )
+        .expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(CIRCUIT_ANCHORS_FILENAME),
+            circuit_anchors_path,
             "{\"schema_version\":1,\"source\":\"test\",\"generated_unix\":1,\"anchors\":[]}\n",
         )
         .expect("circuit_anchors.json should write");
@@ -822,7 +848,7 @@ mod tests {
         assert_ne!(before, after_anchors);
 
         fs::write(
-            lqos_directory.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            config.topology_state_file_path(TOPOLOGY_CANONICAL_STATE_FILENAME),
             concat!(
                 "{\"schema_version\":1,\"source\":\"test\",\"generated_unix\":1,",
                 "\"ingress_kind\":\"native_integration\",",
@@ -845,8 +871,10 @@ mod tests {
     fn topology_source_generation_prefers_topology_import_over_network_json() {
         let lqos_directory = unique_temp_dir("lqos-config-topology-generation-import");
         write_required_inputs(&lqos_directory);
+        let state_topology_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&state_topology_dir).expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_IMPORT_FILENAME),
+            state_topology_dir.join(TOPOLOGY_IMPORT_FILENAME),
             serde_json::to_string_pretty(&json!({
                 "schema_version": 1,
                 "source": "uisp/full2",
@@ -937,8 +965,10 @@ mod tests {
     fn topology_source_generation_tracks_override_files_for_integration_ingress() {
         let lqos_directory = unique_temp_dir("lqos-config-topology-generation-override-files");
         write_required_inputs(&lqos_directory);
+        let state_topology_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&state_topology_dir).expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_IMPORT_FILENAME),
+            state_topology_dir.join(TOPOLOGY_IMPORT_FILENAME),
             serde_json::to_string_pretty(&json!({
                 "schema_version": 1,
                 "source": "python/splynx",
@@ -998,8 +1028,12 @@ mod tests {
     fn topology_source_generation_tracks_compiled_shaping_for_integration_ingress() {
         let lqos_directory = unique_temp_dir("lqos-config-topology-generation-compiled-shaping");
         write_required_inputs(&lqos_directory);
+        let state_topology_dir = lqos_directory.join("state/topology");
+        let state_shaping_dir = lqos_directory.join("state/shaping");
+        fs::create_dir_all(&state_topology_dir).expect("topology state dir should exist");
+        fs::create_dir_all(&state_shaping_dir).expect("shaping state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_IMPORT_FILENAME),
+            state_topology_dir.join(TOPOLOGY_IMPORT_FILENAME),
             serde_json::to_string_pretty(&json!({
                 "schema_version": 1,
                 "source": "uisp/full2",
@@ -1025,7 +1059,7 @@ mod tests {
         )
         .expect("topology import should write");
         fs::write(
-            lqos_directory.join(TOPOLOGY_COMPILED_SHAPING_FILENAME),
+            state_shaping_dir.join(TOPOLOGY_COMPILED_SHAPING_FILENAME),
             serde_json::to_string_pretty(&json!({
                 "schema_version": 1,
                 "source": "uisp/full",
@@ -1053,7 +1087,7 @@ mod tests {
         let before = compute_topology_source_generation(&config)
             .expect("generation should compute before compiled shaping change");
         fs::write(
-            lqos_directory.join(TOPOLOGY_COMPILED_SHAPING_FILENAME),
+            state_shaping_dir.join(TOPOLOGY_COMPILED_SHAPING_FILENAME),
             serde_json::to_string_pretty(&json!({
                 "schema_version": 1,
                 "source": "uisp/full",
@@ -1100,8 +1134,10 @@ mod tests {
     fn topology_source_generation_ignores_shaped_devices_csv_for_integration_ingress() {
         let lqos_directory = unique_temp_dir("lqos-config-topology-generation-no-shaped-devices");
         write_required_inputs(&lqos_directory);
+        let state_topology_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&state_topology_dir).expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_IMPORT_FILENAME),
+            state_topology_dir.join(TOPOLOGY_IMPORT_FILENAME),
             serde_json::to_string_pretty(&json!({
                 "schema_version": 1,
                 "source": "uisp/full2",
@@ -1185,14 +1221,16 @@ mod tests {
                 "uploadBandwidthMbps": 50
             }
         }));
+        let state_topology_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&state_topology_dir).expect("topology state dir should exist");
         fs::write(
-            lqos_directory.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            state_topology_dir.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
             serde_json::to_string_pretty(&stale_canonical)
                 .expect("canonical json should serialize"),
         )
         .expect("canonical state should write");
         fs::write(
-            lqos_directory.join(TOPOLOGY_EDITOR_STATE_FILENAME),
+            state_topology_dir.join(TOPOLOGY_EDITOR_STATE_FILENAME),
             serde_json::to_string_pretty(&TopologyEditorStateFile {
                 schema_version: 1,
                 source: "uisp/full2".to_string(),

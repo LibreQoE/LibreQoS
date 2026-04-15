@@ -324,8 +324,12 @@ pub(crate) fn submit_throughput_stats(
         let mut plan_lookup: FxHashMap<i64, (u64, u64)> = FxHashMap::default();
         for device in catalog.iter_all_devices() {
             let entry = plan_lookup.entry(device.circuit_hash).or_insert((0, 0));
-            entry.0 = entry.0.max(device.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
-            entry.1 = entry.1.max(device.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+            entry.0 = entry
+                .0
+                .max(device.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+            entry.1 = entry
+                .1
+                .max(device.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
         }
 
         THROUGHPUT_TRACKER
@@ -333,8 +337,7 @@ pub(crate) fn submit_throughput_stats(
             .lock()
             .iter()
             .filter_map(|(ip, h)| {
-                let circuit_hash =
-                    resolved_circuit_hash_for_submission(&catalog, ip, h)?;
+                let circuit_hash = resolved_circuit_hash_for_submission(&catalog, ip, h)?;
                 h.actual_bytes_per_second
                     .not_zero()
                     .then_some((circuit_hash, h))
@@ -376,8 +379,7 @@ pub(crate) fn submit_throughput_stats(
             .lock()
             .iter()
             .filter_map(|(ip, h)| {
-                let circuit_hash =
-                    resolved_circuit_hash_for_submission(&catalog, ip, h)?;
+                let circuit_hash = resolved_circuit_hash_for_submission(&catalog, ip, h)?;
                 (h.tcp_retransmits.not_zero() && !crazy_values.contains(&circuit_hash))
                     .then_some((circuit_hash, h))
             })
@@ -677,8 +679,15 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
     if integration_ingress_enabled(cfg.as_ref()) {
         let topology_import = TopologyImportFile::load(cfg.as_ref())?
             .ok_or_else(|| anyhow::anyhow!("topology_import.json does not exist"))?;
-        let mut devices = topology_import.into_imported_bundle().shaped_devices.devices;
-        devices.extend(dynamic_snapshot.iter().map(|circuit| circuit.shaped.clone()));
+        let mut devices = topology_import
+            .into_imported_bundle()
+            .shaped_devices
+            .devices;
+        devices.extend(
+            dynamic_snapshot
+                .iter()
+                .map(|circuit| circuit.shaped.clone()),
+        );
         return Ok(devices);
     }
     let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
@@ -700,27 +709,16 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
             anyhow::bail!("Error reading ShapedDevices.csv");
         }
     }
-    devices.extend(dynamic_snapshot.iter().map(|circuit| circuit.shaped.clone()));
+    devices.extend(
+        dynamic_snapshot
+            .iter()
+            .map(|circuit| circuit.shaped.clone()),
+    );
     Ok(devices)
 }
 
 fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
+    lqos_config::integration_ingress_enabled(config)
 }
 
 #[cfg(test)]

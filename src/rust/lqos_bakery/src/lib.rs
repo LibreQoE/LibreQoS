@@ -2437,8 +2437,13 @@ fn planned_qdisc_identity(argv: &[String]) -> Option<(String, String)> {
     if let Some(handle) = find_arg_value(argv, "handle") {
         return Some((dev, format!("handle:{handle}")));
     }
-    let parent = find_arg_value(argv, "parent")?.to_string();
-    Some((dev, format!("parent:{parent}")))
+    if let Some(parent) = find_arg_value(argv, "parent") {
+        return Some((dev, format!("parent:{parent}")));
+    }
+    if argv.iter().any(|arg| arg == "root") {
+        return Some((dev, "root".to_string()));
+    }
+    None
 }
 
 /// Estimates total qdisc usage for the current full-reload builder queue.
@@ -3170,38 +3175,7 @@ fn migration_target_label(migration: &Migration) -> String {
 }
 
 fn runtime_network_json_path(config: &Config) -> std::path::PathBuf {
-    let base_path = Path::new(&config.lqos_directory);
-    let effective_path = config.topology_state_read_path("network.effective.json");
-    let integration_ingress_enabled = config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate);
-    if effective_path.exists() || integration_ingress_enabled {
-        return effective_path;
-    }
-    if config
-        .long_term_stats
-        .enable_insight_topology
-        .unwrap_or(false)
-    {
-        let tmp_path = base_path.join("network.insight.json");
-        if tmp_path.exists() {
-            return tmp_path;
-        }
-    }
-    base_path.join("network.json")
+    lqos_config::NetworkJson::path_for_config(config)
 }
 
 fn runtime_hash_to_i64(text: &str) -> i64 {
@@ -10802,6 +10776,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lqos-bakery-{name}-{ts}"));
         std::fs::create_dir_all(&dir).expect("temp runtime dir");
         cfg.lqos_directory = dir.display().to_string();
+        // Keep Bakery qdisc-handle state under the per-test runtime directory so
+        // these allocator tests do not share `/opt/libreqos/state` across
+        // parallel test threads.
+        cfg.state_directory = None;
         Arc::new(cfg)
     }
 

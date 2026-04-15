@@ -16,6 +16,10 @@ La página Network Mode en la interfaz web de LibreQoS ahora inspecciona los arc
 ```
 
 ```{note}
+La configuración inicial actual solo ofrece Puente Linux e Interfaz Única para instalaciones nuevas. Si LibreQoS detecta un despliegue XDP existente, la configuración preserva ese modo XDP heredado y le avisa antes de migrar fuera de él.
+```
+
+```{note}
 Si un cambio temporizado de Netplan interrumpe brevemente la sesión del navegador, vuelva a la página Network Mode cuando regrese la conectividad. LibreQoS retomará automáticamente desde esa página el flujo pendiente de confirmar o revertir.
 ```
 

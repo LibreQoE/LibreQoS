@@ -22,7 +22,7 @@ impl SupportInfo for SystemCtlServices {
 
     fn gather(&mut self) -> anyhow::Result<()> {
         let out = Command::new("/bin/systemctl")
-            .args(&["--no-pager", "status"])
+            .args(["--no-pager", "status"])
             .output()?;
 
         self.output = String::from_utf8_lossy(&out.stdout).to_string();

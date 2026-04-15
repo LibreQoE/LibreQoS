@@ -499,7 +499,10 @@ mod tests {
 
         let loaded =
             load_from_path(&path).expect("failed to read topology overrides file from temp path");
-        assert_eq!(loaded.schema_version, TopologyOverridesFile::default().schema_version);
+        assert_eq!(
+            loaded.schema_version,
+            TopologyOverridesFile::default().schema_version
+        );
         assert!(loaded.overrides.is_empty());
         assert!(loaded.attachment_probe_policies.is_empty());
         assert!(loaded.manual_attachment_groups.is_empty());

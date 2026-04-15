@@ -23,23 +23,23 @@ pub fn check_net_json_exists(results: &mut Vec<SanityCheck>) {
 pub fn can_we_load_net_json(results: &mut Vec<SanityCheck>) {
     if let Ok(cfg) = load_config() {
         let path = Path::new(&cfg.lqos_directory).join("network.json");
-        if path.exists() {
-            if let Ok(str) = std::fs::read_to_string(path) {
-                match serde_json::from_str::<Value>(&str) {
-                    Ok(_json) => {
-                        results.push(SanityCheck {
-                            name: "network.json is parseable JSON".to_string(),
-                            success: true,
-                            comments: "".to_string(),
-                        });
-                    }
-                    Err(e) => {
-                        results.push(SanityCheck {
-                            name: "network.json is parseable JSON".to_string(),
-                            success: false,
-                            comments: format!("{e:?}"),
-                        });
-                    }
+        if path.exists()
+            && let Ok(str) = std::fs::read_to_string(path)
+        {
+            match serde_json::from_str::<Value>(&str) {
+                Ok(_json) => {
+                    results.push(SanityCheck {
+                        name: "network.json is parseable JSON".to_string(),
+                        success: true,
+                        comments: "".to_string(),
+                    });
+                }
+                Err(e) => {
+                    results.push(SanityCheck {
+                        name: "network.json is parseable JSON".to_string(),
+                        success: false,
+                        comments: format!("{e:?}"),
+                    });
                 }
             }
         }

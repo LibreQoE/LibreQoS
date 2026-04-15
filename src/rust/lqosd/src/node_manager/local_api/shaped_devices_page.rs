@@ -64,32 +64,31 @@ pub fn shaped_devices_page(query: ShapedDevicesPageQuery) -> ShapedDevicesPage {
     let search = query.search.as_deref().unwrap_or("").trim().to_lowercase();
     let kind = query.kind.clone().unwrap_or(ShapedDevicesPageKind::Static);
 
-    let matches_search = |device: &ShapedDevice| {
-        if search.is_empty() {
-            return true;
-        }
-        device.device_name.to_lowercase().contains(&search)
-            || device.circuit_name.to_lowercase().contains(&search)
-            || device.parent_node.to_lowercase().contains(&search)
-            || device.circuit_id.to_lowercase().contains(&search)
-            || device.device_id.to_lowercase().contains(&search)
-            || device.mac.to_lowercase().contains(&search)
-            || device.comment.to_lowercase().contains(&search)
-            || device
-                .sqm_override
-                .as_deref()
-                .unwrap_or("")
-                .to_lowercase()
-                .contains(&search)
-            || device
-                .ipv4
-                .iter()
-                .any(|(addr, prefix)| format!("{addr}/{prefix}").to_lowercase().contains(&search))
-            || device
-                .ipv6
-                .iter()
-                .any(|(addr, prefix)| format!("{addr}/{prefix}").to_lowercase().contains(&search))
-    };
+    let matches_search =
+        |device: &ShapedDevice| {
+            if search.is_empty() {
+                return true;
+            }
+            device.device_name.to_lowercase().contains(&search)
+                || device.circuit_name.to_lowercase().contains(&search)
+                || device.parent_node.to_lowercase().contains(&search)
+                || device.circuit_id.to_lowercase().contains(&search)
+                || device.device_id.to_lowercase().contains(&search)
+                || device.mac.to_lowercase().contains(&search)
+                || device.comment.to_lowercase().contains(&search)
+                || device
+                    .sqm_override
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .contains(&search)
+                || device.ipv4.iter().any(|(addr, prefix)| {
+                    format!("{addr}/{prefix}").to_lowercase().contains(&search)
+                })
+                || device.ipv6.iter().any(|(addr, prefix)| {
+                    format!("{addr}/{prefix}").to_lowercase().contains(&search)
+                })
+        };
 
     let mut filtered: Vec<ShapedDevice> = match kind {
         ShapedDevicesPageKind::Static => lqos_network_devices::shaped_devices_catalog()

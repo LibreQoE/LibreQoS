@@ -152,7 +152,7 @@ file /opt/libreqos/src/liblqos_python.so
 ldd /opt/libreqos/src/liblqos_python.so
 ```
 
-Routine package upgrades now invoke `lqos_setup --skip-if-ready` during `postinst`. If `/etc/lqos.conf` loads, shaping interfaces are already selected and present, bandwidth is non-zero, and `network.json` plus `ShapedDevices.csv` already exist, the package skips the interactive Cursive setup screen instead of trying to launch a TUI during the upgrade.
+Routine package upgrades now keep `lqosd` in charge of the main WebUI when `/etc/lqos.conf` already exists. Current packages no longer start the dedicated `lqos_setup` web service during a normal upgrade just because newer first-run checks are incomplete. If the upgraded host still needs a first admin user or a topology source, finish that work in the normal WebUI (`first-run.html` or `Complete Setup`) instead of expecting `lqos_setup` to take over port `9123`.
 
 If startup shaping fails because `shaping_inputs.json` is missing or stale, current builds leave the scheduler running in a degraded state and wait for the next scheduled full refresh to recover. The high-frequency topology refresh tick stays disabled until one shaping pass completes successfully, so repeated 3-second refresh attempts should not continue hammering a fresh install that has not produced runtime topology inputs yet.
 

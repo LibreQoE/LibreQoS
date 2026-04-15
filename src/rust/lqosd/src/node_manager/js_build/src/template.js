@@ -124,6 +124,7 @@ function schedulerStateDescriptor(data) {
     const hasError = !!(data?.error && String(data.error).trim().length > 0);
     const available = !!data?.available;
     const active = !!progress?.active;
+    const setupRequired = !!data?.setup_required;
 
     if (hasError) {
         return {
@@ -134,6 +135,17 @@ function schedulerStateDescriptor(data) {
             subtitle: progress?.phase_label || progress?.phase || "Scheduler needs attention",
             ringTone: "tone-danger",
             icon: "fa-triangle-exclamation",
+        };
+    }
+    if (setupRequired) {
+        return {
+            tone: "warning",
+            badgeClass: "text-bg-warning",
+            label: "Setup Required",
+            title: "Choose a topology source",
+            subtitle: data?.setup_message || "LibreQoS needs subscriber data before the scheduler can run",
+            ringTone: "tone-warning",
+            icon: "fa-list-check",
         };
     }
     if (active) {
@@ -190,7 +202,21 @@ function summarizeSchedulerOutput(output, error) {
     return lines[lines.length - 1];
 }
 
-function schedulerActivityItems(output, error) {
+function schedulerSetupMessage(data) {
+    if (data?.setup_required && data?.setup_message) {
+        return String(data.setup_message).trim();
+    }
+    return "";
+}
+
+function schedulerActivityItems(output, error, data) {
+    const setupMessage = schedulerSetupMessage(data);
+    if (setupMessage.length > 0) {
+        return [
+            setupMessage,
+            "Open Complete Setup to choose an integration or provide manual subscriber data.",
+        ];
+    }
     if (error && String(error).trim().length > 0) {
         return [String(error).trim()];
     }
@@ -215,14 +241,19 @@ function renderSchedulerDetails(data) {
     const updatedText = progress?.updated_unix
         ? schedulerRelativeTime(progress.updated_unix)
         : "Update time unavailable";
-    const availabilityText = data?.available ? "Healthy" : "Unavailable";
-    const recentResult = summarizeSchedulerOutput(data?.output, data?.error);
-    const activity = schedulerActivityItems(data?.output, data?.error);
-    const progressMeta = progress?.active
-        ? `${percent}% complete`
-        : descriptor.label === "Idle"
-            ? "Last run complete"
-            : "Waiting for activity";
+    const availabilityText = data?.setup_required ? "Setup Required" : (data?.available ? "Healthy" : "Unavailable");
+    const recentResult = schedulerSetupMessage(data) || summarizeSchedulerOutput(data?.output, data?.error);
+    const activity = schedulerActivityItems(data?.output, data?.error, data);
+    const progressMeta = data?.setup_required
+        ? "Complete runtime setup to enable scheduler work"
+        : progress?.active
+            ? `${percent}% complete`
+            : descriptor.label === "Idle"
+                ? "Last run complete"
+                : "Waiting for activity";
+    const setupAlert = data?.setup_required
+        ? `<div class="alert alert-warning mt-3 mb-0" role="alert"><i class="fa fa-list-check me-2"></i>${escapeHtml(schedulerSetupMessage(data) || "Choose a topology source in Complete Setup before expecting scheduler activity.")}</div>`
+        : "";
     const alertMarkup = data?.error
         ? `<div class="alert alert-danger mt-3 mb-0" role="alert"><i class="fa fa-triangle-exclamation me-2"></i>${escapeHtml(String(data.error).trim())}</div>`
         : "";
@@ -248,6 +279,7 @@ function renderSchedulerDetails(data) {
                 <div class="lqos-scheduler-modal-updated">${escapeHtml(updatedText)}</div>
             </div>
         </div>
+        ${setupAlert}
         ${alertMarkup}
         <div class="lqos-scheduler-progress-card">
             <div class="lqos-scheduler-progress-topline">
@@ -332,6 +364,10 @@ function renderSchedulerStatus(container, state, progress) {
         color = "text-danger";
         label = "Scheduler has an internal error";
         indicator = schedulerRingMarkup(100, "tone-danger", "fa-triangle-exclamation");
+    } else if (state === "setup") {
+        color = "text-warning";
+        label = "Scheduler needs topology setup";
+        indicator = schedulerRingMarkup(100, "tone-warning", "fa-list-check");
     }
 
     container.innerHTML = `
@@ -381,10 +417,17 @@ function loadSchedulerStatus(force = false) {
         const isHealthy = !!data.available && !hasError;
         const progress = data.progress || null;
         const progressActive = !!(progress && progress.active);
+        const setupRequired = !!data.setup_required;
         const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
 
         if (hasError) {
             renderSchedulerStatus(container, "error", progress);
+            scheduleNextSchedulerStatusPoll();
+            return;
+        }
+
+        if (setupRequired) {
+            renderSchedulerStatus(container, "setup", progress);
             scheduleNextSchedulerStatusPoll();
             return;
         }

@@ -1,5 +1,6 @@
 use crate::node_manager::auth::LoginResult;
 use crate::node_manager::local_api::network_mode::NetworkModeInspection;
+use crate::node_manager::runtime_onboarding::RuntimeOnboardingState;
 use crate::shaping_runtime::ShapingRuntimeStatus;
 use axum::Extension;
 use axum::body::Bytes;
@@ -180,6 +181,8 @@ pub struct ConfigView {
     pub shaping_status: ShapingRuntimeStatus,
     #[serde(default)]
     pub network_mode_inspection: NetworkModeInspection,
+    #[serde(default)]
+    pub runtime_onboarding: RuntimeOnboardingState,
 }
 
 pub fn admin_check_data(login: LoginResult) -> bool {
@@ -344,6 +347,8 @@ pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
                 shaping_status: crate::shaping_runtime::get_status(),
                 network_mode_inspection:
                     crate::node_manager::local_api::network_mode::inspect_network_mode(&config),
+                runtime_onboarding:
+                    crate::node_manager::runtime_onboarding::runtime_onboarding_state(),
                 config,
                 secret_state,
             }
@@ -395,8 +400,7 @@ fn inspect_png(body: &[u8]) -> Result<(u32, u32), CobrandUploadValidationError> 
 }
 
 fn rendered_cobrand_width_exceeds_sidebar(width: u32, height: u32) -> bool {
-    u64::from(width) * COBRAND_DISPLAY_HEIGHT_PX
-        > u64::from(height) * COBRAND_MAX_DISPLAY_WIDTH_PX
+    u64::from(width) * COBRAND_DISPLAY_HEIGHT_PX > u64::from(height) * COBRAND_MAX_DISPLAY_WIDTH_PX
 }
 
 fn persist_cobrand_png(body: &[u8]) -> Result<(), StatusCode> {
@@ -406,10 +410,7 @@ fn persist_cobrand_png(body: &[u8]) -> Result<(), StatusCode> {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
     std::fs::create_dir_all(parent_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let temp_root = parent_dir
-        .parent()
-        .unwrap_or(parent_dir)
-        .join(".tmp");
+    let temp_root = parent_dir.parent().unwrap_or(parent_dir).join(".tmp");
     std::fs::create_dir_all(&temp_root).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let mut temp_path = None;
     for attempt in 0..32 {
@@ -477,8 +478,12 @@ pub async fn upload_cobrand(
             "Cobrand image is too wide for the sidebar at 48px tall. Keep the rendered width at or below 176px.",
         ),
     })?;
-    persist_cobrand_png(&body)
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Unable to save cobrand.png."))?;
+    persist_cobrand_png(&body).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unable to save cobrand.png.",
+        )
+    })?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1018,24 +1023,27 @@ pub struct UserRequest {
 #[cfg(test)]
 mod tests {
     use super::{
-        CobrandUploadValidationError, ConfigSecretClearRequest, apply_secret_updates,
-        cobrand_path, persist_cobrand_png, redact_config_secrets, upload_cobrand,
-        validate_cobrand_upload, validate_network_json,
+        CobrandUploadValidationError, ConfigSecretClearRequest, apply_secret_updates, cobrand_path,
+        persist_cobrand_png, redact_config_secrets, upload_cobrand, validate_cobrand_upload,
+        validate_network_json,
     };
     use crate::node_manager::auth::LoginResult;
+    use crate::test_support::runtime_config_test_lock;
     use axum::Extension;
     use axum::body::Bytes;
     use axum::http::HeaderMap;
     use lqos_config::Config;
     use serde_json::json;
+    use std::ffi::OsString;
     use std::fs;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
     const VALID_PNG: &[u8] = &[
-        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H',
-        b'D', b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
-        0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, b'I', b'D', b'A', b'T', 0x78,
-        0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-        0x00, 0x00, 0x00, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
+        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H', b'D',
+        b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, b'I', b'D', b'A', b'T', 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, b'I',
+        b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
     ];
 
     fn encode_test_png(width: u32, height: u32) -> Vec<u8> {
@@ -1052,6 +1060,72 @@ mod tests {
             writer.write_image_data(&data).expect("write png bytes");
         }
         png_bytes
+    }
+
+    fn cobrand_test_runtime_dir() -> PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"))
+    }
+
+    fn write_cobrand_test_config(runtime_dir: &std::path::Path) -> PathBuf {
+        fs::create_dir_all(runtime_dir).expect("create runtime dir");
+        let config_path = runtime_dir.join("lqos.conf");
+        let runtime_dir_string = runtime_dir.display().to_string();
+        let state_dir_string = runtime_dir.join("state").display().to_string();
+        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
+            .replace("/opt/libreqos/src", &runtime_dir_string)
+            .replace("/opt/libreqos/state", &state_dir_string)
+            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
+        fs::write(&config_path, raw).expect("write config");
+        config_path
+    }
+
+    struct CobrandTestContext {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        old_lqos_config: Option<OsString>,
+        old_lqos_directory: Option<OsString>,
+        runtime_dir: PathBuf,
+    }
+
+    impl CobrandTestContext {
+        fn new() -> Self {
+            let guard = runtime_config_test_lock()
+                .lock()
+                .expect("cobrand test lock should not be poisoned");
+            let runtime_dir = cobrand_test_runtime_dir();
+            let config_path = write_cobrand_test_config(&runtime_dir);
+            let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+            let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
+            unsafe {
+                std::env::set_var("LQOS_CONFIG", &config_path);
+                std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
+            }
+            lqos_config::clear_cached_config();
+            Self {
+                _guard: guard,
+                old_lqos_config,
+                old_lqos_directory,
+                runtime_dir,
+            }
+        }
+    }
+
+    impl Drop for CobrandTestContext {
+        fn drop(&mut self) {
+            match &self.old_lqos_config {
+                Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+                None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+            }
+            match &self.old_lqos_directory {
+                Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
+                None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
+            }
+            lqos_config::clear_cached_config();
+            let _ = fs::remove_dir_all(&self.runtime_dir);
+        }
     }
 
     #[test]
@@ -1283,8 +1357,14 @@ mod tests {
     fn validate_cobrand_upload_accepts_boundary_dimensions() {
         let max_width = encode_test_png(176, 48);
         let max_height = encode_test_png(1, 4096);
-        assert_eq!(validate_cobrand_upload(Some("image/png"), &max_width), Ok(()));
-        assert_eq!(validate_cobrand_upload(Some("image/png"), &max_height), Ok(()));
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &max_width),
+            Ok(())
+        );
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &max_height),
+            Ok(())
+        );
     }
 
     #[tokio::test]
@@ -1307,25 +1387,7 @@ mod tests {
 
     #[tokio::test]
     async fn upload_cobrand_accepts_admin_png_and_persists_file() {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should move forward")
-            .as_nanos();
-        let runtime_dir = std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"));
-        fs::create_dir_all(&runtime_dir).expect("create runtime dir");
-        let config_path = runtime_dir.join("lqos.conf");
-        let runtime_dir_string = runtime_dir.display().to_string();
-        let state_dir_string = runtime_dir.join("state").display().to_string();
-        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
-            .replace("/opt/libreqos/src", &runtime_dir_string)
-            .replace("/opt/libreqos/state", &state_dir_string)
-            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
-        fs::write(&config_path, raw).expect("write config");
-        let previous = std::env::var_os("LQOS_CONFIG");
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &config_path);
-        }
-        lqos_config::clear_cached_config();
+        let _context = CobrandTestContext::new();
 
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -1343,40 +1405,11 @@ mod tests {
         let config = lqos_config::load_config().expect("load config");
         let path = cobrand_path(config.as_ref());
         assert_eq!(fs::read(path).expect("read cobrand"), VALID_PNG);
-
-        match previous {
-            Some(value) => unsafe {
-                std::env::set_var("LQOS_CONFIG", value);
-            },
-            None => unsafe {
-                std::env::remove_var("LQOS_CONFIG");
-            },
-        }
-        lqos_config::clear_cached_config();
-        let _ = fs::remove_dir_all(runtime_dir);
     }
 
     #[test]
     fn persist_cobrand_png_writes_runtime_static_file() {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time should move forward")
-            .as_nanos();
-        let runtime_dir = std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"));
-        fs::create_dir_all(&runtime_dir).expect("create runtime dir");
-        let config_path = runtime_dir.join("lqos.conf");
-        let runtime_dir_string = runtime_dir.display().to_string();
-        let state_dir_string = runtime_dir.join("state").display().to_string();
-        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
-            .replace("/opt/libreqos/src", &runtime_dir_string)
-            .replace("/opt/libreqos/state", &state_dir_string)
-            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
-        fs::write(&config_path, raw).expect("write config");
-        let previous = std::env::var_os("LQOS_CONFIG");
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &config_path);
-        }
-        lqos_config::clear_cached_config();
+        let _context = CobrandTestContext::new();
 
         let png_body = VALID_PNG.to_vec();
         persist_cobrand_png(&png_body).expect("write cobrand");
@@ -1384,16 +1417,5 @@ mod tests {
         let config = lqos_config::load_config().expect("load config");
         let path = cobrand_path(config.as_ref());
         assert_eq!(fs::read(path).expect("read cobrand"), png_body);
-
-        match previous {
-            Some(value) => unsafe {
-                std::env::set_var("LQOS_CONFIG", value);
-            },
-            None => unsafe {
-                std::env::remove_var("LQOS_CONFIG");
-            },
-        }
-        lqos_config::clear_cached_config();
-        let _ = fs::remove_dir_all(runtime_dir);
     }
 }

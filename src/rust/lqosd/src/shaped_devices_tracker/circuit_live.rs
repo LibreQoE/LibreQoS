@@ -90,7 +90,11 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
     for (ip_key, data) in THROUGHPUT_TRACKER.raw_data.lock().iter() {
         let device = catalog
             .device_by_hashes(data.device_hash, data.circuit_hash)
-            .or_else(|| catalog.device_longest_match_for_ip(ip_key).map(|(_, dev)| dev));
+            .or_else(|| {
+                catalog
+                    .device_longest_match_for_ip(ip_key)
+                    .map(|(_, dev)| dev)
+            });
         let Some(device) = device else {
             continue;
         };

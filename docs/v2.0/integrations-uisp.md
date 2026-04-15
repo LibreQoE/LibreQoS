@@ -51,7 +51,7 @@ journalctl -u lqos_scheduler --since "30 minutes ago"
 - Scheduler Status is healthy
 - Tree/Flow views reflect expected hierarchy depth for the selected compile mode
 
-If hierarchy depth or parent mapping is not what you expect, revisit `topology.compile_mode`, `use_ptmp_as_parent`, `exclude_sites`, and `exception_cpes` before changing other settings.
+If hierarchy depth or parent mapping is not what you expect, revisit `topology.compile_mode`, `exclude_sites`, `do_not_squash_sites`, and `exception_cpes` before changing other settings.
 
 ### Promote to Root Nodes (Performance Optimization)
 
@@ -137,7 +137,6 @@ infrastructure_transport_caps_enabled = true  # Automatically cap radio capacity
 
 # Site Management
 exclude_sites = []  # Sites to exclude, e.g., ["Test_Site", "Lab_Site"]
-use_ptmp_as_parent = true  # For sites branched off PtMP Access Points
 
 # Bandwidth Adjustments
 bandwidth_overhead_factor = 1.15  # Give customers 15% above plan speed
@@ -161,7 +160,6 @@ The following UISP options are available in current builds and WebUI (Node Manag
 - `exception_cpes`: list of `cpe:parent` overrides for ambiguous parent assignment.
 - `squash_sites`: optional list of sites to squash in full strategy workflows.
 - `do_not_squash_sites`: explicit site-name exclusions from runtime/export squashing.
-- `use_ptmp_as_parent`: prefer PtMP AP as parent for relevant topology paths.
 - `ignore_calculated_capacity`: prefer configured capacities instead of integration-calculated values.
 - `infrastructure_transport_caps_enabled`: automatically cap UISP radio/device attachment rates to observed or known transport-port ceilings before they enter topology/export.
 - `insecure_ssl`: disables TLS certificate verification for UISP API calls.
@@ -182,7 +180,8 @@ Current builds scope this flexible-frame handling narrowly to devices where UISP
 Recommended use:
 1. Keep `insecure_ssl = false` unless you have a known internal PKI/self-signed requirement.
 2. Use `exclude_sites` and `do_not_squash_sites` first for safer topology changes.
-3. UISP runtime/export squashing is always enabled after Topology Manager. Use `do_not_squash_sites` only when a specific site path must remain unsquashed.
+3. Use Topology Manager parent selection and attachment preference for path intent; the old UISP PtMP-parent toggle is retired.
+4. UISP runtime/export squashing is always enabled after Topology Manager. Use `do_not_squash_sites` only when a specific site path must remain unsquashed.
 
 Legacy note:
 - Existing `enable_squashing` values in `/etc/lqos.conf` are ignored for backward compatibility.

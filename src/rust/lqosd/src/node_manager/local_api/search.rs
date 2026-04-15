@@ -240,8 +240,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                             };
                             let n = IpNetwork::V6(v6net);
                             if ipv6_overlap(&n, query_v6) {
-                                let name =
-                                    format!("{} ({})", dev.device_name, pretty_net(&n));
+                                let name = format!("{} ({})", dev.device_name, pretty_net(&n));
                                 push_result(
                                     &mut results,
                                     &mut seen,
@@ -266,8 +265,7 @@ pub fn search_results(search: SearchRequest) -> Vec<SearchResult> {
                             };
                             let n = IpNetwork::V6(v6net);
                             if ipv6_overlap(&n, query_v6) {
-                                let name =
-                                    format!("{} ({})", dev.device_name, pretty_net(&n));
+                                let name = format!("{} ({})", dev.device_name, pretty_net(&n));
                                 push_result(
                                     &mut results,
                                     &mut seen,

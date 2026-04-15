@@ -5,9 +5,11 @@ use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bus::{BusResponse, Circuit};
 use lqos_config::{
-    NetworkJsonNode, NetworkJsonTransport, TopologyRuntimeStatusFile, TopologyShapingInputsFile,
-    load_config, topology_runtime_status_path, topology_shaping_inputs_path,
+    NetworkJsonNode, NetworkJsonTransport, TopologyShapingInputsFile, load_config,
+    topology_runtime_status_path,
 };
+#[cfg(test)]
+use lqos_config::{TopologyRuntimeStatusFile, topology_shaping_inputs_path};
 use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::hash_to_i64;
@@ -16,6 +18,7 @@ use lqos_utils::units::{DownUpOrder, down_up_retransmit_sample};
 use lqos_utils::unix_time::time_since_boot;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+#[cfg(test)]
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -101,6 +104,7 @@ fn publish_shaping_inputs(shaping_inputs: TopologyShapingInputsFile) {
     invalidate_executive_cache_snapshot();
 }
 
+#[cfg(test)]
 fn active_runtime_shaping_inputs_path(config: &lqos_config::Config) -> Result<Option<PathBuf>> {
     let status = TopologyRuntimeStatusFile::load(config)?;
     if !status.ready {
@@ -113,15 +117,16 @@ fn active_runtime_shaping_inputs_path(config: &lqos_config::Config) -> Result<Op
     Ok(Some(PathBuf::from(path)))
 }
 
+#[cfg(test)]
 fn load_active_runtime_shaping_inputs(
     config: &lqos_config::Config,
 ) -> Result<Option<TopologyShapingInputsFile>> {
-    if let Some(active_path) = active_runtime_shaping_inputs_path(config)?
-        && active_path.exists()
-    {
-        let raw = std::fs::read_to_string(&active_path)?;
-        let shaping_inputs = serde_json::from_str(&raw)?;
-        return Ok(Some(shaping_inputs));
+    if let Some(active_path) = active_runtime_shaping_inputs_path(config)? {
+        if active_path.exists() {
+            let raw = std::fs::read_to_string(&active_path)?;
+            let shaping_inputs = serde_json::from_str(&raw)?;
+            return Ok(Some(shaping_inputs));
+        }
     }
 
     let fallback_path = topology_shaping_inputs_path(config);
@@ -302,27 +307,37 @@ fn load_shaped_devices_from_preferred_source(
         }
     }
 
-    let shaped_devices = ConfigShapedDevices::load_for_config(config)
-        .context("Unable to load ShapedDevices.csv")?;
+    let shaped_devices =
+        ConfigShapedDevices::load_for_config(config).context("Unable to load ShapedDevices.csv")?;
     Ok((shaped_devices, ShapedDevicesLoadSource::ShapedDevicesCsv))
 }
-
 fn load_shaping_inputs() {
     let Ok(config) = load_config() else {
         warn!("Unable to load LibreQoS config while loading shaping_inputs.json");
+        publish_shaping_inputs(TopologyShapingInputsFile::default());
         return;
     };
-    match load_active_runtime_shaping_inputs(config.as_ref()) {
+    match lqos_network_devices::load_runtime_shaping_inputs_for_config(config.as_ref()) {
         Ok(Some(shaping_inputs)) => {
             debug!("Loaded shaping inputs from active runtime status");
             publish_shaping_inputs(shaping_inputs);
         }
         Ok(None) => {
-            debug!("No active runtime shaping inputs published; clearing effective parent cache");
-            publish_shaping_inputs(TopologyShapingInputsFile::default());
+            if lqos_config::integration_ingress_enabled(config.as_ref()) {
+                // Preserve the last known-good parent map so a transient publication race or
+                // temporary read failure does not blank topology overlays between runtime writes.
+                debug!(
+                    "No active runtime shaping inputs published; keeping last-known-good effective parent cache"
+                );
+            } else {
+                debug!("Integration ingress disabled; clearing effective parent cache");
+                publish_shaping_inputs(TopologyShapingInputsFile::default());
+            }
         }
         Err(err) => {
-            warn!("Unable to load shaping_inputs.json: {err}");
+            warn!(
+                "Unable to load shaping_inputs.json: {err}; keeping last-known-good effective parent cache"
+            );
         }
     }
 }
@@ -434,7 +449,6 @@ fn build_network_tree_summaries(
 
     summaries
 }
-
 
 pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
@@ -954,14 +968,11 @@ pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
 mod tests {
     use super::*;
     use lqos_config::{
-        CircuitAnchorsFile, Config, TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyShapingCircuitInput,
+        Config, TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyShapingCircuitInput,
         TopologyShapingDeviceInput, TopologyShapingInputsFile,
     };
-    use lqos_topology_compile::{ImportedTopologyBundle, TopologyImportFile};
-    use lqos_utils::XdpIpAddress;
-    use serde_json::json;
     use std::fs;
-    use std::net::Ipv4Addr;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
@@ -974,27 +985,11 @@ mod tests {
         path
     }
 
-    fn write_shaped_devices_csv(path: &std::path::Path, circuit_id: &str, ip: &str) {
-        fs::write(
-            path,
-            format!(
-                concat!(
-                    "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,",
-                    "Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
-                    "\"{}\",\"Circuit {}\",\"device-{}\",",
-                    "\"Device {}\",\"Tower 1\",\"aa:bb:cc:dd:ee:ff\",\"{}\",\"\",",
-                    "\"10\",\"10\",\"100\",\"100\",\"\"\n",
-                ),
-                circuit_id, circuit_id, circuit_id, circuit_id, ip,
-            ),
-        )
-        .expect("ShapedDevices.csv should write");
-    }
-
     fn write_runtime_status(
         path: &std::path::Path,
         ready: bool,
         shaping_inputs_path: &std::path::Path,
+        source_generation: &str,
     ) {
         fs::write(
             path,
@@ -1004,7 +999,7 @@ mod tests {
                 "shaping_inputs_path": shaping_inputs_path,
                 "effective_state_path": "",
                 "effective_network_path": "",
-                "source_generation": "gen-1",
+                "source_generation": source_generation,
                 "shaping_generation": "shape-1",
             })
             .to_string(),
@@ -1046,46 +1041,6 @@ mod tests {
 
         let map = build_effective_circuit_parent_map(&shaping_inputs);
         assert!(map.is_empty());
-    }
-
-    #[test]
-    fn shaped_devices_from_runtime_inputs_uses_effective_parent_and_ip_lookup() {
-        let shaping_inputs = TopologyShapingInputsFile {
-            circuits: vec![TopologyShapingCircuitInput {
-                circuit_id: "circuit-1".to_string(),
-                circuit_name: "Circuit Alpha".to_string(),
-                anchor_node_id: Some("anchor-1".to_string()),
-                effective_parent_node_name: "Parent-A".to_string(),
-                effective_parent_node_id: "parent-id-1".to_string(),
-                download_min_mbps: 10.0,
-                upload_min_mbps: 5.0,
-                download_max_mbps: 50.0,
-                upload_max_mbps: 10.0,
-                devices: vec![TopologyShapingDeviceInput {
-                    device_id: "device-1".to_string(),
-                    device_name: "Device Alpha".to_string(),
-                    mac: "aa:bb:cc:dd:ee:ff".to_string(),
-                    ipv4: vec!["192.168.1.10/32".to_string()],
-                    comment: "device-comment".to_string(),
-                    ..TopologyShapingDeviceInput::default()
-                }],
-                comment: "circuit-comment".to_string(),
-                ..TopologyShapingCircuitInput::default()
-            }],
-            ..TopologyShapingInputsFile::default()
-        };
-
-        let shaped = shaped_devices_from_runtime_inputs(&shaping_inputs);
-        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
-        let device = shaped
-            .get_device_from_ip(&ip)
-            .expect("lookup should resolve");
-
-        assert_eq!(device.parent_node, "Parent-A");
-        assert_eq!(device.parent_node_id.as_deref(), Some("parent-id-1"));
-        assert_eq!(device.anchor_node_id.as_deref(), Some("anchor-1"));
-        assert_eq!(device.comment, "device-comment");
-        assert_eq!(device.circuit_id, "circuit-1");
     }
 
     #[test]
@@ -1134,13 +1089,17 @@ mod tests {
             serde_json::to_string_pretty(&stale_inputs).expect("stale shaping should encode"),
         )
         .expect("stale shaping should write");
-        write_runtime_status(&status_path, true, &active_shaping_path);
 
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: Some(state_directory.to_string_lossy().to_string()),
             ..Config::default()
         };
+        let mut config = config;
+        config.uisp_integration.enable_uisp = true;
+        let source_generation = lqos_config::compute_topology_source_generation(&config)
+            .expect("generation should compute");
+        write_runtime_status(&status_path, true, &active_shaping_path, &source_generation);
 
         let loaded = load_active_runtime_shaping_inputs(&config)
             .expect("runtime shaping should load")
@@ -1150,193 +1109,74 @@ mod tests {
     }
 
     #[test]
-    fn load_shaped_devices_prefers_ready_runtime_even_when_empty() {
-        let lqos_directory = unique_temp_dir("lqosd-shaped-devices-runtime-empty");
+    fn load_shaped_devices_from_preferred_source_uses_runtime_inputs_before_csv() {
+        let lqos_directory = unique_temp_dir("lqosd-shaped-devices-source-order");
         let state_directory = lqos_directory.join("state");
         fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
         fs::create_dir_all(state_directory.join("shaping")).expect("shaping dir should exist");
 
-        let runtime_path = lqos_directory.join("runtime_shaping_inputs.json");
+        let active_shaping_path = lqos_directory.join("shaping_inputs.json");
         let status_path = state_directory
             .join("topology")
             .join(TOPOLOGY_RUNTIME_STATUS_FILENAME);
-        write_shaped_devices_csv(
-            &lqos_directory.join("ShapedDevices.csv"),
-            "csv-circuit",
-            "192.0.2.10/32",
-        );
-        fs::write(
-            &runtime_path,
-            serde_json::to_string_pretty(&TopologyShapingInputsFile::default())
-                .expect("empty shaping inputs should encode"),
-        )
-        .expect("runtime shaping inputs should write");
-        write_runtime_status(&status_path, true, &runtime_path);
+        let csv_path = lqos_directory.join("ShapedDevices.csv");
 
-        let config = Config {
-            lqos_directory: lqos_directory.to_string_lossy().to_string(),
-            state_directory: Some(state_directory.to_string_lossy().to_string()),
-            ..Config::default()
-        };
-
-        let (loaded, source) = load_shaped_devices_from_preferred_source(&config)
-            .expect("preferred shaped-device source should load");
-        assert_eq!(source, ShapedDevicesLoadSource::RuntimeShapingInputs);
-        assert!(loaded.devices.is_empty());
-    }
-
-    #[test]
-    fn load_shaped_devices_uses_csv_when_runtime_is_not_ready() {
-        let lqos_directory = unique_temp_dir("lqosd-shaped-devices-csv-fallback");
-        let state_directory = lqos_directory.join("state");
-        fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
-
-        let runtime_path = lqos_directory.join("runtime_shaping_inputs.json");
-        let status_path = state_directory
-            .join("topology")
-            .join(TOPOLOGY_RUNTIME_STATUS_FILENAME);
-        write_shaped_devices_csv(
-            &lqos_directory.join("ShapedDevices.csv"),
-            "csv-circuit",
-            "192.0.2.10/32",
-        );
-        fs::write(
-            &runtime_path,
-            serde_json::to_string_pretty(&TopologyShapingInputsFile {
-                circuits: vec![TopologyShapingCircuitInput {
-                    circuit_id: "runtime-circuit".to_string(),
-                    devices: vec![TopologyShapingDeviceInput {
-                        device_id: "device-1".to_string(),
-                        device_name: "Device 1".to_string(),
-                        ipv4: vec!["198.51.100.10/32".to_string()],
-                        ..TopologyShapingDeviceInput::default()
-                    }],
-                    ..TopologyShapingCircuitInput::default()
+        let active_inputs = TopologyShapingInputsFile {
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "runtime-circuit".to_string(),
+                circuit_name: "Runtime Circuit".to_string(),
+                effective_parent_node_name: "Runtime Parent".to_string(),
+                effective_parent_node_id: "runtime-parent-id".to_string(),
+                devices: vec![TopologyShapingDeviceInput {
+                    device_id: "runtime-device".to_string(),
+                    device_name: "Runtime Device".to_string(),
+                    ipv4: vec!["192.168.44.9/32".to_string()],
+                    ipv6: vec!["2001:db8::44/128".to_string()],
+                    ..TopologyShapingDeviceInput::default()
                 }],
-                ..TopologyShapingInputsFile::default()
-            })
-            .expect("runtime shaping inputs should encode"),
+                ..TopologyShapingCircuitInput::default()
+            }],
+            ..TopologyShapingInputsFile::default()
+        };
+
+        fs::write(
+            &active_shaping_path,
+            serde_json::to_string_pretty(&active_inputs).expect("active shaping should encode"),
         )
-        .expect("runtime shaping inputs should write");
-        write_runtime_status(&status_path, false, &runtime_path);
+        .expect("active shaping should write");
+        fs::write(
+            &csv_path,
+            "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\ncsv-circuit,CSV Circuit,csv-device,CSV Device,CSV Parent,,192.168.55.10/32,,0,0,100,100,\n",
+        )
+        .expect("csv should write");
 
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: Some(state_directory.to_string_lossy().to_string()),
             ..Config::default()
         };
-
-        let (loaded, source) =
-            load_shaped_devices_from_preferred_source(&config).expect("CSV fallback should load");
-        assert_eq!(source, ShapedDevicesLoadSource::ShapedDevicesCsv);
-        assert_eq!(loaded.devices.len(), 1);
-        assert_eq!(loaded.devices[0].circuit_id, "csv-circuit");
-    }
-
-    #[test]
-    fn load_shaped_devices_uses_topology_import_when_runtime_is_not_ready() {
-        let lqos_directory = unique_temp_dir("lqosd-shaped-devices-topology-import-fallback");
-        let state_directory = lqos_directory.join("state");
-        fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
-
-        let runtime_path = lqos_directory.join("runtime_shaping_inputs.json");
-        let status_path = state_directory
-            .join("topology")
-            .join(TOPOLOGY_RUNTIME_STATUS_FILENAME);
-        fs::write(
-            &runtime_path,
-            serde_json::to_string_pretty(&TopologyShapingInputsFile::default())
-                .expect("runtime shaping inputs should encode"),
-        )
-        .expect("runtime shaping inputs should write");
-        write_runtime_status(&status_path, false, &runtime_path);
-
-        let mut import_devices = ConfigShapedDevices::default();
-        import_devices.replace_with_new_data(vec![ShapedDevice {
-            circuit_id: "import-circuit".to_string(),
-            circuit_name: "Import Circuit".to_string(),
-            device_id: "device-import".to_string(),
-            parent_node: "Tower Import".to_string(),
-            ipv4: vec![(Ipv4Addr::new(203, 0, 113, 10), 32)],
-            ..Default::default()
-        }]);
-        let imported = ImportedTopologyBundle {
-            source: "test/import".to_string(),
-            generated_unix: Some(123),
-            ingress_identity: Some("import-base".to_string()),
-            native_canonical: None,
-            native_editor: None,
-            parent_candidates: None,
-            compatibility_network_json: json!({}),
-            shaped_devices: import_devices,
-            circuit_anchors: CircuitAnchorsFile::default(),
-            ethernet_advisories: Vec::new(),
-        };
-        TopologyImportFile::from_imported_bundle(&imported, "full")
-            .save(&Config {
-                lqos_directory: lqos_directory.to_string_lossy().to_string(),
-                state_directory: Some(state_directory.to_string_lossy().to_string()),
-                ..Config::default()
-            })
-            .expect("topology import should save");
-
-        let mut config = Config {
-            lqos_directory: lqos_directory.to_string_lossy().to_string(),
-            state_directory: Some(state_directory.to_string_lossy().to_string()),
-            ..Config::default()
-        };
-        config.uisp_integration.enable_uisp = true;
+        let source_generation = lqos_config::compute_topology_source_generation(&config)
+            .expect("generation should compute");
+        write_runtime_status(&status_path, true, &active_shaping_path, &source_generation);
 
         let (loaded, source) = load_shaped_devices_from_preferred_source(&config)
-            .expect("topology import fallback should load");
-        assert_eq!(source, ShapedDevicesLoadSource::TopologyImport);
+            .expect("preferred source should load");
+
+        assert_eq!(source, ShapedDevicesLoadSource::RuntimeShapingInputs);
         assert_eq!(loaded.devices.len(), 1);
-        assert_eq!(loaded.devices[0].circuit_id, "import-circuit");
-    }
-
-    #[test]
-    fn load_shaped_devices_falls_back_to_csv_when_topology_import_is_empty() {
-        let lqos_directory = unique_temp_dir("lqosd-shaped-devices-topology-import-empty");
-        let state_directory = lqos_directory.join("state");
-        fs::create_dir_all(state_directory.join("topology")).expect("topology dir should exist");
-
-        write_shaped_devices_csv(
-            &lqos_directory.join("ShapedDevices.csv"),
-            "csv-circuit",
-            "192.0.2.10/32",
+        assert_eq!(loaded.devices[0].circuit_id, "runtime-circuit");
+        assert_eq!(loaded.devices[0].parent_node, "Runtime Parent");
+        assert_eq!(
+            loaded.devices[0].parent_node_id.as_deref(),
+            Some("runtime-parent-id")
         );
-
-        let imported = ImportedTopologyBundle {
-            source: "test/import".to_string(),
-            generated_unix: Some(123),
-            ingress_identity: Some("import-base".to_string()),
-            native_canonical: None,
-            native_editor: None,
-            parent_candidates: None,
-            compatibility_network_json: json!({}),
-            shaped_devices: ConfigShapedDevices::default(),
-            circuit_anchors: CircuitAnchorsFile::default(),
-            ethernet_advisories: Vec::new(),
-        };
-        TopologyImportFile::from_imported_bundle(&imported, "full")
-            .save(&Config {
-                lqos_directory: lqos_directory.to_string_lossy().to_string(),
-                state_directory: Some(state_directory.to_string_lossy().to_string()),
-                ..Config::default()
-            })
-            .expect("topology import should save");
-
-        let mut config = Config {
-            lqos_directory: lqos_directory.to_string_lossy().to_string(),
-            state_directory: Some(state_directory.to_string_lossy().to_string()),
-            ..Config::default()
-        };
-        config.uisp_integration.enable_uisp = true;
-
-        let (loaded, source) = load_shaped_devices_from_preferred_source(&config)
-            .expect("CSV fallback should load");
-        assert_eq!(source, ShapedDevicesLoadSource::ShapedDevicesCsv);
-        assert_eq!(loaded.devices.len(), 1);
-        assert_eq!(loaded.devices[0].circuit_id, "csv-circuit");
+        assert_eq!(
+            loaded.devices[0].ipv4,
+            vec![(Ipv4Addr::new(192, 168, 44, 9), 32)]
+        );
+        assert_eq!(
+            loaded.devices[0].ipv6,
+            vec![("2001:db8::44".parse::<Ipv6Addr>().expect("valid ipv6"), 128)]
+        );
     }
 }

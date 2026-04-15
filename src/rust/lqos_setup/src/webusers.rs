@@ -5,11 +5,17 @@ use cursive::{
     views::{Button, Dialog, EditView, LinearLayout, SelectView, TextView},
 };
 use lqos_config::{UserRole, WebUsers};
+use lqos_setup::bootstrap;
+
+fn load_or_create_setup_users() -> Result<WebUsers, lqos_config::authentication::AuthenticationError>
+{
+    WebUsers::load_or_create_in(&bootstrap::runtime_lqos_directory())
+}
 
 /// Shows and manages the list of web users.
 pub fn webusers_menu(s: &mut Cursive) {
     // Load or create the web users config
-    let webusers = match WebUsers::load_or_create() {
+    let webusers = match load_or_create_setup_users() {
         Ok(wu) => wu,
         Err(e) => {
             s.add_layer(Dialog::info(format!("Failed to load web users: {e}")));
@@ -35,7 +41,7 @@ pub fn webusers_menu(s: &mut Cursive) {
                 .child(TextView::new("Web Users:"))
                 .child(select_view)
                 .child(Button::new("Remove Selected", move |s| {
-                    let mut webusers = match WebUsers::load_or_create() {
+                    let mut webusers = match load_or_create_setup_users() {
                         Ok(wu) => wu,
                         Err(e) => {
                             s.add_layer(Dialog::info(format!("Failed to load web users: {e}")));
@@ -107,7 +113,7 @@ pub fn webusers_menu(s: &mut Cursive) {
                         .unwrap()
                         .to_string();
                     let role = UserRole::from(role_str.as_str());
-                    let mut webusers = match WebUsers::load_or_create() {
+                    let mut webusers = match load_or_create_setup_users() {
                         Ok(wu) => wu,
                         Err(e) => {
                             s.add_layer(Dialog::info(format!("Failed to load web users: {e}")));
@@ -155,7 +161,7 @@ pub fn webusers_menu(s: &mut Cursive) {
                                     })
                                     .unwrap()
                                     .to_string();
-                                let mut webusers = match WebUsers::load_or_create() {
+                                let mut webusers = match load_or_create_setup_users() {
                                     Ok(wu) => wu,
                                     Err(e) => {
                                         s.add_layer(Dialog::info(format!(
@@ -164,7 +170,6 @@ pub fn webusers_menu(s: &mut Cursive) {
                                         return;
                                     }
                                 };
-                                // Default to Admin role for password change (could be improved)
                                 let user = webusers
                                     .get_users()
                                     .into_iter()

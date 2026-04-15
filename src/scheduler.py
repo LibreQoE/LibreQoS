@@ -4,7 +4,7 @@ import csv
 import io
 import json
 import chardet
-from LibreQoS import refreshShapers, refreshShapersUpdateOnly
+from LibreQoS import ValidationFailure, refreshShapers, refreshShapersUpdateOnly
 import subprocess
 import sys
 import tempfile
@@ -75,11 +75,8 @@ def get_state_path(category: str, filename: str) -> str:
     return os.path.join(get_state_directory(), category, filename)
 
 
-def get_existing_state_path(category: str, filename: str) -> str:
-    preferred = get_state_path(category, filename)
-    if os.path.exists(preferred):
-        return preferred
-    return os.path.join(get_libreqos_directory(), filename)
+def get_runtime_state_path(category: str, filename: str) -> str:
+    return get_state_path(category, filename)
 
 
 def set_scheduler_status_bus_enabled(enabled: bool):
@@ -149,6 +146,7 @@ def report_scheduler_runtime_failure(context: str, exc: Exception, *, startup: b
     message = f"{context}: {exc}"
     print(message)
     scheduler_error(message)
+    scheduler_output(message)
     if startup:
         publish_scheduler_progress(
             False,
@@ -158,6 +156,29 @@ def report_scheduler_runtime_failure(context: str, exc: Exception, *, startup: b
             SCHEDULER_STARTUP_STEP_COUNT,
             percent=100,
         )
+
+
+def report_scheduler_validation_failure(
+    context: str,
+    exc: Exception,
+    *,
+    startup: bool = False,
+    step_count: int = SCHEDULER_REFRESH_STEP_COUNT,
+):
+    message = f"{context}: {exc}"
+    print(message)
+    scheduler_error(message)
+    scheduler_output(message)
+    publish_scheduler_progress(
+        False,
+        "validation_failed",
+        "Scheduler validation failed",
+        step_count,
+        step_count,
+        percent=100,
+    )
+    if startup:
+        return
 
 
 def _integration_output_lines(output):
@@ -783,7 +804,7 @@ def load_network_json(path: str):
 
 
 def topology_canonical_state_path() -> str:
-    return get_existing_state_path("topology", "topology_canonical_state.json")
+    return get_runtime_state_path("topology", "topology_canonical_state.json")
 
 
 def load_topology_canonical_state(path: str):
@@ -988,7 +1009,7 @@ def importAndShapeFullReload():
             phase_label="Scheduler waiting for topology runtime",
             step_count=SCHEDULER_STARTUP_STEP_COUNT,
         )
-        return
+        return False
     publish_scheduler_progress(True, "initial_shaping_reload", "Refreshing shaper state", 5, SCHEDULER_STARTUP_STEP_COUNT)
     if not enable_insight_topology():
         refreshShapers()
@@ -997,6 +1018,8 @@ def importAndShapeFullReload():
         shaping_runtime_hash = calculate_shaping_runtime_hash()
     if shaping_runtime_hash != 0:
         set_scheduler_status_bus_enabled(True)
+        return True
+    return False
 
 
 def importAndShapePartialReload():
@@ -1027,6 +1050,9 @@ def importAndShapePartialReload():
         publish_scheduler_progress(True, "partial_reload", "Applying incremental shaper refresh", 4, SCHEDULER_REFRESH_STEP_COUNT)
         try:
             refreshShapers()
+        except ValidationFailure as e:
+            report_scheduler_validation_failure("Scheduled shaping refresh blocked by validation", e)
+            return
         except Exception as e:
             report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
             return
@@ -1037,7 +1063,7 @@ def importAndShapePartialReload():
 
 
 def topology_runtime_status_path():
-    return get_existing_state_path("topology", "topology_runtime_status.json")
+    return get_runtime_state_path("topology", "topology_runtime_status.json")
 
 
 def _load_topology_runtime_status():
@@ -1104,6 +1130,28 @@ def topology_runtime_readiness_detail():
             current_generation,
         )
 
+    shaping_generation = str(status.get("shaping_generation") or "").strip()
+    if not shaping_generation:
+        return (
+            False,
+            "Topology runtime has not published shaping inputs for the current source generation.",
+            current_generation,
+        )
+
+    shaping_inputs_path = str(status.get("shaping_inputs_path") or "").strip()
+    if not shaping_inputs_path:
+        return (
+            False,
+            "Topology runtime did not publish a shaping inputs path for the current source generation.",
+            current_generation,
+        )
+    if not os.path.isfile(shaping_inputs_path):
+        return (
+            False,
+            f"Topology runtime shaping inputs are not available at {shaping_inputs_path}.",
+            current_generation,
+        )
+
     return (True, "", current_generation)
 
 
@@ -1158,6 +1206,9 @@ def topology_runtime_refresh_tick():
 
     try:
         refreshShapers()
+    except ValidationFailure as e:
+        report_scheduler_validation_failure("Topology runtime refresh blocked by validation", e)
+        return
     except Exception as e:
         report_scheduler_runtime_failure("Topology runtime refresh failed", e)
         return
@@ -1182,8 +1233,16 @@ def run_scheduler_main():
     scheduler_alive()
     publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
     try:
-        importAndShapeFullReload()
-        publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
+        startup_ready = importAndShapeFullReload()
+        if startup_ready:
+            publish_scheduler_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
+    except ValidationFailure as e:
+        report_scheduler_validation_failure(
+            "Scheduler startup shaping refresh blocked by validation",
+            e,
+            startup=True,
+            step_count=SCHEDULER_STARTUP_STEP_COUNT,
+        )
     except Exception as e:
         report_scheduler_runtime_failure("Scheduler startup shaping refresh failed", e, startup=True)
         import traceback

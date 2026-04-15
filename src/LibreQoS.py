@@ -74,6 +74,10 @@ class RefreshFailure(Exception):
     pass
 
 
+class ValidationFailure(RefreshFailure):
+    pass
+
+
 def report_refresh_failure(code, message, context=None, dedupe_key=None):
     logging.error(message)
     print("ERROR: " + message)
@@ -134,11 +138,8 @@ def get_state_path(category, filename):
     return os.path.join(get_state_directory(), category, filename)
 
 
-def get_existing_state_path(category, filename):
-    preferred = get_state_path(category, filename)
-    if os.path.exists(preferred):
-        return preferred
-    return os.path.join(get_libreqos_directory(), filename)
+def get_runtime_state_path(category, filename):
+    return get_state_path(category, filename)
 
 
 def ensure_parent_dir(path):
@@ -149,11 +150,7 @@ def ensure_parent_dir(path):
 
 def get_network_json_path():
     base_dir = get_libreqos_directory()
-    effective_path = get_existing_state_path("topology", "network.effective.json")
-
-    if os.path.exists(effective_path):
-        return effective_path
-
+    effective_path = get_runtime_state_path("topology", "network.effective.json")
     if topology_import_ingress_enabled():
         return effective_path
 
@@ -167,47 +164,47 @@ def get_network_json_path():
 
 
 def get_shaping_inputs_path():
-    return get_existing_state_path("shaping", "shaping_inputs.json")
+    return get_runtime_state_path("shaping", "shaping_inputs.json")
 
 
 def get_circuit_anchors_path():
-    return get_existing_state_path("topology", "circuit_anchors.json")
+    return get_runtime_state_path("topology", "circuit_anchors.json")
 
 
 def get_planner_state_path():
-    return get_existing_state_path("shaping", "planner_state.json")
+    return get_runtime_state_path("shaping", "planner_state.json")
 
 
 def get_topology_runtime_status_path():
-    return get_existing_state_path("topology", "topology_runtime_status.json")
+    return get_runtime_state_path("topology", "topology_runtime_status.json")
 
 
 def get_queuing_structure_path():
-    return get_existing_state_path("shaping", "queuingStructure.json")
+    return get_runtime_state_path("shaping", "queuingStructure.json")
 
 
 def get_last_run_path():
-    return get_existing_state_path("stats", "lastRun.txt")
+    return get_runtime_state_path("stats", "lastRun.txt")
 
 
 def get_last_good_config_json_path():
-    return get_existing_state_path("shaping", "lastGoodConfig.json")
+    return get_runtime_state_path("shaping", "lastGoodConfig.json")
 
 
 def get_last_good_config_csv_path():
-    return get_existing_state_path("shaping", "lastGoodConfig.csv")
+    return get_runtime_state_path("shaping", "lastGoodConfig.csv")
 
 
 def get_last_loaded_shaped_devices_path():
-    return get_existing_state_path("shaping", "ShapedDevices.lastLoaded.csv")
+    return get_runtime_state_path("shaping", "ShapedDevices.lastLoaded.csv")
 
 
 def get_stats_by_circuit_path():
-    return get_existing_state_path("stats", "statsByCircuit.json")
+    return get_runtime_state_path("stats", "statsByCircuit.json")
 
 
 def get_stats_by_parent_node_path():
-    return get_existing_state_path("stats", "statsByParentNode.json")
+    return get_runtime_state_path("stats", "statsByParentNode.json")
 
 
 def get_linux_tc_path():
@@ -360,27 +357,30 @@ def _current_topology_source_generation():
 
 
 def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
-    if not topology_import_ingress_enabled():
-        return False
-
     current_generation = _current_topology_source_generation()
     if current_generation is None:
-        return False
+        return None
 
     status_path = get_topology_runtime_status_path()
     try:
         with open(status_path, 'r', encoding='utf-8') as handle:
             status = json.load(handle)
+    except FileNotFoundError:
+        return None
     except Exception:
-        return False
+        return None
 
     if not isinstance(status, dict):
-        return False
-    if not bool(status.get('ready')):
         return False
 
     status_generation = str(status.get('source_generation', '') or '').strip()
     if status_generation != current_generation:
+        return False
+    if not bool(status.get('ready')):
+        return False
+
+    status_shaping_generation = str(status.get('shaping_generation', '') or '').strip()
+    if status_shaping_generation == '':
         return False
 
     status_shaping_inputs_path = str(status.get('shaping_inputs_path', '') or '').strip()
@@ -390,6 +390,8 @@ def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
                 return False
         except Exception:
             return False
+        if not os.path.isfile(status_shaping_inputs_path):
+            return False
 
     return True
 
@@ -397,8 +399,11 @@ def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
 def _shaping_inputs_are_fresh(shaping_inputs_path, shaped_devices_file, network_json_file, circuit_anchors_file=None):
     if not os.path.isfile(shaping_inputs_path):
         return False
-    if _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
+    topology_runtime_ready = _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path)
+    if topology_runtime_ready is True:
         return True
+    if topology_runtime_ready is False:
+        return False
     try:
         shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
         if os.path.isfile(shaped_devices_file) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_file):
@@ -823,34 +828,45 @@ def validateNetworkAndDevices():
             warnings.warn("Rust failed to validate ShapedDevices.csv", stacklevel=2)
         warnings.warn(rustValid, stacklevel=2)
         devicesValidatedOrNot = False
-    with open(get_network_json_path()) as file:
-        try:
-            data = json.load(file) # put JSON-data to a variable
-            if data != {}:
-                #Traverse
-                observedNodes = set()
-                duplicateNodes = set()
-                def traverseToVerifyValidity(data):
-                    for elem in data:
-                        if isinstance(elem, str):
-                            if (isinstance(data[elem], dict)) and (elem != 'children'):
-                                if elem not in observedNodes:
-                                    observedNodes.add(elem)
-                                    if 'children' in data[elem]:
-                                        traverseToVerifyValidity(data[elem]['children'])
-                                else:
-                                    duplicateNodes.add(elem)
-                traverseToVerifyValidity(data)
-                if len(duplicateNodes) > 0:
-                    for elem in sorted(duplicateNodes):
-                        warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
-                    networkValidatedOrNot = False
-                if len(observedNodes) < 1:
-                    warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
-                    networkValidatedOrNot = False
-        except json.decoder.JSONDecodeError:
-            warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
-            networkValidatedOrNot = False
+    network_json_path = get_network_json_path()
+    if not os.path.isfile(network_json_path):
+        if integration_ingress:
+            warnings.warn(
+                f"Integration topology has not published an effective network tree yet: {network_json_path}",
+                stacklevel=2,
+            )
+        else:
+            warnings.warn(f"network.json is missing: {network_json_path}", stacklevel=2)
+        networkValidatedOrNot = False
+    else:
+        with open(network_json_path) as file:
+            try:
+                data = json.load(file) # put JSON-data to a variable
+                if data != {}:
+                    #Traverse
+                    observedNodes = set()
+                    duplicateNodes = set()
+                    def traverseToVerifyValidity(data):
+                        for elem in data:
+                            if isinstance(elem, str):
+                                if (isinstance(data[elem], dict)) and (elem != 'children'):
+                                    if elem not in observedNodes:
+                                        observedNodes.add(elem)
+                                        if 'children' in data[elem]:
+                                            traverseToVerifyValidity(data[elem]['children'])
+                                    else:
+                                        duplicateNodes.add(elem)
+                    traverseToVerifyValidity(data)
+                    if len(duplicateNodes) > 0:
+                        for elem in sorted(duplicateNodes):
+                            warnings.warn("Non-unique Node name in network.json: " + elem, stacklevel=2)
+                        networkValidatedOrNot = False
+                    if len(observedNodes) < 1:
+                        warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
+                        networkValidatedOrNot = False
+            except json.decoder.JSONDecodeError:
+                warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
+                networkValidatedOrNot = False
     if integration_ingress:
         if devicesValidatedOrNot == True:
             print("integration shaping ingress passed validation")
@@ -1290,11 +1306,13 @@ def refreshShapers():
         safeToRunRefresh = True
     else:
         if topology_import_ingress_enabled():
-            warnings.warn("Validation failed for integration ingress/runtime artifacts - will now exit.", stacklevel=2)
-            safeToRunRefresh = False
+            message = "Validation failed for integration ingress/runtime artifacts - will now exit."
+            warnings.warn(message, stacklevel=2)
+            raise ValidationFailure(message)
         elif (isThisFirstRunSinceBoot == False):
-            warnings.warn("Validation failed. Because this is not the first run since boot (queues already set up) - will now exit.", stacklevel=2)
-            safeToRunRefresh = False
+            message = "Validation failed. Because this is not the first run since boot (queues already set up) - will now exit."
+            warnings.warn(message, stacklevel=2)
+            raise ValidationFailure(message)
         else:
             warnings.warn("Validation failed. However - because this is the first run since boot - will load queues from last good config", stacklevel=2)
             shapedDevicesFile = get_last_good_config_csv_path()
@@ -2845,7 +2863,9 @@ def refreshShapersUpdateOnly():
     if (validateNetworkAndDevices() == True):
         safeToRunRefresh = True
     else:
-        warnings.warn("Validation failed. Will now exit.", stacklevel=2)
+        message = "Validation failed. Will now exit."
+        warnings.warn(message, stacklevel=2)
+        raise ValidationFailure(message)
 
     if safeToRunRefresh == True:
         networkChanged = False

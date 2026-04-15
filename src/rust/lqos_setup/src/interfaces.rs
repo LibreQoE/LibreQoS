@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, process::Command};
 
 use cursive::{
     Cursive,
@@ -8,12 +8,33 @@ use cursive::{
 
 use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InterfaceOption {
+    pub name: String,
+    pub label: String,
+}
+
 pub fn get_interfaces() -> anyhow::Result<Vec<String>> {
-    let interfaces = nix::ifaddrs::getifaddrs()?
+    Ok(get_interface_options()?
+        .into_iter()
+        .map(|iface| iface.name)
+        .collect())
+}
+
+pub fn get_interface_options() -> anyhow::Result<Vec<InterfaceOption>> {
+    let mut interfaces = nix::ifaddrs::getifaddrs()?
         .filter(|iface| interface_supports_lqos(&iface.interface_name).is_ok())
         .map(|iface| iface.interface_name)
         .collect::<Vec<_>>();
-    Ok(interfaces)
+    interfaces.sort();
+    interfaces.dedup();
+    Ok(interfaces
+        .into_iter()
+        .map(|name| InterfaceOption {
+            label: interface_label(&name),
+            name,
+        })
+        .collect())
 }
 
 pub(crate) fn interface_supports_lqos(interface: &str) -> anyhow::Result<()> {
@@ -57,17 +78,104 @@ pub(crate) fn interface_supports_lqos(interface: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn interface_label(interface: &str) -> String {
+    let mut parts = vec![interface.to_string()];
+    if let Some(speed) = interface_speed_label(interface) {
+        parts.push(speed);
+    }
+    if let Some(kind) = interface_kind_label(interface) {
+        parts.push(kind);
+    }
+    parts.join(" - ")
+}
+
+fn interface_speed_label(interface: &str) -> Option<String> {
+    let path = Path::new("/sys/class/net").join(interface).join("speed");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let speed = raw.trim().parse::<u64>().ok()?;
+    if speed == 0 || speed == u32::MAX as u64 || speed == u64::MAX {
+        return None;
+    }
+
+    let label = match speed {
+        1000 => "1G".to_string(),
+        2500 => "2.5G".to_string(),
+        5000 => "5G".to_string(),
+        10000 => "10G".to_string(),
+        25000 => "25G".to_string(),
+        40000 => "40G".to_string(),
+        50000 => "50G".to_string(),
+        100000 => "100G".to_string(),
+        value if value >= 1000 && value % 1000 == 0 => format!("{}G", value / 1000),
+        value => format!("{value}M"),
+    };
+    Some(label)
+}
+
+fn interface_kind_label(interface: &str) -> Option<String> {
+    if let Some(port) = interface_port_label(interface) {
+        return Some(port);
+    }
+
+    let driver_path = Path::new("/sys/class/net")
+        .join(interface)
+        .join("device/driver");
+    if let Ok(target) = std::fs::read_link(driver_path)
+        && let Some(driver) = target.file_name().and_then(|name| name.to_str())
+    {
+        return Some(driver.to_string());
+    }
+
+    let device_path = Path::new("/sys/class/net").join(interface).join("device");
+    if !device_path.exists() {
+        return Some("virtual".to_string());
+    }
+
+    None
+}
+
+fn interface_port_label(interface: &str) -> Option<String> {
+    let output = Command::new("ethtool").arg(interface).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if key.trim() != "Port" {
+            continue;
+        }
+        return normalize_port_label(value.trim());
+    }
+    None
+}
+
+fn normalize_port_label(port: &str) -> Option<String> {
+    match port {
+        "FIBRE" => Some("fiber".to_string()),
+        "Twisted Pair" => Some("RJ45".to_string()),
+        "Direct Attach Copper" => Some("DAC".to_string()),
+        "Backplane" => Some("backplane".to_string()),
+        "AUI" | "MII" | "BNC" => Some(port.to_ascii_lowercase()),
+        "Other" | "Unknown" | "Internal" => None,
+        _ if port.is_empty() => None,
+        _ => Some(port.to_string()),
+    }
+}
+
 fn build_interface_list(
-    interfaces: &[String],
+    interfaces: &[InterfaceOption],
     group: &mut RadioGroup<String>,
     active: String,
 ) -> Vec<RadioButton<String>> {
     let mut buttons = Vec::new();
     for iface in interfaces {
-        if *iface != active {
-            buttons.push(group.button(iface.clone(), iface));
+        if iface.name != active {
+            buttons.push(group.button(iface.name.clone(), iface.label.clone()));
         } else {
-            let mut button = group.button(iface.clone(), iface);
+            let mut button = group.button(iface.name.clone(), iface.label.clone());
             button.select();
             buttons.push(button);
         }
@@ -79,16 +187,16 @@ fn build_layout() -> LinearLayout {
     let bridge_mode = CURRENT_CONFIG.lock().bridge_mode;
     match bridge_mode {
         BridgeMode::Linux | BridgeMode::XDP => {
-            let interfaces = get_interfaces().expect("Failed to get interfaces");
+            let interfaces = get_interface_options().expect("Failed to get interfaces");
 
             // If the configuration has empty interface fields, set them to the first available interface
             {
                 let mut config = CURRENT_CONFIG.lock();
                 if config.to_internet.is_empty() && !interfaces.is_empty() {
-                    config.to_internet = interfaces[0].clone();
+                    config.to_internet = interfaces[0].name.clone();
                 }
                 if config.to_network.is_empty() && !interfaces.is_empty() {
-                    config.to_network = interfaces[0].clone();
+                    config.to_network = interfaces[0].name.clone();
                 }
             }
 
@@ -133,13 +241,13 @@ fn build_layout() -> LinearLayout {
                 .child(network_layout)
         }
         BridgeMode::Single => {
-            let interfaces = get_interfaces().expect("Failed to get interfaces");
+            let interfaces = get_interface_options().expect("Failed to get interfaces");
 
             // If the configuration has empty interface field, set it to the first available interface
             {
                 let mut config = CURRENT_CONFIG.lock();
                 if config.to_internet.is_empty() && !interfaces.is_empty() {
-                    config.to_internet = interfaces[0].clone();
+                    config.to_internet = interfaces[0].name.clone();
                 }
             }
 

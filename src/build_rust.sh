@@ -140,14 +140,37 @@ mv liblqos_python.so.new liblqos_python.so
 echo "Updating lqos_api binary..."
 bash ./update_api.sh || echo "Warning: Failed to update lqos_api (continuing)."
 
+set_libreqos_operator_permissions() {
+    local runtime_paths=()
+    [ -e /opt/libreqos/src ] && runtime_paths+=("/opt/libreqos/src")
+    [ -e /opt/libreqos/state ] && runtime_paths+=("/opt/libreqos/state")
+    [ ${#runtime_paths[@]} -eq 0 ] && return
+
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+        sudo chown -R "$SUDO_USER:$SUDO_USER" "${runtime_paths[@]}"
+        sudo chmod -R u+rwX "${runtime_paths[@]}" || true
+        echo "Granted $SUDO_USER ownership of /opt/libreqos/src and /opt/libreqos/state for SFTP editing."
+    else
+        echo "Unable to determine the installing operator account automatically."
+        echo "If you plan to edit LibreQoS files over SFTP, run: sudo chown -R <username>:<username> /opt/libreqos/src /opt/libreqos/state"
+    fi
+}
+
+set_libreqos_operator_permissions
+
 # If we're running systemd, we need to restart processes
-service_exists() {
+service_unit_exists() {
     local n=$1
     if [[ $(systemctl list-units --all -t service --full --no-legend "$n.service" | sed 's/^\s*//g' | cut -f1 -d' ') == $n.service ]]; then
         return 0
     else
         return 1
     fi
+}
+
+service_is_active() {
+    local n=$1
+    systemctl is-active --quiet "$n.service"
 }
 
 refresh_service_unit() {
@@ -159,6 +182,12 @@ refresh_service_unit() {
         sudo cp "$src" "$dst"
         SERVICE_UNITS_UPDATED=1
     fi
+}
+
+hotfix_blocks_service_restart() {
+    local script_path="./systemd_hotfix.sh"
+    [ -x "$script_path" ] || return 1
+    "$script_path" should-offer >/dev/null 2>&1
 }
 
 clear_pinned_maps_before_lqosd_restart() {
@@ -179,23 +208,19 @@ SERVICE_UNITS_UPDATED=0
 refresh_service_unit lqosd
 refresh_service_unit lqos_scheduler
 refresh_service_unit lqos_api
+refresh_service_unit lqos_setup
 
 if [ "$SERVICE_UNITS_UPDATED" -eq 1 ]; then
     echo "Reloading systemd unit definitions."
     sudo systemctl daemon-reload
 fi
 
-if service_exists lqos_node_manager; then
+if service_unit_exists lqos_node_manager; then
     echo "lqos_node_manager is running as a service. It's not needed anymore. Killing it."
     sudo systemctl stop lqos_node_manager
     sudo systemctl disable lqos_node_manager
 fi
-if service_exists lqosd; then
-    clear_pinned_maps_before_lqosd_restart
-    echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
-    sudo systemctl restart lqosd
-fi
-if service_exists lqos_netplan_helper; then
+if service_unit_exists lqos_netplan_helper; then
     echo "lqos_netplan_helper is no longer run as a service. Stopping and disabling it."
     sudo systemctl stop lqos_netplan_helper || true
     sudo systemctl disable lqos_netplan_helper || true
@@ -204,13 +229,29 @@ if service_exists lqos_netplan_helper; then
         sudo systemctl daemon-reload
     fi
 fi
-if service_exists lqos_scheduler; then
-    echo "lqos_scheduler is running as a service. Restarting it. You may need to enter your sudo password."
-    sudo systemctl restart lqos_scheduler
-fi
-if service_exists lqos_api; then
-    echo "lqos_api is running as a service. Restarting it. You may need to enter your sudo password."
-    sudo systemctl restart lqos_api
+
+if hotfix_blocks_service_restart; then
+    echo "Ubuntu 24.04 systemd hotfix is still required. Skipping LibreQoS service restarts."
+    echo "Install it with: sudo ./systemd_hotfix.sh install"
+    echo "Then reboot before restarting LibreQoS services."
+else
+    if service_is_active lqosd; then
+        clear_pinned_maps_before_lqosd_restart
+        echo "lqosd is active as a service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl restart lqosd
+    fi
+    if service_is_active lqos_scheduler; then
+        echo "lqos_scheduler is active as a service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl restart lqos_scheduler
+    fi
+    if service_is_active lqos_api; then
+        echo "lqos_api is active as a service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl restart lqos_api
+    fi
+    if service_is_active lqos_setup; then
+        echo "lqos_setup is active as a service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl restart lqos_setup
+    fi
 fi
 
 echo "-----------------------------------------------------------------"

@@ -288,7 +288,6 @@ infrastructure_transport_caps_enabled = true  # Automatically cap radio capacity
 
 # Site Management
 exclude_sites = []  # Sites to exclude, e.g., ["Test_Site", "Lab_Site"]
-use_ptmp_as_parent = true  # For sites branched off PtMP Access Points
 
 # Bandwidth Adjustments
 bandwidth_overhead_factor = 1.15  # Give customers 15% above plan speed
@@ -311,7 +310,6 @@ The following UISP options are available in current builds and WebUI (Node Manag
 - `exception_cpes`: list of `cpe:parent` overrides for ambiguous parent assignment.
 - `squash_sites`: optional list of sites to squash in full strategy workflows.
 - `do_not_squash_sites`: explicit site-name exclusions from runtime/export squashing.
-- `use_ptmp_as_parent`: prefer PtMP AP as parent for relevant topology paths.
 - `ignore_calculated_capacity`: prefer configured capacities instead of integration-calculated values.
 - `insecure_ssl`: disables TLS certificate verification for UISP API calls.
 - `airmax_flexible_frame_download_ratio`: when UISP reports aggregate AirMax AP capacity for flexible framing and the live `dlRatio` is absent, LibreQoS uses this fallback download share. `0.8` means 80/20 download/upload.
