@@ -81,14 +81,18 @@ pub(crate) fn swap_shaped_devices_snapshot(
     old.shaped.clone()
 }
 
-fn network_json_with_carried_heatmaps(previous: &NetworkJson, mut next: NetworkJson) -> NetworkJson {
+fn network_json_with_carried_runtime_state(
+    previous: &NetworkJson,
+    mut next: NetworkJson,
+) -> NetworkJson {
     next.carry_forward_heatmaps_from(previous);
+    next.carry_forward_live_counters_from(previous);
     next
 }
 
 pub(crate) fn publish_network_json(new_file: NetworkJson) {
     let mut writer = NETWORK_JSON.write();
-    *writer = network_json_with_carried_heatmaps(&writer, new_file);
+    *writer = network_json_with_carried_runtime_state(&writer, new_file);
 }
 
 pub(crate) fn publish_dynamic_circuits_snapshot(new_snapshot: Vec<DynamicCircuit>) {
@@ -125,7 +129,7 @@ pub(crate) fn refresh_dynamic_circuits_last_seen_for_hashes(
 
 #[cfg(test)]
 mod tests {
-    use super::network_json_with_carried_heatmaps;
+    use super::network_json_with_carried_runtime_state;
     use lqos_config::NetworkJsonNode;
     use lqos_utils::{
         qoq_heatmap::TemporalQoqHeatmap,
@@ -211,12 +215,36 @@ mod tests {
         );
         let qoq_heatmap = site.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
         qoq_heatmap.add_sample(Some(91.0), Some(82.0));
+        site.current_throughput.down = 12_500_000;
+        site.current_throughput.up = 6_250_000;
+        site.current_tcp_retransmits.down = 15;
+        site.current_tcp_retransmit_packets.down = 500;
+        site.rtt_buffer = RttBuffer::new(
+            lqos_utils::rtt::RttData::from_nanos(18_000_000),
+            lqos_utils::rtt::FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        site.rtt_buffer.push(
+            lqos_utils::rtt::RttData::from_nanos(18_000_000),
+            lqos_utils::rtt::FlowbeeEffectiveDirection::Download,
+            2,
+        );
+        site.rtt_buffer.push(
+            lqos_utils::rtt::RttData::from_nanos(27_000_000),
+            lqos_utils::rtt::FlowbeeEffectiveDirection::Upload,
+            3,
+        );
+        site.rtt_buffer.push(
+            lqos_utils::rtt::RttData::from_nanos(27_000_000),
+            lqos_utils::rtt::FlowbeeEffectiveDirection::Upload,
+            4,
+        );
 
         let next = lqos_config::NetworkJson {
             nodes: vec![root_node(), site_node("Tower A Renamed", "tower-a")],
         };
 
-        let carried = network_json_with_carried_heatmaps(&previous, next);
+        let carried = network_json_with_carried_runtime_state(&previous, next);
         let site = carried
             .nodes
             .iter()
@@ -239,5 +267,29 @@ mod tests {
         assert_eq!(blocks.retransmit_up[14], Some(2.5));
         assert_eq!(qoq_blocks.download_total[14], Some(91.0));
         assert_eq!(qoq_blocks.upload_total[14], Some(82.0));
+        assert_eq!(site.current_throughput.down, 12_500_000);
+        assert_eq!(site.current_throughput.up, 6_250_000);
+        assert_eq!(site.current_tcp_retransmits.down, 15);
+        assert_eq!(site.current_tcp_retransmit_packets.down, 500);
+        assert_eq!(
+            site.rtt_buffer
+                .percentile(
+                    lqos_utils::rtt::RttBucket::Current,
+                    lqos_utils::rtt::FlowbeeEffectiveDirection::Download,
+                    50,
+                )
+                .map(|rtt| rtt.as_millis()),
+            Some(20.0)
+        );
+        assert_eq!(
+            site.rtt_buffer
+                .percentile(
+                    lqos_utils::rtt::RttBucket::Current,
+                    lqos_utils::rtt::FlowbeeEffectiveDirection::Upload,
+                    50,
+                )
+                .map(|rtt| rtt.as_millis()),
+            Some(30.0)
+        );
     }
 }

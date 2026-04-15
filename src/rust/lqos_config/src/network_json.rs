@@ -228,6 +228,62 @@ impl NetworkJson {
         }
     }
 
+    /// Carry forward matched nodes' live per-cycle counters from a previously loaded active tree.
+    ///
+    /// Matching prefers stable node identifiers when present. If no identifier is available,
+    /// this falls back to node name only when that name is unique in both trees to avoid
+    /// attaching live counters to the wrong node after a reload.
+    ///
+    /// Side effects: copies current counters and `rtt_buffer` values into `self`.
+    pub fn carry_forward_live_counters_from(&mut self, previous: &Self) {
+        let mut previous_by_id: HashMap<String, &NetworkJsonNode> = HashMap::new();
+        let mut previous_name_counts: HashMap<String, usize> = HashMap::new();
+        let mut current_name_counts: HashMap<String, usize> = HashMap::new();
+
+        for node in &previous.nodes {
+            if let Some(id) = node.id.as_deref() {
+                previous_by_id.insert(id.to_string(), node);
+            }
+            *previous_name_counts.entry(node.name.clone()).or_default() += 1;
+        }
+
+        for node in &self.nodes {
+            *current_name_counts.entry(node.name.clone()).or_default() += 1;
+        }
+
+        let mut previous_by_unique_name: HashMap<String, &NetworkJsonNode> = HashMap::new();
+        for node in &previous.nodes {
+            if previous_name_counts.get(&node.name) == Some(&1) {
+                previous_by_unique_name.insert(node.name.clone(), node);
+            }
+        }
+
+        for node in &mut self.nodes {
+            let preserved = node
+                .id
+                .as_deref()
+                .and_then(|id| previous_by_id.get(id).copied())
+                .or_else(|| {
+                    (current_name_counts.get(&node.name) == Some(&1))
+                        .then(|| node.name.clone())
+                        .and_then(|name| previous_by_unique_name.get(&name).copied())
+                });
+
+            if let Some(previous_node) = preserved {
+                node.current_throughput = previous_node.current_throughput;
+                node.current_packets = previous_node.current_packets;
+                node.current_tcp_packets = previous_node.current_tcp_packets;
+                node.current_udp_packets = previous_node.current_udp_packets;
+                node.current_icmp_packets = previous_node.current_icmp_packets;
+                node.current_tcp_retransmits = previous_node.current_tcp_retransmits;
+                node.current_tcp_retransmit_packets = previous_node.current_tcp_retransmit_packets;
+                node.current_marks = previous_node.current_marks;
+                node.current_drops = previous_node.current_drops;
+                node.rtt_buffer = previous_node.rtt_buffer.clone();
+            }
+        }
+    }
+
     /// Sets all current throughput values to zero
     /// Note that due to interior mutability, this does not require mutable
     /// access.
@@ -889,6 +945,93 @@ mod test {
                 .expect("Tower B should exist")
                 .heatmap
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn carry_forward_live_counters_preserves_matched_runtime_state() {
+        let mut previous = parse_network_json_from_value(serde_json::json!({
+            "Parent B": {
+                "children": {
+                    "Site 1": {
+                        "id": "site-1",
+                        "children": {}
+                    }
+                }
+            }
+        }));
+        let mut next = parse_network_json_from_value(serde_json::json!({
+            "Parent B": {
+                "children": {
+                    "Site 1": {
+                        "id": "site-1",
+                        "children": {}
+                    }
+                }
+            }
+        }));
+
+        let previous_site = previous
+            .nodes
+            .iter_mut()
+            .find(|node| node.id.as_deref() == Some("site-1"))
+            .expect("previous Site 1 should exist");
+        previous_site.current_throughput.down = 12_500_000;
+        previous_site.current_throughput.up = 6_250_000;
+        previous_site.current_tcp_packets.down = 1200;
+        previous_site.current_tcp_retransmits.down = 12;
+        previous_site.current_tcp_retransmit_packets.down = 400;
+        previous_site.current_marks.up = 7;
+        previous_site.current_drops.down = 3;
+        previous_site.rtt_buffer = RttBuffer::new(
+            lqos_utils::rtt::RttData::from_nanos(18_000_000),
+            FlowbeeEffectiveDirection::Download,
+            1,
+        );
+        previous_site.rtt_buffer.push(
+            lqos_utils::rtt::RttData::from_nanos(18_000_000),
+            FlowbeeEffectiveDirection::Download,
+            2,
+        );
+        previous_site.rtt_buffer.push(
+            lqos_utils::rtt::RttData::from_nanos(27_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            3,
+        );
+        previous_site.rtt_buffer.push(
+            lqos_utils::rtt::RttData::from_nanos(27_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            4,
+        );
+
+        next.carry_forward_live_counters_from(&previous);
+
+        let next_site = next
+            .nodes
+            .iter()
+            .find(|node| node.id.as_deref() == Some("site-1"))
+            .expect("next Site 1 should exist");
+
+        assert_eq!(next_site.current_throughput.down, 12_500_000);
+        assert_eq!(next_site.current_throughput.up, 6_250_000);
+        assert_eq!(next_site.current_tcp_packets.down, 1200);
+        assert_eq!(next_site.current_tcp_retransmits.down, 12);
+        assert_eq!(next_site.current_tcp_retransmit_packets.down, 400);
+        assert_eq!(next_site.current_marks.up, 7);
+        assert_eq!(next_site.current_drops.down, 3);
+        assert_eq!(
+            next_site
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
+                .map(|rtt| rtt.as_millis()),
+            Some(20.0)
+        );
+        assert_eq!(
+            next_site
+                .rtt_buffer
+                .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
+                .map(|rtt| rtt.as_millis()),
+            Some(30.0)
         );
     }
 
