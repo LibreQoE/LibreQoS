@@ -23,10 +23,7 @@ Complete this once before trying to shape live traffic:
 - [Server Setup - Prerequisites](prereq.md)
 - [Install Ubuntu Server 24.04](ubuntu-server.md)
 
-3. Configure how traffic will pass through the LibreQoS box:
-- [Configure Shaping Bridge](bridge.md)
-
-4. Install LibreQoS (`.deb` recommended):
+3. Install LibreQoS (`.deb` recommended):
 
 ```bash
 cd /tmp
@@ -35,8 +32,6 @@ sudo apt-get upgrade
 wget https://download.libreqos.com/{deb_url_v1_5}
 sudo apt install ./{deb_url_v1_5}
 ```
-
-Using `/tmp` avoids local `.deb` permission problems where `apt` cannot read a package stored in a private home directory as user `_apt`.
 
 ### Ubuntu 24.04 hotfix if the `.deb` install stops
 
