@@ -88,6 +88,7 @@ function updateConfig() {
     // Parse comma-separated strings into arrays
     const existingUisp = { ...(window.config.uisp_integration || {}) };
     delete existingUisp.enable_squashing;
+    delete existingUisp.use_ptmp_as_parent;
 
     const excludeSites = document.getElementById("uispExcludeSites").value.trim();
     const excludeSitesArray = excludeSites ? excludeSites.split(',').map(s => s.trim()) : [];
@@ -119,7 +120,6 @@ function updateConfig() {
         ipv6_with_mikrotik: document.getElementById("uispIpv6WithMikrotik").checked,
         bandwidth_overhead_factor: parseFloat(document.getElementById("uispBandwidthOverhead").value),
         commit_bandwidth_multiplier: parseFloat(document.getElementById("uispCommitMultiplier").value),
-        use_ptmp_as_parent: document.getElementById("uispUsePtmpAsParent").checked,
         ignore_calculated_capacity: document.getElementById("uispIgnoreCalculatedCapacity").checked,
         insecure_ssl: document.getElementById("uispInsecureSsl").checked,
         exclude_sites: excludeSitesArray,
@@ -141,7 +141,6 @@ loadConfig(() => {
         // Boolean fields
         document.getElementById("enableUisp").checked = uisp.enable_uisp ?? false;
         document.getElementById("uispIpv6WithMikrotik").checked = uisp.ipv6_with_mikrotik ?? false;
-        document.getElementById("uispUsePtmpAsParent").checked = uisp.use_ptmp_as_parent ?? false;
         document.getElementById("uispIgnoreCalculatedCapacity").checked = uisp.ignore_calculated_capacity ?? false;
         document.getElementById("uispInsecureSsl").checked = uisp.insecure_ssl ?? false;
 

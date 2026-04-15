@@ -81,9 +81,14 @@ pub(crate) fn swap_shaped_devices_snapshot(
     old.shaped.clone()
 }
 
+fn network_json_with_carried_heatmaps(previous: &NetworkJson, mut next: NetworkJson) -> NetworkJson {
+    next.carry_forward_heatmaps_from(previous);
+    next
+}
+
 pub(crate) fn publish_network_json(new_file: NetworkJson) {
     let mut writer = NETWORK_JSON.write();
-    *writer = new_file;
+    *writer = network_json_with_carried_heatmaps(&writer, new_file);
 }
 
 pub(crate) fn publish_dynamic_circuits_snapshot(new_snapshot: Vec<DynamicCircuit>) {
@@ -116,4 +121,123 @@ pub(crate) fn refresh_dynamic_circuits_last_seen_for_hashes(
     }
 
     changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::network_json_with_carried_heatmaps;
+    use lqos_config::NetworkJsonNode;
+    use lqos_utils::{
+        qoq_heatmap::TemporalQoqHeatmap,
+        rtt::RttBuffer,
+        temporal_heatmap::TemporalHeatmap,
+        units::DownUpOrder,
+    };
+
+    fn root_node() -> NetworkJsonNode {
+        NetworkJsonNode {
+            name: "Root".to_string(),
+            id: None,
+            virtual_node: false,
+            max_throughput: (0.0, 0.0),
+            current_throughput: DownUpOrder::zeroed(),
+            current_packets: DownUpOrder::zeroed(),
+            current_tcp_packets: DownUpOrder::zeroed(),
+            current_udp_packets: DownUpOrder::zeroed(),
+            current_icmp_packets: DownUpOrder::zeroed(),
+            current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_tcp_retransmit_packets: DownUpOrder::zeroed(),
+            current_marks: DownUpOrder::zeroed(),
+            current_drops: DownUpOrder::zeroed(),
+            rtt_buffer: RttBuffer::default(),
+            parents: Vec::new(),
+            immediate_parent: None,
+            node_type: None,
+            latitude: None,
+            longitude: None,
+            active_attachment_name: None,
+            heatmap: None,
+            qoq_heatmap: None,
+        }
+    }
+
+    fn site_node(name: &str, id: &str) -> NetworkJsonNode {
+        NetworkJsonNode {
+            name: name.to_string(),
+            id: Some(id.to_string()),
+            virtual_node: false,
+            max_throughput: (100.0, 100.0),
+            current_throughput: DownUpOrder::zeroed(),
+            current_packets: DownUpOrder::zeroed(),
+            current_tcp_packets: DownUpOrder::zeroed(),
+            current_udp_packets: DownUpOrder::zeroed(),
+            current_icmp_packets: DownUpOrder::zeroed(),
+            current_tcp_retransmits: DownUpOrder::zeroed(),
+            current_tcp_retransmit_packets: DownUpOrder::zeroed(),
+            current_marks: DownUpOrder::zeroed(),
+            current_drops: DownUpOrder::zeroed(),
+            rtt_buffer: RttBuffer::default(),
+            parents: vec![0],
+            immediate_parent: Some(0),
+            node_type: Some("site".to_string()),
+            latitude: None,
+            longitude: None,
+            active_attachment_name: None,
+            heatmap: None,
+            qoq_heatmap: None,
+        }
+    }
+
+    #[test]
+    fn carried_heatmaps_survive_network_json_publish_replacement() {
+        let mut previous = lqos_config::NetworkJson {
+            nodes: vec![root_node(), site_node("Tower A", "tower-a")],
+        };
+        let site = previous
+            .nodes
+            .iter_mut()
+            .find(|node| node.id.as_deref() == Some("tower-a"))
+            .expect("previous site should exist");
+        let heatmap = site.heatmap.get_or_insert_with(TemporalHeatmap::new);
+        heatmap.add_sample(
+            42.0,
+            24.0,
+            Some(10.0),
+            Some(12.0),
+            Some(15.0),
+            Some(18.0),
+            Some(1.5),
+            Some(2.5),
+        );
+        let qoq_heatmap = site.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
+        qoq_heatmap.add_sample(Some(91.0), Some(82.0));
+
+        let next = lqos_config::NetworkJson {
+            nodes: vec![root_node(), site_node("Tower A Renamed", "tower-a")],
+        };
+
+        let carried = network_json_with_carried_heatmaps(&previous, next);
+        let site = carried
+            .nodes
+            .iter()
+            .find(|node| node.id.as_deref() == Some("tower-a"))
+            .expect("replacement site should exist");
+        let blocks = site
+            .heatmap
+            .as_ref()
+            .expect("site heatmap should carry forward")
+            .blocks();
+        let qoq_blocks = site
+            .qoq_heatmap
+            .as_ref()
+            .expect("site qoq heatmap should carry forward")
+            .blocks();
+
+        assert_eq!(blocks.download[14], Some(42.0));
+        assert_eq!(blocks.upload[14], Some(24.0));
+        assert_eq!(blocks.retransmit_down[14], Some(1.5));
+        assert_eq!(blocks.retransmit_up[14], Some(2.5));
+        assert_eq!(qoq_blocks.download_total[14], Some(91.0));
+        assert_eq!(qoq_blocks.upload_total[14], Some(82.0));
+    }
 }

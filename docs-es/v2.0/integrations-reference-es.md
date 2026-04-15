@@ -288,7 +288,6 @@ infrastructure_transport_caps_enabled = true  # Limitar automáticamente la capa
 
 # Gestión de Sitios
 exclude_sites = []  # Sitios a excluir, ej: ["Sitio_Prueba", "Sitio_Lab"]
-use_ptmp_as_parent = true  # Para sitios conectados a través de APs PtMP
 
 # Ajustes de Ancho de Banda
 bandwidth_overhead_factor = 1.15  # Dar a clientes 15% sobre velocidad del plan
@@ -311,7 +310,6 @@ Las compilaciones actuales también incluyen estas opciones en los editores de c
 - `exception_cpes`: sobrescrituras `cpe:parent` para asignación ambigua.
 - `squash_sites`: lista opcional de sitios a compactar en flujos `full`.
 - `do_not_squash_sites`: exclusiones explícitas por nombre de sitio para la compactación de runtime/exportación.
-- `use_ptmp_as_parent`: prioriza AP PtMP como padre en rutas relevantes.
 - `ignore_calculated_capacity`: usa capacidades configuradas en lugar de calculadas.
 - `insecure_ssl`: deshabilita validación de certificados TLS para UISP.
 - `airmax_flexible_frame_download_ratio`: cuando UISP reporta capacidad agregada de un AP AirMax con flexible framing y no entrega `dlRatio`, LibreQoS usa esta proporción de descarga como respaldo. `0.8` significa 80/20 descarga/subida.

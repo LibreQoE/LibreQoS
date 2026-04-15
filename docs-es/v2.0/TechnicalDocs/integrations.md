@@ -110,9 +110,6 @@ bandwidth_overhead_factor = 1.15
 # By default, the customer "minimum" is set to 98% of the maximuum (CIR).
 commit_bandwidth_multiplier = 0.98
 exception_cpes = []
-
-# If you have some sites branched off PtMP Access Points, set `true`
-use_ptmp_as_parent = true
 ```
 
 To test the UISP Integration, use
