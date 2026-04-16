@@ -20,9 +20,10 @@ pub mod test_data;
 mod v15;
 pub use v15::{
     BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
-    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, StormguardConfig,
-    StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
+    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, SslConfig,
+    StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
     TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
+    normalize_external_hostname,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));

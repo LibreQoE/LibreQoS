@@ -18,6 +18,8 @@ Después de instalar el paquete:
 4. Abra `Complete Setup`
 5. Elija cómo recibirá LibreQoS los datos de suscriptores y topología
 
+Si quiere que los operadores usen HTTPS, abra `Configuration -> SSL Setup` después de iniciar sesión, o active la misma opción durante la configuración inicial. Vea [HTTPS opcional con Caddy](https-caddy-es.md).
+
 Para la mayoría de los operadores, `Complete Setup` es donde ocurre la decisión importante del inicio:
 - Integración incluida para UISP, Splynx, VISP, Netzur, Powercode, Sonar o WispGate
 - Importador personalizado si su propio proceso escribe `network.json` y `ShapedDevices.csv`
@@ -27,13 +29,14 @@ Si Scheduler Status todavía muestra `Setup Required`, LibreQoS aún no está li
 
 ## Configuración mediante la interfaz web
 
-La mayoría de los cambios operativos diarios se hacen en la WebUI (`http://tu_ip_del_shaper:9123/config_general.html`).
+La mayoría de los cambios operativos diarios se hacen en la WebUI. Por defecto eso es `http://tu_ip_del_shaper:9123/config_general.html`. Si habilita HTTPS opcional con Caddy, los operadores usarán `https://tu-hostname/` o `https://tu-ip-de-gestión/` en su lugar.
 
 Las versiones actuales usan una disposición coherente en las páginas General, RTT, Queues, TreeGuard, Network Mode, Integration Defaults, Network Layout, Insight, páginas de integración por proveedor, IP Ranges, Flow Tracking y Shaped Devices. Integration Defaults también incluye la política compartida de margen para puertos Ethernet usada por integraciones que pueden detectar la velocidad negociada hacia el suscriptor.
 
 ### Dónde en la WebUI
 
 - Ajustes generales: `Configuration -> General`
+- Configuración de HTTPS: `Configuration -> SSL Setup`
 - Ajustes de integración: `Configuration -> Integrations`
 - Editor de topología: `Configuration -> Network Layout`
 - Editor de dispositivos regulados: `Configuration -> Shaped Devices`
@@ -101,6 +104,7 @@ Para edición directa de archivos (`/etc/lqos.conf`, `network.json`, `ShapedDevi
 ## Páginas relacionadas
 
 - [Inicio rápido](quickstart-es.md)
+- [HTTPS opcional con Caddy](https-caddy-es.md)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 - [Integraciones CRM/NMS](integrations-es.md)
 - [LibreQoS WebUI (Node Manager)](node-manager-ui-es.md)

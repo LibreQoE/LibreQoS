@@ -66,6 +66,8 @@ sudo apt install ./{deb_url_v1_5}
 3. Cree el usuario administrador inicial si se lo pide.
 4. Inicie sesión y confirme que carga el Dashboard.
 
+Opcional: si los operadores necesitan HTTPS, habilite `Configuration -> SSL Setup` después de iniciar sesión, o active la misma opción durante la configuración inicial. Vea [HTTPS opcional con Caddy](https-caddy-es.md).
+
 En este punto, que la WebUI responda no demuestra todavía que LibreQoS ya esté listo para hacer shaping de suscriptores.
 
 Si Scheduler Status muestra `Setup Required`, eso es normal hasta que elija una fuente de topología y publique datos válidos de shaping.
@@ -177,6 +179,7 @@ Amplíe solo después de tener una base conocida y estable.
 ## 8) Páginas relacionadas
 
 - [Configurar LibreQoS](configuration-es.md)
+- [HTTPS opcional con Caddy](https-caddy-es.md)
 - [Modos de operación y fuente de verdad](operating-modes-es.md)
 - [Integraciones CRM/NMS](integrations-es.md)
 - [Referencia avanzada de configuración](configuration-advanced-es.md)

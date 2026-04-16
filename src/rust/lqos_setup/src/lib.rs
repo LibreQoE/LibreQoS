@@ -2,5 +2,6 @@
 
 pub mod bootstrap;
 pub mod hotfix;
+pub mod ssl;
 
 pub use bootstrap::PostinstAction;

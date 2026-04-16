@@ -18,6 +18,8 @@ After installing the package:
 4. Open `Complete Setup`
 5. Choose how LibreQoS will receive subscriber and topology data
 
+If you want operators to use HTTPS, open `Configuration -> SSL Setup` after sign-in, or enable the same option during first-run setup. See [Optional HTTPS With Caddy](https-caddy.md).
+
 For most operators, `Complete Setup` is where the important early decision happens:
 - Built-in integration for UISP, Splynx, VISP, Netzur, Powercode, Sonar, or WispGate
 - Custom importer if your own process writes `network.json` and `ShapedDevices.csv`
@@ -27,13 +29,14 @@ If Scheduler Status still says `Setup Required`, LibreQoS is not ready to shape 
 
 ## Configuration Via Web Interface
 
-Most day-to-day LibreQoS configuration happens in WebUI (`http://your_shaper_ip:9123/config_general.html`).
+Most day-to-day LibreQoS configuration happens in WebUI. By default that is `http://your_shaper_ip:9123/config_general.html`. If you enable optional HTTPS with Caddy, operators use `https://your-hostname/` or `https://your-management-ip/` instead.
 
 Current builds use a consistent configuration layout across the General, RTT, Queues, TreeGuard, Network Mode, Integration Defaults, Network Layout, Insight, provider integration, IP Ranges, Flow Tracking, and Shaped Devices pages. Integration Defaults also includes the shared Ethernet port headroom policy used by integrations that can detect negotiated subscriber-facing port speeds.
 
 ### Where In WebUI
 
 - General settings: `Configuration -> General`
+- HTTPS setup: `Configuration -> SSL Setup`
 - Integration settings: `Configuration -> Integrations`
 - Network layout editor: `Configuration -> Network Layout`
 - Shaped devices editor: `Configuration -> Shaped Devices`
@@ -101,6 +104,7 @@ For direct file editing (`/etc/lqos.conf`, `network.json`, `ShapedDevices.csv`),
 ## Related Pages
 
 - [Quickstart](quickstart.md)
+- [Optional HTTPS With Caddy](https-caddy.md)
 - [Operating Modes and Source of Truth](operating-modes.md)
 - [CRM/NMS Integrations](integrations.md)
 - [LibreQoS WebUI (Node Manager)](node-manager-ui.md)

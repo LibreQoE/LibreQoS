@@ -10,7 +10,8 @@ flowchart LR
     B --> E[Queue/shaping plan refresh]
     E --> F[lqosd]
     F --> G[XDP/TC shaping runtime]
-    F --> H[WebUI :9123]
+    F --> H[WebUI service :9123]
+    J[Optional Caddy HTTPS :443] --> H
     B --> I[Scheduler Status / Urgent Issues]
     F --> I
 ```
@@ -19,7 +20,8 @@ flowchart LR
 
 - Manages actual XDP code.
 - Coded in Rust.
-- Runs the GUI available at http://a.b.c.d:9123
+- Runs the GUI available at `http://a.b.c.d:9123` by default.
+- If optional HTTPS is enabled, Caddy serves `https://hostname/` or `https://management-ip/` and proxies the WebUI to `127.0.0.1:9123`.
 - Hosts WebUI pages such as:
   - Site Map
   - Flow Globe

@@ -59,6 +59,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "executive_heatmap_download.html",
         "executive_heatmap_upload.html",
         "config_general.html",
+        "config_ssl.html",
         "config_rtt.html",
         "config_tuning.html",
         "config_queues.html",

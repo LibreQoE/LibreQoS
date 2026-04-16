@@ -8,7 +8,7 @@ Need definitions for licensing/scheduler terms? See the [Glossary](glossary.md).
 
 | Symptom | First check | WebUI location | Next section |
 |---|---|---|---|
-| Cannot access WebUI | `systemctl status lqosd` | N/A (UI unavailable) | No WebUI at x.x.x.x:9123 |
+| Cannot access WebUI | `systemctl status lqosd caddy` | N/A (UI unavailable) | No WebUI at x.x.x.x:9123 or HTTPS URL |
 | Traffic is not shaping | verify `to_internet` / `to_network`, service state | WebUI Dashboard | LibreQoS Is Running, But Traffic Not Shaping |
 | Scheduler appears unhealthy | check `lqosd` and `lqos_scheduler` logs | WebUI -> Scheduler Status | Scheduler status in WebUI looks unhealthy |
 | Topology/flow views blank | confirm recent traffic and `lqosd` health | WebUI -> Flow Globe / Tree / ASN Analysis | Flow Globe / Tree Overview / ASN Analysis appears blank |
@@ -63,16 +63,23 @@ If the correct username/password still fails, first restart `lqosd` and try agai
 sudo systemctl restart lqosd
 ```
 
-Only remove `lqusers.toml` if you are intentionally resetting access or if the file is corrupt and cannot be repaired. After removing it, restart `lqosd` and open `BOX_IP:9123/login.html`; the WebUI should redirect you to first-run setup automatically.
+Only remove `lqusers.toml` if you are intentionally resetting access or if the file is corrupt and cannot be repaired. After removing it, restart `lqosd` and open `BOX_IP:9123/login.html` if SSL is disabled; the WebUI should redirect you to first-run setup automatically.
 
-### No WebUI at x.x.x.x:9123
+### No WebUI at x.x.x.x:9123 or HTTPS URL
 
-The WebUI is controlled by the `lqosd` service. In current builds, most WebUI access failures are caused by `lqosd` not being healthy.
+The WebUI is controlled by `lqosd`. If optional HTTPS with Caddy is enabled, `caddy` also has to be healthy.
 
 Start by checking:
 ```
-sudo systemctl status lqosd
+sudo systemctl status lqosd caddy
 ```
+
+Then:
+
+- If SSL is disabled, test `http://your-management-ip:9123/`
+- If SSL is enabled with a hostname, test `https://your-hostname/`
+- If SSL is enabled without a hostname, test `https://your-management-ip/`
+- If browsers warn in local-certificate mode, trust `/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt` on the operator workstation
 
 Then follow the full workflow in **Service lqosd is not running or failed to start** below.
 

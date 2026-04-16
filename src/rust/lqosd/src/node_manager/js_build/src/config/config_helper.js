@@ -37,6 +37,9 @@ function ensureOptionalConfigSections(config) {
     if (!config.topology || typeof config.topology !== "object") {
         config.topology = {};
     }
+    if (!config.ssl || typeof config.ssl !== "object") {
+        config.ssl = {};
+    }
 
     if (!config.sonar_integration || typeof config.sonar_integration !== "object") {
         config.sonar_integration = {};
@@ -67,6 +70,13 @@ function ensureOptionalConfigSections(config) {
     }
 
     const topology = config.topology;
+    const ssl = config.ssl;
+    if (typeof ssl.enabled !== "boolean") ssl.enabled = false;
+    if (typeof ssl.managed_by_libreqos !== "boolean") ssl.managed_by_libreqos = false;
+    if (typeof ssl.external_hostname !== "string" && ssl.external_hostname !== null) {
+        ssl.external_hostname = null;
+    }
+
     const normalizeMode = (mode) => {
         if (typeof mode !== "string") {
             return "";
@@ -630,6 +640,7 @@ export function validNodeList(network_json) {
 export function renderConfigMenu(currentPage) {
     const menuItems = [
         { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
+        { href: "config_ssl.html", icon: "fa-lock", text: "SSL Setup", id: "ssl" },
         { href: "config_rtt.html", icon: "fa-stopwatch", text: "RTT Thresholds", id: "rtt" },
         { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
         { href: "config_interface.html", icon: "fa-chain", text: "Bridge & Interface Mode", id: "interface" },

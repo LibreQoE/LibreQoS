@@ -887,17 +887,13 @@ function initObserveShapeToggle() {
 }
 
 function setupDynamicUrls() {
-    // Get the current host and protocol from the browser
-    const currentHost = window.location.hostname;
-    const currentProtocol = window.location.protocol;
-    
-    // Construct API URL (port 9122)
-    // The Swagger UI lives at /api-docs/ (dash, trailing slash)
-    const apiUrl = `${currentProtocol}//${currentHost}:9122/api-docs/`;
-    
+    const apiUrl = window.location.protocol === "https:"
+        ? "/api/v1/api-docs/"
+        : `${window.location.protocol}//${window.location.hostname}:9122/api-docs/`;
+
     // Construct Chat URL (port 9121)
-    const chatUrl = `${currentProtocol}//${currentHost}:9121/`;
-    
+    const chatUrl = "chatbot.html";
+
     // Update API link only if it has the placeholder
     const apiLink = document.getElementById('apiLink');
     if (apiLink) {
@@ -922,8 +918,7 @@ function setupDynamicUrls() {
         } else {
             const hrefAttr = chatLink.getAttribute('href');
             if (hrefAttr === '%%CHAT_URL%%' || !hrefAttr) {
-                // Prefer embedded chatbot page
-                chatLink.href = 'chatbot.html';
+                chatLink.href = chatUrl;
             }
         }
     }

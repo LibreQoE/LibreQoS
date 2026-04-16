@@ -21,3 +21,4 @@ uuid = { workspace = true }
 tokio = { workspace = true }
 axum = { version = "0.7.7" }
 libc = "0.2"
+default-net = { workspace = true }

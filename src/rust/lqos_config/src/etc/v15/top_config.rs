@@ -27,6 +27,10 @@ fn default_rtt_red_ms() -> u32 {
     200
 }
 
+fn default_false() -> bool {
+    false
+}
+
 /// RTT color scale thresholds (milliseconds) used by the web UI.
 ///
 /// These represent the color "anchor points" for RTT:
@@ -54,6 +58,48 @@ impl Default for RttThresholds {
             red_ms: default_rtt_red_ms(),
         }
     }
+}
+
+/// Optional HTTPS/Caddy settings for the LibreQoS operator UI.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct SslConfig {
+    /// Whether LibreQoS should run the WebUI behind a local Caddy proxy.
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+    /// Optional public hostname used for trusted public certificates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_hostname: Option<String>,
+    /// Whether LibreQoS owns and manages the generated Caddy configuration.
+    #[serde(default = "default_false")]
+    pub managed_by_libreqos: bool,
+    /// Previous direct WebUI listen address restored when SSL is disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_webserver_listen: Option<String>,
+}
+
+/// Normalizes and validates an optional external hostname for HTTPS/Caddy use.
+pub fn normalize_external_hostname(hostname: &str) -> Result<Option<String>, String> {
+    let normalized = hostname.trim().trim_end_matches('.').to_string();
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+    if normalized.contains("://")
+        || normalized.contains('/')
+        || normalized.contains(':')
+        || normalized.chars().any(char::is_whitespace)
+    {
+        return Err(
+            "ssl.external_hostname must be a hostname only, without a scheme, path, or port."
+                .to_string(),
+        );
+    }
+    if normalized.parse::<std::net::IpAddr>().is_ok() {
+        return Err(
+            "ssl.external_hostname must be a DNS hostname. Leave it blank to use the management IP with a local certificate."
+                .to_string(),
+        );
+    }
+    Ok(Some(normalized))
 }
 
 /// Top-level configuration file for LibreQoS.
@@ -169,6 +215,10 @@ pub struct Config {
     /// Listen options for the webserver
     pub webserver_listen: Option<String>,
 
+    /// Optional HTTPS/Caddy configuration for the WebUI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssl: Option<SslConfig>,
+
     /// Controls whether an operator-provided cobrand image should be shown in the WebUI.
     #[serde(default)]
     pub display_cobrand: bool,
@@ -253,6 +303,12 @@ impl Config {
                     "rtt_thresholds must satisfy green_ms <= yellow_ms <= red_ms".to_string(),
                 );
             }
+        }
+        if let Some(ssl) = &self.ssl
+            && let Some(hostname) = ssl.external_hostname.as_deref()
+            && normalize_external_hostname(hostname)?.is_none()
+        {
+            return Err("ssl.external_hostname must not be empty when configured".to_string());
         }
         if let Some(multiplier) = self.integration_common.ethernet_port_limit_multiplier
             && (!multiplier.is_finite() || multiplier <= 0.0 || multiplier > 1.0)
@@ -382,6 +438,7 @@ impl Default for Config {
             flows: None,
             disable_webserver: None,
             webserver_listen: None,
+            ssl: None,
             display_cobrand: false,
             stormguard: None,
             treeguard: treeguard::TreeguardConfig::default(),
@@ -569,7 +626,7 @@ impl Config {
 
 #[cfg(test)]
 mod test {
-    use super::{Config, RttThresholds};
+    use super::{Config, RttThresholds, SslConfig, normalize_external_hostname};
 
     fn remove_sections(raw: &str, sections: &[&str]) -> String {
         let mut output = Vec::new();
@@ -597,7 +654,9 @@ mod test {
         raw.lines()
             .filter(|line| {
                 let trimmed = line.trim_start();
-                !keys.iter().any(|key| trimmed.starts_with(&format!("{key} =")))
+                !keys
+                    .iter()
+                    .any(|key| trimmed.starts_with(&format!("{key} =")))
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -813,6 +872,54 @@ mod test {
         let config = Config::load_from_string(&stripped)
             .expect("Config without display_cobrand should still deserialize");
         assert!(!config.display_cobrand);
+    }
+
+    #[test]
+    fn ssl_hostname_validation_rejects_scheme_path_whitespace_ip_and_port() {
+        for invalid in [
+            "https://libreqos.example.com",
+            "libreqos.example.com/path",
+            "libreqos example.com",
+            "192.0.2.1",
+            "libreqos.example.com:8443",
+        ] {
+            let error =
+                normalize_external_hostname(invalid).expect_err("invalid hostname should fail");
+            assert!(error.contains("hostname only") || error.contains("DNS hostname"));
+        }
+    }
+
+    #[test]
+    fn ssl_hostname_round_trips_in_config() {
+        let mut config = Config::default();
+        config.ssl = Some(SslConfig {
+            enabled: true,
+            external_hostname: Some("libreqos.example.com".to_string()),
+            managed_by_libreqos: true,
+            previous_webserver_listen: Some("192.0.2.10:9123".to_string()),
+        });
+        config.validate().expect("ssl config should validate");
+
+        let serialized = toml::to_string_pretty(&config).expect("config should serialize");
+        assert!(serialized.contains("[ssl]"));
+        assert!(serialized.contains("external_hostname = \"libreqos.example.com\""));
+        assert!(serialized.contains("previous_webserver_listen = \"192.0.2.10:9123\""));
+
+        let round_trip = Config::load_from_string(&serialized).expect("config should deserialize");
+        assert_eq!(
+            round_trip
+                .ssl
+                .as_ref()
+                .and_then(|ssl| ssl.external_hostname.as_deref()),
+            Some("libreqos.example.com")
+        );
+        assert_eq!(
+            round_trip
+                .ssl
+                .as_ref()
+                .and_then(|ssl| ssl.previous_webserver_listen.as_deref()),
+            Some("192.0.2.10:9123")
+        );
     }
 
     #[test]

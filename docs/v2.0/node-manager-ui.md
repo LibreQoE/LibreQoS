@@ -1,6 +1,6 @@
 # LibreQoS WebUI (Node Manager)
 
-This page documents key WebUI (Node Manager) views and operational behavior in the local WebUI (`http://your_shaper_ip:9123`).
+This page documents key WebUI (Node Manager) views and operational behavior in the local WebUI. By default operators use `http://your_shaper_ip:9123`. If optional HTTPS with Caddy is enabled, operators use `https://your-hostname/` or `https://your-management-ip/` instead.
 
 For the full logical-topology versus queue-topology file flow, see [Topology Data Flow](topology-data-flow.md).
 
@@ -173,6 +173,7 @@ Practical meaning:
 - Saved passwords, API tokens, and keys stay hidden when you open an integration page.
 - If a credential is already configured, the field stays blank until you type a replacement. Use `Clear` only when you want to remove the saved value.
 - Leave the field blank to keep the current value. Enter a new value to replace it.
+- `Configuration -> SSL Setup` can install Caddy, switch the WebUI behind HTTPS, and later disable that HTTPS setup if you want to return to direct HTTP on port `9123`.
 
 ### Urgent Issues
 - WebUI can display urgent operational issues reported by LibreQoS services.
@@ -221,4 +222,5 @@ If only Site Map is blank or slow while other pages are healthy, also check mana
 
 - [Components](components.md)
 - [Configuration](configuration.md)
+- [Optional HTTPS With Caddy](https-caddy.md)
 - [Troubleshooting](troubleshooting.md)

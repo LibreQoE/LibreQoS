@@ -94,3 +94,5 @@ sudo systemctl start lqosd lqos_scheduler
 ```
 
 You can now point a web browser at `http://a.b.c.d:9123` (replace `a.b.c.d` with the management IP address of your shaping server) and enjoy a real-time view of your network.
+
+If you want operators to use HTTPS instead, sign in and open `Configuration -> SSL Setup`. See [Optional HTTPS With Caddy](https-caddy.md).

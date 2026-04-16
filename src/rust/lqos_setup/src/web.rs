@@ -8,7 +8,7 @@ use crate::{
 use anyhow::{Context, Result, bail};
 use axum::{
     Form, Router,
-    extract::Query,
+    extract::{Host, Query},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
@@ -47,6 +47,8 @@ struct SaveForm {
     internet_vlan: Option<String>,
     network_vlan: Option<String>,
     allow_subnets: String,
+    enable_ssl: Option<String>,
+    external_hostname: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +60,8 @@ struct HotfixForm {
 struct PendingForm {
     token: String,
     operation_id: String,
+    enable_ssl: Option<String>,
+    external_hostname: Option<String>,
 }
 
 pub(crate) fn run() -> Result<()> {
@@ -100,15 +104,15 @@ async fn root() -> Redirect {
     Redirect::temporary(target)
 }
 
-async fn setup_page(Query(query): Query<SetupQuery>) -> Response {
+async fn setup_page(Host(_host): Host, Query(query): Query<SetupQuery>) -> Response {
     match render_setup_page(query.token.as_deref(), query.notice.as_deref(), None) {
         Ok(html) => Html(html).into_response(),
         Err(err) => error_response(StatusCode::FORBIDDEN, &err.to_string()),
     }
 }
 
-async fn completed_page() -> Response {
-    match render_completed_page() {
+async fn completed_page(Host(host): Host) -> Response {
+    match render_completed_page(&host) {
         Ok(html) => Html(html).into_response(),
         Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
     }
@@ -163,7 +167,7 @@ async fn install_hotfix(Form(form): Form<HotfixForm>) -> Response {
     }
 }
 
-async fn save_setup(Form(form): Form<SaveForm>) -> Response {
+async fn save_setup(Host(host): Host, Form(form): Form<SaveForm>) -> Response {
     if let Err(err) = ensure_valid_setup_token(&form.token) {
         return error_response(StatusCode::FORBIDDEN, &err.to_string());
     }
@@ -192,7 +196,12 @@ async fn save_setup(Form(form): Form<SaveForm>) -> Response {
 
     match setup_actions::prepare_commit() {
         Ok(CommitOutcome::Complete(success)) => {
-            match finalize_success_html(&success.config, success.event_log) {
+            match finalize_success_html(
+                &success.config,
+                success.event_log,
+                ssl_request(&form),
+                Some(&host),
+            ) {
                 Ok(html) => Html(html).into_response(),
                 Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
             }
@@ -201,18 +210,24 @@ async fn save_setup(Form(form): Form<SaveForm>) -> Response {
             &form.token,
             &pending.operation_id,
             &pending.prompt,
+            ssl_request(&form),
         ))
         .into_response(),
         Err(err) => error_response(StatusCode::BAD_REQUEST, &err.to_string()),
     }
 }
 
-async fn confirm_setup(Form(form): Form<PendingForm>) -> Response {
+async fn confirm_setup(Host(host): Host, Form(form): Form<PendingForm>) -> Response {
     if let Err(err) = ensure_valid_setup_token(&form.token) {
         return error_response(StatusCode::FORBIDDEN, &err.to_string());
     }
     match setup_actions::confirm_pending_commit(&form.operation_id) {
-        Ok(success) => match finalize_success_html(&success.config, success.event_log) {
+        Ok(success) => match finalize_success_html(
+            &success.config,
+            success.event_log,
+            ssl_request_from_pending(&form),
+            Some(&host),
+        ) {
             Ok(html) => Html(html).into_response(),
             Err(err) => error_response(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()),
         },
@@ -404,6 +419,14 @@ fn render_setup_page(
             "<label>Allowed Subnets<textarea name=\"allow_subnets\" rows=\"6\">{}</textarea></label>",
             escape_html(&config.allow_subnets.join("\n"))
         ));
+        html.push_str("<div class=\"ssl-setup-card\">");
+        html.push_str("<h3>Optional HTTPS with Caddy</h3>");
+        html.push_str("<p class=\"muted\">Use HTTPS if you want the LibreQoS WebUI to open with a lock icon instead of plain HTTP. This is optional.</p>");
+        html.push_str("<p class=\"muted\">If you enter a public hostname, Caddy will ask Let's Encrypt for a browser-trusted certificate. If you leave the hostname blank, Caddy will secure the box by management IP with a local certificate. Browsers will warn until you trust that local root certificate on the operator computers that use this box.</p>");
+        html.push_str("<label class=\"checkbox-row\"><input type=\"checkbox\" name=\"enable_ssl\"> Enable HTTPS with Caddy after setup</label>");
+        html.push_str("<label>External Hostname (optional)<input type=\"text\" name=\"external_hostname\" placeholder=\"libreqos.example.com\"></label>");
+        html.push_str("<p class=\"muted\">Leave the hostname blank if staff will reach LibreQoS by IP address.</p>");
+        html.push_str("</div>");
         html.push_str(
             "<button id=\"saveSetupButton\" type=\"submit\">Save Setup</button></form></section>",
         );
@@ -492,6 +515,23 @@ fn parse_vlan(raw: Option<&str>) -> Result<u32> {
         .with_context(|| format!("Invalid VLAN value: {value}"))
 }
 
+fn ssl_request(form: &SaveForm) -> Option<String> {
+    ssl_request_value(&form.enable_ssl, form.external_hostname.as_deref())
+}
+
+fn ssl_request_from_pending(form: &PendingForm) -> Option<String> {
+    ssl_request_value(&form.enable_ssl, form.external_hostname.as_deref())
+}
+
+fn ssl_request_value(
+    enable_ssl: &Option<String>,
+    external_hostname: Option<&str>,
+) -> Option<String> {
+    enable_ssl
+        .is_some()
+        .then(|| external_hostname.unwrap_or("").trim().to_string())
+}
+
 fn resolve_requested_bridge_mode(requested_mode: &str, allow_legacy_xdp: bool) -> Result<&str> {
     match requested_mode {
         "single" | "linux" => Ok(requested_mode),
@@ -518,7 +558,12 @@ fn hidden_token(html: &mut String, token: &str) {
     );
 }
 
-fn render_pending_page(token: &str, operation_id: &str, prompt: &str) -> String {
+fn render_pending_page(
+    token: &str,
+    operation_id: &str,
+    prompt: &str,
+    ssl_request: Option<String>,
+) -> String {
     let mut html = page_shell("Confirm Network Change");
     html.push_str("<main class=\"setup-shell\"><section class=\"card\">");
     html.push_str("<h1>Confirm Network Change</h1>");
@@ -526,6 +571,17 @@ fn render_pending_page(token: &str, operation_id: &str, prompt: &str) -> String 
         "<pre class=\"report\">{}</pre>",
         escape_html(prompt)
     ));
+    if let Some(external_hostname) = ssl_request.as_deref() {
+        if external_hostname.is_empty() {
+            html.push_str("<p class=\"notice\">HTTPS with Caddy will also be enabled after this network change. LibreQoS will use a local certificate for the address you use to reach this setup page.</p>");
+        } else {
+            let _ = write!(
+                html,
+                "<p class=\"notice\">HTTPS with Caddy will also be enabled after this network change using hostname <code>{}</code>.</p>",
+                escape_html(external_hostname)
+            );
+        }
+    }
     html.push_str("<div class=\"button-row\">");
     html.push_str("<form method=\"post\" action=\"/setup/confirm\" onsubmit=\"return submitWithProgress(this, 'Confirming managed network change...');\">");
     hidden_token(&mut html, token);
@@ -534,6 +590,14 @@ fn render_pending_page(token: &str, operation_id: &str, prompt: &str) -> String 
         "<input type=\"hidden\" name=\"operation_id\" value=\"{}\">",
         escape_html(operation_id)
     );
+    if let Some(external_hostname) = ssl_request.as_deref() {
+        html.push_str("<input type=\"hidden\" name=\"enable_ssl\" value=\"on\">");
+        let _ = write!(
+            html,
+            "<input type=\"hidden\" name=\"external_hostname\" value=\"{}\">",
+            escape_html(external_hostname)
+        );
+    }
     html.push_str("<button type=\"submit\">Confirm</button></form>");
     html.push_str("<form method=\"post\" action=\"/setup/revert\" onsubmit=\"return submitWithProgress(this, 'Reverting pending network change...');\">");
     hidden_token(&mut html, token);
@@ -550,8 +614,21 @@ fn render_pending_page(token: &str, operation_id: &str, prompt: &str) -> String 
 fn finalize_success_html(
     config: &lqos_config::Config,
     mut event_log: Vec<String>,
+    ssl_request: Option<String>,
+    preferred_host: Option<&str>,
 ) -> Result<String> {
-    setup_actions::persist_setup_success(config, &mut event_log)?;
+    let ssl_outcome = if let Some(external_hostname) = ssl_request {
+        let outcome =
+            lqos_setup::ssl::enable_setup_ssl(config, Some(external_hostname), preferred_host)?;
+        event_log.push(outcome.message.clone());
+        Some(outcome)
+    } else {
+        None
+    };
+    let final_config = lqos_config::load_config()
+        .map(|config| (*config).clone())
+        .unwrap_or_else(|_| config.clone());
+    setup_actions::persist_setup_success(&final_config, &mut event_log)?;
     let handoff_notice = match service_handoff::schedule_runtime_handoff() {
         Ok(notice) => {
             event_log.push(notice.message.clone());
@@ -575,22 +652,48 @@ fn finalize_success_html(
         "<details class=\"notice-details\" open><summary>Show setup actions</summary><pre class=\"report\">{}</pre></details>",
         escape_html(&report)
     ));
+    if let Some(outcome) = &ssl_outcome {
+        html.push_str("<div class=\"notice\">");
+        let _ = write!(
+            html,
+            "<strong>HTTPS URL:</strong> <a href=\"{}\">{}</a>",
+            escape_html(&outcome.target_url),
+            escape_html(&outcome.target_url)
+        );
+        if let Some(ca_path) = outcome.internal_ca_root_certificate.as_deref() {
+            let _ = write!(
+                html,
+                "<p class=\"muted\">If the browser warns about the certificate, trust the Caddy local root certificate from <code>{}</code> on the operator computers that manage this node.</p>",
+                escape_html(ca_path)
+            );
+        }
+        html.push_str("</div>");
+    }
     if handoff_notice
         .as_ref()
         .is_some_and(|notice| notice.automatic)
     {
         html.push_str("<p class=\"muted\">LibreQoS runtime services are starting now. This setup page may stop responding during the handoff. Use the link below after the handoff if you want to load the normal runtime UI.</p>");
     }
-    html.push_str(
-        "<div class=\"button-row\"><a class=\"button-link\" href=\"/\">Open LibreQoS</a></div>",
+    let open_target = ssl_outcome
+        .as_ref()
+        .map(|outcome| outcome.target_url.clone())
+        .unwrap_or_else(|| runtime_access_url(&final_config, preferred_host));
+    let _ = write!(
+        html,
+        "<div class=\"button-row\"><a class=\"button-link\" href=\"{}\">Open LibreQoS</a></div>",
+        escape_html(&open_target)
     );
     html.push_str("</section></main></body></html>");
     Ok(html)
 }
 
-fn render_completed_page() -> Result<String> {
+fn render_completed_page(preferred_host: &str) -> Result<String> {
     let snapshot = bootstrap::status_snapshot()?;
     let report = bootstrap::load_setup_completion_report().unwrap_or_default();
+    let open_target = lqos_config::load_config()
+        .map(|config| runtime_access_url(config.as_ref(), Some(preferred_host)))
+        .unwrap_or_else(|_| "/".to_string());
     let mut html = page_shell("Setup Complete");
     html.push_str("<main class=\"setup-shell\"><section class=\"card\"><h1>Setup Saved</h1>");
     html.push_str(&format!(
@@ -604,11 +707,17 @@ fn render_completed_page() -> Result<String> {
         ));
     }
     html.push_str("<p class=\"muted\">Use the button below after the handoff if you want to load the normal runtime UI.</p>");
-    html.push_str(
-        "<div class=\"button-row\"><a class=\"button-link\" href=\"/\">Open LibreQoS</a></div>",
+    let _ = write!(
+        html,
+        "<div class=\"button-row\"><a class=\"button-link\" href=\"{}\">Open LibreQoS</a></div>",
+        escape_html(&open_target)
     );
     html.push_str("</section></main></body></html>");
     Ok(html)
+}
+
+fn runtime_access_url(config: &lqos_config::Config, preferred_host: Option<&str>) -> String {
+    lqos_setup::ssl::ssl_status(config, preferred_host).target_url
 }
 
 fn page_shell(title: &str) -> String {
@@ -649,6 +758,10 @@ fn base_css() -> &'static str {
     .busy-bar{height:12px;border-radius:999px;background:linear-gradient(90deg,var(--lqos-primary) 0%,#14b8a6 30%,#d1fae5 50%,#14b8a6 70%,var(--lqos-primary) 100%);background-size:200% 100%;animation:busy-slide 1.2s linear infinite;margin-bottom:14px}\
     @keyframes busy-slide{0%{background-position:200% 0}100%{background-position:-200% 0}}\
     .validation-message{margin:10px 0 0;color:#b91c1c;font-weight:700}\
+    .ssl-setup-card{margin-top:18px;padding:16px;border-radius:14px;background:rgba(37,99,235,.06);border:1px solid rgba(37,99,235,.14)}\
+    .ssl-setup-card h3{margin:0 0 10px;font-size:1.05rem}\
+    .checkbox-row{display:flex;align-items:center;gap:10px;font-weight:700}\
+    .checkbox-row input{width:auto;margin:0}\
     code{background:#eef2f7;padding:2px 6px;border-radius:6px}"
 }
 
@@ -694,7 +807,8 @@ fn selected(value: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_requested_bridge_mode;
+    use super::{render_pending_page, resolve_requested_bridge_mode, runtime_access_url};
+    use lqos_config::{Config, SslConfig};
 
     #[test]
     fn xdp_mode_is_preserved_for_existing_xdp_config() {
@@ -705,5 +819,57 @@ mod tests {
     fn xdp_mode_is_not_available_for_new_installs() {
         let error = resolve_requested_bridge_mode("xdp", false).unwrap_err();
         assert!(error.to_string().contains("Unsupported bridge mode"));
+    }
+
+    #[test]
+    fn pending_page_preserves_ssl_request_fields() {
+        let html = render_pending_page(
+            "token-1",
+            "op-1",
+            "pending change",
+            Some("edge.libreqos.test".to_string()),
+        );
+
+        assert!(html.contains("HTTPS with Caddy will also be enabled"));
+        assert!(html.contains("name=\"enable_ssl\" value=\"on\""));
+        assert!(html.contains("name=\"external_hostname\" value=\"edge.libreqos.test\""));
+    }
+
+    #[test]
+    fn runtime_access_url_uses_request_host_for_internal_ca_setup() {
+        let config = Config {
+            webserver_listen: Some("127.0.0.1:9123".to_string()),
+            ssl: Some(SslConfig {
+                enabled: true,
+                external_hostname: None,
+                managed_by_libreqos: true,
+                previous_webserver_listen: Some("0.0.0.0:9123".to_string()),
+            }),
+            ..Config::default()
+        };
+
+        assert_eq!(
+            runtime_access_url(&config, Some("setup.libreqos.test:9123")),
+            "https://setup.libreqos.test/"
+        );
+    }
+
+    #[test]
+    fn runtime_access_url_keeps_direct_http_when_ssl_is_disabled() {
+        let config = Config {
+            webserver_listen: Some("0.0.0.0:9123".to_string()),
+            ssl: Some(SslConfig {
+                enabled: false,
+                external_hostname: None,
+                managed_by_libreqos: true,
+                previous_webserver_listen: Some("0.0.0.0:9123".to_string()),
+            }),
+            ..Config::default()
+        };
+
+        assert_eq!(
+            runtime_access_url(&config, Some("setup.libreqos.test:9123")),
+            "http://setup.libreqos.test:9123/"
+        );
     }
 }

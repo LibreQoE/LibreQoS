@@ -33,6 +33,11 @@ to_network = "eth1"
 #internet_vlan = 2
 #network_vlan = 3
 
+#[ssl]
+#enabled = false
+#external_hostname = "libreqos.example.com"
+#managed_by_libreqos = false
+
 [queues]
 default_sqm = "cake diffserv4"
 queue_mode = "shape"

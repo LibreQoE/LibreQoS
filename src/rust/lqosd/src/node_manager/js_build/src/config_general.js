@@ -216,8 +216,14 @@ function updateConfig() {
     const selectedProfileId = selectedQooProfileId();
     window.config.qoo_profile_id = selectedProfileId ? selectedProfileId : null;
     
-    const webserverListen = document.getElementById("webserverListen").value.trim();
-    window.config.webserver_listen = webserverListen ? webserverListen : null;
+    const sslEnabled = !!window.config?.ssl?.enabled;
+    const webserverListenInput = document.getElementById("webserverListen");
+    const webserverListen = webserverListenInput.value.trim();
+    if (sslEnabled) {
+        window.config.webserver_listen = "127.0.0.1:9123";
+    } else {
+        window.config.webserver_listen = webserverListen ? webserverListen : null;
+    }
 }
 
 // Render the configuration menu
@@ -242,8 +248,13 @@ loadConfig(() => {
         }
 
         // Optional fields with nullish coalescing
+        const sslEnabled = !!window.config?.ssl?.enabled;
         document.getElementById("disableWebserver").checked = window.config.disable_webserver ?? false;
-        document.getElementById("webserverListen").value = window.config.webserver_listen ?? "";
+        document.getElementById("webserverListen").value = sslEnabled
+            ? "127.0.0.1:9123"
+            : (window.config.webserver_listen ?? "");
+        document.getElementById("webserverListen").disabled = sslEnabled;
+        document.getElementById("sslWebserverNotice").classList.toggle("d-none", !sslEnabled);
         document.getElementById("disableIcmpPing").checked = window.config.disable_icmp_ping ?? false;
         document.getElementById("excludeEfficiencyCores").checked = window.config.exclude_efficiency_cores ?? true;
         document.getElementById("enableCircuitHeatmaps").checked = window.config.enable_circuit_heatmaps ?? true;

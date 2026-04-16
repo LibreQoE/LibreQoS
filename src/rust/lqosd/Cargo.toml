@@ -23,6 +23,7 @@ lqos_heimdall = { path = "../lqos_heimdall" }
 lqos_stormguard = { path = "../lqos_stormguard" }
 lqos_probe = { path = "../lqos_probe" }
 lqos_netplan_helper = { path = "../lqos_netplan_helper" }
+lqos_setup = { path = "../lqos_setup" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }

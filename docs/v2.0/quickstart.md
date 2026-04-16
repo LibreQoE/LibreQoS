@@ -61,6 +61,8 @@ sudo apt install ./{deb_url_v1_5}
 3. Create the initial WebUI admin user if prompted.
 4. Sign in and confirm the Dashboard opens.
 
+Optional: if operators need HTTPS, enable `Configuration -> SSL Setup` after sign-in, or enable the same option during first-run setup. See [Optional HTTPS With Caddy](https-caddy.md).
+
 At this point, the WebUI being available does not yet prove that LibreQoS is ready to shape subscribers.
 
 If Scheduler Status says `Setup Required`, that is expected until you choose a topology source and publish usable shaping data.
@@ -172,6 +174,7 @@ Expand only after you have one known-good baseline.
 ## 8) Related Pages
 
 - [Configure LibreQoS](configuration.md)
+- [Optional HTTPS With Caddy](https-caddy.md)
 - [Operating Modes and Source of Truth](operating-modes.md)
 - [CRM/NMS Integrations](integrations.md)
 - [Advanced Configuration Reference](configuration-advanced.md)

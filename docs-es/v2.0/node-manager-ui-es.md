@@ -1,6 +1,6 @@
 # Interfaz WebUI (Node Manager) de LibreQoS
 
-Esta página documenta las vistas clave de la WebUI (Node Manager) y su comportamiento operativo en la interfaz local (`http://ip_del_shaper:9123`).
+Esta página documenta las vistas clave de la WebUI (Node Manager) y su comportamiento operativo en la interfaz local. Por defecto los operadores usan `http://ip_del_shaper:9123`. Si se habilita HTTPS opcional con Caddy, los operadores usan `https://tu-hostname/` o `https://tu-ip-de-gestión/`.
 
 ## Vistas principales
 
@@ -122,6 +122,7 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - Las contraseñas, los tokens API y las claves guardadas permanecen ocultos al abrir una página de integración.
 - Si ya existe una credencial guardada, el campo permanece vacío hasta que escriba un reemplazo. Use `Clear` solo cuando quiera quitar el valor guardado.
 - Deje el campo vacío para conservar el valor actual. Escriba uno nuevo para reemplazarlo.
+- `Configuration -> SSL Setup` puede instalar Caddy, poner la WebUI detrás de HTTPS y luego desactivar ese HTTPS si quiere volver al HTTP directo en el puerto `9123`.
 
 ### Problemas urgentes
 - WebUI puede mostrar problemas operativos urgentes informados por los servicios de LibreQoS.
@@ -166,4 +167,5 @@ journalctl -u lqosd --since "10 minutes ago"
 
 - [Componentes](components-es.md)
 - [Configuración](configuration-es.md)
+- [HTTPS opcional con Caddy](https-caddy-es.md)
 - [Solución de Problemas](troubleshooting-es.md)

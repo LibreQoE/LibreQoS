@@ -18,6 +18,7 @@ asn_analysis.js
 lts_trial.js
 lts_trial_setup.js
 config_general.js
+config_ssl.js
 config_rtt.js
 config_tuning.js
 config_queues.js

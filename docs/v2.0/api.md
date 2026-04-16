@@ -13,7 +13,8 @@ This is separate from base shaping limits:
 
 Use Swagger on your node as the complete reference and test surface for your installed build:
 
-- `http://<node-ip>:9122/api-docs`
+- Direct local API port: `http://<node-ip>:9122/api-docs`
+- If optional HTTPS with Caddy is enabled for the WebUI: `https://<hostname-or-node-ip>/api/v1/api-docs`
 
 Use this page as a capability map. Use Swagger for full endpoint inventory, request/response schemas, and live testing.
 
@@ -142,3 +143,5 @@ If integrations are enabled, integration refresh cycles may overwrite direct fil
 - Do not expose the API directly to the public Internet.
 - If remote access is needed, use a reverse proxy with TLS and authentication.
 - Restrict inbound access with firewall allowlists.
+
+If you want the WebUI and API docs on one HTTPS origin, see [Optional HTTPS With Caddy](https-caddy.md).

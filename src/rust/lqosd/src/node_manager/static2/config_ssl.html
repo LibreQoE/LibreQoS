@@ -1,0 +1,88 @@
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <section class="lqos-config-panel">
+        <div class="lqos-config-panel-header">
+            <div>
+                <h5 class="lqos-config-panel-title">SSL Setup</h5>
+                <div class="lqos-config-panel-subtitle">Optional HTTPS for the LibreQoS WebUI and API docs using a local Caddy reverse proxy.</div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-12 col-xl-6">
+                <div class="lqos-config-section h-100">
+                    <h6 class="lqos-config-section-title">How This Works</h6>
+                    <div class="lqos-config-section-subtitle">Choose whether staff will open LibreQoS by hostname or by IP address.</div>
+
+                    <p class="mb-3">
+                        If you enter a public hostname, Caddy will ask Let's Encrypt for a certificate that browsers already trust.
+                        Use this when staff can reach LibreQoS by name, like <code>libreqos.example.com</code>.
+                    </p>
+
+                    <p class="mb-0">
+                        If you leave the hostname blank, Caddy will secure LibreQoS by IP address with its own local certificate authority.
+                        This still encrypts traffic, but each operator computer must trust that local root certificate before browsers stop warning.
+                    </p>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-6">
+                <div class="lqos-config-section h-100">
+                    <h6 class="lqos-config-section-title">Current Status</h6>
+                    <div class="lqos-config-section-subtitle">The buttons below install or remove the LibreQoS-managed Caddy configuration.</div>
+
+                    <div id="sslStatusAlert" class="alert alert-secondary mb-3" role="status">Loading SSL status...</div>
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Operator URL</dt>
+                        <dd class="col-sm-8" id="sslTargetUrl">-</dd>
+                        <dt class="col-sm-4">Caddy Installed</dt>
+                        <dd class="col-sm-8" id="sslCaddyInstalled">-</dd>
+                        <dt class="col-sm-4">Managed Caddyfile</dt>
+                        <dd class="col-sm-8" id="sslCaddyfilePresent">-</dd>
+                        <dt class="col-sm-4">Certificate Mode</dt>
+                        <dd class="col-sm-8" id="sslModeLabel">-</dd>
+                        <dt class="col-sm-4">Root Certificate</dt>
+                        <dd class="col-sm-8" id="sslCaPath">-</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="lqos-config-panel">
+        <div class="row g-3">
+            <div class="col-12 col-xl-8">
+                <div class="lqos-config-section h-100">
+                    <h6 class="lqos-config-section-title">External Hostname</h6>
+                    <div class="lqos-config-section-subtitle">Optional. Leave blank to keep HTTPS on the management IP with a local certificate.</div>
+
+                    <label for="externalHostname" class="form-label">External Hostname</label>
+                    <input type="text" class="form-control" id="externalHostname" placeholder="libreqos.example.com">
+                    <div class="form-text">Do not include <code>http://</code>, <code>https://</code>, a path, or a port number.</div>
+
+                    <div id="sslWebserverBlocked" class="alert alert-warning mt-3 d-none" role="alert">
+                        The WebUI is currently disabled in General Settings. Re-enable the Web Server before using SSL setup.
+                    </div>
+
+                    <div id="sslResult" class="alert alert-info mt-3 d-none" role="alert"></div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-4">
+                <div class="lqos-config-section h-100">
+                    <h6 class="lqos-config-section-title">Actions</h6>
+                    <div class="lqos-config-section-subtitle">Setup installs Caddy if needed, writes the managed Caddyfile, and switches LibreQoS into local-only listen mode.</div>
+
+                    <div class="d-grid gap-2">
+                        <button type="button" id="setupSslButton" class="btn btn-outline-primary">Setup SSL</button>
+                        <button type="button" id="disableSslButton" class="btn btn-outline-secondary">Disable SSL</button>
+                        <button type="button" id="refreshSslStatusButton" class="btn btn-link text-decoration-none px-0">Refresh Status</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script src="config_ssl.js%CACHEBUSTERS%"></script>

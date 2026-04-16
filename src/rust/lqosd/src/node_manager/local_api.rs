@@ -24,6 +24,7 @@ pub(crate) mod scheduler;
 pub(crate) mod search;
 pub(crate) mod shaped_device_api;
 pub(crate) mod shaped_devices_page;
+pub(crate) mod ssl;
 pub(crate) mod throughput_attribution_debug;
 pub(crate) mod topology_manager;
 pub(crate) mod topology_probes;
@@ -56,6 +57,9 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
             post(network_mode::retry_shaping),
         )
         .route("/config/cobrand", post(config::upload_cobrand))
+        .route("/ssl/status", get(ssl::status))
+        .route("/ssl/setup", post(ssl::setup))
+        .route("/ssl/disable", post(ssl::disable))
         .with_state(network_mode::NetworkModeApiState::default())
         .layer(Extension(shaper_query))
         .layer(CorsLayer::very_permissive())

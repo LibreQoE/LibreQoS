@@ -42,6 +42,8 @@ LQOS_FILES=(
   ShapedDevices.example.csv
   shaping_skip_report.py
   systemd_hotfix.sh
+  install_caddy.sh
+  disable_caddy.sh
   virtual_tree_nodes.py
   manualNetwork.template.csv
   ../requirements.txt
@@ -226,9 +228,11 @@ fi
 cp mikrotik_ipv6.example.toml "$ETC_LIBREQOS_DIR"/mikrotik_ipv6.example.toml
 
 # Ensure helper scripts are executable in the package
-if [ -f "$LQOS_DIR/update_api.sh" ]; then
-  chmod a+x "$LQOS_DIR/update_api.sh" || true
-fi
+for helper_script in update_api.sh install_caddy.sh disable_caddy.sh; do
+  if [ -f "$LQOS_DIR/$helper_script" ]; then
+    chmod a+x "$LQOS_DIR/$helper_script" || true
+  fi
+done
 
 # Copy files into the LibreQoS/bin directory
 for file in "${LQOS_BIN_FILES[@]}"; do
