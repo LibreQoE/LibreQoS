@@ -243,6 +243,41 @@ fn dedup_raw_devices_by_id(
     (deduped_devices, deduped_json)
 }
 
+pub(crate) fn dedup_raw_sites_by_id(sites_raw: Vec<Site>) -> Vec<Site> {
+    let original_len = sites_raw.len();
+    let mut seen_ids = HashSet::<String>::new();
+    let mut duplicate_counts = HashMap::<String, usize>::new();
+    let mut deduped_sites = Vec::with_capacity(original_len);
+
+    for site in sites_raw {
+        let site_id = site.id.clone();
+        if !seen_ids.insert(site_id.clone()) {
+            *duplicate_counts.entry(site_id).or_insert(0) += 1;
+            continue;
+        }
+        deduped_sites.push(site);
+    }
+
+    if !duplicate_counts.is_empty() {
+        let duplicate_rows = duplicate_counts.values().sum::<usize>();
+        let mut duplicate_ids = duplicate_counts.into_iter().collect::<Vec<_>>();
+        duplicate_ids.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        let sample_ids = duplicate_ids
+            .iter()
+            .take(5)
+            .map(|(site_id, count)| format!("{site_id} (+{count})"))
+            .collect::<Vec<_>>();
+        warn!(
+            duplicate_site_ids = duplicate_ids.len(),
+            duplicate_site_rows = duplicate_rows,
+            sample = ?sample_ids,
+            "UISP returned duplicate site IDs; deduping by site ID before topology processing"
+        );
+    }
+
+    deduped_sites
+}
+
 impl UispData {
     pub(crate) fn from_parts(
         sites_raw: Vec<Site>,
@@ -332,6 +367,7 @@ impl UispData {
         // Obtain the UISP data and transform it into easier to work with types
         let (mut sites_raw, devices_raw, data_links_raw, devices_as_json) =
             load_uisp_data(config.clone()).await?;
+        sites_raw = dedup_raw_sites_by_id(sites_raw);
         let (devices_raw, devices_as_json) = dedup_raw_devices_by_id(devices_raw, devices_as_json);
 
         // Normalize endpoint/customer names before deduplication and downstream parsing.
@@ -551,7 +587,10 @@ impl UispData {
 
 #[cfg(test)]
 mod tests {
-    use super::{dedup_raw_devices_by_id, dedup_site_names, normalize_client_site_names};
+    use super::{
+        dedup_raw_devices_by_id, dedup_raw_sites_by_id, dedup_site_names,
+        normalize_client_site_names,
+    };
     use serde_json::json;
     use uisp::{Device, Site};
 
@@ -717,5 +756,20 @@ mod tests {
             raw_json[1]["identification"]["hostname"].as_str(),
             Some("Unique Name")
         );
+    }
+
+    #[test]
+    fn duplicate_raw_sites_are_deduped_by_id() {
+        let first = mk_site("site-1", "First Name", None, None);
+        let duplicate = mk_site("site-1", "Second Name", None, None);
+        let unique = mk_site("site-2", "Unique Name", None, None);
+
+        let sites = dedup_raw_sites_by_id(vec![first, duplicate, unique]);
+
+        assert_eq!(sites.len(), 2);
+        assert_eq!(sites[0].id, "site-1");
+        assert_eq!(sites[0].name_or_blank(), "First Name");
+        assert_eq!(sites[1].id, "site-2");
+        assert_eq!(sites[1].name_or_blank(), "Unique Name");
     }
 }
