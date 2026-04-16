@@ -134,6 +134,16 @@ popd > /dev/null || exit
 cp rust/target/$TARGET/liblqos_python.so ./liblqos_python.so.new
 mv liblqos_python.so.new liblqos_python.so
 
+# Ensure runtime helper scripts required by the WebUI/setup flows exist and stay executable.
+for helper_script in update_api.sh install_caddy.sh disable_caddy.sh
+do
+    if [ ! -f "$helper_script" ]; then
+        echo "Expected runtime helper $helper_script to exist."
+        exit 1
+    fi
+    chmod a+x "$helper_script"
+done
+
 
 
 # Update the lqos_api binary

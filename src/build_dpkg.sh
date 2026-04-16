@@ -230,7 +230,7 @@ cp mikrotik_ipv6.example.toml "$ETC_LIBREQOS_DIR"/mikrotik_ipv6.example.toml
 # Ensure helper scripts are executable in the package
 for helper_script in update_api.sh install_caddy.sh disable_caddy.sh; do
   if [ -f "$LQOS_DIR/$helper_script" ]; then
-    chmod a+x "$LQOS_DIR/$helper_script" || true
+    chmod a+x "$LQOS_DIR/$helper_script"
   fi
 done
 
