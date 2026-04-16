@@ -2,7 +2,7 @@ use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
 use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
 use crate::ip_ranges::IpRanges;
-use crate::strategies::common::dedup_site_names;
+use crate::strategies::common::{dedup_raw_sites_by_id, dedup_site_names};
 use crate::strategies::full::shaped_devices_writer::{ShapedDevice, write_circuit_anchors};
 use crate::uisp_types::UispDevice;
 use lqos_config::{
@@ -32,11 +32,12 @@ pub async fn build_flat_network(
             error!("{e:?}");
             UispIntegrationError::UispConnectError
         })?;
-    let mut sites = uisp::load_all_sites(config.clone()).await.map_err(|e| {
+    let sites = uisp::load_all_sites(config.clone()).await.map_err(|e| {
         error!("Unable to load device list from UISP");
         error!("{e:?}");
         UispIntegrationError::UispConnectError
     })?;
+    let mut sites = dedup_raw_sites_by_id(sites);
     let data_links = uisp::load_all_data_links(config.clone())
         .await
         .map_err(|e| {
