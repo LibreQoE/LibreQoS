@@ -2380,9 +2380,6 @@ fn resolved_queue_visibility_policy(
             TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren
         }
         TopologyQueueVisibilityPolicy::QueueAuto => {
-            if ui_node.current_parent_node_id.is_none() {
-                return TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren;
-            }
             let Some(tree_node) = tree_node.and_then(Value::as_object) else {
                 return TopologyQueueVisibilityPolicy::QueueVisible;
             };
@@ -5990,6 +5987,238 @@ mod tests {
             Some(2350)
         );
         assert_eq!(aggregation.get("virtual").and_then(Value::as_bool), None);
+    }
+
+    #[test]
+    fn queue_auto_top_level_site_below_threshold_stays_visible() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
+
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-root".to_string(),
+                    node_name: "Root Aggregation".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "site-child".to_string(),
+                    node_name: "Edge".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-root".to_string()),
+                    current_parent_node_name: Some("Root Aggregation".to_string()),
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let canonical = json!({
+            "Root Aggregation": {
+                "children": {
+                    "Edge": {
+                        "children": {},
+                        "downloadBandwidthMbps": 1000,
+                        "id": "site-child",
+                        "name": "Edge",
+                        "type": "Site",
+                        "uploadBandwidthMbps": 1000
+                    }
+                },
+                "downloadBandwidthMbps": 2350,
+                "id": "site-root",
+                "name": "Root Aggregation",
+                "type": "Site",
+                "uploadBandwidthMbps": 2350
+            }
+        });
+
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![
+                TopologyEffectiveNodeState {
+                    node_id: "site-root".to_string(),
+                    logical_parent_node_id: String::new(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "site-child".to_string(),
+                    logical_parent_node_id: "site-root".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+            ],
+        };
+
+        let effective_network = apply_effective_topology_to_network_json(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
+        let root = effective_network
+            .as_object()
+            .expect("effective export should remain an object tree");
+        let root_node = root
+            .get("Root Aggregation")
+            .and_then(Value::as_object)
+            .expect("root node should remain exported");
+        assert_eq!(root_node.get("virtual").and_then(Value::as_bool), None);
+        let children = root_node["children"]
+            .as_object()
+            .expect("root node should retain its logical children");
+        assert!(children.get("Edge").is_some());
+    }
+
+    #[test]
+    fn queue_auto_top_level_site_above_threshold_becomes_virtual() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
+
+        let editor_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-root".to_string(),
+                    node_name: "Root Aggregation".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+                TopologyEditorNode {
+                    node_id: "site-child".to_string(),
+                    node_name: "Edge".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: Some("site-root".to_string()),
+                    current_parent_node_name: Some("Root Aggregation".to_string()),
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
+            ],
+        };
+
+        let canonical = json!({
+            "Root Aggregation": {
+                "children": {
+                    "Edge": {
+                        "children": {},
+                        "downloadBandwidthMbps": 1000,
+                        "id": "site-child",
+                        "name": "Edge",
+                        "type": "Site",
+                        "uploadBandwidthMbps": 1000
+                    }
+                },
+                "downloadBandwidthMbps": 7000,
+                "id": "site-root",
+                "name": "Root Aggregation",
+                "type": "Site",
+                "uploadBandwidthMbps": 7000
+            }
+        });
+
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![
+                TopologyEffectiveNodeState {
+                    node_id: "site-root".to_string(),
+                    logical_parent_node_id: String::new(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+                TopologyEffectiveNodeState {
+                    node_id: "site-child".to_string(),
+                    logical_parent_node_id: "site-root".to_string(),
+                    preferred_attachment_id: None,
+                    effective_attachment_id: None,
+                    fallback_reason: None,
+                    all_attachments_suppressed: false,
+                    attachments: vec![],
+                },
+            ],
+        };
+
+        let effective_network = apply_effective_topology_to_network_json(
+            &config,
+            &canonical,
+            &editor_state,
+            &effective,
+        );
+        let root = effective_network
+            .as_object()
+            .expect("effective export should remain an object tree");
+        let root_node = root
+            .get("Root Aggregation")
+            .and_then(Value::as_object)
+            .expect("root node should remain exported");
+        assert_eq!(root_node.get("virtual").and_then(Value::as_bool), Some(true));
+        let children = root_node["children"]
+            .as_object()
+            .expect("root node should retain its logical children");
+        assert!(children.get("Edge").is_some());
     }
 
     #[test]

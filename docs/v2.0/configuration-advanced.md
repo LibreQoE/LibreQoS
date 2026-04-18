@@ -108,8 +108,8 @@ In the WebUI, this lives at `Configuration -> Integration - Common` as `Queue Au
 How it works:
 
 - `queue_auto_virtualize_threshold_mbps` is the static queue-policy threshold used by `lqos_topology`.
-- Integration roots default to static virtual nodes in the runtime tree.
-- Site nodes above the threshold may also be virtualized automatically when they are acting as aggregation-only branches.
+- `QueueAuto` only hides a node when it is a `Site`, has child branches, and its final effective node rate is at or above the threshold.
+- That same threshold rule applies to top-level `QueueAuto` sites and non-top-level `QueueAuto` sites.
 - Nodes with directly attached circuits stay queue-visible by default.
 
 This static queue policy is now the primary way to avoid wasting HTB depth or creating artificial aggregate choke points. TreeGuard runtime link virtualization remains available, but is disabled by default.
@@ -120,23 +120,20 @@ This static queue policy is now the primary way to avoid wasting HTB depth or cr
 
 ```{mermaid}
 flowchart TD
-    A[Node queue policy = QueueAuto] --> B{Is this a root node?}
-    B -->|Yes| C[Hide for queueing / promote children]
-    B -->|No| D{Is this a Site node?}
+    A[Node queue policy = QueueAuto] --> B{Is this a Site node?}
+    B -->|No| C[Keep queue-visible]
+    B -->|Yes| D{Does it have child branches?}
     D -->|No| E[Keep queue-visible]
-    D -->|Yes| F{Does it have child branches?}
+    D -->|Yes| F{Final effective node rate >= threshold?}
     F -->|No| G[Keep queue-visible]
-    F -->|Yes| H{Final effective node rate >= threshold?}
-    H -->|No| I[Keep queue-visible]
-    H -->|Yes| J[Mark static virtual for queueing]
+    F -->|Yes| H[Mark static virtual for queueing]
 ```
 
 Current rule summary:
 
-- Root nodes default to queue-hidden or static virtual behavior depending on policy.
 - Non-`Site` nodes stay queue-visible under `QueueAuto`.
 - A `Site` with no child branches stays queue-visible.
-- A `Site` with child branches only becomes static virtual when its final effective node rate is at or above `queue_auto_virtualize_threshold_mbps`.
+- A top-level or non-top-level `Site` with child branches only becomes static virtual when its final effective node rate is at or above `queue_auto_virtualize_threshold_mbps`.
 - The rate used for this decision is the recompiled runtime-effective rate, not an earlier raw attachment max.
 
 When a node becomes static virtual:
