@@ -37,6 +37,7 @@ pub(crate) mod bpf {
 #[derive(Clone, Copy)]
 struct PinnedMapAbiSpec {
     path: &'static str,
+    expected_map_type: u32,
     expected_key_size: u32,
     expected_value_size: u32,
 }
@@ -76,16 +77,19 @@ fn ip_mapping_pinned_map_abi_specs() -> [PinnedMapAbiSpec; 3] {
     [
         PinnedMapAbiSpec {
             path: "/sys/fs/bpf/map_ip_to_cpu_and_tc",
+            expected_map_type: bpf::bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
             expected_key_size,
             expected_value_size,
         },
         PinnedMapAbiSpec {
             path: "/sys/fs/bpf/ip_to_cpu_and_tc_hotcache",
+            expected_map_type: bpf::bpf_map_type_BPF_MAP_TYPE_LRU_HASH,
             expected_key_size: std::mem::size_of::<XdpIpAddress>() as u32,
             expected_value_size,
         },
         PinnedMapAbiSpec {
             path: "/sys/fs/bpf/ip_mapping_epoch",
+            expected_map_type: bpf::bpf_map_type_BPF_MAP_TYPE_ARRAY,
             expected_key_size: std::mem::size_of::<u32>() as u32,
             expected_value_size: std::mem::size_of::<u32>() as u32,
         },
@@ -114,19 +118,22 @@ fn pinned_map_info(path: &str) -> Result<Option<bpf_map_info>> {
     Ok(Some(info))
 }
 
-fn pinned_map_key_value_sizes(path: &str) -> Result<Option<(u32, u32)>> {
-    Ok(pinned_map_info(path)?.map(|info| (info.key_size, info.value_size)))
+fn pinned_map_abi(path: &str) -> Result<Option<(u32, u32, u32)>> {
+    Ok(pinned_map_info(path)?.map(|info| (info.type_, info.key_size, info.value_size)))
 }
 
 fn ip_mapping_subsystem_ready_with<F>(mut map_sizes: F) -> Result<bool>
 where
-    F: FnMut(&str) -> Result<Option<(u32, u32)>>,
+    F: FnMut(&str) -> Result<Option<(u32, u32, u32)>>,
 {
     for spec in ip_mapping_pinned_map_abi_specs() {
-        let Some((key_size, value_size)) = map_sizes(spec.path)? else {
+        let Some((map_type, key_size, value_size)) = map_sizes(spec.path)? else {
             return Ok(false);
         };
-        if key_size != spec.expected_key_size || value_size != spec.expected_value_size {
+        if map_type != spec.expected_map_type
+            || key_size != spec.expected_key_size
+            || value_size != spec.expected_value_size
+        {
             return Ok(false);
         }
     }
@@ -140,7 +147,7 @@ where
 /// pinned or have an incompatible ABI, and `Err` for unexpected inspection
 /// failures.
 pub fn ip_mapping_subsystem_ready() -> Result<bool> {
-    ip_mapping_subsystem_ready_with(pinned_map_key_value_sizes)
+    ip_mapping_subsystem_ready_with(pinned_map_abi)
 }
 
 #[cfg(test)]
@@ -151,12 +158,16 @@ mod tests {
     #[test]
     fn ip_mapping_ready_requires_all_expected_maps() {
         let specs = ip_mapping_pinned_map_abi_specs();
-        let sizes: HashMap<&str, (u32, u32)> = specs
+        let sizes: HashMap<&str, (u32, u32, u32)> = specs
             .iter()
             .map(|spec| {
                 (
                     spec.path,
-                    (spec.expected_key_size, spec.expected_value_size),
+                    (
+                        spec.expected_map_type,
+                        spec.expected_key_size,
+                        spec.expected_value_size,
+                    ),
                 )
             })
             .collect();
@@ -177,7 +188,11 @@ mod tests {
                     .into_iter()
                     .find(|spec| spec.path == path)
                     .expect("test path should be part of IP mapping ABI specs");
-                Ok(Some((spec.expected_key_size, spec.expected_value_size)))
+                Ok(Some((
+                    spec.expected_map_type,
+                    spec.expected_key_size,
+                    spec.expected_value_size,
+                )))
             }
         })
         .expect("missing map should not be an inspection error");
@@ -197,9 +212,36 @@ mod tests {
             } else {
                 spec.expected_value_size
             };
-            Ok(Some((spec.expected_key_size, value_size)))
+            Ok(Some((
+                spec.expected_map_type,
+                spec.expected_key_size,
+                value_size,
+            )))
         })
         .expect("ABI mismatch should not be an inspection error");
+
+        assert!(!ready);
+    }
+
+    #[test]
+    fn ip_mapping_ready_is_false_when_a_map_type_differs() {
+        let ready = ip_mapping_subsystem_ready_with(|path| {
+            let spec = ip_mapping_pinned_map_abi_specs()
+                .into_iter()
+                .find(|spec| spec.path == path)
+                .expect("test path should be part of IP mapping ABI specs");
+            let map_type = if path == "/sys/fs/bpf/ip_to_cpu_and_tc_hotcache" {
+                bpf::bpf_map_type_BPF_MAP_TYPE_HASH
+            } else {
+                spec.expected_map_type
+            };
+            Ok(Some((
+                map_type,
+                spec.expected_key_size,
+                spec.expected_value_size,
+            )))
+        })
+        .expect("map type mismatch should not be an inspection error");
 
         assert!(!ready);
     }
@@ -246,6 +288,7 @@ pub fn check_root() -> Result<()> {
 
 fn remove_incompatible_pinned_map(
     path: &str,
+    expected_map_type: u32,
     expected_key_size: u32,
     expected_value_size: u32,
 ) -> Result<()> {
@@ -258,10 +301,19 @@ fn remove_incompatible_pinned_map(
         return Ok(());
     };
 
-    if info.key_size != expected_key_size || info.value_size != expected_value_size {
+    if info.type_ != expected_map_type
+        || info.key_size != expected_key_size
+        || info.value_size != expected_value_size
+    {
         warn!(
-            "Pinned BPF map '{}' ABI mismatch (key_size={}, value_size={}) expected (key_size={}, value_size={}). Removing pin to force recreation.",
-            path, info.key_size, info.value_size, expected_key_size, expected_value_size
+            "Pinned BPF map '{}' ABI mismatch (type={}, key_size={}, value_size={}) expected (type={}, key_size={}, value_size={}). Removing pin to force recreation.",
+            path,
+            info.type_,
+            info.key_size,
+            info.value_size,
+            expected_map_type,
+            expected_key_size,
+            expected_value_size
         );
         fs::remove_file(path).map_err(|e| {
             Error::msg(format!(
@@ -277,22 +329,26 @@ fn ensure_ip_mapping_maps_abi() -> Result<()> {
     for spec in ip_mapping_pinned_map_abi_specs() {
         remove_incompatible_pinned_map(
             spec.path,
+            spec.expected_map_type,
             spec.expected_key_size,
             spec.expected_value_size,
         )?;
     }
     remove_incompatible_pinned_map(
         "/sys/fs/bpf/tc_classify_control",
+        bpf::bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY,
         std::mem::size_of::<u32>() as u32,
         std::mem::size_of::<crate::tc_classify_control::TcClassifyControl>() as u32,
     )?;
     remove_incompatible_pinned_map(
         "/sys/fs/bpf/map_traffic",
+        bpf::bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH,
         std::mem::size_of::<XdpIpAddress>() as u32,
         std::mem::size_of::<crate::HostCounter>() as u32,
     )?;
     remove_incompatible_pinned_map(
         "/sys/fs/bpf/flowbee",
+        bpf::bpf_map_type_BPF_MAP_TYPE_LRU_HASH,
         std::mem::size_of::<crate::flowbee_data::FlowbeeKey>() as u32,
         std::mem::size_of::<crate::flowbee_data::FlowbeeData>() as u32,
     )?;
