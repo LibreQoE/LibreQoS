@@ -2,6 +2,7 @@
 
 use crate::node_manager::runtime_onboarding::runtime_onboarding_state;
 use axum::Json;
+use axum::extract::ConnectInfo;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum_extra::extract::CookieJar;
@@ -15,18 +16,24 @@ use parking_lot::Mutex;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::collections::{HashMap, VecDeque};
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::Relaxed;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{error, warn};
 
 const COOKIE_NAME: &str = "User-Token";
 const SESSION_TOKEN_VERSION: &str = "v1";
 const SESSION_DURATION_SECS: u64 = 60 * 60 * 24 * 30;
 const SESSION_KEY_FILE_NAME: &str = "lqusers.session.key";
+const LOGIN_FAILURE_WINDOW: Duration = Duration::from_secs(60);
+const LOGIN_FAILURE_LIMIT: usize = 5;
+const LOGIN_REPEATED_FAILURE_LOG_THRESHOLD: usize = 3;
+const LOGIN_RATE_LIMIT_USERNAME_MAX_CHARS: usize = 128;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -85,7 +92,173 @@ struct SessionUser {
 
 static AUTH_SNAPSHOT: Lazy<Mutex<Option<CachedAuthSnapshot>>> = Lazy::new(|| Mutex::new(None));
 static SESSION_KEY: Lazy<Mutex<Option<Vec<u8>>>> = Lazy::new(|| Mutex::new(None));
+static LOGIN_RATE_LIMITER: Lazy<Mutex<LoginRateLimiter>> =
+    Lazy::new(|| Mutex::new(LoginRateLimiter::new()));
 pub static FIRST_LOAD: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoginRateLimitScope {
+    Ip,
+    Username,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LoginRateLimitExceeded {
+    scope: LoginRateLimitScope,
+    failures: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LoginFailureRecord {
+    ip_failures: usize,
+    username_failures: usize,
+}
+
+#[derive(Debug)]
+struct LoginRateLimiter {
+    by_ip: HashMap<IpAddr, VecDeque<Instant>>,
+    by_username: HashMap<String, VecDeque<Instant>>,
+    last_cleanup: Instant,
+}
+
+impl LoginRateLimiter {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            by_ip: HashMap::new(),
+            by_username: HashMap::new(),
+            last_cleanup: now,
+        }
+    }
+
+    fn check(
+        &mut self,
+        remote_ip: IpAddr,
+        username: &str,
+        now: Instant,
+    ) -> Option<LoginRateLimitExceeded> {
+        self.prune_expired_entries(now);
+        let ip_failures = Self::recent_failures(&mut self.by_ip, &remote_ip, now);
+        if ip_failures >= LOGIN_FAILURE_LIMIT {
+            return Some(LoginRateLimitExceeded {
+                scope: LoginRateLimitScope::Ip,
+                failures: ip_failures,
+            });
+        }
+
+        let username_key = username.to_string();
+        let username_failures = Self::recent_failures(&mut self.by_username, &username_key, now);
+        if username_failures >= LOGIN_FAILURE_LIMIT {
+            return Some(LoginRateLimitExceeded {
+                scope: LoginRateLimitScope::Username,
+                failures: username_failures,
+            });
+        }
+
+        None
+    }
+
+    fn record_failure(
+        &mut self,
+        remote_ip: IpAddr,
+        username: &str,
+        now: Instant,
+    ) -> LoginFailureRecord {
+        self.prune_expired_entries(now);
+        let ip_failures = Self::push_failure(&mut self.by_ip, remote_ip, now);
+        let username_failures =
+            Self::push_failure(&mut self.by_username, username.to_string(), now);
+
+        LoginFailureRecord {
+            ip_failures,
+            username_failures,
+        }
+    }
+
+    fn clear_username(&mut self, username: &str) {
+        self.by_username.remove(username);
+    }
+
+    fn prune_expired_entries(&mut self, now: Instant) {
+        if now.saturating_duration_since(self.last_cleanup) < LOGIN_FAILURE_WINDOW {
+            return;
+        }
+
+        Self::prune_map(&mut self.by_ip, now);
+        Self::prune_map(&mut self.by_username, now);
+        self.last_cleanup = now;
+    }
+
+    fn prune_map<K: Eq + std::hash::Hash>(
+        attempts_by_key: &mut HashMap<K, VecDeque<Instant>>,
+        now: Instant,
+    ) {
+        attempts_by_key.retain(|_, attempts| {
+            Self::prune_attempts(attempts, now);
+            !attempts.is_empty()
+        });
+    }
+
+    fn recent_failures<K: Eq + std::hash::Hash>(
+        attempts_by_key: &mut HashMap<K, VecDeque<Instant>>,
+        key: &K,
+        now: Instant,
+    ) -> usize {
+        let Some(attempts) = attempts_by_key.get_mut(key) else {
+            return 0;
+        };
+        Self::prune_attempts(attempts, now);
+        attempts.len()
+    }
+
+    fn push_failure<K: Eq + std::hash::Hash>(
+        attempts_by_key: &mut HashMap<K, VecDeque<Instant>>,
+        key: K,
+        now: Instant,
+    ) -> usize {
+        let attempts = attempts_by_key.entry(key).or_default();
+        Self::prune_attempts(attempts, now);
+        attempts.push_back(now);
+        attempts.len()
+    }
+
+    fn prune_attempts(attempts: &mut VecDeque<Instant>, now: Instant) {
+        while let Some(attempt) = attempts.front() {
+            if now.saturating_duration_since(*attempt) <= LOGIN_FAILURE_WINDOW {
+                break;
+            }
+            attempts.pop_front();
+        }
+    }
+}
+
+fn login_rate_limit_username(username: &str) -> String {
+    let normalized: String = username
+        .trim()
+        .chars()
+        .flat_map(char::to_lowercase)
+        .take(LOGIN_RATE_LIMIT_USERNAME_MAX_CHARS)
+        .collect();
+
+    if normalized.is_empty() {
+        "<empty>".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn login_rate_limit_response() -> (StatusCode, Json<LoginResponse>) {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(LoginResponse {
+            ok: false,
+            reason: Some("rate_limited"),
+            message: Some(
+                "Too many failed login attempts. Wait a minute and try again.".to_string(),
+            ),
+        }),
+    )
+}
 
 fn record_first_login_timestamp_if_needed() {
     let config = match load_config() {
@@ -549,6 +722,7 @@ pub struct LoginAttempt {
 }
 
 pub async fn try_login(
+    ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     jar: CookieJar,
     Json(login): Json<LoginAttempt>,
 ) -> Result<(CookieJar, Json<LoginResponse>), (StatusCode, Json<LoginResponse>)> {
@@ -577,6 +751,23 @@ pub async fn try_login(
         AuthBootstrapState::Ready => {}
     }
 
+    let remote_ip = remote_addr.ip();
+    let rate_limit_username = login_rate_limit_username(&login.username);
+    let now = Instant::now();
+    if let Some(limit) = LOGIN_RATE_LIMITER
+        .lock()
+        .check(remote_ip, &rate_limit_username, now)
+    {
+        warn!(
+            remote_ip = %remote_ip,
+            username = %rate_limit_username,
+            scope = ?limit.scope,
+            failures = limit.failures,
+            "Rate-limited WebUI login attempt"
+        );
+        return Err(login_rate_limit_response());
+    }
+
     let mut users = WebUsers::load_or_create().map_err(|e| {
         warn!("Unable to load users during login: {e}");
         (
@@ -591,6 +782,21 @@ pub async fn try_login(
     let authenticated = users
         .authenticate(&login.username, &login.password)
         .map_err(|_| {
+            let record =
+                LOGIN_RATE_LIMITER
+                    .lock()
+                    .record_failure(remote_ip, &rate_limit_username, now);
+            if record.ip_failures >= LOGIN_REPEATED_FAILURE_LOG_THRESHOLD
+                || record.username_failures >= LOGIN_REPEATED_FAILURE_LOG_THRESHOLD
+            {
+                warn!(
+                    remote_ip = %remote_ip,
+                    username = %rate_limit_username,
+                    ip_failures = record.ip_failures,
+                    username_failures = record.username_failures,
+                    "Repeated failed WebUI login attempt"
+                );
+            }
             (
                 StatusCode::UNAUTHORIZED,
                 Json(LoginResponse {
@@ -601,6 +807,9 @@ pub async fn try_login(
             )
         })?;
 
+    LOGIN_RATE_LIMITER
+        .lock()
+        .clear_username(&rate_limit_username);
     invalidate_auth_cache();
     let key = session_key().map_err(|e| {
         error!("Unable to load session key during login: {e}");
@@ -747,4 +956,101 @@ pub async fn first_user(
             message: None,
         }),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn login_rate_limiter_blocks_after_failed_attempt_limit() {
+        let mut limiter = LoginRateLimiter::new();
+        let remote_ip = IpAddr::from([203, 0, 113, 10]);
+        let username = "admin";
+        let now = Instant::now();
+
+        for attempt in 1..=LOGIN_FAILURE_LIMIT {
+            assert_eq!(limiter.check(remote_ip, username, now), None);
+            let record = limiter.record_failure(remote_ip, username, now);
+            assert_eq!(record.ip_failures, attempt);
+            assert_eq!(record.username_failures, attempt);
+        }
+
+        assert_eq!(
+            limiter.check(remote_ip, username, now),
+            Some(LoginRateLimitExceeded {
+                scope: LoginRateLimitScope::Ip,
+                failures: LOGIN_FAILURE_LIMIT
+            })
+        );
+    }
+
+    #[test]
+    fn login_rate_limiter_blocks_username_across_source_ips() {
+        let mut limiter = LoginRateLimiter::new();
+        let username = "admin";
+        let now = Instant::now();
+
+        for host in 1..=LOGIN_FAILURE_LIMIT {
+            let remote_ip = IpAddr::from([198, 51, 100, host as u8]);
+            assert_eq!(limiter.check(remote_ip, username, now), None);
+            limiter.record_failure(remote_ip, username, now);
+        }
+
+        let fresh_remote_ip = IpAddr::from([198, 51, 100, 200]);
+        assert_eq!(
+            limiter.check(fresh_remote_ip, username, now),
+            Some(LoginRateLimitExceeded {
+                scope: LoginRateLimitScope::Username,
+                failures: LOGIN_FAILURE_LIMIT
+            })
+        );
+    }
+
+    #[test]
+    fn login_rate_limiter_expires_old_failures_and_clears_on_success() {
+        let mut limiter = LoginRateLimiter::new();
+        let remote_ip = IpAddr::from([192, 0, 2, 44]);
+        let username = "admin";
+        let now = Instant::now();
+
+        for _ in 0..LOGIN_FAILURE_LIMIT {
+            limiter.record_failure(remote_ip, username, now);
+        }
+        assert!(limiter.check(remote_ip, username, now).is_some());
+
+        let later = now + LOGIN_FAILURE_WINDOW + Duration::from_secs(1);
+        assert_eq!(limiter.check(remote_ip, username, later), None);
+        assert!(limiter.by_ip.is_empty());
+        assert!(limiter.by_username.is_empty());
+
+        for _ in 0..LOGIN_FAILURE_LIMIT {
+            limiter.record_failure(remote_ip, username, later);
+        }
+        assert!(limiter.check(remote_ip, username, later).is_some());
+
+        limiter.clear_username(username);
+        assert_eq!(
+            limiter.check(remote_ip, username, later),
+            Some(LoginRateLimitExceeded {
+                scope: LoginRateLimitScope::Ip,
+                failures: LOGIN_FAILURE_LIMIT
+            })
+        );
+
+        let later_after_window = later + LOGIN_FAILURE_WINDOW + Duration::from_secs(1);
+        assert_eq!(limiter.check(remote_ip, username, later_after_window), None);
+    }
+
+    #[test]
+    fn login_rate_limit_username_normalizes_and_caps_input() {
+        assert_eq!(login_rate_limit_username("  Admin  "), "admin");
+        assert_eq!(login_rate_limit_username("   "), "<empty>");
+
+        let long_name = "A".repeat(LOGIN_RATE_LIMIT_USERNAME_MAX_CHARS + 10);
+        assert_eq!(
+            login_rate_limit_username(&long_name).chars().count(),
+            LOGIN_RATE_LIMIT_USERNAME_MAX_CHARS
+        );
+    }
 }
