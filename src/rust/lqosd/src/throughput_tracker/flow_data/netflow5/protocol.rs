@@ -6,10 +6,12 @@ use nix::sys::time::TimeValLike;
 use std::net::IpAddr;
 
 use crate::throughput_tracker::flow_data::FlowbeeLocalData;
+use crate::throughput_tracker::flow_data::netflow_common::{
+    boot_nanos_to_netflow_millis, clamp_i64_to_u32, clamp_u64_to_u32,
+};
 
 const NETFLOW5_MAX_RECORDS_PER_PACKET: usize = 30;
 pub(crate) const NETFLOW5_MAX_FLOWS_PER_PACKET: usize = NETFLOW5_MAX_RECORDS_PER_PACKET / 2;
-const NANOS_PER_MILLI: u64 = 1_000_000;
 
 /// Standard Netflow 5 header
 #[repr(C)]
@@ -29,7 +31,7 @@ impl Netflow5Header {
     /// Create a new Netflow 5 header
     pub(crate) fn new(flow_sequence: u32, num_records: u16) -> Self {
         let uptime_ms: u32 = time_since_boot()
-            .map(|u| clamp_i64_to_u32("sys_uptime", u.num_milliseconds()))
+            .map(|u| clamp_i64_to_u32("NetFlow5", "sys_uptime", u.num_milliseconds()))
             .unwrap_or(0);
         let unix_secs = unix_now().unwrap_or(0);
 
@@ -37,7 +39,7 @@ impl Netflow5Header {
             version: (5u16).to_be(),
             count: num_records.to_be(),
             sys_uptime: uptime_ms.to_be(),
-            unix_secs: clamp_u64_to_u32("unix_secs", unix_secs).to_be(),
+            unix_secs: clamp_u64_to_u32("NetFlow5", "unix_secs", unix_secs).to_be(),
             unix_nsecs: 0,
             flow_sequence,
             engine_type: 0,
@@ -72,29 +74,6 @@ pub(crate) struct Netflow5Record {
     pub(crate) pad2: u16,
 }
 
-fn clamp_i64_to_u32(field: &str, value: i64) -> u32 {
-    if value < 0 {
-        tracing::warn!("NetFlow5 {field} value {value} is negative; clamping to 0");
-        return 0;
-    }
-
-    clamp_u64_to_u32(field, value as u64)
-}
-
-fn clamp_u64_to_u32(field: &str, value: u64) -> u32 {
-    match u32::try_from(value) {
-        Ok(value) => value,
-        Err(_) => {
-            tracing::warn!("NetFlow5 {field} value {value} exceeds u32::MAX; clamping to u32::MAX");
-            u32::MAX
-        }
-    }
-}
-
-fn boot_nanos_to_netflow_millis(field: &str, value: u64) -> u32 {
-    clamp_u64_to_u32(field, value / NANOS_PER_MILLI)
-}
-
 /// Convert a Flowbee key and data to a pair of Netflow 5 records
 pub(crate) fn to_netflow_5(
     key: &FlowbeeKey,
@@ -105,12 +84,12 @@ pub(crate) fn to_netflow_5(
     if let (IpAddr::V4(local), IpAddr::V4(remote)) = (local, remote) {
         let src_ip = u32::from_ne_bytes(local.octets());
         let dst_ip = u32::from_ne_bytes(remote.octets());
-        let d_pkts2 = clamp_u64_to_u32("down packets", data.packets_sent.down).to_be();
-        let d_octets2 = clamp_u64_to_u32("down octets", data.bytes_sent.down).to_be();
-        let d_pkts = clamp_u64_to_u32("up packets", data.packets_sent.up).to_be();
-        let d_octets = clamp_u64_to_u32("up octets", data.bytes_sent.up).to_be();
-        let first = boot_nanos_to_netflow_millis("first", data.start_time).to_be();
-        let last = boot_nanos_to_netflow_millis("last", data.last_seen).to_be();
+        let d_pkts2 = clamp_u64_to_u32("NetFlow5", "down packets", data.packets_sent.down).to_be();
+        let d_octets2 = clamp_u64_to_u32("NetFlow5", "down octets", data.bytes_sent.down).to_be();
+        let d_pkts = clamp_u64_to_u32("NetFlow5", "up packets", data.packets_sent.up).to_be();
+        let d_octets = clamp_u64_to_u32("NetFlow5", "up octets", data.bytes_sent.up).to_be();
+        let first = boot_nanos_to_netflow_millis("NetFlow5", "first", data.start_time).to_be();
+        let last = boot_nanos_to_netflow_millis("NetFlow5", "last", data.last_seen).to_be();
 
         let record = Netflow5Record {
             src_addr: src_ip,
@@ -168,6 +147,7 @@ pub(crate) fn to_netflow_5(
 mod tests {
     use super::*;
     use crate::throughput_tracker::flow_data::FlowbeeLocalData;
+    use crate::throughput_tracker::flow_data::netflow_common::NANOS_PER_MILLI;
     use lqos_utils::{XdpIpAddress, units::DownUpOrder};
     use std::net::IpAddr;
 
@@ -223,7 +203,7 @@ mod tests {
         let too_many_millis = (u64::from(u32::MAX) + 1) * NANOS_PER_MILLI;
 
         assert_eq!(
-            boot_nanos_to_netflow_millis("test timestamp", too_many_millis),
+            boot_nanos_to_netflow_millis("NetFlow5", "test timestamp", too_many_millis),
             u32::MAX
         );
     }

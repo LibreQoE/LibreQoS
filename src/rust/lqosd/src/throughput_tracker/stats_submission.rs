@@ -62,12 +62,57 @@ fn load_insight_logical_network_json() -> anyhow::Result<String> {
 }
 
 /// Temporary conversion function for LTS/Insight compatibility
-/// TODO: Remove when LTS/Insight support fractional rates
 fn rate_for_submission(rate_mbps: f32) -> u32 {
+    if rate_mbps.is_nan() {
+        warn!("LTS2 bandwidth value {rate_mbps} is not finite; clamping to 1 Mbps");
+        return 1;
+    }
+    if rate_mbps.is_infinite() {
+        if rate_mbps.is_sign_positive() {
+            warn!("LTS2 bandwidth value {rate_mbps} exceeds u32::MAX; clamping to u32::MAX");
+            return u32::MAX;
+        }
+        warn!("LTS2 bandwidth value {rate_mbps} is not finite; clamping to 1 Mbps");
+        return 1;
+    }
+
     if rate_mbps < 1.0 {
         1 // Round up small fractional rates to 1 Mbps for now
+    } else if rate_mbps >= u32::MAX as f32 {
+        warn!("LTS2 bandwidth value {rate_mbps} exceeds u32::MAX; clamping to u32::MAX");
+        u32::MAX
     } else {
         rate_mbps.round() as u32 // Round to nearest integer
+    }
+}
+
+fn clamp_lts2_u64_to_u32(field: &str, value: u64) -> u32 {
+    match u32::try_from(value) {
+        Ok(value) => value,
+        Err(_) => {
+            warn!("LTS2 {field} value {value} exceeds u32::MAX; clamping to u32::MAX");
+            u32::MAX
+        }
+    }
+}
+
+fn clamp_lts2_u64_to_i32(field: &str, value: u64) -> i32 {
+    match i32::try_from(value) {
+        Ok(value) => value,
+        Err(_) => {
+            warn!("LTS2 {field} value {value} exceeds i32::MAX; clamping to i32::MAX");
+            i32::MAX
+        }
+    }
+}
+
+fn lts2_rtt_millis_from_nanos(field: &str, nanos: u64) -> f32 {
+    let millis = nanos as f64 / 1_000_000.0;
+    if !millis.is_finite() || millis > f64::from(f32::MAX) {
+        warn!("LTS2 {field} RTT value {nanos} ns exceeds f32::MAX ms; clamping to f32::MAX");
+        f32::MAX
+    } else {
+        millis as f32
     }
 }
 
@@ -277,22 +322,22 @@ pub(crate) fn submit_throughput_stats(
             tcp_retransmits_down: tcp_retransmits.down,
             tcp_retransmits_up: tcp_retransmits.up,
             cake_marks_down: if queue_metrics_available {
-                TOTAL_QUEUE_STATS.marks.get_down() as i32
+                clamp_lts2_u64_to_i32("total cake_marks_down", TOTAL_QUEUE_STATS.marks.get_down())
             } else {
                 0
             },
             cake_marks_up: if queue_metrics_available {
-                TOTAL_QUEUE_STATS.marks.get_up() as i32
+                clamp_lts2_u64_to_i32("total cake_marks_up", TOTAL_QUEUE_STATS.marks.get_up())
             } else {
                 0
             },
             cake_drops_down: if queue_metrics_available {
-                TOTAL_QUEUE_STATS.drops.get_down() as i32
+                clamp_lts2_u64_to_i32("total cake_drops_down", TOTAL_QUEUE_STATS.drops.get_down())
             } else {
                 0
             },
             cake_drops_up: if queue_metrics_available {
-                TOTAL_QUEUE_STATS.drops.get_up() as i32
+                clamp_lts2_u64_to_i32("total cake_drops_up", TOTAL_QUEUE_STATS.drops.get_up())
             } else {
                 0
             },
@@ -418,8 +463,8 @@ pub(crate) fn submit_throughput_stats(
             .map(|(k, v)| crate::lts2_sys::shared_types::CircuitRetransmits {
                 timestamp: now,
                 circuit_hash: k,
-                tcp_retransmits_down: v.down as u32,
-                tcp_retransmits_up: v.up as u32,
+                tcp_retransmits_down: clamp_lts2_u64_to_u32("circuit tcp_retransmits_down", v.down),
+                tcp_retransmits_up: clamp_lts2_u64_to_u32("circuit tcp_retransmits_up", v.up),
             })
             .collect::<Vec<_>>();
         if crate::lts2_sys::circuit_retransmits(&circuit_retransmits_batch).is_err() {
@@ -448,7 +493,7 @@ pub(crate) fn submit_throughput_stats(
                 Some(crate::lts2_sys::shared_types::CircuitRtt {
                     timestamp: now,
                     circuit_hash: *circuit_hash,
-                    median_rtt: (median_nanos as f64 / 1_000_000.0) as f32,
+                    median_rtt: lts2_rtt_millis_from_nanos("circuit median", median_nanos),
                 })
             })
             .collect::<Vec<_>>();
@@ -465,16 +510,28 @@ pub(crate) fn submit_throughput_stats(
                     cake_drops.push(CircuitCakeDrops {
                         timestamp: now,
                         circuit_hash,
-                        cake_drops_down: drops.get_down() as u32,
-                        cake_drops_up: drops.get_up() as u32,
+                        cake_drops_down: clamp_lts2_u64_to_u32(
+                            "circuit cake_drops_down",
+                            drops.get_down(),
+                        ),
+                        cake_drops_up: clamp_lts2_u64_to_u32(
+                            "circuit cake_drops_up",
+                            drops.get_up(),
+                        ),
                     });
                 }
                 if marks.not_zero() {
                     cake_marks.push(CircuitCakeMarks {
                         timestamp: now,
                         circuit_hash,
-                        cake_marks_down: marks.get_down() as u32,
-                        cake_marks_up: marks.get_up() as u32,
+                        cake_marks_down: clamp_lts2_u64_to_u32(
+                            "circuit cake_marks_down",
+                            marks.get_down(),
+                        ),
+                        cake_marks_up: clamp_lts2_u64_to_u32(
+                            "circuit cake_marks_up",
+                            marks.get_up(),
+                        ),
                     });
                 }
             });
@@ -517,24 +574,42 @@ pub(crate) fn submit_throughput_stats(
                 site_retransmits.push(crate::lts2_sys::shared_types::SiteRetransmits {
                     timestamp: now,
                     site_hash,
-                    tcp_retransmits_down: node.current_tcp_retransmits.down as u32,
-                    tcp_retransmits_up: node.current_tcp_retransmits.up as u32,
+                    tcp_retransmits_down: clamp_lts2_u64_to_u32(
+                        "site tcp_retransmits_down",
+                        node.current_tcp_retransmits.down,
+                    ),
+                    tcp_retransmits_up: clamp_lts2_u64_to_u32(
+                        "site tcp_retransmits_up",
+                        node.current_tcp_retransmits.up,
+                    ),
                 });
             }
             if queue_metrics_available && node.current_drops.not_zero() {
                 site_cake_drops.push(crate::lts2_sys::shared_types::SiteCakeDrops {
                     timestamp: now,
                     site_hash,
-                    cake_drops_down: node.current_drops.get_down() as u32,
-                    cake_drops_up: node.current_drops.get_up() as u32,
+                    cake_drops_down: clamp_lts2_u64_to_u32(
+                        "site cake_drops_down",
+                        node.current_drops.get_down(),
+                    ),
+                    cake_drops_up: clamp_lts2_u64_to_u32(
+                        "site cake_drops_up",
+                        node.current_drops.get_up(),
+                    ),
                 });
             }
             if queue_metrics_available && node.current_marks.not_zero() {
                 site_cake_marks.push(crate::lts2_sys::shared_types::SiteCakeMarks {
                     timestamp: now,
                     site_hash,
-                    cake_marks_down: node.current_marks.get_down() as u32,
-                    cake_marks_up: node.current_marks.get_up() as u32,
+                    cake_marks_down: clamp_lts2_u64_to_u32(
+                        "site cake_marks_down",
+                        node.current_marks.get_down(),
+                    ),
+                    cake_marks_up: clamp_lts2_u64_to_u32(
+                        "site cake_marks_up",
+                        node.current_marks.get_up(),
+                    ),
                 });
             }
             let download = node
@@ -556,7 +631,7 @@ pub(crate) fn submit_throughput_stats(
                 site_rtt.push(crate::lts2_sys::shared_types::SiteRtt {
                     timestamp: now,
                     site_hash,
-                    median_rtt: (median_nanos as f64 / 1_000_000.0) as f32,
+                    median_rtt: lts2_rtt_millis_from_nanos("site median", median_nanos),
                 });
             }
         });
@@ -769,6 +844,14 @@ mod tests {
     }
 
     #[test]
+    fn test_rate_for_submission_clamps_non_finite_and_huge_rates() {
+        assert_eq!(rate_for_submission(f32::NAN), 1);
+        assert_eq!(rate_for_submission(f32::INFINITY), u32::MAX);
+        assert_eq!(rate_for_submission(f32::NEG_INFINITY), 1);
+        assert_eq!(rate_for_submission(u32::MAX as f32), u32::MAX);
+    }
+
+    #[test]
     fn test_rate_for_submission_prevents_zero() {
         // Should never return 0, even for very small inputs
         assert_eq!(rate_for_submission(0.01), 1);
@@ -781,6 +864,35 @@ mod tests {
         assert_eq!(rate_for_submission(5.0), 5);
         assert_eq!(rate_for_submission(10.0), 10);
         assert_eq!(rate_for_submission(100.0), 100);
+    }
+
+    #[test]
+    fn lts2_u64_to_u32_clamps_protocol_limited_fields() {
+        assert_eq!(clamp_lts2_u64_to_u32("test", u64::from(u32::MAX)), u32::MAX);
+        assert_eq!(
+            clamp_lts2_u64_to_u32("test", u64::from(u32::MAX) + 1),
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn lts2_u64_to_i32_clamps_protocol_limited_fields() {
+        assert_eq!(
+            clamp_lts2_u64_to_i32("test", u64::try_from(i32::MAX).unwrap()),
+            i32::MAX
+        );
+        assert_eq!(
+            clamp_lts2_u64_to_i32("test", u64::try_from(i32::MAX).unwrap() + 1),
+            i32::MAX
+        );
+    }
+
+    #[test]
+    fn lts2_rtt_millis_keeps_large_values_finite() {
+        assert_eq!(lts2_rtt_millis_from_nanos("test", 1_500_000), 1.5);
+        let millis = lts2_rtt_millis_from_nanos("test", u64::MAX);
+        assert!(millis.is_finite());
+        assert!(millis > 1.0e13);
     }
 
     #[test]
