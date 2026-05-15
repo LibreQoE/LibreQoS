@@ -437,10 +437,23 @@ fn session_key() -> Result<Vec<u8>, std::io::Error> {
 }
 
 fn build_session_cookie(token: String) -> Cookie<'static> {
+    build_session_cookie_with_secure(token, session_cookie_secure())
+}
+
+fn build_session_cookie_with_secure(token: String, secure: bool) -> Cookie<'static> {
     let mut cookie = Cookie::new(COOKIE_NAME, token);
     cookie.set_path("/");
     cookie.set_same_site(SameSite::Lax);
+    cookie.set_http_only(true);
+    cookie.set_secure(secure);
     cookie
+}
+
+fn session_cookie_secure() -> bool {
+    load_config()
+        .ok()
+        .and_then(|config| config.ssl.as_ref().map(|ssl| ssl.enabled))
+        .unwrap_or(false)
 }
 
 fn build_signed_session(key: &[u8], user: &AuthenticatedUser) -> Result<String, StatusCode> {
@@ -702,6 +715,26 @@ pub async fn login_from_token(token: &str) -> LoginResult {
     }
 
     login_result
+}
+
+/// Validates the `User-Token` value from an HTTP Cookie header for websocket upgrades.
+pub async fn login_from_cookie_header(cookie_header: Option<&str>) -> LoginResult {
+    let Some(token) = session_token_from_cookie_header(cookie_header) else {
+        return LoginResult::Denied;
+    };
+    login_from_token(token).await
+}
+
+fn session_token_from_cookie_header(cookie_header: Option<&str>) -> Option<&str> {
+    let header = cookie_header?;
+    header.split(';').find_map(|entry| {
+        let (name, value) = entry.trim().split_once('=')?;
+        if name == COOKIE_NAME {
+            Some(value)
+        } else {
+            None
+        }
+    })
 }
 
 /// Invalidate the cached auth snapshot after user-management changes.
@@ -1052,5 +1085,37 @@ mod tests {
             login_rate_limit_username(&long_name).chars().count(),
             LOGIN_RATE_LIMIT_USERNAME_MAX_CHARS
         );
+    }
+
+    #[test]
+    fn session_cookie_is_http_only_and_secure_when_requested() {
+        let cookie = build_session_cookie_with_secure("session-value".to_string(), true);
+        let rendered = cookie.to_string();
+
+        assert!(rendered.contains("HttpOnly"));
+        assert!(rendered.contains("SameSite=Lax"));
+        assert!(rendered.contains("Secure"));
+    }
+
+    #[test]
+    fn session_cookie_omits_secure_for_direct_http_mode() {
+        let cookie = build_session_cookie_with_secure("session-value".to_string(), false);
+        let rendered = cookie.to_string();
+
+        assert!(rendered.contains("HttpOnly"));
+        assert!(rendered.contains("SameSite=Lax"));
+        assert!(!rendered.contains("Secure"));
+    }
+
+    #[test]
+    fn session_cookie_header_parser_extracts_user_token() {
+        assert_eq!(
+            session_token_from_cookie_header(Some(
+                "Theme=dark; User-Token=v1.payload.sig; other=1"
+            )),
+            Some("v1.payload.sig")
+        );
+        assert_eq!(session_token_from_cookie_header(Some("Theme=dark")), None);
+        assert_eq!(session_token_from_cookie_header(None), None);
     }
 }
