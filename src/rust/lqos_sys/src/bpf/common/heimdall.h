@@ -101,7 +101,13 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
         if (captured_size > PACKET_OCTET_SIZE) {
             captured_size = PACKET_OCTET_SIZE;
         }
-        if (captured_size == 0) {
+        // Force verifier-visible unsigned and stack-write bounds for bpf_probe_read_kernel.
+        volatile __u32 bounded_size = captured_size;
+        __u32 safe_size = bounded_size & 0xff;
+        if (safe_size > PACKET_OCTET_SIZE) {
+            safe_size = PACKET_OCTET_SIZE;
+        }
+        if (safe_size == 0) {
             return;
         }
 
@@ -112,13 +118,13 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
         event.dst_port = dissector->dst_port;
         event.ip_protocol = dissector->ip_protocol;
         event.tos = dissector->tos;
-        event.size = captured_size;
+        event.size = safe_size;
         event.tcp_flags = dissector->tcp_flags;
         event.tcp_window = dissector->window;
         event.tsval = dissector->tsval;
         event.tsecr = dissector->tsecr;
 
-        int err = bpf_probe_read_kernel(&event.dump, captured_size, dissector->start);
+        int err = bpf_probe_read_kernel(&event.dump, safe_size, dissector->start);
         if (err != 0) {
             return;
         }

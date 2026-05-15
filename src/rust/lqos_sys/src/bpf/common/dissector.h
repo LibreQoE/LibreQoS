@@ -176,6 +176,23 @@ static __always_inline bool ipv4_is_complete_unfragmented(struct iphdr *iph, voi
         return false;
     }
 
+    __u8 ip_protocol = iph->protocol;
+    if (ip_protocol == IPPROTO_TCP &&
+        total_len < ihl_bytes + sizeof(struct tcphdr))
+    {
+        return false;
+    }
+    if (ip_protocol == IPPROTO_UDP &&
+        total_len < ihl_bytes + sizeof(struct udphdr))
+    {
+        return false;
+    }
+    if (ip_protocol == IPPROTO_ICMP &&
+        total_len < ihl_bytes + sizeof(struct icmphdr))
+    {
+        return false;
+    }
+
     return true;
 }
 
@@ -461,8 +478,6 @@ static __always_inline bool dissector_find_ip_header(
         dissector->ip_header.iph = dissector->start + dissector->l3offset;
         if (!ipv4_is_complete_unfragmented(dissector->ip_header.iph, dissector->end))
             return false;
-        __u16 total_len = bpf_ntohs(dissector->ip_header.iph->tot_len);
-        dissector->end = (void *)((char *)dissector->ip_header.iph + total_len);
         encode_ipv4(dissector->ip_header.iph->saddr, &dissector->src_ip);
         encode_ipv4(dissector->ip_header.iph->daddr, &dissector->dst_ip);
         dissector->ip_protocol = dissector->ip_header.iph->protocol;
