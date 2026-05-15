@@ -38,4 +38,4 @@ pub use lqos_kernel::ip_mapping_subsystem_ready;
 pub use lqos_kernel::max_tracked_ips;
 pub use lqos_kernel::unload_xdp_from_interface;
 pub use tc_classify_control::{initialize_tc_classify_bypass, set_tc_classify_bypass};
-pub use throughput::{HostCounter, throughput_for_each};
+pub use throughput::{HostCounter, TrafficMapPressure, throughput_for_each, traffic_map_pressure};

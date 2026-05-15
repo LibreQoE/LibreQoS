@@ -16,7 +16,9 @@ use lqos_bakery::BakeryCommands;
 use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
-use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
+use lqos_sys::{
+    flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each, traffic_map_pressure,
+};
 use lqos_utils::qoo::{LossMeasurement, QOQ_UNKNOWN, QoqScores, compute_qoq_scores};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use lqos_utils::{
@@ -27,7 +29,10 @@ use lqos_utils::{
 };
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
-use std::{sync::atomic::AtomicU64, time::Duration};
+use std::{
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 use tracing::{debug, info, warn};
 
 // Maximum number of flows to track simultaneously
@@ -59,6 +64,7 @@ pub struct ThroughputTracker {
     pub(crate) icmp_packets_per_second: AtomicDownUp,
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
     pub(crate) shaped_actual_bytes_per_second: AtomicDownUp,
+    host_map_insert_failures: AtomicU64,
     pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
     pub(crate) circuit_qoq_heatmaps: Mutex<FxHashMap<i64, TemporalQoqHeatmap>>,
     pub(crate) global_heatmap: Mutex<TemporalHeatmap>,
@@ -148,10 +154,28 @@ impl ThroughputTracker {
             icmp_packets_per_second: AtomicDownUp::zeroed(),
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
             shaped_actual_bytes_per_second: AtomicDownUp::zeroed(),
+            host_map_insert_failures: AtomicU64::new(0),
             circuit_heatmaps: Mutex::default(),
             circuit_qoq_heatmaps: Mutex::default(),
             global_heatmap: Mutex::new(TemporalHeatmap::new()),
             global_qoq_heatmap: Mutex::new(TemporalQoqHeatmap::new()),
+        }
+    }
+
+    fn report_host_map_pressure(&self) {
+        let Ok(pressure) = traffic_map_pressure() else {
+            return;
+        };
+
+        let previous = self
+            .host_map_insert_failures
+            .swap(pressure.insert_failures, Ordering::Relaxed);
+        if pressure.insert_failures > previous {
+            warn!(
+                "Host traffic map insert failures increased by {} (total {}). Unknown or dynamic-circuit host visibility may be churning under map pressure.",
+                pressure.insert_failures - previous,
+                pressure.insert_failures
+            );
         }
     }
 
@@ -474,6 +498,7 @@ impl ThroughputTracker {
 
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let catalog = lqos_network_devices::network_devices_catalog();
+        self.report_host_map_pressure();
         let mut raw_data = self.raw_data.lock();
 
         #[allow(clippy::too_many_arguments)]

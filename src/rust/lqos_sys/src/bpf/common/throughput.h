@@ -28,11 +28,16 @@ struct host_counter {
     __u64 last_seen;
 };
 
+struct traffic_map_pressure {
+    __u64 insert_failures;
+    __u64 last_failure_ns;
+};
+
 // Pinned map storing counters per host. its an LRU structure: if it
 // runs out of space, the least recently seen host will be removed.
 struct
 {
-    __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
     __type(key, struct in6_addr);
     __type(value, struct host_counter);
     __uint(max_entries, MAX_TRACKED_IPS);
@@ -46,6 +51,25 @@ struct {
     __type(key, __u32);
     __type(value, struct host_counter);
 } map_traffic_scratch SEC(".maps");
+
+// Low-rate userspace pressure signal for host-map insert failures.
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct traffic_map_pressure);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+} map_traffic_pressure SEC(".maps");
+
+static __always_inline void record_map_traffic_insert_failure(__u64 now)
+{
+    __u32 zero = 0;
+    struct traffic_map_pressure *pressure =
+        bpf_map_lookup_elem(&map_traffic_pressure, &zero);
+    if (!pressure) return;
+    pressure->insert_failures++;
+    pressure->last_failure_ns = now;
+}
 
 static __always_inline void track_traffic(
     int direction, 
@@ -134,7 +158,7 @@ static __always_inline void track_traffic(
             }
         }
         if (bpf_map_update_elem(&map_traffic, key, new_host, BPF_NOEXIST) != 0) {
-            bpf_debug("Failed to insert flow");
+            record_map_traffic_insert_failure(dissector->now);
         }
     }
 }
