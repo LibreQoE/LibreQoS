@@ -186,6 +186,8 @@ Done when:
 
 ### 7. Move sensitive browser operational drafts out of durable localStorage
 
+Status: Done. Network-mode drafts and pending-operation state now use tab-scoped `sessionStorage`, legacy durable values are migrated and removed, apply/confirm/revert/rollback/logout clear operational keys, harmless preferences remain durable, and node_manager storage/build-contract validation passed on 2026-05-15.
+
 Why:
 
 The update audit found no durable session tokens in browser storage, which is good. Remaining `localStorage` usage still includes operational drafts and pending network-mode state. On shared operator workstations, A-grade posture should reduce how much deployment detail survives logout or browser restart.

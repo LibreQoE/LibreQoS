@@ -4,6 +4,7 @@ import {initDayNightMode} from "./helpers/dark_mode";
 import {initColorBlind} from "./helpers/colorblind";
 import {listenOnceMatchingWithTimeout as listenWsOnceMatchingWithTimeout} from "./pubsub/listeners";
 import {get_ws_client} from "./pubsub/ws";
+import {clearOperationalNetworkModeStorage} from "./config/network_mode_storage.mjs";
 
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
@@ -752,6 +753,7 @@ function getDeviceCounts() {
 function initLogout() {
     $("#btnLogout").on('click', () => {
         //console.log("Logout");
+        clearOperationalNetworkModeStorage();
         const cookies = document.cookie.split(";");
 
         for (let i = 0; i < cookies.length; i++) {
