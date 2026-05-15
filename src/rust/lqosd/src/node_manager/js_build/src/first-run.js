@@ -1,7 +1,6 @@
 $("#btnCreateUser").on('click', () => {
     let username = ($("#username").val() || "").trim();
     let password = $("#password").val();
-    let anon = document.getElementById("allowAnonymous").checked;
     if (username === "") {
         alert("You must enter a username");
         return;
@@ -12,7 +11,6 @@ $("#btnCreateUser").on('click', () => {
     }
 
     let login = {
-        allow_anonymous: anon,
         username: username,
         password: password
     }

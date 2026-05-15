@@ -55,7 +55,6 @@ struct CachedAuthSnapshot {
 struct AuthSnapshot {
     bootstrap_state: AuthBootstrapState,
     auth_epoch: u64,
-    allow_anonymous: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -334,7 +333,6 @@ fn auth_snapshot() -> AuthSnapshot {
             return AuthSnapshot {
                 bootstrap_state: AuthBootstrapState::CorruptUsersFile,
                 auth_epoch: 0,
-                allow_anonymous: false,
             };
         }
     };
@@ -350,7 +348,6 @@ fn auth_snapshot() -> AuthSnapshot {
         None => AuthSnapshot {
             bootstrap_state: AuthBootstrapState::MissingUsersFile,
             auth_epoch: 0,
-            allow_anonymous: false,
         },
         Some(_) => match WebUsers::load_or_create() {
             Ok(users) => AuthSnapshot {
@@ -360,14 +357,12 @@ fn auth_snapshot() -> AuthSnapshot {
                     AuthBootstrapState::Ready
                 },
                 auth_epoch: users.auth_epoch(),
-                allow_anonymous: users.do_we_allow_anonymous(),
             },
             Err(e) => {
                 warn!("Unable to load auth state: {e}");
                 AuthSnapshot {
                     bootstrap_state: AuthBootstrapState::CorruptUsersFile,
                     auth_epoch: 0,
-                    allow_anonymous: false,
                 }
             }
         },
@@ -597,14 +592,14 @@ pub async fn get_username(jar: &CookieJar) -> String {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum LoginResult {
     Admin,
     ReadOnly,
     Denied,
 }
 
-fn login_result_for_session(user: Option<SessionUser>, allow_anonymous: bool) -> LoginResult {
+fn login_result_for_session(user: Option<SessionUser>) -> LoginResult {
     match user {
         Some(SessionUser {
             role: UserRole::Admin,
@@ -614,7 +609,6 @@ fn login_result_for_session(user: Option<SessionUser>, allow_anonymous: bool) ->
             role: UserRole::ReadOnly,
             ..
         }) => LoginResult::ReadOnly,
-        None if allow_anonymous => LoginResult::ReadOnly,
         None => LoginResult::Denied,
     }
 }
@@ -649,7 +643,7 @@ fn runtime_onboarding_exempt_path(path: &str) -> bool {
 /// Checks an incoming request for a `User-Token` cookie. If found,
 /// it validates the request against the signed session and current auth epoch.
 /// Missing or empty auth state redirects to first-run; invalid sessions redirect
-/// to login unless anonymous read-only is enabled.
+/// to login.
 pub async fn auth_layer(
     jar: CookieJar,
     mut req: axum::extract::Request,
@@ -667,7 +661,7 @@ pub async fn auth_layer(
     }
 
     let login_result = match session_from_cookie(&jar, &snapshot) {
-        Ok(user) => login_result_for_session(user, snapshot.allow_anonymous),
+        Ok(user) => login_result_for_session(user),
         Err(status) => return (status, "Unable to validate session").into_response(),
     };
 
@@ -703,7 +697,7 @@ pub async fn login_from_token(token: &str) -> LoginResult {
     };
 
     let login_result = match verify_signed_session(&key, token, &snapshot) {
-        Ok(user) => login_result_for_session(user, snapshot.allow_anonymous),
+        Ok(user) => login_result_for_session(user),
         Err(e) => {
             warn!("Unable to verify websocket session token: {e}");
             LoginResult::Denied
@@ -881,7 +875,6 @@ pub async fn try_login(
 pub struct FirstUser {
     username: String,
     password: String,
-    allow_anonymous: bool,
 }
 
 pub async fn first_user(
@@ -924,19 +917,6 @@ pub async fn first_user(
             }),
         )
     })?;
-    users
-        .allow_anonymous(new_user.allow_anonymous)
-        .map_err(|e| {
-            warn!("Unable to set anonymous auth policy: {e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(LoginResponse {
-                    ok: false,
-                    reason: Some("auth_corrupt"),
-                    message: Some("Unable to update auth settings.".to_string()),
-                }),
-            )
-        })?;
     users
         .add_or_update_user(&new_user.username, &new_user.password, UserRole::Admin)
         .map_err(|e| {
@@ -994,6 +974,21 @@ pub async fn first_user(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_session_is_denied() {
+        assert_eq!(login_result_for_session(None), LoginResult::Denied);
+    }
+
+    #[test]
+    fn authenticated_read_only_session_keeps_read_only_role() {
+        let user = SessionUser {
+            username: "support".to_string(),
+            role: UserRole::ReadOnly,
+        };
+
+        assert_eq!(login_result_for_session(Some(user)), LoginResult::ReadOnly);
+    }
 
     #[test]
     fn login_rate_limiter_blocks_after_failed_attempt_limit() {
