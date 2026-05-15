@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {safeRelativeHref, simpleLinkRow} from "./safe_dom.mjs";
+import {appendIconText, safeRelativeHref, simpleLinkRow} from "./safe_dom.mjs";
 
 class FakeClassList {
     constructor() {
@@ -24,10 +24,15 @@ class FakeElement {
         this.classList = new FakeClassList();
         this._textContent = "";
         this._href = "";
+        this.attributes = {};
     }
 
     appendChild(child) {
         this.children.push(child);
+    }
+
+    setAttribute(name, value) {
+        this.attributes[name] = String(value);
     }
 
     set href(value) {
@@ -44,6 +49,12 @@ class FakeElement {
 
     get textContent() {
         return this._textContent;
+    }
+}
+
+class FakeTextNode {
+    constructor(text) {
+        this.textContent = String(text);
     }
 }
 
@@ -72,4 +83,21 @@ test("simpleLinkRow renders operator text as text content", () => {
     assert.equal(link.href, "#");
     assert.equal(link.textContent, "<img src=x onerror=alert(1)>");
     assert.equal(link.classList.contains("redactable"), true);
+});
+
+test("appendIconText appends operator text without innerHTML", () => {
+    globalThis.document = {
+        createElement: (tagName) => new FakeElement(tagName),
+        createTextNode: (textValue) => new FakeTextNode(textValue),
+    };
+
+    const link = new FakeElement("a");
+    appendIconText(link, ["fa", "fa-save"], "<img src=x onerror=alert(1)>");
+
+    assert.equal(link.children.length, 3);
+    assert.equal(link.children[0].tagName, "I");
+    assert.equal(link.children[0].attributes["aria-hidden"], "true");
+    assert.deepEqual(link.children[0].classList.values, ["fa", "fa-save"]);
+    assert.equal(link.children[1].textContent, " ");
+    assert.equal(link.children[2].textContent, "<img src=x onerror=alert(1)>");
 });
