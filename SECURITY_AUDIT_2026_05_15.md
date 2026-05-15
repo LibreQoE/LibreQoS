@@ -1,4 +1,4 @@
-## Rust dependency audit: cargo audit and cargo machete
+## Rust dependency audit
 
 Date: 2026-05-15
 
@@ -16,17 +16,16 @@ Commands run:
 - `cargo audit` scanned 549 locked crate dependencies.
 - No CVE-class vulnerability was reported.
 - One `rand` soundness advisory is present in the locked graph. Current repo
-  usage touches affected APIs. The specific advisory trigger also requires a
-  custom logger that calls `rand::thread_rng` / `rand::rng` during reseeding;
-  no such logger setup was found in `src/rust/`.
+  usage touches affected APIs, but the full advisory trigger path was not found.
+  Reachability is recorded as unknown rather than confirmed.
 - `cargo machete` found one likely unused dependency: `tokio` in
   `lqos_network_devices`.
 - The remaining `cargo audit` warnings were maintenance-only notices and are
   not counted as security issues here.
 
-### Findings
+### Dependency findings and triage notes
 
-#### RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc: `rand` soundness advisory
+#### Reachability unknown: RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc `rand` soundness advisory
 
 Paths importing or using the affected dependency/API:
 
@@ -212,20 +211,19 @@ Paths:
 
 Short description:
 
-The WebUI and local API install `CorsLayer::very_permissive()`. In the
-tower-http version locked by the workspace, that mirrors the request origin and
-allows credentials. The WebUI session uses a `User-Token` cookie with
+The WebUI and local API install `CorsLayer::very_permissive()`, a permissive
+credentialed CORS policy. The WebUI session uses a `User-Token` cookie with
 `SameSite=Lax`, but without `Secure` or `HttpOnly`.
 
 Exposure / threat:
 
-The reviewed code does not show a supported cross-origin WebUI client. For a
-cookie-authenticated control-plane UI, reflecting arbitrary origins while
-allowing credentials grants browser read access to origins outside the WebUI's
-own origin whenever the browser sends the `User-Token` cookie. `SameSite=Lax`
-limits common unrelated-site subresource requests, but this policy is still
-broader than the reviewed WebUI needs. The local API and WebUI should not grant
-credentialed CORS to arbitrary origins without a documented client need.
+I did not find a documented cross-origin WebUI client in the reviewed code. For
+a cookie-authenticated control-plane UI, permissive credentialed CORS grants
+browser read access to origins outside the WebUI's own origin whenever the
+browser sends the `User-Token` cookie. `SameSite=Lax` limits common
+unrelated-site subresource requests, but this policy is still broader than the
+reviewed WebUI needs. The local API and WebUI should not grant credentialed
+CORS to arbitrary origins without a documented client need.
 
 Recommended actions:
 
@@ -282,3 +280,246 @@ Recommended actions:
   `0.0.0.0:9123` and uses a setup token. Because this section assumes the
   runtime Caddy option is already installed, first-run setup exposure is left
   for a later setup/lifecycle audit unless a concrete bypass is found.
+
+## Bridged interface / eBPF malformed-traffic audit
+
+Date: 2026-05-15
+
+Scope assumptions:
+
+- The two bridged interfaces are in scope for this section, including XDP,
+  TC/eBPF, pinned maps, ring-buffer events, and userspace consumers of eBPF
+  output.
+- The control interface and Caddy/API/WebUI exposure are covered by the prior
+  section and are out of scope here.
+- Linux, Ubuntu, kernel, and NIC driver vulnerabilities are out of scope. This
+  section reviews LibreQoS packet parser behavior, map pressure, debug logging,
+  and userspace handling of eBPF output.
+- No live XDP/TC attach-detach, pinned-map cleanup, or packet fuzzing was
+  performed. Findings are based on static review of in-repo code.
+
+Files and directories reviewed:
+
+- `src/rust/lqos_sys/src/bpf/common/debug.h`
+- `src/rust/lqos_sys/src/bpf/common/dissector.h`
+- `src/rust/lqos_sys/src/bpf/common/dissector_tc.h`
+- `src/rust/lqos_sys/src/bpf/common/flows.h`
+- `src/rust/lqos_sys/src/bpf/common/heimdall.h`
+- `src/rust/lqos_sys/src/bpf/common/lpm.h`
+- `src/rust/lqos_sys/src/bpf/common/throughput.h`
+- `src/rust/lqos_sys/src/bpf/common/maximums.h`
+- `src/rust/lqos_sys/src/lqos_kernel.rs`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/flow_analysis/kernel_ringbuffer.rs`
+- `src/rust/lqosd/src/throughput_tracker/tracking_data.rs`
+- `src/rust/lqos_heimdall/src/perf_interface.rs`
+- `src/rust/lqos_heimdall/src/timeline.rs`
+- `src/rust/lqos_heimdall/src/pcap.rs`
+
+Review searches:
+
+- `rg "bpf_debug\\(|frag_off|ihl|tot_len|doff|BPF_MAP_TYPE_HASH|BPF_MAP_TYPE_PERCPU_HASH|BPF_MAP_TYPE_LRU|MAX_FLOWS|MAX_TRACKED_IPS|bpf_ringbuf_output|bpf_probe_read_kernel" src/rust/lqos_sys/src src/rust/lqosd/src/throughput_tracker src/rust/lqos_heimdall/src`
+
+### Summary
+
+- The XDP/TC packet dissectors use explicit `data_end` bounds checks and bounded
+  VLAN/MPLS loops. The review did not find memory-unsafe packet reads in the
+  normal parser path.
+- Parser failures in `xdp_prog` return `XDP_PASS`; parser failures in
+  `tc_iphash_to_cpu` return `TC_ACT_OK`. Unknown non-IP traffic therefore
+  passes unshaped in the reviewed XDP/TC paths.
+- Five malformed-traffic / resource-exhaustion findings are listed below.
+  Packet-rate `bpf_trace_printk` is reachable through the `bpf_debug` macro
+  from malformed short UDP/ICMP paths.
+- Several findings affect observability and flow analysis more than packet
+  forwarding. They can still break LibreQoS operationally by hiding current
+  flow/host state, filling pinned maps, or burning CPU on bridged-interface
+  traffic.
+
+### Findings
+
+#### Malformed packets can trigger packet-rate BPF trace logging
+
+Paths:
+
+- `src/rust/lqos_sys/src/bpf/common/debug.h`
+- `src/rust/lqos_sys/src/bpf/common/dissector.h`
+- `src/rust/lqos_sys/src/bpf/common/flows.h`
+- `src/rust/lqos_sys/src/bpf/common/throughput.h`
+
+Short description:
+
+`bpf_debug(...)` expands directly to `bpf_trace_printk(...)`. Some call sites
+are behind `VERBOSE` or `TRACING`, but several error paths reachable from packet
+handling are not. Examples include truncated UDP/ICMP headers in
+`dissector.h` and map insertion failures in `flows.h` and `throughput.h`.
+
+Exposure / threat:
+
+An attacker on a bridged interface can send malformed or high-cardinality
+traffic that repeatedly hits these error paths. `bpf_trace_printk` is expensive
+and writes into the kernel tracing path; at packet rate this can consume CPU and
+trace-buffer bandwidth on the shaping host. Once map-pressure findings below
+are triggered, failed insertions can also create a second packet-rate logging
+path.
+
+Recommended actions:
+
+- Compile `bpf_debug` to a no-op unless `VERBOSE` or `TRACING` is explicitly
+  enabled.
+- Replace packet-rate error logging with counters in a bounded BPF map that
+  userspace can poll at a low rate.
+- Treat any remaining `bpf_trace_printk` call in XDP/TC packet paths as a debug
+  build feature, not production behavior.
+
+#### IPv4 fragments and invalid IPv4 header lengths can pollute flow tracking
+
+Path:
+
+- `src/rust/lqos_sys/src/bpf/common/dissector.h`
+
+Short description:
+
+The XDP dissector verifies that an IPv4 header-sized region is present, then
+uses `iph->ihl * 4` to locate TCP, UDP, or ICMP headers. The reviewed code does
+not reject `ihl < 5`, does not verify the IPv4 total length against the captured
+packet bounds, and does not skip L4 snooping for fragmented IPv4 packets.
+
+Exposure / threat:
+
+Malformed IPv4 packets can make the dissector derive L4 ports and TCP flags
+from bytes that are not a valid L4 header. When those bytes make the apparent
+TCP data offset large enough, the TCP timestamp parser can also run against
+fragment payload rather than a real TCP options area. On the TCP path, this can
+seed or update Flowbee records, retransmit counters, and RTT sampling inputs
+with attacker-chosen fragment payload bytes.
+
+UDP and ICMP fragments can also be interpreted as flow traffic if enough
+payload bytes are present. Those paths can create or update UDP/ICMP Flowbee
+entries from fragment payload instead of a valid UDP or ICMP header.
+
+Recommended actions:
+
+- Validate IPv4 `version == 4`, `ihl >= 5`, and `l3offset + ihl * 4 <= data_end`
+  before any L4 header lookup.
+- Validate IPv4 total length enough to ensure the parsed L4 header is inside the
+  IPv4 packet, not just inside the received frame.
+- Skip L4 snooping and Flowbee updates for IPv4 fragments with non-zero fragment
+  offset or `MF` set. Continue IP-level LPM shaping if desired.
+- Add a small packet corpus for malformed IPv4 IHL values, truncated TCP/UDP,
+  and fragmented IPv4 packets.
+
+#### UDP/ICMP spray can fill the non-LRU Flowbee map
+
+Paths:
+
+- `src/rust/lqos_sys/src/bpf/common/flows.h`
+- `src/rust/lqos_sys/src/bpf/common/maximums.h`
+- `src/rust/lqosd/src/throughput_tracker/tracking_data.rs`
+
+Short description:
+
+`flowbee` is a pinned `BPF_MAP_TYPE_HASH` with `MAX_FLOWS` entries. The UDP and
+ICMP handlers create a new Flowbee entry whenever no entry exists, even when the
+IP mapping result has `tc_handle == 0`. TCP has a guard for non-SYN packets with
+no mapping, but UDP and ICMP do not have the same shaped-traffic guard.
+
+Exposure / threat:
+
+Traffic with many spoofed IPs and ports can fill `flowbee` with unshaped UDP or
+ICMP entries. When the map is full, later legitimate flow insertions fail and
+LibreQoS loses current flow, RTT, retransmit, and QoE visibility for real
+traffic. Each failed insert also reaches a `bpf_debug` path, which can amplify
+the logging DoS above.
+
+Recommended actions:
+
+- Do not create UDP/ICMP Flowbee entries when `tc_handle == 0`, unless a
+  documented feature requires unshaped flow visibility.
+- Consider changing `flowbee` to an LRU map, or add a bounded admission policy
+  for unshaped UDP/ICMP.
+- Expose Flowbee map pressure and insertion failures to userspace as counters,
+  not trace logs.
+- Add tests or a packet-replay harness that confirms unshaped UDP/ICMP sprays do
+  not evict or block shaped TCP flow visibility.
+
+#### Spoofed IP spray can fill the per-host traffic map
+
+Paths:
+
+- `src/rust/lqos_sys/src/bpf/common/throughput.h`
+- `src/rust/lqos_sys/src/bpf/common/maximums.h`
+
+Short description:
+
+`map_traffic` is declared as `BPF_MAP_TYPE_PERCPU_HASH` with
+`MAX_TRACKED_IPS = 128000`. The comment says the map is LRU, but the declared
+type is not an LRU map. `track_traffic` inserts a host counter for every parsed
+IP host key, including unshaped traffic with `tc_handle == 0`.
+
+Exposure / threat:
+
+An attacker can send traffic with many spoofed source or destination IPs through
+the bridge and fill the host counter map. Once full, new legitimate host
+counters fail to insert, unknown-IP and per-host throughput visibility becomes
+misleading, and every failed insertion can hit `bpf_debug("Failed to insert
+flow")`.
+
+Recommended actions:
+
+- Change the map type to an LRU variant if eviction of old host counters is the
+  intended behavior, or correct the comment and add explicit map-pressure
+  handling.
+- Avoid inserting unshaped hosts into `map_traffic` unless operator-facing
+  unknown-IP visibility requires it.
+- Add userspace counters for insert failures and map occupancy so operators can
+  distinguish real quiet periods from map exhaustion.
+
+#### Heimdall packet capture copies a fixed 128 bytes and ignores event-backpressure errors
+
+Paths:
+
+- `src/rust/lqos_sys/src/bpf/common/heimdall.h`
+- `src/rust/lqos_heimdall/src/perf_interface.rs`
+- `src/rust/lqos_heimdall/src/pcap.rs`
+
+Short description:
+
+When Heimdall analysis mode is enabled for a watched IP, the eBPF path copies
+`PACKET_OCTET_SIZE` bytes from the packet start into each event and sends the
+event through `heimdall_events`. The copy length is fixed at 128 bytes, the
+return from `bpf_probe_read_kernel` is ignored, and the return from
+`bpf_ringbuf_output` is ignored.
+
+Exposure / threat:
+
+This path is conditional on Heimdall watch mode, so it is not a default
+bridging exposure. When enabled, short or malformed watched packets can produce
+zero-padded or incomplete packet dumps without any signal to userspace. High
+rate watched traffic can also fill the ring buffer. The current eBPF path
+ignores the `bpf_ringbuf_output` return value, and the reviewed userspace path
+has a collected-event counter and missed-tick warning but no surfaced
+ring-buffer drop counter for Heimdall captures.
+
+Recommended actions:
+
+- Clamp the packet-copy length to the available packet length and
+  `PACKET_OCTET_SIZE`.
+- Check the return values from `bpf_probe_read_kernel` and `bpf_ringbuf_output`
+  and increment bounded counters for copy failures and dropped events.
+- Surface Heimdall copy-failure and ring-buffer drop counters through the
+  existing Heimdall/lqosd status path when packet capture is active.
+
+### Observations / not findings
+
+- VLAN, PPPoE, and MPLS parsing uses bounded loops and `data_end` checks before
+  walking encapsulation headers. This limits parser runtime on stacked headers.
+- Unknown non-IP traffic passes unshaped by design, preserving ARP, STP, IS-IS,
+  and similar bridge traffic.
+- IPv6 extension headers and IPv6 fragments are not deeply parsed for Flowbee
+  L4 metrics. The reviewed path still performs IP-level LPM mapping for
+  unsupported protocols, so this is an observability gap rather than a shaping
+  bypass in the reviewed code.
+- Flowbee RTT ring-buffer userspace handling validates event size before copying
+  and uses a bounded in-process queue with coalesced wakeups.
+- Runtime packet fuzzing, pinned-map occupancy checks, and live bridge-interface
+  reachability were not performed in this stage.
