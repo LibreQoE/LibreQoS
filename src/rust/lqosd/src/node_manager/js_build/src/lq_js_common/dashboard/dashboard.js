@@ -3,6 +3,7 @@ import {DashboardLayout} from "./layout";
 import {get_ws_client} from "../../pubsub/ws";
 import {heading5Icon} from "../helpers/content_builders";
 import {openDashboardEditor} from "./dashboard_editor";
+import {appendIconText} from "../../helpers/safe_dom.mjs";
 
 const DIAGNOSTIC_CHANNELS = new Set(["Cpu", "Ram", "RttHistogram"]);
 const DASHBOARD_DATA_STALE_MS = 15000;
@@ -1021,7 +1022,7 @@ export class Dashboard {
                 i.classList.add("list-group-item","list-group-item-action");
                 let ln = document.createElement("a");
                 ln.href = "#";
-                ln.innerHTML = "<i class='fa fa-save'></i> " + d.name;
+                appendIconText(ln, ["fa", "fa-save"], d.name);
                 ln.onclick = () => {
                     let resp = confirm("Load [" + d.name + "] from [" + d.path + "]?");
                     if (resp) {
