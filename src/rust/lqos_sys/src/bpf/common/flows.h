@@ -454,8 +454,10 @@ static __always_inline void infer_tcp_rtt(
                 struct flowbee_event event = {0};
                 event.key = *key;
                 event.round_trip_time = elapsed;
-                event.effective_direction = other_rate_index; // direction of the origial TCP segment we matched against
-                bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0);
+                event.effective_direction = other_rate_index; // Direction of the original TCP segment we matched against.
+                if (bpf_ringbuf_output(&flowbee_events, &event, sizeof(event), 0) != 0) {
+                    record_flowbee_event_output_failure(dissector->now);
+                }
                 data->last_rtt[other_rate_index] = dissector->now;
             }
         }

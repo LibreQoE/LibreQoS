@@ -31,6 +31,8 @@ struct host_counter {
 struct traffic_map_pressure {
     __u64 insert_failures;
     __u64 last_failure_ns;
+    __u64 flow_event_output_failures;
+    __u64 last_flow_event_failure_ns;
 };
 
 // Pinned map storing counters per host. its an LRU structure: if it
@@ -69,6 +71,16 @@ static __always_inline void record_map_traffic_insert_failure(__u64 now)
     if (!pressure) return;
     pressure->insert_failures++;
     pressure->last_failure_ns = now;
+}
+
+static __always_inline void record_flowbee_event_output_failure(__u64 now)
+{
+    __u32 zero = 0;
+    struct traffic_map_pressure *pressure =
+        bpf_map_lookup_elem(&map_traffic_pressure, &zero);
+    if (!pressure) return;
+    pressure->flow_event_output_failures++;
+    pressure->last_flow_event_failure_ns = now;
 }
 
 static __always_inline void track_traffic(

@@ -133,6 +133,8 @@ Done when:
 
 ### 5. Add low-cost eBPF backpressure visibility
 
+Status: Done. Flow RTT ring-buffer output failures now increment the existing per-CPU pressure map and `lqosd` logs increases once per polling cycle; the BPF object built, focused Rust checks/clippy passed, and the eBPF load was confirmed on 2026-05-15.
+
 Why:
 
 The RTT `flowbee_events` ring-buffer path still ignores `bpf_ringbuf_output` failure. Heimdall now checks copy/output errors, but drop visibility should be consistent. This should be done with extreme care because recent eBPF changes already hit verifier and size limits.

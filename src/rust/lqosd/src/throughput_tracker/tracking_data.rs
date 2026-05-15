@@ -65,6 +65,7 @@ pub struct ThroughputTracker {
     pub(crate) shaped_bytes_per_second: AtomicDownUp,
     pub(crate) shaped_actual_bytes_per_second: AtomicDownUp,
     host_map_insert_failures: AtomicU64,
+    flow_event_output_failures: AtomicU64,
     pub(crate) circuit_heatmaps: Mutex<FxHashMap<i64, TemporalHeatmap>>,
     pub(crate) circuit_qoq_heatmaps: Mutex<FxHashMap<i64, TemporalQoqHeatmap>>,
     pub(crate) global_heatmap: Mutex<TemporalHeatmap>,
@@ -155,6 +156,7 @@ impl ThroughputTracker {
             shaped_bytes_per_second: AtomicDownUp::zeroed(),
             shaped_actual_bytes_per_second: AtomicDownUp::zeroed(),
             host_map_insert_failures: AtomicU64::new(0),
+            flow_event_output_failures: AtomicU64::new(0),
             circuit_heatmaps: Mutex::default(),
             circuit_qoq_heatmaps: Mutex::default(),
             global_heatmap: Mutex::new(TemporalHeatmap::new()),
@@ -175,6 +177,17 @@ impl ThroughputTracker {
                 "Host traffic map insert failures increased by {} (total {}). Unknown or dynamic-circuit host visibility may be churning under map pressure.",
                 pressure.insert_failures - previous,
                 pressure.insert_failures
+            );
+        }
+
+        let previous = self
+            .flow_event_output_failures
+            .swap(pressure.flow_event_output_failures, Ordering::Relaxed);
+        if pressure.flow_event_output_failures > previous {
+            warn!(
+                "Flow RTT event ring-buffer output failures increased by {} (total {}). RTT samples may be dropping under ring-buffer pressure.",
+                pressure.flow_event_output_failures - previous,
+                pressure.flow_event_output_failures
             );
         }
     }
