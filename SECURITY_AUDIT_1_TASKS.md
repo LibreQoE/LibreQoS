@@ -71,6 +71,8 @@ Done when:
 
 ### 3. Add an auth surface regression gate for Node Manager
 
+Status: Done. Added the missing HTML route build-contract check, websocket same-origin guard, template-page block, and CORS regression test; existing cookie and read-only dashboard tests were rerun on 2026-05-15.
+
 Why:
 
 The branch fixed important auth behavior: no anonymous WebUI mode, CORS removed, session cookies hardened, durable session token no longer copied into websocket auth, and read-only dashboard writes denied. A-grade security needs a regression gate so these do not slip back.

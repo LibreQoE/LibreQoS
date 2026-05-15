@@ -10,7 +10,7 @@ use crate::system_stats::SystemStats;
 use anyhow::{Result, bail};
 use axum::Router;
 use axum::http::StatusCode;
-use axum::response::Redirect;
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use lqos_bus::BusRequest;
 use lqos_config::load_config;
@@ -58,6 +58,7 @@ pub async fn spawn_webserver(
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
         .route("/health", get(health_check))
+        .route("/template.html", get(not_found))
         .route("/configuration.html", get(redirect_configuration_page))
         // Backwards compatible aliases for historical misspellings.
         .route_service(
@@ -105,4 +106,24 @@ async fn redirect_configuration_page() -> Redirect {
 /// Provides a simple OK status
 async fn health_check() -> (StatusCode, &'static str) {
     (StatusCode::OK, "OK")
+}
+
+async fn not_found() -> Response {
+    StatusCode::NOT_FOUND.into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn node_manager_router_sources_do_not_enable_cors_layer() {
+        let sources = [
+            include_str!("run.rs"),
+            include_str!("local_api.rs"),
+            include_str!("ws.rs"),
+        ];
+        for source in sources {
+            assert!(!source.contains(concat!("Cors", "Layer")));
+            assert!(!source.contains(concat!("tower_http::", "cors")));
+        }
+    }
 }
