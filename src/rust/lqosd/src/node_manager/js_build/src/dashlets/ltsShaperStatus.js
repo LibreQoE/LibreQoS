@@ -1,5 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {clearDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
+import {clearDiv, simpleRow, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {get_ws_client} from "../pubsub/ws";
 
 const wsClient = get_ws_client();
@@ -74,7 +74,7 @@ export class LtsShaperStatus extends BaseDashlet {
                         } else if (row.last_seen_seconds_ago > 120) {
                             color = "orange";
                         }
-                        tr.appendChild(simpleRowHtml(`<span style="color: ${color}">■</span>`));
+                        tr.appendChild(simpleRowTrustedHtml(`<span style="color: ${color}">■</span>`));
                         tr.appendChild(simpleRow(row.name));
                         tr.appendChild(simpleRow(row.last_seen_seconds_ago + "s"));
                         tbody.appendChild(tr);

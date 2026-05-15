@@ -1,4 +1,4 @@
-import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
+import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowTrustedHtml, theading} from "./helpers/builders";
 import {
     formatCakeStat, formatCakeStatPercent,
     formatRetransmit, formatRetransmitFraction, retransmitFractionFromSample,
@@ -1870,22 +1870,22 @@ function renderAttachedCircuitsRows(rows) {
             tr.appendChild(ipCell);
 
             tr.appendChild(simpleRow(formatLastSeen(toNumber(circuit.last_seen_nanos, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
+            tr.appendChild(simpleRowTrustedHtml(formatThroughput(toNumber(circuit.bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
+            tr.appendChild(simpleRowTrustedHtml(formatThroughput(toNumber(circuit.bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
 
             if (toNumber(circuit.rtt_current_p50_nanos?.down, 0) > 0) {
-                tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.down, 0) / 1_000_000)));
+                tr.appendChild(simpleRowTrustedHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.down, 0) / 1_000_000)));
             } else {
                 tr.appendChild(simpleRow("-"));
             }
             if (toNumber(circuit.rtt_current_p50_nanos?.up, 0) > 0) {
-                tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.up, 0) / 1_000_000)));
+                tr.appendChild(simpleRowTrustedHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.up, 0) / 1_000_000)));
             } else {
                 tr.appendChild(simpleRow("-"));
             }
 
-            tr.appendChild(simpleRowHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.down))));
-            tr.appendChild(simpleRowHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.up))));
+            tr.appendChild(simpleRowTrustedHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.down))));
+            tr.appendChild(simpleRowTrustedHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.up))));
 
             tbody.appendChild(tr);
     });
