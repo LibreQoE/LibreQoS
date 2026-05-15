@@ -212,6 +212,8 @@ Done when:
 
 ### 8. Add a Content-Security-Policy appropriate for the current UI
 
+Status: Done. Authenticated templated pages and standalone login/first-run pages now emit an enforced CSP that keeps scripts self-hosted, preserves the existing inline template/style requirements, permits current websocket/API-docs/Insight tile needs, blocks framing, and is covered by Rust CSP tests plus `lqosd` check/clippy and node_manager build-contract validation on 2026-05-15.
+
 Why:
 
 CSP will not replace XSS fixes, but it reduces blast radius if a future trusted-HTML sink regresses. The current UI uses Bootstrap, FontAwesome, local scripts, and some inline bootstrap/theme snippets, so the policy should be practical rather than aspirational.

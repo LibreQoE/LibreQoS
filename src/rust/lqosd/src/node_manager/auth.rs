@@ -1,6 +1,7 @@
 //! Provides authentication for the Node Manager.
 
 use crate::node_manager::runtime_onboarding::runtime_onboarding_state;
+use crate::node_manager::security_headers::apply_node_manager_security_headers;
 use axum::Json;
 use axum::extract::ConnectInfo;
 use axum::http::StatusCode;
@@ -551,7 +552,9 @@ fn serve_standalone_page(page: &str) -> Result<Response, StatusCode> {
         error!("Unable to read standalone page {:?}: {e}", path);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    Ok(Html(body).into_response())
+    let mut response = Html(body).into_response();
+    apply_node_manager_security_headers(response.headers_mut());
+    Ok(response)
 }
 
 pub async fn login_page(jar: CookieJar) -> Response {

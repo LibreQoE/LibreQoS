@@ -2,6 +2,7 @@
 //! files.
 
 use crate::node_manager::auth::get_username;
+use crate::node_manager::security_headers::apply_node_manager_security_headers;
 use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
@@ -254,6 +255,7 @@ pub async fn apply_templates(
         res_parts
             .headers
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        apply_node_manager_security_headers(&mut res_parts.headers);
         let res = Response::from_parts(res_parts, Body::from(byte_string));
         Ok(res)
     } else {
