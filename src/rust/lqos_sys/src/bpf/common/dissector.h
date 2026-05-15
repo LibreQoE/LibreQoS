@@ -79,6 +79,9 @@ struct pppoe_proto
 #define PPPOE_SES_HLEN 8
 #define PPP_IP 0x21
 #define PPP_IPV6 0x57
+#define IPV4_MIN_IHL_BYTES 20
+#define IPV4_MORE_FRAGMENTS 0x2000
+#define IPV4_FRAGMENT_OFFSET_MASK 0x1FFF
 
 // Representation of an MPLS label
 struct mpls_label
@@ -134,6 +137,46 @@ static __always_inline bool dissector_new(
 static __always_inline bool is_ip(__u16 eth_type)
 {
     return eth_type == ETH_P_IP || eth_type == ETH_P_IPV6;
+}
+
+static __always_inline bool ipv4_is_complete_unfragmented(struct iphdr *iph, void *end)
+{
+    if (iph + 1 > end)
+    {
+        return false;
+    }
+    if (iph->version != 4)
+    {
+        return false;
+    }
+
+    __u8 ihl_bytes = iph->ihl * 4;
+    if (ihl_bytes < IPV4_MIN_IHL_BYTES)
+    {
+        return false;
+    }
+    if ((void *)iph + ihl_bytes > end)
+    {
+        return false;
+    }
+
+    __u16 total_len = bpf_ntohs(iph->tot_len);
+    if (total_len < ihl_bytes)
+    {
+        return false;
+    }
+    if ((void *)iph + total_len > end)
+    {
+        return false;
+    }
+
+    __u16 fragment = bpf_ntohs(iph->frag_off);
+    if (fragment & (IPV4_MORE_FRAGMENTS | IPV4_FRAGMENT_OFFSET_MASK))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 // Locates the layer-3 offset, if present. Fast returns for various
@@ -331,7 +374,7 @@ static __always_inline struct icmphdr *get_icmp_header(struct dissector_t *disse
 
 #define BITCHECK(flag) (dissector->tcp_flags & flag)
 
-static __always_inline void snoop(struct dissector_t *dissector)
+static __always_inline bool snoop(struct dissector_t *dissector)
 {
     switch (dissector->ip_protocol)
     {
@@ -342,7 +385,7 @@ static __always_inline void snoop(struct dissector_t *dissector)
         {
             if (hdr + 1 > dissector->end)
             {
-                return;
+                return false;
             }
             dissector->src_port = hdr->source;
             dissector->dst_port = hdr->dest;
@@ -361,7 +404,9 @@ static __always_inline void snoop(struct dissector_t *dissector)
             dissector->sequence = hdr->seq;
 
             parse_tcp_ts(hdr, dissector->end, &dissector->tsval, &dissector->tsecr);
+            return true;
         }
+        return false;
     } break;
     case IPPROTO_UDP:
     {
@@ -371,11 +416,13 @@ static __always_inline void snoop(struct dissector_t *dissector)
             if (hdr + 1 > dissector->end)
             {
                 bpf_debug("UDP header past end");
-                return;
+                return false;
             }
             dissector->src_port = hdr->source;
             dissector->dst_port = hdr->dest;
+            return true;
         }
+        return false;
     } break;
     case IPPROTO_ICMP:
     {
@@ -385,14 +432,17 @@ static __always_inline void snoop(struct dissector_t *dissector)
             if ((char *)hdr + sizeof(struct icmphdr) > dissector->end)
             {
                 bpf_debug("ICMP header past end");
-                return;
+                return false;
             }
             dissector->ip_protocol = 1;
             dissector->src_port = bpf_ntohs(hdr->type);
             dissector->dst_port = bpf_ntohs(hdr->code);
+            return true;
         }    
+        return false;
     } break;
     }
+    return true;
 }
 
 // Searches for an IP header.
@@ -409,13 +459,16 @@ static __always_inline bool dissector_find_ip_header(
             return false;
         }
         dissector->ip_header.iph = dissector->start + dissector->l3offset;
-        if (dissector->ip_header.iph + 1 > dissector->end)
+        if (!ipv4_is_complete_unfragmented(dissector->ip_header.iph, dissector->end))
             return false;
+        __u16 total_len = bpf_ntohs(dissector->ip_header.iph->tot_len);
+        dissector->end = (void *)((char *)dissector->ip_header.iph + total_len);
         encode_ipv4(dissector->ip_header.iph->saddr, &dissector->src_ip);
         encode_ipv4(dissector->ip_header.iph->daddr, &dissector->dst_ip);
         dissector->ip_protocol = dissector->ip_header.iph->protocol;
         dissector->tos = dissector->ip_header.iph->tos;
-        snoop(dissector);
+        if (!snoop(dissector))
+            return false;
 
         return true;
     }
@@ -435,7 +488,8 @@ static __always_inline bool dissector_find_ip_header(
         encode_ipv6(&dissector->ip_header.ip6h->daddr, &dissector->dst_ip);
         dissector->ip_protocol = dissector->ip_header.ip6h->nexthdr;
         dissector->tos = dissector->ip_header.ip6h->flow_lbl[0]; // Is this right?
-        snoop(dissector);
+        if (!snoop(dissector))
+            return false;
         return true;
     }
     break;
