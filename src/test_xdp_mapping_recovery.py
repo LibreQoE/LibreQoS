@@ -1,4 +1,75 @@
 import unittest
+import sys
+import types
+
+
+def install_libreqos_import_stubs():
+    python_check = types.ModuleType("pythonCheck")
+    python_check.checkPythonVersion = lambda: None
+    sys.modules["pythonCheck"] = python_check
+
+    deepdiff = types.ModuleType("deepdiff")
+    deepdiff.DeepDiff = lambda *_args, **_kwargs: {}
+    sys.modules["deepdiff"] = deepdiff
+
+    lqlib = types.ModuleType("liblqos_python")
+    lqlib.is_lqosd_alive = lambda: True
+    lqlib.clear_ip_mappings = lambda: None
+    lqlib.delete_ip_mapping = lambda *_args, **_kwargs: None
+    lqlib.validate_shaped_devices = lambda: "OK"
+    lqlib.is_libre_already_running = lambda: False
+    lqlib.create_lock_file = lambda: None
+    lqlib.free_lock_file = lambda: None
+    lqlib.add_ip_mapping = lambda *_args, **_kwargs: None
+
+    class DummyBatchedCommands:
+        pass
+
+    class DummyBakery:
+        pass
+
+    lqlib.BatchedCommands = DummyBatchedCommands
+    lqlib.check_config = lambda: None
+    lqlib.sqm = lambda: "cake"
+    lqlib.upstream_bandwidth_capacity_download_mbps = lambda: 1000
+    lqlib.upstream_bandwidth_capacity_upload_mbps = lambda: 1000
+    lqlib.interface_a = lambda: "eth0"
+    lqlib.interface_b = lambda: "eth1"
+    lqlib.enable_actual_shell_commands = lambda: False
+    lqlib.use_bin_packing_to_balance_cpu = lambda: False
+    lqlib.queue_mode = lambda: "shape"
+    lqlib.run_shell_commands_as_sudo = lambda: False
+    lqlib.generated_pn_download_mbps = lambda: 1000
+    lqlib.generated_pn_upload_mbps = lambda: 1000
+    lqlib.queues_available_override = lambda: 0
+    lqlib.on_a_stick = lambda: False
+    lqlib.get_tree_weights = lambda: {}
+    lqlib.get_weights = lambda: {}
+    lqlib.is_network_flat = lambda: False
+    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"
+    lqlib.enable_insight_topology = lambda: False
+    lqlib.is_insight_enabled = lambda: False
+    lqlib.scheduler_error = lambda *_args, **_kwargs: None
+    lqlib.xdp_ip_mapping_capacity = lambda: 1024
+    lqlib.overrides_circuit_adjustments_effective = lambda: []
+    lqlib.automatic_import_uisp = lambda: False
+    lqlib.automatic_import_splynx = lambda: False
+    lqlib.automatic_import_powercode = lambda: False
+    lqlib.automatic_import_sonar = lambda: False
+    lqlib.automatic_import_wispgate = lambda: False
+    lqlib.automatic_import_netzur = lambda: False
+    lqlib.automatic_import_visp = lambda: False
+    lqlib.topology_import_ingress_enabled = lambda: False
+    lqlib.plan_top_level_cpu_bins = lambda *_args, **_kwargs: {}
+    lqlib.plan_class_identities = lambda *_args, **_kwargs: {}
+    lqlib.fast_queues_fq_codel = lambda: False
+    lqlib.shaping_cpu_count = lambda: 16
+    lqlib.Bakery = DummyBakery
+    sys.modules["liblqos_python"] = lqlib
+
+
+install_libreqos_import_stubs()
+sys.modules.pop("LibreQoS", None)
 
 import LibreQoS
 

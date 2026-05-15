@@ -7,13 +7,9 @@ import unittest
 
 
 sys.modules.setdefault("routeros_api", types.SimpleNamespace())
-sys.modules.setdefault(
-	"liblqos_python",
-	types.SimpleNamespace(
-		load_mikrotik_ipv6_routers_json=lambda: "[]",
-		mikrotik_ipv6_config_path=lambda: "/etc/libreqos/mikrotik_ipv6.toml",
-	),
-)
+lqlib = sys.modules.setdefault("liblqos_python", types.SimpleNamespace())
+lqlib.load_mikrotik_ipv6_routers_json = lambda: "[]"
+lqlib.mikrotik_ipv6_config_path = lambda: "/etc/libreqos/mikrotik_ipv6.toml"
 
 import mikrotikFindIPv6
 from mikrotikFindIPv6 import _build_ipv4_to_ipv6_map, _mac_from_dhcpv6_duid
