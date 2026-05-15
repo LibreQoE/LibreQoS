@@ -41,6 +41,40 @@ pub struct HeimdallEvent {
     pub packet_data: [u8; PACKET_OCTET_SIZE],
 }
 
+impl Default for HeimdallEvent {
+    fn default() -> Self {
+        Self {
+            timestamp: 0,
+            src: XdpIpAddress::default(),
+            dst: XdpIpAddress::default(),
+            src_port: 0,
+            dst_port: 0,
+            ip_protocol: 0,
+            tos: 0,
+            size: 0,
+            tcp_flags: 0,
+            tcp_window: 0,
+            tcp_tsval: 0,
+            tcp_tsecr: 0,
+            packet_data: [0; PACKET_OCTET_SIZE],
+        }
+    }
+}
+
+impl HeimdallEvent {
+    pub(crate) fn captured_len(&self) -> usize {
+        (self.size as usize).min(PACKET_OCTET_SIZE)
+    }
+
+    pub(crate) fn packet_bytes(&self) -> &[u8] {
+        &self.packet_data[..self.captured_len()]
+    }
+
+    fn clamp_size_to_capture_buffer(&mut self) {
+        self.size = self.captured_len() as u32;
+    }
+}
+
 /*
 Snippet for tcp_flags decoding
 if (hdr->fin) flags |= 1;
@@ -76,11 +110,38 @@ pub unsafe extern "C" fn heimdall_handle_events(
     let data_u8 = data as *const u8;
     let data_slice: &[u8] = unsafe { slice::from_raw_parts(data_u8, EVENT_SIZE) };
 
-    if let Ok(incoming) = HeimdallEvent::read_from_bytes(data_slice) {
+    if let Ok(mut incoming) = HeimdallEvent::read_from_bytes(data_slice) {
+        incoming.clamp_size_to_capture_buffer();
         store_on_timeline(incoming);
     } else {
         println!("Failed to decode");
     }
 
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn captured_len_clamps_to_packet_buffer() {
+        let event = HeimdallEvent {
+            size: PACKET_OCTET_SIZE as u32 + 64,
+            ..Default::default()
+        };
+
+        assert_eq!(event.captured_len(), PACKET_OCTET_SIZE);
+    }
+
+    #[test]
+    fn packet_bytes_honors_stated_capture_size() {
+        let mut event = HeimdallEvent {
+            size: 4,
+            ..Default::default()
+        };
+        event.packet_data[..6].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+
+        assert_eq!(event.packet_bytes(), &[1, 2, 3, 4]);
+    }
 }
