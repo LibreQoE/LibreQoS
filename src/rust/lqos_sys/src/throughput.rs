@@ -63,6 +63,10 @@ pub struct TrafficMapPressure {
     pub insert_failures: u64,
     /// Most recent failure time in nanoseconds since kernel boot.
     pub last_failure_ns: u64,
+    /// Failed attempts to write an RTT event to the flow ring buffer.
+    pub flow_event_output_failures: u64,
+    /// Most recent RTT event write failure time in nanoseconds since kernel boot.
+    pub last_flow_event_failure_ns: u64,
 }
 
 /// Iterates through all throughput entries, and sends them in turn to `callback`.
@@ -109,6 +113,12 @@ pub fn traffic_map_pressure() -> anyhow::Result<TrafficMapPressure> {
                 .insert_failures
                 .saturating_add(pressure.insert_failures);
             total.last_failure_ns = total.last_failure_ns.max(pressure.last_failure_ns);
+            total.flow_event_output_failures = total
+                .flow_event_output_failures
+                .saturating_add(pressure.flow_event_output_failures);
+            total.last_flow_event_failure_ns = total
+                .last_flow_event_failure_ns
+                .max(pressure.last_flow_event_failure_ns);
             total
         }))
 }
@@ -124,6 +134,6 @@ mod test {
 
     #[test]
     fn traffic_map_pressure_size() {
-        assert_eq!(std::mem::size_of::<TrafficMapPressure>(), 16);
+        assert_eq!(std::mem::size_of::<TrafficMapPressure>(), 32);
     }
 }
