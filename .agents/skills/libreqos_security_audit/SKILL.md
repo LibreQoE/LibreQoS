@@ -1,15 +1,15 @@
 ---
 name: libreqos_security_audit
-description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, bridged-interface/eBPF malformed-traffic review, and audit-file findings updates.
+description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, bridged-interface/eBPF malformed-traffic review, panic/error-handling/type-loss review, and audit-file findings updates.
 ---
 
 # LibreQoS Security Audit
 
 Use this skill for recurring LibreQoS security audit passes in this repo. It
-covers the Rust dependency baseline, network control-plane exposure review, and
-bridged-interface/eBPF malformed-traffic review. Use additional focused checks
-for Python, packaging, live-host configuration, secrets, and authentication
-flows outside these scopes.
+covers the Rust dependency baseline, network control-plane exposure review,
+bridged-interface/eBPF malformed-traffic review, and panic/error-handling/type
+loss review. Use additional focused checks for Python, packaging, live-host
+configuration, secrets, and authentication flows outside these scopes.
 
 ## Scope
 
@@ -259,6 +259,67 @@ state, unexpected packet drops, userspace panic, or unreported loss of capture
 events. Do not count verifier-enforced memory safety, unknown non-IP traffic
 that merely fails open, or untested live reachability claims as findings by
 themselves.
+
+## Step 4: Panic, Error-Handling, and Type-Loss Audit
+
+Use this step when the audit turns to code paths that can panic, hide errors, or
+silently lose data. Include the sibling `../../lqos_api/src/` when it is present
+because it is part of the deployed control-plane surface, but do not edit that
+repo unless the user explicitly authorizes cross-repo changes.
+
+Start with these searches, then inspect only runtime-reachable code. Exclude
+tests, fixtures, generated output, vendored bindings, and historical copies such
+as `LibreQoS-old.py` unless the user explicitly puts them in scope.
+
+```text
+rg -n "\\bpanic!\\(|\\.unwrap\\(|\\.expect\\(|unreachable!\\(|todo!\\(|unimplemented!\\(|assert!\\(|from_raw_parts|transmute|unsafe \\{|as (u8|u16|u32|usize|i8|i16|i32|f32)|unwrap_or_default\\(|except Exception|except:|pass$" src/rust src --glob '*.py' ../../lqos_api/src
+rg -n "as u32|as u16|as f32|partial_cmp\\(.*\\)\\.unwrap|to_str\\(\\)\\.unwrap|parse\\(\\)\\.unwrap|try_into\\(\\)\\.unwrap" src/rust ../../lqos_api/src
+rg -n "except Exception|except:|pass$|sys.exit|int\\(|float\\(" src --glob '*.py' --glob '!LibreQoS-old.py' --glob '!LibreQoS-ancient.py' --glob '!LibreQoS.py.new'
+```
+
+For each candidate, identify:
+
+- file name and exact line number
+- whether the code is request-time, packet-time, config/import-time, startup-only,
+  test-only, or generated/vendor code
+- whether an external user, bridged-interface packet, operator-managed file, or
+  internal telemetry value can trigger the path
+- whether the impact is panic/DoS, poisoned shared state, incorrect rejection,
+  silent fallback, lossy conversion, wrapped counters, non-finite float handling,
+  or misleading operational data
+
+Count a finding when evidence supports one of these:
+
+- a request, websocket message, packet event, or operator-managed file can panic
+  a runtime task instead of returning an error
+- malformed input can poison or permanently break shared runtime state
+- error handling silently continues with a different shaping, auth, or telemetry
+  result that an operator would not see
+- numeric conversion narrows kernel counters, flow counters, bandwidth values, or
+  timestamps in a way that can wrap, saturate unexpectedly, become non-finite, or
+  otherwise lose operational data
+- an unsafe block reads caller-provided memory without a size check or serializes
+  uninitialized padding bytes
+
+Do not count these as findings by themselves:
+
+- `unwrap` / `expect` in tests, examples, benchmarks, one-shot setup validation,
+  or process startup where failure stops boot cleanly
+- unsafe FFI wrappers that validate sizes and keep pointer lifetimes local
+- protocol fields that are intentionally narrower when the code checks range or
+  logs/clamps loss before export
+- broad Python exception handling that only preserves backwards-compatible
+  tolerance and does not change shaping/auth/security behavior
+
+The audit-file section must include:
+
+- Heading: `Panic, error-handling, and type-loss audit`.
+- Date, scope, and exact searches or files reviewed.
+- Summary bullets separating confirmed findings, reachability-unknown items, and
+  observations/not-findings.
+- One subsection per finding with the repo-relative `path:line`, short
+  description, exposure/threat, and recommended actions.
+- No placeholders, no `...`, and no unresolved `<angle-bracket>` tokens.
 
 ## Validation
 
