@@ -4,7 +4,6 @@ use anyhow::{Result, bail};
 use axum::Router;
 use lqos_config::load_config;
 use std::path::Path;
-use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 pub(super) fn vendor_route() -> Result<Router> {
@@ -112,7 +111,6 @@ pub(super) fn static_routes() -> Result<Router> {
     router = router.route_service("/config_spylnx.html", ServeFile::new(splynx_path));
 
     router = router
-        .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
         .route_layer(axum::middleware::from_fn(apply_templates));
 

@@ -48,7 +48,7 @@ zerocopy = { workspace = true }
 fxhash = "0.2.1"
 axum = { version = "0.7.7", features = ["ws"] }
 axum-extra = {  version = "0.9.4", features = ["cookie", "cookie-private"] }
-tower-http = { version = "0.6.1", features = ["fs", "cors"] }
+tower-http = { version = "0.6.1", features = ["fs"] }
 strum = {  version = "0.26.3", features = ["derive"] }
 default-net = {  workspace = true }
 rand = { version = "0.8.6", default-features = false, features = ["std", "std_rng"] }
