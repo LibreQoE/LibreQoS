@@ -23,6 +23,8 @@ def install_common_stubs():
     lqlib.exception_cpes = lambda: []
     lqlib.promote_to_root_list = lambda: []
     lqlib.client_bandwidth_multiplier = lambda: 1.0
+    lqlib.write_compiled_topology_from_python_graph_payload = lambda *_args, **_kwargs: None
+    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"
     sys.modules["liblqos_python"] = lqlib
 
 
@@ -105,8 +107,9 @@ class TestIntegrationCommonIgnoreSubnets(unittest.TestCase):
 
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1][0], "client-1")
-        self.assertIn("203.0.113.10/32", rows[1][6])
-        self.assertNotIn("100.64.1.10/32", rows[1][6])
+        ipv4_column = rows[0].index("IPv4")
+        self.assertIn("203.0.113.10/32", rows[1][ipv4_column])
+        self.assertNotIn("100.64.1.10/32", rows[1][ipv4_column])
 
     def test_prune_does_not_require_ip_to_be_in_allowed_subnets(self):
         integrationCommon.allowed_subnets = lambda: ["10.0.0.0/8"]
@@ -131,7 +134,8 @@ class TestIntegrationCommonIgnoreSubnets(unittest.TestCase):
 
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1][0], "client-1")
-        self.assertIn("203.0.113.10/32", rows[1][6])
+        ipv4_column = rows[0].index("IPv4")
+        self.assertIn("203.0.113.10/32", rows[1][ipv4_column])
 
 
 if __name__ == "__main__":

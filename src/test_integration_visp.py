@@ -1,5 +1,40 @@
 import unittest
+import sys
+import types
 from unittest.mock import patch
+
+
+def install_visp_stubs():
+    lqlib = types.ModuleType("liblqos_python")
+    lqlib.allowed_subnets = lambda: ["0.0.0.0/0", "::/0"]
+    lqlib.ignore_subnets = lambda: []
+    lqlib.generated_pn_download_mbps = lambda: 1000
+    lqlib.generated_pn_upload_mbps = lambda: 1000
+    lqlib.circuit_name_use_address = lambda: False
+    lqlib.upstream_bandwidth_capacity_download_mbps = lambda: 1000
+    lqlib.upstream_bandwidth_capacity_upload_mbps = lambda: 1000
+    lqlib.find_ipv6_using_mikrotik = lambda: False
+    lqlib.exclude_sites = lambda: []
+    lqlib.bandwidth_overhead_factor = lambda: 1.0
+    lqlib.committed_bandwidth_multiplier = lambda: 1.0
+    lqlib.exception_cpes = lambda: []
+    lqlib.promote_to_root_list = lambda: []
+    lqlib.client_bandwidth_multiplier = lambda: 1.0
+    lqlib.write_compiled_topology_from_python_graph_payload = lambda *_args, **_kwargs: None
+    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"
+    lqlib.visp_client_id = lambda: ""
+    lqlib.visp_client_secret = lambda: ""
+    lqlib.visp_username = lambda: ""
+    lqlib.visp_password = lambda: ""
+    lqlib.visp_isp_id = lambda: ""
+    lqlib.visp_online_users_domain = lambda: ""
+    lqlib.visp_timeout_secs = lambda: 60
+    sys.modules["liblqos_python"] = lqlib
+
+
+install_visp_stubs()
+sys.modules.pop("integrationCommon", None)
+sys.modules.pop("integrationVISP", None)
 
 from integrationVISP import (
     _bulk_ipv4_candidates,

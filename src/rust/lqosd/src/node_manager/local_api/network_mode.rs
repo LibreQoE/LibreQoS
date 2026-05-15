@@ -110,7 +110,14 @@ enum MergeNetworkModeError {
 
 fn merge_network_mode(candidate: Config) -> Result<Config, MergeNetworkModeError> {
     let live = lqos_config::load_config().map_err(|_| MergeNetworkModeError::LoadLiveConfig)?;
-    let mut merged = (*live).clone();
+    merge_network_mode_with_live(&live, candidate)
+}
+
+fn merge_network_mode_with_live(
+    live: &Config,
+    candidate: Config,
+) -> Result<Config, MergeNetworkModeError> {
+    let mut merged = live.clone();
     merged.bridge = candidate.bridge;
     merged.single_interface = candidate.single_interface;
     merged
@@ -202,11 +209,9 @@ pub async fn apply(
                 MergeNetworkModeError::InvalidCandidate(message) => {
                     helper_validation_error_response(message)
                 }
-                MergeNetworkModeError::LoadLiveConfig => {
-                    helper_internal_error_response(
-                        "Unable to load the live LibreQoS configuration".to_string(),
-                    )
-                }
+                MergeNetworkModeError::LoadLiveConfig => helper_internal_error_response(
+                    "Unable to load the live LibreQoS configuration".to_string(),
+                ),
             };
         }
     };
@@ -350,7 +355,7 @@ pub async fn retry_shaping(
 
 #[cfg(test)]
 mod tests {
-    use super::{MergeNetworkModeError, merge_network_mode};
+    use super::{MergeNetworkModeError, merge_network_mode, merge_network_mode_with_live};
     use crate::test_support::runtime_config_test_lock;
     use lqos_config::{BridgeConfig, Config, SingleInterfaceConfig};
     use std::ffi::OsString;
@@ -439,8 +444,8 @@ mod tests {
             ..BridgeConfig::default()
         });
 
-        let error =
-            with_config_env(|| merge_network_mode(candidate).expect_err("invalid MTU should fail"));
+        let error = merge_network_mode_with_live(&Config::default(), candidate)
+            .expect_err("invalid MTU should fail");
 
         assert_eq!(
             error,
@@ -459,8 +464,8 @@ mod tests {
             ..SingleInterfaceConfig::default()
         });
 
-        let error =
-            with_config_env(|| merge_network_mode(candidate).expect_err("invalid MTU should fail"));
+        let error = merge_network_mode_with_live(&Config::default(), candidate)
+            .expect_err("invalid MTU should fail");
 
         assert_eq!(
             error,
