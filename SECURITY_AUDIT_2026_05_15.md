@@ -94,3 +94,191 @@ findings under this audit policy:
 
 These should be tracked as modernization work, not listed as release security
 findings unless a separate vulnerability is reported for them.
+
+## Network control-plane audit
+
+Date: 2026-05-15
+
+Scope assumptions:
+
+- The Caddy / SSL / TLS option is installed.
+- Linux, Ubuntu, kernel, and distribution package vulnerabilities are out of
+  scope for this section.
+- The control interface is in scope. The two bridge interfaces, whether XDP or
+  Linux bridge backed by eBPF, are out of scope for this section.
+- An open listener is not a vulnerability by itself. This section looks for
+  exploitability, unauthorized access, credential exposure, authorization
+  bypass, or remotely triggerable failure on the control plane.
+- The sibling `../../lqos_api/` repo is included because it is exposed behind
+  the managed Caddy configuration.
+
+Files and directories reviewed:
+
+- `docs/v2.0/https-caddy.md`
+- `docs/v2.0/api.md`
+- `src/rust/lqos_setup/src/ssl.rs`
+- `src/rust/lqos_setup/src/web.rs`
+- `src/rust/lqosd/src/node_manager/run.rs`
+- `src/rust/lqosd/src/node_manager/auth.rs`
+- `src/rust/lqosd/src/node_manager/local_api.rs`
+- `src/rust/lqosd/src/node_manager/static_pages.rs`
+- `src/rust/lqos_config/src/authentication.rs`
+- `../../lqos_api/src/main.rs`
+- `../../lqos_api/src/web.rs`
+- `../../lqos_api/src/web_security.rs`
+- `../../lqos_api/README.md`
+
+### Summary
+
+- The managed Caddy configuration disables the Caddy admin API, proxies the
+  WebUI to `127.0.0.1:9123`, and proxies `/api/v1/*` to `127.0.0.1:9122`.
+- The WebUI runtime listener is configured to move to loopback for the Caddy
+  path. That loopback listener is not a finding.
+- The sibling `lqos_api` service still binds directly to `:::9122`. If that
+  port is reachable on the control interface, authenticated API traffic can
+  bypass the Caddy/TLS path. Runtime reachability was not verified in this
+  code audit.
+- Three control-plane findings and one reachability-unknown exposure are listed
+  below. Public API documentation and the explicit anonymous read-only demo mode
+  are recorded as observations, not findings by themselves.
+
+### Findings
+
+#### Reachability unknown: direct `lqos_api` listener can bypass the Caddy/TLS path
+
+Path:
+
+- `../../lqos_api/src/main.rs`
+
+Short description:
+
+`lqos_api` binds its HTTP server to `:::9122`. The managed Caddy configuration
+proxies API traffic to `127.0.0.1:9122`, but the API process itself also remains
+able to listen on all interfaces unless deployment firewalling blocks it.
+
+Exposure / threat:
+
+The API binds all interfaces while Caddy proxies the intended HTTPS path to
+localhost. If port `9122` is reachable on the control interface, a client can
+send the `x-bearer` credential over direct HTTP instead of the Caddy-protected
+HTTPS path. This audit verified the code-level listener and Caddy upstream, but
+did not verify runtime firewall or socket exposure on an installed host.
+
+Recommended actions:
+
+- Make the `lqos_api` listen address configurable and default it to
+  `127.0.0.1:9122` when the Caddy option is installed.
+- Update the Caddy/setup integration and API documentation so remote operators
+  use only the HTTPS `/api/v1/` path.
+- Add install-time firewall guidance or service hardening that blocks direct
+  control-interface access to `9122` when Caddy is enabled.
+
+#### Malformed `x-bearer` header can panic API authentication
+
+Path:
+
+- `../../lqos_api/src/web_security.rs`
+
+Short description:
+
+The API authentication middleware calls `header.to_str().unwrap()` while
+processing the unauthenticated `x-bearer` header.
+
+Exposure / threat:
+
+A remote client can send a malformed header value that fails UTF-8 conversion.
+Authentication should reject that request, but the current code can panic while
+handling unauthenticated input. Even if Axum/Tokio limits the blast radius to a
+request task or connection, this is a remotely triggerable control-plane failure
+path.
+
+Recommended actions:
+
+- Replace the `unwrap()` with explicit error handling that returns
+  `401 Unauthorized` for invalid or missing bearer headers.
+- Keep malformed authentication input on the same path as other auth failures:
+  no panic, no stack trace, and no different response body that helps probing.
+- After fixing, add a small test for a non-UTF-8 or otherwise invalid
+  `x-bearer` value.
+
+#### WebUI and local API use credentialed permissive CORS
+
+Paths:
+
+- `src/rust/lqosd/src/node_manager/run.rs`
+- `src/rust/lqosd/src/node_manager/static_pages.rs`
+- `src/rust/lqosd/src/node_manager/local_api.rs`
+- `src/rust/lqosd/src/node_manager/auth.rs`
+
+Short description:
+
+The WebUI and local API install `CorsLayer::very_permissive()`. In the
+tower-http version locked by the workspace, that mirrors the request origin and
+allows credentials. The WebUI session uses a `User-Token` cookie with
+`SameSite=Lax`, but without `Secure` or `HttpOnly`.
+
+Exposure / threat:
+
+The reviewed code does not show a supported cross-origin WebUI client. For a
+cookie-authenticated control-plane UI, reflecting arbitrary origins while
+allowing credentials grants browser read access to origins outside the WebUI's
+own origin whenever the browser sends the `User-Token` cookie. `SameSite=Lax`
+limits common unrelated-site subresource requests, but this policy is still
+broader than the reviewed WebUI needs. The local API and WebUI should not grant
+credentialed CORS to arbitrary origins without a documented client need.
+
+Recommended actions:
+
+- Remove CORS from same-origin WebUI/local API routes unless a concrete
+  supported cross-origin client requires it.
+- If cross-origin access is required, restrict allowed origins to configured
+  operator hosts and avoid credentialed wildcard or origin-mirroring behavior.
+- Add origin or CSRF checks for state-changing browser routes.
+- Set session cookies with `Secure` when served behind HTTPS and `HttpOnly`
+  unless browser JavaScript truly needs to read the cookie.
+
+#### WebUI login lacks rate limiting
+
+Paths:
+
+- `src/rust/lqosd/src/node_manager/auth.rs`
+- `src/rust/lqos_config/src/authentication.rs`
+
+Short description:
+
+The WebUI login path checks passwords with Argon2id for current hashes and
+upgrades older SHA-256 hashes after successful login. The reviewed code did not
+show per-IP, per-account, or global throttling for repeated failed login
+attempts to the public `/doLogin` route.
+
+Exposure / threat:
+
+Under the Caddy setup, the login form is reachable through the control-plane
+HTTPS entrypoint. An unauthenticated client can repeatedly submit passwords to
+`/doLogin`; the server-side password hash is strong, but the reviewed code does
+not throttle repeated failures before each verification attempt.
+
+Recommended actions:
+
+- Add rate limiting or exponential backoff for failed `/doLogin` attempts,
+  keyed by source address and username.
+- Log repeated failures in a way operators can act on without logging submitted
+  passwords.
+
+### Observations / not findings
+
+- `src/rust/lqos_setup/src/ssl.rs` renders a managed Caddyfile with
+  `admin off`, WebUI upstream `127.0.0.1:9123`, and API upstream
+  `127.0.0.1:9122`.
+- `docs/v2.0/https-caddy.md` documents moving the WebUI runtime listener to
+  `127.0.0.1:9123` when HTTPS is enabled.
+- `../../lqos_api/src/web.rs` merges Swagger UI at `/api-docs`. This exposes
+  endpoint shape, not credentials or control actions, and is not counted as a
+  vulnerability by itself.
+- `allow_anonymous` is an explicit read-only public/demo mode in the WebUI
+  authentication configuration. It is not counted as a finding when the operator
+  intentionally enables that mode.
+- `src/rust/lqos_setup/src/web.rs` binds the setup web service to
+  `0.0.0.0:9123` and uses a setup token. Because this section assumes the
+  runtime Caddy option is already installed, first-run setup exposure is left
+  for a later setup/lifecycle audit unless a concrete bypass is found.
