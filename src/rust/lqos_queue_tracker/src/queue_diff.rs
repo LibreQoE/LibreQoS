@@ -64,18 +64,18 @@ fn queue_kind(queue: &QueueType) -> &'static str {
 #[derive(Serialize, Clone, Debug)]
 pub struct CakeDiff {
     pub bytes: u64,
-    pub packets: u32,
-    pub qlen: u32,
+    pub packets: u64,
+    pub qlen: u64,
     pub tins: Vec<CakeDiffTin>,
 }
 
 #[derive(Serialize, Clone, Debug)]
 pub struct CakeDiffTin {
     pub sent_bytes: u64,
-    pub backlog_bytes: u32,
-    pub drops: u32,
-    pub marks: u32,
-    pub base_delay_us: u32,
+    pub backlog_bytes: u64,
+    pub drops: u64,
+    pub marks: u64,
+    pub base_delay_us: u64,
 }
 
 fn cake_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff, QueueDiffError> {
@@ -113,10 +113,10 @@ pub enum QueueDiffError {
 #[derive(Serialize, Clone, Debug)]
 pub struct FqCodelDiff {
     pub bytes: u64,
-    pub packets: u32,
-    pub backlog: u32,
-    pub flows: u16,
-    pub ddrops: u32,
+    pub packets: u64,
+    pub backlog: u64,
+    pub flows: u64,
+    pub ddrops: u64,
 }
 
 fn fq_codel_diff(previous: &QueueType, current: &QueueType) -> Result<QueueDiff, QueueDiffError> {
