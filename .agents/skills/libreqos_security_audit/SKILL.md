@@ -1,6 +1,6 @@
 ---
 name: libreqos_security_audit
-description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, bridged-interface/eBPF malformed-traffic review, panic/error-handling/type-loss review, and audit-file findings updates.
+description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, bridged-interface/eBPF malformed-traffic review, panic/error-handling/type-loss review, node_manager privacy/auth/XSS review, and audit-file findings updates.
 ---
 
 # LibreQoS Security Audit
@@ -8,8 +8,9 @@ description: Repo-local LibreQoS workflow for release security audit passes. Use
 Use this skill for recurring LibreQoS security audit passes in this repo. It
 covers the Rust dependency baseline, network control-plane exposure review,
 bridged-interface/eBPF malformed-traffic review, and panic/error-handling/type
-loss review. Use additional focused checks for Python, packaging, live-host
-configuration, secrets, and authentication flows outside these scopes.
+loss review, and node_manager privacy/auth/XSS review. Use additional focused
+checks for Python, packaging, live-host configuration, secrets, and
+authentication flows outside these scopes.
 
 ## Scope
 
@@ -319,6 +320,90 @@ The audit-file section must include:
   observations/not-findings.
 - One subsection per finding with the repo-relative `path:line`, short
   description, exposure/threat, and recommended actions.
+- No placeholders, no `...`, and no unresolved `<angle-bracket>` tokens.
+
+## Step 5: Node Manager Privacy, Auth, and XSS Audit
+
+Use this step when reviewing node_manager for missing anonymization of PII,
+missing authentication or authorization on data access, browser-storage exposure,
+and XSS. Review source files, not generated bundles, unless a generated artifact
+is the only shipped source for that behavior.
+
+Start with these surfaces:
+
+```text
+src/rust/lqosd/src/node_manager/run.rs
+src/rust/lqosd/src/node_manager/static_pages.rs
+src/rust/lqosd/src/node_manager/auth.rs
+src/rust/lqosd/src/node_manager/ws.rs
+src/rust/lqosd/src/node_manager/ws/messages.rs
+src/rust/lqosd/src/node_manager/local_api/
+src/rust/lqosd/src/node_manager/js_build/src/
+src/rust/lqosd/src/node_manager/static2/template.html
+docs/v2.0/node-manager-ui.md
+docs/v2.0/components.md
+```
+
+Use these searches as a starting point:
+
+```text
+rg -n "localStorage|sessionStorage|document\\.cookie|innerHTML|outerHTML|insertAdjacentHTML|eval\\(|Function\\(|onclick=|onerror=|sanitize|DOMPurify|redact|redaction|redactable|allow_anonymous|auth_layer|route_layer|LoginResult|ReadOnly|Admin|Denied" src/rust/lqosd/src/node_manager docs/v2.0
+rg -n "innerHTML\\s*=.*(\\+|`)|simpleRowHtml\\(|href=.*\\+|data-[^=]+=|textContent|innerText" src/rust/lqosd/src/node_manager/js_build/src --glob '*.js'
+rg -n "ShapedDevice|network_json|CircuitById|AllShapedDevices|NetworkJson|Search|UnknownIps|CircuitDirectory|device_name|circuit_name|mac|ipv4|ipv6|comment" src/rust/lqosd/src/node_manager
+```
+
+For each candidate, identify:
+
+- the exact `path:line`
+- whether access is unauthenticated, anonymous read-only, authenticated read-only,
+  or admin-only
+- whether the exposed data includes subscriber/customer identifiers, circuit
+  names/IDs, device names/IDs, IPs, MACs, comments, topology names, tickets, or
+  integration secrets
+- whether redaction happens server-side, in the transport payload, or only in the
+  browser display
+- whether browser storage persists credentials, session tokens, topology drafts,
+  dashboard layouts, interface names, VLANs, or other operational data
+- whether untrusted strings are inserted with `innerHTML`, HTML tooltips,
+  attributes, inline handlers, or URLs without escaping and protocol validation
+
+Count a finding when evidence supports one of these:
+
+- anonymous/demo/read-only access can retrieve raw PII or sensitive operational
+  data with no server-side anonymization
+- a route, websocket request, local API, static fallback, or file-serving path
+  exposes data without the expected auth boundary
+- state-changing websocket/local API behavior is available to read-only or
+  anonymous users without a documented reason
+- operator/customer/integration-controlled strings can reach `innerHTML` or HTML
+  attributes without escaping
+- an XSS would expose a session token, API key, config secret, localStorage value,
+  or pending control-plane operation
+- localStorage retains sensitive topology/configuration data beyond the browser
+  session or logout without a clear need
+
+Do not count these as findings by themselves:
+
+- static JS/CSS/images served without auth when they contain no operator data,
+  credentials, or secrets
+- client-side redaction that is documented as screenshot/demo display redaction,
+  unless the same mode is used as the privacy boundary for anonymous/public
+  access
+- admin-only config views that already redact integration secrets before sending
+  them to the browser
+- `innerHTML` used only for fixed icons, fixed Bootstrap markup, or escaped values
+
+The audit-file section must include:
+
+- Heading: `Node Manager privacy, auth, and XSS audit`.
+- Date, scope, exact searches or files reviewed, and any excluded generated/vendor
+  output.
+- Summary bullets separating confirmed findings, hardening observations, and
+  not-findings.
+- One subsection per finding with repo-relative `path:line`, short description,
+  exposure/threat, and recommended actions.
+- A short localStorage/sessionStorage/cookie note, even when no sensitive
+  localStorage token is found.
 - No placeholders, no `...`, and no unresolved `<angle-bracket>` tokens.
 
 ## Validation
