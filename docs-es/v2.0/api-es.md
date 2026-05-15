@@ -16,6 +16,8 @@ Use Swagger en su nodo como referencia completa y superficie de prueba para la v
 - Puerto local directo de la API: `http://<node-ip>:9122/api-docs`
 - Si la WebUI usa HTTPS opcional con Caddy: `https://<hostname-o-ip-del-nodo>/api/v1/api-docs`
 
+En sistemas que usan HTTPS con Caddy gestionado, deje el listener de la API en loopback y acceda a la API mediante `/api/v1/`. `LQOS_API_LISTEN` es un override avanzado para despliegues que exponen intencionalmente el listener de la API en forma directa; no lo configure en sistemas con Caddy gestionado salvo que la exposición directa, el firewall, TLS y los controles de acceso de operadores se hayan planificado juntos.
+
 Use esta página como mapa de capacidades. Use Swagger para inventario completo de endpoints, esquemas request/response y pruebas en vivo.
 
 ¿Necesita definiciones de persistencia e impacto en runtime? Vea el [Glosario](glossary-es.md).

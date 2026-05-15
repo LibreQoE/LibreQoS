@@ -237,6 +237,8 @@ Done when:
 
 ### 9. Keep Caddy/API loopback behavior guarded, but do not duplicate setup work
 
+Status: Done. Managed Caddy Caddyfile tests now assert loopback API/WebUI upstreams and runtime enable/disable tests continue to preserve `lqos_api` restarts; operator docs now identify `LQOS_API_LISTEN` as an advanced override that should stay unset on managed Caddy systems unless direct API exposure is intentional and separately protected.
+
 Why:
 
 The branch assumes Caddy is set up. The useful repo-owned hardening is to prevent accidental drift from the intended Caddy/loopback shape, not to treat Caddy setup itself as missing.

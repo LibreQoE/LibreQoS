@@ -650,6 +650,26 @@ mod tests {
     }
 
     #[test]
+    fn managed_caddyfile_keeps_api_and_webui_upstreams_loopback() {
+        let plan = build_runtime_plan(Some("libreqos.example.com".to_string()), None);
+        let caddyfile = render_managed_caddyfile(&plan);
+
+        assert!(caddyfile.contains(&format!("reverse_proxy {API_UPSTREAM}")));
+        assert!(caddyfile.contains(&format!("reverse_proxy {WEB_UPSTREAM}")));
+        for exposed_upstream in [
+            "reverse_proxy :9122",
+            "reverse_proxy 0.0.0.0:9122",
+            "reverse_proxy [::]:9122",
+            "reverse_proxy :::9122",
+        ] {
+            assert!(
+                !caddyfile.contains(exposed_upstream),
+                "managed Caddy should not proxy API traffic through {exposed_upstream}"
+            );
+        }
+    }
+
+    #[test]
     fn internal_ca_caddyfile_adds_tls_internal() {
         let plan = build_runtime_plan(None, None);
         let caddyfile = render_managed_caddyfile(&plan);

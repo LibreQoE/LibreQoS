@@ -16,6 +16,8 @@ Use Swagger on your node as the complete reference and test surface for your ins
 - Direct local API port: `http://<node-ip>:9122/api-docs`
 - If optional HTTPS with Caddy is enabled for the WebUI: `https://<hostname-or-node-ip>/api/v1/api-docs`
 
+On systems using managed Caddy HTTPS, leave the API listener on loopback and access it through `/api/v1/`. `LQOS_API_LISTEN` is an advanced override for deployments that intentionally expose the API listener directly; do not set it on managed Caddy systems unless direct API exposure, firewalling, TLS, and operator access controls have been planned together.
+
 Use this page as a capability map. Use Swagger for full endpoint inventory, request/response schemas, and live testing.
 
 Need definitions for persistence and runtime-impact terms? See the [Glossary](glossary.md).

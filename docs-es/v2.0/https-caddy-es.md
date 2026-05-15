@@ -20,7 +20,14 @@ LibreQoS ofrece dos opciones simples:
 - Los operadores dejan de usar `http://tu_ip_del_shaper:9123` y pasan a usar `https://tu-hostname/` o `https://tu-ip-de-gestión/`.
 - LibreQoS mueve el listener de la WebUI a `127.0.0.1:9123`.
 - Caddy publica la WebUI y la documentación de la API por HTTPS.
+- En modo Caddy gestionado, las solicitudes de API se envían a `127.0.0.1:9122`, de modo que la API queda detrás del mismo origen HTTPS que la WebUI.
 - Swagger pasa a `/api/v1/api-docs` en el mismo origen HTTPS de la WebUI.
+
+## Overrides del listener de la API
+
+El modo Caddy gestionado espera que el servicio API permanezca en loopback y se alcance a través de Caddy en `/api/v1/`.
+
+`LQOS_API_LISTEN` es un override para despliegues avanzados. No lo configure en sistemas con Caddy gestionado, salvo que quiera exponer directamente el listener de la API y también haya planificado firewall, TLS y controles de acceso de operadores para ese listener directo.
 
 ## Si usa el modo de certificado local
 
