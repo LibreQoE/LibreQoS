@@ -97,17 +97,22 @@ function loadUsers() {
         const tbody = $('<tbody>');
         
         users.forEach(user => {
+            const actions = $('<td>');
+            const editButton = $('<button type="button" class="btn btn-sm btn-primary edit-user">')
+                .data('username', user.username)
+                .append($('<i class="fa fa-edit">'))
+                .append(document.createTextNode(' Edit'));
+            const deleteButton = $('<button type="button" class="btn btn-sm btn-danger delete-user">')
+                .data('username', user.username)
+                .append($('<i class="fa fa-trash">'))
+                .append(document.createTextNode(' Delete'));
+
+            actions.append(editButton, ' ', deleteButton);
+
             const row = $('<tr>')
-                .append(`<td>${user.username}</td>`)
-                .append(`<td>${user.role}</td>`)
-                .append(`<td>
-                    <button class="btn btn-sm btn-primary edit-user" data-username="${user.username}">
-                        <i class="fa fa-edit"></i> Edit
-                    </button>
-                    <button class="btn btn-sm btn-danger delete-user" data-username="${user.username}">
-                        <i class="fa fa-trash"></i> Delete
-                    </button>
-                </td>`);
+                .append($('<td>').text(user.username))
+                .append($('<td>').text(user.role))
+                .append(actions);
             
             tbody.append(row);
         });

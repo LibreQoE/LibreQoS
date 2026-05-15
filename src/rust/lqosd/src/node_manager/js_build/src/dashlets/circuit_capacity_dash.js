@@ -1,5 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {clearDashDiv, simpleRowHtml, theading} from "../helpers/builders";
+import {clearDashDiv, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {formatRtt, formatPercent} from "../helpers/scaling";
 import {redactCell} from "../helpers/redact";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
@@ -87,9 +87,9 @@ export class CircuitCapacityDash extends BaseDashlet {
                 linkCol.appendChild(link);
                 row.appendChild(linkCol);
 
-                row.appendChild(simpleRowHtml(formatPercent(c.capacity[0]*100)));
-                row.appendChild(simpleRowHtml(formatPercent(c.capacity[1]*100)));
-                row.appendChild(simpleRowHtml(formatRtt(c.rtt)));
+                row.appendChild(simpleRowTrustedHtml(formatPercent(c.capacity[0]*100)));
+                row.appendChild(simpleRowTrustedHtml(formatPercent(c.capacity[1]*100)));
+                row.appendChild(simpleRowTrustedHtml(formatRtt(c.rtt)));
                 tbody.appendChild(row);
 
                 count++;

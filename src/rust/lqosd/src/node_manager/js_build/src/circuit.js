@@ -1,6 +1,6 @@
 // Obtain URL parameters
 import {DirectChannel} from "./pubsub/direct_channels";
-import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
+import {clearDiv, formatLastSeen, simpleRow, simpleRowTrustedHtml, theading} from "./helpers/builders";
 import {
     formatRetransmitFraction,
     formatRtt,
@@ -1914,14 +1914,14 @@ function renderTopAsnTab() {
 
             row.appendChild(truncatedTrafficCell(rowData.asn_name, "lqos-circuit-traffic-asn-cell"));
             row.appendChild(truncatedTrafficCell(rowData.asn_country, "lqos-circuit-traffic-country-cell"));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.down_bps, plan.down)));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.up_bps, plan.up)));
-            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_down_nanos)));
-            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_up_nanos)));
-            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_down)));
-            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_up)));
-            row.appendChild(simpleRowHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
-            row.appendChild(simpleRowHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.down_bps, plan.down)));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.up_bps, plan.up)));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_down_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_up_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_down)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_up)));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
             row.appendChild(simpleRow(scaleNumber(rowData.flow_count)));
 
             tbody.appendChild(row);
@@ -2003,18 +2003,18 @@ function renderTrafficTab() {
             row.style.opacity = toNumber(rowData.opacity, 1);
 
             row.appendChild(truncatedTrafficCell(rowData.protocol_name, "lqos-circuit-traffic-protocol-cell"));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.down_bps, plan.down)));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.up_bps, plan.up)));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.down_bps, plan.down)));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.up_bps, plan.up)));
             row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_down)));
             row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_up)));
             row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_down)));
             row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_up)));
-            row.appendChild(simpleRowHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
-            row.appendChild(simpleRowHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
-            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_down_nanos)));
-            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_up_nanos)));
-            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_down)));
-            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_up)));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_down_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_up_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_down)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_up)));
             row.appendChild(truncatedTrafficCell(rowData.asn_name, "lqos-circuit-traffic-asn-cell"));
             row.appendChild(truncatedTrafficCell(rowData.asn_country, "lqos-circuit-traffic-country-cell"));
             row.appendChild(simpleRow(rowData.remote_ip));
@@ -2161,7 +2161,10 @@ function initialDevices(circuits) {
 
         let name = document.createElement("h5");
         name.classList.add("redactable");
-        name.innerHTML = "<i class='fa fa-computer'></i> " + circuit.device_name;
+        const deviceIcon = document.createElement("i");
+        deviceIcon.classList.add("fa", "fa-computer");
+        name.appendChild(deviceIcon);
+        name.appendChild(document.createTextNode(` ${circuit.device_name ?? ""}`));
         d.appendChild(name);
 
         let infoTableWrap = document.createElement("div");
@@ -2181,7 +2184,7 @@ function initialDevices(circuits) {
         td.classList.add("table-value-cell");
         td.classList.add("redactable");
         td.colSpan = 2;
-        td.innerHTML = circuit.mac;
+        td.textContent = circuit.mac ?? "";
         tr.appendChild(td);
         tbody.appendChild(tr);
 
@@ -2194,7 +2197,7 @@ function initialDevices(circuits) {
         td = document.createElement("td");
         td.classList.add("table-value-cell");
         td.colSpan = 2;
-        td.innerHTML = circuit.comment;
+        td.textContent = circuit.comment ?? "";
         tr2.appendChild(td);
         tbody.appendChild(tr2);
 

@@ -1,4 +1,4 @@
-import {clearDiv, simpleRowHtml, theading} from "../helpers/builders";
+import {clearDiv, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/scaling";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
@@ -89,8 +89,8 @@ export class TopTreeSummary extends DashletBaseInsight {
                 const tpDown = toNumber(r[1].current_throughput[0], 0) * 8;
                 const tpUp = toNumber(r[1].current_throughput[1], 0) * 8;
                 const maxThroughput = effectiveMax(r[1]);
-                row.appendChild(simpleRowHtml(formatThroughput(tpDown, maxThroughput[0])));
-                row.appendChild(simpleRowHtml(formatThroughput(tpUp, maxThroughput[1])));
+                row.appendChild(simpleRowTrustedHtml(formatThroughput(tpDown, maxThroughput[0])));
+                row.appendChild(simpleRowTrustedHtml(formatThroughput(tpUp, maxThroughput[1])));
 
                 const tcpPacketsDown = retransmitPacketsForNode(r[1], 0);
                 const tcpPacketsUp = retransmitPacketsForNode(r[1], 1);
@@ -98,19 +98,19 @@ export class TopTreeSummary extends DashletBaseInsight {
                 const retransmitsUp = toNumber(r[1].current_retransmits[1], 0);
 
                 if (tcpPacketsDown > 0) {
-                    row.appendChild(simpleRowHtml(formatRetransmit(retransmitsDown / tcpPacketsDown)))
+                    row.appendChild(simpleRowTrustedHtml(formatRetransmit(retransmitsDown / tcpPacketsDown)))
                 } else {
-                    row.appendChild(simpleRowHtml(""));
+                    row.appendChild(simpleRowTrustedHtml(""));
                 }
                 if (tcpPacketsUp > 0) {
-                    row.appendChild(simpleRowHtml(formatRetransmit(retransmitsUp / tcpPacketsUp)))
+                    row.appendChild(simpleRowTrustedHtml(formatRetransmit(retransmitsUp / tcpPacketsUp)))
                 } else {
-                    row.appendChild(simpleRowHtml(""));
+                    row.appendChild(simpleRowTrustedHtml(""));
                 }
-                row.appendChild(simpleRowHtml(formatCakeStat(r[1].current_marks[0])))
-                row.appendChild(simpleRowHtml(formatCakeStat(r[1].current_marks[1])))
-                row.appendChild(simpleRowHtml(formatCakeStat(r[1].current_drops[0])))
-                row.appendChild(simpleRowHtml(formatCakeStat(r[1].current_drops[1])))
+                row.appendChild(simpleRowTrustedHtml(formatCakeStat(r[1].current_marks[0])))
+                row.appendChild(simpleRowTrustedHtml(formatCakeStat(r[1].current_marks[1])))
+                row.appendChild(simpleRowTrustedHtml(formatCakeStat(r[1].current_drops[0])))
+                row.appendChild(simpleRowTrustedHtml(formatCakeStat(r[1].current_drops[1])))
                 target.appendChild(row);
             });
         }
