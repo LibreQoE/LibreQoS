@@ -5,7 +5,7 @@ use crate::throughput_tracker::flow_data::{
 use crate::throughput_tracker::resolve_circuit_metadata_for_ip;
 use lqos_sys::flowbee_data::FlowbeeKey;
 use lqos_utils::units::DownUpOrder;
-use lqos_utils::unix_time::{time_since_boot, unix_now};
+use lqos_utils::unix_time::{TimeError, time_since_boot, unix_now};
 use serde::Serialize;
 use std::time::Duration;
 
@@ -38,16 +38,24 @@ pub struct FlowTimeline {
     pub remote_ip: String,
 }
 
-pub fn flow_timeline_data(asn_id: u32) -> Vec<FlowTimeline> {
-    let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
-    let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now()
-        .expect("failed to retrieve current unix time")
-        .saturating_sub(since_boot.as_secs());
+pub fn flow_timeline_data(asn_id: u32) -> Result<Vec<FlowTimeline>, TimeError> {
+    let boot_time = flow_timeline_boot_time()?;
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_asn(asn_id);
 
-    all_flows_to_transport(boot_time, all_flows_for_asn)
+    Ok(all_flows_to_transport(boot_time, all_flows_for_asn))
+}
+
+fn flow_timeline_boot_time() -> Result<u64, TimeError> {
+    flow_timeline_boot_time_from(|| time_since_boot().map(Duration::from), unix_now)
+}
+
+fn flow_timeline_boot_time_from(
+    since_boot: impl FnOnce() -> Result<Duration, TimeError>,
+    now: impl FnOnce() -> Result<u64, TimeError>,
+) -> Result<u64, TimeError> {
+    let since_boot = since_boot()?;
+    Ok(now()?.saturating_sub(since_boot.as_secs()))
 }
 
 fn all_flows_to_transport(
@@ -100,27 +108,39 @@ fn all_flows_to_transport(
         .collect::<Vec<_>>()
 }
 
-pub fn country_timeline_data(iso_code: &str) -> Vec<FlowTimeline> {
-    let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
-    let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now()
-        .expect("failed to retrieve current unix time")
-        .saturating_sub(since_boot.as_secs());
+pub fn country_timeline_data(iso_code: &str) -> Result<Vec<FlowTimeline>, TimeError> {
+    let boot_time = flow_timeline_boot_time()?;
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_country(iso_code);
 
-    all_flows_to_transport(boot_time, all_flows_for_asn)
+    Ok(all_flows_to_transport(boot_time, all_flows_for_asn))
 }
 
-pub fn protocol_timeline_data(protocol_name: &str) -> Vec<FlowTimeline> {
+pub fn protocol_timeline_data(protocol_name: &str) -> Result<Vec<FlowTimeline>, TimeError> {
     let protocol_name = protocol_name.replace("_", "/");
-    let time_since_boot = time_since_boot().expect("failed to retrieve time since boot");
-    let since_boot = Duration::from(time_since_boot);
-    let boot_time = unix_now()
-        .expect("failed to retrieve current unix time")
-        .saturating_sub(since_boot.as_secs());
+    let boot_time = flow_timeline_boot_time()?;
 
     let all_flows_for_asn = RECENT_FLOWS.all_flows_for_protocol(&protocol_name);
 
-    all_flows_to_transport(boot_time, all_flows_for_asn)
+    Ok(all_flows_to_transport(boot_time, all_flows_for_asn))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boot_time_helper_propagates_clock_errors() {
+        let result = flow_timeline_boot_time_from(|| Err(TimeError::ClockNotReady), || Ok(1_000));
+
+        assert!(matches!(result, Err(TimeError::ClockNotReady)));
+    }
+
+    #[test]
+    fn boot_time_helper_saturates_underflow() {
+        let boot_time = flow_timeline_boot_time_from(|| Ok(Duration::from_secs(20)), || Ok(10))
+            .expect("test clock values should build a boot time");
+
+        assert_eq!(boot_time, 0);
+    }
 }

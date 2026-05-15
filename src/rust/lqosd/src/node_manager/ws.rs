@@ -738,29 +738,31 @@ async fn receive_channel_message(
             }
         }
         WsRequest::AsnFlowTimeline { asn } => {
-            let response = WsResponse::AsnFlowTimeline {
-                asn,
-                data: flow_explorer::flow_timeline_data(asn),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::flow_timeline_data(asn)
+                .map(|data| WsResponse::AsnFlowTimeline { asn, data });
+            if send_flow_timeline_response(&tx, "ASN", response).await {
                 return true;
             }
         }
         WsRequest::CountryFlowTimeline { iso_code } => {
-            let response = WsResponse::CountryFlowTimeline {
-                iso_code: iso_code.clone(),
-                data: flow_explorer::country_timeline_data(&iso_code),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::country_timeline_data(&iso_code).map(|data| {
+                WsResponse::CountryFlowTimeline {
+                    iso_code: iso_code.clone(),
+                    data,
+                }
+            });
+            if send_flow_timeline_response(&tx, "country", response).await {
                 return true;
             }
         }
         WsRequest::ProtocolFlowTimeline { protocol } => {
-            let response = WsResponse::ProtocolFlowTimeline {
-                protocol: protocol.clone(),
-                data: flow_explorer::protocol_timeline_data(&protocol),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::protocol_timeline_data(&protocol).map(|data| {
+                WsResponse::ProtocolFlowTimeline {
+                    protocol: protocol.clone(),
+                    data,
+                }
+            });
+            if send_flow_timeline_response(&tx, "protocol", response).await {
                 return true;
             }
         }
@@ -2593,6 +2595,26 @@ fn maybe_schedule_lts_signup_shutdown(
 ) {
     if signup_ok && !close_connection {
         schedule_shutdown();
+    }
+}
+
+async fn send_flow_timeline_response(
+    tx: &Sender<Arc<Vec<u8>>>,
+    label: &str,
+    response: Result<WsResponse, lqos_utils::unix_time::TimeError>,
+) -> bool {
+    match response {
+        Ok(response) => send_ws_response(tx, response).await,
+        Err(err) => {
+            warn!("Unable to build {label} flow timeline: {err}");
+            send_ws_response(
+                tx,
+                WsResponse::Error {
+                    message: format!("Unable to build {label} flow timeline"),
+                },
+            )
+            .await
+        }
     }
 }
 

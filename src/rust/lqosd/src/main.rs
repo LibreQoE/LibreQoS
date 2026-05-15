@@ -1116,6 +1116,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetAsnFlowTimeline { asn } => {
                 let data = node_manager::flow_timeline_data(*asn)
+                    .unwrap_or_else(|err| {
+                        warn!("Unable to build ASN flow timeline: {err}");
+                        Vec::new()
+                    })
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
@@ -1123,6 +1127,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetCountryFlowTimeline { iso_code } => {
                 let data = node_manager::country_timeline_data(iso_code)
+                    .unwrap_or_else(|err| {
+                        warn!("Unable to build country flow timeline: {err}");
+                        Vec::new()
+                    })
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
@@ -1130,6 +1138,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetProtocolFlowTimeline { protocol } => {
                 let data = node_manager::protocol_timeline_data(protocol)
+                    .unwrap_or_else(|err| {
+                        warn!("Unable to build protocol flow timeline: {err}");
+                        Vec::new()
+                    })
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
