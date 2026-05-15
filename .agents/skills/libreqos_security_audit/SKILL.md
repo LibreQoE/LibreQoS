@@ -1,6 +1,6 @@
 ---
 name: libreqos_security_audit
-description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, bridged-interface/eBPF malformed-traffic review, panic/error-handling/type-loss review, node_manager privacy/auth/XSS review, and audit-file findings updates.
+description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, bridged-interface/eBPF malformed-traffic review, panic/error-handling/type-loss review, node_manager privacy/auth/XSS review, executive-summary/conclusion grading, and audit-file findings updates.
 ---
 
 # LibreQoS Security Audit
@@ -8,8 +8,9 @@ description: Repo-local LibreQoS workflow for release security audit passes. Use
 Use this skill for recurring LibreQoS security audit passes in this repo. It
 covers the Rust dependency baseline, network control-plane exposure review,
 bridged-interface/eBPF malformed-traffic review, and panic/error-handling/type
-loss review, and node_manager privacy/auth/XSS review. Use additional focused
-checks for Python, packaging, live-host configuration, secrets, and
+loss review, node_manager privacy/auth/XSS review, and final executive-summary
+wrap-up. Use additional focused checks for Python, packaging, live-host
+configuration, secrets, and
 authentication flows outside these scopes.
 
 ## Scope
@@ -405,6 +406,50 @@ The audit-file section must include:
 - A short localStorage/sessionStorage/cookie note, even when no sensitive
   localStorage token is found.
 - No placeholders, no `...`, and no unresolved `<angle-bracket>` tokens.
+
+## Step 6: Audit Introduction, Executive Summary, Conclusion, and Grade
+
+Use this step after the requested audit sections have enough findings to
+summarize. Keep the write-up brief enough for release planning while preserving
+the concrete evidence in the detailed sections below.
+
+At the beginning of the audit file, add:
+
+- `Introduction`: the audit date, overall scope, what was static-only, and major
+  exclusions such as Linux/Ubuntu vulnerabilities, live firewall state, or
+  deployment-specific controls not visible in the checkout.
+- `Executive summary`: bullet points that signal the actionable issues found
+  later in the document. Include the highest-risk findings, non-findings that
+  matter to release confidence, and the recommended fix priority.
+- An overall letter grade from `A` to `F`. Use the grade as a concise release
+  posture signal, not as a substitute for findings.
+
+At the end of the audit file, add:
+
+- `Conclusion`: restate the overall grade and explain the security posture in a
+  balanced way.
+- Call out what LibreQoS is doing right, such as dependency health, auth layers,
+  TLS/Caddy direction, redaction of secrets, verifier-conscious eBPF bounds
+  checks, or any other strengths actually found in the detailed sections.
+- Call out what needs work, prioritizing concrete risk over volume of findings.
+- Keep recommendations aligned with the detailed findings. Do not introduce new
+  unsupported claims in the conclusion.
+
+Suggested grading rubric:
+
+- `A`: No confirmed high-impact release issues, strong auth/session boundaries,
+  validated input handling, and only minor hardening items remain.
+- `B`: Good foundations with a few bounded, actionable hardening issues.
+- `C`: Acceptable foundations, but multiple actionable issues remain in
+  control-plane, WebUI, privacy, panic/DoS, or observability paths.
+- `D`: Security-critical issues are likely reachable or broad auth/privacy
+  boundaries are missing.
+- `F`: Known unauthenticated compromise, widespread secret exposure, or a
+  release-blocking vulnerability with no mitigation.
+
+The introduction, executive summary, and conclusion must not contain
+placeholders, speculative certainty, or findings that are absent from the body of
+the audit.
 
 ## Validation
 

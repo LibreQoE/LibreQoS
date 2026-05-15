@@ -1,3 +1,44 @@
+## Introduction
+
+This audit is a basic pre-release security review of LibreQoS as of
+2026-05-15. It focuses on dependency advisories, Rust dependency hygiene,
+control-plane exposure, bridged-interface and eBPF malformed-traffic handling,
+panic/error/type-loss paths, and Node Manager privacy, authentication, and XSS
+risk.
+
+The review is static unless a section explicitly says otherwise. It does not
+cover Ubuntu/Linux distribution vulnerabilities, live firewall state, NIC driver
+behavior, or private deployment-specific controls that are not visible in this
+checkout.
+
+## Executive summary
+
+- Overall grade: **C**. LibreQoS has several strong security foundations, but
+  the current release state includes multiple actionable control-plane and WebUI
+  issues that should be fixed or explicitly risk-accepted before release.
+- No CVE-class Rust dependency vulnerability was confirmed as reachable during
+  the dependency audit. A `rand` soundness advisory remains reachability unknown,
+  and one likely unused dependency should be removed.
+- The Caddy/TLS path is generally well-directed for the WebUI, but the sibling
+  API service can still bind directly on all interfaces, malformed bearer headers
+  can panic API authentication, WebUI/local API CORS is too broad, and WebUI
+  login lacks rate limiting.
+- The eBPF packet parsers show good verifier-conscious bounds checking for
+  common encapsulation paths, but malformed traffic can still create operational
+  DoS or visibility loss through packet-rate debug logging, IPv4 fragment/header
+  edge cases, and non-LRU map exhaustion.
+- The panic/type-loss review found request-time panic paths and unchecked numeric
+  narrowing that can lose operational data in queue stats and NetFlow export.
+- Node Manager has the highest concentration of release-relevant WebUI risk:
+  anonymous/read-only paths can retrieve raw subscriber and topology data,
+  operator-controlled strings reach `innerHTML`, the session cookie is readable
+  by JavaScript, and read-only users can write dashboard themes that can become
+  stored XSS.
+- Recommended release priority is to first fix WebUI XSS/session-cookie exposure,
+  server-side anonymization for anonymous/demo mode, API direct-listener/TLS
+  bypass risk, malformed auth-header panic, and production packet-path debug
+  logging.
+
 ## Rust dependency audit
 
 Date: 2026-05-15
@@ -1003,3 +1044,31 @@ Recommended actions:
   credentials there, but interface names, VLANs, and operation IDs are
   operationally sensitive on shared browsers. Prefer `sessionStorage` or clear
   these keys on logout, confirm, and rollback.
+
+## Conclusion
+
+Overall security grade: **C**.
+
+LibreQoS is not starting from a bad place. The review found no confirmed
+reachable CVE-class Rust dependency issue, the managed Caddy setup moves the
+intended WebUI path toward loopback-backed TLS, Node Manager has a real
+authentication/role model, eBPF packet parsing uses many explicit `data_end`
+checks and bounded encapsulation loops, and several sensitive admin config values
+are already redacted before they reach the browser. Those are meaningful
+strengths, and they reduce the chance that the next release ships with a simple
+dependency or parser-memory-safety failure.
+
+The weaknesses are concentrated around control-plane hardening and browser trust
+boundaries. The biggest current risks are WebUI stored/DOM XSS, a JavaScript
+readable session token, raw PII exposure in anonymous/read-only demo paths, an
+API direct-listener path that can bypass the intended Caddy/TLS route if exposed,
+request-time panics on malformed or stale inputs, and packet-path behavior that
+can lose observability or consume CPU under malformed/high-cardinality bridged
+traffic.
+
+The release posture should be: acceptable foundations, but not yet polished
+security hygiene. Fixing the Node Manager XSS/session/anonymization issues and
+the API/control-plane panic/listener issues would move the project materially
+toward a **B**. Addressing the eBPF map-pressure/debug-logging findings, adding
+rate limiting, and cleaning up numeric type-loss paths would make the security
+state much more comfortable for routine release cadence.
