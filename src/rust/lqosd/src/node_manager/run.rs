@@ -84,7 +84,11 @@ pub async fn spawn_webserver(
         .fallback_service(ServeDir::new(static_path));
 
     info!("Webserver listening on: [{listen_address}]");
-    axum::serve(listener, router).await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
