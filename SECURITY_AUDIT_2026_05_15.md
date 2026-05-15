@@ -781,3 +781,225 @@ Recommended actions:
   The sampled paths are shaping-input tolerance or planner-weight fallback
   behavior. They should be cleaned up for diagnosability, but I did not find a
   concrete security impact in this stage.
+
+## Node Manager privacy, auth, and XSS audit
+
+Date: 2026-05-15
+
+Scope:
+
+- Node Manager HTTP routing, static page routing, auth/session handling,
+  websocket request handling, local API data providers, frontend source under
+  `src/rust/lqosd/src/node_manager/js_build/src/`, and the templated static HTML
+  shell.
+- Generated bundles, vendored JavaScript, static images, and source maps were
+  excluded from detailed XSS review unless a source file pointed to the behavior.
+- This was a static source review. No browser exploit proof-of-concept was run.
+
+Review searches:
+
+- `rg -n "localStorage|sessionStorage|document\.cookie|innerHTML|outerHTML|insertAdjacentHTML|eval\(|Function\(|onclick=|onerror=|sanitize|DOMPurify|redact|redaction|redactable|allow_anonymous|auth_layer|route_layer|LoginResult|ReadOnly|Admin|Denied" src/rust/lqosd/src/node_manager docs/v2.0`
+- `rg -n 'innerHTML\s*=.*(\+|`)|simpleRowHtml\(|href=.*\+|data-[^=]+=|textContent|innerText' src/rust/lqosd/src/node_manager/js_build/src --glob '*.js'`
+- `rg -n "ShapedDevice|network_json|CircuitById|AllShapedDevices|NetworkJson|Search|UnknownIps|CircuitDirectory|device_name|circuit_name|mac|ipv4|ipv6|comment" src/rust/lqosd/src/node_manager`
+
+### Summary
+
+- Four confirmed findings are listed below: raw PII exposure in anonymous/read-only
+  surfaces, multiple DOM XSS sinks for operator/customer fields, JS-readable
+  session cookies, and dashboard-theme writes/XSS reachable by read-only users.
+- I did not find a websocket path that serves data before the handshake completes:
+  the server sends `Hello`, requires `HelloReply`, rejects denied tokens, and
+  closes on other pre-handshake messages.
+- Static HTML pages and `/local-api/*` are routed through `auth_layer`. The
+  fallback static file server remains a hardening concern, but the reviewed
+  current `static2` files are static assets or pages already listed in the
+  authenticated router.
+- No session token or API key was found in `localStorage`. The higher-risk browser
+  storage issue is that the session cookie is readable by JavaScript so the
+  websocket client can copy it into the handshake.
+
+### Findings
+
+#### Anonymous/read-only mode exposes raw subscriber and topology data without server-side anonymization
+
+Paths:
+
+- `src/rust/lqos_config/src/authentication.rs:487`
+- `src/rust/lqos_config/src/authentication.rs:498`
+- `src/rust/lqosd/src/node_manager/auth.rs:421`
+- `src/rust/lqosd/src/node_manager/auth.rs:431`
+- `src/rust/lqosd/src/node_manager/ws.rs:2199`
+- `src/rust/lqosd/src/node_manager/ws.rs:2207`
+- `src/rust/lqosd/src/node_manager/local_api/config.rs:528`
+- `src/rust/lqosd/src/node_manager/local_api/config.rs:541`
+- `src/rust/lqosd/src/node_manager/local_api/shaped_devices_page.rs:118`
+- `src/rust/lqosd/src/node_manager/local_api/shaped_devices_page.rs:123`
+- `src/rust/lqosd/src/node_manager/local_api/shaped_devices_page.rs:131`
+- `docs/v2.0/components.md:123`
+- `docs/v2.0/components.md:126`
+- `src/rust/lqosd/src/node_manager/js_build/src/helpers/redact.js:48`
+
+Short description:
+
+The documented anonymous option grants unauthenticated users `ReadOnly` access.
+Read-only websocket requests include raw `network.json` and all shaped devices.
+Those payloads include circuit names/IDs, device names/IDs, parent node names,
+MACs, comments, and IPv4/IPv6 addresses. The current redaction feature is a
+client-side display blur/font mode, documented as not modifying source data.
+
+Exposure / threat:
+
+Anonymous read-only mode is intended for demos, but demos are exactly where PII
+redaction matters. Anyone who can reach a node with anonymous mode enabled can
+request raw payloads directly over the websocket, regardless of whether the UI
+redaction toggle is on. Read-only authenticated users also receive the same raw
+data, so redaction is not a privacy boundary.
+
+Recommended actions:
+
+- Add a server-side anonymized/demo payload mode for anonymous access. Replace
+  subscriber/circuit/device names, IDs, IPs, MACs, and comments before sending
+  websocket responses.
+- Consider field-level filtering for normal `ReadOnly` users where full
+  subscriber/device identifiers are not needed.
+- Keep browser redaction as a screenshot tool, but do not rely on it for public
+  demo privacy.
+- Add tests that anonymous mode cannot retrieve raw `AllShapedDevices`,
+  `NetworkJson`, circuit search, or circuit detail identifiers.
+
+#### Operator-controlled names reach `innerHTML` without escaping
+
+Paths:
+
+- `src/rust/lqosd/src/node_manager/js_build/src/template.js:797`
+- `src/rust/lqosd/src/node_manager/js_build/src/template.js:799`
+- `src/rust/lqosd/src/node_manager/js_build/src/template.js:801`
+- `src/rust/lqosd/src/node_manager/js_build/src/circuit.js:2164`
+- `src/rust/lqosd/src/node_manager/js_build/src/dashlets/top10_downloaders.js:97`
+- `src/rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_downloaders.js:97`
+- `src/rust/lqosd/src/node_manager/js_build/src/dashlets/worst10_retransmits.js:101`
+- `src/rust/lqosd/src/node_manager/js_build/src/config_users.js:101`
+- `src/rust/lqosd/src/node_manager/js_build/src/config_users.js:104`
+- `src/rust/lqosd/src/node_manager/js_build/src/helpers/builders.js:45`
+
+Short description:
+
+Several frontend paths concatenate circuit names, device names, site names,
+dashboard/user fields, or other operator-controlled values into `innerHTML`. Some
+nearby code has local `escapeHtml` helpers, but these sinks do not consistently
+use them. `simpleRowHtml` is a reusable helper that writes its argument directly
+to `td.innerHTML`.
+
+Exposure / threat:
+
+Circuit/device/site names can come from operator files or external integrations.
+A malicious or compromised integration record containing HTML can execute script
+when a user searches, opens a circuit page, views dashboard top lists, or opens
+the user management page. Because the WebUI controls shaping and configuration,
+stored XSS should be treated as a control-plane compromise path, not a cosmetic
+bug.
+
+Recommended actions:
+
+- Replace these sinks with DOM construction and `textContent` for untrusted text.
+  Keep icons as separately created `<i>` elements.
+- Ban `simpleRowHtml` for untrusted data. Use `simpleRow` or an escaped helper
+  with a name that makes trust explicit.
+- Escape attribute values separately from text nodes and validate URL protocols
+  before assigning links.
+- Add frontend tests or a small DOM fixture using a circuit name like
+  `<img src=x onerror=alert(1)>` to confirm it renders as text everywhere.
+
+#### WebUI session token is readable by JavaScript and copied into websocket auth
+
+Paths:
+
+- `src/rust/lqosd/src/node_manager/auth.rs:266`
+- `src/rust/lqosd/src/node_manager/auth.rs:269`
+- `src/rust/lqosd/src/node_manager/js_build/src/pubsub/ws.js:66`
+- `src/rust/lqosd/src/node_manager/js_build/src/pubsub/ws.js:78`
+
+Short description:
+
+The `User-Token` session cookie is created with `SameSite=Lax`, but it is not
+marked `HttpOnly` or `Secure`. The frontend websocket client reads
+`document.cookie` and sends the session token in the websocket handshake.
+
+Exposure / threat:
+
+Any XSS in Node Manager can read and exfiltrate the signed session token. That
+turns DOM injection into session theft, and an admin session can perform
+configuration and shaping actions. `Secure` should also be set when the Caddy/TLS
+option is active so the browser will not send the cookie over plain HTTP.
+
+Recommended actions:
+
+- Move websocket authentication to the server-side `Cookie` header during the
+  upgrade, or issue a short-lived websocket nonce that is not the durable session
+  token.
+- Set `HttpOnly` on the session cookie once the websocket no longer needs
+  JavaScript cookie access.
+- Set `Secure` whenever Node Manager is served through HTTPS/Caddy, with a
+  documented local-development exception if needed.
+- Add an XSS regression test that verifies the session token is not available via
+  `document.cookie`.
+
+#### Read-only websocket users can write dashboard themes, enabling stored XSS
+
+Paths:
+
+- `src/rust/lqosd/src/node_manager/ws.rs:354`
+- `src/rust/lqosd/src/node_manager/ws.rs:371`
+- `src/rust/lqosd/src/node_manager/ws.rs:378`
+- `src/rust/lqosd/src/node_manager/local_api/dashboard_themes.rs:35`
+- `src/rust/lqosd/src/node_manager/local_api/dashboard_themes.rs:60`
+- `src/rust/lqosd/src/node_manager/local_api/dashboard_themes.rs:97`
+- `src/rust/lqosd/src/node_manager/js_build/src/lq_js_common/dashboard/dashboard.js:1024`
+
+Short description:
+
+The websocket dashboard-theme save/get/delete handlers do not check for
+`LoginResult::Admin`. `dashboard_themes` only normalizes `/` and `\` in the theme
+filename, stores the provided `name`, and later returns it for display. The saved
+layout list writes `d.name` into `innerHTML`.
+
+Exposure / threat:
+
+Any authenticated read-only user, and any anonymous user when demo mode is
+enabled, can save a dashboard layout with a malicious name. When an admin or
+operator opens the saved-layout picker, that name can execute as stored XSS and
+steal the JS-readable session token described above.
+
+Recommended actions:
+
+- Require `LoginResult::Admin` for `DashletSave` and `DashletDelete`, or document
+  and constrain why read-only users should be allowed to write shared layouts.
+- Escape `d.name` when rendering saved layouts, preferably with `textContent`.
+- Validate dashboard theme names server-side with an allowlist of printable
+  characters and a length limit.
+- Add websocket tests for read-only denial and an XSS fixture for saved layout
+  names.
+
+### Hardening observations / not findings
+
+- `src/rust/lqosd/src/node_manager/ws.rs:311` through
+  `src/rust/lqosd/src/node_manager/ws.rs:329` require the websocket `HelloReply`
+  before processing normal requests. This review did not find a pre-handshake
+  data response.
+- `src/rust/lqosd/src/node_manager/static_pages.rs:114` through
+  `src/rust/lqosd/src/node_manager/static_pages.rs:117` apply auth and templates
+  to the listed HTML pages, and `src/rust/lqosd/src/node_manager/local_api.rs:66`
+  applies `auth_layer` to `/local-api`. `src/rust/lqosd/src/node_manager/run.rs:85`
+  still has an unauthenticated fallback `ServeDir`; keep it restricted to static
+  assets and avoid adding data files or unlisted HTML pages under `static2`.
+- `src/rust/lqosd/src/node_manager/local_api/config.rs:341` through
+  `src/rust/lqosd/src/node_manager/local_api/config.rs:349` require admin access
+  and redact integration secrets before returning the main config view.
+- `src/rust/lqosd/src/node_manager/js_build/src/config_interface.js:4`,
+  `src/rust/lqosd/src/node_manager/js_build/src/config_interface.js:5`,
+  `src/rust/lqosd/src/node_manager/js_build/src/config_interface.js:376`, and
+  `src/rust/lqosd/src/node_manager/js_build/src/config_interface.js:424` store
+  network-mode drafts and pending operation IDs in `localStorage`. I did not find
+  credentials there, but interface names, VLANs, and operation IDs are
+  operationally sensitive on shared browsers. Prefer `sessionStorage` or clear
+  these keys on logout, confirm, and rollback.
