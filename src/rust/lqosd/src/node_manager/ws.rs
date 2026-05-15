@@ -38,8 +38,8 @@ use axum::{
         WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderMap, StatusCode, header},
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode, Uri, header},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -203,7 +203,12 @@ async fn ws_handler(
     Extension(probe_client): Extension<ProbeClient>,
     Extension(shaper_query): Extension<Sender<ShaperQueryCommand>>,
     headers: HeaderMap,
-) -> impl IntoResponse {
+) -> Response {
+    if !websocket_origin_allowed(&headers) {
+        warn!("Rejected websocket upgrade with cross-origin Origin header");
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     let has_cookie = headers.contains_key(header::COOKIE);
     let user_agent = headers
         .get(header::USER_AGENT)
@@ -236,6 +241,39 @@ async fn ws_handler(
         )
         .await;
     })
+    .into_response()
+}
+
+fn websocket_origin_allowed(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    else {
+        return true;
+    };
+
+    let Some(host) = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    else {
+        return false;
+    };
+
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    let Some(scheme) = uri.scheme_str() else {
+        return false;
+    };
+    if scheme != "http" && scheme != "https" {
+        return false;
+    }
+
+    uri.authority()
+        .map(|authority| authority.as_str().eq_ignore_ascii_case(host))
+        .unwrap_or(false)
 }
 
 async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
@@ -2713,12 +2751,13 @@ mod tests {
     use super::{
         can_write_dashboard_themes, decode_ws_request, maybe_schedule_lts_signup_shutdown,
         run_topology_manager_blocking_with_timeout, run_topology_manager_mutation_blocking,
+        websocket_origin_allowed,
     };
     use crate::node_manager::auth::LoginResult;
     use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
     use crate::node_manager::ws::messages::WsRequest;
     use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
-    use axum::http::StatusCode;
+    use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
     use serde_cbor::Value as CborValue;
     use std::collections::BTreeMap;
     use std::sync::{
@@ -2977,11 +3016,51 @@ mod tests {
         entries.contains_key(&text("request_id"))
     }
 
+    fn origin_headers(host: &str, origin: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_str(host).unwrap());
+        if let Some(origin) = origin {
+            headers.insert(header::ORIGIN, HeaderValue::from_str(origin).unwrap());
+        }
+        headers
+    }
+
     #[test]
     fn read_only_websocket_users_cannot_write_dashboard_themes() {
         assert!(can_write_dashboard_themes(LoginResult::Admin));
         assert!(!can_write_dashboard_themes(LoginResult::ReadOnly));
         assert!(!can_write_dashboard_themes(LoginResult::Denied));
+    }
+
+    #[test]
+    fn websocket_origin_allows_same_origin_and_non_browser_clients() {
+        assert!(websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("https://node.example.test:9123")
+        )));
+        assert!(websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            None
+        )));
+    }
+
+    #[test]
+    fn websocket_origin_rejects_cross_origin_and_invalid_origin() {
+        assert!(!websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("https://evil.example.test")
+        )));
+        assert!(!websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("null")
+        )));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://node.example.test:9123"),
+        );
+        assert!(!websocket_origin_allowed(&headers));
     }
 
     #[test]
