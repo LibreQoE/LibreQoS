@@ -17,8 +17,9 @@ checkout.
   the current release state includes multiple actionable control-plane and WebUI
   issues that should be fixed or explicitly risk-accepted before release.
 - No CVE-class Rust dependency vulnerability was confirmed as reachable during
-  the dependency audit. A `rand` soundness advisory remains reachability unknown,
-  and one likely unused dependency should be removed.
+  the dependency audit. The `rand` soundness advisory has been remediated by
+  updating the locked 0.8 dependency line to `rand 0.8.6`, and one likely unused
+  dependency should be removed.
 - The Caddy/TLS path is generally well-directed for the WebUI, but the sibling
   API service can still bind directly on all interfaces, malformed bearer headers
   can panic API authentication, WebUI/local API CORS is too broad, and WebUI
@@ -51,14 +52,22 @@ Commands run:
 - `cargo audit`
 - `cargo machete`
 - `cargo tree --locked --workspace --depth 1`
+- `cargo update -p rand@0.8.5 --precise 0.8.6`
+- `cargo tree --locked -p lqosd -e features`
+- `cargo check -p lqos_probe -p lqosd`
 
 ### Summary
 
 - `cargo audit` scanned 549 locked crate dependencies.
 - No CVE-class vulnerability was reported.
-- One `rand` soundness advisory is present in the locked graph. Current repo
-  usage touches affected APIs, but the full advisory trigger path was not found.
-  Reachability is recorded as unknown rather than confirmed.
+- The previous `rand` soundness advisory no longer appears in `cargo audit`
+  after updating `rand 0.8.5` to `rand 0.8.6`.
+- Direct `rand` imports now disable default features and re-enable only `std`
+  and `std_rng`, which are required for the current `thread_rng` and `random`
+  calls. The resolved graph still enables `rand/default` through upstream
+  `tungstenite` and `cookie` dependencies, so feature minimization is limited
+  to LibreQoS' direct imports unless those upstream crates are patched or
+  upgraded.
 - `cargo machete` found one likely unused dependency: `tokio` in
   `lqos_network_devices`.
 - The remaining `cargo audit` warnings were maintenance-only notices and are
@@ -66,20 +75,22 @@ Commands run:
 
 ### Dependency findings and triage notes
 
-#### Reachability unknown: RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc `rand` soundness advisory
+#### Resolved: RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc `rand` soundness advisory
 
 Paths importing or using the affected dependency/API:
 
-- `src/rust/lqosd/Cargo.toml` imports `rand = "0.8.5"`.
+- `src/rust/lqosd/Cargo.toml` imports
+  `rand = { version = "0.8.6", default-features = false, features = ["std", "std_rng"] }`.
 - `src/rust/lqosd/src/node_manager/auth.rs` uses
   `rand::thread_rng().fill_bytes(...)` for session-key generation.
 - `src/rust/lqosd/src/node_manager/ws/single_user_channels.rs` uses
   `rand::random::<u64>()` for chatbot request IDs.
-- `src/rust/lqos_probe/Cargo.toml` imports `rand = "0.8.5"`.
+- `src/rust/lqos_probe/Cargo.toml` imports
+  `rand = { version = "0.8.6", default-features = false, features = ["std", "std_rng"] }`.
 - `src/rust/lqos_probe/src/lib.rs` uses `rand::random` for ICMP ping IDs.
 - `src/rust/lqosd/Cargo.toml` also imports `tungstenite`,
   `tokio-tungstenite`, and `axum-extra`, which appear in the `cargo audit`
-  dependency tree above `rand 0.8.5`.
+  dependency tree above `rand 0.8.6`.
 
 Short description:
 
@@ -90,16 +101,14 @@ reseeding while called from the logger. LibreQoS has affected API calls, but the
 audit did not find a custom `log::Log` implementation or `log::set_logger` path
 in `src/rust/`, so the full trigger path was not found.
 
-Recommended actions:
+Remediation:
 
-- Update direct `rand` usage to a patched release line, or replace the direct
-  session-key generation path with an OS RNG API such as `rand_core::OsRng` /
-  `getrandom`.
-- After updating, run `cargo update -p rand --precise 0.8.6` if staying on
-  the `0.8` line, then `cargo audit` and focused checks for `lqosd` and
-  `lqos_probe`.
-- Keep this as a release-tracked follow-up, but do not block release solely on
-  the advisory unless a custom logger path is introduced or discovered.
+- Updated the locked 0.8 line with
+  `cargo update -p rand@0.8.5 --precise 0.8.6`.
+- Minimized LibreQoS' direct `rand` feature requests to `std` and `std_rng`.
+- Re-ran `cargo audit`; the `rand` advisory is no longer reported.
+- Re-ran `cargo check -p lqos_probe -p lqosd`; both crates compile with the
+  updated dependency.
 
 #### Unused dependency: `tokio` in `lqos_network_devices`
 

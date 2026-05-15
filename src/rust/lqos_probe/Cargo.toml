@@ -11,5 +11,5 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 lqos_config = { path = "../lqos_config" }
-rand = "0.8.5"
+rand = { version = "0.8.6", default-features = false, features = ["std", "std_rng"] }
 surge-ping = "0.8.1"
