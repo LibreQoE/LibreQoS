@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::lts2_sys::control_channel::ControlChannelCommand;
-use crate::node_manager::auth::{LoginResult, login_from_token};
+use crate::node_manager::auth::{LoginResult, login_from_cookie_header};
 use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
     ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
@@ -65,6 +65,16 @@ static TOPOLOGY_MANAGER_READ_PERMITS: Lazy<Arc<Semaphore>> =
     Lazy::new(|| Arc::new(Semaphore::new(1)));
 static TOPOLOGY_MANAGER_BLOCKING_PERMITS: Lazy<Arc<Semaphore>> =
     Lazy::new(|| Arc::new(Semaphore::new(1)));
+
+struct WsUpgradeContext {
+    channels: Arc<PubSub>,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
+    probe_client: ProbeClient,
+    shaper_query: Sender<ShaperQueryCommand>,
+    browser_language: Option<String>,
+    login: LoginResult,
+}
 
 async fn send_control_command(
     control_tx: &tokio::sync::mpsc::Sender<ControlChannelCommand>,
@@ -205,30 +215,41 @@ async fn ws_handler(
         .get(header::ACCEPT_LANGUAGE)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
+    let login = login_from_cookie_header(
+        headers
+            .get(header::COOKIE)
+            .and_then(|value| value.to_str().ok()),
+    )
+    .await;
     ws.on_upgrade(move |socket| async move {
         handle_socket(
             socket,
-            channels,
-            bus_tx,
-            control_tx,
-            probe_client,
-            shaper_query,
-            browser_language,
+            WsUpgradeContext {
+                channels,
+                bus_tx,
+                control_tx,
+                probe_client,
+                shaper_query,
+                browser_language,
+                login,
+            },
         )
         .await;
     })
 }
 
-async fn handle_socket(
-    socket: WebSocket,
-    channels: Arc<PubSub>,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
-    probe_client: ProbeClient,
-    shaper_query: Sender<ShaperQueryCommand>,
-    browser_language: Option<String>,
-) {
+async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
     info!("Websocket connected");
+
+    let WsUpgradeContext {
+        channels,
+        bus_tx,
+        control_tx,
+        probe_client,
+        shaper_query,
+        browser_language,
+        mut login,
+    } = context;
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -244,7 +265,6 @@ async fn handle_socket(
     });
     let mut subscribed_channels = HashSet::new();
     let mut handshake_complete = false;
-    let mut login = LoginResult::Denied;
     let handshake_timeout =
         tokio::time::sleep(std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS));
     tokio::pin!(handshake_timeout);
@@ -392,13 +412,10 @@ async fn receive_channel_message(
                 warn!("Websocket handshake ack mismatch");
                 return true;
             }
-            let token = reply.token.trim();
-            let login_result = login_from_token(token).await;
-            if login_result == LoginResult::Denied {
-                warn!("Websocket handshake token rejected");
+            if *request_state.login == LoginResult::Denied {
+                warn!("Websocket handshake cookie rejected");
                 return true;
             }
-            *request_state.login = login_result;
             *handshake_complete = true;
             info!("Websocket handshake completed");
             return false;

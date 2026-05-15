@@ -1,8 +1,8 @@
 import { Encoder, decode } from "../lq_js_common/helpers/cbor-x";
+import { websocketHelloReply } from "./ws_auth.mjs";
 
 const ACK_TEXT = "I accept that this is an unstable, internal API and is unsupported";
 const EXPECTED_UI_VERSION = (window.LQOS_UI_VERSION || "").trim() || null;
-const USER_TOKEN_COOKIE = "User-Token";
 const VERSION_RELOAD_KEY = "lqosWsVersionReload";
 const encoder = new Encoder({ useRecords: false, variableMapSize: true });
 const DIAGNOSTIC_CHANNELS = new Set(["Cpu", "Ram", "RttHistogram"]);
@@ -61,22 +61,6 @@ function dashboardWsInteresting(event, channels = [], details = {}) {
         channels: interesting,
         ...details,
     });
-}
-
-function get_cookie_value(name) {
-    const cookies = document.cookie ? document.cookie.split(";") : [];
-    const prefix = `${name}=`;
-    for (let i = 0; i < cookies.length; i++) {
-        const entry = cookies[i].trim();
-        if (entry.startsWith(prefix)) {
-            return decodeURIComponent(entry.slice(prefix.length));
-        }
-    }
-    return "";
-}
-
-function get_user_token() {
-    return get_cookie_value(USER_TOKEN_COOKIE);
 }
 
 function versionReloadKey(serverVersion) {
@@ -419,12 +403,7 @@ export class WsClient {
         dashboardWsDebug("handshake-complete", {
             desiredChannels: Array.from(this.desiredChannels.keys()),
         });
-        if (!this._sendControl({
-            HelloReply: {
-                ack: ACK_TEXT,
-                token: get_user_token(),
-            },
-        })) {
+        if (!this._sendControl(websocketHelloReply(ACK_TEXT))) {
             return;
         }
         const pending = this.pending;
