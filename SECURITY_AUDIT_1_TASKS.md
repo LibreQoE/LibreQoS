@@ -266,6 +266,8 @@ Done when:
 
 ### 10. Close the audit with repeatable evidence
 
+Status: Done. The branch now has repeatable Rust, frontend, dependency, and eBPF-load evidence recorded below; remaining risks are compatibility or maintenance items that are accepted for this release branch.
+
 Why:
 
 The final A grade should be based on proof, not just code inspection.
@@ -281,6 +283,31 @@ Work:
 Done when:
 
 - The branch has an evidence-backed security summary that explains why the remaining risks are accepted for an A grade.
+
+## Security Branch Evidence Summary
+
+The following checks were run on 2026-05-15:
+
+- `cargo test -p lqos_setup ssl -- --nocapture`: passed, including managed Caddy loopback and API-service restart coverage.
+- `cargo check -p lqos_setup`: passed.
+- `cargo clippy -p lqos_setup -- -D warnings`: passed.
+- `src/rust/lqosd/src/node_manager/js_build/test-node-manager.sh`: passed 7 frontend tests, rebuilt bundles, and verified the Node Manager build contract.
+- `cargo check -p lqosd -p lqos_sys -p lqos_setup`: passed.
+- `cargo clippy -p lqosd -p lqos_sys -p lqos_setup -- -D warnings`: passed.
+- `cargo test -p lqos_sys bpf_packet_policy -- --nocapture`: passed 4 malformed-packet policy tests.
+- `cargo audit`: passed with 4 allowed unmaintained-crate warnings: `bincode`, `fxhash`, transitive `paste`, and `serde_cbor`.
+- `cargo machete`: passed with no unused dependencies reported.
+- `cargo tree -p lqosd -i serde_cbor`: passed and confirms `serde_cbor` remains part of the current LTS2/Insight-compatible protocol surface.
+- `git diff --check`: passed.
+- Runtime eBPF load validation: confirmed by operator on 2026-05-15 with no verifier validation errors.
+
+Accepted release risks:
+
+- `serde_cbor` remains in place for LTS2/Insight compatibility. Replacing it would require a coordinated protocol migration on the other end, which is explicitly out of scope for this branch.
+- `bincode`, `fxhash`, and transitive `paste` are tracked as maintenance items. `cargo audit` reports them as unmaintained warnings, not active vulnerability failures, and replacing them is deferred unless the migration is small and separately tested.
+- The eBPF malformed-traffic policy intentionally passes IPv6 first extension headers and fragments unshaped rather than expanding the hot-path parser. That keeps verifier/code-size risk bounded while avoiding unsafe lookup/flow-tracking behavior.
+- The Content-Security-Policy still allows required inline scripts/styles because the current Node Manager templates use small inline boot/theme snippets and inline layout styles. The policy otherwise keeps scripts self-hosted, blocks framing, and preserves the existing WebUI/API-docs/Insight tile requirements.
+- Managed Caddy deployments are the assumed secure exposure path. `LQOS_API_LISTEN` is documented as an advanced override that should remain unset on managed Caddy systems unless direct API exposure is intentional and separately protected.
 
 ## Deferred Unless Time Allows
 
