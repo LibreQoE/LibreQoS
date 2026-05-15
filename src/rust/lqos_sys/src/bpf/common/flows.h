@@ -113,7 +113,7 @@ struct flow_data_t {
 // This is pinned and not per-CPU, because half the data appears on either side of the bridge.
 struct
 {
-    __uint(type, BPF_MAP_TYPE_HASH); // TODO: BPF_MAP_TYPE_LRU_PERCPU_HASH?
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __type(key, struct flow_key_t);
     __type(value, struct flow_data_t);
     __uint(max_entries, MAX_FLOWS);
@@ -637,6 +637,14 @@ static __always_inline void track_flows(
             out_mapping->circuit_id = ip_info->circuit_id;
             out_mapping->device_id = ip_info->device_id;
         }
+    }
+
+    // Do not create flowbee entries for traffic that does not map to a shaped
+    // circuit. This keeps spoofed or otherwise untracked traffic from churning
+    // the bounded LRU map.
+    if (!data && out_mapping->tc_handle == 0) {
+        apply_stick_offset_to_mapping(direction, out_mapping);
+        return;
     }
 
     u_int8_t rate_index;
