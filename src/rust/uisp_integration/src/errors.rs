@@ -23,4 +23,6 @@ pub enum UispIntegrationError {
     WriteCircuitAnchors,
     #[error("Bad IP")]
     BadIp,
+    #[error("Bad IP range: {0}")]
+    BadIpRange(String),
 }

@@ -2,6 +2,7 @@ use crate::ip_ranges::IpRanges;
 use lqos_config::{Config, EthernetPortLimitPolicy, usable_ethernet_cap_mbps};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use tracing::warn;
 use uisp::Device;
 
 #[derive(Debug)]
@@ -531,6 +532,18 @@ impl UispDevice {
         Some(addr.to_string())
     }
 
+    fn permitted_ip_entry(ip_ranges: &IpRanges, ip: &str) -> bool {
+        let Some(addr) = ip
+            .split('/')
+            .next()
+            .and_then(|addr| addr.parse::<IpAddr>().ok())
+        else {
+            warn!("Ignoring malformed UISP device IP address '{ip}'");
+            return false;
+        };
+        ip_ranges.is_permitted(addr)
+    }
+
     /// Creates a new UispDevice from a UISP device
     ///
     /// # Arguments
@@ -687,18 +700,8 @@ impl UispDevice {
         }
 
         // Remove IP addresses that are disallowed
-        ipv4.retain(|ip| {
-            let split: Vec<_> = ip.split('/').collect();
-            //let subnet: u8 = split[1].parse().unwrap();
-            let addr: IpAddr = split[0].parse().unwrap();
-            ip_ranges.is_permitted(addr)
-        });
-        ipv6.retain(|ip| {
-            let split: Vec<_> = ip.split('/').collect();
-            //let subnet: u8 = split[1].parse().unwrap();
-            let addr: IpAddr = split[0].parse().unwrap();
-            ip_ranges.is_permitted(addr)
-        });
+        ipv4.retain(|ip| Self::permitted_ip_entry(ip_ranges, ip));
+        ipv6.retain(|ip| Self::permitted_ip_entry(ip_ranges, ip));
 
         // Handle any "exception CPE" entries
         let mut site_id = device.get_site_id().unwrap_or_default();
