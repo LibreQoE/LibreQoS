@@ -160,6 +160,8 @@ Done when:
 
 ### 6. Expand malformed-traffic coverage without growing the hot path recklessly
 
+Status: Done. IPv6 first extension headers/fragments now fail open before lookup or flow tracking on both XDP and TC fallback paths; direct IPv6 TCP/UDP remains lookup-eligible, stacked MPLS policy is covered by fixtures, the fragment policy is documented, focused and full `lqos_sys` tests/check/clippy passed, and eBPF load validation passed on 2026-05-15.
+
 Why:
 
 The branch fixed IPv4 header length, total length, version, and fragment handling, but the audit still points at IPv6 extension headers, IPv6 fragments, MPLS parser coverage, and fragment policy. Full parser expansion may be too expensive for XDP, so the task should be conservative.

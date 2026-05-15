@@ -82,6 +82,11 @@ struct pppoe_proto
 #define IPV4_MIN_IHL_BYTES 20
 #define IPV4_MORE_FRAGMENTS 0x2000
 #define IPV4_FRAGMENT_OFFSET_MASK 0x1FFF
+#define IPV6_NEXTHDR_HOP_BY_HOP 0
+#define IPV6_NEXTHDR_ROUTING 43
+#define IPV6_NEXTHDR_FRAGMENT 44
+#define IPV6_NEXTHDR_AUTHENTICATION 51
+#define IPV6_NEXTHDR_DESTINATION_OPTIONS 60
 
 // Representation of an MPLS label
 struct mpls_label
@@ -196,6 +201,21 @@ static __always_inline bool ipv4_is_complete_unfragmented(struct iphdr *iph, voi
     return true;
 }
 
+static __always_inline bool ipv6_next_header_passes_unshaped(__u8 next_header)
+{
+    switch (next_header)
+    {
+    case IPV6_NEXTHDR_HOP_BY_HOP:
+    case IPV6_NEXTHDR_ROUTING:
+    case IPV6_NEXTHDR_FRAGMENT:
+    case IPV6_NEXTHDR_AUTHENTICATION:
+    case IPV6_NEXTHDR_DESTINATION_OPTIONS:
+        return true;
+    }
+
+    return false;
+}
+
 // Locates the layer-3 offset, if present. Fast returns for various
 // common non-IP types. Will perform VLAN redirection if requested.
 static __always_inline bool dissector_find_l3_offset(
@@ -293,7 +313,6 @@ static __always_inline bool dissector_find_l3_offset(
         }
         break;
 
-        // WARNING/TODO: Here be dragons; this needs testing.
         case ETH_P_MPLS_UC:
         case ETH_P_MPLS_MC:
         {
@@ -499,9 +518,15 @@ static __always_inline bool dissector_find_ip_header(
         dissector->ip_header.ip6h = dissector->start + dissector->l3offset;
         if (dissector->ip_header.iph + 1 > dissector->end)
             return false;
+        __u8 next_header = dissector->ip_header.ip6h->nexthdr;
+        // IPv6 extension chains and fragments are intentionally fail-open here.
+        // A bounded parser can be added later, but the hot path must not create
+        // flow state from headers whose transport ports are not directly present.
+        if (ipv6_next_header_passes_unshaped(next_header))
+            return false;
         encode_ipv6(&dissector->ip_header.ip6h->saddr, &dissector->src_ip);
         encode_ipv6(&dissector->ip_header.ip6h->daddr, &dissector->dst_ip);
-        dissector->ip_protocol = dissector->ip_header.ip6h->nexthdr;
+        dissector->ip_protocol = next_header;
         dissector->tos = dissector->ip_header.ip6h->flow_lbl[0]; // Is this right?
         if (!snoop(dissector))
             return false;

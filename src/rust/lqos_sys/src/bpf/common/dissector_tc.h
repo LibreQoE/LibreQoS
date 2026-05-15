@@ -143,7 +143,6 @@ static __always_inline bool tc_dissector_find_l3_offset(
         }
         break;
 
-        // WARNING/TODO: Here be dragons; this needs testing.
         case ETH_P_MPLS_UC:
         case ETH_P_MPLS_MC: {
             if SKB_OVERFLOW_OFFSET(dissector->start, dissector-> end,
@@ -212,6 +211,8 @@ static __always_inline bool tc_dissector_find_ip_header(
         }
         dissector->ip_header.ip6h = dissector->start + dissector->l3offset;
         if (dissector->ip_header.iph + 1 > dissector->end)
+            return false;
+        if (ipv6_next_header_passes_unshaped(dissector->ip_header.ip6h->nexthdr))
             return false;
         encode_ipv6(&dissector->ip_header.ip6h->saddr, &dissector->src_ip);
         encode_ipv6(&dissector->ip_header.ip6h->daddr, &dissector->dst_ip);

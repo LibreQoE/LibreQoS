@@ -8,6 +8,8 @@
 
 #![deny(clippy::unwrap_used)]
 mod bifrost_maps;
+#[cfg(test)]
+mod bpf_packet_policy;
 mod bpf_iterator;
 /// Provides direct access to LibBPF functionality, as exposed by the
 /// built-in, compiled eBPF programs. This is very-low level and should
