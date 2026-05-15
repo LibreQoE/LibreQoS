@@ -29,6 +29,11 @@ import {CakeDrops} from "./graphs/cake_drops";
 import {QueuingActivityWaveform} from "./graphs/queuing_activity_waveform";
 import {getNodeIdMap, linkToTreeNode} from "./executive_utils";
 import {loadConfig} from "./config/config_helper";
+import {
+    appendRedactableText,
+    setIconText,
+    setPacketCaptureDownloadButton,
+} from "./circuit_packet_capture_dom.mjs";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
@@ -58,6 +63,7 @@ let excludeRttLastValue = false;
 let excludeRttBusy = false;
 let latestCakeMsg = null;
 let cakeGraphs = null;
+
 let cakeQueueUnavailable = false;
 let queueStatsMode = "live";
 let circuitSqmOverride = "";
@@ -2501,7 +2507,7 @@ function wireupAnalysis(circuits) {
     listBtn.id = "CaptureTopBtn";
     listBtn.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
     listBtn.setAttribute("data-bs-toggle", "dropdown");
-    listBtn.innerHTML = "<i class='fa fa-search'></i> Packet Capture";
+    setIconText(listBtn, ["fa", "fa-search"], "Packet Capture");
     list.appendChild(listBtn);
 
     let listUl = document.createElement("ul");
@@ -2510,8 +2516,9 @@ function wireupAnalysis(circuits) {
         let entry = document.createElement("li");
         let item = document.createElement("a");
         item.classList.add("dropdown-item");
-        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from <span class='redactable'>" + ip[0] + "</span>";
         let address = ip[0]; // For closure capture
+        setIconText(item, ["fa", "fa-search"], "Capture packets from ");
+        appendRedactableText(item, address);
         item.onclick = () => {
             //console.log("Clicky " + address);
             listenOnce("RequestAnalysisResult", (msg) => {
@@ -2525,13 +2532,13 @@ function wireupAnalysis(circuits) {
                 let sessionId = okData.session_id;
                 let btn = document.getElementById("CaptureTopBtn");
                 btn.disabled = true;
-                btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
+                setIconText(btn, ["fa", "fa-spinner", "fa-spin"], "Capturing Packets (" + counter + ")");
                 let interval = setInterval(() => {
                     counter--;
                     if (counter === -1) {
                         clearInterval(interval);
                         btn.disabled = false;
-                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for <span class='redactable'>" + address + "</span>";
+                        setPacketCaptureDownloadButton(btn, address);
                         btn.classList.remove("btn-secondary");
                         btn.classList.add("btn-success");
                         btn.onclick = () => {
@@ -2546,7 +2553,7 @@ function wireupAnalysis(circuits) {
                         }
                         return;
                     }
-                    btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
+                    setIconText(btn, ["fa", "fa-spinner", "fa-spin"], "Capturing Packets (" + counter + ")");
                 }, 1000);
             });
             wsClient.send({ RequestAnalysis: { ip: address } });
