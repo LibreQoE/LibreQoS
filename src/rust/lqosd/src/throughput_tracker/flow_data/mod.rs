@@ -6,6 +6,7 @@ mod flow_analysis;
 mod flow_tracker;
 mod netflow5;
 mod netflow9;
+mod netflow_common;
 
 use crate::throughput_tracker::flow_data::{
     flow_analysis::FinishedFlowAnalysis, netflow5::Netflow5, netflow9::Netflow9,

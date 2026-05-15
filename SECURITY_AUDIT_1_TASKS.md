@@ -44,6 +44,8 @@ Done when:
 
 ### 2. Clamp and warn on all remaining 32-bit telemetry narrowing
 
+Status: Done. NetFlow 9 timestamps and LTS2/Insight client-side telemetry conversions now clamp with warnings while preserving current wire field widths; focused Rust tests and `cargo check -p lqosd` passed on 2026-05-15.
+
 Why:
 
 The update audit still calls out NetFlow 9 timestamps and LTS2 stats submission counters that narrow wider values without a documented clamp. This is not an unauthenticated exploit, but A-grade security should avoid silent wraparound in operational telemetry.
