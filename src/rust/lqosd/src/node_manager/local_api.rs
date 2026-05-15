@@ -37,7 +37,6 @@ use crate::node_manager::auth::auth_layer;
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
-use tower_http::cors::CorsLayer;
 
 pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
@@ -62,6 +61,5 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
         .route("/ssl/disable", post(ssl::disable))
         .with_state(network_mode::NetworkModeApiState::default())
         .layer(Extension(shaper_query))
-        .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

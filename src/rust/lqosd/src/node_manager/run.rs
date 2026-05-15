@@ -18,7 +18,6 @@ use lqos_probe::ProbeClient;
 use std::path::Path;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
-use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
 
@@ -82,8 +81,7 @@ pub async fn spawn_webserver(
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)
         .nest("/local-api", local_api(shaper_tx))
-        .fallback_service(ServeDir::new(static_path))
-        .layer(CorsLayer::very_permissive());
+        .fallback_service(ServeDir::new(static_path));
 
     info!("Webserver listening on: [{listen_address}]");
     axum::serve(listener, router).await?;
