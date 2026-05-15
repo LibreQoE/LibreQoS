@@ -523,3 +523,261 @@ Recommended actions:
   and uses a bounded in-process queue with coalesced wakeups.
 - Runtime packet fuzzing, pinned-map occupancy checks, and live bridge-interface
   reachability were not performed in this stage.
+
+## Panic, error-handling, and type-loss audit
+
+Date: 2026-05-15
+
+Scope:
+
+- Runtime Rust under `src/rust/`, current Python entrypoints under `src/`, and
+  sibling `../../lqos_api/src/` because the API is deployed behind Caddy.
+- Tests, generated output, vendored bindings, and historical Python copies were
+  excluded unless a runtime path referenced them.
+- This was a static source review. No live service, XDP/TC attach-detach, or
+  packet replay was performed.
+
+Review searches:
+
+- `rg -n "\bpanic!\(|\.unwrap\(|\.expect\(|unreachable!\(|todo!\(|unimplemented!\(|assert!\(|from_raw_parts|transmute|unsafe \{|as (u8|u16|u32|usize|i8|i16|i32|f32)|unwrap_or_default\(|except Exception|except:|pass$" src/rust src --glob '*.py' ../../lqos_api/src`
+- `rg -n "as u32|as u16|as f32|partial_cmp\(.*\)\.unwrap|to_str\(\)\.unwrap|parse\(\)\.unwrap|try_into\(\)\.unwrap" src/rust ../../lqos_api/src`
+- `rg -n "except Exception|except:|pass$|sys.exit|int\(|float\(" src --glob '*.py' --glob '!LibreQoS-old.py' --glob '!LibreQoS-ancient.py' --glob '!LibreQoS.py.new'`
+
+### Summary
+
+- Four confirmed findings are listed below: one authenticated request-time panic,
+  one request/websocket error-handling panic pattern, one queue-stat type-loss
+  issue, and one NetFlow export type-loss issue.
+- Two reachability-unknown hardening items are listed separately: API bandwidth
+  float narrowing and RTT percentile sorting on floats.
+- The malformed `x-bearer` panic at `../../lqos_api/src/web_security.rs:32` was
+  already recorded in the network control-plane section and is not duplicated as
+  a new finding here.
+- I did not find a confirmed memory-unsafe unsoundness issue in the reviewed
+  runtime paths. The high-volume unsafe hits were mostly FFI wrappers, generated
+  libbpf bindings, or callbacks that check event size before `from_raw_parts`.
+
+### Findings
+
+#### Authenticated packet-capture download can panic on missing capture file
+
+Paths:
+
+- `src/rust/lqosd/src/node_manager/local_api.rs:44`
+- `src/rust/lqosd/src/node_manager/local_api/packet_analysis.rs:29`
+- `src/rust/lqosd/src/node_manager/local_api/packet_analysis.rs:35`
+
+Short description:
+
+The authenticated `/local-api/pcapDump/:id` route calls
+`n_second_pcap(id).expect(...)` and later `ServeFile::try_call(...).expect(...)`.
+An invalid, expired, or removed packet-capture session can panic the request task
+instead of returning a normal HTTP error.
+
+Exposure / threat:
+
+This route is behind the WebUI auth layer, so it is not an unauthenticated remote
+panic. A logged-in user, stale browser request, or automation using an old capture
+ID can still trigger request-time failure on the control plane. If the panic
+poisons shared state in the surrounding server path, the blast radius could be
+larger than one failed download.
+
+Recommended actions:
+
+- Return `404 Not Found` or `410 Gone` when `n_second_pcap(id)` cannot resolve a
+  capture file.
+- Convert `ServeFile::try_call` errors into a bounded `5xx` response and log the
+  underlying path/error once.
+- Add a focused route test for a missing capture ID and for a removed capture
+  file.
+
+#### Flow-explorer websocket handlers panic when time sources fail
+
+Paths:
+
+- `src/rust/lqosd/src/node_manager/local_api/flow_explorer.rs:42`
+- `src/rust/lqosd/src/node_manager/local_api/flow_explorer.rs:45`
+- `src/rust/lqosd/src/node_manager/local_api/flow_explorer.rs:104`
+- `src/rust/lqosd/src/node_manager/local_api/flow_explorer.rs:107`
+- `src/rust/lqosd/src/node_manager/local_api/flow_explorer.rs:117`
+- `src/rust/lqosd/src/node_manager/local_api/flow_explorer.rs:120`
+- `src/rust/lqosd/src/node_manager/ws.rs:665`
+- `src/rust/lqosd/src/node_manager/ws.rs:674`
+- `src/rust/lqosd/src/node_manager/ws.rs:683`
+
+Short description:
+
+The flow-explorer timeline builders use `expect(...)` on `time_since_boot()` and
+`unix_now()`. These functions are called from websocket message handlers for ASN,
+country, and protocol timelines.
+
+Exposure / threat:
+
+The direct trigger is an operating-system time retrieval failure, not attacker
+controlled input. Still, once the condition exists, any authenticated websocket
+request for these timeline views can panic instead of returning an empty/error
+payload. This is incorrect request-time error handling on a control-plane feature.
+
+Recommended actions:
+
+- Return `Result<Vec<FlowTimeline>, Error>` from the timeline builders and send a
+  structured websocket error when the clock calls fail.
+- Reuse a small helper that computes boot time once with explicit logging.
+- Add a focused unit test for the transport conversion path and a websocket test
+  for the error response if the time helper is injectable.
+
+#### Queue tracker silently narrows kernel qdisc counters
+
+Paths:
+
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_cake.rs:102`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_cake.rs:117`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_cake.rs:187`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_cake.rs:198`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_cake.rs:206`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_fq_codel.rs:61`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_fq_codel.rs:62`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_htb.rs:49`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_htb.rs:50`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_mq.rs:37`
+- `src/rust/lqos_queue_tracker/src/queue_types/tc_mq.rs:38`
+
+Short description:
+
+The qdisc JSON parsers read `tc -s -j` values as `u64` and then cast many packet,
+drop, backlog, flow, and memory counters to `u32` or `u16` with `as`. Rust's
+integer narrowing casts wrap modulo the destination type, so large counters can
+silently become smaller values.
+
+Exposure / threat:
+
+Busy shapers can exceed 32-bit packet/drop counters during normal operation. A
+traffic flood can make this happen faster. Wrapped queue stats can hide drops,
+mislead capacity and QoE views, and produce incorrect data for downstream
+operator or Insight decisions. This is data loss rather than memory corruption.
+
+Recommended actions:
+
+- Keep kernel counters as `u64` through the queue tracker, bus messages, API
+  serialization, and UI consumers unless the kernel field is truly bounded.
+- Where a protocol/UI contract must stay narrower, use `try_from` with explicit
+  clamp-and-warn behavior instead of unchecked `as` casts.
+- Add qdisc parser fixtures with values above `u32::MAX` and `u16::MAX`.
+
+#### NetFlow 5 export can wrap flow counts, byte counts, and timestamps
+
+Paths:
+
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/mod.rs:69`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:83`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:84`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:85`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:86`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:96`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:97`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:119`
+- `src/rust/lqosd/src/throughput_tracker/flow_data/netflow5/protocol.rs:120`
+
+Short description:
+
+The NetFlow 5 exporter narrows accumulator length, packet counters, byte counters,
+and nanosecond timestamps to `u16` or `u32` with unchecked casts. One direction
+converts timestamps to milliseconds before narrowing; the reverse record narrows
+nanoseconds directly.
+
+Exposure / threat:
+
+NetFlow export is optional, but when enabled it can silently emit wrapped or
+inconsistent accounting for long-lived or high-throughput flows. External
+collectors may then undercount traffic, mis-order flow times, or make billing and
+abuse-analysis decisions from corrupted export records.
+
+Recommended actions:
+
+- Split NetFlow batches before the record count exceeds the protocol limit and
+  avoid unchecked `usize -> u16` casts.
+- Convert timestamps consistently to the expected NetFlow units before narrowing.
+- For NetFlow 5's inherently 32-bit fields, clamp with a warning or emit delta
+  records before counters exceed protocol capacity.
+- Prefer NetFlow 9/IPFIX-style export for counters that need wider fields.
+
+### Reachability unknown / hardening items
+
+#### API site-speed changes narrow unbounded `f64` request values to `f32`
+
+Paths:
+
+- `../../lqos_api/src/api/network_json.rs:126`
+- `../../lqos_api/src/api/network_json.rs:127`
+- `../../lqos_api/src/api/network_json.rs:128`
+- `../../lqos_api/src/api/network_json.rs:129`
+- `../../lqos_api/src/api/network_json.rs:230`
+- `../../lqos_api/src/api/network_json.rs:234`
+- `../../lqos_api/src/api/network_json.rs:237`
+- `../../lqos_api/src/api/network_json.rs:241`
+- `../../lqos_api/src/api/network_json.rs:711`
+- `../../lqos_api/src/api/network_json.rs:714`
+- `../../lqos_api/src/api/network_json.rs:717`
+- `../../lqos_api/src/api/network_json.rs:720`
+
+Short description:
+
+The API accepts site-speed values as `Option<f64>`, writes them into
+`network.json`, and then narrows values to `f32` for live bus commands and queue
+mapping reads. The reviewed code did not show finite/range validation before the
+narrowing casts.
+
+Exposure / threat:
+
+The route is bearer-authenticated, so this is not unauthenticated input. A
+credentialed caller can submit extremely large or nonsensical bandwidth values
+that round or become non-finite when narrowed, depending on downstream handling.
+The live command path may then diverge from the JSON value. I did not verify
+whether downstream bus receivers reject these values.
+
+Recommended actions:
+
+- Validate site-speed request values as finite, positive, and within explicit
+  LibreQoS-supported Mbps bounds before writing JSON or sending live commands.
+- Keep one numeric type across API, config, bus, and bakery code where practical.
+- Add API tests for huge, negative, zero, fractional, and boundary bandwidth
+  values.
+
+#### API transit conversion can panic if RTT samples contain NaN
+
+Path:
+
+- `../../lqos_api/src/transit_types.rs:389`
+
+Short description:
+
+`NetworkJsonTransit::from` sorts RTT samples with
+`partial_cmp(...).unwrap()`. `partial_cmp` returns `None` for NaN, which makes the
+conversion panic if a NaN reaches the RTT vector.
+
+Exposure / threat:
+
+The current in-repo RTT producers reviewed here mostly derive RTT values from
+durations, which should be finite. I did not find a clear external input path to
+inject NaN into this vector, so this is marked reachability unknown. If a NaN
+does enter the telemetry state, several API endpoints that serialize
+`NetworkJsonTransit` can panic while preparing a response.
+
+Recommended actions:
+
+- Filter non-finite RTT samples before sorting, or sort with `f32::total_cmp`.
+- Add a small conversion test with `[10.0, f32::NAN]` to prove the API response
+  path does not panic.
+
+### Observations / not findings
+
+- `../../lqos_api/src/web_security.rs:32` remains a confirmed malformed-header
+  panic, but it was already recorded in the network control-plane audit section.
+- Unsafe callback paths such as `src/rust/lqos_heimdall/src/perf_interface.rs:70`
+  through `src/rust/lqos_heimdall/src/perf_interface.rs:77` check event size
+  before creating a byte slice. This is not counted as a new unsoundness finding.
+- Broad Python exception handling exists in runtime files, including
+  `src/LibreQoS.py:2361`, `src/LibreQoS.py:2364`, and `src/LibreQoS.py:2549`.
+  The sampled paths are shaping-input tolerance or planner-weight fallback
+  behavior. They should be cleaned up for diagnosability, but I did not find a
+  concrete security impact in this stage.
