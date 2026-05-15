@@ -1,15 +1,15 @@
 ---
 name: libreqos_security_audit
-description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, and audit-file findings updates.
+description: Repo-local LibreQoS workflow for release security audit passes. Use when auditing LibreQoS with cargo audit, cargo machete, cargo tree, CVE triage, network control-plane exposure review, bridged-interface/eBPF malformed-traffic review, and audit-file findings updates.
 ---
 
 # LibreQoS Security Audit
 
 Use this skill for recurring LibreQoS security audit passes in this repo. It
-covers the Rust dependency baseline and the network control-plane exposure
-review. Use additional focused checks for Python, packaging, live-host
-configuration, secrets, and authentication flows outside the control-plane
-scope.
+covers the Rust dependency baseline, network control-plane exposure review, and
+bridged-interface/eBPF malformed-traffic review. Use additional focused checks
+for Python, packaging, live-host configuration, secrets, and authentication
+flows outside these scopes.
 
 ## Scope
 
@@ -210,6 +210,55 @@ The audit-file section must include:
 - A separate observations / not-findings subsection for open listeners or public
   docs that are intentional and not vulnerable by themselves.
 - No placeholders, no `...`, and no unresolved `<angle-bracket>` tokens.
+
+## Step 3: Bridged Interface / eBPF Malformed-Traffic Audit
+
+Use this step when the audit turns to bridged interfaces and the eBPF datapath.
+This step is about malformed-packet handling, DoS, map exhaustion, ring-buffer
+backpressure, packet-rate debug logging, and userspace handling of eBPF events.
+It is not about the control interface.
+
+Review these BPF-specific surfaces first:
+
+```text
+src/rust/lqos_sys/src/bpf/lqos_kern.c
+src/rust/lqos_sys/src/bpf/common/debug.h
+src/rust/lqos_sys/src/bpf/common/dissector.h
+src/rust/lqos_sys/src/bpf/common/dissector_tc.h
+src/rust/lqos_sys/src/bpf/common/flows.h
+src/rust/lqos_sys/src/bpf/common/heimdall.h
+src/rust/lqos_sys/src/bpf/common/lpm.h
+src/rust/lqos_sys/src/bpf/common/throughput.h
+src/rust/lqos_sys/src/bpf/common/maximums.h
+src/rust/lqos_sys/src/lqos_kernel.rs
+src/rust/lqosd/src/throughput_tracker/
+src/rust/lqos_heimdall/src/
+```
+
+Use this search as the starting point:
+
+```text
+rg "bpf_debug\\(|frag_off|ihl|tot_len|doff|BPF_MAP_TYPE_HASH|BPF_MAP_TYPE_PERCPU_HASH|BPF_MAP_TYPE_LRU|MAX_FLOWS|MAX_TRACKED_IPS|bpf_ringbuf_output|bpf_probe_read_kernel|data_end|SKB_OVERFLOW|metadata|queue_mapping" src/rust/lqos_sys/src src/rust/lqosd/src/throughput_tracker src/rust/lqos_heimdall/src
+```
+
+For each packet path, identify the concrete behavior for:
+
+- malformed Ethernet, VLAN, PPPoE, MPLS, IPv4, IPv6, TCP, UDP, and ICMP input
+- IPv4 `ihl`, total length, and fragmentation checks before L4 parsing
+- IPv6 extension headers and fragments
+- bounded-loop limits for stacked headers and TCP options
+- unshaped or spoofed traffic creating pinned-map entries
+- map type, max entries, LRU behavior, and insert-failure behavior
+- `bpf_trace_printk` / `bpf_debug` calls reachable from bridged traffic
+- ring-buffer size checks, backpressure, drop counters, and userspace panics
+- metadata paths where malformed packets can become unexpected drops
+
+Count a finding when malformed, spoofed, or high-cardinality traffic can cause
+packet-rate expensive work, non-LRU map exhaustion, bogus flow/RTT/retransmit
+state, unexpected packet drops, userspace panic, or unreported loss of capture
+events. Do not count verifier-enforced memory safety, unknown non-IP traffic
+that merely fails open, or untested live reachability claims as findings by
+themselves.
 
 ## Validation
 
