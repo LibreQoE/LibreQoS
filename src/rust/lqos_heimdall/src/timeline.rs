@@ -1,7 +1,7 @@
 use crate::{
     HeimdallMode, SESSION_EXPIRE_SECONDS, TIMELINE_EXPIRE_SECS, heimdall_watch_ip,
     pcap::{PcapFileHeader, PcapPacketHeader},
-    perf_interface::{HeimdallEvent, PACKET_OCTET_SIZE},
+    perf_interface::HeimdallEvent,
     set_heimdall_mode,
 };
 use dashmap::{DashMap, DashSet};
@@ -189,12 +189,7 @@ pub fn n_second_pcap(session_id: usize) -> Option<String> {
                 info!("Unable to write to {filename}: {:?}", err);
                 return None;
             }
-            if e.size < PACKET_OCTET_SIZE as u32 {
-                if let Err(err) = out.write_all(&e.packet_data[0..e.size as usize]) {
-                    info!("Unable to write to {filename}: {:?}", err);
-                    return None;
-                }
-            } else if let Err(err) = out.write_all(&e.packet_data) {
+            if let Err(err) = out.write_all(e.packet_bytes()) {
                 info!("Unable to write to {filename}: {:?}", err);
                 return None;
             }

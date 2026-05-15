@@ -97,6 +97,14 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
 {
     if (mode == 2) {
         struct heimdall_event event = {0};
+        __u32 captured_size = size;
+        if (captured_size > PACKET_OCTET_SIZE) {
+            captured_size = PACKET_OCTET_SIZE;
+        }
+        if (captured_size == 0) {
+            return;
+        }
+
         event.timetamp = dissector->now;
         event.src = dissector->src_ip;
         event.dst = dissector->dst_ip;
@@ -104,19 +112,20 @@ static __always_inline void update_heimdall(struct dissector_t *dissector, __u32
         event.dst_port = dissector->dst_port;
         event.ip_protocol = dissector->ip_protocol;
         event.tos = dissector->tos;
-        event.size = size;
+        event.size = captured_size;
         event.tcp_flags = dissector->tcp_flags;
         event.tcp_window = dissector->window;
         event.tsval = dissector->tsval;
         event.tsecr = dissector->tsecr;
-        //if (size > PACKET_OCTET_SIZE) size = PACKET_OCTET_SIZE;
-        bpf_probe_read_kernel(&event.dump, PACKET_OCTET_SIZE, dissector->start);
-        bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
+
+        int err = bpf_probe_read_kernel(&event.dump, captured_size, dissector->start);
+        if (err != 0) {
+            return;
+        }
+
+        err = bpf_ringbuf_output(&heimdall_events, &event, sizeof(event), 0);
+        if (err != 0) {
+            return;
+        }
     }
-    
-    // Commented out because we don't really care - some will be missed
-    // during very heavy load.
-    //if (err != 0) {
-    //    bpf_debug("Failed to send perf event %d", err);
-    //}
 }

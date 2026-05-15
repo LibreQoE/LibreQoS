@@ -276,6 +276,7 @@ as `LibreQoS-old.py` unless the user explicitly puts them in scope.
 ```text
 rg -n "\\bpanic!\\(|\\.unwrap\\(|\\.expect\\(|unreachable!\\(|todo!\\(|unimplemented!\\(|assert!\\(|from_raw_parts|transmute|unsafe \\{|as (u8|u16|u32|usize|i8|i16|i32|f32)|unwrap_or_default\\(|except Exception|except:|pass$" src/rust src --glob '*.py' ../../lqos_api/src
 rg -n "as u32|as u16|as f32|partial_cmp\\(.*\\)\\.unwrap|to_str\\(\\)\\.unwrap|parse\\(\\)\\.unwrap|try_into\\(\\)\\.unwrap" src/rust ../../lqos_api/src
+rg -n "let _ =|\\.ok\\(\\)|\\.err\\(\\)|if .*\\.is_err\\(\\)|if .*\\.is_ok\\(\\)|bpf_(ringbuf_output|probe_read_kernel|probe_read|map_update_elem|map_delete_elem|seq_write)\\([^;]*\\);" src/rust src --glob '*.py' ../../lqos_api/src
 rg -n "except Exception|except:|pass$|sys.exit|int\\(|float\\(" src --glob '*.py' --glob '!LibreQoS-old.py' --glob '!LibreQoS-ancient.py' --glob '!LibreQoS.py.new'
 ```
 
@@ -297,6 +298,9 @@ Count a finding when evidence supports one of these:
 - malformed input can poison or permanently break shared runtime state
 - error handling silently continues with a different shaping, auth, or telemetry
   result that an operator would not see
+- a fallible BPF helper, filesystem/network write, IPC send, service-control
+  operation, or parser result is ignored where failure can hide packet drops,
+  stale runtime state, failed telemetry, or incomplete control-plane changes
 - numeric conversion narrows kernel counters, flow counters, bandwidth values, or
   timestamps in a way that can wrap, saturate unexpectedly, become non-finite, or
   otherwise lose operational data

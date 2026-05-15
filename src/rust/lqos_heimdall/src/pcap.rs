@@ -40,11 +40,30 @@ pub(crate) struct PcapPacketHeader {
 impl PcapPacketHeader {
     pub(crate) fn from_heimdall(event: &HeimdallEvent) -> Self {
         let timestamp_nanos = Duration::from_nanos(event.timestamp);
+        let captured_len = event.captured_len() as u32;
         Self {
             ts_sec: timestamp_nanos.as_secs() as u32,
             ts_usec: timestamp_nanos.subsec_micros(),
-            inc_len: u32::min(PACKET_OCTET_SIZE as u32, event.size),
-            orig_len: event.size,
+            inc_len: captured_len,
+            orig_len: captured_len,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packet_header_uses_captured_len() {
+        let event = HeimdallEvent {
+            size: PACKET_OCTET_SIZE as u32 + 1,
+            ..Default::default()
+        };
+
+        let header = PcapPacketHeader::from_heimdall(&event);
+
+        assert_eq!(header.inc_len, PACKET_OCTET_SIZE as u32);
+        assert_eq!(header.orig_len, PACKET_OCTET_SIZE as u32);
     }
 }
