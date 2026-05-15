@@ -196,7 +196,7 @@ static __always_inline bool tc_dissector_find_ip_header(
                 return false;
         }
         dissector->ip_header.iph = dissector->start + dissector->l3offset;
-        if (dissector->ip_header.iph + 1 > dissector->end) {
+        if (!ipv4_is_complete_unfragmented(dissector->ip_header.iph, dissector->end)) {
             return false;
         }
         encode_ipv4(dissector->ip_header.iph->saddr, &dissector->src_ip);
