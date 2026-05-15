@@ -32,11 +32,17 @@ impl QueueNetwork {
         }
         let raw_string =
             std::fs::read_to_string(path).map_err(|_| QueueStructureError::FileNotFound)?;
+        let json: Value = serde_json::from_str(&raw_string).map_err(|err| {
+            error!("Unable to parse JSON for queueStructure: {err}");
+            QueueStructureError::JsonError
+        })?;
+        Self::from_value(&json)
+    }
+
+    pub(crate) fn from_value(json: &Value) -> Result<Self, QueueStructureError> {
         let mut result = Self {
             cpu_node: Vec::new(),
         };
-        let json: Value =
-            serde_json::from_str(&raw_string).map_err(|_| QueueStructureError::FileNotFound)?;
         if let Value::Object(map) = &json {
             if let Some(network) = map.get("Network") {
                 if let Value::Object(map) = network {

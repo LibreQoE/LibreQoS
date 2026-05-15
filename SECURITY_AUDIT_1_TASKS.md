@@ -99,6 +99,8 @@ Done when:
 
 ### 4. Remove panic and silent-failure paths on operator-controlled inputs
 
+Status: Done. UISP subnet/device IP parsing now reports malformed data without panicking, malformed queue snapshots return parse errors, Heimdall/BPF/socket cleanup failures are logged, and XDP/TC detach fallbacks report failures while continuing; focused tests, compile checks, and clippy passed on 2026-05-15.
+
 Why:
 
 DeepSeek found several low-to-medium reliability/security issues where malformed operator files, imported API data, or cleanup failures panic or silently hide an operational failure. These are not direct remote compromise vectors, but they are exactly the sort of hardening work that separates a B from an A.

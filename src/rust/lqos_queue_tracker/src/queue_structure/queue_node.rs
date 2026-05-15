@@ -64,60 +64,52 @@ macro_rules! grab_u64 {
 /// correctly.
 macro_rules! grab_tc_handle {
     ($target: expr, $key: expr, $value: expr) => {
-        let s = $value.as_str();
-        if s.is_none() {
-            error!("Unable to parse {:?} as a string from JSON", s);
+        let Some(s) = $value.as_str() else {
+            error!("Unable to parse {:?} as a string from JSON", $value);
             return Err(QueueStructureError::StringParse(format!("{:?}", $value)));
-        }
-        let s = s.unwrap();
-        let tmp = TcHandle::from_string(s);
-        if tmp.is_err() {
+        };
+        let Ok(handle) = TcHandle::from_string(s) else {
             error!("Unable to parse {:?} as a TC Handle", s);
-            return Err(QueueStructureError::TcHandle(format!("{:?}", tmp)));
-        }
-        $target = tmp.unwrap();
+            return Err(QueueStructureError::TcHandle(s.to_string()));
+        };
+        $target = handle;
     };
 }
 
 /// Macro to convert hex strings (e.g. 0xff) to a u32
 macro_rules! grab_hex {
     ($target: expr, $key: expr, $value: expr) => {
-        let s = $value.as_str();
-        if s.is_none() {
+        let Some(s) = $value.as_str() else {
             error!("Unable to parse {:?} as a string from JSON", $value);
-            return Err(QueueStructureError::StringParse(format!("{:?}", s)));
-        }
-        let s = s.unwrap();
-        let tmp = read_hex_string(s);
-        if tmp.is_err() {
+            return Err(QueueStructureError::StringParse(format!("{:?}", $value)));
+        };
+        let Ok(parsed) = read_hex_string(s) else {
             error!("Unable to parse {:?} as a hex string", $value);
-            return Err(QueueStructureError::HexParse(format!("{:?}", tmp)));
-        }
-        $target = tmp.unwrap();
+            return Err(QueueStructureError::HexParse(s.to_string()));
+        };
+        $target = parsed;
     };
 }
 
 /// Macro to extract an option<string>
 macro_rules! grab_string_option {
     ($target: expr, $key: expr, $value: expr) => {
-        let s = $value.as_str();
-        if s.is_none() {
+        let Some(s) = $value.as_str() else {
             error!("Unable to parse {:?} as a string from JSON", $value);
-            return Err(QueueStructureError::StringParse(format!("{:?}", s)));
-        }
-        $target = Some(s.unwrap().to_string());
+            return Err(QueueStructureError::StringParse(format!("{:?}", $value)));
+        };
+        $target = Some(s.to_string());
     };
 }
 
 /// Macro to extract a string
 macro_rules! grab_string {
     ($target: expr, $key: expr, $value: expr) => {
-        let s = $value.as_str();
-        if s.is_none() {
+        let Some(s) = $value.as_str() else {
             error!("Unable to parse {:?} as a string from JSON", $value);
-            return Err(QueueStructureError::StringParse(format!("{:?}", s)));
-        }
-        $target = s.unwrap().to_string();
+            return Err(QueueStructureError::StringParse(format!("{:?}", $value)));
+        };
+        $target = s.to_string();
     };
 }
 
@@ -302,29 +294,10 @@ mod test {
         include_str!("./example_queue_flat.test.json");
 
     fn try_load_queue_structure(raw_string: &str) -> super::super::QueueNetwork {
-        let mut result = super::super::QueueNetwork {
-            cpu_node: Vec::new(),
-        };
-        let json: Value = serde_json::from_str(raw_string).unwrap_or_default();
-        if let Value::Object(map) = &json {
-            if let Some(network) = map.get("Network") {
-                if let Value::Object(map) = network {
-                    for (key, value) in map.iter() {
-                        if let Ok(node) = QueueNode::from_json(key, value) {
-                            result.cpu_node.push(node);
-                        }
-                    }
-                } else {
-                    panic!("Unable to parse network object structure");
-                }
-            } else {
-                panic!("Network entry not found");
-            }
-        } else {
-            panic!("Unable to parse queueStructure.json");
-        }
-
-        result
+        let json: Value =
+            serde_json::from_str(raw_string).expect("test queue structure should be valid JSON");
+        super::super::QueueNetwork::from_value(&json)
+            .expect("test queue structure should load successfully")
     }
 
     #[test]
@@ -335,6 +308,24 @@ mod test {
     #[test]
     fn load_queue_structure_with_children() {
         try_load_queue_structure(EXAMPLE_QUEUE_STRUCTURE_WITH_CHILDREN);
+    }
+
+    #[test]
+    fn malformed_queue_structure_is_returned_as_an_error() {
+        let json = serde_json::json!({});
+
+        let network = super::super::QueueNetwork::from_value(&json);
+
+        assert!(matches!(network, Err(QueueStructureError::JsonError)));
+    }
+
+    #[test]
+    fn non_object_network_entry_is_returned_as_an_error() {
+        let json = serde_json::json!({ "Network": [] });
+
+        let network = super::super::QueueNetwork::from_value(&json);
+
+        assert!(matches!(network, Err(QueueStructureError::JsonError)));
     }
 
     #[test]

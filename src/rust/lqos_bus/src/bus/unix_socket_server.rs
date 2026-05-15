@@ -10,6 +10,7 @@ use std::{
     ffi::CString,
     fmt::Write,
     fs::remove_file,
+    process::Command,
     time::{Duration, Instant},
 };
 use thiserror::Error;
@@ -187,7 +188,9 @@ impl UnixSocketServer {
     /// (doing so is considered unsound), so provide a mechanism
     /// to explicitly call the cleanup for signal handling.
     pub fn signal_cleanup() {
-        let _ = UnixSocketServer::delete_local_socket(); // Ignore result
+        if let Err(err) = UnixSocketServer::delete_local_socket() {
+            warn!("Unable to remove local bus socket during signal cleanup: {err}");
+        }
     }
 
     fn check_directory() -> Result<(), UnixSocketServerError> {
@@ -214,7 +217,11 @@ impl UnixSocketServer {
             return Err(UnixSocketServerError::CString);
         };
         unsafe {
-            nix::libc::chmod(unix_path.as_ptr(), 777);
+            let chmod_result = nix::libc::chmod(unix_path.as_ptr(), 0o777);
+            if chmod_result != 0 {
+                let err = std::io::Error::last_os_error();
+                warn!("Unable to set permissions on {BUS_SOCKET_DIRECTORY}: {err}");
+            }
         }
         Ok(())
     }
@@ -223,8 +230,8 @@ impl UnixSocketServer {
         let socket_path = std::path::Path::new(BUS_SOCKET_PATH);
         if socket_path.exists() {
             let ret = remove_file(socket_path);
-            if ret.is_err() {
-                error!("Unable to remove {BUS_SOCKET_PATH}");
+            if let Err(err) = ret {
+                error!("Unable to remove {BUS_SOCKET_PATH}: {err}");
                 return Err(UnixSocketServerError::RmDirFail);
             }
         }
@@ -232,7 +239,17 @@ impl UnixSocketServer {
     }
 
     fn make_socket_public() -> Result<(), UnixSocketServerError> {
-        let _ = lqos_utils::run_success!("/bin/chmod", "-R", "a+rwx", BUS_SOCKET_DIRECTORY);
+        match Command::new("/bin/chmod")
+            .args(["-R", "a+rwx", BUS_SOCKET_DIRECTORY])
+            .status()
+        {
+            Ok(status) if status.success() => {}
+            Ok(status) => warn!(
+                "Unable to make {BUS_SOCKET_DIRECTORY} public; chmod exited with status {:?}",
+                status.code()
+            ),
+            Err(err) => warn!("Unable to run chmod for {BUS_SOCKET_DIRECTORY}: {err}"),
+        }
         Ok(())
     }
 
@@ -370,7 +387,9 @@ impl UnixSocketServer {
 
 impl Drop for UnixSocketServer {
     fn drop(&mut self) {
-        let _ = UnixSocketServer::delete_local_socket(); // Ignore result
+        if let Err(err) = UnixSocketServer::delete_local_socket() {
+            warn!("Unable to remove local bus socket during shutdown: {err}");
+        }
     }
 }
 

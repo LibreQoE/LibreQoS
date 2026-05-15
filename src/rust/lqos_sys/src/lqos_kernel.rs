@@ -378,6 +378,34 @@ pub fn interface_name_to_index(interface_name: &str) -> Result<u32> {
     }
 }
 
+fn warn_command_failure(action: &str, output: std::io::Result<std::process::Output>) {
+    match output {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            if stderr.is_empty() {
+                warn!(
+                    "{action} failed with status {:?} and no stderr",
+                    output.status.code()
+                );
+            } else {
+                warn!(
+                    "{action} failed with status {:?}: {stderr}",
+                    output.status.code()
+                );
+            }
+        }
+        Err(err) => warn!("{action} failed to execute: {err}"),
+    }
+}
+
+fn warn_libbpf_detach_failure(action: &str, interface_name: &str, err: i32) {
+    if err != 0 {
+        warn!("{action} failed on {interface_name} with errno {err}; continuing cleanup");
+    }
+}
+
 /// Removes the XDP bindings from an interface.
 ///
 /// # Arguments
@@ -417,21 +445,32 @@ pub fn unload_xdp_from_interface(interface_name: &str) -> Result<()> {
     }
 
     // As a last resort, ask ip(8) to turn off XDP in all modes
-    let _ = Command::new("/bin/ip")
-        .args(["link", "set", interface_name, "xdp", "off"])
-        .output();
-    let _ = Command::new("/bin/ip")
-        .args(["link", "set", interface_name, "xdpdrv", "off"])
-        .output();
-    let _ = Command::new("/bin/ip")
-        .args(["link", "set", interface_name, "xdpgeneric", "off"])
-        .output();
+    warn_command_failure(
+        &format!("Fallback XDP detach on {interface_name}"),
+        Command::new("/bin/ip")
+            .args(["link", "set", interface_name, "xdp", "off"])
+            .output(),
+    );
+    warn_command_failure(
+        &format!("Fallback XDP driver detach on {interface_name}"),
+        Command::new("/bin/ip")
+            .args(["link", "set", interface_name, "xdpdrv", "off"])
+            .output(),
+    );
+    warn_command_failure(
+        &format!("Fallback XDP generic detach on {interface_name}"),
+        Command::new("/bin/ip")
+            .args(["link", "set", interface_name, "xdpgeneric", "off"])
+            .output(),
+    );
 
     // Detach TC hooks as well
     unsafe {
         let interface_c = CString::new(interface_name)?;
-        let _ = bpf::tc_detach_egress(ifindex_i32, false, true, interface_c.as_ptr());
-        let _ = bpf::tc_detach_ingress(ifindex_i32, false, true, interface_c.as_ptr());
+        let err = bpf::tc_detach_egress(ifindex_i32, false, true, interface_c.as_ptr());
+        warn_libbpf_detach_failure("TC egress detach", interface_name, err);
+        let err = bpf::tc_detach_ingress(ifindex_i32, false, true, interface_c.as_ptr());
+        warn_libbpf_detach_failure("TC ingress detach", interface_name, err);
     }
 
     Ok(())
@@ -595,8 +634,9 @@ pub fn attach_xdp_and_tc_to_interface(
     // extern int tc_attach_egress(int ifindex, bool verbose, struct lqos_kern *obj);
     // extern int tc_detach_egress(int ifindex, bool verbose, bool flush_hook, char * ifname);
     let interface_c = CString::new(interface_name)?;
-    let _ =
-        unsafe { bpf::tc_detach_egress(interface_index as i32, false, true, interface_c.as_ptr()) }; // Ignoring error, because it's ok to not have something to detach
+    let detach_err =
+        unsafe { bpf::tc_detach_egress(interface_index as i32, false, true, interface_c.as_ptr()) };
+    warn_libbpf_detach_failure("Pre-attach TC egress detach", interface_name, detach_err);
 
     // Find the heimdall_events perf map by name
     let heimdall_events_name = c"heimdall_events";
@@ -657,15 +697,11 @@ pub fn attach_xdp_and_tc_to_interface(
     let _r = Command::new("tc")
         .args(["qdisc", "del", "dev", interface_name, "clsact"])
         .output()?;
-    // This message was worrying people, commented out.
-    //println!("{}", String::from_utf8(r.stderr).unwrap());
 
     // Ensure clsact qdisc exists (libbpf APIs will create hooks, but this makes state explicit)
     let _r = Command::new("tc")
         .args(["qdisc", "add", "dev", interface_name, "clsact"])
         .output()?;
-    // This message was worrying people, commented out.
-    //println!("{}", String::from_utf8(r.stderr).unwrap());
 
     // Attach to the egress
     let error = unsafe { bpf::tc_attach_egress(interface_index as i32, false, skeleton) };
@@ -772,7 +808,11 @@ unsafe fn attach_xdp_best_available(
             }
             if should_retry(err) && attempts < max_retries {
                 // Proactively detach any lingering XDP and retry
-                let _ = unload_xdp_from_interface(iface_name);
+                if let Err(unload_err) = unload_xdp_from_interface(iface_name) {
+                    warn!(
+                        "Unable to unload XDP/TC before attach retry on {iface_name}: {unload_err}"
+                    );
+                }
                 thread::sleep(Duration::from_millis(50));
                 attempts += 1;
                 continue;

@@ -29,6 +29,15 @@ where
     K: Default + Clone,
     V: Default + Clone,
 {
+    fn log_delete_failure(&self, action: &str, err: i32) {
+        if err != 0 && err != -2 {
+            tracing::warn!(
+                "{action} failed for BPF map fd {} with errno {err}",
+                self.fd
+            );
+        }
+    }
+
     /// Connect to a BPF map via a filename. Connects the internal
     /// file descriptor, which is held until the structure is
     /// dropped.
@@ -166,7 +175,7 @@ where
                 // ENOEXIST : not actually an error, just nothing to do
                 Ok(())
             } else {
-                Err(Error::msg("Unable to delete from map"))
+                Err(Error::msg(format!("Unable to delete from map ({err})")))
             }
         } else {
             Ok(())
@@ -187,7 +196,8 @@ where
                 while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
                     == 0
                 {
-                    bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
+                    let err = bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
+                    self.log_delete_failure("BPF map clear delete", err);
                     prev_key = key_ptr;
                 }
             }
@@ -222,7 +232,8 @@ where
             while bpf_map_get_next_key(self.fd, prev_key as *mut c_void, key_ptr as *mut c_void)
                 == 0
             {
-                bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
+                let err = bpf_map_delete_elem(self.fd, key_ptr as *mut c_void);
+                self.log_delete_failure("BPF map clear_no_repeat delete", err);
                 prev_key = key_ptr;
             }
         }
@@ -234,7 +245,11 @@ where
     pub fn clear_bulk(&mut self) -> Result<()> {
         let mut keys: Vec<K> = self.dump_vec().iter().map(|(k, _)| k.clone()).collect();
         let mut count = keys.len() as u32;
+        if count == 0 {
+            return Ok(());
+        }
         loop {
+            let requested = count;
             let ret = unsafe {
                 bpf_map_delete_batch(
                     self.fd,
@@ -243,7 +258,11 @@ where
                     null_mut(),
                 )
             };
-            if ret != 0 || count == 0 {
+            if ret != 0 {
+                self.log_delete_failure("BPF map bulk clear", ret);
+                break;
+            }
+            if count == 0 || count >= requested {
                 break;
             }
         }
@@ -253,7 +272,11 @@ where
     /// Bulk clear selected keys from the map.
     pub fn clear_bulk_keys(&mut self, keys: &mut Vec<K>) -> Result<()> {
         let mut count = keys.len() as u32;
+        if count == 0 {
+            return Ok(());
+        }
         loop {
+            let requested = count;
             let ret = unsafe {
                 bpf_map_delete_batch(
                     self.fd,
@@ -262,7 +285,11 @@ where
                     null_mut(),
                 )
             };
-            if ret != 0 || count == 0 {
+            if ret != 0 {
+                self.log_delete_failure("BPF map selected-key bulk clear", ret);
+                break;
+            }
+            if count == 0 || count >= requested {
                 break;
             }
         }
