@@ -64,7 +64,7 @@ do_not_track_subnets = ["192.168.0.0/16"]
 
 ### Contabilidad RADIUS (opcional)
 
-LibreQoS acepta una sección opcional `[radius_accounting]` para definir clientes NAS de confianza. En v2.0, esta sección solo se valida y se conserva. `lqosd` no abrirá un servicio de contabilidad RADIUS con esta configuración.
+LibreQoS acepta una sección opcional `[radius_accounting]` para definir clientes NAS de confianza. Cuando está habilitada, `lqosd` inicia un servicio de contabilidad RADIUS, verifica paquetes de los clientes configurados, envía paquetes Accounting-Response para solicitudes aceptadas y mantiene el estado de sesión decodificado en memoria. La aplicación de circuitos dinámicos desde la contabilidad RADIUS aún no está habilitada.
 
 Ejemplo:
 
@@ -85,8 +85,9 @@ Notas:
 - Omita la sección o configure `enabled = false` para mantener deshabilitada la contabilidad RADIUS. Puede omitir los clientes mientras está deshabilitada; cualquier entrada de cliente que configure también debe ser válida.
 - Cualquier valor configurado en `listen` debe ser una dirección de escucha IP:puerto con un puerto distinto de cero, como `0.0.0.0:1813`. Cuando `enabled = true`, configure al menos un cliente. Cada cliente configurado debe incluir al menos una entrada `source`.
 - `source` acepta una cadena IP/CIDR o una lista de cadenas IP/CIDR. Las direcciones IP sin prefijo se aceptan como hosts individuales.
-- Cada cliente configurado debe incluir un `secret_file` no vacío. Esta es la ruta configurada para el secreto compartido del cliente. LibreQoS conserva ese valor al reescribir `/etc/lqos.conf`. La salida de depuración generada a partir de este campo oculta la ruta, pero los paquetes de soporte que incluyan `/etc/lqos.conf` pueden mostrar esa ruta.
+- Cada cliente configurado debe incluir un `secret_file` no vacío. `lqosd` lee este archivo cuando inicia el servicio y usa su contenido como secreto compartido. LibreQoS conserva la ruta configurada en `/etc/lqos.conf`. La salida de depuración generada a partir de este campo oculta la ruta, pero los paquetes de soporte que incluyan `/etc/lqos.conf` pueden mostrar esa ruta.
 - `default_ttl_seconds` y `stale_grace_seconds` deben ser mayores que cero.
+- Reinicie `lqosd` después de cambiar esta sección para recargar el servicio y los archivos de secreto compartido.
 
 ### Integraciones con CRM/NMS
 

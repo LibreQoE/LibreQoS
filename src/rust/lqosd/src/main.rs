@@ -16,6 +16,7 @@ mod node_manager;
 mod preflight_checks;
 mod probe_provider;
 mod program_control;
+mod radius_accounting;
 mod remote_commands;
 mod rtt_exclusions;
 mod scheduler_control;
@@ -197,6 +198,7 @@ fn main() -> Result<()> {
     // Load config
     let config = lqos_config::load_config()?;
     let web_config = config.clone();
+    let radius_accounting_config = config.radius_accounting.clone();
     shaping_runtime::mark_starting("LibreQoS is starting shaping services.");
 
     ensure_rustls_crypto_provider()?;
@@ -412,6 +414,13 @@ fn main() -> Result<()> {
                     tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
                     BusRequest,
                 )>(100);
+
+                if let Err(err) =
+                    radius_accounting::start_configured_radius_accounting(radius_accounting_config)
+                        .await
+                {
+                    error!("RADIUS accounting listener was not started: {err}");
+                }
 
                 let webserver_disabled = web_config.disable_webserver.unwrap_or(false);
                 if !webserver_disabled {

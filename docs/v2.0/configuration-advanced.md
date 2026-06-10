@@ -196,7 +196,7 @@ Notes:
 
 #### RADIUS accounting (optional)
 
-LibreQoS accepts an optional `[radius_accounting]` section for trusted NAS client settings. In v2.0, this section is validated and saved only. `lqosd` will not start a RADIUS accounting listener from it.
+LibreQoS accepts an optional `[radius_accounting]` section for trusted NAS client settings. When enabled, `lqosd` starts a RADIUS accounting listener, verifies packets from configured clients, sends Accounting-Response packets for accepted requests, and keeps the decoded session state in memory. Dynamic-circuit application from RADIUS accounting is not enabled yet.
 
 Example:
 
@@ -217,8 +217,9 @@ Notes:
 - Omit the section or set `enabled = false` to keep RADIUS accounting disabled. Clients may be omitted while it is disabled; any client entries you configure are still validated.
 - Any configured `listen` value must be an IP:port listen address with a non-zero port, such as `0.0.0.0:1813`. When `enabled = true`, configure at least one client. Each configured client must include at least one `source` entry.
 - `source` accepts one IP/CIDR string or a list of IP/CIDR strings. Bare IP addresses are accepted as host sources.
-- Each configured client must include a non-empty `secret_file`. This is the configured location for the client's shared secret. LibreQoS preserves that value in `/etc/lqos.conf`. Debug output generated from this config field hides the configured path, but `/etc/lqos.conf` and support bundles that include it can still show the path.
+- Each configured client must include a non-empty `secret_file`. `lqosd` reads this file when the listener starts and uses its contents as the shared secret. LibreQoS preserves the configured path in `/etc/lqos.conf`. Debug output generated from this config field hides the configured path, but `/etc/lqos.conf` and support bundles that include it can still show the path.
 - `default_ttl_seconds` and `stale_grace_seconds` must be greater than zero.
+- Restart `lqosd` after changing this section so the listener and shared-secret files are reloaded.
 
 #### CRM/NMS Integrations
 

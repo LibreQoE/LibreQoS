@@ -105,7 +105,7 @@
       "title": "Start the listener from lqosd when configured",
       "description": "As a LibreQoS operator, I want lqosd to start the RADIUS accounting listener only when configured, so that existing installations are unchanged unless RADIUS accounting is enabled.",
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "lqosd does not bind a RADIUS accounting socket when radius_accounting is absent or disabled.",
         "When radius_accounting is enabled, lqosd starts the listener inside the existing tokio runtime after configuration is loaded.",
@@ -119,7 +119,7 @@
       "title": "Provide protocol test fixtures",
       "description": "As a LibreQoS developer, I want focused protocol fixtures and scenario tests, so that regressions in packet parsing, authentication, and listener behavior are caught without NAS hardware.",
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "acceptanceCriteria": [
         "Raw packet fixtures cover valid Accounting-Start, Accounting-Interim, Accounting-Stop, invalid packet length, invalid authenticator, unknown standard attributes, unknown vendor-specific attributes, and IPv6 address or prefix attributes.",
         "A test packet builder can generate authenticated Accounting-Request packets for readable scenario tests.",

@@ -8,7 +8,162 @@ use crate::test_support::{
     radius_vendor_attribute, radius_vendor_attributes, radius_vendor_subattribute,
     signed_accounting_request_packet,
 };
-use crate::{MessageAuthenticatorPolicy, handle_accounting_request, verify_accounting_request};
+use crate::{
+    MessageAuthenticatorPolicy, RadiusCode, handle_accounting_request, verify_accounting_request,
+};
+
+const RAW_ACCOUNTING_START_FIXTURE: [u8; 26] = [
+    4,
+    51,
+    0,
+    26,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    ACCT_STATUS_TYPE,
+    6,
+    0,
+    0,
+    0,
+    1,
+];
+const RAW_ACCOUNTING_INTERIM_FIXTURE: [u8; 26] = [
+    4,
+    52,
+    0,
+    26,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    ACCT_STATUS_TYPE,
+    6,
+    0,
+    0,
+    0,
+    3,
+];
+const RAW_ACCOUNTING_STOP_FIXTURE: [u8; 26] = [
+    4,
+    53,
+    0,
+    26,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    ACCT_STATUS_TYPE,
+    6,
+    0,
+    0,
+    0,
+    2,
+];
+const RAW_UNKNOWN_VENDOR_IPV6_FIXTURE: [u8; 66] = [
+    4,
+    54,
+    0,
+    66,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    241,
+    5,
+    b's',
+    b't',
+    b'd',
+    26,
+    12,
+    0,
+    0,
+    48,
+    57,
+    b'v',
+    b'e',
+    b'n',
+    b'd',
+    b'o',
+    b'r',
+    NAS_IPV6_ADDRESS,
+    18,
+    0x20,
+    0x01,
+    0x0d,
+    0xb8,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    FRAMED_IPV6_PREFIX,
+    11,
+    0,
+    56,
+    0x20,
+    0x01,
+    0x0d,
+    0xb8,
+    0,
+    0x10,
+    0,
+];
 
 #[test]
 fn extracts_acct_status_type_variants_and_unknown_values() {
@@ -28,6 +183,55 @@ fn extracts_acct_status_type_variants_and_unknown_values() {
         assert_eq!(event.status_type, Some(expected));
         assert_eq!(event.status_type.unwrap().as_u32(), raw);
     }
+}
+
+#[test]
+fn raw_packet_fixtures_cover_accounting_statuses_and_attribute_preservation() {
+    for (raw_packet, identifier, expected_status) in [
+        (
+            RAW_ACCOUNTING_START_FIXTURE.as_slice(),
+            51,
+            AcctStatusType::Start,
+        ),
+        (
+            RAW_ACCOUNTING_INTERIM_FIXTURE.as_slice(),
+            52,
+            AcctStatusType::InterimUpdate,
+        ),
+        (
+            RAW_ACCOUNTING_STOP_FIXTURE.as_slice(),
+            53,
+            AcctStatusType::Stop,
+        ),
+    ] {
+        let request = handle_accounting_request(raw_packet).unwrap();
+        let event = AccountingEvent::from_request(&request);
+
+        assert_eq!(request.packet().code(), RadiusCode::AccountingRequest);
+        assert_eq!(request.packet().identifier(), identifier);
+        assert_eq!(event.status_type, Some(expected_status));
+    }
+
+    let request = handle_accounting_request(&RAW_UNKNOWN_VENDOR_IPV6_FIXTURE).unwrap();
+    let event = AccountingEvent::from_request(&request);
+
+    assert_unknown_standard_attributes(&event, &[(241, b"std")]);
+    assert_eq!(
+        event.unknown_vendor_attributes,
+        vec![UnknownVendorAttribute {
+            vendor_id: Some(12_345),
+            vendor_type: None,
+            value: b"vendor".to_vec(),
+        }]
+    );
+    assert_eq!(event.nas_ipv6_address, Some("2001:db8::1".parse().unwrap()));
+    assert_eq!(
+        event.framed_ipv6_prefixes,
+        vec![Ipv6Prefix {
+            address: "2001:db8:10::".parse().unwrap(),
+            prefix_len: 56,
+        }]
+    );
 }
 
 #[test]

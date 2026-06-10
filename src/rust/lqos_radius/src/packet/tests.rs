@@ -42,6 +42,28 @@ const FIXED_MULTI_PROXY_ACCOUNTING_RESPONSE: [u8; 30] = [
     5, 12, 0, 30, 178, 201, 10, 40, 135, 29, 40, 136, 69, 8, 142, 127, 30, 126, 130, 165, 33, 5,
     111, 110, 101, 33, 5, 116, 119, 111,
 ];
+const RAW_INVALID_PACKET_LENGTH_FIXTURE: [u8; 20] = [
+    ACCOUNTING_REQUEST_CODE,
+    13,
+    0,
+    (RADIUS_HEADER_LEN - 1) as u8,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+];
 const UNKNOWN_ATTRIBUTE_TYPE: u8 = 241;
 
 #[test]
@@ -105,7 +127,7 @@ fn rejects_short_packet_header() {
 #[test]
 fn rejects_declared_packet_length_below_header() {
     assert_eq!(
-        parse_packet(&packet_with_declared_len((RADIUS_HEADER_LEN - 1) as u16)),
+        parse_packet(&RAW_INVALID_PACKET_LENGTH_FIXTURE),
         Err(PacketError::InvalidPacketLength {
             declared: RADIUS_HEADER_LEN - 1,
         })
@@ -267,11 +289,9 @@ fn verifies_fixed_accounting_request_authenticator() {
 
 #[test]
 fn rejects_accounting_request_with_wrong_secret() {
-    let packet = signed_accounting_request_packet(7, &ACCOUNTING_START_ATTRIBUTE, SHARED_SECRET);
-
     assert_eq!(
         verify_accounting_request(
-            &packet,
+            &FIXED_ACCOUNTING_REQUEST,
             b"wrong-secret",
             MessageAuthenticatorPolicy::Optional
         ),

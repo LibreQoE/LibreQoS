@@ -202,11 +202,9 @@ pub async fn apply(
                 MergeNetworkModeError::InvalidCandidate(message) => {
                     helper_validation_error_response(message)
                 }
-                MergeNetworkModeError::LoadLiveConfig => {
-                    helper_internal_error_response(
-                        "Unable to load the live LibreQoS configuration".to_string(),
-                    )
-                }
+                MergeNetworkModeError::LoadLiveConfig => helper_internal_error_response(
+                    "Unable to load the live LibreQoS configuration".to_string(),
+                ),
             };
         }
     };
@@ -390,11 +388,13 @@ mod tests {
 
     #[test]
     fn merge_network_mode_rejects_invalid_bridge_mtu() {
-        let mut candidate = Config::default();
-        candidate.bridge = Some(BridgeConfig {
-            mtu: Some(9217),
-            ..BridgeConfig::default()
-        });
+        let candidate = Config {
+            bridge: Some(BridgeConfig {
+                mtu: Some(9217),
+                ..BridgeConfig::default()
+            }),
+            ..Config::default()
+        };
 
         let error =
             with_config_env(|| merge_network_mode(candidate).expect_err("invalid MTU should fail"));
@@ -409,12 +409,14 @@ mod tests {
 
     #[test]
     fn merge_network_mode_rejects_invalid_single_interface_mtu() {
-        let mut candidate = Config::default();
-        candidate.bridge = None;
-        candidate.single_interface = Some(SingleInterfaceConfig {
-            mtu: Some(575),
-            ..SingleInterfaceConfig::default()
-        });
+        let candidate = Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig {
+                mtu: Some(575),
+                ..SingleInterfaceConfig::default()
+            }),
+            ..Config::default()
+        };
 
         let error =
             with_config_env(|| merge_network_mode(candidate).expect_err("invalid MTU should fail"));
