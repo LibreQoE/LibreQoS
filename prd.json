@@ -1,0 +1,135 @@
+{
+  "product": "LibreQoS",
+  "branchName": "radius-accounting-listener",
+  "summary": "Add an opt-in RADIUS accounting listener MVP that can be developed and tested without root, decode common accounting packets, and prepare dynamic-circuit command plumbing for lqosd integration.",
+  "stories": [
+    {
+      "id": "RADIUS-001",
+      "title": "Create the lqos_radius crate",
+      "description": "As a LibreQoS developer, I want a separate lqos_radius crate with a rootless test executable, so that RADIUS accounting protocol work can be built and exercised without running lqosd as root.",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "The Rust workspace includes lqos_radius as a buildable member.",
+        "lqos_radius exposes a library API for packet handling and listener startup.",
+        "lqos_radius includes an executable entrypoint that can run on a configurable non-privileged listen address.",
+        "cargo test for lqos_radius runs without requiring root privileges or live shaping state."
+      ]
+    },
+    {
+      "id": "RADIUS-002",
+      "title": "Configure RADIUS accounting",
+      "description": "As a LibreQoS operator, I want RADIUS accounting settings in LibreQoS configuration, so that I can explicitly enable the listener and control which NAS clients are trusted.",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "radius_accounting can be disabled without requiring any RADIUS clients.",
+        "When radius_accounting is enabled, configuration requires a valid listen address and at least one client source.",
+        "Each configured client has a source allow-list and a shared secret source that is not emitted in logs or serialized debug output.",
+        "Configuration validation rejects invalid listen addresses, invalid client sources, missing secrets, and non-positive timing values.",
+        "Configuration round-trip tests cover enabled and disabled RADIUS accounting settings."
+      ]
+    },
+    {
+      "id": "RADIUS-003",
+      "title": "Decode and verify accounting packets",
+      "description": "As a LibreQoS operator, I want incoming RADIUS accounting packets to be decoded and verified, so that only authentic Accounting-Request packets from trusted clients are accepted.",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "The decoder accepts Accounting-Request packets and rejects unsupported RADIUS packet codes for this MVP.",
+        "Packet length, attribute bounds, and malformed attribute cases are validated before packet acceptance.",
+        "Accounting-Request authenticators are verified against the matched client shared secret.",
+        "Message-Authenticator is verified when present and is required when configuration enables that policy.",
+        "Valid accepted requests can produce an Accounting-Response packet with response code 5."
+      ]
+    },
+    {
+      "id": "RADIUS-004",
+      "title": "Extract common accounting attributes",
+      "description": "As a LibreQoS operator, I want common RADIUS accounting attributes translated into typed session events, so that subscriber session lifecycle, identity, and address data can be inspected and used later.",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Typed events include Acct-Status-Type values for Start, Stop, Interim-Update, Accounting-On, and Accounting-Off.",
+        "Typed events include session and NAS identity fields such as Acct-Session-Id, NAS-IP-Address, NAS-IPv6-Address, NAS-Identifier, NAS-Port, NAS-Port-Id, User-Name, Calling-Station-Id, Called-Station-Id, Class, and Event-Timestamp when present.",
+        "Typed events include subscriber address fields such as Framed-IP-Address, Framed-IP-Netmask, Framed-Route, Framed-IPv6-Prefix, Delegated-IPv6-Prefix, and Framed-IPv6-Address when present.",
+        "Unknown standard attributes and unknown vendor-specific attributes are preserved for diagnostics without rejecting otherwise valid packets.",
+        "MikroTik-Rate-Limit vendor attributes are decoded into rate values and tests verify configurable NAS-to-LibreQoS direction mapping."
+      ]
+    },
+    {
+      "id": "RADIUS-005",
+      "title": "Run a rootless UDP accounting listener",
+      "description": "As a LibreQoS developer, I want the lqos_radius listener to run against loopback test traffic, so that protocol and server behavior can be proven before wiring live lqosd behavior.",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "The listener can bind to 127.0.0.1:0 or another configured non-privileged address for tests.",
+        "Accepted Accounting-Request packets receive an Accounting-Response without waiting for dynamic-circuit application.",
+        "Packets from unconfigured sources do not create session events or command placeholders.",
+        "Packets with invalid authenticators are rejected and do not create session events or command placeholders.",
+        "Loopback UDP tests verify accepted requests, rejected sources, invalid authenticators, and response behavior."
+      ]
+    },
+    {
+      "id": "RADIUS-006",
+      "title": "Track accounting sessions in memory",
+      "description": "As a LibreQoS operator, I want accepted accounting events to update runtime session state, so that Starts, Interims, Stops, and NAS resets have predictable results during the MVP.",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Sessions are keyed primarily by NAS identity plus Acct-Session-Id when both values are available.",
+        "Start and Interim-Update events create or refresh a session and preserve the latest decoded identity and address data.",
+        "Stop events mark the session stopped and are harmless when duplicated.",
+        "Accounting-On and Accounting-Off mark sessions for the affected NAS stale without affecting other NAS clients.",
+        "Sessions that cannot become dynamic circuits retain a specific pending reason such as missing IP, missing rate, missing parent, missing session ID, or ambiguous mapping."
+      ]
+    },
+    {
+      "id": "RADIUS-007",
+      "title": "Prepare dynamic-circuit command plumbing",
+      "description": "As a LibreQoS developer, I want RADIUS session handling to emit create, update, and remove command placeholders, so that lqosd can later connect those commands to the existing dynamic-circuit path without changing the protocol server.",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "lqos_radius exposes a command sink boundary for dynamic-circuit intents that the lqosd-facing adapter can map to CreateDynamicCircuit and RemoveDynamicCircuit placeholders.",
+        "Shapeable Start and Interim-Update events emit create or update command intents through the sink boundary.",
+        "Stop events emit remove command intents when a deterministic circuit identity is available.",
+        "Fake sink tests assert the emitted command type and circuit identity for Start, Interim-Update, Stop, and expiry scenarios.",
+        "The listener never writes dynamic_circuits.json directly."
+      ]
+    },
+    {
+      "id": "RADIUS-008",
+      "title": "Start the listener from lqosd when configured",
+      "description": "As a LibreQoS operator, I want lqosd to start the RADIUS accounting listener only when configured, so that existing installations are unchanged unless RADIUS accounting is enabled.",
+      "priority": 2,
+      "passes": false,
+      "acceptanceCriteria": [
+        "lqosd does not bind a RADIUS accounting socket when radius_accounting is absent or disabled.",
+        "When radius_accounting is enabled, lqosd starts the listener inside the existing tokio runtime after configuration is loaded.",
+        "Listener startup failures are reported clearly without logging shared secrets.",
+        "lqosd shutdown stops the listener without blocking daemon shutdown.",
+        "The lqosd wiring uses the lqos_radius command sink boundary and leaves final dynamic-circuit application behind the existing bus or daemon channel path for this MVP."
+      ]
+    },
+    {
+      "id": "RADIUS-009",
+      "title": "Provide protocol test fixtures",
+      "description": "As a LibreQoS developer, I want focused protocol fixtures and scenario tests, so that regressions in packet parsing, authentication, and listener behavior are caught without NAS hardware.",
+      "priority": 1,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Raw packet fixtures cover valid Accounting-Start, Accounting-Interim, Accounting-Stop, invalid packet length, invalid authenticator, unknown standard attributes, unknown vendor-specific attributes, and IPv6 address or prefix attributes.",
+        "A test packet builder can generate authenticated Accounting-Request packets for readable scenario tests.",
+        "Authenticator tests cover correct secrets, wrong secrets, modified attributes, truncated packets, valid Message-Authenticator, invalid Message-Authenticator, and required Message-Authenticator policy.",
+        "Session tests use fake time and a fake command sink instead of sockets, root privileges, bakery, TC, XDP, or disk writes."
+      ]
+    }
+  ],
+  "notes": [
+    "Full dynamic-circuit application, operator UI or CLI diagnostics, persistent session storage, and CoA or Disconnect support remain outside this MVP unless separately requested.",
+    "Binding the default UDP 1813 port may require elevated privileges; the crate executable and automated tests should support non-privileged addresses for development."
+  ]
+}

@@ -1,0 +1,14 @@
+[package]
+name = "lqos_radius"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-only"
+
+[dependencies]
+clap = { workspace = true }
+hmac = { workspace = true }
+ip_network = { workspace = true }
+md-5 = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }

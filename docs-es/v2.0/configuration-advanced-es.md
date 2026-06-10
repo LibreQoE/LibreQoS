@@ -62,6 +62,32 @@ netflow_version = 5
 do_not_track_subnets = ["192.168.0.0/16"]
 ```
 
+### Contabilidad RADIUS (opcional)
+
+LibreQoS acepta una sección opcional `[radius_accounting]` para definir clientes NAS de confianza. En v2.0, esta sección solo se valida y se conserva. `lqosd` no abrirá un servicio de contabilidad RADIUS con esta configuración.
+
+Ejemplo:
+
+```toml
+[radius_accounting]
+enabled = false
+listen = "0.0.0.0:1813"
+default_ttl_seconds = 900
+stale_grace_seconds = 120
+
+[[radius_accounting.clients]]
+name = "pppoe-core-1"
+source = ["192.0.2.10/32"]
+secret_file = "/etc/lqos/radius-secrets/pppoe-core-1"
+```
+
+Notas:
+- Omita la sección o configure `enabled = false` para mantener deshabilitada la contabilidad RADIUS. Puede omitir los clientes mientras está deshabilitada; cualquier entrada de cliente que configure también debe ser válida.
+- Cualquier valor configurado en `listen` debe ser una dirección de escucha IP:puerto con un puerto distinto de cero, como `0.0.0.0:1813`. Cuando `enabled = true`, configure al menos un cliente. Cada cliente configurado debe incluir al menos una entrada `source`.
+- `source` acepta una cadena IP/CIDR o una lista de cadenas IP/CIDR. Las direcciones IP sin prefijo se aceptan como hosts individuales.
+- Cada cliente configurado debe incluir un `secret_file` no vacío. Esta es la ruta configurada para el secreto compartido del cliente. LibreQoS conserva ese valor al reescribir `/etc/lqos.conf`. La salida de depuración generada a partir de este campo oculta la ruta, pero los paquetes de soporte que incluyan `/etc/lqos.conf` pueden mostrar esa ruta.
+- `default_ttl_seconds` y `stale_grace_seconds` deben ser mayores que cero.
+
 ### Integraciones con CRM/NMS
 
 Más información sobre [configuración de integraciones aquí.](integrations-es.md).

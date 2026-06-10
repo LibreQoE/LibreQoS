@@ -15,6 +15,7 @@ mod mikrotik_ipv6;
 mod netzur_integration;
 mod powercode_integration;
 mod queues;
+mod radius_accounting;
 mod sonar_integration;
 mod splynx_integration;
 mod stormguard;
@@ -31,6 +32,9 @@ pub use integration_common::IntegrationConfig;
 pub use long_term_stats::LongTermStats;
 pub use mikrotik_ipv6::MikrotikIpv6Config;
 pub use queues::{LazyQueueMode, QueueMode};
+pub use radius_accounting::{
+    RadiusAccountingClient, RadiusAccountingConfig, RadiusClientSource, RadiusSharedSecretSource,
+};
 pub use stormguard::{StormguardConfig, StormguardStrategy};
 pub use topology::{TopologyConfig, normalize_topology_compile_mode};
 pub use treeguard::{

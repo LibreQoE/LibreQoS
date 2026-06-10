@@ -177,6 +177,12 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic_circuits: Option<super::dynamic_circuits::DynamicCircuitsConfig>,
 
+    /// RADIUS accounting configuration.
+    ///
+    /// Optional so older configs without this section still deserialize cleanly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius_accounting: Option<super::radius_accounting::RadiusAccountingConfig>,
+
     /// Network flows configuration
     pub flows: Option<super::flows::FlowConfig>,
 
@@ -368,6 +374,9 @@ impl Config {
         if let Some(dynamic_circuits) = &self.dynamic_circuits {
             dynamic_circuits.validate()?;
         }
+        if let Some(radius_accounting) = &self.radius_accounting {
+            radius_accounting.validate()?;
+        }
         Ok(())
     }
 
@@ -442,6 +451,7 @@ impl Default for Config {
             long_term_stats: super::long_term_stats::LongTermStats::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
             dynamic_circuits: None,
+            radius_accounting: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
             topology: super::topology::TopologyConfig::default(),
             mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),

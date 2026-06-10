@@ -42,7 +42,8 @@ pub use cpu_topology::{
 };
 pub use etc::{
     BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode,
-    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, SslConfig,
+    MikrotikIpv6Config, QueueMode, RadiusAccountingClient, RadiusAccountingConfig,
+    RadiusClientSource, RadiusSharedSecretSource, RttThresholds, SingleInterfaceConfig, SslConfig,
     StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
     TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
     clear_cached_config, disable_xdp_bridge, enable_long_term_stats, load_config,

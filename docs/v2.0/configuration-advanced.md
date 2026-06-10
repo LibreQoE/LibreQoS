@@ -194,6 +194,32 @@ Notes:
 - `ip_range` must be a CIDR. `0.0.0.0` (and `::`) are allowed shorthands for the match-all `/0` networks.
 - `attach_to` is a `network.json` node name (optional; empty is allowed).
 
+#### RADIUS accounting (optional)
+
+LibreQoS accepts an optional `[radius_accounting]` section for trusted NAS client settings. In v2.0, this section is validated and saved only. `lqosd` will not start a RADIUS accounting listener from it.
+
+Example:
+
+```toml
+[radius_accounting]
+enabled = false
+listen = "0.0.0.0:1813"
+default_ttl_seconds = 900
+stale_grace_seconds = 120
+
+[[radius_accounting.clients]]
+name = "pppoe-core-1"
+source = ["192.0.2.10/32"]
+secret_file = "/etc/lqos/radius-secrets/pppoe-core-1"
+```
+
+Notes:
+- Omit the section or set `enabled = false` to keep RADIUS accounting disabled. Clients may be omitted while it is disabled; any client entries you configure are still validated.
+- Any configured `listen` value must be an IP:port listen address with a non-zero port, such as `0.0.0.0:1813`. When `enabled = true`, configure at least one client. Each configured client must include at least one `source` entry.
+- `source` accepts one IP/CIDR string or a list of IP/CIDR strings. Bare IP addresses are accepted as host sources.
+- Each configured client must include a non-empty `secret_file`. This is the configured location for the client's shared secret. LibreQoS preserves that value in `/etc/lqos.conf`. Debug output generated from this config field hides the configured path, but `/etc/lqos.conf` and support bundles that include it can still show the path.
+- `default_ttl_seconds` and `stale_grace_seconds` must be greater than zero.
+
 #### CRM/NMS Integrations
 
 Learn more about [configuring integrations here](integrations.md).

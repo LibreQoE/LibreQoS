@@ -20,7 +20,8 @@ pub mod test_data;
 mod v15;
 pub use v15::{
     BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
-    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, SslConfig,
+    MikrotikIpv6Config, QueueMode, RadiusAccountingClient, RadiusAccountingConfig,
+    RadiusClientSource, RadiusSharedSecretSource, RttThresholds, SingleInterfaceConfig, SslConfig,
     StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
     TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
     normalize_external_hostname,
