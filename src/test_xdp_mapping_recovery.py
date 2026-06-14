@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 import sys
 import types
@@ -46,7 +47,7 @@ def install_libreqos_import_stubs():
     lqlib.get_tree_weights = lambda: {}
     lqlib.get_weights = lambda: {}
     lqlib.is_network_flat = lambda: False
-    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"
+    lqlib.get_libreqos_directory = lambda: tempfile.gettempdir() + "/libreqos"
     lqlib.enable_insight_topology = lambda: False
     lqlib.is_insight_enabled = lambda: False
     lqlib.scheduler_error = lambda *_args, **_kwargs: None
