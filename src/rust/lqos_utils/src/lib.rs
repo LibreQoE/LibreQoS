@@ -18,6 +18,8 @@ pub mod hex_string;
 
 /// Utilities for scaling bits and packets to human-readable format
 pub mod packet_scale;
+/// Cross-process PID-file locking helpers.
+pub mod process_lock;
 mod string_table_enum;
 
 /// Rolling heatmap data storage for executive summary views.
