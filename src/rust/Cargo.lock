@@ -2332,7 +2332,7 @@ dependencies = [
  "clap",
  "lqos_bus",
  "lqos_config",
- "nix",
+ "lqos_utils",
  "serde",
  "serde_json",
  "tokio",
