@@ -1538,12 +1538,31 @@ pub fn publish_effective_topology_artifacts(
     let _lock = acquire_effective_publish_lock(config)?;
 
     let effective_state_path = topology_effective_state_path(config);
+    let effective_state_value = serde_json::to_value(&artifacts.effective)?;
+
+    let effective_network_path = topology_effective_network_path(config);
+    let effective_generation = artifacts
+        .effective_network
+        .as_ref()
+        .map(compute_effective_network_generation)
+        .transpose()?;
+
+    let shaping_inputs_path = topology_shaping_inputs_path(config);
+    let shaping_inputs = build_shaping_inputs(config, artifacts)?;
+    let prepared_shaping_inputs = match shaping_inputs {
+        Some(mut shaping_inputs) => {
+            shaping_inputs.shaping_generation = shaping_inputs.compute_shaping_generation()?;
+            let shaping_inputs_value = serde_json::to_value(&shaping_inputs)?;
+            Some((shaping_inputs, shaping_inputs_value))
+        }
+        None => None,
+    };
+
     let current_effective_state = TopologyEffectiveStateFile::load(config).ok();
     if !current_effective_state
         .as_ref()
         .is_some_and(|current| effective_state_payload_equals(current, &artifacts.effective))
     {
-        let effective_state_value = serde_json::to_value(&artifacts.effective)?;
         atomic_write_json_value(&effective_state_path, &effective_state_value).with_context(
             || {
                 format!(
@@ -1554,12 +1573,6 @@ pub fn publish_effective_topology_artifacts(
         )?;
     }
 
-    let effective_network_path = topology_effective_network_path(config);
-    let effective_generation = artifacts
-        .effective_network
-        .as_ref()
-        .map(compute_effective_network_generation)
-        .transpose()?;
     if let Some(effective_network) = artifacts.effective_network.as_ref() {
         let current_effective_network = read_json_value(&effective_network_path);
         if current_effective_network.as_ref() != Some(effective_network) {
@@ -1581,30 +1594,13 @@ pub fn publish_effective_topology_artifacts(
         })?;
     }
 
-    let shaping_inputs_path = topology_shaping_inputs_path(config);
-    let shaping_inputs = match build_shaping_inputs(config, artifacts) {
-        Ok(value) => value,
-        Err(err) => {
-            if shaping_inputs_path.exists() {
-                std::fs::remove_file(&shaping_inputs_path).with_context(|| {
-                    format!(
-                        "Unable to remove stale runtime shaping inputs at {:?}",
-                        shaping_inputs_path
-                    )
-                })?;
-            }
-            return Err(err);
-        }
-    };
-    match shaping_inputs {
-        Some(mut shaping_inputs) => {
-            shaping_inputs.shaping_generation = shaping_inputs.compute_shaping_generation()?;
+    match prepared_shaping_inputs {
+        Some((shaping_inputs, shaping_inputs_value)) => {
             let current_shaping_inputs = TopologyShapingInputsFile::load(config).ok();
             if !current_shaping_inputs
                 .as_ref()
                 .is_some_and(|current| current.semantic_equals(&shaping_inputs))
             {
-                let shaping_inputs_value = serde_json::to_value(&shaping_inputs)?;
                 atomic_write_json_value(&shaping_inputs_path, &shaping_inputs_value).with_context(
                     || {
                         format!(
@@ -5018,6 +5014,66 @@ mod tests {
         assert!(topology_effective_network_path(&config).exists());
         assert!(topology_shaping_inputs_path(&config).exists());
         assert!(topology_runtime_status_path(&config).exists());
+    }
+
+    #[test]
+    fn publish_preserves_previous_artifacts_when_shaping_inputs_fail() {
+        let lqos_directory = unique_temp_dir("lqos-topology-publish-prep-failure");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let effective_state_path = topology_effective_state_path(&config);
+        let effective_network_path = topology_effective_network_path(&config);
+        let shaping_inputs_path = topology_shaping_inputs_path(&config);
+        let previous_effective_state = "{\"previous\":\"effective-state\"}\n";
+        let previous_effective_network = "{\"previous\":\"effective-network\"}\n";
+        let previous_shaping_inputs = "{\"previous\":\"shaping-inputs\"}\n";
+        for path in [
+            &effective_state_path,
+            &effective_network_path,
+            &shaping_inputs_path,
+        ] {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("artifact parent directory should exist");
+            }
+        }
+        fs::write(&effective_state_path, previous_effective_state)
+            .expect("previous effective state should write");
+        fs::write(&effective_network_path, previous_effective_network)
+            .expect("previous effective network should write");
+        fs::write(&shaping_inputs_path, previous_shaping_inputs)
+            .expect("previous shaping inputs should write");
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Tower 1\",\"tower-1\",\"\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-2\",\"Device 2\",\"Missing Parent\",\"missing-parent\",\"\",\"aa:bb:cc:dd:ee:00\",\"192.0.2.11/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let result = publish_effective_topology_artifacts(
+            &config,
+            &sample_runtime_artifacts(),
+            "new-generation",
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read_to_string(&effective_state_path).expect("effective state should remain"),
+            previous_effective_state
+        );
+        assert_eq!(
+            fs::read_to_string(&effective_network_path).expect("effective network should remain"),
+            previous_effective_network
+        );
+        assert_eq!(
+            fs::read_to_string(&shaping_inputs_path).expect("shaping inputs should remain"),
+            previous_shaping_inputs
+        );
     }
 
     #[test]
