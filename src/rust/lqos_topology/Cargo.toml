@@ -14,3 +14,4 @@ lqos_config = { path = "../lqos_config" }
 lqos_overrides = { path = "../lqos_overrides" }
 lqos_probe = { path = "../lqos_probe" }
 lqos_topology_compile = { path = "../lqos_topology_compile" }
+lqos_utils = { path = "../lqos_utils" }

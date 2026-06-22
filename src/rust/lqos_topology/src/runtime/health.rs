@@ -6,17 +6,13 @@ use lqos_config::{
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{AttachmentProbeSpec, is_health_state_fresh};
 
 use super::probe::parse_probe_ip;
 
 pub(super) fn now_unix() -> Option<u64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|duration| duration.as_secs())
+    lqos_utils::unix_time::unix_now().ok()
 }
 
 fn probe_unavailable_reason(local_ip: &str, remote_ip: &str) -> String {

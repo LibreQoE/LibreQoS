@@ -2496,6 +2496,7 @@ dependencies = [
  "lqos_overrides",
  "lqos_probe",
  "lqos_topology_compile",
+ "lqos_utils",
  "serde_json",
  "tokio",
  "tracing",

@@ -31,7 +31,6 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME: &str = "topology_effective_publish.lock";
 const TOPOLOGY_WARNING_EXAMPLE_LIMIT: usize = 5;
@@ -188,10 +187,7 @@ pub struct AttachmentProbeSpec {
 }
 
 fn now_unix() -> Option<u64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .map(|duration| duration.as_secs())
+    lqos_utils::unix_time::unix_now().ok()
 }
 
 fn atomic_write_json_value(path: &Path, value: &Value) -> Result<()> {
@@ -1097,9 +1093,8 @@ fn build_flat_bucket_assignments(
         &bucket_names,
         &BTreeMap::new(),
         &BTreeMap::new(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs_f64())
+        lqos_utils::unix_time::unix_now()
+            .map(|timestamp| timestamp as f64)
             .unwrap_or(0.0),
         &TopLevelPlannerParams {
             mode: planner_mode,
