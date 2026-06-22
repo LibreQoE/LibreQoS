@@ -1494,15 +1494,16 @@ fn build_effective_topology_artifacts_from_prepared(
     let effective_network = if runtime_flat_mode(config) {
         Some(runtime_flat_bucket_network(config))
     } else {
-        canonical_network.as_object().map(|_| {
-            apply_effective_topology_to_canonical_state(
+        match canonical_network.as_object() {
+            Some(_) => Some(apply_effective_topology_to_canonical_state(
                 config,
                 canonical,
                 &ui_state,
                 &effective,
                 virtualization,
-            )
-        })
+            )?),
+            None => None,
+        }
     };
 
     if let Some(effective_network) = effective_network.as_ref() {
@@ -2805,9 +2806,9 @@ fn apply_effective_topology_reparenting_only(
     canonical_network: &Value,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
-) -> Value {
+) -> std::result::Result<Value, Vec<String>> {
     let Some(root) = canonical_network.as_object() else {
-        return canonical_network.clone();
+        return Ok(canonical_network.clone());
     };
     let mut out = root.clone();
     let ui_by_node = ui_state
@@ -2842,12 +2843,13 @@ fn apply_effective_topology_reparenting_only(
             let Some((node_key, node_value)) = remove_node_by_id(&mut out, &ui_node.node_id) else {
                 continue;
             };
-            let _ = insert_node_under_parent_id(
+            insert_node_under_parent_id(
                 &mut out,
                 &selected_parent.parent_node_id,
                 &node_key,
                 node_value,
-            );
+            )
+            .map_err(|err| vec![err])?;
             continue;
         };
         let Some(target_attachment) = selected_parent
@@ -2878,7 +2880,8 @@ fn apply_effective_topology_reparenting_only(
                     &mut out,
                     &selected_parent.parent_node_id,
                     &current_anchor_attachment,
-                );
+                )
+                .map_err(|err| vec![err])?;
             }
             continue;
         }
@@ -2892,31 +2895,34 @@ fn apply_effective_topology_reparenting_only(
                 &mut out,
                 &selected_parent.parent_node_id,
                 &anchor_attachment,
-            );
-            let _ = insert_node_under_parent_id(
+            )
+            .map_err(|err| vec![err])?;
+            insert_node_under_parent_id(
                 &mut out,
                 &anchor_attachment.attachment_id,
                 &node_key,
                 node_value,
-            );
+            )
+            .map_err(|err| vec![err])?;
         } else {
-            let _ = insert_node_under_parent_id(
+            insert_node_under_parent_id(
                 &mut out,
                 &selected_parent.parent_node_id,
                 &node_key,
                 node_value,
-            );
+            )
+            .map_err(|err| vec![err])?;
         }
     }
 
-    Value::Object(out)
+    Ok(Value::Object(out))
 }
 
 fn queue_policy_reference_tree(
     canonical: &TopologyCanonicalStateFile,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
-) -> Value {
+) -> std::result::Result<Value, Vec<String>> {
     let canonical_network =
         if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration {
             canonical.insight_topology_network_json()
@@ -2924,11 +2930,11 @@ fn queue_policy_reference_tree(
             canonical.compatibility_network_json().clone()
         };
     let mut logical_tree =
-        apply_effective_topology_reparenting_only(&canonical_network, ui_state, effective);
+        apply_effective_topology_reparenting_only(&canonical_network, ui_state, effective)?;
     if let Some(root) = logical_tree.as_object_mut() {
         recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
     }
-    logical_tree
+    Ok(logical_tree)
 }
 
 fn queue_hidden_node_ids_in_promotion_order(ui_state: &TopologyEditorStateFile) -> Vec<String> {
@@ -3102,48 +3108,76 @@ fn insert_node_under_parent_id(
     parent_id: &str,
     node_key: &str,
     node_value: Value,
-) -> bool {
-    for (key, value) in map.iter_mut() {
-        let Some(node) = value.as_object_mut() else {
-            continue;
-        };
-        if node
-            .get("id")
-            .and_then(Value::as_str)
-            .is_some_and(|id| id == parent_id)
-        {
-            let children = node
-                .entry("children".to_string())
-                .or_insert_with(|| Value::Object(Map::new()));
-            let Some(children) = children.as_object_mut() else {
-                return false;
+) -> std::result::Result<(), String> {
+    fn insert_node_under_parent_id_inner(
+        map: &mut Map<String, Value>,
+        parent_id: &str,
+        node_key: &str,
+        node_value: &Value,
+    ) -> std::result::Result<bool, String> {
+        for (key, value) in map.iter_mut() {
+            let Some(node) = value.as_object_mut() else {
+                continue;
             };
-            let mut node_value = node_value;
-            if let Some(node_object) = node_value.as_object_mut() {
-                node_object.insert("parent_site".to_string(), Value::String(key.clone()));
-                node_object
-                    .entry("name".to_string())
-                    .or_insert_with(|| Value::String(node_key.to_string()));
+            if key == parent_id
+                || node
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|id| id == parent_id)
+            {
+                let parent_name = node
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or(key)
+                    .to_string();
+                let children = node
+                    .entry("children".to_string())
+                    .or_insert_with(|| Value::Object(Map::new()));
+                let Some(children) = children.as_object_mut() else {
+                    return Err(format!(
+                        "Unable to reparent '{node_key}' under '{parent_id}': parent has non-object children"
+                    ));
+                };
+                if children.contains_key(node_key) {
+                    return Err(format!(
+                        "Unable to reparent '{node_key}' under '{parent_id}': child key already exists"
+                    ));
+                }
+                let mut node_value = node_value.clone();
+                if let Some(node_object) = node_value.as_object_mut() {
+                    node_object.insert("parent_site".to_string(), Value::String(parent_name));
+                    node_object
+                        .entry("name".to_string())
+                        .or_insert_with(|| Value::String(node_key.to_string()));
+                }
+                children.insert(node_key.to_string(), node_value);
+                return Ok(true);
             }
-            children.insert(node_key.to_string(), node_value);
-            return true;
+            if let Some(children) = node.get_mut("children").and_then(Value::as_object_mut)
+                && insert_node_under_parent_id_inner(children, parent_id, node_key, node_value)?
+            {
+                return Ok(true);
+            }
         }
-        if let Some(children) = node.get_mut("children").and_then(Value::as_object_mut)
-            && insert_node_under_parent_id(children, parent_id, node_key, node_value.clone())
-        {
-            return true;
-        }
+        Ok(false)
     }
-    false
+
+    if insert_node_under_parent_id_inner(map, parent_id, node_key, &node_value)? {
+        Ok(())
+    } else {
+        Err(format!(
+            "Unable to reparent '{node_key}': target parent '{parent_id}' was not found"
+        ))
+    }
 }
 
 fn ensure_attachment_node_exists(
     root: &mut Map<String, Value>,
     parent_id: &str,
     attachment: &TopologyAttachmentOption,
-) {
+) -> std::result::Result<(), String> {
     if update_node_bandwidths_by_id(root, &attachment.attachment_id, attachment) {
-        return;
+        return Ok(());
     }
     let download = attachment
         .download_bandwidth_mbps
@@ -3172,12 +3206,18 @@ fn ensure_attachment_node_exists(
         Value::String(attachment.attachment_name.clone()),
     );
     node.insert("type".to_string(), Value::String("AP".to_string()));
-    let _ = insert_node_under_parent_id(
+    insert_node_under_parent_id(
         root,
         parent_id,
         &attachment.attachment_name,
         Value::Object(node),
-    );
+    )
+    .map_err(|err| {
+        format!(
+            "Unable to create attachment node '{}' under '{}': {err}",
+            attachment.attachment_name, parent_id
+        )
+    })
 }
 
 fn attachment_anchor_for_reparent(
@@ -4269,7 +4309,8 @@ fn validate_effective_topology_network_from_canonical(
     let mut errors = Vec::new();
     validate_effective_node_identity_consistency(ui_state, effective, &mut errors);
     validate_effective_site_parent_cycles(ui_state, effective, &mut errors);
-    let queue_policy_tree = queue_policy_reference_tree(canonical, ui_state, effective);
+    let queue_policy_tree = queue_policy_reference_tree(canonical, ui_state, effective)
+        .unwrap_or_else(|_| Value::Object(Map::new()));
     let queue_policy_root = queue_policy_tree.as_object();
 
     let mut counts = HashMap::new();
@@ -4355,18 +4396,22 @@ fn apply_effective_topology_to_network_json_from_canonical(
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
     virtualization: &QueueVirtualizationContext,
-) -> Value {
-    let mut out = apply_effective_topology_reparenting_only(canonical_network, ui_state, effective);
+) -> std::result::Result<Value, Vec<String>> {
+    let mut out =
+        apply_effective_topology_reparenting_only(canonical_network, ui_state, effective)?;
     if let Some(root) = out.as_object_mut() {
         recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
         apply_queue_hidden_node_virtualization(config, ui_state, effective, root, virtualization);
         apply_runtime_squashing(config, ui_state, effective, root);
     }
-    out
+    Ok(out)
 }
 
 /// Applies the effective attachment selection to a canonical network tree and returns
 /// the runtime-effective tree used by shaping/export.
+///
+/// Returns errors instead of a partial tree when reparenting cannot find the target
+/// parent or would overwrite an existing child subtree.
 ///
 /// This legacy helper accepts the candidate canonical network tree directly and reconstructs
 /// canonical topology metadata from it so existing call sites and tests can keep using the same
@@ -4376,7 +4421,7 @@ pub fn apply_effective_topology_to_network_json(
     canonical_network: &Value,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
-) -> Value {
+) -> std::result::Result<Value, Vec<String>> {
     let canonical_state = TopologyCanonicalStateFile::from_editor_and_network(
         ui_state,
         canonical_network,
@@ -4398,7 +4443,7 @@ fn apply_effective_topology_to_canonical_state(
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
     virtualization: &QueueVirtualizationContext,
-) -> Value {
+) -> std::result::Result<Value, Vec<String>> {
     let canonical_network =
         if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration {
             canonical.insight_topology_network_json()
@@ -4419,10 +4464,12 @@ fn apply_effective_topology_to_canonical_state(
 mod tests {
     use super::{
         EffectiveTopologyArtifacts, QueueVirtualizationContext,
-        apply_effective_topology_to_canonical_state, apply_effective_topology_to_network_json,
-        apply_effective_topology_to_network_json_from_canonical, auto_attachment_option,
-        build_effective_topology_artifacts, build_effective_topology_artifacts_from_canonical,
-        build_shaping_inputs, collect_direct_circuit_node_ids, compute_effective_state,
+        apply_effective_topology_to_canonical_state as try_apply_effective_topology_to_canonical_state,
+        apply_effective_topology_to_network_json as try_apply_effective_topology_to_network_json,
+        apply_effective_topology_to_network_json_from_canonical as try_apply_effective_topology_to_network_json_from_canonical,
+        auto_attachment_option, build_effective_topology_artifacts,
+        build_effective_topology_artifacts_from_canonical, build_shaping_inputs,
+        collect_direct_circuit_node_ids, compute_effective_state,
         publish_effective_topology_artifacts, publish_topology_runtime_error_status,
         validate_effective_topology_network,
     };
@@ -4452,6 +4499,52 @@ mod tests {
         let path = std::env::temp_dir().join(format!("{prefix}-{unique}"));
         fs::create_dir_all(&path).expect("temp directory should be creatable");
         path
+    }
+
+    fn apply_effective_topology_to_network_json(
+        config: &Config,
+        canonical_network: &Value,
+        ui_state: &TopologyEditorStateFile,
+        effective: &TopologyEffectiveStateFile,
+    ) -> Value {
+        try_apply_effective_topology_to_network_json(config, canonical_network, ui_state, effective)
+            .expect("effective topology export should succeed")
+    }
+
+    fn apply_effective_topology_to_network_json_from_canonical(
+        config: &Config,
+        canonical_network: &Value,
+        canonical: &TopologyCanonicalStateFile,
+        ui_state: &TopologyEditorStateFile,
+        effective: &TopologyEffectiveStateFile,
+        virtualization: &QueueVirtualizationContext,
+    ) -> Value {
+        try_apply_effective_topology_to_network_json_from_canonical(
+            config,
+            canonical_network,
+            canonical,
+            ui_state,
+            effective,
+            virtualization,
+        )
+        .expect("effective topology export should succeed")
+    }
+
+    fn apply_effective_topology_to_canonical_state(
+        config: &Config,
+        canonical: &TopologyCanonicalStateFile,
+        ui_state: &TopologyEditorStateFile,
+        effective: &TopologyEffectiveStateFile,
+        virtualization: &QueueVirtualizationContext,
+    ) -> Value {
+        try_apply_effective_topology_to_canonical_state(
+            config,
+            canonical,
+            ui_state,
+            effective,
+            virtualization,
+        )
+        .expect("effective topology export should succeed")
     }
 
     fn canonical_node_with_rate_source(
@@ -8058,6 +8151,171 @@ mod tests {
     }
 
     #[test]
+    fn effective_export_fails_when_reparent_target_parent_is_missing() {
+        let canonical = json!({
+            "Old Parent": {
+                "children": {
+                    "Child Site": {
+                        "children": {},
+                        "id": "child-site",
+                        "name": "Child Site",
+                        "parent_site": "Old Parent",
+                        "type": "Site"
+                    }
+                },
+                "id": "old-parent",
+                "name": "Old Parent",
+                "type": "Site"
+            }
+        });
+        let ui_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "test".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "child-site".to_string(),
+                node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
+                current_parent_node_id: Some("old-parent".to_string()),
+                current_parent_node_name: Some("Old Parent".to_string()),
+                current_attachment_id: None,
+                current_attachment_name: None,
+                can_move: true,
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "missing-parent".to_string(),
+                    parent_node_name: "Missing Parent".to_string(),
+                    attachment_options: Vec::new(),
+                    all_attachments_suppressed: false,
+                    has_probe_unavailable_attachments: false,
+                }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                preferred_attachment_id: None,
+                preferred_attachment_name: None,
+                effective_attachment_id: None,
+                effective_attachment_name: None,
+            }],
+        };
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![TopologyEffectiveNodeState {
+                node_id: "child-site".to_string(),
+                logical_parent_node_id: "missing-parent".to_string(),
+                preferred_attachment_id: None,
+                effective_attachment_id: None,
+                fallback_reason: None,
+                all_attachments_suppressed: false,
+                attachments: Vec::new(),
+            }],
+        };
+
+        let errors = try_apply_effective_topology_to_network_json(
+            &Config::default(),
+            &canonical,
+            &ui_state,
+            &effective,
+        )
+        .expect_err("missing target parent should fail export");
+        let error_text = errors.join(" | ");
+        assert!(error_text.contains("Child Site"));
+        assert!(error_text.contains("missing-parent"));
+    }
+
+    #[test]
+    fn effective_export_fails_when_reparent_would_overwrite_child_key() {
+        let canonical = json!({
+            "Old Parent": {
+                "children": {
+                    "Child Site": {
+                        "children": {},
+                        "id": "child-site",
+                        "name": "Child Site",
+                        "parent_site": "Old Parent",
+                        "type": "Site"
+                    }
+                },
+                "id": "old-parent",
+                "name": "Old Parent",
+                "type": "Site"
+            },
+            "Target Parent": {
+                "children": {
+                    "Child Site": {
+                        "children": {},
+                        "id": "existing-child",
+                        "name": "Child Site",
+                        "parent_site": "Target Parent",
+                        "type": "Site"
+                    }
+                },
+                "id": "target-parent",
+                "name": "Target Parent",
+                "type": "Site"
+            }
+        });
+        let ui_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "test".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "child-site".to_string(),
+                node_name: "Child Site".to_string(),
+                latitude: None,
+                longitude: None,
+                current_parent_node_id: Some("old-parent".to_string()),
+                current_parent_node_name: Some("Old Parent".to_string()),
+                current_attachment_id: None,
+                current_attachment_name: None,
+                can_move: true,
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "target-parent".to_string(),
+                    parent_node_name: "Target Parent".to_string(),
+                    attachment_options: Vec::new(),
+                    all_attachments_suppressed: false,
+                    has_probe_unavailable_attachments: false,
+                }],
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                preferred_attachment_id: None,
+                preferred_attachment_name: None,
+                effective_attachment_id: None,
+                effective_attachment_name: None,
+            }],
+        };
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![TopologyEffectiveNodeState {
+                node_id: "child-site".to_string(),
+                logical_parent_node_id: "target-parent".to_string(),
+                preferred_attachment_id: None,
+                effective_attachment_id: None,
+                fallback_reason: None,
+                all_attachments_suppressed: false,
+                attachments: Vec::new(),
+            }],
+        };
+
+        let errors = try_apply_effective_topology_to_network_json(
+            &Config::default(),
+            &canonical,
+            &ui_state,
+            &effective,
+        )
+        .expect_err("child-key collision should fail export");
+        let error_text = errors.join(" | ");
+        assert!(error_text.contains("Child Site"));
+        assert!(error_text.contains("target-parent"));
+        assert!(error_text.contains("child key already exists"));
+    }
+
+    #[test]
     fn site_reparenting_does_not_create_self_anchored_duplicate_site() {
         let canonical = json!({
             "David Spence": {
@@ -8248,6 +8506,23 @@ mod tests {
             generated_unix: None,
             ingress_identity: None,
             nodes: vec![
+                TopologyEditorNode {
+                    node_id: "site-alpha".to_string(),
+                    node_name: "Site Alpha".to_string(),
+                    latitude: None,
+                    longitude: None,
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: vec![],
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                },
                 TopologyEditorNode {
                     node_id: "site-beta".to_string(),
                     node_name: "Site Beta".to_string(),
