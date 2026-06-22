@@ -2411,6 +2411,7 @@ dependencies = [
  "clap",
  "hmac",
  "ip_network",
+ "lqos_config",
  "md-5",
  "subtle",
  "thiserror 1.0.69",

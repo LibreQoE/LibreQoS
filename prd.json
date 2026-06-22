@@ -1,135 +1,108 @@
 {
   "product": "LibreQoS",
-  "branchName": "radius-accounting-listener",
-  "summary": "Add an opt-in RADIUS accounting listener MVP that can be developed and tested without root, decode common accounting packets, and prepare dynamic-circuit command plumbing for lqosd integration.",
+  "branchName": "radius-accounting-dynamic-circuits",
+  "summary": "Extend the opt-in RADIUS accounting listener from session tracking to dynamic circuit application, with fallback speeds and MAC-based ShapedDevices matching for operator-managed account plans.",
   "stories": [
     {
-      "id": "RADIUS-001",
-      "title": "Create the lqos_radius crate",
-      "description": "As a LibreQoS developer, I want a separate lqos_radius crate with a rootless test executable, so that RADIUS accounting protocol work can be built and exercised without running lqosd as root.",
+      "id": "RADIUS-010",
+      "title": "Gate RADIUS dynamic circuit application",
+      "description": "As a LibreQoS operator, I want RADIUS dynamic circuit application to have its own explicit activation settings, so that I can receive accounting packets without changing shaping until I choose to enable it.",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "The Rust workspace includes lqos_radius as a buildable member.",
-        "lqos_radius exposes a library API for packet handling and listener startup.",
-        "lqos_radius includes an executable entrypoint that can run on a configurable non-privileged listen address.",
-        "cargo test for lqos_radius runs without requiring root privileges or live shaping state."
+        "RADIUS accounting continues to listen and track sessions when dynamic circuit application is disabled.",
+        "RADIUS-created dynamic circuits are not applied unless both RADIUS application settings and the existing dynamic_circuits feature are enabled.",
+        "Invalid activation settings are rejected during configuration validation before listener startup.",
+        "Config round-trip tests cover disabled application, enabled application, missing dynamic_circuits dependency, and valid activation settings."
       ]
     },
     {
-      "id": "RADIUS-002",
-      "title": "Configure RADIUS accounting",
-      "description": "As a LibreQoS operator, I want RADIUS accounting settings in LibreQoS configuration, so that I can explicitly enable the listener and control which NAS clients are trusted.",
+      "id": "RADIUS-011",
+      "title": "Configure fallback RADIUS speeds",
+      "description": "As a LibreQoS operator, I want an optional default speed profile for RADIUS-created circuits, so that sessions without packet-provided or lookup-provided rates can still be shaped at a safe default plan.",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "radius_accounting can be disabled without requiring any RADIUS clients.",
-        "When radius_accounting is enabled, configuration requires a valid listen address and at least one client source.",
-        "Each configured client has a source allow-list and a shared secret source that is not emitted in logs or serialized debug output.",
-        "Configuration validation rejects invalid listen addresses, invalid client sources, missing secrets, and non-positive timing values.",
-        "Configuration round-trip tests cover enabled and disabled RADIUS accounting settings."
+        "RADIUS accounting configuration can define download_min_mbps, upload_min_mbps, download_max_mbps, and upload_max_mbps as an optional fallback profile.",
+        "Validation rejects non-finite rates, rates less than or equal to zero, and minimum rates greater than maximum rates.",
+        "When no packet or lookup rate exists and no fallback profile is configured, the session remains pending with a missing-rate reason.",
+        "When a fallback profile is configured, it is used only after higher-priority rate sources fail to resolve a rate."
       ]
     },
     {
-      "id": "RADIUS-003",
-      "title": "Decode and verify accounting packets",
-      "description": "As a LibreQoS operator, I want incoming RADIUS accounting packets to be decoded and verified, so that only authentic Accounting-Request packets from trusted clients are accepted.",
+      "id": "RADIUS-012",
+      "title": "Match ShapedDevices by RADIUS MAC",
+      "description": "As a LibreQoS operator, I want RADIUS accounting sessions to optionally match ShapedDevices entries by MAC address, so that my existing account-plan sync can provide circuit metadata while RADIUS supplies the active IP addresses.",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "The decoder accepts Accounting-Request packets and rejects unsupported RADIUS packet codes for this MVP.",
-        "Packet length, attribute bounds, and malformed attribute cases are validated before packet acceptance.",
-        "Accounting-Request authenticators are verified against the matched client shared secret.",
-        "Message-Authenticator is verified when present and is required when configuration enables that policy.",
-        "Valid accepted requests can produce an Accounting-Response packet with response code 5."
+        "A configuration option enables or disables matching RADIUS Calling-Station-Id values against ShapedDevices MAC values.",
+        "MAC matching normalizes common colon, hyphen, dot, plain-hex, and mixed-case formats before comparison.",
+        "A unique MAC match supplies circuit ID, circuit name, device ID, device name, parent fields, speed fields, and SQM override metadata for the dynamic circuit.",
+        "RADIUS-provided IPv4 and IPv6 address data replaces the matched ShapedDevices address fields for the active dynamic circuit.",
+        "No match or more than one matching ShapedDevices row leaves the session pending and emits no dynamic circuit."
       ]
     },
     {
-      "id": "RADIUS-004",
-      "title": "Extract common accounting attributes",
-      "description": "As a LibreQoS operator, I want common RADIUS accounting attributes translated into typed session events, so that subscriber session lifecycle, identity, and address data can be inspected and used later.",
+      "id": "RADIUS-013",
+      "title": "Resolve RADIUS sessions into shaped devices",
+      "description": "As a LibreQoS operator, I want shapeable RADIUS sessions converted into valid dynamic circuit device definitions, so that active subscriber addresses can be attached to the correct circuit and plan.",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "Typed events include Acct-Status-Type values for Start, Stop, Interim-Update, Accounting-On, and Accounting-Off.",
-        "Typed events include session and NAS identity fields such as Acct-Session-Id, NAS-IP-Address, NAS-IPv6-Address, NAS-Identifier, NAS-Port, NAS-Port-Id, User-Name, Calling-Station-Id, Called-Station-Id, Class, and Event-Timestamp when present.",
-        "Typed events include subscriber address fields such as Framed-IP-Address, Framed-IP-Netmask, Framed-Route, Framed-IPv6-Prefix, Delegated-IPv6-Prefix, and Framed-IPv6-Address when present.",
-        "Unknown standard attributes and unknown vendor-specific attributes are preserved for diagnostics without rejecting otherwise valid packets.",
-        "MikroTik-Rate-Limit vendor attributes are decoded into rate values and tests verify configurable NAS-to-LibreQoS direction mapping."
+        "A session becomes shapeable only when it has a stable circuit identity, device identity, at least one IP address or prefix, parent attachment metadata, and resolved rates.",
+        "When no ShapedDevices MAC match supplies identity, the default circuit ID is derived from NAS identity and Acct-Session-Id, and display names prefer User-Name and Calling-Station-Id when present.",
+        "Rate resolution uses decoded RADIUS rate data before ShapedDevices MAC-match rates, and uses the configured fallback profile only when both are missing.",
+        "Missing IP, missing parent, missing rate, and ambiguous MAC match cases remain pending with distinct reasons.",
+        "Unit tests cover Start without IP, Interim activation with IP, matched ShapedDevices metadata with RADIUS IP replacement, and fallback identity generation."
       ]
     },
     {
-      "id": "RADIUS-005",
-      "title": "Run a rootless UDP accounting listener",
-      "description": "As a LibreQoS developer, I want the lqos_radius listener to run against loopback test traffic, so that protocol and server behavior can be proven before wiring live lqosd behavior.",
+      "id": "RADIUS-014",
+      "title": "Apply RADIUS dynamic circuit upserts",
+      "description": "As a LibreQoS operator, I want accepted RADIUS Start and Interim-Update packets to create or update dynamic circuits through the existing daemon path, so that active sessions are shaped without editing ShapedDevices.csv.",
       "priority": 1,
       "passes": true,
       "acceptanceCriteria": [
-        "The listener can bind to 127.0.0.1:0 or another configured non-privileged address for tests.",
-        "Accepted Accounting-Request packets receive an Accounting-Response without waiting for dynamic-circuit application.",
-        "Packets from unconfigured sources do not create session events or command placeholders.",
-        "Packets with invalid authenticators are rejected and do not create session events or command placeholders.",
-        "Loopback UDP tests verify accepted requests, rejected sources, invalid authenticators, and response behavior."
+        "Shapeable Start and Interim-Update events submit CreateDynamicCircuit requests with the resolved ShapedDevice payload.",
+        "RADIUS dynamic circuit application uses the existing lqosd dynamic circuit path and never writes dynamic_circuits.json directly from lqos_radius.",
+        "The UDP Accounting-Response path does not wait for dynamic circuit persistence or bakery overlay work to finish.",
+        "Create or update failures are logged with circuit and session identity and do not stop the RADIUS listener.",
+        "Tests use fake command or bus sinks and do not require live shaping, bakery, TC, XDP, or root privileges."
       ]
     },
     {
-      "id": "RADIUS-006",
-      "title": "Track accounting sessions in memory",
-      "description": "As a LibreQoS operator, I want accepted accounting events to update runtime session state, so that Starts, Interims, Stops, and NAS resets have predictable results during the MVP.",
+      "id": "RADIUS-015",
+      "title": "Expire RADIUS dynamic circuits",
+      "description": "As a LibreQoS operator, I want RADIUS-created dynamic circuits removed when accounting sessions stop or expire, so that stale subscriber IPs do not remain shaped after the session ends.",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Stop events submit RemoveDynamicCircuit for the active circuit ID, and duplicate Stop events are harmless.",
+        "Sessions that exceed default_ttl_seconds without refresh remove any active RADIUS-created dynamic circuit.",
+        "Accounting-On and Accounting-Off events mark matching NAS sessions stale and remove active circuits no later than stale_grace_seconds unless refreshed by Start or Interim-Update.",
+        "Removal uses the same circuit ID that was used for creation, including IDs supplied by ShapedDevices MAC matching.",
+        "Fake-time tests cover Stop removal, TTL expiry removal, stale NAS reset expiry, and refresh before expiry."
+      ]
+    },
+    {
+      "id": "RADIUS-016",
+      "title": "Report RADIUS activation outcomes",
+      "description": "As a LibreQoS operator, I want clear RADIUS dynamic circuit diagnostics, so that I can see why a session was shaped, pending, expired, or rejected without exposing shared secrets.",
       "priority": 2,
       "passes": true,
       "acceptanceCriteria": [
-        "Sessions are keyed primarily by NAS identity plus Acct-Session-Id when both values are available.",
-        "Start and Interim-Update events create or refresh a session and preserve the latest decoded identity and address data.",
-        "Stop events mark the session stopped and are harmless when duplicated.",
-        "Accounting-On and Accounting-Off mark sessions for the affected NAS stale without affecting other NAS clients.",
-        "Sessions that cannot become dynamic circuits retain a specific pending reason such as missing IP, missing rate, missing parent, missing session ID, or ambiguous mapping."
-      ]
-    },
-    {
-      "id": "RADIUS-007",
-      "title": "Prepare dynamic-circuit command plumbing",
-      "description": "As a LibreQoS developer, I want RADIUS session handling to emit create, update, and remove command placeholders, so that lqosd can later connect those commands to the existing dynamic-circuit path without changing the protocol server.",
-      "priority": 2,
-      "passes": true,
-      "acceptanceCriteria": [
-        "lqos_radius exposes a command sink boundary for dynamic-circuit intents that the lqosd-facing adapter can map to CreateDynamicCircuit and RemoveDynamicCircuit placeholders.",
-        "Shapeable Start and Interim-Update events emit create or update command intents through the sink boundary.",
-        "Stop events emit remove command intents when a deterministic circuit identity is available.",
-        "Fake sink tests assert the emitted command type and circuit identity for Start, Interim-Update, Stop, and expiry scenarios.",
-        "The listener never writes dynamic_circuits.json directly."
-      ]
-    },
-    {
-      "id": "RADIUS-008",
-      "title": "Start the listener from lqosd when configured",
-      "description": "As a LibreQoS operator, I want lqosd to start the RADIUS accounting listener only when configured, so that existing installations are unchanged unless RADIUS accounting is enabled.",
-      "priority": 2,
-      "passes": true,
-      "acceptanceCriteria": [
-        "lqosd does not bind a RADIUS accounting socket when radius_accounting is absent or disabled.",
-        "When radius_accounting is enabled, lqosd starts the listener inside the existing tokio runtime after configuration is loaded.",
-        "Listener startup failures are reported clearly without logging shared secrets.",
-        "lqosd shutdown stops the listener without blocking daemon shutdown.",
-        "The lqosd wiring uses the lqos_radius command sink boundary and leaves final dynamic-circuit application behind the existing bus or daemon channel path for this MVP."
-      ]
-    },
-    {
-      "id": "RADIUS-009",
-      "title": "Provide protocol test fixtures",
-      "description": "As a LibreQoS developer, I want focused protocol fixtures and scenario tests, so that regressions in packet parsing, authentication, and listener behavior are caught without NAS hardware.",
-      "priority": 1,
-      "passes": true,
-      "acceptanceCriteria": [
-        "Raw packet fixtures cover valid Accounting-Start, Accounting-Interim, Accounting-Stop, invalid packet length, invalid authenticator, unknown standard attributes, unknown vendor-specific attributes, and IPv6 address or prefix attributes.",
-        "A test packet builder can generate authenticated Accounting-Request packets for readable scenario tests.",
-        "Authenticator tests cover correct secrets, wrong secrets, modified attributes, truncated packets, valid Message-Authenticator, invalid Message-Authenticator, and required Message-Authenticator policy.",
-        "Session tests use fake time and a fake command sink instead of sockets, root privileges, bakery, TC, XDP, or disk writes."
+        "Diagnostics distinguish active, pending, stopped, stale, expired, and apply-failed RADIUS session states.",
+        "Pending diagnostics include missing IP, missing parent, missing rate, missing session identity, no MAC match, and ambiguous MAC match reasons.",
+        "Create, update, remove, and expiry counters are tracked separately from packet accept and reject counters.",
+        "Logs and diagnostics include circuit/session identifiers needed for troubleshooting but never include shared secret contents."
       ]
     }
   ],
   "notes": [
-    "Full dynamic-circuit application, operator UI or CLI diagnostics, persistent session storage, and CoA or Disconnect support remain outside this MVP unless separately requested.",
-    "Binding the default UDP 1813 port may require elevated privileges; the crate executable and automated tests should support non-privileged addresses for development."
+    "This PRD starts after the completed listener, packet parsing, session tracking, and deferred command-intent work from RADIUS-001 through RADIUS-009.",
+    "RADIUS-provided IP and prefix data is authoritative for active dynamic circuit addresses; ShapedDevices MAC matches supply account-plan and topology metadata only.",
+    "Dynamic circuit application must use the existing lqosd dynamic circuit path and must continue to respect the existing dynamic_circuits.enabled safety gate.",
+    "Automated tests for this PRD should use fake sinks, fake time, and loopback-only packet handling; they must not require root privileges or live TC/XDP shaping state."
   ]
 }

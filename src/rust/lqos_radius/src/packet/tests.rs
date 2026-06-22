@@ -211,7 +211,7 @@ fn parses_empty_attribute_value_and_continues() {
 
     assert_eq!(parsed.attributes().len(), 2);
     assert_eq!(parsed.attributes()[0].kind(), UNKNOWN_ATTRIBUTE_TYPE);
-    assert_eq!(parsed.attributes()[0].value(), &[]);
+    assert_eq!(parsed.attributes()[0].value(), &[] as &[u8]);
     assert_eq!(parsed.attributes()[1].kind(), ACCT_STATUS_TYPE);
     assert_eq!(parsed.attributes()[1].value(), &[0, 0, 0, 1]);
 }

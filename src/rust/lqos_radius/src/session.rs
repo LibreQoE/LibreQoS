@@ -1,17 +1,24 @@
 //! In-memory RADIUS accounting session tracking.
 
-use crate::{AccountingEvent, AcctStatusType};
+use crate::mac_match::ShapedDevicesMacMatch;
 use crate::{
-    DynamicCircuitCommandSink, DynamicCircuitIntent, DynamicCircuitRemoval,
-    DynamicCircuitRemovalReason, DynamicCircuitUpsert,
+    AccountingEvent, AcctStatusType, DynamicCircuitCommandSink, DynamicCircuitIntent,
+    DynamicCircuitRemoval, DynamicCircuitRemovalReason, DynamicCircuitUpsert, MikrotikRateLimit,
 };
-use std::collections::HashMap;
+use lqos_config::{ShapedDevice, validate_rate_profile_mbps};
+use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, Ipv6Addr};
+
+pub use lqos_config::RateProfileValidationError as SessionRateProfileError;
 
 /// In-memory session store for accepted RADIUS accounting events.
 #[derive(Debug, Default)]
 pub struct AccountingSessionStore {
     sessions: HashMap<AccountingSessionKey, AccountingSession>,
+    nas_session_keys_by_acct_session_id: HashMap<String, HashSet<AccountingSessionKey>>,
+    pending_keys_by_lookup: HashMap<SessionLookupIndexKey, HashSet<AccountingSessionKey>>,
+    fallback_keys_by_lookup: HashMap<SessionLookupIndexKey, HashSet<AccountingSessionKey>>,
+    activation_counters: RadiusActivationCounters,
 }
 
 impl AccountingSessionStore {
@@ -22,6 +29,10 @@ impl AccountingSessionStore {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
+            nas_session_keys_by_acct_session_id: HashMap::new(),
+            pending_keys_by_lookup: HashMap::new(),
+            fallback_keys_by_lookup: HashMap::new(),
+            activation_counters: RadiusActivationCounters::default(),
         }
     }
 
@@ -48,6 +59,23 @@ impl AccountingSessionStore {
         self.sessions.get(key)
     }
 
+    /// Returns dynamic-circuit activation counters tracked by this session store.
+    #[must_use]
+    pub const fn activation_counters(&self) -> RadiusActivationCounters {
+        self.activation_counters
+    }
+
+    /// Returns diagnostics for all retained accounting sessions.
+    ///
+    /// Side effects: none. The returned snapshot is built from in-memory state.
+    #[must_use]
+    pub fn activation_diagnostics(&self) -> Vec<RadiusActivationDiagnostic> {
+        self.sessions
+            .iter()
+            .map(|(key, session)| RadiusActivationDiagnostic::from_retained_session(key, session))
+            .collect()
+    }
+
     /// Applies one accounting event using the default missing-parent mapping.
     ///
     /// Side effects: mutates only this in-memory store. It does not write files,
@@ -65,27 +93,71 @@ impl AccountingSessionStore {
         event: AccountingEvent,
         mapping: DynamicCircuitMapping,
     ) -> AccountingSessionUpdate {
-        let Some(status_type) = event.status_type else {
-            return AccountingSessionUpdate::Ignored {
-                reason: AccountingSessionIgnoreReason::MissingStatusType,
-            };
-        };
+        self.apply_event_with_mapping_and_rate_sources(
+            event,
+            mapping,
+            SessionRateSources::default(),
+        )
+    }
 
-        match status_type {
-            AcctStatusType::Start | AcctStatusType::InterimUpdate => {
-                self.upsert_active_session(event, mapping)
-            }
-            AcctStatusType::Stop => self.stop_session(event, mapping),
-            AcctStatusType::AccountingOn => {
-                self.mark_nas_sessions_stale(event, NasResetStatus::AccountingOn)
-            }
-            AcctStatusType::AccountingOff => {
-                self.mark_nas_sessions_stale(event, NasResetStatus::AccountingOff)
-            }
-            AcctStatusType::Unknown(value) => AccountingSessionUpdate::Ignored {
-                reason: AccountingSessionIgnoreReason::UnsupportedStatusType(value),
+    /// Applies one accounting event with explicit mapping and rate-source state.
+    ///
+    /// Resolution priority is decoded packet rate, then any supplied
+    /// ShapedDevices profile, then any supplied fallback profile.
+    ///
+    /// Side effects: mutates only this in-memory store. It does not write files,
+    /// emit dynamic-circuit commands, or touch shaping state.
+    pub fn apply_event_with_mapping_and_rate_sources(
+        &mut self,
+        event: AccountingEvent,
+        mapping: DynamicCircuitMapping,
+        rate_sources: SessionRateSources,
+    ) -> AccountingSessionUpdate {
+        self.apply_event_with_dynamic_circuit_resolution(
+            event,
+            DynamicCircuitResolution {
+                mapping,
+                rate_sources,
+                matched_shaped_device: None,
             },
-        }
+        )
+    }
+
+    /// Applies one accounting event with resolved dynamic-circuit metadata.
+    ///
+    /// Resolution priority is decoded packet rate, then any supplied
+    /// ShapedDevices profile, then any supplied fallback profile.
+    ///
+    /// Side effects: mutates only this in-memory store. It does not write files,
+    /// emit dynamic-circuit commands, or touch shaping state.
+    pub fn apply_event_with_dynamic_circuit_resolution(
+        &mut self,
+        event: AccountingEvent,
+        resolution: DynamicCircuitResolution,
+    ) -> AccountingSessionUpdate {
+        self.apply_event_with_resolution_resolver(event, |_| resolution)
+    }
+
+    /// Applies one accounting event using a shaped-devices MAC matcher.
+    ///
+    /// The matcher is evaluated after active-session sparse fields are merged,
+    /// allowing an update packet to use a `Calling-Station-Id` carried from an
+    /// earlier packet in the same session.
+    ///
+    /// Side effects: mutates only this in-memory store. It does not write files,
+    /// emit dynamic-circuit commands, or touch shaping state.
+    pub fn apply_event_with_shaped_devices_mac_matcher(
+        &mut self,
+        event: AccountingEvent,
+        matcher: &crate::ShapedDevicesMacMatcher,
+        fallback_profile: Option<SessionRateProfile>,
+    ) -> AccountingSessionUpdate {
+        self.apply_event_with_resolution_resolver(event, |latest_event| {
+            DynamicCircuitResolution::from_shaped_devices_mac_match(
+                matcher.match_event(latest_event),
+                fallback_profile,
+            )
+        })
     }
 
     /// Applies one accounting event and emits dynamic-circuit intents for shapeable sessions.
@@ -99,15 +171,77 @@ impl AccountingSessionStore {
         mapping: DynamicCircuitMapping,
         sink: &mut impl DynamicCircuitCommandSink,
     ) -> AccountingSessionUpdate {
-        let reset_identities = match event.status_type {
-            Some(AcctStatusType::AccountingOn | AcctStatusType::AccountingOff) => {
-                Some(NasIdentitySet::from_event(&event))
-            }
-            _ => None,
-        };
-        let update = self.apply_event_with_mapping(event, mapping);
-        self.emit_dynamic_circuit_intents(&update, reset_identities.as_ref(), sink);
+        self.apply_event_with_dynamic_circuit_resolution_and_commands(
+            event,
+            DynamicCircuitResolution {
+                mapping,
+                rate_sources: SessionRateSources::default(),
+                matched_shaped_device: None,
+            },
+            sink,
+        )
+    }
+
+    /// Applies one accounting event with resolved metadata and emits dynamic-circuit intents.
+    ///
+    /// Side effects: mutates only this in-memory store and invokes `sink` for
+    /// emitted intents. This method does not write files, talk to `lqosd`, or
+    /// touch shaping state.
+    pub fn apply_event_with_dynamic_circuit_resolution_and_commands(
+        &mut self,
+        event: AccountingEvent,
+        resolution: DynamicCircuitResolution,
+        sink: &mut impl DynamicCircuitCommandSink,
+    ) -> AccountingSessionUpdate {
+        let update = self.apply_event_with_dynamic_circuit_resolution(event, resolution);
+        self.emit_dynamic_circuit_intents(&update, sink);
         update
+    }
+
+    /// Applies one accounting event with a MAC matcher and emits dynamic-circuit intents.
+    ///
+    /// Side effects: mutates only this in-memory store and invokes `sink` for
+    /// emitted intents. This method does not write files, talk to `lqosd`, or
+    /// touch shaping state.
+    pub fn apply_event_with_shaped_devices_mac_matcher_and_commands(
+        &mut self,
+        event: AccountingEvent,
+        matcher: &crate::ShapedDevicesMacMatcher,
+        fallback_profile: Option<SessionRateProfile>,
+        sink: &mut impl DynamicCircuitCommandSink,
+    ) -> AccountingSessionUpdate {
+        let update =
+            self.apply_event_with_shaped_devices_mac_matcher(event, matcher, fallback_profile);
+        self.emit_dynamic_circuit_intents(&update, sink);
+        update
+    }
+
+    fn apply_event_with_resolution_resolver(
+        &mut self,
+        event: AccountingEvent,
+        resolve_metadata: impl FnOnce(&AccountingEvent) -> DynamicCircuitResolution,
+    ) -> AccountingSessionUpdate {
+        let Some(status_type) = event.status_type else {
+            return AccountingSessionUpdate::Ignored {
+                reason: AccountingSessionIgnoreReason::MissingStatusType,
+            };
+        };
+
+        match status_type {
+            AcctStatusType::Start | AcctStatusType::InterimUpdate => {
+                self.upsert_active_session(event, resolve_metadata)
+            }
+            AcctStatusType::Stop => self.stop_session(event, resolve_metadata),
+            AcctStatusType::AccountingOn => {
+                self.mark_nas_sessions_stale(event, NasResetStatus::AccountingOn)
+            }
+            AcctStatusType::AccountingOff => {
+                self.mark_nas_sessions_stale(event, NasResetStatus::AccountingOff)
+            }
+            AcctStatusType::Unknown(value) => AccountingSessionUpdate::Ignored {
+                reason: AccountingSessionIgnoreReason::UnsupportedStatusType(value),
+            },
+        }
     }
 
     /// Removes one retained session and emits a dynamic-circuit removal when possible.
@@ -120,11 +254,19 @@ impl AccountingSessionStore {
         key: &AccountingSessionKey,
         sink: &mut impl DynamicCircuitCommandSink,
     ) -> Option<AccountingSession> {
-        let mut session = self.sessions.remove(key)?;
+        let mut session = self.remove_session(key)?;
+        self.activation_counters.expiry += 1;
+        let removal_reason = match session.state {
+            AccountingSessionState::Stale(reset) => DynamicCircuitRemovalReason::NasReset(reset),
+            AccountingSessionState::Active | AccountingSessionState::Stopped => {
+                DynamicCircuitRemovalReason::Expired
+            }
+        };
         emit_active_dynamic_circuit_removals(
             key,
             &mut session,
-            DynamicCircuitRemovalReason::Expired,
+            removal_reason,
+            &mut self.activation_counters,
             sink,
         );
         Some(session)
@@ -133,19 +275,13 @@ impl AccountingSessionStore {
     fn emit_dynamic_circuit_intents(
         &mut self,
         update: &AccountingSessionUpdate,
-        reset_identities: Option<&NasIdentitySet>,
         sink: &mut impl DynamicCircuitCommandSink,
     ) {
         match update {
             AccountingSessionUpdate::SessionUpdated { key, state } => {
                 self.emit_session_dynamic_circuit_intents(key, *state, sink);
             }
-            AccountingSessionUpdate::NasSessionsMarkedStale { reset, .. } => {
-                let Some(reset_identities) = reset_identities else {
-                    return;
-                };
-                self.emit_nas_reset_dynamic_circuit_removals(reset_identities, *reset, sink);
-            }
+            AccountingSessionUpdate::NasSessionsMarkedStale { .. } => {}
             AccountingSessionUpdate::Ignored { .. } => {}
         }
     }
@@ -157,44 +293,7 @@ impl AccountingSessionStore {
         sink: &mut impl DynamicCircuitCommandSink,
     ) {
         match state {
-            AccountingSessionState::Active => {
-                let Some(circuit_id) = key.dynamic_circuit_id() else {
-                    return;
-                };
-                let Some(session) = self.sessions.get_mut(key) else {
-                    return;
-                };
-                if !session.pending_reasons.is_empty() {
-                    emit_active_dynamic_circuit_removals(
-                        key,
-                        session,
-                        DynamicCircuitRemovalReason::NoLongerShapeable,
-                        sink,
-                    );
-                    return;
-                }
-
-                let already_emitted = session
-                    .active_dynamic_circuit_ids
-                    .iter()
-                    .any(|active_id| active_id == &circuit_id);
-                let upsert = DynamicCircuitUpsert {
-                    circuit_id: circuit_id.clone(),
-                    session_key: key.clone(),
-                    event: session.latest_event.clone(),
-                };
-                match (already_emitted, session.latest_event.status_type) {
-                    (true, Some(AcctStatusType::InterimUpdate)) => {
-                        sink.emit(DynamicCircuitIntent::UpdateDynamicCircuit(upsert));
-                    }
-                    (_, Some(AcctStatusType::Start | AcctStatusType::InterimUpdate)) => {
-                        sink.emit(DynamicCircuitIntent::CreateDynamicCircuit(upsert));
-                    }
-                    _ => {}
-                }
-                push_active_dynamic_circuit_id(&mut session.active_dynamic_circuit_ids, circuit_id);
-                emit_rekeyed_dynamic_circuit_removals(key, session, sink);
-            }
+            AccountingSessionState::Active => self.emit_active_session_intents(key, sink),
             AccountingSessionState::Stopped => {
                 let Some(session) = self.sessions.get_mut(key) else {
                     return;
@@ -203,6 +302,7 @@ impl AccountingSessionStore {
                     key,
                     session,
                     DynamicCircuitRemovalReason::Stop,
+                    &mut self.activation_counters,
                     sink,
                 );
             }
@@ -210,56 +310,104 @@ impl AccountingSessionStore {
         }
     }
 
-    fn emit_nas_reset_dynamic_circuit_removals(
+    fn emit_active_session_intents(
         &mut self,
-        reset_identities: &NasIdentitySet,
-        reset: NasResetStatus,
+        key: &AccountingSessionKey,
         sink: &mut impl DynamicCircuitCommandSink,
     ) {
-        for (key, session) in &mut self.sessions {
-            if !session_matches_identities(key, session, reset_identities) {
-                continue;
-            }
+        let Some(session) = self.sessions.get_mut(key) else {
+            return;
+        };
+        let Some(shaped_device) = session.resolved_shaped_device.clone() else {
             emit_active_dynamic_circuit_removals(
                 key,
                 session,
-                DynamicCircuitRemovalReason::NasReset(reset),
+                DynamicCircuitRemovalReason::NoLongerShapeable,
+                &mut self.activation_counters,
                 sink,
             );
+            return;
+        };
+        let circuit_id = shaped_device.circuit_id.clone();
+        if circuit_id.trim().is_empty() {
+            emit_active_dynamic_circuit_removals(
+                key,
+                session,
+                DynamicCircuitRemovalReason::NoLongerShapeable,
+                &mut self.activation_counters,
+                sink,
+            );
+            return;
         }
+
+        let already_emitted = session
+            .active_dynamic_circuit_ids
+            .iter()
+            .any(|active_id| active_id == &circuit_id);
+        let upsert = DynamicCircuitUpsert {
+            circuit_id: circuit_id.clone(),
+            session_key: key.clone(),
+            event: session.latest_event.clone(),
+            shaped_device,
+        };
+        match (already_emitted, session.latest_event.status_type) {
+            (true, Some(AcctStatusType::InterimUpdate)) => {
+                self.activation_counters.update += 1;
+                sink.emit(DynamicCircuitIntent::UpdateDynamicCircuit(upsert));
+            }
+            (_, Some(AcctStatusType::Start | AcctStatusType::InterimUpdate)) => {
+                self.activation_counters.create += 1;
+                sink.emit(DynamicCircuitIntent::CreateDynamicCircuit(upsert));
+            }
+            _ => {}
+        }
+        push_active_dynamic_circuit_id(&mut session.active_dynamic_circuit_ids, circuit_id.clone());
+        push_unique_text(&mut session.diagnostic_circuit_ids, &circuit_id);
+        emit_rekeyed_dynamic_circuit_removals(
+            key,
+            session,
+            &circuit_id,
+            &mut self.activation_counters,
+            sink,
+        );
     }
 
     fn upsert_active_session(
         &mut self,
         event: AccountingEvent,
-        mapping: DynamicCircuitMapping,
+        resolve_metadata: impl FnOnce(&AccountingEvent) -> DynamicCircuitResolution,
     ) -> AccountingSessionUpdate {
-        self.apply_session_state(event, mapping, AccountingSessionState::Active)
+        self.apply_session_state(event, resolve_metadata, AccountingSessionState::Active)
     }
 
     fn stop_session(
         &mut self,
         event: AccountingEvent,
-        mapping: DynamicCircuitMapping,
+        resolve_metadata: impl FnOnce(&AccountingEvent) -> DynamicCircuitResolution,
     ) -> AccountingSessionUpdate {
-        self.apply_session_state(event, mapping, AccountingSessionState::Stopped)
+        self.apply_session_state(event, resolve_metadata, AccountingSessionState::Stopped)
     }
 
     fn apply_session_state(
         &mut self,
         event: AccountingEvent,
-        mapping: DynamicCircuitMapping,
+        resolve_metadata: impl FnOnce(&AccountingEvent) -> DynamicCircuitResolution,
         state: AccountingSessionState,
     ) -> AccountingSessionUpdate {
         let key_resolution = self.resolve_session_key(&event);
         let promoted_sessions = key_resolution
             .previous_keys
             .iter()
-            .filter_map(|previous_key| self.sessions.remove(previous_key))
+            .filter_map(|previous_key| self.remove_session(previous_key))
             .collect::<Vec<_>>();
         let key = key_resolution.key;
 
-        if let Some(session) = self.sessions.get_mut(&key) {
+        if self.sessions.contains_key(&key) {
+            self.remove_session_indexes(&key);
+            let session = self
+                .sessions
+                .get_mut(&key)
+                .expect("session key existed before index removal");
             let mut previous_event = session.latest_event.clone();
             for promoted_session in promoted_sessions {
                 merge_known_nas_identity_values(
@@ -270,6 +418,10 @@ impl AccountingSessionStore {
                     &mut session.active_dynamic_circuit_ids,
                     promoted_session.active_dynamic_circuit_ids,
                 );
+                merge_diagnostic_circuit_ids(
+                    &mut session.diagnostic_circuit_ids,
+                    promoted_session.diagnostic_circuit_ids,
+                );
                 if state == AccountingSessionState::Active {
                     previous_event =
                         merge_sparse_active_event(&previous_event, promoted_session.latest_event);
@@ -277,11 +429,27 @@ impl AccountingSessionStore {
             }
             session.state = state;
             session.latest_event = latest_session_event(Some(&previous_event), event, state);
-            session.pending_reasons = pending_reasons(&session.latest_event, mapping);
+            let metadata = if state == AccountingSessionState::Active {
+                session_dynamic_metadata(
+                    &key,
+                    &session.latest_event,
+                    resolve_metadata(&session.latest_event),
+                )
+            } else {
+                SessionDynamicMetadata::inactive()
+            };
+            session.resolved_rate = metadata.resolved_rate;
+            session.resolved_shaped_device = metadata.resolved_shaped_device;
+            if let Some(device) = &session.resolved_shaped_device {
+                push_unique_text(&mut session.diagnostic_circuit_ids, &device.circuit_id);
+            }
+            session.pending_reasons = metadata.pending_reasons;
             merge_known_nas_identities(&mut session.known_nas_identities, &session.latest_event);
+            self.index_session(&key);
         } else {
             let mut known_nas_identities = Vec::new();
             let mut active_dynamic_circuit_ids = Vec::new();
+            let mut diagnostic_circuit_ids = Vec::new();
             let mut previous_event = None;
             for promoted_session in promoted_sessions {
                 merge_known_nas_identity_values(
@@ -291,6 +459,10 @@ impl AccountingSessionStore {
                 merge_active_dynamic_circuit_ids(
                     &mut active_dynamic_circuit_ids,
                     promoted_session.active_dynamic_circuit_ids,
+                );
+                merge_diagnostic_circuit_ids(
+                    &mut diagnostic_circuit_ids,
+                    promoted_session.diagnostic_circuit_ids,
                 );
                 previous_event = Some(match previous_event {
                     Some(previous_event) if state == AccountingSessionState::Active => {
@@ -302,17 +474,28 @@ impl AccountingSessionStore {
             }
             let latest_event = latest_session_event(previous_event.as_ref(), event, state);
             merge_known_nas_identities(&mut known_nas_identities, &latest_event);
-            let pending_reasons = pending_reasons(&latest_event, mapping);
+            let metadata = if state == AccountingSessionState::Active {
+                session_dynamic_metadata(&key, &latest_event, resolve_metadata(&latest_event))
+            } else {
+                SessionDynamicMetadata::inactive()
+            };
+            if let Some(device) = &metadata.resolved_shaped_device {
+                push_unique_text(&mut diagnostic_circuit_ids, &device.circuit_id);
+            }
             self.sessions.insert(
                 key.clone(),
                 AccountingSession {
                     state,
                     latest_event,
                     known_nas_identities,
+                    resolved_rate: metadata.resolved_rate,
+                    resolved_shaped_device: metadata.resolved_shaped_device,
                     active_dynamic_circuit_ids,
-                    pending_reasons,
+                    diagnostic_circuit_ids,
+                    pending_reasons: metadata.pending_reasons,
                 },
             );
+            self.index_session(&key);
         }
 
         AccountingSessionUpdate::SessionUpdated { key, state }
@@ -332,11 +515,20 @@ impl AccountingSessionStore {
 
         let state = AccountingSessionState::Stale(reset);
         let mut marked_count = 0;
+        let mut newly_stale_session_keys = HashSet::new();
+        let mut stale_session_keys = HashSet::new();
         for (key, session) in &mut self.sessions {
             if !session_matches_identities(key, session, &reset_identities) {
                 continue;
             }
+            if !matches!(session.state, AccountingSessionState::Stale(_)) {
+                newly_stale_session_keys.insert(key.clone());
+            }
+            stale_session_keys.insert(key.clone());
             session.state = state;
+            session.resolved_rate = None;
+            session.resolved_shaped_device = None;
+            session.pending_reasons.clear();
             marked_count += 1;
         }
 
@@ -344,6 +536,8 @@ impl AccountingSessionStore {
             nas,
             reset,
             marked_count,
+            newly_stale_session_keys,
+            stale_session_keys,
         }
     }
 
@@ -420,20 +614,16 @@ impl AccountingSessionStore {
         excluded_key: Option<&AccountingSessionKey>,
     ) -> Option<AccountingSessionKey> {
         let mut found = None;
-        for (key, session) in &self.sessions {
+        let candidate_keys = self
+            .nas_session_keys_by_acct_session_id
+            .get(acct_session_id)?;
+        for key in candidate_keys {
             if excluded_key.is_some_and(|excluded_key| excluded_key == key) {
                 continue;
             }
-            let AccountingSessionKey::NasSession {
-                acct_session_id: existing_session_id,
-                ..
-            } = key
-            else {
+            let Some(session) = self.sessions.get(key) else {
                 continue;
             };
-            if existing_session_id != acct_session_id {
-                continue;
-            }
             if !session_matches_identities(key, session, identities) {
                 continue;
             }
@@ -452,17 +642,20 @@ impl AccountingSessionStore {
     ) -> Option<AccountingSessionKey> {
         let event_fingerprint = PendingSessionFingerprint::from_event(event, identities.primary());
         let mut found = None;
-        for (key, session) in &self.sessions {
-            let AccountingSessionKey::Pending { fingerprint } = key else {
+        for key in self.lookup_candidates(&self.pending_keys_by_lookup, event, identities) {
+            let Some(session) = self.sessions.get(&key) else {
+                continue;
+            };
+            let AccountingSessionKey::Pending { fingerprint } = &key else {
                 continue;
             };
             let nas_context_matches =
-                !identities.is_empty() && session_matches_identities(key, session, identities);
+                !identities.is_empty() && session_matches_identities(&key, session, identities);
             if fingerprint.matches_with_nas_context(&event_fingerprint, nas_context_matches) {
                 if found.is_some() {
                     return None;
                 }
-                found = Some(key.clone());
+                found = Some(key);
             }
         }
         found
@@ -475,14 +668,17 @@ impl AccountingSessionStore {
     ) -> Option<AccountingSessionKey> {
         let event_fingerprint = PendingSessionFingerprint::from_event(event, identities.primary());
         let mut found = None;
-        for (key, session) in &self.sessions {
+        for key in self.lookup_candidates(&self.fallback_keys_by_lookup, event, identities) {
             if matches!(key, AccountingSessionKey::Pending { .. }) {
                 continue;
             }
-            if !identities.is_empty() && !session_matches_identities(key, session, identities) {
+            let Some(session) = self.sessions.get(&key) else {
+                continue;
+            };
+            if !identities.is_empty() && !session_matches_identities(&key, session, identities) {
                 continue;
             }
-            let session_fingerprint = session_fingerprint(key, session);
+            let session_fingerprint = session_fingerprint(&key, session);
             if !session_fingerprint
                 .matches_with_nas_context(&event_fingerprint, !identities.is_empty())
             {
@@ -491,9 +687,77 @@ impl AccountingSessionStore {
             if found.is_some() {
                 return None;
             }
-            found = Some(key.clone());
+            found = Some(key);
         }
         found
+    }
+
+    fn lookup_candidates(
+        &self,
+        index: &HashMap<SessionLookupIndexKey, HashSet<AccountingSessionKey>>,
+        event: &AccountingEvent,
+        identities: &NasIdentitySet,
+    ) -> HashSet<AccountingSessionKey> {
+        let mut candidates = HashSet::new();
+        for lookup_key in event_lookup_index_keys(event, identities) {
+            let Some(keys) = index.get(&lookup_key) else {
+                continue;
+            };
+            candidates.extend(keys.iter().cloned());
+        }
+        candidates
+    }
+
+    fn remove_session(&mut self, key: &AccountingSessionKey) -> Option<AccountingSession> {
+        self.remove_session_indexes(key);
+        self.sessions.remove(key)
+    }
+
+    fn index_session(&mut self, key: &AccountingSessionKey) {
+        let Some(session) = self.sessions.get(key) else {
+            return;
+        };
+        let index_entries = session_index_entries(key, session);
+
+        if let Some(acct_session_id) = index_entries.nas_session_id {
+            self.nas_session_keys_by_acct_session_id
+                .entry(acct_session_id)
+                .or_default()
+                .insert(key.clone());
+        }
+        for lookup_key in index_entries.pending_lookup_keys {
+            self.pending_keys_by_lookup
+                .entry(lookup_key)
+                .or_default()
+                .insert(key.clone());
+        }
+        for lookup_key in index_entries.fallback_lookup_keys {
+            self.fallback_keys_by_lookup
+                .entry(lookup_key)
+                .or_default()
+                .insert(key.clone());
+        }
+    }
+
+    fn remove_session_indexes(&mut self, key: &AccountingSessionKey) {
+        let Some(session) = self.sessions.get(key) else {
+            return;
+        };
+        let index_entries = session_index_entries(key, session);
+
+        if let Some(acct_session_id) = index_entries.nas_session_id {
+            remove_indexed_session_key(
+                &mut self.nas_session_keys_by_acct_session_id,
+                &acct_session_id,
+                key,
+            );
+        }
+        for lookup_key in index_entries.pending_lookup_keys {
+            remove_indexed_session_key(&mut self.pending_keys_by_lookup, &lookup_key, key);
+        }
+        for lookup_key in index_entries.fallback_lookup_keys {
+            remove_indexed_session_key(&mut self.fallback_keys_by_lookup, &lookup_key, key);
+        }
     }
 }
 
@@ -524,7 +788,7 @@ impl SessionKeyResolution {
 }
 
 /// One retained accounting session.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AccountingSession {
     /// Current lifecycle state for the session.
     pub state: AccountingSessionState,
@@ -532,10 +796,129 @@ pub struct AccountingSession {
     pub latest_event: AccountingEvent,
     /// NAS identities observed across retained events for this session.
     pub known_nas_identities: Vec<NasIdentity>,
+    /// Rate profile resolved for this session, when one is available.
+    pub resolved_rate: Option<ResolvedSessionRate>,
+    /// Resolved in-memory shaped-device payload for this RADIUS session.
+    pub resolved_shaped_device: Option<ShapedDevice>,
     /// Dynamic-circuit IDs this session has emitted and not yet removed.
     pub active_dynamic_circuit_ids: Vec<String>,
+    /// Dynamic-circuit IDs retained for final stopped or expired diagnostics.
+    pub diagnostic_circuit_ids: Vec<String>,
     /// Reasons this session cannot currently become a dynamic circuit.
     pub pending_reasons: Vec<PendingSessionReason>,
+}
+
+/// Dynamic-circuit activation counters tracked separately from packet accept/reject counts.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RadiusActivationCounters {
+    /// Create intents emitted for shapeable Start or first Interim-Update events.
+    pub create: u64,
+    /// Update intents emitted for already-active Interim-Update events.
+    pub update: u64,
+    /// Remove intents emitted for Stop, stale, expiry, rekey, or no-longer-shapeable events.
+    pub remove: u64,
+    /// Retained sessions expired by TTL or stale grace cleanup.
+    pub expiry: u64,
+}
+
+/// Listener packet counters tracked separately from dynamic-circuit activation counters.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RadiusPacketCounters {
+    /// Verified packets accepted by the listener.
+    pub accepted: u64,
+    /// Packets rejected before accounting-session processing.
+    pub rejected: u64,
+}
+
+/// Operator-facing activation state for one RADIUS accounting session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RadiusActivationDiagnosticState {
+    /// The retained session is active and currently has a resolved dynamic-circuit payload.
+    Active,
+    /// The retained session is active but lacks required data to create a circuit.
+    Pending,
+    /// The retained session has received Acct-Status-Type Stop.
+    Stopped,
+    /// The retained session was marked stale by Accounting-On or Accounting-Off.
+    Stale(NasResetStatus),
+    /// The retained session was removed by TTL or stale-grace expiry.
+    Expired,
+    /// A resolved dynamic-circuit request failed after it was emitted to the caller.
+    ApplyFailed,
+}
+
+/// Diagnostic snapshot for one RADIUS dynamic-circuit activation outcome.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RadiusActivationDiagnostic {
+    /// Stable session key used by the in-memory store.
+    pub session_key: AccountingSessionKey,
+    /// Best-known Acct-Session-Id for troubleshooting.
+    pub acct_session_id: Option<String>,
+    /// Best-known NAS identity for troubleshooting.
+    pub nas: Option<NasIdentity>,
+    /// Dynamic-circuit IDs associated with this session.
+    pub circuit_ids: Vec<String>,
+    /// Current activation outcome.
+    pub state: RadiusActivationDiagnosticState,
+    /// Reasons a pending session cannot be shaped yet.
+    pub pending_reasons: Vec<PendingSessionReason>,
+    /// Sanitized apply-failure detail when `state` is `ApplyFailed`.
+    pub apply_error: Option<String>,
+}
+
+impl RadiusActivationDiagnostic {
+    /// Builds a diagnostic snapshot for a retained session.
+    #[must_use]
+    pub fn from_retained_session(key: &AccountingSessionKey, session: &AccountingSession) -> Self {
+        Self::from_session_with_state(key, session, retained_activation_state(session), None)
+    }
+
+    /// Builds a diagnostic snapshot for a session removed by expiry cleanup.
+    #[must_use]
+    pub fn from_expired_session(key: &AccountingSessionKey, session: &AccountingSession) -> Self {
+        Self::from_session_with_state(key, session, RadiusActivationDiagnosticState::Expired, None)
+    }
+
+    /// Builds a diagnostic snapshot for a dynamic-circuit apply failure.
+    #[must_use]
+    pub fn apply_failed(
+        session_key: AccountingSessionKey,
+        circuit_id: String,
+        apply_error: String,
+    ) -> Self {
+        Self {
+            acct_session_id: session_key.acct_session_id().map(ToString::to_string),
+            nas: session_key.nas().cloned(),
+            session_key,
+            circuit_ids: vec![circuit_id],
+            state: RadiusActivationDiagnosticState::ApplyFailed,
+            pending_reasons: Vec::new(),
+            apply_error: Some(apply_error),
+        }
+    }
+
+    fn from_session_with_state(
+        key: &AccountingSessionKey,
+        session: &AccountingSession,
+        state: RadiusActivationDiagnosticState,
+        apply_error: Option<String>,
+    ) -> Self {
+        Self {
+            session_key: key.clone(),
+            acct_session_id: key
+                .acct_session_id()
+                .or(session.latest_event.acct_session_id.as_deref())
+                .map(ToString::to_string),
+            nas: key
+                .nas()
+                .cloned()
+                .or_else(|| NasIdentitySet::from_event(&session.latest_event).primary()),
+            circuit_ids: diagnostic_circuit_ids(key, session),
+            state,
+            pending_reasons: session.pending_reasons.clone(),
+            apply_error,
+        }
+    }
 }
 
 /// Stable key used for retained accounting sessions.
@@ -562,6 +945,17 @@ impl AccountingSessionKey {
         match self {
             Self::NasSession { nas, .. } => Some(nas),
             Self::Pending { fingerprint } => fingerprint.nas.as_ref(),
+        }
+    }
+
+    /// Returns the Acct-Session-Id associated with this key, when known.
+    #[must_use]
+    pub fn acct_session_id(&self) -> Option<&str> {
+        match self {
+            Self::NasSession {
+                acct_session_id, ..
+            } => Some(acct_session_id),
+            Self::Pending { fingerprint } => fingerprint.acct_session_id.as_deref(),
         }
     }
 
@@ -645,7 +1039,6 @@ impl PendingSessionFingerprint {
         let Some(nas_port_matches) = optional_match(&self.nas_port, &other.nas_port) else {
             return false;
         };
-
         let non_session_matches = [
             user_name_matches,
             calling_station_matches,
@@ -702,16 +1095,217 @@ pub enum NasResetStatus {
     AccountingOff,
 }
 
+/// Parent attachment metadata for a resolved dynamic circuit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DynamicCircuitParent {
+    /// Human-readable parent node name from `network.json`.
+    pub parent_node: String,
+    /// Stable parent node identifier, when known.
+    pub parent_node_id: Option<String>,
+    /// Stable anchor node identifier, when known.
+    pub anchor_node_id: Option<String>,
+}
+
+impl DynamicCircuitParent {
+    /// Creates parent metadata from a parent node name.
+    #[must_use]
+    pub fn new(parent_node: impl Into<String>) -> Self {
+        Self {
+            parent_node: parent_node.into(),
+            parent_node_id: None,
+            anchor_node_id: None,
+        }
+    }
+
+    /// Returns true when the parent metadata can populate a `ShapedDevice` parent.
+    #[must_use]
+    pub fn has_parent_node(&self) -> bool {
+        !self.parent_node.trim().is_empty()
+    }
+}
+
 /// Current dynamic-circuit mapping state for a session event.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum DynamicCircuitMapping {
-    /// Subscriber IP, rate, parent, and identity can map to a dynamic circuit.
-    Ready,
+    /// Subscriber IP, rate, and identity can map to a dynamic circuit when
+    /// `matched_shaped_device` supplies valid parent attachment metadata.
+    ///
+    /// This variant is used when another resolved object, such as a
+    /// `ShapedDevices.csv` MAC match, carries the parent attachment fields. Use
+    /// `ReadyWithParent` for fallback identities that do not have a matched
+    /// shaped-device row.
+    MatchedShapedDevice,
+    /// Subscriber IP, rate, identity, and explicit parent metadata can map to a dynamic circuit.
+    ReadyWithParent(DynamicCircuitParent),
     /// No parent node mapping is known yet.
     #[default]
     MissingParent,
     /// More than one parent or subscriber mapping matches the event.
     Ambiguous,
+    /// MAC matching is enabled, but no shaped-device row matches the event.
+    NoMacMatch,
+    /// MAC matching is enabled, and more than one shaped-device row matches the event.
+    AmbiguousMacMatch,
+}
+
+/// Dynamic-circuit metadata resolved for one accounting event.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DynamicCircuitResolution {
+    /// Parent or ShapedDevices mapping state for the event.
+    pub mapping: DynamicCircuitMapping,
+    /// Rate profiles available outside the accounting packet.
+    pub rate_sources: SessionRateSources,
+    /// Shaped-device row supplying circuit metadata, when MAC matching found one.
+    pub matched_shaped_device: Option<ShapedDevice>,
+}
+
+impl DynamicCircuitResolution {
+    /// Builds a resolution from a shaped-devices MAC match result.
+    ///
+    /// Unique ShapedDevices matches use the matched row as the authoritative
+    /// account-plan source. The fallback profile is kept only for no-match and
+    /// ambiguous-match pending diagnostics, and does not mask invalid rates in
+    /// a matched ShapedDevices row. No-match and ambiguous-match results stay
+    /// pending with MAC-specific reasons; callers with another parent source
+    /// should construct a `ReadyWithParent` resolution directly.
+    ///
+    /// Side effects: none. The match result is converted in memory only.
+    #[must_use]
+    pub fn from_shaped_devices_mac_match(
+        mac_match: ShapedDevicesMacMatch,
+        fallback_profile: Option<SessionRateProfile>,
+    ) -> Self {
+        match mac_match {
+            ShapedDevicesMacMatch::Unique(device) => {
+                let shaped_device_profile = session_rate_profile_from_shaped_device(&device);
+                Self {
+                    mapping: DynamicCircuitMapping::MatchedShapedDevice,
+                    rate_sources: SessionRateSources {
+                        shaped_device_profile,
+                        fallback_profile: None,
+                    },
+                    matched_shaped_device: Some(*device),
+                }
+            }
+            ShapedDevicesMacMatch::NoMatch => Self {
+                mapping: DynamicCircuitMapping::NoMacMatch,
+                rate_sources: SessionRateSources {
+                    shaped_device_profile: None,
+                    fallback_profile,
+                },
+                matched_shaped_device: None,
+            },
+            ShapedDevicesMacMatch::Ambiguous => Self {
+                mapping: DynamicCircuitMapping::AmbiguousMacMatch,
+                rate_sources: SessionRateSources {
+                    shaped_device_profile: None,
+                    fallback_profile,
+                },
+                matched_shaped_device: None,
+            },
+        }
+    }
+}
+
+/// Complete speed profile resolved for a RADIUS accounting session.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SessionRateProfile {
+    download_min_mbps: f32,
+    upload_min_mbps: f32,
+    download_max_mbps: f32,
+    upload_max_mbps: f32,
+}
+
+impl SessionRateProfile {
+    /// Creates a validated session rate profile.
+    ///
+    /// Side effects: none.
+    pub fn new(
+        download_min_mbps: f32,
+        upload_min_mbps: f32,
+        download_max_mbps: f32,
+        upload_max_mbps: f32,
+    ) -> Result<Self, SessionRateProfileError> {
+        validate_rate_profile_mbps(
+            download_min_mbps,
+            upload_min_mbps,
+            download_max_mbps,
+            upload_max_mbps,
+        )?;
+
+        Ok(Self {
+            download_min_mbps,
+            upload_min_mbps,
+            download_max_mbps,
+            upload_max_mbps,
+        })
+    }
+
+    /// Returns the minimum download rate in Mbps.
+    #[must_use]
+    pub const fn download_min_mbps(&self) -> f32 {
+        self.download_min_mbps
+    }
+
+    /// Returns the minimum upload rate in Mbps.
+    #[must_use]
+    pub const fn upload_min_mbps(&self) -> f32 {
+        self.upload_min_mbps
+    }
+
+    /// Returns the maximum download rate in Mbps.
+    #[must_use]
+    pub const fn download_max_mbps(&self) -> f32 {
+        self.download_max_mbps
+    }
+
+    /// Returns the maximum upload rate in Mbps.
+    #[must_use]
+    pub const fn upload_max_mbps(&self) -> f32 {
+        self.upload_max_mbps
+    }
+
+    fn from_packet_rate(rate_limit: &MikrotikRateLimit) -> Option<Self> {
+        let upload_mbps = bits_per_second_to_mbps(rate_limit.upload_bps);
+        let download_mbps = bits_per_second_to_mbps(rate_limit.download_bps);
+
+        Self::new(download_mbps, upload_mbps, download_mbps, upload_mbps).ok()
+    }
+}
+
+/// Candidate non-packet rate profiles for resolving a RADIUS accounting session.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SessionRateSources {
+    /// Rate profile supplied by a `ShapedDevices.csv` MAC match.
+    ///
+    /// Used only when no usable rate was decoded from the accounting packet.
+    pub shaped_device_profile: Option<SessionRateProfile>,
+    /// Configured fallback profile.
+    ///
+    /// Used only when no decoded packet rate is usable and no unique ShapedDevices MAC match
+    /// supplied the session metadata.
+    pub fallback_profile: Option<SessionRateProfile>,
+}
+
+/// Rate source selected for a RADIUS accounting session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionRateSource {
+    /// Rate decoded from the accounting packet.
+    Packet,
+    /// Rate supplied by matched `ShapedDevices.csv` metadata.
+    ShapedDevice,
+    /// Configured fallback profile used when no usable decoded packet or
+    /// unique ShapedDevices MAC-match rate is available.
+    Fallback,
+}
+
+/// Resolved rate profile and its source.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedSessionRate {
+    /// Source that supplied the rate profile.
+    pub source: SessionRateSource,
+    /// Complete min/max speed profile.
+    pub profile: SessionRateProfile,
 }
 
 /// Reason a retained session cannot currently become a dynamic circuit.
@@ -721,14 +1315,22 @@ pub enum PendingSessionReason {
     MissingSessionId,
     /// No NAS identity attribute is present.
     MissingNasIdentity,
+    /// No stable dynamic-circuit identity is available.
+    MissingCircuitIdentity,
+    /// No stable dynamic-device identity is available.
+    MissingDeviceIdentity,
     /// No subscriber IPv4, IPv6, or prefix address is present.
     MissingIpAddress,
-    /// No decoded rate-limit attribute is present.
+    /// No usable rate source is available.
     MissingRate,
     /// No parent node mapping is available.
     MissingParent,
     /// The event maps ambiguously to more than one parent or subscriber target.
     AmbiguousMapping,
+    /// MAC matching is enabled, but no shaped-device MAC matched the event.
+    NoMacMatch,
+    /// MAC matching is enabled, and more than one shaped-device MAC matched the event.
+    AmbiguousMacMatch,
 }
 
 /// Result of applying one accounting event to the session store.
@@ -749,6 +1351,10 @@ pub enum AccountingSessionUpdate {
         reset: NasResetStatus,
         /// Number of sessions marked stale.
         marked_count: usize,
+        /// Session keys that transitioned from active or stopped to stale.
+        newly_stale_session_keys: HashSet<AccountingSessionKey>,
+        /// Session keys whose retained stale state was updated by this reset.
+        stale_session_keys: HashSet<AccountingSessionKey>,
     },
     /// The event did not carry an actionable accounting status.
     Ignored {
@@ -766,6 +1372,21 @@ pub enum AccountingSessionIgnoreReason {
     UnsupportedStatusType(u32),
     /// Accounting-On or Accounting-Off had no NAS identity to match sessions.
     MissingNasIdentityForReset(NasResetStatus),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum SessionLookupIndexKey {
+    AcctSessionId(String),
+    UserName(String),
+    CallingStationId(String),
+    NasPortId(String),
+    NasPort(u32),
+}
+
+struct SessionIndexEntries {
+    nas_session_id: Option<String>,
+    pending_lookup_keys: Vec<SessionLookupIndexKey>,
+    fallback_lookup_keys: Vec<SessionLookupIndexKey>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -840,6 +1461,109 @@ impl NasIdentitySet {
     }
 }
 
+fn session_index_entries(
+    key: &AccountingSessionKey,
+    session: &AccountingSession,
+) -> SessionIndexEntries {
+    let nas_session_id = match key {
+        AccountingSessionKey::NasSession {
+            acct_session_id, ..
+        } => Some(acct_session_id.clone()),
+        AccountingSessionKey::Pending { .. } => None,
+    };
+    let lookup_keys = session_lookup_index_keys(key, session);
+    let (pending_lookup_keys, fallback_lookup_keys) = match key {
+        AccountingSessionKey::Pending { .. } => (lookup_keys, Vec::new()),
+        AccountingSessionKey::NasSession { .. } => (Vec::new(), lookup_keys),
+    };
+
+    SessionIndexEntries {
+        nas_session_id,
+        pending_lookup_keys,
+        fallback_lookup_keys,
+    }
+}
+
+fn session_lookup_index_keys(
+    key: &AccountingSessionKey,
+    session: &AccountingSession,
+) -> Vec<SessionLookupIndexKey> {
+    let mut lookup_keys = Vec::new();
+    let fingerprint = session_fingerprint(key, session);
+    push_fingerprint_lookup_keys(&mut lookup_keys, &fingerprint);
+    lookup_keys
+}
+
+fn event_lookup_index_keys(
+    event: &AccountingEvent,
+    identities: &NasIdentitySet,
+) -> Vec<SessionLookupIndexKey> {
+    let mut lookup_keys = Vec::new();
+    let fingerprint = PendingSessionFingerprint::from_event(event, identities.primary());
+    push_fingerprint_lookup_keys(&mut lookup_keys, &fingerprint);
+    lookup_keys
+}
+
+fn push_fingerprint_lookup_keys(
+    lookup_keys: &mut Vec<SessionLookupIndexKey>,
+    fingerprint: &PendingSessionFingerprint,
+) {
+    if let Some(acct_session_id) = &fingerprint.acct_session_id {
+        push_unique_lookup_key(
+            lookup_keys,
+            SessionLookupIndexKey::AcctSessionId(acct_session_id.clone()),
+        );
+    }
+    if let Some(user_name) = &fingerprint.user_name {
+        push_unique_lookup_key(
+            lookup_keys,
+            SessionLookupIndexKey::UserName(user_name.clone()),
+        );
+    }
+    if let Some(calling_station_id) = &fingerprint.calling_station_id {
+        push_unique_lookup_key(
+            lookup_keys,
+            SessionLookupIndexKey::CallingStationId(calling_station_id.clone()),
+        );
+    }
+    if let Some(nas_port_id) = &fingerprint.nas_port_id {
+        push_unique_lookup_key(
+            lookup_keys,
+            SessionLookupIndexKey::NasPortId(nas_port_id.clone()),
+        );
+    }
+    if let Some(nas_port) = fingerprint.nas_port {
+        push_unique_lookup_key(lookup_keys, SessionLookupIndexKey::NasPort(nas_port));
+    }
+}
+
+fn push_unique_lookup_key(
+    lookup_keys: &mut Vec<SessionLookupIndexKey>,
+    lookup_key: SessionLookupIndexKey,
+) {
+    if !lookup_keys.contains(&lookup_key) {
+        lookup_keys.push(lookup_key);
+    }
+}
+
+fn remove_indexed_session_key<K>(
+    index: &mut HashMap<K, HashSet<AccountingSessionKey>>,
+    index_key: &K,
+    session_key: &AccountingSessionKey,
+) where
+    K: Eq + std::hash::Hash,
+{
+    let remove_empty_entry = if let Some(keys) = index.get_mut(index_key) {
+        keys.remove(session_key);
+        keys.is_empty()
+    } else {
+        false
+    };
+    if remove_empty_entry {
+        index.remove(index_key);
+    }
+}
+
 fn session_matches_identities(
     key: &AccountingSessionKey,
     session: &AccountingSession,
@@ -859,6 +1583,43 @@ fn session_matches_identities(
     }
 
     identities.overlaps(&NasIdentitySet::from_event(&session.latest_event))
+}
+
+fn retained_activation_state(session: &AccountingSession) -> RadiusActivationDiagnosticState {
+    match session.state {
+        AccountingSessionState::Active if session.pending_reasons.is_empty() => {
+            RadiusActivationDiagnosticState::Active
+        }
+        AccountingSessionState::Active => RadiusActivationDiagnosticState::Pending,
+        AccountingSessionState::Stopped => RadiusActivationDiagnosticState::Stopped,
+        AccountingSessionState::Stale(reset) => RadiusActivationDiagnosticState::Stale(reset),
+    }
+}
+
+fn diagnostic_circuit_ids(key: &AccountingSessionKey, session: &AccountingSession) -> Vec<String> {
+    let mut circuit_ids = Vec::new();
+    if let Some(device) = &session.resolved_shaped_device {
+        push_unique_text(&mut circuit_ids, &device.circuit_id);
+    }
+    for circuit_id in &session.active_dynamic_circuit_ids {
+        push_unique_text(&mut circuit_ids, circuit_id);
+    }
+    for circuit_id in &session.diagnostic_circuit_ids {
+        push_unique_text(&mut circuit_ids, circuit_id);
+    }
+    if circuit_ids.is_empty()
+        && let Some(circuit_id) = key.dynamic_circuit_id()
+    {
+        push_unique_text(&mut circuit_ids, &circuit_id);
+    }
+    circuit_ids
+}
+
+fn push_unique_text(values: &mut Vec<String>, value: &str) {
+    if value.trim().is_empty() || values.iter().any(|existing| existing == value) {
+        return;
+    }
+    values.push(value.to_string());
 }
 
 fn latest_session_event(
@@ -924,43 +1685,402 @@ fn merge_sparse_active_event(
     event
 }
 
+fn resolved_session_rate(
+    event: &AccountingEvent,
+    rate_sources: SessionRateSources,
+) -> Option<ResolvedSessionRate> {
+    if let Some(profile) = event
+        .mikrotik_rate_limits
+        .iter()
+        .find_map(SessionRateProfile::from_packet_rate)
+    {
+        return Some(ResolvedSessionRate {
+            source: SessionRateSource::Packet,
+            profile,
+        });
+    }
+
+    if let Some(profile) = rate_sources.shaped_device_profile {
+        return Some(ResolvedSessionRate {
+            source: SessionRateSource::ShapedDevice,
+            profile,
+        });
+    }
+
+    rate_sources
+        .fallback_profile
+        .map(|profile| ResolvedSessionRate {
+            source: SessionRateSource::Fallback,
+            profile,
+        })
+}
+
+fn session_rate_profile_from_shaped_device(device: &ShapedDevice) -> Option<SessionRateProfile> {
+    SessionRateProfile::new(
+        device.download_min_mbps,
+        device.upload_min_mbps,
+        device.download_max_mbps,
+        device.upload_max_mbps,
+    )
+    .ok()
+}
+
+struct SessionDynamicMetadata {
+    resolved_rate: Option<ResolvedSessionRate>,
+    resolved_shaped_device: Option<ShapedDevice>,
+    pending_reasons: Vec<PendingSessionReason>,
+}
+
+impl SessionDynamicMetadata {
+    fn inactive() -> Self {
+        Self {
+            resolved_rate: None,
+            resolved_shaped_device: None,
+            pending_reasons: Vec::new(),
+        }
+    }
+}
+
+fn session_dynamic_metadata(
+    key: &AccountingSessionKey,
+    event: &AccountingEvent,
+    resolution: DynamicCircuitResolution,
+) -> SessionDynamicMetadata {
+    let subscriber_ips = SubscriberIpMetadata::from_event(event);
+    let resolved_rate = resolved_session_rate(event, resolution.rate_sources);
+    let parent = resolved_parent_attachment(
+        resolution.matched_shaped_device.as_ref(),
+        &resolution.mapping,
+    );
+    let has_circuit_identity =
+        circuit_identity_available(key, resolution.matched_shaped_device.as_ref());
+    let has_device_identity =
+        device_identity_available(key, resolution.matched_shaped_device.as_ref());
+    let pending_reasons = pending_reasons(
+        event,
+        &resolution.mapping,
+        resolved_rate,
+        &subscriber_ips,
+        parent.as_ref(),
+        has_circuit_identity,
+        has_device_identity,
+    );
+    let resolved_shaped_device = pending_reasons
+        .is_empty()
+        .then(|| {
+            resolved_shaped_device(
+                key,
+                event,
+                resolution.matched_shaped_device.as_ref(),
+                resolved_rate,
+                &subscriber_ips,
+                parent.as_ref(),
+            )
+        })
+        .flatten();
+
+    SessionDynamicMetadata {
+        resolved_rate,
+        resolved_shaped_device,
+        pending_reasons,
+    }
+}
+
+struct SubscriberIpMetadata {
+    ipv4: Vec<(Ipv4Addr, u32)>,
+    ipv6: Vec<(Ipv6Addr, u32)>,
+}
+
+impl SubscriberIpMetadata {
+    fn from_event(event: &AccountingEvent) -> Self {
+        Self {
+            ipv4: subscriber_ipv4_cidrs(event),
+            ipv6: subscriber_ipv6_cidrs(event),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.ipv4.is_empty() && self.ipv6.is_empty()
+    }
+}
+
+fn resolved_shaped_device(
+    key: &AccountingSessionKey,
+    event: &AccountingEvent,
+    matched_shaped_device: Option<&ShapedDevice>,
+    resolved_rate: Option<ResolvedSessionRate>,
+    subscriber_ips: &SubscriberIpMetadata,
+    parent: Option<&DynamicCircuitParent>,
+) -> Option<ShapedDevice> {
+    let resolved_rate = resolved_rate?;
+    let parent = parent?;
+    let mut device = if let Some(matched_shaped_device) = matched_shaped_device {
+        matched_shaped_device.clone()
+    } else {
+        default_resolved_shaped_device(key, event, parent)?
+    };
+    apply_parent_attachment(&mut device, parent);
+    device.ipv4 = subscriber_ips.ipv4.clone();
+    device.ipv6 = subscriber_ips.ipv6.clone();
+    apply_session_rate_profile(&mut device, resolved_rate.profile);
+    device.refresh_hashes();
+    Some(device)
+}
+
+fn resolved_parent_attachment(
+    matched_shaped_device: Option<&ShapedDevice>,
+    mapping: &DynamicCircuitMapping,
+) -> Option<DynamicCircuitParent> {
+    matched_shaped_device
+        .and_then(parent_from_shaped_device)
+        .or_else(|| parent_from_mapping(mapping))
+}
+
+fn parent_from_shaped_device(device: &ShapedDevice) -> Option<DynamicCircuitParent> {
+    // lqos_bakery dynamic-circuit validation still requires parent_node.
+    let parent = DynamicCircuitParent {
+        parent_node: device.parent_node.clone(),
+        parent_node_id: device.parent_node_id.clone(),
+        anchor_node_id: device.anchor_node_id.clone(),
+    };
+    parent.has_parent_node().then_some(parent)
+}
+
+fn parent_from_mapping(mapping: &DynamicCircuitMapping) -> Option<DynamicCircuitParent> {
+    let DynamicCircuitMapping::ReadyWithParent(parent) = mapping else {
+        return None;
+    };
+    parent.has_parent_node().then(|| parent.clone())
+}
+
+fn circuit_identity_available(
+    key: &AccountingSessionKey,
+    matched_shaped_device: Option<&ShapedDevice>,
+) -> bool {
+    if let Some(device) = matched_shaped_device {
+        return !device.circuit_id.trim().is_empty();
+    }
+
+    key.dynamic_circuit_id().is_some()
+}
+
+fn device_identity_available(
+    key: &AccountingSessionKey,
+    matched_shaped_device: Option<&ShapedDevice>,
+) -> bool {
+    if let Some(device) = matched_shaped_device {
+        return !device.device_id.trim().is_empty();
+    }
+
+    key.dynamic_circuit_id().is_some()
+}
+
+fn default_resolved_shaped_device(
+    key: &AccountingSessionKey,
+    event: &AccountingEvent,
+    parent: &DynamicCircuitParent,
+) -> Option<ShapedDevice> {
+    let circuit_id = key.dynamic_circuit_id()?;
+    let device_id = circuit_id.clone();
+    Some(ShapedDevice {
+        circuit_name: default_circuit_name(event, &circuit_id),
+        device_name: default_device_name(event, &device_id),
+        circuit_id,
+        device_id,
+        parent_node: parent.parent_node.clone(),
+        parent_node_id: parent.parent_node_id.clone(),
+        anchor_node_id: parent.anchor_node_id.clone(),
+        mac: non_empty_str(&event.calling_station_id)
+            .unwrap_or_default()
+            .to_string(),
+        comment: String::new(),
+        sqm_override: None,
+        circuit_hash: 0,
+        device_hash: 0,
+        parent_hash: 0,
+        ..ShapedDevice::default()
+    })
+}
+
+fn apply_parent_attachment(device: &mut ShapedDevice, parent: &DynamicCircuitParent) {
+    device.parent_node = parent.parent_node.clone();
+    device.parent_node_id = parent.parent_node_id.clone();
+    device.anchor_node_id = parent.anchor_node_id.clone();
+}
+
+fn default_circuit_name(event: &AccountingEvent, fallback: &str) -> String {
+    non_empty_str(&event.user_name)
+        .or_else(|| non_empty_str(&event.calling_station_id))
+        .or_else(|| non_empty_str(&event.acct_session_id))
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn default_device_name(event: &AccountingEvent, fallback: &str) -> String {
+    non_empty_str(&event.calling_station_id)
+        .or_else(|| non_empty_str(&event.user_name))
+        .or_else(|| non_empty_str(&event.acct_session_id))
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn apply_session_rate_profile(device: &mut ShapedDevice, profile: SessionRateProfile) {
+    device.download_min_mbps = profile.download_min_mbps();
+    device.upload_min_mbps = profile.upload_min_mbps();
+    device.download_max_mbps = profile.download_max_mbps();
+    device.upload_max_mbps = profile.upload_max_mbps();
+}
+
+fn bits_per_second_to_mbps(bits_per_second: u64) -> f32 {
+    bits_per_second as f32 / 1_000_000.0
+}
+
 fn pending_reasons(
     event: &AccountingEvent,
-    mapping: DynamicCircuitMapping,
+    mapping: &DynamicCircuitMapping,
+    resolved_rate: Option<ResolvedSessionRate>,
+    subscriber_ips: &SubscriberIpMetadata,
+    parent: Option<&DynamicCircuitParent>,
+    has_circuit_identity: bool,
+    has_device_identity: bool,
 ) -> Vec<PendingSessionReason> {
     let mut reasons = Vec::new();
 
-    if event.acct_session_id.as_ref().is_none_or(String::is_empty) {
+    let missing_session_id = event.acct_session_id.as_ref().is_none_or(String::is_empty);
+    if missing_session_id {
         reasons.push(PendingSessionReason::MissingSessionId);
     }
-    if NasIdentitySet::from_event(event).is_empty() {
+    let missing_nas_identity = NasIdentitySet::from_event(event).is_empty();
+    if missing_nas_identity {
         reasons.push(PendingSessionReason::MissingNasIdentity);
     }
-    if !has_subscriber_ip(event) {
+    if !has_circuit_identity && !missing_session_id && !missing_nas_identity {
+        reasons.push(PendingSessionReason::MissingCircuitIdentity);
+    }
+    if !has_device_identity && !missing_session_id && !missing_nas_identity {
+        reasons.push(PendingSessionReason::MissingDeviceIdentity);
+    }
+    if subscriber_ips.is_empty() {
         reasons.push(PendingSessionReason::MissingIpAddress);
     }
-    if event.mikrotik_rate_limits.is_empty() {
+    if resolved_rate.is_none() {
         reasons.push(PendingSessionReason::MissingRate);
     }
+    if parent.is_none()
+        && matches!(
+            mapping,
+            DynamicCircuitMapping::MatchedShapedDevice
+                | DynamicCircuitMapping::ReadyWithParent(_)
+                | DynamicCircuitMapping::MissingParent
+        )
+    {
+        reasons.push(PendingSessionReason::MissingParent);
+    }
     match mapping {
-        DynamicCircuitMapping::Ready => {}
-        DynamicCircuitMapping::MissingParent => reasons.push(PendingSessionReason::MissingParent),
+        DynamicCircuitMapping::MatchedShapedDevice
+        | DynamicCircuitMapping::ReadyWithParent(_)
+        | DynamicCircuitMapping::MissingParent => {}
         DynamicCircuitMapping::Ambiguous => reasons.push(PendingSessionReason::AmbiguousMapping),
+        DynamicCircuitMapping::NoMacMatch => reasons.push(PendingSessionReason::NoMacMatch),
+        DynamicCircuitMapping::AmbiguousMacMatch => {
+            reasons.push(PendingSessionReason::AmbiguousMacMatch);
+        }
     }
 
     reasons
 }
 
-fn has_subscriber_ip(event: &AccountingEvent) -> bool {
-    event.framed_ip_address.is_some()
-        || event.framed_ipv6_address.is_some()
-        || !event.framed_routes.is_empty()
-        || !event.framed_ipv6_prefixes.is_empty()
-        || !event.delegated_ipv6_prefixes.is_empty()
+fn subscriber_ipv4_cidrs(event: &AccountingEvent) -> Vec<(Ipv4Addr, u32)> {
+    let mut ipv4_cidrs = Vec::new();
+    if let Some(framed_ip_address) = event.framed_ip_address {
+        let prefix_len = event
+            .framed_ip_netmask
+            .and_then(ipv4_netmask_prefix_len)
+            .filter(|prefix_len| *prefix_len > 0)
+            .unwrap_or(32);
+        if let Some(cidr) = subscriber_ipv4_cidr(framed_ip_address, prefix_len) {
+            ipv4_cidrs.push(cidr);
+        }
+    }
+    for framed_route in &event.framed_routes {
+        if let Some(route_destination) = framed_route_destination(framed_route) {
+            ipv4_cidrs.push(route_destination);
+        }
+    }
+    ipv4_cidrs
+}
+
+fn subscriber_ipv6_cidrs(event: &AccountingEvent) -> Vec<(Ipv6Addr, u32)> {
+    let mut ipv6_cidrs = Vec::new();
+    if let Some(framed_ipv6_address) = event.framed_ipv6_address
+        && let Some(cidr) = subscriber_ipv6_cidr(framed_ipv6_address, 128)
+    {
+        ipv6_cidrs.push(cidr);
+    }
+    ipv6_cidrs.extend(
+        event.framed_ipv6_prefixes.iter().filter_map(|prefix| {
+            subscriber_ipv6_cidr(prefix.address, u32::from(prefix.prefix_len))
+        }),
+    );
+    ipv6_cidrs.extend(
+        event.delegated_ipv6_prefixes.iter().filter_map(|prefix| {
+            subscriber_ipv6_cidr(prefix.address, u32::from(prefix.prefix_len))
+        }),
+    );
+    ipv6_cidrs
+}
+
+fn subscriber_ipv6_cidr(address: Ipv6Addr, prefix_len: u32) -> Option<(Ipv6Addr, u32)> {
+    if prefix_len == 0 || prefix_len > 128 || address.is_unspecified() || address.is_multicast() {
+        return None;
+    }
+
+    Some((address, prefix_len))
+}
+
+fn framed_route_destination(framed_route: &str) -> Option<(Ipv4Addr, u32)> {
+    parse_ipv4_cidr(framed_route.split_whitespace().next()?)
+}
+
+fn parse_ipv4_cidr(raw_cidr: &str) -> Option<(Ipv4Addr, u32)> {
+    let Some((address, prefix_len)) = raw_cidr.split_once('/') else {
+        return subscriber_ipv4_cidr(raw_cidr.parse().ok()?, 32);
+    };
+    let address = address.parse().ok()?;
+    let prefix_len = prefix_len.parse().ok()?;
+    subscriber_ipv4_cidr(address, prefix_len)
+}
+
+fn subscriber_ipv4_cidr(address: Ipv4Addr, prefix_len: u32) -> Option<(Ipv4Addr, u32)> {
+    if prefix_len == 0
+        || prefix_len > 32
+        || address.is_unspecified()
+        || address.is_multicast()
+        || address.octets() == [255, 255, 255, 255]
+    {
+        return None;
+    }
+
+    Some((address, prefix_len))
+}
+
+fn ipv4_netmask_prefix_len(netmask: Ipv4Addr) -> Option<u32> {
+    let netmask_bits = u32::from(netmask);
+    let prefix_len = netmask_bits.count_ones();
+    let expected_netmask = if prefix_len == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix_len)
+    };
+    (netmask_bits == expected_netmask).then_some(prefix_len)
 }
 
 fn non_empty_text(value: &Option<String>) -> Option<String> {
     value.as_ref().filter(|value| !value.is_empty()).cloned()
+}
+
+fn non_empty_str(value: &Option<String>) -> Option<&str> {
+    value.as_deref().filter(|value| !value.trim().is_empty())
 }
 
 fn carry_text(target: &mut Option<String>, previous: &Option<String>) {
@@ -1020,9 +2140,13 @@ fn merge_known_nas_identity_values(
 
 fn merge_active_dynamic_circuit_ids(active_ids: &mut Vec<String>, ids: Vec<String>) {
     for id in ids {
-        if !active_ids.contains(&id) {
-            active_ids.push(id);
-        }
+        push_active_dynamic_circuit_id(active_ids, id);
+    }
+}
+
+fn merge_diagnostic_circuit_ids(diagnostic_ids: &mut Vec<String>, ids: Vec<String>) {
+    for id in ids {
+        push_unique_text(diagnostic_ids, &id);
     }
 }
 
@@ -1036,9 +2160,11 @@ fn emit_active_dynamic_circuit_removals(
     key: &AccountingSessionKey,
     session: &mut AccountingSession,
     reason: DynamicCircuitRemovalReason,
+    counters: &mut RadiusActivationCounters,
     sink: &mut impl DynamicCircuitCommandSink,
 ) {
     for circuit_id in std::mem::take(&mut session.active_dynamic_circuit_ids) {
+        counters.remove += 1;
         sink.emit(DynamicCircuitIntent::RemoveDynamicCircuit(
             DynamicCircuitRemoval {
                 circuit_id,
@@ -1052,17 +2178,17 @@ fn emit_active_dynamic_circuit_removals(
 fn emit_rekeyed_dynamic_circuit_removals(
     key: &AccountingSessionKey,
     session: &mut AccountingSession,
+    current_circuit_id: &str,
+    counters: &mut RadiusActivationCounters,
     sink: &mut impl DynamicCircuitCommandSink,
 ) {
-    let Some(current_circuit_id) = key.dynamic_circuit_id() else {
-        return;
-    };
     let active_ids = std::mem::take(&mut session.active_dynamic_circuit_ids);
     for circuit_id in active_ids {
         if circuit_id == current_circuit_id {
             push_active_dynamic_circuit_id(&mut session.active_dynamic_circuit_ids, circuit_id);
             continue;
         }
+        counters.remove += 1;
         sink.emit(DynamicCircuitIntent::RemoveDynamicCircuit(
             DynamicCircuitRemoval {
                 circuit_id,

@@ -21,10 +21,11 @@ mod v15;
 pub use v15::{
     BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
     MikrotikIpv6Config, QueueMode, RadiusAccountingClient, RadiusAccountingConfig,
-    RadiusClientSource, RadiusSharedSecretSource, RttThresholds, SingleInterfaceConfig, SslConfig,
-    StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
-    TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
-    normalize_external_hostname,
+    RadiusClientSource, RadiusDynamicCircuitApplicationConfig, RadiusFallbackSpeedProfile,
+    RadiusSharedSecretSource, RateProfileValidationError, RttThresholds, SingleInterfaceConfig,
+    SslConfig, StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig,
+    TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig,
+    TreeguardQooConfig, Tunables, normalize_external_hostname, validate_rate_profile_mbps,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));

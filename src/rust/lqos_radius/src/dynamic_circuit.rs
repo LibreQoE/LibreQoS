@@ -1,6 +1,7 @@
 //! Dynamic-circuit command intents emitted by RADIUS session handling.
 
 use crate::{AccountingEvent, AccountingSessionKey, NasResetStatus};
+use lqos_config::ShapedDevice;
 
 /// Sink boundary for dynamic-circuit intents produced by RADIUS session state.
 pub trait DynamicCircuitCommandSink {
@@ -13,13 +14,13 @@ pub trait DynamicCircuitCommandSink {
 }
 
 /// Dynamic-circuit intent that an lqosd-facing adapter can map onto daemon commands.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DynamicCircuitIntent {
     /// Create a runtime dynamic circuit. Adapters can map this to `CreateDynamicCircuit`.
     CreateDynamicCircuit(DynamicCircuitUpsert),
     /// Update a runtime dynamic circuit. Adapters can map this to `CreateDynamicCircuit`.
     UpdateDynamicCircuit(DynamicCircuitUpsert),
-    /// Remove a runtime dynamic circuit. Adapters can map this to `RemoveDynamicCircuit`.
+    /// Remove a runtime dynamic circuit. Adapters may defer this until runtime removals are enabled.
     RemoveDynamicCircuit(DynamicCircuitRemoval),
 }
 
@@ -37,7 +38,7 @@ impl DynamicCircuitIntent {
 }
 
 /// Data needed to create or update a dynamic circuit from a RADIUS session.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DynamicCircuitUpsert {
     /// Stable circuit identifier for the dynamic circuit overlay.
     pub circuit_id: String,
@@ -45,6 +46,8 @@ pub struct DynamicCircuitUpsert {
     pub session_key: AccountingSessionKey,
     /// Latest decoded accounting event data for the shapeable session.
     pub event: AccountingEvent,
+    /// Fully resolved in-memory `ShapedDevice` payload for the active session.
+    pub shaped_device: ShapedDevice,
 }
 
 /// Data needed to remove a dynamic circuit from a RADIUS session.

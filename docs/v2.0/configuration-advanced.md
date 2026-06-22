@@ -196,16 +196,33 @@ Notes:
 
 #### RADIUS accounting (optional)
 
-LibreQoS accepts an optional `[radius_accounting]` section for trusted NAS client settings. When enabled, `lqosd` starts a RADIUS accounting listener, verifies packets from configured clients, sends Accounting-Response packets for accepted requests, and keeps the decoded session state in memory. Dynamic-circuit application from RADIUS accounting is not enabled yet.
+LibreQoS accepts an optional `[radius_accounting]` section for trusted NAS client settings. When enabled, `lqosd` starts a RADIUS accounting listener, verifies packets from configured clients, sends Accounting-Response packets for accepted requests, and keeps the decoded session state in memory. When both `radius_accounting.dynamic_circuit_application.enabled` and top-level `dynamic_circuits.enabled` are true, shapeable Start and Interim-Update sessions are submitted to the dynamic-circuit path.
 
 Example:
 
 ```toml
+[dynamic_circuits]
+enabled = true
+
 [radius_accounting]
-enabled = false
+enabled = true
 listen = "0.0.0.0:1813"
 default_ttl_seconds = 900
 stale_grace_seconds = 120
+
+[radius_accounting.dynamic_circuit_application]
+enabled = true
+match_shaped_devices_by_mac = true
+# Optional fallback parent for default RADIUS identities when MAC metadata is not used.
+# fallback_parent_node = "Core PPPoE"
+# fallback_parent_node_id = "core-pppoe"
+# fallback_anchor_node_id = "radius-anchor"
+
+[radius_accounting.fallback_speed_profile]
+download_min_mbps = 5.0
+upload_min_mbps = 3.0
+download_max_mbps = 25.0
+upload_max_mbps = 10.0
 
 [[radius_accounting.clients]]
 name = "pppoe-core-1"
@@ -215,10 +232,20 @@ secret_file = "/etc/lqos/radius-secrets/pppoe-core-1"
 
 Notes:
 - Omit the section or set `enabled = false` to keep RADIUS accounting disabled. Clients may be omitted while it is disabled; any client entries you configure are still validated.
+- With `radius_accounting.dynamic_circuit_application.enabled = false`, accounting packets are accepted and tracked but do not change shaping. With it enabled, LibreQoS can resolve eligible sessions into `ShapedDevice` definitions in memory. Dynamic circuits are applied only when top-level `dynamic_circuits.enabled = true` is also configured.
+- Accounting-Response packets are sent independently from dynamic-circuit application. If a create or update fails, `lqosd` logs the circuit and session identifiers and keeps listening.
+- Dynamic-circuit application creates or updates circuits from shapeable Start and Interim-Update packets. Stop packets, TTL expiry, and stale NAS reset expiry submit `RemoveDynamicCircuit` for the active RADIUS-created circuit. Accounting-Response packets are still sent without waiting for that asynchronous removal; failures are logged with the circuit and session identifiers.
+- Set `radius_accounting.dynamic_circuit_application.match_shaped_devices_by_mac = true` to match RADIUS `Calling-Station-Id` values against `ShapedDevices.csv` MAC values. LibreQoS normalizes colon, hyphen, dotted, plain-hex, and mixed-case MAC formats before matching. A unique match supplies the circuit, device, parent, SQM override, and ShapedDevices speed fields; packet-decoded rates still take priority. The active IPv4 and IPv6 addresses come from the RADIUS session. No match or multiple matching rows leaves the session pending.
+- The RADIUS listener loads MAC-match metadata from `ShapedDevices.csv` when it starts. Restart `lqosd` after changing MAC, parent, circuit, device, SQM, or speed fields that RADIUS MAC matching should use.
+- If `radius_accounting.dynamic_circuit_application.enabled = true` but `match_shaped_devices_by_mac = false`, configure `fallback_parent_node` when default RADIUS identities should become shapeable. Without `fallback_parent_node`, sessions remain pending with missing parent metadata.
+- `fallback_parent_node`, `fallback_parent_node_id`, and `fallback_anchor_node_id` are used only for default identities derived from NAS identity plus `Acct-Session-Id`. MAC-matched sessions keep the parent metadata from the matched `ShapedDevices.csv` row.
+- A RADIUS session is shapeable only after LibreQoS has a stable NAS plus `Acct-Session-Id` identity, a device identity, at least one framed or delegated IP address or prefix, parent attachment metadata, and a resolved speed profile. Sessions without parent metadata remain pending.
 - Any configured `listen` value must be an IP:port listen address with a non-zero port, such as `0.0.0.0:1813`. When `enabled = true`, configure at least one client. Each configured client must include at least one `source` entry.
 - `source` accepts one IP/CIDR string or a list of IP/CIDR strings. Bare IP addresses are accepted as host sources.
 - Each configured client must include a non-empty `secret_file`. `lqosd` reads this file when the listener starts and uses its contents as the shared secret. LibreQoS preserves the configured path in `/etc/lqos.conf`. Debug output generated from this config field hides the configured path, but `/etc/lqos.conf` and support bundles that include it can still show the path.
 - `default_ttl_seconds` and `stale_grace_seconds` must be greater than zero.
+- Omit `[radius_accounting.fallback_speed_profile]` when sessions without a usable decoded packet rate or ShapedDevices MAC-match rate should stay pending with a missing-rate reason. If a matched `ShapedDevices.csv` row contains invalid speed fields, the session stays pending instead of falling back.
+- When RADIUS dynamic-circuit application is enabled, fallback speed values must be finite and greater than zero. `download_min_mbps` must not exceed `download_max_mbps`, and `upload_min_mbps` must not exceed `upload_max_mbps`.
 - Restart `lqosd` after changing this section so the listener and shared-secret files are reloaded.
 
 #### CRM/NMS Integrations

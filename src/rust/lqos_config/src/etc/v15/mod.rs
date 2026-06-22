@@ -33,7 +33,9 @@ pub use long_term_stats::LongTermStats;
 pub use mikrotik_ipv6::MikrotikIpv6Config;
 pub use queues::{LazyQueueMode, QueueMode};
 pub use radius_accounting::{
-    RadiusAccountingClient, RadiusAccountingConfig, RadiusClientSource, RadiusSharedSecretSource,
+    RadiusAccountingClient, RadiusAccountingConfig, RadiusClientSource,
+    RadiusDynamicCircuitApplicationConfig, RadiusFallbackSpeedProfile, RadiusSharedSecretSource,
+    RateProfileValidationError, validate_rate_profile_mbps,
 };
 pub use stormguard::{StormguardConfig, StormguardStrategy};
 pub use topology::{TopologyConfig, normalize_topology_compile_mode};

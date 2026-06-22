@@ -415,9 +415,12 @@ fn main() -> Result<()> {
                     BusRequest,
                 )>(100);
 
-                if let Err(err) =
-                    radius_accounting::start_configured_radius_accounting(radius_accounting_config)
-                        .await
+                if let Err(err) = radius_accounting::start_configured_radius_accounting(
+                    radius_accounting_config,
+                    &web_config,
+                    bus_tx.clone(),
+                )
+                .await
                 {
                     error!("RADIUS accounting listener was not started: {err}");
                 }

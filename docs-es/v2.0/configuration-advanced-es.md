@@ -64,16 +64,33 @@ do_not_track_subnets = ["192.168.0.0/16"]
 
 ### Contabilidad RADIUS (opcional)
 
-LibreQoS acepta una sección opcional `[radius_accounting]` para definir clientes NAS de confianza. Cuando está habilitada, `lqosd` inicia un servicio de contabilidad RADIUS, verifica paquetes de los clientes configurados, envía paquetes Accounting-Response para solicitudes aceptadas y mantiene el estado de sesión decodificado en memoria. La aplicación de circuitos dinámicos desde la contabilidad RADIUS aún no está habilitada.
+LibreQoS acepta una sección opcional `[radius_accounting]` para definir clientes NAS de confianza. Cuando está habilitada, `lqosd` inicia un servicio de contabilidad RADIUS, verifica paquetes de los clientes configurados, envía paquetes Accounting-Response para solicitudes aceptadas y mantiene el estado de sesión decodificado en memoria. Cuando `radius_accounting.dynamic_circuit_application.enabled` y la opción global `dynamic_circuits.enabled` están habilitadas, las sesiones Start e Interim-Update aptas se envían a la ruta de circuitos dinámicos.
 
 Ejemplo:
 
 ```toml
+[dynamic_circuits]
+enabled = true
+
 [radius_accounting]
-enabled = false
+enabled = true
 listen = "0.0.0.0:1813"
 default_ttl_seconds = 900
 stale_grace_seconds = 120
+
+[radius_accounting.dynamic_circuit_application]
+enabled = true
+match_shaped_devices_by_mac = true
+# Nodo padre opcional para identidades RADIUS por defecto cuando no se usan metadatos MAC.
+# fallback_parent_node = "Core PPPoE"
+# fallback_parent_node_id = "core-pppoe"
+# fallback_anchor_node_id = "radius-anchor"
+
+[radius_accounting.fallback_speed_profile]
+download_min_mbps = 5.0
+upload_min_mbps = 3.0
+download_max_mbps = 25.0
+upload_max_mbps = 10.0
 
 [[radius_accounting.clients]]
 name = "pppoe-core-1"
@@ -82,11 +99,21 @@ secret_file = "/etc/lqos/radius-secrets/pppoe-core-1"
 ```
 
 Notas:
-- Omita la sección o configure `enabled = false` para mantener deshabilitada la contabilidad RADIUS. Puede omitir los clientes mientras está deshabilitada; cualquier entrada de cliente que configure también debe ser válida.
+- Omita la sección o configure `enabled = false` para mantener deshabilitada la contabilidad RADIUS. Puede omitir los clientes mientras está deshabilitada; cualquier entrada de cliente que configure se sigue validando.
+- Con `radius_accounting.dynamic_circuit_application.enabled = false`, los paquetes de contabilidad se aceptan y se rastrean, pero no cambian el shaping. Cuando está habilitado, LibreQoS puede resolver sesiones aptas como definiciones `ShapedDevice` en memoria. Los circuitos dinámicos solo se aplican si también está configurado `dynamic_circuits.enabled = true` en la sección global.
+- Los paquetes Accounting-Response se envían de forma independiente de la aplicación de circuitos dinámicos. Si falla una creación o actualización, `lqosd` registra los identificadores de circuito y sesión y sigue escuchando.
+- La aplicación de circuitos dinámicos crea o actualiza circuitos desde paquetes Start e Interim-Update aptos para shaping. Los paquetes Stop, la expiración por TTL y la expiración de sesiones obsoletas por reinicio NAS envían `RemoveDynamicCircuit` para el circuito activo creado por RADIUS. Los paquetes Accounting-Response se siguen enviando sin esperar esa eliminación asíncrona; los fallos se registran con los identificadores de circuito y sesión.
+- Configure `radius_accounting.dynamic_circuit_application.match_shaped_devices_by_mac = true` para comparar los valores RADIUS `Calling-Station-Id` con los valores MAC de `ShapedDevices.csv`. LibreQoS normaliza formatos con dos puntos, guiones, puntos, hexadecimal sin separadores y combinaciones de mayúsculas/minúsculas antes de comparar. Una coincidencia única aporta los campos de circuito, dispositivo, nodo padre, override SQM y velocidades de `ShapedDevices.csv`; las velocidades decodificadas del paquete tienen prioridad. Las direcciones IPv4 e IPv6 activas vienen de la sesión RADIUS. Si no hay coincidencia o hay varias filas coincidentes, la sesión queda pendiente.
+- El servicio RADIUS carga los metadatos de coincidencia MAC desde `ShapedDevices.csv` cuando inicia. Reinicie `lqosd` después de cambiar campos de MAC, nodo padre, circuito, dispositivo, SQM o velocidad que la coincidencia MAC de RADIUS deba usar.
+- Si `radius_accounting.dynamic_circuit_application.enabled = true` pero `match_shaped_devices_by_mac = false`, configure `fallback_parent_node` cuando las identidades RADIUS por defecto deban quedar aptas para shaping. Sin `fallback_parent_node`, las sesiones quedan pendientes por falta de metadatos de nodo padre.
+- `fallback_parent_node`, `fallback_parent_node_id` y `fallback_anchor_node_id` se usan solo para identidades por defecto derivadas de la identidad NAS más `Acct-Session-Id`. Las sesiones con coincidencia MAC conservan los metadatos de nodo padre de la fila coincidente de `ShapedDevices.csv`.
+- Una sesión RADIUS solo queda apta para shaping cuando LibreQoS tiene una identidad estable de NAS más `Acct-Session-Id`, una identidad de dispositivo, al menos una dirección IP o prefijo recibido por RADIUS, metadatos de conexión a un nodo padre y un perfil de velocidad resuelto. Las sesiones sin metadatos de nodo padre quedan pendientes.
 - Cualquier valor configurado en `listen` debe ser una dirección de escucha IP:puerto con un puerto distinto de cero, como `0.0.0.0:1813`. Cuando `enabled = true`, configure al menos un cliente. Cada cliente configurado debe incluir al menos una entrada `source`.
 - `source` acepta una cadena IP/CIDR o una lista de cadenas IP/CIDR. Las direcciones IP sin prefijo se aceptan como hosts individuales.
 - Cada cliente configurado debe incluir un `secret_file` no vacío. `lqosd` lee este archivo cuando inicia el servicio y usa su contenido como secreto compartido. LibreQoS conserva la ruta configurada en `/etc/lqos.conf`. La salida de depuración generada a partir de este campo oculta la ruta, pero los paquetes de soporte que incluyan `/etc/lqos.conf` pueden mostrar esa ruta.
 - `default_ttl_seconds` y `stale_grace_seconds` deben ser mayores que cero.
+- Omita `[radius_accounting.fallback_speed_profile]` cuando las sesiones sin una velocidad decodificada utilizable en el paquete RADIUS ni una velocidad de coincidencia MAC en `ShapedDevices.csv` deban quedar pendientes con motivo de velocidad faltante. Si una fila coincidente de `ShapedDevices.csv` contiene velocidades inválidas, la sesión queda pendiente en lugar de usar el perfil de respaldo.
+- Cuando la aplicación de circuitos dinámicos de RADIUS está habilitada, los valores del perfil de velocidad de respaldo deben ser finitos y mayores que cero. `download_min_mbps` no debe superar `download_max_mbps`, y `upload_min_mbps` no debe superar `upload_max_mbps`.
 - Reinicie `lqosd` después de cambiar esta sección para recargar el servicio y los archivos de secreto compartido.
 
 ### Integraciones con CRM/NMS

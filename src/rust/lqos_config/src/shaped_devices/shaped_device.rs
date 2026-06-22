@@ -40,8 +40,7 @@ pub struct ShapedDevice {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anchor_node_id: Option<String>,
 
-    /// The device's MAC address. This isn't actually used, it exists for
-    /// convenient mapping/seraching.
+    /// The device's MAC address, used by imports and RADIUS MAC matching.
     pub mac: String,
 
     /// A list of all IPv4 addresses and CIDR subnets associated with the
@@ -91,6 +90,15 @@ pub struct ShapedDevice {
 }
 
 impl ShapedDevice {
+    /// Refreshes derived hash fields from the current circuit, device, and parent identifiers.
+    ///
+    /// Side effects: mutates only `circuit_hash`, `device_hash`, and `parent_hash` on this value.
+    pub fn refresh_hashes(&mut self) {
+        self.circuit_hash = hash_to_i64(&self.circuit_id);
+        self.device_hash = hash_to_i64(&self.device_id);
+        self.parent_hash = hash_to_i64(&self.parent_node);
+    }
+
     fn normalize_header(value: &str) -> String {
         value
             .chars()
@@ -321,10 +329,11 @@ impl ShapedDevice {
             },
             comment: Self::field(record, &layout, "comment").to_string(),
             sqm_override: None,
-            circuit_hash: hash_to_i64(Self::field(record, &layout, "circuit_id")),
-            device_hash: hash_to_i64(Self::field(record, &layout, "device_id")),
-            parent_hash: hash_to_i64(Self::field(record, &layout, "parent_node")),
+            circuit_hash: 0,
+            device_hash: 0,
+            parent_hash: 0,
         };
+        device.refresh_hashes();
 
         // Optional 14th field: per-circuit SQM override token
         if let Some(raw) = layout.get("sqm").and_then(|idx| record.get(*idx)) {

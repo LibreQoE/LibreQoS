@@ -9,6 +9,7 @@ use ip_network::IpNetwork;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
+use thiserror::Error;
 
 fn default_ttl_seconds() -> u64 {
     900
@@ -138,12 +139,112 @@ impl RadiusAccountingClient {
     }
 }
 
+/// Optional fallback speed profile for sessions without decoded packet rates or matched ShapedDevices rates.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct RadiusFallbackSpeedProfile {
+    /// Default minimum download bandwidth in Mbps.
+    pub download_min_mbps: f32,
+    /// Default minimum upload bandwidth in Mbps.
+    pub upload_min_mbps: f32,
+    /// Default maximum download bandwidth in Mbps.
+    pub download_max_mbps: f32,
+    /// Default maximum upload bandwidth in Mbps.
+    pub upload_max_mbps: f32,
+}
+
+impl RadiusFallbackSpeedProfile {
+    /// Validates all fallback speed values.
+    pub fn validate(&self) -> Result<(), String> {
+        validate_rate_profile_mbps(
+            self.download_min_mbps,
+            self.upload_min_mbps,
+            self.download_max_mbps,
+            self.upload_max_mbps,
+        )
+        .map_err(|error| error.with_config_prefix("radius_accounting.fallback_speed_profile"))
+    }
+}
+
+/// Validation error for a complete Mbps rate profile.
+#[derive(Clone, Copy, Debug, Error, PartialEq)]
+pub enum RateProfileValidationError {
+    /// A rate value was NaN or infinite.
+    #[error("{field} must be finite, got {rate_mbps} Mbps")]
+    NonFinite {
+        /// Field that failed validation.
+        field: &'static str,
+        /// Invalid rate value in Mbps.
+        rate_mbps: f32,
+    },
+    /// A rate value was zero or negative.
+    #[error("{field} must be > 0, got {rate_mbps} Mbps")]
+    NonPositive {
+        /// Field that failed validation.
+        field: &'static str,
+        /// Invalid rate value in Mbps.
+        rate_mbps: f32,
+    },
+    /// A minimum rate exceeded its matching maximum rate.
+    #[error("{min_field} ({min_mbps} Mbps) must be <= {max_field} ({max_mbps} Mbps)")]
+    MinimumExceedsMaximum {
+        /// Minimum-rate field that failed validation.
+        min_field: &'static str,
+        /// Minimum-rate value in Mbps.
+        min_mbps: f32,
+        /// Maximum-rate field that failed validation.
+        max_field: &'static str,
+        /// Maximum-rate value in Mbps.
+        max_mbps: f32,
+    },
+}
+
+impl RateProfileValidationError {
+    /// Formats this validation error with a config-path prefix.
+    #[must_use]
+    pub fn with_config_prefix(&self, prefix: &str) -> String {
+        match self {
+            Self::NonFinite { field, .. } => format!("{prefix}.{field} must be finite"),
+            Self::NonPositive { field, .. } => format!("{prefix}.{field} must be > 0"),
+            Self::MinimumExceedsMaximum {
+                min_field,
+                max_field,
+                ..
+            } => format!("{prefix}.{min_field} must be <= {prefix}.{max_field}"),
+        }
+    }
+}
+
+/// Validates a complete Mbps rate profile.
+pub fn validate_rate_profile_mbps(
+    download_min_mbps: f32,
+    upload_min_mbps: f32,
+    download_max_mbps: f32,
+    upload_max_mbps: f32,
+) -> Result<(), RateProfileValidationError> {
+    validate_rate_profile_field("download_min_mbps", download_min_mbps)?;
+    validate_rate_profile_field("upload_min_mbps", upload_min_mbps)?;
+    validate_rate_profile_field("download_max_mbps", download_max_mbps)?;
+    validate_rate_profile_field("upload_max_mbps", upload_max_mbps)?;
+    validate_rate_profile_order(
+        "download_min_mbps",
+        download_min_mbps,
+        "download_max_mbps",
+        download_max_mbps,
+    )?;
+    validate_rate_profile_order(
+        "upload_min_mbps",
+        upload_min_mbps,
+        "upload_max_mbps",
+        upload_max_mbps,
+    )
+}
+
 /// RADIUS accounting listener configuration.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct RadiusAccountingConfig {
     /// Persisted operator flag for RADIUS accounting listener support.
     ///
-    /// In v2.0 this value is validated and saved, but does not start a listener.
+    /// When true, `lqosd` starts the listener after configuration validation.
     #[serde(default)]
     pub enabled: bool,
     /// UDP socket address for the listener, for example `0.0.0.0:1813`.
@@ -156,9 +257,64 @@ pub struct RadiusAccountingConfig {
     /// Grace period in seconds before stale accounting state is considered expired.
     #[serde(default = "default_stale_grace_seconds")]
     pub stale_grace_seconds: u64,
+    /// Safety gate for RADIUS dynamic-circuit application.
+    #[serde(default)]
+    pub dynamic_circuit_application: RadiusDynamicCircuitApplicationConfig,
+    /// Optional fallback speed profile for sessions without decoded packet rates or matched ShapedDevices rates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_speed_profile: Option<RadiusFallbackSpeedProfile>,
     /// Trusted RADIUS NAS clients.
     #[serde(default)]
     pub clients: Vec<RadiusAccountingClient>,
+}
+
+/// RADIUS dynamic-circuit application settings.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct RadiusDynamicCircuitApplicationConfig {
+    /// Enable the RADIUS dynamic-circuit application gate.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Match `Calling-Station-Id` values to `ShapedDevices.csv` MAC fields.
+    #[serde(default)]
+    pub match_shaped_devices_by_mac: bool,
+    /// Parent node used for default RADIUS identities when MAC matching does not supply metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_parent_node: Option<String>,
+    /// Stable parent node ID used with `fallback_parent_node`, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_parent_node_id: Option<String>,
+    /// Stable anchor node ID used with `fallback_parent_node`, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_anchor_node_id: Option<String>,
+}
+
+impl RadiusDynamicCircuitApplicationConfig {
+    /// Validates RADIUS dynamic-circuit application settings.
+    pub fn validate(&self) -> Result<(), String> {
+        validate_optional_text(
+            "radius_accounting.dynamic_circuit_application.fallback_parent_node",
+            self.fallback_parent_node.as_deref(),
+        )?;
+        validate_optional_text(
+            "radius_accounting.dynamic_circuit_application.fallback_parent_node_id",
+            self.fallback_parent_node_id.as_deref(),
+        )?;
+        validate_optional_text(
+            "radius_accounting.dynamic_circuit_application.fallback_anchor_node_id",
+            self.fallback_anchor_node_id.as_deref(),
+        )?;
+
+        if self.fallback_parent_node.is_none()
+            && (self.fallback_parent_node_id.is_some() || self.fallback_anchor_node_id.is_some())
+        {
+            return Err(
+                "radius_accounting.dynamic_circuit_application.fallback_parent_node must be set when fallback parent IDs are configured"
+                    .to_string(),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for RadiusAccountingConfig {
@@ -168,6 +324,8 @@ impl Default for RadiusAccountingConfig {
             listen: None,
             default_ttl_seconds: default_ttl_seconds(),
             stale_grace_seconds: default_stale_grace_seconds(),
+            dynamic_circuit_application: RadiusDynamicCircuitApplicationConfig::default(),
+            fallback_speed_profile: None,
             clients: Vec::new(),
         }
     }
@@ -185,6 +343,13 @@ impl RadiusAccountingConfig {
 
         if self.listen.is_some_and(|listen| listen.port() == 0) {
             return Err("radius_accounting.listen port must be > 0".to_string());
+        }
+
+        if self.dynamic_circuit_application.enabled {
+            self.dynamic_circuit_application.validate()?;
+            if let Some(fallback_speed_profile) = &self.fallback_speed_profile {
+                fallback_speed_profile.validate()?;
+            }
         }
 
         for (index, client) in self.clients.iter().enumerate() {
@@ -249,6 +414,43 @@ fn client_label(index: usize, name: &str) -> String {
     }
 }
 
+fn validate_optional_text(config_path: &str, value: Option<&str>) -> Result<(), String> {
+    if value.is_some_and(|value| value.trim().is_empty()) {
+        return Err(format!("{config_path} must not be empty when configured"));
+    }
+    Ok(())
+}
+
+fn validate_rate_profile_field(
+    field: &'static str,
+    rate_mbps: f32,
+) -> Result<(), RateProfileValidationError> {
+    if !rate_mbps.is_finite() {
+        return Err(RateProfileValidationError::NonFinite { field, rate_mbps });
+    }
+    if rate_mbps <= 0.0 {
+        return Err(RateProfileValidationError::NonPositive { field, rate_mbps });
+    }
+    Ok(())
+}
+
+fn validate_rate_profile_order(
+    min_field: &'static str,
+    min_mbps: f32,
+    max_field: &'static str,
+    max_mbps: f32,
+) -> Result<(), RateProfileValidationError> {
+    if min_mbps > max_mbps {
+        return Err(RateProfileValidationError::MinimumExceedsMaximum {
+            min_field,
+            min_mbps,
+            max_field,
+            max_mbps,
+        });
+    }
+    Ok(())
+}
+
 fn parse_client_source(source: &str) -> Result<IpNetwork, String> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
@@ -281,6 +483,13 @@ mod tests {
     const TEST_SECRET_FILE_LINE: &str = "secret_file = \"/etc/lqos/radius-secrets/pppoe-core-1\"";
     const TEST_TTL_SECONDS_LINE: &str = "default_ttl_seconds = 900";
     const TEST_STALE_GRACE_SECONDS_LINE: &str = "stale_grace_seconds = 120";
+    const TEST_FALLBACK_SECTION_LINES: &[&str] = &[
+        "[radius_accounting.fallback_speed_profile]",
+        "download_min_mbps = 5.0",
+        "upload_min_mbps = 3.0",
+        "download_max_mbps = 25.0",
+        "upload_max_mbps = 10.0",
+    ];
     const TEST_CLIENT_LINES: &[&str] = &[TEST_SOURCE_LINE, TEST_SECRET_FILE_LINE];
     const TEST_NAMED_CLIENT_LINES: &[&str] = &[
         TEST_CLIENT_NAME_LINE,
@@ -369,6 +578,31 @@ mod tests {
         assert!(radius.clients.is_empty());
         assert_eq!(radius.default_ttl_seconds, default_ttl_seconds());
         assert_eq!(radius.stale_grace_seconds, default_stale_grace_seconds());
+        assert!(!radius.dynamic_circuit_application.enabled);
+        assert!(
+            !radius
+                .dynamic_circuit_application
+                .match_shaped_devices_by_mac
+        );
+        assert!(
+            radius
+                .dynamic_circuit_application
+                .fallback_parent_node
+                .is_none()
+        );
+        assert!(
+            radius
+                .dynamic_circuit_application
+                .fallback_parent_node_id
+                .is_none()
+        );
+        assert!(
+            radius
+                .dynamic_circuit_application
+                .fallback_anchor_node_id
+                .is_none()
+        );
+        assert!(radius.fallback_speed_profile.is_none());
     }
 
     fn valid_client() -> RadiusAccountingClient {
@@ -376,6 +610,15 @@ mod tests {
             name: TEST_CLIENT_NAME.to_string(),
             source: vec![source(TEST_SOURCE), source("2001:db8::/48")],
             secret_file: RadiusSharedSecretSource::from(TEST_SECRET_FILE),
+        }
+    }
+
+    fn valid_fallback_speed_profile() -> RadiusFallbackSpeedProfile {
+        RadiusFallbackSpeedProfile {
+            download_min_mbps: 5.0,
+            upload_min_mbps: 3.0,
+            download_max_mbps: 25.0,
+            upload_max_mbps: 10.0,
         }
     }
 
@@ -389,6 +632,8 @@ mod tests {
             ),
             default_ttl_seconds: default_ttl_seconds(),
             stale_grace_seconds: default_stale_grace_seconds(),
+            dynamic_circuit_application: RadiusDynamicCircuitApplicationConfig::default(),
+            fallback_speed_profile: None,
             clients: vec![valid_client()],
         }
     }
@@ -454,6 +699,272 @@ mod tests {
 
         let parsed = Config::load_from_string(&raw).expect("config should deserialize");
         assert_eq!(parsed.radius_accounting, config.radius_accounting);
+
+        let toml_config = Config::load_from_string(&example_with_radius(&enabled_radius_section(
+            TEST_FALLBACK_SECTION_LINES,
+            Some(TEST_CLIENT_LINES),
+        )))
+        .expect("fallback speed profile TOML should deserialize");
+        assert_eq!(
+            toml_config
+                .radius_accounting
+                .expect("radius accounting should be present")
+                .fallback_speed_profile,
+            Some(valid_fallback_speed_profile())
+        );
+    }
+
+    #[test]
+    fn disabled_dynamic_circuit_application_round_trips() {
+        let mut radius = valid_enabled_config();
+        radius.dynamic_circuit_application.enabled = false;
+        let config = Config {
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+
+        let raw = toml::to_string_pretty(&config).expect("config should serialize");
+        let parsed = Config::load_from_string(&raw).expect("config should deserialize");
+        let radius = parsed
+            .radius_accounting
+            .expect("radius accounting section should round trip");
+
+        assert!(!radius.dynamic_circuit_application.enabled);
+    }
+
+    #[test]
+    fn enabled_dynamic_circuit_application_round_trips_without_top_level_dynamic_circuits() {
+        let mut radius = valid_enabled_config();
+        radius.dynamic_circuit_application.enabled = true;
+        let config = Config {
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+
+        config
+            .validate()
+            .expect("valid RADIUS dynamic circuit activation should pass");
+        let raw = toml::to_string_pretty(&config).expect("config should serialize");
+        assert!(raw.contains("[radius_accounting.dynamic_circuit_application]"));
+
+        let parsed = Config::load_from_string(&raw).expect("config should deserialize");
+        let radius = parsed
+            .radius_accounting
+            .expect("radius accounting section should round trip");
+        assert!(radius.dynamic_circuit_application.enabled);
+        assert!(
+            !radius
+                .dynamic_circuit_application
+                .match_shaped_devices_by_mac
+        );
+        assert!(parsed.dynamic_circuits.is_none());
+    }
+
+    #[test]
+    fn fallback_speed_profile_round_trips() {
+        let mut radius = valid_enabled_config();
+        radius.fallback_speed_profile = Some(valid_fallback_speed_profile());
+        let config = Config {
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+
+        config
+            .validate()
+            .expect("valid fallback speed profile should pass");
+        let raw = toml::to_string_pretty(&config).expect("config should serialize");
+        assert!(raw.contains("[radius_accounting.fallback_speed_profile]"));
+        assert!(raw.contains("download_min_mbps = 5.0"));
+
+        let parsed = Config::load_from_string(&raw).expect("config should deserialize");
+        assert_eq!(parsed.radius_accounting, config.radius_accounting);
+    }
+
+    #[test]
+    fn mac_match_dynamic_application_setting_round_trips() {
+        let mut radius = valid_enabled_config();
+        radius.dynamic_circuit_application.enabled = true;
+        radius
+            .dynamic_circuit_application
+            .match_shaped_devices_by_mac = true;
+        let config = Config {
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+
+        config
+            .validate()
+            .expect("valid RADIUS MAC matching settings should pass");
+        let raw = toml::to_string_pretty(&config).expect("config should serialize");
+        assert!(raw.contains("match_shaped_devices_by_mac = true"));
+
+        let parsed = Config::load_from_string(&raw).expect("config should deserialize");
+        let radius = parsed
+            .radius_accounting
+            .expect("radius accounting section should round trip");
+        assert!(
+            radius
+                .dynamic_circuit_application
+                .match_shaped_devices_by_mac
+        );
+    }
+
+    #[test]
+    fn fallback_parent_settings_round_trip() {
+        let mut radius = valid_enabled_config();
+        radius.dynamic_circuit_application.enabled = true;
+        radius.dynamic_circuit_application.fallback_parent_node = Some("Core PPPoE".to_string());
+        radius.dynamic_circuit_application.fallback_parent_node_id = Some("core-pppoe".to_string());
+        radius.dynamic_circuit_application.fallback_anchor_node_id =
+            Some("radius-anchor".to_string());
+        let config = Config {
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+
+        config
+            .validate()
+            .expect("valid RADIUS fallback parent settings should pass");
+        let raw = toml::to_string_pretty(&config).expect("config should serialize");
+        assert!(raw.contains("fallback_parent_node = \"Core PPPoE\""));
+        assert!(raw.contains("fallback_parent_node_id = \"core-pppoe\""));
+        assert!(raw.contains("fallback_anchor_node_id = \"radius-anchor\""));
+
+        let parsed = Config::load_from_string(&raw).expect("config should deserialize");
+        assert_eq!(parsed.radius_accounting, config.radius_accounting);
+    }
+
+    #[test]
+    fn validation_rejects_invalid_fallback_speed_profile() {
+        for (label, profile, expected) in [
+            (
+                "non-finite download minimum",
+                RadiusFallbackSpeedProfile {
+                    download_min_mbps: f32::NAN,
+                    ..valid_fallback_speed_profile()
+                },
+                "download_min_mbps must be finite",
+            ),
+            (
+                "non-finite upload maximum",
+                RadiusFallbackSpeedProfile {
+                    upload_max_mbps: f32::INFINITY,
+                    ..valid_fallback_speed_profile()
+                },
+                "upload_max_mbps must be finite",
+            ),
+            (
+                "zero download maximum",
+                RadiusFallbackSpeedProfile {
+                    download_max_mbps: 0.0,
+                    ..valid_fallback_speed_profile()
+                },
+                "download_max_mbps must be > 0",
+            ),
+            (
+                "negative upload minimum",
+                RadiusFallbackSpeedProfile {
+                    upload_min_mbps: -1.0,
+                    ..valid_fallback_speed_profile()
+                },
+                "upload_min_mbps must be > 0",
+            ),
+            (
+                "download minimum greater than maximum",
+                RadiusFallbackSpeedProfile {
+                    download_min_mbps: 30.0,
+                    ..valid_fallback_speed_profile()
+                },
+                "download_min_mbps must be <= radius_accounting.fallback_speed_profile.download_max_mbps",
+            ),
+            (
+                "upload minimum greater than maximum",
+                RadiusFallbackSpeedProfile {
+                    upload_min_mbps: 15.0,
+                    ..valid_fallback_speed_profile()
+                },
+                "upload_min_mbps must be <= radius_accounting.fallback_speed_profile.upload_max_mbps",
+            ),
+        ] {
+            let mut config = valid_enabled_config();
+            config.dynamic_circuit_application.enabled = true;
+            config.fallback_speed_profile = Some(profile);
+            let error = config.validate().expect_err(label);
+
+            assert!(
+                error.contains(expected),
+                "expected error to contain '{expected}', got '{error}'"
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_circuit_application_does_not_require_top_level_dynamic_circuits() {
+        let mut radius = valid_enabled_config();
+        radius.dynamic_circuit_application.enabled = true;
+
+        let missing_top_level_dynamic_circuits = Config {
+            radius_accounting: Some(radius.clone()),
+            ..Config::default()
+        };
+        missing_top_level_dynamic_circuits
+            .validate()
+            .expect("RADIUS dynamic circuit activation should not require dynamic_circuits");
+
+        let disabled_top_level_dynamic_circuits = Config {
+            dynamic_circuits: Some(Default::default()),
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+        disabled_top_level_dynamic_circuits
+            .validate()
+            .expect("disabled dynamic_circuits should not block RADIUS dynamic circuit activation");
+    }
+
+    #[test]
+    fn disabled_radius_accounting_dynamic_application_does_not_require_dynamic_circuits() {
+        let radius = RadiusAccountingConfig {
+            dynamic_circuit_application: RadiusDynamicCircuitApplicationConfig {
+                enabled: true,
+                ..RadiusDynamicCircuitApplicationConfig::default()
+            },
+            ..RadiusAccountingConfig::default()
+        };
+        let config = Config {
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+
+        config
+            .validate()
+            .expect("disabled RADIUS accounting should not require dynamic_circuits");
+    }
+
+    #[test]
+    fn dynamic_circuit_activation_settings_deserialize_without_top_level_dynamic_circuits() {
+        let radius = format!(
+            r#"
+
+[radius_accounting]
+enabled = true
+{TEST_LISTEN_LINE}
+
+[radius_accounting.dynamic_circuit_application]
+enabled = true
+
+[[radius_accounting.clients]]
+{TEST_SOURCE_LINE}
+{TEST_SECRET_FILE_LINE}
+"#
+        );
+        let config = Config::load_from_string(&example_with_radius(&radius))
+            .expect("valid activation settings should deserialize");
+        let radius = config
+            .radius_accounting
+            .expect("radius accounting should be present");
+
+        assert!(radius.dynamic_circuit_application.enabled);
+        assert!(config.dynamic_circuits.is_none());
     }
 
     #[test]
@@ -658,6 +1169,43 @@ mod tests {
             (
                 enabled_radius_section(&["stale_grace_seconds = 0"], Some(TEST_CLIENT_LINES)),
                 "stale_grace_seconds",
+            ),
+            (
+                enabled_radius_section(
+                    &[
+                        "[radius_accounting.dynamic_circuit_application]",
+                        "enabled = true",
+                        "[radius_accounting.fallback_speed_profile]",
+                        "download_min_mbps = 0.0",
+                        "upload_min_mbps = 3.0",
+                        "download_max_mbps = 25.0",
+                        "upload_max_mbps = 10.0",
+                    ],
+                    Some(TEST_CLIENT_LINES),
+                ),
+                "fallback_speed_profile.download_min_mbps",
+            ),
+            (
+                enabled_radius_section(
+                    &[
+                        "[radius_accounting.dynamic_circuit_application]",
+                        "enabled = true",
+                        "fallback_parent_node = \"   \"",
+                    ],
+                    Some(TEST_CLIENT_LINES),
+                ),
+                "fallback_parent_node",
+            ),
+            (
+                enabled_radius_section(
+                    &[
+                        "[radius_accounting.dynamic_circuit_application]",
+                        "enabled = true",
+                        "fallback_parent_node_id = \"core-pppoe\"",
+                    ],
+                    Some(TEST_CLIENT_LINES),
+                ),
+                "fallback_parent_node must be set",
             ),
             (enabled_radius_section(&[], None), "clients"),
         ]);
