@@ -201,7 +201,7 @@ fn build_unobserved_health_entry(
         previous.status == TopologyAttachmentHealthStatus::Suppressed
             && previous
                 .suppressed_until_unix
-                .is_some_and(|deadline| now_unix().map_or(true, |now| now < deadline))
+                .is_some_and(|deadline| now_unix().is_none_or(|now| now < deadline))
     });
     if suppression_active {
         entry.status = TopologyAttachmentHealthStatus::Suppressed;
