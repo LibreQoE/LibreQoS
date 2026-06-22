@@ -3,22 +3,70 @@ use lqos_bus::{BusReply, BusRequest, BusResponse};
 use lqos_probe::{ProbeClass, ProbeRequest};
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::oneshot::error::TryRecvError;
 
 use crate::AttachmentProbeSpec;
 
 use super::TopologyBusSender;
 
 const TOPOLOGY_PROBE_MAX_AGE_MS: u64 = 250;
+const BUS_CALL_TIMEOUT_MARGIN: Duration = Duration::from_millis(500);
+const BUS_CALL_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
-fn bus_call(bus_tx: TopologyBusSender, request: BusRequest) -> anyhow::Result<BusReply> {
-    let (once_tx, once_rx) = tokio::sync::oneshot::channel();
+fn sleep_until_deadline(deadline: Instant) -> bool {
+    let now = Instant::now();
+    if now >= deadline {
+        return false;
+    }
+    std::thread::sleep(
+        deadline
+            .saturating_duration_since(now)
+            .min(BUS_CALL_POLL_INTERVAL),
+    );
+    true
+}
+
+fn bus_call(
+    bus_tx: TopologyBusSender,
+    request: BusRequest,
+    timeout: Duration,
+) -> anyhow::Result<BusReply> {
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(|| anyhow::anyhow!("Invalid bus call timeout: {timeout:?}"))?;
+    let (once_tx, mut once_rx) = tokio::sync::oneshot::channel();
     let request_copy = request.clone();
-    bus_tx.blocking_send((once_tx, request))?;
-    if let Ok(reply) = once_rx.blocking_recv() {
-        Ok(reply)
-    } else {
-        anyhow::bail!("Call to {:?} failed", request_copy);
+    let mut pending = Some((once_tx, request));
+
+    while let Some(message) = pending.take() {
+        match bus_tx.try_send(message) {
+            Ok(()) => break,
+            Err(TrySendError::Full(returned)) => {
+                pending = Some(returned);
+                if !sleep_until_deadline(deadline) {
+                    anyhow::bail!("Timed out sending bus request: {request_copy:?}");
+                }
+            }
+            Err(TrySendError::Closed(_)) => {
+                anyhow::bail!("Bus closed while sending request: {request_copy:?}");
+            }
+        }
+    }
+
+    loop {
+        match once_rx.try_recv() {
+            Ok(reply) => return Ok(reply),
+            Err(TryRecvError::Empty) => {
+                if !sleep_until_deadline(deadline) {
+                    anyhow::bail!("Timed out waiting for bus reply: {request_copy:?}");
+                }
+            }
+            Err(TryRecvError::Closed) => {
+                anyhow::bail!("Bus reply channel closed for request: {request_copy:?}");
+            }
+        }
     }
 }
 
@@ -75,6 +123,7 @@ pub(super) fn probe_specs(
             requests: probe_requests,
             max_age_ms: TOPOLOGY_PROBE_MAX_AGE_MS,
         },
+        timeout.saturating_add(BUS_CALL_TIMEOUT_MARGIN),
     )
     .map_err(|err| anyhow::anyhow!("unable to query shared probe manager: {err}"))?
     .responses
