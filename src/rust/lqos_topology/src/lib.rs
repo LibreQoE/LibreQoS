@@ -1132,6 +1132,7 @@ fn load_runtime_shaping_overrides(config: &Config) -> Result<lqos_overrides::Ove
 #[derive(Default)]
 struct QueueVirtualizationContext {
     direct_circuit_node_ids: HashSet<String>,
+    direct_circuit_node_names: HashSet<String>,
     forced_visible_node_names: HashSet<String>,
 }
 
@@ -1177,6 +1178,27 @@ fn collect_direct_circuit_node_ids(
     direct_node_ids
 }
 
+fn insert_direct_node_name(target: &mut HashSet<String>, value: Option<&str>) {
+    let Some(node_name) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return;
+    };
+    target.insert(node_name.to_string());
+}
+
+fn collect_direct_circuit_node_names(
+    shaped_devices: &ConfigShapedDevices,
+    circuit_anchors: &[CircuitAnchor],
+) -> HashSet<String> {
+    let mut direct_node_names = HashSet::new();
+    for device in &shaped_devices.devices {
+        insert_direct_node_name(&mut direct_node_names, Some(device.parent_node.as_str()));
+    }
+    for anchor in circuit_anchors {
+        insert_direct_node_name(&mut direct_node_names, anchor.anchor_node_name.as_deref());
+    }
+    direct_node_names
+}
+
 fn forced_visible_node_names(overrides: &lqos_overrides::OverrideFile) -> HashSet<String> {
     overrides
         .network_adjustments()
@@ -1199,47 +1221,55 @@ fn load_queue_virtualization_context(
 ) -> Result<QueueVirtualizationContext> {
     let runtime_overrides = load_runtime_shaping_overrides(config)?;
     let attachment_owner_by_attachment_id = build_attachment_owner_map(ui_state);
-    let direct_circuit_node_ids = if topology_import_ingress_enabled(config) {
-        let Some((mut shaped_devices, circuit_anchors)) =
-            load_integration_shaping_artifacts(config)?
-        else {
-            return Ok(QueueVirtualizationContext {
-                forced_visible_node_names: forced_visible_node_names(&runtime_overrides),
-                ..QueueVirtualizationContext::default()
-            });
-        };
-        let runtime_devices = apply_runtime_shaped_device_overrides(
-            std::mem::take(&mut shaped_devices.devices),
-            &runtime_overrides,
-        );
-        shaped_devices.replace_with_new_data(runtime_devices);
-        collect_direct_circuit_node_ids(
-            &shaped_devices,
-            &circuit_anchors,
-            &attachment_owner_by_attachment_id,
-        )
-    } else {
-        let shaped_devices_path = ConfigShapedDevices::path_for_config(config);
-        if !shaped_devices_path.exists() {
-            HashSet::new()
-        } else {
-            let shaped_devices_mtime = std::fs::metadata(&shaped_devices_path)
-                .ok()
-                .and_then(|metadata| metadata.modified().ok());
-            let shaped_devices = ConfigShapedDevices::load_for_config(config).with_context(
-                || "Unable to load ShapedDevices.csv while preparing queue virtualization",
-            )?;
-            let circuit_anchors = load_circuit_anchors(config, shaped_devices_mtime);
-            collect_direct_circuit_node_ids(
-                &shaped_devices,
-                &circuit_anchors,
-                &attachment_owner_by_attachment_id,
+    let (direct_circuit_node_ids, direct_circuit_node_names) =
+        if topology_import_ingress_enabled(config) {
+            let Some((mut shaped_devices, circuit_anchors)) =
+                load_integration_shaping_artifacts(config)?
+            else {
+                return Ok(QueueVirtualizationContext {
+                    forced_visible_node_names: forced_visible_node_names(&runtime_overrides),
+                    ..QueueVirtualizationContext::default()
+                });
+            };
+            let runtime_devices = apply_runtime_shaped_device_overrides(
+                std::mem::take(&mut shaped_devices.devices),
+                &runtime_overrides,
+            );
+            shaped_devices.replace_with_new_data(runtime_devices);
+            (
+                collect_direct_circuit_node_ids(
+                    &shaped_devices,
+                    &circuit_anchors,
+                    &attachment_owner_by_attachment_id,
+                ),
+                collect_direct_circuit_node_names(&shaped_devices, &circuit_anchors),
             )
-        }
-    };
+        } else {
+            let shaped_devices_path = ConfigShapedDevices::path_for_config(config);
+            if !shaped_devices_path.exists() {
+                (HashSet::new(), HashSet::new())
+            } else {
+                let shaped_devices_mtime = std::fs::metadata(&shaped_devices_path)
+                    .ok()
+                    .and_then(|metadata| metadata.modified().ok());
+                let shaped_devices = ConfigShapedDevices::load_for_config(config).with_context(
+                    || "Unable to load ShapedDevices.csv while preparing queue virtualization",
+                )?;
+                let circuit_anchors = load_circuit_anchors(config, shaped_devices_mtime);
+                (
+                    collect_direct_circuit_node_ids(
+                        &shaped_devices,
+                        &circuit_anchors,
+                        &attachment_owner_by_attachment_id,
+                    ),
+                    collect_direct_circuit_node_names(&shaped_devices, &circuit_anchors),
+                )
+            }
+        };
 
     Ok(QueueVirtualizationContext {
         direct_circuit_node_ids,
+        direct_circuit_node_names,
         forced_visible_node_names: forced_visible_node_names(&runtime_overrides),
     })
 }
@@ -2715,6 +2745,9 @@ fn resolved_queue_visibility_policy(
     if virtualization
         .direct_circuit_node_ids
         .contains(ui_node.node_id.as_str())
+        || virtualization
+            .direct_circuit_node_names
+            .contains(ui_node.node_name.as_str())
     {
         return TopologyQueueVisibilityPolicy::QueueVisible;
     }
@@ -4451,9 +4484,9 @@ mod tests {
         apply_effective_topology_to_network_json_from_canonical as try_apply_effective_topology_to_network_json_from_canonical,
         auto_attachment_option, build_effective_topology_artifacts,
         build_effective_topology_artifacts_from_canonical, build_shaping_inputs,
-        collect_direct_circuit_node_ids, compute_effective_state,
-        publish_effective_topology_artifacts, publish_topology_runtime_error_status,
-        validate_effective_topology_network,
+        collect_direct_circuit_node_ids, collect_direct_circuit_node_names,
+        compute_effective_state, publish_effective_topology_artifacts,
+        publish_topology_runtime_error_status, validate_effective_topology_network,
     };
     use lqos_config::{
         CircuitAnchor, CircuitAnchorsFile, Config, ConfigShapedDevices, ShapedDevice,
@@ -6813,6 +6846,35 @@ mod tests {
         let (config, canonical, editor_state, effective) = site_with_ap_fixture();
         let virtualization = QueueVirtualizationContext {
             direct_circuit_node_ids: HashSet::from(["site-agg".to_string()]),
+            direct_circuit_node_names: HashSet::new(),
+            forced_visible_node_names: HashSet::new(),
+        };
+
+        let canonical_network = canonical.insight_topology_network_json();
+        let effective_network = apply_effective_topology_to_network_json_from_canonical(
+            &config,
+            &canonical_network,
+            &canonical,
+            &editor_state,
+            &effective,
+            &virtualization,
+        );
+        let root = effective_network
+            .as_object()
+            .expect("effective export should remain an object tree");
+        let site = root["Aggregation"]
+            .as_object()
+            .expect("Aggregation should remain exported");
+
+        assert_eq!(site.get("virtual").and_then(Value::as_bool), None);
+    }
+
+    #[test]
+    fn large_site_with_name_only_direct_circuit_stays_visible() {
+        let (config, canonical, editor_state, effective) = site_with_ap_fixture();
+        let virtualization = QueueVirtualizationContext {
+            direct_circuit_node_ids: HashSet::new(),
+            direct_circuit_node_names: HashSet::from(["Aggregation".to_string()]),
             forced_visible_node_names: HashSet::new(),
         };
 
@@ -6857,9 +6919,11 @@ mod tests {
 
         let direct_node_ids =
             collect_direct_circuit_node_ids(&shaped_devices, &[], &attachment_owners);
+        let direct_node_names = collect_direct_circuit_node_names(&shaped_devices, &[]);
 
         assert!(direct_node_ids.contains("attachment-node"));
         assert!(direct_node_ids.contains("site-agg"));
+        assert!(direct_node_names.contains("Attachment Node"));
     }
 
     #[test]
@@ -6867,6 +6931,7 @@ mod tests {
         let (config, canonical, editor_state, effective) = site_with_ap_fixture();
         let virtualization = QueueVirtualizationContext {
             direct_circuit_node_ids: HashSet::new(),
+            direct_circuit_node_names: HashSet::new(),
             forced_visible_node_names: HashSet::from(["Aggregation".to_string()]),
         };
 
@@ -7264,6 +7329,7 @@ mod tests {
         let (config, canonical, editor_state, effective) = ap_branch_fixture();
         let virtualization = QueueVirtualizationContext {
             direct_circuit_node_ids: HashSet::from(["ap-agg".to_string()]),
+            direct_circuit_node_names: HashSet::new(),
             forced_visible_node_names: HashSet::new(),
         };
         let canonical_state = TopologyCanonicalStateFile::from_editor_and_network(
