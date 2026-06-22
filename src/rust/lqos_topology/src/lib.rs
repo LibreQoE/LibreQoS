@@ -541,6 +541,32 @@ fn resolve_effective_parent_from_anchor(
     None
 }
 
+fn duplicate_circuit_shape_conflicts(
+    circuit: &TopologyShapingCircuitInput,
+    device: &lqos_config::ShapedDevice,
+) -> Vec<&'static str> {
+    let mut conflicts = Vec::new();
+    if circuit.download_min_mbps != device.download_min_mbps {
+        conflicts.push("Download Min Mbps");
+    }
+    if circuit.upload_min_mbps != device.upload_min_mbps {
+        conflicts.push("Upload Min Mbps");
+    }
+    if circuit.download_max_mbps != device.download_max_mbps {
+        conflicts.push("Download Max Mbps");
+    }
+    if circuit.upload_max_mbps != device.upload_max_mbps {
+        conflicts.push("Upload Max Mbps");
+    }
+    if circuit.comment != device.comment {
+        conflicts.push("Comment");
+    }
+    if circuit.sqm_override != device.sqm_override {
+        conflicts.push("sqm");
+    }
+    conflicts
+}
+
 fn ipv4_with_prefix_to_string(entry: &(std::net::Ipv4Addr, u32)) -> String {
     if entry.1 >= 32 {
         entry.0.to_string()
@@ -877,6 +903,14 @@ fn build_shaping_inputs(
                 errors.push(format!(
                     "Circuit '{}' resolved to multiple effective parents while building shaping_inputs.json.",
                     device.circuit_id
+                ));
+            }
+            let conflicts = duplicate_circuit_shape_conflicts(circuit, device);
+            if !conflicts.is_empty() {
+                errors.push(format!(
+                    "Circuit '{}' had conflicting circuit-level fields across ShapedDevices.csv rows while building shaping_inputs.json: {}.",
+                    device.circuit_id,
+                    conflicts.join(", ")
                 ));
             }
             index
@@ -5816,6 +5850,61 @@ mod tests {
             circuit.resolution_source,
             lqos_config::TopologyShapingResolutionSource::TopologyAnchor
         );
+    }
+
+    #[test]
+    fn shaping_inputs_reject_duplicate_circuit_shape_conflicts() {
+        let lqos_directory = unique_temp_dir("lqos-topology-duplicate-circuit-shape");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Tower 1\",\"tower-1\",\"\",\"aa:bb:cc:dd:ee:01\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"first\",\"cake\"\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-2\",\"Device 2\",\"Tower 1\",\"tower-1\",\"\",\"aa:bb:cc:dd:ee:02\",\"192.0.2.11/32\",\"\",\"20\",\"30\",\"200\",\"300\",\"second\",\"fq_codel\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: Vec::new(),
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: Vec::new(),
+            },
+            effective_network: Some(json!({
+                "Tower 1": {
+                    "id": "tower-1",
+                    "name": "Tower 1",
+                    "children": {}
+                }
+            })),
+        };
+
+        let err = build_shaping_inputs(&config, &artifacts)
+            .expect_err("duplicate circuit conflicts should fail shaping inputs");
+        let message = err.to_string();
+
+        assert!(message.contains("conflicting circuit-level fields"));
+        assert!(message.contains("Download Min Mbps"));
+        assert!(message.contains("Upload Min Mbps"));
+        assert!(message.contains("Download Max Mbps"));
+        assert!(message.contains("Upload Max Mbps"));
+        assert!(message.contains("Comment"));
+        assert!(message.contains("sqm"));
     }
 
     #[test]
