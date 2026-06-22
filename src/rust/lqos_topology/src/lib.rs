@@ -324,6 +324,11 @@ fn build_effective_queue_aliases(
         .iter()
         .map(|node| (node.node_id.as_str(), node))
         .collect::<HashMap<_, _>>();
+    let logical_parent_by_node = effective
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node.logical_parent_node_id.as_str()))
+        .collect::<HashMap<_, _>>();
     let mut aliases_by_id = HashMap::new();
     let mut aliases_by_name = HashMap::new();
 
@@ -331,16 +336,13 @@ fn build_effective_queue_aliases(
         if exported_effective_nodes.contains_key(&effective_node.node_id) {
             continue;
         }
-        let Some(parent_name) = exported_effective_nodes
-            .get(effective_node.logical_parent_node_id.as_str())
-            .cloned()
-        else {
+        let Some(resolved) = nearest_exported_effective_parent(
+            &effective_node.logical_parent_node_id,
+            &logical_parent_by_node,
+            exported_effective_nodes,
+        ) else {
             continue;
         };
-        let resolved = (
-            effective_node.logical_parent_node_id.clone(),
-            parent_name.clone(),
-        );
         aliases_by_id
             .entry(effective_node.node_id.clone())
             .or_insert_with(|| resolved.clone());
@@ -352,6 +354,25 @@ fn build_effective_queue_aliases(
     }
 
     (aliases_by_id, aliases_by_name)
+}
+
+fn nearest_exported_effective_parent(
+    parent_id: &str,
+    logical_parent_by_node: &HashMap<&str, &str>,
+    exported_effective_nodes: &HashMap<String, String>,
+) -> Option<(String, String)> {
+    let mut cursor = parent_id.trim();
+    let mut seen = HashSet::new();
+    while !cursor.is_empty() && seen.insert(cursor.to_string()) {
+        if let Some(parent_name) = exported_effective_nodes.get(cursor) {
+            return Some((cursor.to_string(), parent_name.clone()));
+        }
+        cursor = logical_parent_by_node
+            .get(cursor)
+            .copied()
+            .unwrap_or_default();
+    }
+    None
 }
 
 fn effective_parent_is_exported(
@@ -5916,6 +5937,119 @@ mod tests {
             circuit.resolution_source,
             lqos_config::TopologyShapingResolutionSource::LegacyParent
         );
+    }
+
+    #[test]
+    fn shaping_inputs_skip_nested_virtual_effective_nodes_when_resolving_physical_parent() {
+        let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-nested-virtual");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Access\",\"site-access\",\"\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+                "\"circuit-2\",\"Circuit 2\",\"device-2\",\"Device 2\",\"Access\",\"\",\"\",\"aa:bb:cc:dd:ee:00\",\"192.0.2.11/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: vec![
+                    TopologyEffectiveNodeState {
+                        node_id: "site-agg".to_string(),
+                        logical_parent_node_id: "site-root".to_string(),
+                        preferred_attachment_id: None,
+                        effective_attachment_id: None,
+                        fallback_reason: None,
+                        all_attachments_suppressed: false,
+                        attachments: Vec::new(),
+                    },
+                    TopologyEffectiveNodeState {
+                        node_id: "site-access".to_string(),
+                        logical_parent_node_id: "site-agg".to_string(),
+                        preferred_attachment_id: None,
+                        effective_attachment_id: None,
+                        fallback_reason: None,
+                        all_attachments_suppressed: false,
+                        attachments: Vec::new(),
+                    },
+                ],
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: vec![
+                    TopologyEditorNode {
+                        node_id: "site-agg".to_string(),
+                        node_name: "Aggregation".to_string(),
+                        current_parent_node_id: Some("site-root".to_string()),
+                        current_parent_node_name: Some("Core".to_string()),
+                        queue_visibility_policy:
+                            TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
+                        ..TopologyEditorNode::default()
+                    },
+                    TopologyEditorNode {
+                        node_id: "site-access".to_string(),
+                        node_name: "Access".to_string(),
+                        current_parent_node_id: Some("site-agg".to_string()),
+                        current_parent_node_name: Some("Aggregation".to_string()),
+                        queue_visibility_policy:
+                            TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
+                        ..TopologyEditorNode::default()
+                    },
+                ],
+            },
+            effective_network: Some(json!({
+                "Core": {
+                    "id": "site-root",
+                    "name": "Core",
+                    "children": {
+                        "Aggregation": {
+                            "id": "site-agg",
+                            "name": "Aggregation",
+                            "virtual": true,
+                            "children": {
+                                "Access": {
+                                    "id": "site-access",
+                                    "name": "Access",
+                                    "virtual": true,
+                                    "children": {}
+                                }
+                            }
+                        }
+                    }
+                }
+            })),
+        };
+
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build")
+            .expect("shaping inputs should exist");
+        for circuit_id in ["circuit-1", "circuit-2"] {
+            let circuit = shaping_inputs
+                .circuits
+                .iter()
+                .find(|circuit| circuit.circuit_id == circuit_id)
+                .expect("expected circuit");
+
+            assert_eq!(circuit.effective_parent_node_id, "site-root");
+            assert_eq!(circuit.effective_parent_node_name, "Core");
+            assert_eq!(
+                circuit.resolution_source,
+                lqos_config::TopologyShapingResolutionSource::LegacyParent
+            );
+        }
     }
 
     #[test]
