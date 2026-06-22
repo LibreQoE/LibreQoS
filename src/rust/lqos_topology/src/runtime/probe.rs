@@ -1,6 +1,6 @@
 use anyhow::Result;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
-use lqos_probe::{ProbeClass, ProbeRequest};
+use lqos_probe::{ProbeClass, ProbeObservation, ProbeRequest};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
@@ -14,6 +14,30 @@ use super::TopologyBusSender;
 const TOPOLOGY_PROBE_MAX_AGE_MS: u64 = 250;
 const BUS_CALL_TIMEOUT_MARGIN: Duration = Duration::from_millis(500);
 const BUS_CALL_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+fn probe_observations_to_results(
+    probe_positions: Vec<(String, usize)>,
+    observations: Vec<ProbeObservation>,
+) -> Result<HashMap<String, (bool, bool)>> {
+    if observations.len() != probe_positions.len() {
+        anyhow::bail!(
+            "shared probe manager returned {} observations for {} topology probes",
+            observations.len(),
+            probe_positions.len()
+        );
+    }
+
+    let mut results = HashMap::<String, (bool, bool)>::new();
+    for ((pair_id, endpoint_index), observation) in probe_positions.into_iter().zip(observations) {
+        let entry = results.entry(pair_id).or_insert((false, false));
+        if endpoint_index == 0 {
+            entry.0 = observation.reachable;
+        } else {
+            entry.1 = observation.reachable;
+        }
+    }
+    Ok(results)
+}
 
 fn sleep_until_deadline(deadline: Instant) -> bool {
     let now = Instant::now();
@@ -130,20 +154,9 @@ pub(super) fn probe_specs(
     .into_iter()
     .next();
 
-    let mut results = HashMap::<String, (bool, bool)>::new();
     match response {
         Some(BusResponse::ProbeObservations(observations)) => {
-            for ((pair_id, endpoint_index), observation) in
-                probe_positions.into_iter().zip(observations)
-            {
-                let entry = results.entry(pair_id).or_insert((false, false));
-                if endpoint_index == 0 {
-                    entry.0 = observation.reachable;
-                } else {
-                    entry.1 = observation.reachable;
-                }
-            }
-            Ok(results)
+            probe_observations_to_results(probe_positions, observations)
         }
         Some(BusResponse::Fail(message)) => Err(anyhow::anyhow!(
             "shared probe manager rejected topology batch: {message}"
@@ -151,5 +164,53 @@ pub(super) fn probe_specs(
         other => Err(anyhow::anyhow!(
             "unexpected response from shared probe manager: {other:?}"
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::probe_observations_to_results;
+    use lqos_probe::{ProbeClass, ProbeKind, ProbeObservation};
+
+    fn observation(target: &str, reachable: bool) -> ProbeObservation {
+        ProbeObservation {
+            requested_target: target.to_string(),
+            normalized_target: target.to_string(),
+            resolved_ip: Some(target.to_string()),
+            class: ProbeClass::TopologyAttachment,
+            kind: ProbeKind::Reachability,
+            observed_at_unix_ms: 1,
+            reachable,
+            rtt_ms: None,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn probe_observations_reject_count_mismatch() {
+        let err = probe_observations_to_results(
+            vec![("pair-1".to_string(), 0), ("pair-1".to_string(), 1)],
+            vec![observation("192.0.2.1", true)],
+        )
+        .expect_err("missing observation should fail");
+
+        assert!(
+            err.to_string()
+                .contains("returned 1 observations for 2 topology probes")
+        );
+    }
+
+    #[test]
+    fn probe_observations_build_endpoint_results() {
+        let results = probe_observations_to_results(
+            vec![("pair-1".to_string(), 0), ("pair-1".to_string(), 1)],
+            vec![
+                observation("192.0.2.1", true),
+                observation("192.0.2.2", false),
+            ],
+        )
+        .expect("matched observations should build results");
+
+        assert_eq!(results.get("pair-1"), Some(&(true, false)));
     }
 }
