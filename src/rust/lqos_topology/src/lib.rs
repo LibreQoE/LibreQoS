@@ -3880,7 +3880,7 @@ fn squash_backhaul_pairs_in_children(
     children: &mut Map<String, Value>,
     do_not_squash_sites: &HashSet<String>,
     roles_by_node_id: &HashMap<String, TopologyAttachmentRole>,
-) {
+) -> std::result::Result<(), String> {
     let child_keys = children.keys().cloned().collect::<Vec<_>>();
     for child_key in child_keys {
         let Some(node) = children.get_mut(&child_key).and_then(Value::as_object_mut) else {
@@ -3894,7 +3894,7 @@ fn squash_backhaul_pairs_in_children(
             grandchildren,
             do_not_squash_sites,
             roles_by_node_id,
-        );
+        )?;
     }
 
     loop {
@@ -3960,6 +3960,12 @@ fn squash_backhaul_pairs_in_children(
                 do_not_squash_sites,
             ) {
                 continue;
+            }
+            if endpoint_key != child_key && children.contains_key(&endpoint_key) {
+                return Err(format!(
+                    "Unable to squash runtime backhaul pair '{child_key}' into '{endpoint_key}' under '{}': child key already exists",
+                    parent_name.unwrap_or("<root>")
+                ));
             }
 
             let Some(mut child_value) = children.remove(&child_key) else {
@@ -4038,6 +4044,7 @@ fn squash_backhaul_pairs_in_children(
             break;
         }
     }
+    Ok(())
 }
 
 fn squash_single_attachment_hops_in_children(
@@ -4045,7 +4052,7 @@ fn squash_single_attachment_hops_in_children(
     children: &mut Map<String, Value>,
     do_not_squash_sites: &HashSet<String>,
     roles_by_node_id: &HashMap<String, TopologyAttachmentRole>,
-) {
+) -> std::result::Result<(), String> {
     let child_keys = children.keys().cloned().collect::<Vec<_>>();
     for child_key in child_keys {
         let Some(node) = children.get_mut(&child_key).and_then(Value::as_object_mut) else {
@@ -4059,7 +4066,7 @@ fn squash_single_attachment_hops_in_children(
             grandchildren,
             do_not_squash_sites,
             roles_by_node_id,
-        );
+        )?;
     }
 
     loop {
@@ -4107,6 +4114,12 @@ fn squash_single_attachment_hops_in_children(
                 do_not_squash_sites,
             ) {
                 continue;
+            }
+            if endpoint_key != child_key && children.contains_key(&endpoint_key) {
+                return Err(format!(
+                    "Unable to squash runtime attachment hop '{child_key}' into '{endpoint_key}' under '{}': child key already exists",
+                    parent_name.unwrap_or("<root>")
+                ));
             }
 
             let Some(mut child_value) = children.remove(&child_key) else {
@@ -4167,6 +4180,7 @@ fn squash_single_attachment_hops_in_children(
             break;
         }
     }
+    Ok(())
 }
 
 fn apply_runtime_squashing(
@@ -4174,12 +4188,12 @@ fn apply_runtime_squashing(
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
     root: &mut Map<String, Value>,
-) {
+) -> std::result::Result<(), String> {
     if !ui_state.source.starts_with("uisp/") {
-        return;
+        return Ok(());
     }
     if !config.uisp_integration.enable_uisp {
-        return;
+        return Ok(());
     }
 
     let do_not_squash_sites = config
@@ -4193,8 +4207,9 @@ fn apply_runtime_squashing(
     let pair_by_attachment_id = attachment_pair_memberships(ui_state);
     prune_inactive_backhaul_stubs_in_children(root, &pair_by_attachment_id, &active_pair_ids);
     let roles_by_node_id = selected_attachment_roles(ui_state, effective);
-    squash_backhaul_pairs_in_children(None, root, &do_not_squash_sites, &roles_by_node_id);
-    squash_single_attachment_hops_in_children(None, root, &do_not_squash_sites, &roles_by_node_id);
+    squash_backhaul_pairs_in_children(None, root, &do_not_squash_sites, &roles_by_node_id)?;
+    squash_single_attachment_hops_in_children(None, root, &do_not_squash_sites, &roles_by_node_id)?;
+    Ok(())
 }
 
 fn count_node_ids(value: &Value, counts: &mut HashMap<String, usize>) {
@@ -4492,7 +4507,7 @@ fn apply_effective_topology_to_network_json_from_canonical(
     if let Some(root) = out.as_object_mut() {
         recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
         apply_queue_hidden_node_virtualization(config, ui_state, effective, root, virtualization);
-        apply_runtime_squashing(config, ui_state, effective, root);
+        apply_runtime_squashing(config, ui_state, effective, root).map_err(|err| vec![err])?;
     }
     Ok(out)
 }
@@ -6822,6 +6837,111 @@ mod tests {
         );
         assert_eq!(child_site["downloadBandwidthMbps"].as_u64(), Some(400));
         assert_eq!(child_site["uploadBandwidthMbps"].as_u64(), Some(400));
+    }
+
+    #[test]
+    fn runtime_squashing_fails_when_single_hop_would_overwrite_child_key() {
+        let mut config = Config::default();
+        config.uisp_integration.enable_uisp = true;
+        let canonical = json!({
+            "Parent Site": {
+                "children": {
+                    "Backhaul Attachment": {
+                        "children": {
+                            "Child Site": {
+                                "children": {},
+                                "downloadBandwidthMbps": 940,
+                                "id": "child-site-new",
+                                "name": "Child Site",
+                                "parent_site": "Backhaul Attachment",
+                                "type": "Site",
+                                "uploadBandwidthMbps": 940
+                            }
+                        },
+                        "downloadBandwidthMbps": 400,
+                        "id": "backhaul-attachment",
+                        "name": "Backhaul Attachment",
+                        "parent_site": "Parent Site",
+                        "type": "AP",
+                        "uploadBandwidthMbps": 400
+                    },
+                    "Child Site": {
+                        "children": {},
+                        "downloadBandwidthMbps": 100,
+                        "id": "child-site-existing",
+                        "name": "Child Site",
+                        "parent_site": "Parent Site",
+                        "type": "Site",
+                        "uploadBandwidthMbps": 100
+                    }
+                },
+                "downloadBandwidthMbps": 1000,
+                "id": "parent-site",
+                "name": "Parent Site",
+                "type": "Site",
+                "uploadBandwidthMbps": 1000
+            }
+        });
+
+        let mut single_hop_attachment =
+            sample_attachment_option("backhaul-attachment", "Backhaul Attachment");
+        single_hop_attachment.attachment_role = TopologyAttachmentRole::PtpBackhaul;
+        let ui_state = TopologyEditorStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: None,
+            ingress_identity: None,
+            nodes: vec![TopologyEditorNode {
+                node_id: "child-site-new".to_string(),
+                node_name: "Child Site".to_string(),
+                current_parent_node_id: Some("parent-site".to_string()),
+                current_parent_node_name: Some("Parent Site".to_string()),
+                current_attachment_id: Some("backhaul-attachment".to_string()),
+                current_attachment_name: Some("Backhaul Attachment".to_string()),
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "parent-site".to_string(),
+                    parent_node_name: "Parent Site".to_string(),
+                    attachment_options: vec![single_hop_attachment],
+                    all_attachments_suppressed: false,
+                    has_probe_unavailable_attachments: false,
+                }],
+                ..TopologyEditorNode::default()
+            }],
+        };
+        let effective = TopologyEffectiveStateFile {
+            schema_version: 1,
+            generated_unix: None,
+            canonical_generated_unix: None,
+            health_generated_unix: None,
+            nodes: vec![TopologyEffectiveNodeState {
+                node_id: "child-site-new".to_string(),
+                logical_parent_node_id: "parent-site".to_string(),
+                preferred_attachment_id: Some("backhaul-attachment".to_string()),
+                effective_attachment_id: Some("backhaul-attachment".to_string()),
+                fallback_reason: None,
+                all_attachments_suppressed: false,
+                attachments: vec![TopologyEffectiveAttachmentState {
+                    attachment_id: "backhaul-attachment".to_string(),
+                    health_status: TopologyAttachmentHealthStatus::Healthy,
+                    health_reason: None,
+                    suppressed_until_unix: None,
+                    probe_enabled: false,
+                    probeable: false,
+                    effective_selected: true,
+                }],
+            }],
+        };
+
+        let errors = try_apply_effective_topology_to_network_json(
+            &config, &canonical, &ui_state, &effective,
+        )
+        .expect_err("runtime squashing collision should fail export");
+
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("child key already exists"))
+        );
     }
 
     #[test]
