@@ -46,6 +46,55 @@ fn probe_unavailable_reason(local_ip: &str, remote_ip: &str) -> String {
     "Probe unavailable".to_string()
 }
 
+fn probeable_pair(local_ip: &str, remote_ip: &str) -> bool {
+    parse_probe_ip(local_ip)
+        .zip(parse_probe_ip(remote_ip))
+        .is_some_and(|(local, remote)| local != remote)
+}
+
+fn base_health_entry(
+    spec: &AttachmentProbeSpec,
+    previous: Option<&TopologyAttachmentHealthEntry>,
+) -> TopologyAttachmentHealthEntry {
+    let mut entry = previous
+        .cloned()
+        .unwrap_or_else(|| TopologyAttachmentHealthEntry {
+            attachment_pair_id: spec.pair_id.clone(),
+            ..TopologyAttachmentHealthEntry::default()
+        });
+    entry.attachment_pair_id = spec.pair_id.clone();
+    entry.attachment_id = Some(spec.attachment_id.clone());
+    entry.attachment_name = Some(spec.attachment_name.clone());
+    entry.child_node_id = Some(spec.node_id.clone());
+    entry.child_node_name = Some(spec.node_name.clone());
+    entry.parent_node_id = Some(spec.parent_node_id.clone());
+    entry.parent_node_name = Some(spec.parent_node_name.clone());
+    entry.local_probe_ip = Some(spec.local_ip.clone());
+    entry.remote_probe_ip = Some(spec.remote_ip.clone());
+    entry.enabled = spec.enabled;
+    entry.probeable = probeable_pair(&spec.local_ip, &spec.remote_ip);
+    entry
+}
+
+fn health_entry_for_unprobeable_spec(
+    spec: &AttachmentProbeSpec,
+    previous: Option<&TopologyAttachmentHealthEntry>,
+) -> TopologyAttachmentHealthEntry {
+    let mut entry = base_health_entry(spec, previous);
+    if !spec.enabled {
+        entry.status = TopologyAttachmentHealthStatus::Disabled;
+        entry.reason = Some("Health probe disabled".to_string());
+    } else {
+        entry.status = TopologyAttachmentHealthStatus::ProbeUnavailable;
+        entry.reason = Some(probe_unavailable_reason(&spec.local_ip, &spec.remote_ip));
+    }
+    entry.consecutive_misses = 0;
+    entry.consecutive_successes = 0;
+    entry.suppressed_until_unix = None;
+    entry.endpoint_status = Vec::new();
+    entry
+}
+
 pub(super) fn load_starting_health() -> TopologyAttachmentHealthStateFile {
     let Ok(config) = load_config() else {
         return TopologyAttachmentHealthStateFile::default();
@@ -67,45 +116,10 @@ fn build_health_entry(
     probe_result: Option<(bool, bool)>,
 ) -> TopologyAttachmentHealthEntry {
     let now = now_unix();
-    let probeable = parse_probe_ip(&spec.local_ip)
-        .zip(parse_probe_ip(&spec.remote_ip))
-        .is_some_and(|(local, remote)| local != remote);
-    let mut entry = previous
-        .cloned()
-        .unwrap_or_else(|| TopologyAttachmentHealthEntry {
-            attachment_pair_id: spec.pair_id.clone(),
-            ..TopologyAttachmentHealthEntry::default()
-        });
-    entry.attachment_pair_id = spec.pair_id.clone();
-    entry.attachment_id = Some(spec.attachment_id.clone());
-    entry.attachment_name = Some(spec.attachment_name.clone());
-    entry.child_node_id = Some(spec.node_id.clone());
-    entry.child_node_name = Some(spec.node_name.clone());
-    entry.parent_node_id = Some(spec.parent_node_id.clone());
-    entry.parent_node_name = Some(spec.parent_node_name.clone());
-    entry.local_probe_ip = Some(spec.local_ip.clone());
-    entry.remote_probe_ip = Some(spec.remote_ip.clone());
-    entry.enabled = spec.enabled;
-    entry.probeable = probeable;
+    let mut entry = base_health_entry(spec, previous);
 
-    if !spec.enabled {
-        entry.status = TopologyAttachmentHealthStatus::Disabled;
-        entry.reason = Some("Health probe disabled".to_string());
-        entry.consecutive_misses = 0;
-        entry.consecutive_successes = 0;
-        entry.suppressed_until_unix = None;
-        entry.endpoint_status = Vec::new();
-        return entry;
-    }
-
-    if !probeable {
-        entry.status = TopologyAttachmentHealthStatus::ProbeUnavailable;
-        entry.reason = Some(probe_unavailable_reason(&spec.local_ip, &spec.remote_ip));
-        entry.consecutive_misses = 0;
-        entry.consecutive_successes = 0;
-        entry.suppressed_until_unix = None;
-        entry.endpoint_status = Vec::new();
-        return entry;
+    if !spec.enabled || !entry.probeable {
+        return health_entry_for_unprobeable_spec(spec, previous);
     }
 
     let (local_reachable, remote_reachable) = probe_result.unwrap_or((false, false));
@@ -173,28 +187,40 @@ fn build_health_entry(
     entry
 }
 
-pub(super) fn refresh_health_state(
+fn build_unobserved_health_entry(
+    spec: &AttachmentProbeSpec,
+    previous: Option<&TopologyAttachmentHealthEntry>,
+    reason: &str,
+) -> TopologyAttachmentHealthEntry {
+    let mut entry = base_health_entry(spec, previous);
+    if !spec.enabled || !entry.probeable {
+        return health_entry_for_unprobeable_spec(spec, previous);
+    }
+
+    let suppression_active = previous.is_some_and(|previous| {
+        previous.status == TopologyAttachmentHealthStatus::Suppressed
+            && previous
+                .suppressed_until_unix
+                .is_some_and(|deadline| now_unix().map_or(true, |now| now < deadline))
+    });
+    if suppression_active {
+        entry.status = TopologyAttachmentHealthStatus::Suppressed;
+        entry.reason = previous.and_then(|previous| previous.reason.clone());
+    } else {
+        entry.status = TopologyAttachmentHealthStatus::ProbeUnavailable;
+        entry.reason = Some(reason.to_string());
+        entry.suppressed_until_unix = None;
+    }
+    entry.consecutive_successes = 0;
+    entry.endpoint_status = Vec::new();
+    entry
+}
+
+fn save_health_entries(
     config: &lqos_config::Config,
     health_state: &mut TopologyAttachmentHealthStateFile,
-    specs: &[AttachmentProbeSpec],
-    probe_results: &HashMap<String, (bool, bool)>,
+    mut new_entries: Vec<TopologyAttachmentHealthEntry>,
 ) -> Result<bool> {
-    let previous_by_pair = health_state
-        .attachments
-        .iter()
-        .map(|entry| (entry.attachment_pair_id.as_str(), entry))
-        .collect::<HashMap<_, _>>();
-    let mut new_entries = specs
-        .iter()
-        .map(|spec| {
-            build_health_entry(
-                config,
-                spec,
-                previous_by_pair.get(spec.pair_id.as_str()).copied(),
-                probe_results.get(&spec.pair_id).copied(),
-            )
-        })
-        .collect::<Vec<_>>();
     new_entries
         .sort_unstable_by(|left, right| left.attachment_pair_id.cmp(&right.attachment_pair_id));
     let mut next_state = health_state.clone();
@@ -215,6 +241,55 @@ pub(super) fn refresh_health_state(
         .context("Unable to save topology attachment health state")?;
     *health_state = next_state;
     Ok(true)
+}
+
+pub(super) fn refresh_health_state(
+    config: &lqos_config::Config,
+    health_state: &mut TopologyAttachmentHealthStateFile,
+    specs: &[AttachmentProbeSpec],
+    probe_results: &HashMap<String, (bool, bool)>,
+) -> Result<bool> {
+    let previous_by_pair = health_state
+        .attachments
+        .iter()
+        .map(|entry| (entry.attachment_pair_id.as_str(), entry))
+        .collect::<HashMap<_, _>>();
+    let new_entries = specs
+        .iter()
+        .map(|spec| {
+            build_health_entry(
+                config,
+                spec,
+                previous_by_pair.get(spec.pair_id.as_str()).copied(),
+                probe_results.get(&spec.pair_id).copied(),
+            )
+        })
+        .collect::<Vec<_>>();
+    save_health_entries(config, health_state, new_entries)
+}
+
+pub(super) fn mark_health_state_unobserved(
+    config: &lqos_config::Config,
+    health_state: &mut TopologyAttachmentHealthStateFile,
+    specs: &[AttachmentProbeSpec],
+    reason: &str,
+) -> Result<bool> {
+    let previous_by_pair = health_state
+        .attachments
+        .iter()
+        .map(|entry| (entry.attachment_pair_id.as_str(), entry))
+        .collect::<HashMap<_, _>>();
+    let new_entries = specs
+        .iter()
+        .map(|spec| {
+            build_unobserved_health_entry(
+                spec,
+                previous_by_pair.get(spec.pair_id.as_str()).copied(),
+                reason,
+            )
+        })
+        .collect::<Vec<_>>();
+    save_health_entries(config, health_state, new_entries)
 }
 
 fn hash_health_status(status: TopologyAttachmentHealthStatus, hasher: &mut impl Hasher) {
@@ -249,8 +324,26 @@ pub(super) fn health_effective_signature(health_state: &TopologyAttachmentHealth
 
 #[cfg(test)]
 mod tests {
-    use super::{TopologyAttachmentHealthEntry, health_effective_signature};
+    use super::{
+        TopologyAttachmentHealthEntry, build_unobserved_health_entry, health_effective_signature,
+    };
+    use crate::AttachmentProbeSpec;
     use lqos_config::{TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus};
+
+    fn probe_spec() -> AttachmentProbeSpec {
+        AttachmentProbeSpec {
+            pair_id: "pair-1".to_string(),
+            attachment_id: "attachment-1".to_string(),
+            attachment_name: "Attachment 1".to_string(),
+            node_id: "child-1".to_string(),
+            node_name: "Child 1".to_string(),
+            parent_node_id: "parent-1".to_string(),
+            parent_node_name: "Parent 1".to_string(),
+            local_ip: "192.0.2.1".to_string(),
+            remote_ip: "192.0.2.2".to_string(),
+            enabled: true,
+        }
+    }
 
     fn health_entry() -> TopologyAttachmentHealthEntry {
         TopologyAttachmentHealthEntry {
@@ -313,5 +406,41 @@ mod tests {
             health_effective_signature(&first),
             health_effective_signature(&second)
         );
+    }
+
+    #[test]
+    fn unobserved_health_marks_probeable_pair_unavailable() {
+        let entry = build_unobserved_health_entry(
+            &probe_spec(),
+            Some(&health_entry()),
+            "Probe unavailable: shared probe manager unavailable",
+        );
+
+        assert_eq!(
+            entry.status,
+            TopologyAttachmentHealthStatus::ProbeUnavailable
+        );
+        assert_eq!(
+            entry.reason.as_deref(),
+            Some("Probe unavailable: shared probe manager unavailable")
+        );
+        assert!(entry.endpoint_status.is_empty());
+    }
+
+    #[test]
+    fn unobserved_health_preserves_active_suppression() {
+        let mut previous = health_entry();
+        previous.status = TopologyAttachmentHealthStatus::Suppressed;
+        previous.reason = Some("2 missed probes".to_string());
+        previous.suppressed_until_unix = Some(u64::MAX);
+
+        let entry = build_unobserved_health_entry(
+            &probe_spec(),
+            Some(&previous),
+            "Probe unavailable: shared probe manager unavailable",
+        );
+
+        assert_eq!(entry.status, TopologyAttachmentHealthStatus::Suppressed);
+        assert_eq!(entry.reason.as_deref(), Some("2 missed probes"));
     }
 }

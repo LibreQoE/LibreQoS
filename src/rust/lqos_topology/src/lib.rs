@@ -2019,10 +2019,20 @@ fn apply_health_to_option(
                 entry.suppressed_until_unix,
             )
         } else {
-            (TopologyAttachmentHealthStatus::Healthy, None, None)
+            (
+                TopologyAttachmentHealthStatus::ProbeUnavailable,
+                Some(format!(
+                    "Probe unavailable: no current health observation for pair '{pair_id}'"
+                )),
+                None,
+            )
         }
     } else {
-        (TopologyAttachmentHealthStatus::Healthy, None, None)
+        (
+            TopologyAttachmentHealthStatus::ProbeUnavailable,
+            Some("Probe unavailable: missing attachment pair id".to_string()),
+            None,
+        )
     };
 
     let mut out = option.clone();
@@ -4503,7 +4513,7 @@ mod tests {
         apply_effective_topology_to_canonical_state as try_apply_effective_topology_to_canonical_state,
         apply_effective_topology_to_network_json as try_apply_effective_topology_to_network_json,
         apply_effective_topology_to_network_json_from_canonical as try_apply_effective_topology_to_network_json_from_canonical,
-        auto_attachment_option, build_effective_topology_artifacts,
+        apply_health_to_option, auto_attachment_option, build_effective_topology_artifacts,
         build_effective_topology_artifacts_from_canonical, build_shaping_inputs,
         collect_direct_circuit_node_ids, collect_direct_circuit_node_names,
         compute_effective_state, publish_effective_topology_artifacts,
@@ -4959,6 +4969,28 @@ mod tests {
             suppressed_until_unix: None,
             effective_selected: false,
         }
+    }
+
+    #[test]
+    fn apply_health_to_option_marks_missing_observation_unavailable() {
+        let mut option = sample_attachment_option("attachment-1", "Attachment 1");
+        option.pair_id = Some("pair-1".to_string());
+        option.local_probe_ip = Some("192.0.2.1".to_string());
+        option.remote_probe_ip = Some("192.0.2.2".to_string());
+        option.probe_enabled = true;
+        option.probeable = true;
+
+        let enriched =
+            apply_health_to_option(&option, &TopologyOverridesFile::default(), &HashMap::new());
+
+        assert_eq!(
+            enriched.health_status,
+            TopologyAttachmentHealthStatus::ProbeUnavailable
+        );
+        assert_eq!(
+            enriched.health_reason.as_deref(),
+            Some("Probe unavailable: no current health observation for pair 'pair-1'")
+        );
     }
 
     fn sample_runtime_artifacts() -> EffectiveTopologyArtifacts {

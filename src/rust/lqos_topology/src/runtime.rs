@@ -14,7 +14,10 @@ mod health;
 mod probe;
 
 use gate::{RoundHints, RuntimeBuildGate, topology_overrides_generation};
-use health::{health_effective_signature, load_starting_health, now_unix, refresh_health_state};
+use health::{
+    health_effective_signature, load_starting_health, mark_health_state_unobserved, now_unix,
+    refresh_health_state,
+};
 use probe::probe_specs;
 
 use crate::{
@@ -56,7 +59,10 @@ fn run_round(
                 refresh_health_state(config.as_ref(), health_state, specs, &probe_results)?;
             }
             Err(err) => {
+                let reason =
+                    format!("Probe unavailable: shared probe manager unavailable: {err:#}");
                 warn!("Topology probe round could not query shared probe manager: {err:#}");
+                mark_health_state_unobserved(config.as_ref(), health_state, specs, &reason)?;
             }
         }
     } else {
