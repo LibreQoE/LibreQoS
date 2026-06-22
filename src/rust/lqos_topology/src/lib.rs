@@ -4227,6 +4227,7 @@ fn count_node_ids(value: &Value, counts: &mut HashMap<String, usize>) {
 }
 
 fn effective_site_parent_map(
+    site_node_ids: &HashSet<&str>,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
 ) -> HashMap<String, String> {
@@ -4238,7 +4239,7 @@ fn effective_site_parent_map(
     let mut parents = HashMap::new();
 
     for node in &ui_state.nodes {
-        if !node.node_id.contains(":site:") {
+        if !site_node_ids.contains(node.node_id.as_str()) {
             continue;
         }
         let selected_parent = effective_by_node
@@ -4250,7 +4251,7 @@ fn effective_site_parent_map(
         let Some(parent_id) = selected_parent else {
             continue;
         };
-        if !parent_id.contains(":site:") {
+        if !site_node_ids.contains(parent_id.as_str()) {
             continue;
         }
         parents.insert(node.node_id.clone(), parent_id);
@@ -4260,11 +4261,12 @@ fn effective_site_parent_map(
 }
 
 fn validate_effective_site_parent_cycles(
+    site_node_ids: &HashSet<&str>,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
     errors: &mut Vec<String>,
 ) {
-    let parents = effective_site_parent_map(ui_state, effective);
+    let parents = effective_site_parent_map(site_node_ids, ui_state, effective);
     for site_id in parents.keys() {
         let mut seen = HashSet::new();
         let mut cursor = site_id.as_str();
@@ -4283,6 +4285,15 @@ fn validate_effective_site_parent_cycles(
             cursor = parent_id.as_str();
         }
     }
+}
+
+fn canonical_site_node_ids(canonical: &TopologyCanonicalStateFile) -> HashSet<&str> {
+    canonical
+        .nodes
+        .iter()
+        .filter(|node| node.node_kind.eq_ignore_ascii_case("site"))
+        .map(|node| node.node_id.as_str())
+        .collect()
 }
 
 fn validate_effective_node_identity_consistency(
@@ -4412,8 +4423,9 @@ fn validate_effective_topology_network_from_canonical(
     virtualization: &QueueVirtualizationContext,
 ) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
+    let site_node_ids = canonical_site_node_ids(canonical);
     validate_effective_node_identity_consistency(ui_state, effective, &mut errors);
-    validate_effective_site_parent_cycles(ui_state, effective, &mut errors);
+    validate_effective_site_parent_cycles(&site_node_ids, ui_state, effective, &mut errors);
     let queue_policy_tree = queue_policy_reference_tree(canonical, ui_state, effective)
         .unwrap_or_else(|_| Value::Object(Map::new()));
     let queue_policy_root = queue_policy_tree.as_object();
@@ -4430,14 +4442,27 @@ fn validate_effective_topology_network_from_canonical(
     let child_branch_counts = logical_child_branch_counts(ui_state);
     let attachment_branch_counts = effective_attachment_branch_counts(effective);
 
-    for node in &ui_state.nodes {
-        if !node.node_id.contains(":site:") {
-            continue;
-        }
+    for canonical_node in canonical
+        .nodes
+        .iter()
+        .filter(|node| site_node_ids.contains(node.node_id.as_str()))
+    {
+        let fallback_node;
+        let ui_node = if let Some(ui_node) = ui_state.find_node(&canonical_node.node_id) {
+            ui_node
+        } else {
+            fallback_node = TopologyEditorNode {
+                node_id: canonical_node.node_id.clone(),
+                node_name: canonical_node.node_name.clone(),
+                queue_visibility_policy: canonical_node.queue_visibility_policy,
+                ..TopologyEditorNode::default()
+            };
+            &fallback_node
+        };
         if resolved_queue_visibility_policy(
             config,
-            node,
-            queue_policy_root.and_then(|root| find_node_by_id(root, &node.node_id)),
+            ui_node,
+            queue_policy_root.and_then(|root| find_node_by_id(root, &canonical_node.node_id)),
             &child_branch_counts,
             &attachment_branch_counts,
             virtualization,
@@ -4445,15 +4470,19 @@ fn validate_effective_topology_network_from_canonical(
         {
             continue;
         }
-        match counts.get(&node.node_id).copied().unwrap_or_default() {
+        match counts
+            .get(&canonical_node.node_id)
+            .copied()
+            .unwrap_or_default()
+        {
             1 => {}
             0 => errors.push(format!(
                 "Effective topology export dropped site '{}'.",
-                node.node_name
+                canonical_node.node_name
             )),
             count => errors.push(format!(
                 "Effective topology export duplicated site '{}' {} times.",
-                node.node_name, count
+                canonical_node.node_name, count
             )),
         }
     }
@@ -9324,11 +9353,11 @@ mod tests {
             generated_unix: None,
             ingress_identity: None,
             nodes: vec![TopologyEditorNode {
-                node_id: "uisp:site:site-beta".to_string(),
+                node_id: "plain-beta".to_string(),
                 node_name: "Site Beta".to_string(),
                 latitude: None,
                 longitude: None,
-                current_parent_node_id: Some("uisp:site:site-alpha".to_string()),
+                current_parent_node_id: Some("plain-alpha".to_string()),
                 current_parent_node_name: Some("Site Alpha".to_string()),
                 current_attachment_id: Some("beta-alpha-60".to_string()),
                 current_attachment_name: Some("Beta - Alpha 60".to_string()),
@@ -9347,8 +9376,8 @@ mod tests {
             canonical_generated_unix: None,
             health_generated_unix: None,
             nodes: vec![TopologyEffectiveNodeState {
-                node_id: "uisp:site:site-beta".to_string(),
-                logical_parent_node_id: "uisp:site:site-alpha".to_string(),
+                node_id: "plain-beta".to_string(),
+                logical_parent_node_id: "plain-alpha".to_string(),
                 preferred_attachment_id: Some("beta-alpha-60".to_string()),
                 effective_attachment_id: Some("beta-alpha-60".to_string()),
                 fallback_reason: None,
@@ -9359,7 +9388,7 @@ mod tests {
         let exported = json!({
             "Site Alpha": {
                 "children": {},
-                "id": "uisp:site:site-alpha",
+                "id": "plain-alpha",
                 "name": "Site Alpha",
                 "type": "Site"
             }
@@ -9371,12 +9400,12 @@ mod tests {
                 "children": {
                     "Site Beta": {
                         "children": {},
-                        "id": "uisp:site:site-beta",
+                        "id": "plain-beta",
                         "name": "Site Beta",
                         "type": "Site"
                     }
                 },
-                "id": "uisp:site:site-alpha",
+                "id": "plain-alpha",
                 "name": "Site Alpha",
                 "type": "Site"
             }
@@ -9402,11 +9431,11 @@ mod tests {
             ingress_identity: None,
             nodes: vec![
                 TopologyEditorNode {
-                    node_id: "uisp:site:site-a".to_string(),
+                    node_id: "plain-a".to_string(),
                     node_name: "Site A".to_string(),
                     latitude: None,
                     longitude: None,
-                    current_parent_node_id: Some("uisp:site:site-b".to_string()),
+                    current_parent_node_id: Some("plain-b".to_string()),
                     current_parent_node_name: Some("Site B".to_string()),
                     current_attachment_id: None,
                     current_attachment_name: None,
@@ -9419,11 +9448,11 @@ mod tests {
                     effective_attachment_name: None,
                 },
                 TopologyEditorNode {
-                    node_id: "uisp:site:site-b".to_string(),
+                    node_id: "plain-b".to_string(),
                     node_name: "Site B".to_string(),
                     latitude: None,
                     longitude: None,
-                    current_parent_node_id: Some("uisp:site:site-a".to_string()),
+                    current_parent_node_id: Some("plain-a".to_string()),
                     current_parent_node_name: Some("Site A".to_string()),
                     current_attachment_id: None,
                     current_attachment_name: None,
@@ -9444,8 +9473,8 @@ mod tests {
             health_generated_unix: None,
             nodes: vec![
                 TopologyEffectiveNodeState {
-                    node_id: "uisp:site:site-a".to_string(),
-                    logical_parent_node_id: "uisp:site:site-b".to_string(),
+                    node_id: "plain-a".to_string(),
+                    logical_parent_node_id: "plain-b".to_string(),
                     preferred_attachment_id: None,
                     effective_attachment_id: None,
                     fallback_reason: None,
@@ -9453,8 +9482,8 @@ mod tests {
                     attachments: vec![],
                 },
                 TopologyEffectiveNodeState {
-                    node_id: "uisp:site:site-b".to_string(),
-                    logical_parent_node_id: "uisp:site:site-a".to_string(),
+                    node_id: "plain-b".to_string(),
+                    logical_parent_node_id: "plain-a".to_string(),
                     preferred_attachment_id: None,
                     effective_attachment_id: None,
                     fallback_reason: None,
@@ -9466,13 +9495,13 @@ mod tests {
         let exported = json!({
             "Site A": {
                 "children": {},
-                "id": "uisp:site:site-a",
+                "id": "plain-a",
                 "name": "Site A",
                 "type": "Site"
             },
             "Site B": {
                 "children": {},
-                "id": "uisp:site:site-b",
+                "id": "plain-b",
                 "name": "Site B",
                 "type": "Site"
             }
