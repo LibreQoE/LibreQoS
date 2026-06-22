@@ -1427,6 +1427,7 @@ fn apply_runtime_shaped_device_overrides(
                 {
                     device.parent_node = parent_node.clone();
                     device.parent_node_id = None;
+                    device.anchor_node_id = None;
                 }
             }
         }
@@ -5496,6 +5497,139 @@ mod tests {
         assert_eq!(circuit_one.upload_max_mbps, 60.0);
         assert_eq!(circuit_two.effective_parent_node_id, "tower-1");
         assert_eq!(circuit_two.effective_parent_node_name, "Tower 1");
+    }
+
+    #[test]
+    fn shaping_inputs_reparent_override_clears_stale_csv_anchor() {
+        let lqos_directory = unique_temp_dir("lqos-topology-reparent-clears-anchor");
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        config.splynx_integration.enable_splynx = true;
+        let shaped_device = json!({
+            "circuit_id": "circuit-1",
+            "circuit_name": "Circuit 1",
+            "device_id": "device-1",
+            "device_name": "Device 1",
+            "parent_node": "Old Tower",
+            "parent_node_id": "old-tower",
+            "anchor_node_id": "old-tower",
+            "mac": "",
+            "ipv4": [],
+            "ipv6": [],
+            "download_min_mbps": 10.0,
+            "upload_min_mbps": 10.0,
+            "download_max_mbps": 100.0,
+            "upload_max_mbps": 100.0,
+            "comment": "",
+            "sqm_override": null
+        });
+        write_runtime_json_fixture(
+            config.topology_state_file_path("topology_import.json"),
+            &json!({
+                "schema_version": 1,
+                "source": "splynx/full",
+                "generated_unix": 1,
+                "ingress_identity": "ingress-1",
+                "compile_mode": "full",
+                "imported": {
+                    "source": "splynx/full",
+                    "generated_unix": 1,
+                    "ingress_identity": "ingress-1",
+                    "compatibility_network_json": {},
+                    "shaped_devices": [shaped_device.clone()],
+                    "circuit_anchors": {
+                        "schema_version": 1,
+                        "source": "splynx/full",
+                        "generated_unix": 1,
+                        "anchors": []
+                    },
+                    "ethernet_advisories": []
+                }
+            }),
+            "topology import",
+        );
+        write_runtime_json_fixture(
+            config.shaping_state_file_path("topology_compiled_shaping.json"),
+            &json!({
+                "schema_version": 1,
+                "source": "splynx/full",
+                "compile_mode": "full",
+                "generated_unix": 1,
+                "ingress_identity": "ingress-1",
+                "shaped_devices": [shaped_device],
+                "circuit_anchors": {
+                    "schema_version": 1,
+                    "source": "splynx/full",
+                    "generated_unix": 1,
+                    "anchors": []
+                }
+            }),
+            "compiled shaping",
+        );
+        fs::write(
+            lqos_directory.join("lqos_overrides.json"),
+            serde_json::to_string_pretty(&json!({
+                "circuit_adjustments": [
+                    {
+                        "type": "reparent_circuit",
+                        "circuit_id": "circuit-1",
+                        "parent_node": "New Tower"
+                    }
+                ],
+                "network_adjustments": []
+            }))
+            .expect("override json should serialize"),
+        )
+        .expect("override file should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: Vec::new(),
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: Vec::new(),
+            },
+            effective_network: Some(json!({
+                "Old Tower": {
+                    "id": "old-tower",
+                    "name": "Old Tower",
+                    "children": {}
+                },
+                "New Tower": {
+                    "id": "new-tower",
+                    "name": "New Tower",
+                    "children": {}
+                }
+            })),
+        };
+
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build")
+            .expect("shaping inputs should exist");
+        let circuit = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "circuit-1")
+            .expect("expected circuit");
+
+        assert_eq!(circuit.anchor_node_id, None);
+        assert_eq!(circuit.effective_parent_node_id, "new-tower");
+        assert_eq!(circuit.effective_parent_node_name, "New Tower");
+        assert_eq!(
+            circuit.resolution_source,
+            lqos_config::TopologyShapingResolutionSource::LegacyParent
+        );
     }
 
     #[test]
