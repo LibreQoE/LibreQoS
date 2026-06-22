@@ -24,15 +24,19 @@ use lqos_overrides::{
     TopologyOverridesFile,
 };
 use lqos_topology_compile::{TopologyCompiledShapingFile, TopologyImportFile};
+use lqos_utils::process_lock::{ProcessFileLock, ProcessLockConfig};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::Write;
 use std::net::IpAddr;
-use std::path::{Path, PathBuf};
-use std::thread;
+use std::path::Path;
 
 const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME: &str = "topology_effective_publish.lock";
+const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_GUARD_FILENAME: &str =
+    "topology_effective_publish.lock.guard";
+const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_CONTENTION_CODE: &str =
+    "LQOS_TOPOLOGY_EFFECTIVE_PUBLISH_LOCKED";
 const TOPOLOGY_WARNING_EXAMPLE_LIMIT: usize = 5;
 type EffectiveQueueAliasMap = HashMap<String, (String, String)>;
 
@@ -1363,46 +1367,28 @@ pub struct EffectiveTopologyArtifacts {
 }
 
 struct EffectivePublishLock {
-    path: PathBuf,
-}
-
-impl Drop for EffectivePublishLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
+    _lock: ProcessFileLock,
 }
 
 fn acquire_effective_publish_lock(config: &Config) -> Result<EffectivePublishLock> {
-    let path = Path::new(&config.lqos_directory).join(TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME);
-    for _ in 0..50 {
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(_) => return Ok(EffectivePublishLock { path }),
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                let stale = std::fs::metadata(&path)
-                    .ok()
-                    .and_then(|metadata| metadata.modified().ok())
-                    .and_then(|modified| modified.elapsed().ok())
-                    .is_some_and(|elapsed| elapsed.as_secs() > 30);
-                if stale {
-                    let _ = std::fs::remove_file(&path);
-                    continue;
-                }
-                thread::sleep(std::time::Duration::from_millis(100));
-            }
-            Err(err) => {
-                return Err(err).with_context(|| {
-                    format!(
-                        "Unable to acquire topology effective publish lock at {:?}",
-                        path
-                    )
-                });
-            }
-        }
-    }
-    Err(anyhow::anyhow!(
-        "Timed out waiting for topology effective publish lock at {:?}",
-        path
-    ))
+    let lock_dir = Path::new(&config.lqos_directory);
+    let lock_path = lock_dir.join(TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME);
+    let guard_path = lock_dir.join(TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_GUARD_FILENAME);
+    let lock_config = ProcessLockConfig::new(
+        &lock_path,
+        lock_dir,
+        guard_path,
+        "publish effective topology artifacts",
+        TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_CONTENTION_CODE,
+        "The LibreQoS topology effective publish lock",
+    );
+    let lock = ProcessFileLock::acquire(&lock_config).with_context(|| {
+        format!(
+            "Unable to acquire topology effective publish lock at {:?}",
+            lock_path
+        )
+    })?;
+    Ok(EffectivePublishLock { _lock: lock })
 }
 
 /// Builds validated effective-topology artifacts from canonical topology plus operator intent.
@@ -4459,7 +4445,7 @@ fn apply_effective_topology_to_canonical_state(
 #[cfg(test)]
 mod tests {
     use super::{
-        EffectiveTopologyArtifacts, QueueVirtualizationContext,
+        EffectiveTopologyArtifacts, QueueVirtualizationContext, acquire_effective_publish_lock,
         apply_effective_topology_to_canonical_state as try_apply_effective_topology_to_canonical_state,
         apply_effective_topology_to_network_json as try_apply_effective_topology_to_network_json,
         apply_effective_topology_to_network_json_from_canonical as try_apply_effective_topology_to_network_json_from_canonical,
@@ -5014,6 +5000,25 @@ mod tests {
         assert!(topology_effective_network_path(&config).exists());
         assert!(topology_shaping_inputs_path(&config).exists());
         assert!(topology_runtime_status_path(&config).exists());
+    }
+
+    #[test]
+    fn effective_publish_lock_rejects_live_holder_without_removing_lock() {
+        let lqos_directory = unique_temp_dir("lqos-topology-effective-publish-lock");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            ..Config::default()
+        };
+        let lock_path = lqos_directory.join(super::TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME);
+
+        let first = acquire_effective_publish_lock(&config).expect("first lock should acquire");
+        assert!(lock_path.exists());
+        let second = acquire_effective_publish_lock(&config);
+
+        assert!(second.is_err());
+        assert!(lock_path.exists());
+        drop(first);
+        assert!(!lock_path.exists());
     }
 
     #[test]
