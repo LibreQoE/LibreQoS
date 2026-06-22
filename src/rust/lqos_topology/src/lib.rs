@@ -37,7 +37,7 @@ const TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME: &str = "topology_effective_publi
 const TOPOLOGY_WARNING_EXAMPLE_LIMIT: usize = 5;
 type EffectiveQueueAliasMap = HashMap<String, (String, String)>;
 
-pub use runtime::start_topology;
+pub use runtime::start_topology_thread;
 
 #[derive(Default)]
 struct TopologyFallbackWarningSummary {

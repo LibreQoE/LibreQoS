@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use lqos_bus::{BusRequest, BusResponse, bus_request_with_timeout};
+use lqos_bus::{BusReply, BusRequest, BusResponse};
 use lqos_config::{
     TopologyAttachmentEndpointStatus, TopologyAttachmentHealthEntry,
     TopologyAttachmentHealthStateFile, TopologyAttachmentHealthStatus, TopologyCanonicalStateFile,
@@ -12,7 +12,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     AttachmentProbeSpec,
@@ -23,7 +23,23 @@ use crate::{
 };
 
 const TOPOLOGY_PROBE_MAX_AGE_MS: u64 = 250;
-const TOPOLOGY_PROBE_BUS_TIMEOUT: Duration = Duration::from_secs(8);
+
+fn bus_call(
+    bus_tx: tokio::sync::mpsc::Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        BusRequest,
+    )>,
+    request: BusRequest,
+) -> anyhow::Result<BusReply> {
+    let (once_tx, once_rx) = tokio::sync::oneshot::channel();
+    let request_copy = request.clone(); // For debug output
+    bus_tx.blocking_send((once_tx, request))?;
+    if let Ok(reply) = once_rx.blocking_recv() {
+        Ok(reply)
+    } else {
+        anyhow::bail!("Call to {:?} failed", request_copy);
+    }
+}
 
 fn now_unix() -> Option<u64> {
     SystemTime::now()
@@ -85,7 +101,11 @@ fn load_starting_health() -> TopologyAttachmentHealthStateFile {
     }
 }
 
-async fn probe_specs(
+fn probe_specs(
+    bus_tx: tokio::sync::mpsc::Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        BusRequest,
+    )>,
     specs: &[AttachmentProbeSpec],
     timeout: Duration,
 ) -> Result<HashMap<String, (bool, bool)>> {
@@ -123,24 +143,21 @@ async fn probe_specs(
         return Ok(HashMap::new());
     }
 
-    let responses = bus_request_with_timeout(
-        vec![BusRequest::ProbeBatch {
+    let response = bus_call(
+        bus_tx.clone(),
+        BusRequest::ProbeBatch {
             requests: probe_requests,
             max_age_ms: TOPOLOGY_PROBE_MAX_AGE_MS,
-        }],
-        TOPOLOGY_PROBE_BUS_TIMEOUT,
+        },
     )
-    .await
-    .map_err(|err| anyhow::anyhow!("unable to query shared probe manager: {err}"))?;
-    let Some(response) = responses.into_iter().next() else {
-        return Err(anyhow::anyhow!(
-            "shared probe manager returned no bus response for topology batch"
-        ));
-    };
+    .map_err(|err| anyhow::anyhow!("unable to query shared probe manager: {err}"))?
+    .responses
+    .into_iter()
+    .next();
 
     let mut results = HashMap::<String, (bool, bool)>::new();
     match response {
-        BusResponse::ProbeObservations(observations) => {
+        Some(BusResponse::ProbeObservations(observations)) => {
             for ((pair_id, endpoint_index), observation) in
                 probe_positions.into_iter().zip(observations)
             {
@@ -153,7 +170,7 @@ async fn probe_specs(
             }
             Ok(results)
         }
-        BusResponse::Fail(message) => Err(anyhow::anyhow!(
+        Some(BusResponse::Fail(message)) => Err(anyhow::anyhow!(
             "shared probe manager rejected topology batch: {message}"
         )),
         other => Err(anyhow::anyhow!(
@@ -379,7 +396,11 @@ struct RoundHints {
     probes_enabled: bool,
 }
 
-async fn run_round(
+fn run_round(
+    bus_tx: tokio::sync::mpsc::Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        BusRequest,
+    )>,
     health_state: &mut TopologyAttachmentHealthStateFile,
     last_effective: &mut HashMap<String, Option<String>>,
     gate: &mut RuntimeBuildGate,
@@ -402,7 +423,7 @@ async fn run_round(
     let specs = &gate.cached_probe_specs;
     let probes_enabled = specs.iter().any(|spec| spec.enabled);
     if probes_enabled {
-        match probe_specs(specs, Duration::from_millis(750)).await {
+        match probe_specs(bus_tx.clone(), specs, Duration::from_millis(750)) {
             Ok(probe_results) => {
                 refresh_health_state(config.as_ref(), health_state, specs, &probe_results)?;
             }
@@ -493,20 +514,43 @@ async fn run_round(
     Ok(RoundHints { probes_enabled })
 }
 
-/// Starts the long-running topology runtime loop.
-///
-/// Side effects: reads topology/config inputs, issues probe batches through the
-/// local LibreQoS bus, and continuously publishes runtime topology artifacts and
-/// status files for the scheduler and UI.
-pub async fn start_topology() {
+/// Launches the threaded topology system.
+pub fn start_topology_thread(
+    bus_tx: tokio::sync::mpsc::Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        BusRequest,
+    )>,
+) {
+    let thread_result = std::thread::Builder::new()
+        .name("topology".to_string())
+        .spawn(|| {
+            debug!("Starting Topology Thread");
+            start_topology(bus_tx);
+            warn!("Topology Thread Terminating");
+        });
+
+    if let Err(e) = thread_result {
+        tracing::error!("Unable top start the topology thread: {e:?}");
+    }
+}
+
+fn start_topology(
+    bus_tx: tokio::sync::mpsc::Sender<(
+        tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
+        BusRequest,
+    )>,
+) {
     let mut health_state = load_starting_health();
     let mut last_effective = HashMap::<String, Option<String>>::new();
     let mut build_gate = RuntimeBuildGate::default();
 
     loop {
-        let round_hints = match run_round(&mut health_state, &mut last_effective, &mut build_gate)
-            .await
-        {
+        let round_hints = match run_round(
+            bus_tx.clone(),
+            &mut health_state,
+            &mut last_effective,
+            &mut build_gate,
+        ) {
             Ok(hints) => hints,
             Err(err) => {
                 if let Ok(config) = load_config()
@@ -541,7 +585,7 @@ pub async fn start_topology() {
                 }
             })
             .unwrap_or(1);
-        tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
+        std::thread::sleep(Duration::from_secs(sleep_seconds));
     }
 }
 
