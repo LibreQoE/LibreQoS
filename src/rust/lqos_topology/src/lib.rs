@@ -2130,6 +2130,15 @@ const fn attachment_health_preference(status: TopologyAttachmentHealthStatus) ->
     }
 }
 
+const fn attachment_probeability_preference(option: &TopologyAttachmentOption) -> bool {
+    match option.health_status {
+        TopologyAttachmentHealthStatus::Healthy => option.probeable,
+        TopologyAttachmentHealthStatus::Disabled => true,
+        TopologyAttachmentHealthStatus::ProbeUnavailable
+        | TopologyAttachmentHealthStatus::Suppressed => false,
+    }
+}
+
 fn ranked_auto_attachment_id(
     parent: &TopologyAllowedParent,
     current_attachment_id: Option<&str>,
@@ -2140,10 +2149,10 @@ fn ranked_auto_attachment_id(
         .filter(|option| attachment_selectable_for_auto(option))
         .max_by_key(|option| {
             (
+                attachment_health_preference(option.health_status),
+                attachment_probeability_preference(option),
                 attachment_rate_source_preference(option.rate_source),
                 attachment_capacity_mbps(option).unwrap_or(0),
-                attachment_health_preference(option.health_status),
-                option.probeable,
                 current_attachment_id == Some(option.attachment_id.as_str()),
             )
         })
@@ -4517,7 +4526,8 @@ mod tests {
         build_effective_topology_artifacts_from_canonical, build_shaping_inputs,
         collect_direct_circuit_node_ids, collect_direct_circuit_node_names,
         compute_effective_state, publish_effective_topology_artifacts,
-        publish_topology_runtime_error_status, validate_effective_topology_network,
+        publish_topology_runtime_error_status, ranked_auto_attachment_id,
+        validate_effective_topology_network,
     };
     use lqos_config::{
         CircuitAnchor, CircuitAnchorsFile, Config, ConfigShapedDevices, ShapedDevice,
@@ -4990,6 +5000,38 @@ mod tests {
         assert_eq!(
             enriched.health_reason.as_deref(),
             Some("Probe unavailable: no current health observation for pair 'pair-1'")
+        );
+    }
+
+    #[test]
+    fn ranked_auto_attachment_prefers_healthy_before_capacity() {
+        let mut healthy = sample_attachment_option("healthy-link", "Healthy Link");
+        healthy.capacity_mbps = Some(100);
+        healthy.download_bandwidth_mbps = Some(100);
+        healthy.upload_bandwidth_mbps = Some(100);
+        healthy.rate_source = TopologyAttachmentRateSource::Static;
+        healthy.probeable = true;
+        healthy.health_status = TopologyAttachmentHealthStatus::Healthy;
+
+        let mut unavailable = sample_attachment_option("unavailable-link", "Unavailable Link");
+        unavailable.capacity_mbps = Some(10_000);
+        unavailable.download_bandwidth_mbps = Some(10_000);
+        unavailable.upload_bandwidth_mbps = Some(10_000);
+        unavailable.rate_source = TopologyAttachmentRateSource::DynamicIntegration;
+        unavailable.probeable = true;
+        unavailable.health_status = TopologyAttachmentHealthStatus::ProbeUnavailable;
+
+        let parent = TopologyAllowedParent {
+            parent_node_id: "parent-1".to_string(),
+            parent_node_name: "Parent 1".to_string(),
+            attachment_options: vec![auto_attachment_option(), unavailable, healthy],
+            all_attachments_suppressed: false,
+            has_probe_unavailable_attachments: true,
+        };
+
+        assert_eq!(
+            ranked_auto_attachment_id(&parent, None).as_deref(),
+            Some("healthy-link")
         );
     }
 
