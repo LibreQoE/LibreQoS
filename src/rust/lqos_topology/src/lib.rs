@@ -2827,14 +2827,7 @@ fn resolved_queue_visibility_policy(
         return TopologyQueueVisibilityPolicy::QueueVisible;
     }
     match ui_node.queue_visibility_policy {
-        TopologyQueueVisibilityPolicy::QueueVisible => resolved_auto_queue_visibility_policy(
-            config,
-            ui_node,
-            tree_node,
-            child_branch_counts,
-            attachment_branch_counts,
-            virtualization,
-        ),
+        TopologyQueueVisibilityPolicy::QueueVisible => TopologyQueueVisibilityPolicy::QueueVisible,
         TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren => {
             TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren
         }
@@ -7401,7 +7394,7 @@ mod tests {
     }
 
     #[test]
-    fn large_visible_site_without_direct_circuits_auto_virtualizes() {
+    fn large_visible_site_without_direct_circuits_stays_visible() {
         let (config, canonical, editor_state, effective) = site_with_ap_fixture();
 
         let effective_network = apply_effective_topology_to_canonical_state(
@@ -7418,7 +7411,7 @@ mod tests {
             .as_object()
             .expect("Aggregation should remain exported");
 
-        assert_eq!(site.get("virtual").and_then(Value::as_bool), Some(true));
+        assert_eq!(site.get("virtual").and_then(Value::as_bool), None);
     }
 
     #[test]
@@ -7738,7 +7731,7 @@ mod tests {
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
