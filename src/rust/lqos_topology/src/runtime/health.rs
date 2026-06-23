@@ -7,9 +7,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::{AttachmentProbeSpec, is_health_state_fresh};
-
-use super::probe::parse_probe_ip;
+use crate::{AttachmentProbeSpec, is_health_state_fresh, parse_probe_ip};
 
 pub(super) fn now_unix() -> Option<u64> {
     lqos_utils::unix_time::unix_now().ok()

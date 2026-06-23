@@ -2,12 +2,11 @@ use anyhow::Result;
 use lqos_bus::{BusReply, BusRequest, BusResponse};
 use lqos_probe::{ProbeClass, ProbeObservation, ProbeRequest};
 use std::collections::HashMap;
-use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::oneshot::error::TryRecvError;
 
-use crate::AttachmentProbeSpec;
+use crate::{AttachmentProbeSpec, parse_probe_ip};
 
 use super::TopologyBusSender;
 
@@ -92,14 +91,6 @@ fn bus_call(
             }
         }
     }
-}
-
-pub(super) fn parse_probe_ip(raw: &str) -> Option<IpAddr> {
-    raw.trim()
-        .split('/')
-        .next()
-        .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse::<IpAddr>().ok())
 }
 
 pub(super) fn probe_specs(

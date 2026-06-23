@@ -1796,11 +1796,23 @@ pub fn publish_topology_runtime_error_status(
 }
 
 fn parse_probe_ip(raw: &str) -> Option<IpAddr> {
-    raw.trim()
-        .split('/')
-        .next()
-        .filter(|value| !value.is_empty())
-        .and_then(|value| value.parse::<IpAddr>().ok())
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let Some((addr, prefix)) = raw.split_once('/') else {
+        return raw.parse::<IpAddr>().ok();
+    };
+    if addr.is_empty() || prefix.is_empty() || prefix.contains('/') {
+        return None;
+    }
+    let ip = addr.parse::<IpAddr>().ok()?;
+    let prefix = prefix.parse::<u8>().ok()?;
+    match ip {
+        IpAddr::V4(_) if prefix <= 32 => Some(ip),
+        IpAddr::V6(_) if prefix <= 128 => Some(ip),
+        _ => None,
+    }
 }
 
 /// Returns the runtime stale cutoff in seconds for topology attachment health.
@@ -4597,7 +4609,7 @@ mod tests {
         apply_health_to_option, auto_attachment_option, build_effective_topology_artifacts,
         build_effective_topology_artifacts_from_canonical, build_shaping_inputs,
         collect_direct_circuit_node_ids, collect_direct_circuit_node_names,
-        compute_effective_state, publish_effective_topology_artifacts,
+        compute_effective_state, parse_probe_ip, publish_effective_topology_artifacts,
         publish_topology_runtime_error_status, ranked_auto_attachment_id,
         validate_effective_topology_network,
     };
@@ -4627,6 +4639,17 @@ mod tests {
         let path = std::env::temp_dir().join(format!("{prefix}-{unique}"));
         fs::create_dir_all(&path).expect("temp directory should be creatable");
         path
+    }
+
+    #[test]
+    fn parse_probe_ip_rejects_invalid_cidr_suffixes() {
+        assert!(parse_probe_ip("192.0.2.1").is_some());
+        assert!(parse_probe_ip("192.0.2.1/32").is_some());
+        assert!(parse_probe_ip("2001:db8::1/128").is_some());
+        assert!(parse_probe_ip("192.0.2.1/not-a-prefix").is_none());
+        assert!(parse_probe_ip("192.0.2.1/33").is_none());
+        assert!(parse_probe_ip("2001:db8::1/129").is_none());
+        assert!(parse_probe_ip("192.0.2.1/24/extra").is_none());
     }
 
     fn apply_effective_topology_to_network_json(
