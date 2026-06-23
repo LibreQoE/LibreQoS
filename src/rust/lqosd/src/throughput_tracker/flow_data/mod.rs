@@ -17,10 +17,18 @@ use crossbeam_channel::Sender;
 pub(crate) use flow_analysis::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowActor, FlowAnalysis,
     FlowbeeEffectiveDirection, RECENT_FLOWS, RttBuffer, RttData, expire_rtt_flows,
-    flowbee_handle_events, flowbee_rtt_map, get_asn_name_and_country, get_asn_name_by_id,
-    get_flowbee_event_count_and_reset, get_rtt_events_per_second, setup_flow_analysis,
+    flowbee_handle_events, flowbee_rtt_map, get_asn_name_by_id, get_flowbee_event_count_and_reset,
+    get_rtt_events_per_second, setup_flow_analysis,
 };
-pub(crate) use flow_tracker::{ALL_FLOWS, AsnId, FlowbeeLocalData};
+#[cfg(test)]
+pub(crate) use flow_tracker::{
+    active_flow_test_lock, replace_active_flows_for_test, replace_active_flows_live_for_test,
+};
+pub(crate) use flow_tracker::{
+    ActiveFlowDisplayFields, ActiveFlowSnapshot, AsnId, FlowbeeLocalData, active_flow_snapshot,
+    for_each_active_flow_for_circuit, live_active_flow_count, retry_times_to_unix_seconds,
+};
+pub(in crate::throughput_tracker) use flow_tracker::{mutate_all_flows, refresh_active_flow_snapshot};
 use lqos_sys::flowbee_data::FlowbeeKey;
 use tracing::{debug, error, info};
 

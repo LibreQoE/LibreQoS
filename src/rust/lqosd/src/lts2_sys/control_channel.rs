@@ -16,7 +16,9 @@ use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
 use lqos_probe::ProbeClass;
 
 mod messages;
-use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use crate::throughput_tracker::{
+    flow_data::for_each_active_flow_for_circuit, retire_check, THROUGHPUT_TRACKER,
+};
 pub use messages::{
     RemoteInsightRequest, SupportTicket, SupportTicketComment, SupportTicketStatus,
     SupportTicketSummary, WsMessage,
@@ -26,6 +28,7 @@ const SHAPER_VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 const CONTROL_CHANNEL_QUEUE_DEPTH: usize = 256;
 const CONNECTION_COMMAND_QUEUE_DEPTH: usize = 1024;
 const SOCKET_SENDER_QUEUE_DEPTH: usize = 32;
+const STREAMING_CIRCUIT_FLOW_WINDOW: Duration = Duration::from_secs(300);
 
 type ControlSocketWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 
@@ -1412,45 +1415,76 @@ async fn shaper_snapshot_streaming(
     Ok(())
 }
 
+#[derive(Serialize, Deserialize)]
+struct DeviceSnapshot {
+    device_id: String,
+    device_name: String,
+    addresses: Vec<(std::net::IpAddr, u8)>,
+    last_ping_ms: Option<f32>,
+    bits_per_second: (u64, u64),
+    median_tcp_rtt_ms: Option<f32>,
+    tcp_retransmit_pct: (f64, f64),
+}
+
+#[derive(Serialize, Deserialize)]
+struct FlowSnapshot {
+    remote_ip: std::net::IpAddr,
+    local_ip: std::net::IpAddr,
+    src_port: u16,
+    dst_port: u16,
+    ip_protocol: u8,
+    // Legacy Insight field name; payload value is the flow age at snapshot time.
+    #[serde(rename = "last_seen_nanos")]
+    age_nanos_wire: u64,
+    rate_bps: (u32, u32),
+    bytes_sent: (u64, u64),
+    packets_sent: (u64, u64),
+    tcp_retransmits: (u16, u16),
+    rtt_ms: (f32, f32),
+}
+
+#[derive(Serialize, Deserialize)]
+struct StreamingCircuitPayload {
+    devices: Vec<DeviceSnapshot>,
+    flows: Vec<FlowSnapshot>,
+}
+
+fn streaming_circuit_flow_snapshots(
+    circuit_hash: i64,
+    now_nanos: u64,
+) -> Vec<FlowSnapshot> {
+    let five_minutes_ago =
+        now_nanos.saturating_sub(STREAMING_CIRCUIT_FLOW_WINDOW.as_nanos() as u64);
+    let mut flows_out = Vec::new();
+
+    for_each_active_flow_for_circuit(circuit_hash, five_minutes_ago, |flow| {
+        let rtt_ms = (
+            flow.rtt_nanos.down as f32 / 1_000_000.0,
+            flow.rtt_nanos.up as f32 / 1_000_000.0,
+        );
+        flows_out.push(FlowSnapshot {
+            remote_ip: flow.key.remote_ip.as_ip(),
+            local_ip: flow.key.local_ip.as_ip(),
+            src_port: flow.key.src_port,
+            dst_port: flow.key.dst_port,
+            ip_protocol: flow.key.ip_protocol,
+            age_nanos_wire: flow.age_nanos(now_nanos),
+            rate_bps: (flow.rate_estimate_bps.down, flow.rate_estimate_bps.up),
+            bytes_sent: (flow.bytes_sent.down, flow.bytes_sent.up),
+            packets_sent: (flow.packets_sent.down, flow.packets_sent.up),
+            tcp_retransmits: (flow.tcp_retransmits.down, flow.tcp_retransmits.up),
+            rtt_ms,
+        });
+    });
+
+    flows_out
+}
+
 async fn circuit_snapshot_streaming(
     request_id: u64,
     circuit_hash: i64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
-    #[derive(Serialize, Deserialize)]
-    struct DeviceSnapshot {
-        device_id: String,
-        device_name: String,
-        addresses: Vec<(std::net::IpAddr, u8)>,
-        last_ping_ms: Option<f32>,
-        // down, up bits per second
-        bits_per_second: (u64, u64),
-        median_tcp_rtt_ms: Option<f32>,
-        // down, up retransmit percentage
-        tcp_retransmit_pct: (f64, f64),
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct FlowSnapshot {
-        remote_ip: std::net::IpAddr,
-        local_ip: std::net::IpAddr,
-        src_port: u16,
-        dst_port: u16,
-        ip_protocol: u8,
-        last_seen_nanos: u64,
-        // Down/Up tuples for compact transport
-        rate_bps: (u32, u32),
-        bytes_sent: (u64, u64),
-        packets_sent: (u64, u64),
-        tcp_retransmits: (u16, u16),
-        rtt_ms: (f32, f32),
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct StreamingCircuitPayload {
-        devices: Vec<DeviceSnapshot>,
-        flows: Vec<FlowSnapshot>,
-    }
 
     // Helper: choose a host IP for ping (only /32 or /128)
     fn choose_host_ip(
@@ -1496,20 +1530,26 @@ async fn circuit_snapshot_streaming(
 
     // Aggregation holders per device hash
     use lqos_utils::units::{DownUpOrder, down_up_divide};
-    struct Agg {
+    #[derive(Default)]
+    struct DeviceTrafficAggregate {
         bps_bytes: DownUpOrder<u64>,
         tcp_packets: DownUpOrder<u64>,
         tcp_retries: DownUpOrder<u64>,
         rtts: Vec<f32>,
     }
-    let mut aggregates: std::collections::HashMap<i64, Agg> = std::collections::HashMap::new();
+    let mut aggregates: std::collections::HashMap<i64, DeviceTrafficAggregate> =
+        std::collections::HashMap::new();
 
     // Walk raw throughput data and fold into devices of this circuit
     {
-        let raw = crate::throughput_tracker::THROUGHPUT_TRACKER
-            .raw_data
-            .lock();
+        let raw_cycle = THROUGHPUT_TRACKER
+            .cycle
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let raw = THROUGHPUT_TRACKER.raw_data.lock();
         for (xdp_ip, te) in raw.iter() {
+            if !retire_check(raw_cycle, te.most_recent_cycle) {
+                continue;
+            }
             let device = catalog
                 .device_by_hashes(te.device_hash, te.circuit_hash)
                 .or_else(|| {
@@ -1522,17 +1562,10 @@ async fn circuit_snapshot_streaming(
             if !matches_desired {
                 continue;
             }
-            // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
-            // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
             let Some(device_hash) = device.map(|device| device.device_hash) else {
                 continue;
             };
-            let agg = aggregates.entry(device_hash).or_insert_with(|| Agg {
-                bps_bytes: DownUpOrder::zeroed(),
-                tcp_packets: DownUpOrder::zeroed(),
-                tcp_retries: DownUpOrder::zeroed(),
-                rtts: Vec::new(),
-            });
+            let agg = aggregates.entry(device_hash).or_default();
             // bytes_per_second -> later convert to bits
             agg.bps_bytes += te.bytes_per_second;
             agg.tcp_packets += te.tcp_packets;
@@ -1547,12 +1580,7 @@ async fn circuit_snapshot_streaming(
     // Build device snapshots
     let mut devices_out: Vec<DeviceSnapshot> = Vec::new();
     for dev in circuit_devices {
-        let agg = aggregates.remove(&dev.device_hash).unwrap_or(Agg {
-            bps_bytes: DownUpOrder::zeroed(),
-            tcp_packets: DownUpOrder::zeroed(),
-            tcp_retries: DownUpOrder::zeroed(),
-            rtts: Vec::new(),
-        });
+        let agg = aggregates.remove(&dev.device_hash).unwrap_or_default();
         // Compact addresses into a single list
         let mut addresses: Vec<(std::net::IpAddr, u8)> = Vec::new();
         addresses.extend(
@@ -1606,51 +1634,12 @@ async fn circuit_snapshot_streaming(
         });
     }
 
-    // Build flow snapshots for this circuit (recent, last 5 minutes)
-    let mut flows_out: Vec<FlowSnapshot> = Vec::new();
-    if let Ok(now_ts) = lqos_utils::unix_time::time_since_boot() {
-        let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
-        let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
-        let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
-        for (key, (local, ..)) in all_flows.flow_data.iter() {
-            if local.last_seen < five_minutes_ago {
-                continue;
-            }
-            let device = catalog
-                .device_by_hashes(local.device_hash, local.circuit_hash)
-                .or_else(|| {
-                    catalog
-                        .device_longest_match_for_ip(&key.local_ip)
-                        .map(|(_, device)| device)
-                });
-            let matches_desired = local.circuit_hash == Some(circuit_hash)
-                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
-            if !matches_desired {
-                continue;
-            }
-
-            let local_ip_addr = key.local_ip.as_ip();
-            let remote_ip_addr = key.remote_ip.as_ip();
-
-            let rtt_ms = (
-                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Download) as f32,
-                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Upload) as f32,
-            );
-            flows_out.push(FlowSnapshot {
-                remote_ip: remote_ip_addr,
-                local_ip: local_ip_addr,
-                src_port: key.src_port,
-                dst_port: key.dst_port,
-                ip_protocol: key.ip_protocol,
-                last_seen_nanos: now_nanos.saturating_sub(local.last_seen),
-                rate_bps: (local.rate_estimate_bps.down, local.rate_estimate_bps.up),
-                bytes_sent: (local.bytes_sent.down, local.bytes_sent.up),
-                packets_sent: (local.packets_sent.down, local.packets_sent.up),
-                tcp_retransmits: (local.tcp_retransmits.down, local.tcp_retransmits.up),
-                rtt_ms,
-            });
-        }
-    }
+    let flows_out = lqos_utils::unix_time::time_since_boot()
+        .map(|now_ts| {
+            let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
+            streaming_circuit_flow_snapshots(circuit_hash, now_nanos)
+        })
+        .unwrap_or_default();
 
     let payload = StreamingCircuitPayload {
         devices: devices_out,
@@ -1761,6 +1750,16 @@ async fn tree_snapshot_streaming(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{ActiveFlowSnapshotTestContext, active_flow_entry};
+    use crate::throughput_tracker::{replace_raw_throughput_for_test, RawThroughputTestEntry};
+    use crate::throughput_tracker::flow_data::{
+        FlowbeeEffectiveDirection, RttBuffer, RttData, replace_active_flows_for_test,
+        replace_active_flows_live_for_test,
+    };
+    use lqos_config::ShapedDevice;
+    use lqos_utils::units::DownUpOrder;
+    use lqos_utils::hash_to_i64;
+    use std::net::Ipv4Addr;
 
     #[test]
     fn encode_ws_binary_round_trips_begin_ingest() {
@@ -1787,5 +1786,255 @@ mod tests {
             }
             other => panic!("unexpected decoded message: {other:?}"),
         }
+    }
+
+    #[test]
+    fn streaming_circuit_flow_snapshots_filter_snapshot_by_age_and_circuit() {
+        let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "streaming-circuit-test",
+            vec![ShapedDevice {
+                circuit_id: "insight-circuit".to_string(),
+                circuit_name: "Insight Circuit".to_string(),
+                device_id: "insight-device".to_string(),
+                device_name: "Insight Device".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 52), 32)],
+                ..Default::default()
+            }],
+        );
+        let circuit_hash = hash_to_i64("insight-circuit");
+        let now_nanos = 1_000_000_000_000;
+        let mut hash_matched = active_flow_entry(
+            [192, 0, 2, 99],
+            [198, 51, 100, 62],
+            50_002,
+            now_nanos - 10_000_000_000,
+            DownUpOrder::new(30_000, 40_000),
+            DownUpOrder::new(1_000, 2_000),
+            DownUpOrder::new(10, 20),
+        );
+        hash_matched.1.0.circuit_hash = Some(circuit_hash);
+        let mut ip_matched = active_flow_entry(
+            [192, 0, 2, 52],
+            [198, 51, 100, 60],
+            50_000,
+            now_nanos - 1_000_000_000,
+            DownUpOrder::new(30_000, 40_000),
+            DownUpOrder::new(1_000, 2_000),
+            DownUpOrder::new(10, 20),
+        );
+        let mut rtt = RttBuffer::new(
+            RttData::from_nanos(12_000_000),
+            FlowbeeEffectiveDirection::Download,
+            now_nanos,
+        );
+        rtt.push(
+            RttData::from_nanos(12_000_000),
+            FlowbeeEffectiveDirection::Download,
+            now_nanos,
+        );
+        rtt.push(
+            RttData::from_nanos(34_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            now_nanos,
+        );
+        rtt.push(
+            RttData::from_nanos(34_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            now_nanos,
+        );
+        ip_matched.1.0.set_rtt_buffer(rtt);
+
+        replace_active_flows_for_test(vec![
+            ip_matched,
+            active_flow_entry(
+                [192, 0, 2, 52],
+                [198, 51, 100, 61],
+                50_001,
+                now_nanos - 301_000_000_000,
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+            active_flow_entry(
+                [192, 0, 2, 52],
+                [198, 51, 100, 64],
+                50_004,
+                now_nanos - STREAMING_CIRCUIT_FLOW_WINDOW.as_nanos() as u64,
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+            hash_matched,
+            active_flow_entry(
+                [192, 0, 2, 53],
+                [198, 51, 100, 63],
+                50_003,
+                now_nanos - 1_000_000_000,
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+        ]);
+
+        let flows = streaming_circuit_flow_snapshots(circuit_hash, now_nanos);
+
+        assert_eq!(flows.len(), 3);
+        let mut remote_ips = flows
+            .iter()
+            .map(|flow| flow.remote_ip.to_string())
+            .collect::<Vec<_>>();
+        remote_ips.sort();
+        assert_eq!(
+            remote_ips,
+            vec!["198.51.100.60", "198.51.100.62", "198.51.100.64"]
+        );
+        let ip_matched = flows
+            .iter()
+            .find(|flow| flow.remote_ip.to_string() == "198.51.100.60")
+            .expect("IP-matched flow should be included");
+        assert_eq!(ip_matched.age_nanos_wire, 1_000_000_000);
+        let wire_flow = serde_json::to_value(ip_matched).expect("flow should serialize");
+        assert_eq!(wire_flow["last_seen_nanos"], 1_000_000_000);
+        assert!(wire_flow.get("age_nanos").is_none());
+        assert_eq!(ip_matched.rate_bps, (30_000, 40_000));
+        assert_eq!(ip_matched.bytes_sent, (1_000, 2_000));
+        assert_eq!(ip_matched.packets_sent, (10, 20));
+        assert_eq!(ip_matched.tcp_retransmits, (1, 2));
+        assert_eq!(ip_matched.rtt_ms, (14.0, 35.0));
+
+        replace_active_flows_live_for_test(Vec::new());
+        assert_eq!(
+            streaming_circuit_flow_snapshots(circuit_hash, now_nanos).len(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn circuit_snapshot_streaming_aggregates_only_fresh_raw_device_rows() {
+        let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "streaming-circuit-raw-test",
+            vec![ShapedDevice {
+                circuit_id: "raw-circuit".to_string(),
+                circuit_name: "Raw Circuit".to_string(),
+                device_id: "raw-device".to_string(),
+                device_name: "Raw Device".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 0), 24)],
+                ..Default::default()
+            }],
+        );
+        let circuit_hash = hash_to_i64("raw-circuit");
+        let device_hash = hash_to_i64("raw-device");
+        let _raw_guard = replace_raw_throughput_for_test(
+            100,
+            vec![
+                RawThroughputTestEntry {
+                    ip: lqos_utils::XdpIpAddress::from_ip(Ipv4Addr::new(192, 0, 2, 10).into()),
+                    circuit_hash: Some(circuit_hash),
+                    device_hash: Some(device_hash),
+                    most_recent_cycle: 99,
+                    bytes_per_second: DownUpOrder::new(1_000, 2_000),
+                    tcp_packets: DownUpOrder::new(100, 200),
+                    tcp_retransmits: DownUpOrder::new(10, 20),
+                },
+                RawThroughputTestEntry {
+                    ip: lqos_utils::XdpIpAddress::from_ip(Ipv4Addr::new(192, 0, 2, 11).into()),
+                    circuit_hash: Some(circuit_hash),
+                    device_hash: Some(device_hash),
+                    most_recent_cycle: 60,
+                    bytes_per_second: DownUpOrder::new(9_000, 9_000),
+                    tcp_packets: DownUpOrder::new(900, 900),
+                    tcp_retransmits: DownUpOrder::new(90, 90),
+                },
+                RawThroughputTestEntry {
+                    ip: lqos_utils::XdpIpAddress::from_ip(Ipv4Addr::new(192, 0, 2, 12).into()),
+                    circuit_hash: Some(circuit_hash),
+                    device_hash: Some(device_hash),
+                    most_recent_cycle: 70,
+                    bytes_per_second: DownUpOrder::new(100, 200),
+                    tcp_packets: DownUpOrder::new(10, 20),
+                    tcp_retransmits: DownUpOrder::new(1, 2),
+                },
+            ],
+        );
+        let now_nanos = std::time::Duration::from(
+            lqos_utils::unix_time::time_since_boot()
+                .expect("test system clock should report time since boot"),
+        )
+        .as_nanos() as u64;
+        replace_active_flows_for_test(vec![
+            active_flow_entry(
+                [192, 0, 2, 10],
+                [198, 51, 100, 70],
+                50_010,
+                now_nanos.saturating_sub(1_000_000_000),
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+            active_flow_entry(
+                [192, 0, 2, 12],
+                [198, 51, 100, 72],
+                50_012,
+                now_nanos.saturating_sub(1_000_000_000),
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+        ]);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
+        circuit_snapshot_streaming(77, circuit_hash, tx)
+            .await
+            .expect("streaming circuit snapshot should send");
+
+        let Some(Message::Binary(bytes)) = rx.recv().await else {
+            panic!("streaming circuit should emit one binary frame");
+        };
+        let messages::WsMessage::StreamingCircuit {
+            request_id,
+            circuit_hash: payload_circuit_hash,
+            data,
+        } = messages::WsMessage::from_bytes(&bytes).expect("streaming circuit should decode")
+        else {
+            panic!("unexpected websocket message");
+        };
+        assert_eq!(request_id, 77);
+        assert_eq!(payload_circuit_hash, circuit_hash);
+        let payload: StreamingCircuitPayload =
+            serde_cbor::from_slice(&data).expect("streaming circuit payload should decode");
+
+        assert_eq!(payload.devices.len(), 1);
+        assert_eq!(payload.devices[0].device_id, "raw-device");
+        assert_eq!(payload.devices[0].bits_per_second, (8_000, 16_000));
+        assert_eq!(payload.devices[0].tcp_retransmit_pct, (0.1, 0.1));
+        let mut flow_ips = payload
+            .flows
+            .iter()
+            .map(|flow| flow.remote_ip.to_string())
+            .collect::<Vec<_>>();
+        flow_ips.sort();
+        assert_eq!(flow_ips, vec!["198.51.100.70", "198.51.100.72"]);
+    }
+
+    #[test]
+    fn streaming_flow_snapshot_decodes_legacy_last_seen_nanos_wire_field() {
+        let decoded: FlowSnapshot = serde_json::from_value(serde_json::json!({
+            "remote_ip": "198.51.100.62",
+            "local_ip": "192.0.2.99",
+            "src_port": 443,
+            "dst_port": 50002,
+            "ip_protocol": 6,
+            "last_seen_nanos": 1_000_000_000_u64,
+            "rate_bps": [30_000, 40_000],
+            "bytes_sent": [1_000, 2_000],
+            "packets_sent": [10, 20],
+            "tcp_retransmits": [1, 2],
+            "rtt_ms": [12.0, 34.0]
+        }))
+        .expect("legacy flow snapshot should deserialize");
+
+        assert_eq!(decoded.age_nanos_wire, 1_000_000_000);
     }
 }

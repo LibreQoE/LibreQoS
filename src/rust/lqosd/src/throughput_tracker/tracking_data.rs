@@ -1,12 +1,12 @@
 use super::{
     RETIRE_AFTER_SECONDS,
     flow_data::{
-        ALL_FLOWS, AsnAggregate, FlowAnalysis, FlowbeeLocalData, RttBuffer, RttData,
-        get_flowbee_event_count_and_reset, update_asn_heatmaps,
+        AsnAggregate, FlowAnalysis, FlowbeeLocalData, RttBuffer, RttData,
+        get_flowbee_event_count_and_reset, mutate_all_flows, update_asn_heatmaps,
     },
     throughput_entry::ThroughputEntry,
 };
-use crate::throughput_tracker::CIRCUIT_RTT_BUFFERS;
+use crate::throughput_tracker::{CIRCUIT_RTT_BUFFERS, resolve_flow_device};
 use crate::{
     stats::HIGH_WATERMARK,
     throughput_tracker::flow_data::{FlowbeeEffectiveDirection, expire_rtt_flows, flowbee_rtt_map},
@@ -16,8 +16,11 @@ use lqos_bakery::BakeryCommands;
 use lqos_bus::TcHandle;
 use lqos_config::NetworkJson;
 use lqos_queue_tracker::ALL_QUEUE_SUMMARY;
-use lqos_sys::{flowbee_data::FlowbeeKey, iterate_flows, throughput_for_each};
-use lqos_utils::qoo::{LossMeasurement, QOQ_UNKNOWN, QoqScores, compute_qoq_scores};
+use lqos_sys::{
+    flowbee_data::{FlowbeeData, FlowbeeKey},
+    iterate_flows, throughput_for_each,
+};
+use lqos_utils::qoo::{LossMeasurement, QOQ_UNKNOWN, QooProfile, QoqScores, compute_qoq_scores};
 use lqos_utils::{XdpIpAddress, unix_time::time_since_boot};
 use lqos_utils::{
     qoq_heatmap::TemporalQoqHeatmap,
@@ -36,16 +39,172 @@ const MAX_FLOWS: usize = 1_000_000;
 
 pub const MAX_RETRY_TIMES: usize = 128;
 const MIN_QOO_FLOW_BYTES: u64 = 1_000_000;
+// Only compact after a large spike has cleared. This avoids per-tick rehashing while still
+// releasing obviously stale peak capacity on systems that briefly approach `MAX_FLOWS`.
+const FLOW_TABLE_SHRINK_MIN_CAPACITY: usize = 16_384;
+const FLOW_TABLE_SHRINK_EXCESS_FACTOR: usize = 4;
 
 pub(crate) struct FlowApplyContext<'a> {
     pub(crate) timeout_seconds: u64,
-    pub(crate) sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
     pub(crate) net_json_calc: &'a mut NetworkJson,
     pub(crate) rtt_circuit_tracker: &'a mut FxHashMap<XdpIpAddress, RttBuffer>,
     pub(crate) rtt_by_circuit: &'a mut FxHashMap<i64, RttBuffer>,
     pub(crate) tcp_retries: &'a mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
     pub(crate) tcp_retry_packets: &'a mut FxHashMap<XdpIpAddress, DownUpOrder<u64>>,
     pub(crate) expired_keys: &'a mut Vec<FlowbeeKey>,
+    pub(crate) finished_flow_exports: &'a mut Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+}
+
+fn collect_finished_flow_exports(
+    flow_data: &mut FxHashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>,
+    expired_keys: &[FlowbeeKey],
+    finished_flow_exports: &mut Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+) -> usize {
+    let mut removed = 0;
+    for key in expired_keys {
+        if let Some((local, analysis)) = flow_data.remove(key) {
+            finished_flow_exports.push((*key, (local, analysis)));
+            removed += 1;
+        }
+    }
+    removed
+}
+
+fn collect_stale_flow_exports(
+    flow_data: &mut FxHashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>,
+    expire_before_nanos: u64,
+    finished_flow_exports: &mut Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
+) -> usize {
+    let mut removed = 0;
+    for export in flow_data.extract_if(|_key, (local, _analysis)| {
+        local.last_seen < expire_before_nanos
+    }) {
+        finished_flow_exports.push(export);
+        removed += 1;
+    }
+    removed
+}
+
+fn shrink_flow_table_if_sparse(
+    flow_data: &mut FxHashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>,
+) {
+    let capacity = flow_data.capacity();
+    let shrink_threshold = flow_data
+        .len()
+        .saturating_mul(FLOW_TABLE_SHRINK_EXCESS_FACTOR)
+        .max(FLOW_TABLE_SHRINK_MIN_CAPACITY);
+    if capacity > shrink_threshold {
+        flow_data.shrink_to_fit();
+    }
+}
+
+fn accumulate_device_rtt_samples(
+    rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, RttBuffer>,
+    raw_entry: Option<&ThroughputEntry>,
+    key: &FlowbeeKey,
+    flow: &FlowbeeLocalData,
+    rtt_buffer: &RttBuffer,
+) {
+    if key.ip_protocol != 6 || flow.end_status != 0 || raw_entry.is_none() {
+        return;
+    }
+
+    let include_download = flow.bytes_sent.down >= MIN_QOO_FLOW_BYTES;
+    let include_upload = flow.bytes_sent.up >= MIN_QOO_FLOW_BYTES;
+    if !include_download && !include_upload {
+        return;
+    }
+
+    let device_rtt = rtt_circuit_tracker.entry(key.local_ip).or_default();
+    if include_download {
+        device_rtt.accumulate_direction(rtt_buffer, FlowbeeEffectiveDirection::Download);
+    }
+    if include_upload {
+        device_rtt.accumulate_direction(rtt_buffer, FlowbeeEffectiveDirection::Upload);
+    }
+}
+
+fn update_flow_qoo(flow: &mut FlowbeeLocalData, key: &FlowbeeKey, profile: Option<&QooProfile>) {
+    if key.ip_protocol != 6 {
+        return;
+    }
+    let Some(profile) = profile else {
+        return;
+    };
+    let Some(tcp_info) = flow.tcp_info.as_ref() else {
+        return;
+    };
+
+    let loss_download =
+        tcp_retransmit_loss_proxy(flow.tcp_retransmits.down as u64, flow.packets_sent.down);
+    let loss_upload =
+        tcp_retransmit_loss_proxy(flow.tcp_retransmits.up as u64, flow.packets_sent.up);
+    let mut scores = compute_qoq_scores(profile, &tcp_info.rtt, loss_download, loss_upload);
+    if flow.bytes_sent.down < MIN_QOO_FLOW_BYTES {
+        scores.download_total = QOQ_UNKNOWN;
+    }
+    if flow.bytes_sent.up < MIN_QOO_FLOW_BYTES {
+        scores.upload_total = QOQ_UNKNOWN;
+    }
+    flow.set_qoq_scores(scores);
+}
+
+fn flow_asn_rtt_ms(
+    raw_entry: Option<&ThroughputEntry>,
+    flow: &FlowbeeLocalData,
+) -> Option<f32> {
+    let excluded = raw_entry
+        .and_then(|entry| entry.circuit_hash)
+        .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+    if excluded {
+        None
+    } else {
+        combine_rtt_ms(flow.get_rtt_array())
+    }
+}
+
+fn flow_deltas(
+    data: &FlowbeeData,
+    previous: &FlowbeeLocalData,
+) -> (DownUpOrder<u64>, DownUpOrder<u64>, DownUpOrder<u64>) {
+    let delta_bytes = data.bytes_sent.checked_sub_or_zero(previous.bytes_sent);
+    let delta_packets = data.packets_sent.checked_sub_or_zero(previous.packets_sent);
+    let delta_retrans = data
+        .tcp_retransmits
+        .checked_sub_or_zero(previous.tcp_retransmits);
+    (
+        delta_bytes,
+        delta_packets,
+        DownUpOrder::new(delta_retrans.down as u64, delta_retrans.up as u64),
+    )
+}
+
+fn apply_flow_rtt_and_qoo(
+    flow: &mut FlowbeeLocalData,
+    raw_entry: Option<&ThroughputEntry>,
+    rtt_circuit_tracker: &mut FxHashMap<XdpIpAddress, RttBuffer>,
+    key: &FlowbeeKey,
+    rtt_buffer: Option<RttBuffer>,
+    rtt_expire: u64,
+    qoo_profile: Option<&QooProfile>,
+) {
+    if let Some(raw_entry) = raw_entry {
+        flow.set_tracking_metadata(
+            raw_entry.circuit_hash,
+            raw_entry.device_hash,
+            raw_entry.circuit_id.as_deref(),
+        );
+    }
+    let retired_stale_rtt = if let Some(rtt_buffer) = rtt_buffer {
+        accumulate_device_rtt_samples(rtt_circuit_tracker, raw_entry, key, flow, &rtt_buffer);
+        flow.set_rtt_buffer(rtt_buffer);
+        false
+    } else {
+        flow.retire_stale_rtt(rtt_expire)
+    };
+    if !retired_stale_rtt {
+        update_flow_qoo(flow, key, qoo_profile);
+    }
 }
 
 pub struct ThroughputTracker {
@@ -408,20 +567,6 @@ impl ThroughputTracker {
         });
     }
 
-    fn shaped_device_for_ip_or_hashes<'a>(
-        catalog: &'a lqos_network_devices::NetworkDevicesCatalog,
-        ip: &XdpIpAddress,
-        device_hash: Option<i64>,
-        circuit_hash: Option<i64>,
-    ) -> Option<&'a lqos_config::ShapedDevice> {
-        if let Some(device) = catalog.device_by_hashes(device_hash, circuit_hash) {
-            return Some(device);
-        }
-        catalog
-            .device_longest_match_for_ip(ip)
-            .map(|(_net, device)| device)
-    }
-
     fn lookup_network_parents_from_ip_or_hashes(
         catalog: &lqos_network_devices::NetworkDevicesCatalog,
         ip: &XdpIpAddress,
@@ -429,7 +574,7 @@ impl ThroughputTracker {
         circuit_hash: Option<i64>,
         lock: &NetworkJson,
     ) -> Option<Vec<usize>> {
-        Self::shaped_device_for_ip_or_hashes(catalog, ip, device_hash, circuit_hash)
+        resolve_flow_device(catalog, ip, device_hash, circuit_hash)
             .and_then(|device| lock.get_parents_for_circuit_id(&device.parent_node))
     }
 
@@ -437,12 +582,8 @@ impl ThroughputTracker {
         let catalog = lqos_network_devices::network_devices_catalog();
         let mut raw_data = self.raw_data.lock();
         raw_data.iter_mut().for_each(|(ip, data)| {
-            let shaped_device = Self::shaped_device_for_ip_or_hashes(
-                &catalog,
-                ip,
-                data.device_hash,
-                data.circuit_hash,
-            );
+            let shaped_device =
+                resolve_flow_device(&catalog, ip, data.device_hash, data.circuit_hash);
             if data.device_hash.is_none()
                 && let Some(device) = shaped_device
             {
@@ -453,9 +594,12 @@ impl ThroughputTracker {
             {
                 data.circuit_hash = Some(device.circuit_hash);
             }
-            data.circuit_id = shaped_device.map(|d| d.circuit_id.clone());
-            data.network_json_parents = shaped_device
-                .and_then(|device| lock.get_parents_for_circuit_id(&device.parent_node));
+            if let Some(device) = shaped_device {
+                data.circuit_id = Some(device.circuit_id.clone());
+                data.network_json_parents = lock.get_parents_for_circuit_id(&device.parent_node);
+            } else {
+                data.network_json_parents = None;
+            }
         });
     }
 
@@ -527,7 +671,7 @@ impl ThroughputTracker {
                 entry.last_seen = reduced.last_seen;
 
                 entry.tc_handle = reduced.tc_handle;
-                let shaped_device = Self::shaped_device_for_ip_or_hashes(
+                let shaped_device = resolve_flow_device(
                     &catalog,
                     xdp_ip,
                     reduced.device_hash,
@@ -544,16 +688,19 @@ impl ThroughputTracker {
                 entry.circuit_hash = resolved_circuit_hash;
                 entry.device_hash = resolved_device_hash;
                 if hashes_changed {
-                    let shaped_device = Self::shaped_device_for_ip_or_hashes(
+                    let shaped_device = resolve_flow_device(
                         &catalog,
                         xdp_ip,
                         entry.device_hash,
                         entry.circuit_hash,
                     );
-                    entry.circuit_id = shaped_device.map(|d| d.circuit_id.clone());
-                    entry.network_json_parents = shaped_device.and_then(|device| {
-                        net_json_calc.get_parents_for_circuit_id(&device.parent_node)
-                    });
+                    if let Some(device) = shaped_device {
+                        entry.circuit_id = Some(device.circuit_id.clone());
+                        entry.network_json_parents =
+                            net_json_calc.get_parents_for_circuit_id(&device.parent_node);
+                    } else {
+                        entry.network_json_parents = None;
+                    }
 
                     if shaped_device.is_none() {
                         record_dynamic_observation(
@@ -651,7 +798,7 @@ impl ThroughputTracker {
                     }
                 }
             } else {
-                let shaped_device = Self::shaped_device_for_ip_or_hashes(
+                let shaped_device = resolve_flow_device(
                     &catalog,
                     xdp_ip,
                     reduced.device_hash,
@@ -781,13 +928,13 @@ impl ThroughputTracker {
     pub(crate) fn apply_flow_data(&self, ctx: FlowApplyContext<'_>) {
         let FlowApplyContext {
             timeout_seconds,
-            sender,
             net_json_calc,
             rtt_circuit_tracker,
             rtt_by_circuit,
             tcp_retries,
             tcp_retry_packets,
             expired_keys,
+            finished_flow_exports,
         } = ctx;
         //log::debug!("Flowbee events this second: {}", get_flowbee_event_count_and_reset());
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
@@ -820,377 +967,252 @@ impl ThroughputTracker {
             let expire = since_boot
                 .saturating_sub(Duration::from_secs(timeout_seconds))
                 .as_nanos() as u64;
+            let rtt_expire = since_boot
+                .saturating_sub(Duration::from_secs(RETIRE_AFTER_SECONDS))
+                .as_nanos() as u64;
 
-            let mut all_flows_lock = ALL_FLOWS.lock();
-            let mut raw_data = self.raw_data.lock();
+            finished_flow_exports.clear();
 
-            // Track through all the flows
-            iterate_flows(&mut |key, data| {
-                let mut rtt_buffer = rtt_samples.remove(key);
-                let mut rtt_for_circuit: Option<[RttData; 2]> = None;
-                if data.end_status == 3 {
-                    // The flow has been handled already and should be ignored.
-                    // DO NOT process it again.
-                } else if data.last_seen < expire {
-                    // This flow has expired but not been handled yet. Add it to the list to be cleaned.
-                    expired_keys.push(*key);
-                } else {
-                    // We have a valid flow, so it needs to be tracked
-                    if let Some(this_flow) = all_flows_lock.flow_data.get_mut(key) {
-                        let delta_bytes =
-                            data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
-                        let delta_packets = data
-                            .packets_sent
-                            .checked_sub_or_zero(this_flow.0.packets_sent);
-                        let delta_retrans = data
-                            .tcp_retransmits
-                            .checked_sub_or_zero(this_flow.0.tcp_retransmits);
-                        let delta_retrans =
-                            DownUpOrder::new(delta_retrans.down as u64, delta_retrans.up as u64);
-                        // If retransmits have changed, add the time to the retry list
-                        if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
-                            this_flow.0.record_tcp_retry_time(
-                                FlowbeeEffectiveDirection::Download,
-                                data.last_seen,
-                            );
-                        }
-                        if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
-                            this_flow.0.record_tcp_retry_time(
-                                FlowbeeEffectiveDirection::Upload,
-                                data.last_seen,
-                            );
-                        }
+            mutate_all_flows(|flow_data| {
+                let mut raw_data = self.raw_data.lock();
 
-                        //let change_since_last_time = data.bytes_sent.checked_sub_or_zero(this_flow.0.bytes_sent);
-                        //this_flow.0.throughput_buffer.push(change_since_last_time);
-                        //println!("{change_since_last_time:?}");
-
-                        this_flow.0.set_last_seen(data.last_seen);
-                        this_flow.0.set_bytes_sent(data.bytes_sent);
-                        this_flow.0.set_packets_sent(data.packets_sent);
-                        this_flow.0.set_rate_estimate_bps(data.rate_estimate_bps);
-                        this_flow.0.set_tcp_retransmits(data.tcp_retransmits);
-                        this_flow.0.set_end_status(data.end_status);
-                        this_flow.0.set_tos(data.tos);
-                        this_flow.0.set_flags(data.flags);
-
-                        if let Some(rtt_buffer) = rtt_buffer.take() {
-                            // Accumulate histogram data per-device so the device median is
-                            // weighted by RTT sample volume (not just per-flow medians).
-                            if key.ip_protocol == 6
-                                && data.end_status == 0
-                                && raw_data.contains_key(&key.local_ip)
-                            {
-                                let device_rtt =
-                                    rtt_circuit_tracker.entry(key.local_ip).or_default();
-                                if data.bytes_sent.down >= MIN_QOO_FLOW_BYTES {
-                                    device_rtt.accumulate_direction(
-                                        &rtt_buffer,
-                                        FlowbeeEffectiveDirection::Download,
-                                    );
-                                }
-                                if data.bytes_sent.up >= MIN_QOO_FLOW_BYTES {
-                                    device_rtt.accumulate_direction(
-                                        &rtt_buffer,
-                                        FlowbeeEffectiveDirection::Upload,
-                                    );
-                                }
-                            }
-
-                            this_flow.0.set_rtt_buffer(rtt_buffer);
-                        }
-
-                        // Per-flow QoO (stored for UI display).
-                        if key.ip_protocol == 6
-                            && let (Some(profile), Some(tcp_info)) =
-                                (qoo_profile.as_ref(), this_flow.0.tcp_info.as_ref())
-                        {
-                            let loss_download = tcp_retransmit_loss_proxy(
-                                this_flow.0.tcp_retransmits.down as u64,
-                                this_flow.0.packets_sent.down,
-                            );
-                            let loss_upload = tcp_retransmit_loss_proxy(
-                                this_flow.0.tcp_retransmits.up as u64,
-                                this_flow.0.packets_sent.up,
-                            );
-                            let scores = compute_qoq_scores(
-                                profile.as_ref(),
-                                &tcp_info.rtt,
-                                loss_download,
-                                loss_upload,
-                            );
-                            let mut scores = scores;
-                            if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
-                                scores.download_total = QOQ_UNKNOWN;
-                            }
-                            if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
-                                scores.upload_total = QOQ_UNKNOWN;
-                            }
-                            this_flow.0.set_qoq_scores(scores);
-                        }
-                        if enable_asn_heatmaps {
-                            let excluded = raw_data
-                                .get(&key.local_ip)
-                                .and_then(|t| t.circuit_hash)
-                                .is_some_and(crate::rtt_exclusions::is_excluded_hash);
-                            let flow_rtt = if excluded {
-                                None
-                            } else {
-                                combine_rtt_ms(this_flow.0.get_rtt_array())
-                            };
-                            add_asn_sample(
-                                this_flow.1.asn_id.0,
-                                delta_bytes,
-                                delta_packets,
-                                delta_retrans,
-                                flow_rtt,
-                            );
-                        }
-                        if key.ip_protocol == 6
-                            && data.end_status == 0
-                            && raw_data.contains_key(&key.local_ip)
-                        {
-                            tcp_retries
-                                .entry(key.local_ip)
-                                .or_insert_with(DownUpOrder::zeroed)
-                                .checked_add(delta_retrans);
-                            tcp_retry_packets
-                                .entry(key.local_ip)
-                                .or_insert_with(DownUpOrder::zeroed)
-                                .checked_add(delta_packets);
-                        }
+                // Track through all the flows
+                iterate_flows(&mut |key, data| {
+                    let mut rtt_buffer = rtt_samples.remove(key);
+                    let raw_entry = raw_data.get(&key.local_ip);
+                    if data.end_status == 3 {
+                        // The flow has been handled already and should be ignored.
+                        // DO NOT process it again.
+                    } else if data.last_seen < expire {
+                        // This flow has expired but not been handled yet. Add it to the list to be cleaned.
+                        expired_keys.push(*key);
                     } else {
-                        // Check if we've hit the flow limit
-                        if all_flows_lock.flow_data.len() >= MAX_FLOWS {
-                            // Log warning once per second to avoid spam
-                            static LAST_WARNING: std::sync::atomic::AtomicU64 =
-                                std::sync::atomic::AtomicU64::new(0);
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs();
-                            let last = LAST_WARNING.load(std::sync::atomic::Ordering::Relaxed);
-                            if now > last {
-                                warn!("Flow limit of {} reached, dropping new flow", MAX_FLOWS);
-                                LAST_WARNING.store(now, std::sync::atomic::Ordering::Relaxed);
+                        // We have a valid flow, so it needs to be tracked
+                        if let Some(this_flow) = flow_data.get_mut(key) {
+                            let (delta_bytes, delta_packets, delta_retrans) =
+                                flow_deltas(data, &this_flow.0);
+                            // If retransmits have changed, add the time to the retry list
+                            if data.tcp_retransmits.down != this_flow.0.tcp_retransmits.down {
+                                this_flow.0.record_tcp_retry_time(
+                                    FlowbeeEffectiveDirection::Download,
+                                    data.last_seen,
+                                );
+                            }
+                            if data.tcp_retransmits.up != this_flow.0.tcp_retransmits.up {
+                                this_flow.0.record_tcp_retry_time(
+                                    FlowbeeEffectiveDirection::Upload,
+                                    data.last_seen,
+                                );
+                            }
+
+                            this_flow.0.set_last_seen(data.last_seen);
+                            this_flow.0.set_bytes_sent(data.bytes_sent);
+                            this_flow.0.set_packets_sent(data.packets_sent);
+                            this_flow.0.set_rate_estimate_bps(data.rate_estimate_bps);
+                            this_flow.0.set_tcp_retransmits(data.tcp_retransmits);
+                            this_flow.0.set_end_status(data.end_status);
+                            this_flow.0.set_tos(data.tos);
+                            this_flow.0.set_flags(data.flags);
+
+                            apply_flow_rtt_and_qoo(
+                                &mut this_flow.0,
+                                raw_entry,
+                                rtt_circuit_tracker,
+                                key,
+                                rtt_buffer.take(),
+                                rtt_expire,
+                                qoo_profile.as_deref(),
+                            );
+                            if enable_asn_heatmaps {
+                                add_asn_sample(
+                                    this_flow.1.asn_id.0,
+                                    delta_bytes,
+                                    delta_packets,
+                                    delta_retrans,
+                                    flow_asn_rtt_ms(raw_entry, &this_flow.0),
+                                );
+                            }
+                            if key.ip_protocol == 6 && data.end_status == 0 && raw_entry.is_some()
+                            {
+                                tcp_retries
+                                    .entry(key.local_ip)
+                                    .or_insert_with(DownUpOrder::zeroed)
+                                    .checked_add(delta_retrans);
+                                tcp_retry_packets
+                                    .entry(key.local_ip)
+                                    .or_insert_with(DownUpOrder::zeroed)
+                                    .checked_add(delta_packets);
                             }
                         } else {
-                            // Insert it into the map
-                            let flow_analysis = FlowAnalysis::new(key);
-                            let mut flow_summary = FlowbeeLocalData::from_flow(data, key);
-                            if let Some(rtt_buffer) = rtt_buffer.take() {
-                                if key.ip_protocol == 6
-                                    && data.end_status == 0
-                                    && raw_data.contains_key(&key.local_ip)
-                                {
-                                    let device_rtt =
-                                        rtt_circuit_tracker.entry(key.local_ip).or_default();
-                                    if data.bytes_sent.down >= MIN_QOO_FLOW_BYTES {
-                                        device_rtt.accumulate_direction(
-                                            &rtt_buffer,
-                                            FlowbeeEffectiveDirection::Download,
-                                        );
-                                    }
-                                    if data.bytes_sent.up >= MIN_QOO_FLOW_BYTES {
-                                        device_rtt.accumulate_direction(
-                                            &rtt_buffer,
-                                            FlowbeeEffectiveDirection::Upload,
-                                        );
-                                    }
+                            // Check if we've hit the flow limit
+                            if flow_data.len() >= MAX_FLOWS {
+                                // Log warning once per second to avoid spam
+                                static LAST_WARNING: std::sync::atomic::AtomicU64 =
+                                    std::sync::atomic::AtomicU64::new(0);
+                                let now = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs();
+                                let last = LAST_WARNING.load(std::sync::atomic::Ordering::Relaxed);
+                                if now > last {
+                                    warn!("Flow limit of {} reached, dropping new flow", MAX_FLOWS);
+                                    LAST_WARNING.store(now, std::sync::atomic::Ordering::Relaxed);
                                 }
-                                rtt_for_circuit = Some([
-                                    rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download),
-                                    rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload),
-                                ]);
-                                flow_summary.set_rtt_buffer(rtt_buffer);
+                            } else {
+                                // Insert it into the map
+                                let flow_analysis = FlowAnalysis::new(key);
+                                let mut flow_summary = FlowbeeLocalData::from_flow(data, key);
+                                apply_flow_rtt_and_qoo(
+                                    &mut flow_summary,
+                                    raw_entry,
+                                    rtt_circuit_tracker,
+                                    key,
+                                    rtt_buffer.take(),
+                                    rtt_expire,
+                                    qoo_profile.as_deref(),
+                                );
+                                if enable_asn_heatmaps {
+                                    let delta_retrans = DownUpOrder::new(
+                                        data.tcp_retransmits.down as u64,
+                                        data.tcp_retransmits.up as u64,
+                                    );
+                                    add_asn_sample(
+                                        flow_analysis.asn_id.0,
+                                        data.bytes_sent,
+                                        data.packets_sent,
+                                        delta_retrans,
+                                        flow_asn_rtt_ms(raw_entry, &flow_summary),
+                                    );
+                                }
+                                flow_data.insert(*key, (flow_summary, flow_analysis));
                             }
+                        }
 
-                            // Per-flow QoO (stored for UI display).
-                            if key.ip_protocol == 6
-                                && let (Some(profile), Some(tcp_info)) =
-                                    (qoo_profile.as_ref(), flow_summary.tcp_info.as_ref())
-                            {
-                                let loss_download = tcp_retransmit_loss_proxy(
-                                    flow_summary.tcp_retransmits.down as u64,
-                                    flow_summary.packets_sent.down,
-                                );
-                                let loss_upload = tcp_retransmit_loss_proxy(
-                                    flow_summary.tcp_retransmits.up as u64,
-                                    flow_summary.packets_sent.up,
-                                );
-                                let scores = compute_qoq_scores(
-                                    profile.as_ref(),
-                                    &tcp_info.rtt,
-                                    loss_download,
-                                    loss_upload,
-                                );
-                                let mut scores = scores;
-                                if data.bytes_sent.down < MIN_QOO_FLOW_BYTES {
-                                    scores.download_total = QOQ_UNKNOWN;
-                                }
-                                if data.bytes_sent.up < MIN_QOO_FLOW_BYTES {
-                                    scores.upload_total = QOQ_UNKNOWN;
-                                }
-                                flow_summary.set_qoq_scores(scores);
-                            }
-                            if enable_asn_heatmaps {
-                                let excluded = raw_data
-                                    .get(&key.local_ip)
-                                    .and_then(|t| t.circuit_hash)
-                                    .is_some_and(crate::rtt_exclusions::is_excluded_hash);
-                                let flow_rtt = if excluded {
-                                    None
-                                } else {
-                                    rtt_for_circuit.and_then(combine_rtt_ms)
-                                };
-                                let delta_retrans = DownUpOrder::new(
-                                    data.tcp_retransmits.down as u64,
-                                    data.tcp_retransmits.up as u64,
-                                );
-                                add_asn_sample(
-                                    flow_analysis.asn_id.0,
-                                    data.bytes_sent,
-                                    data.packets_sent,
-                                    delta_retrans,
-                                    flow_rtt,
-                                );
-                            }
-                            all_flows_lock
-                                .flow_data
-                                .insert(*key, (flow_summary, flow_analysis));
+                        if data.end_status != 0 {
+                            // The flow has ended. We need to remove it from the map.
+                            expired_keys.push(*key);
                         }
                     }
+                }); // End flow iterator
 
-                    if data.end_status != 0 {
-                        // The flow has ended. We need to remove it from the map.
-                        expired_keys.push(*key);
-                    }
-                }
-            }); // End flow iterator
+                // Merge in the per-flow RTT data into the per-circuit tracker
+                for (local_ip, rtt_buffer) in rtt_circuit_tracker {
+                    let rtt_buffer = std::mem::take(rtt_buffer);
+                    let download = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download);
+                    let upload = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload);
 
-            // Merge in the per-flow RTT data into the per-circuit tracker
-            for (local_ip, rtt_buffer) in rtt_circuit_tracker {
-                let rtt_buffer = std::mem::take(rtt_buffer);
-                let download = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Download);
-                let upload = rtt_buffer.median_new_data(FlowbeeEffectiveDirection::Upload);
+                    let rtt_median = match (download.as_nanos(), upload.as_nanos()) {
+                        (0, 0) => None,
+                        (d, 0) => Some(RttData::from_nanos(d)),
+                        (0, u) => Some(RttData::from_nanos(u)),
+                        (d, u) => Some(RttData::from_nanos(d.saturating_add(u) / 2)),
+                    };
 
-                let rtt_median = match (download.as_nanos(), upload.as_nanos()) {
-                    (0, 0) => None,
-                    (d, 0) => Some(RttData::from_nanos(d)),
-                    (0, u) => Some(RttData::from_nanos(u)),
-                    (d, u) => Some(RttData::from_nanos(d.saturating_add(u) / 2)),
-                };
-
-                if let Some(rtt_median) = rtt_median
-                    && let Some(tracker) = raw_data.get_mut(local_ip)
-                {
-                    // Shift left
-                    for i in 1..60 {
-                        tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
-                    }
-                    tracker.recent_rtt_data[0] = rtt_median;
-                    tracker.last_fresh_rtt_data_cycle = self_cycle;
-                    tracker.rtt_buffer = rtt_buffer;
-                    let excluded = tracker
-                        .circuit_hash
-                        .is_some_and(crate::rtt_exclusions::is_excluded_hash);
-                    if !excluded {
-                        if let Some(circuit_hash) = tracker.circuit_hash {
-                            rtt_by_circuit
-                                .entry(circuit_hash)
-                                .or_default()
-                                .accumulate(&tracker.rtt_buffer);
-                        }
-                        if let Some(parents) = &tracker.network_json_parents {
-                            net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
-                        }
-                    }
-                }
-            }
-
-            // Merge in the TCP retries
-            // Reset all entries in the tracker to 0
-            for (_k, circuit) in raw_data.iter_mut() {
-                circuit.tcp_retransmits = DownUpOrder::zeroed();
-                circuit.tcp_retransmit_packets = DownUpOrder::zeroed();
-            }
-            // Apply the new ones
-            for (local_ip, retries) in tcp_retries {
-                if let Some(tracker) = raw_data.get_mut(local_ip) {
-                    tracker.tcp_retransmit_packets = tcp_retry_packets
-                        .get(local_ip)
-                        .copied()
-                        .unwrap_or_else(DownUpOrder::zeroed);
-                    tracker.tcp_retransmits = *retries;
-
-                    // Send it upstream
-                    if let Some(parents) = &tracker.network_json_parents {
-                        net_json_calc.add_retransmit_cycle(
-                            parents,
-                            tracker.tcp_retransmits,
-                            tracker.tcp_retransmit_packets,
-                        );
-                    }
-                }
-            }
-
-            // Per-device QoO (stored for UI display via `NetworkTreeClients`).
-            //
-            // NOTE: `compute_qoq_scores` uses the TOTAL RTT histogram bucket, so scores remain
-            // meaningful even when the current RTT window has few samples. We only update scores
-            // when prerequisites are available; otherwise we keep the last known values so the UI
-            // doesn't flap to unknown ("-") on idle seconds.
-            if let Some(profile) = qoo_profile.as_ref() {
-                for tracker in raw_data.values_mut() {
-                    if tracker
-                        .circuit_hash
-                        .is_some_and(crate::rtt_exclusions::is_excluded_hash)
+                    if let Some(rtt_median) = rtt_median
+                        && let Some(tracker) = raw_data.get_mut(local_ip)
                     {
-                        tracker.qoq = QoqScores::default();
-                        continue;
-                    }
-                    let tcp_packets_delta = tracker.tcp_retransmit_packets;
-                    let loss_download = tcp_retransmit_loss_proxy(
-                        tracker.tcp_retransmits.down,
-                        tcp_packets_delta.down,
-                    );
-                    let loss_upload =
-                        tcp_retransmit_loss_proxy(tracker.tcp_retransmits.up, tcp_packets_delta.up);
-                    let scores = compute_qoq_scores(
-                        profile.as_ref(),
-                        &tracker.rtt_buffer,
-                        loss_download,
-                        loss_upload,
-                    );
-                    if scores.download_total != QOQ_UNKNOWN {
-                        tracker.qoq.download_total = scores.download_total;
-                    }
-                    if scores.upload_total != QOQ_UNKNOWN {
-                        tracker.qoq.upload_total = scores.upload_total;
-                    }
-                }
-            }
-
-            // Key Expiration
-            if !expired_keys.is_empty() {
-                for key in expired_keys.iter() {
-                    // Send it off to netperf for analysis if we are supporting doing so.
-                    if let Some(d) = all_flows_lock.flow_data.remove(key) {
-                        let _ = sender.send((*key, (d.0.clone(), d.1)));
+                        // Shift left
+                        for i in 1..60 {
+                            tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
+                        }
+                        tracker.recent_rtt_data[0] = rtt_median;
+                        tracker.last_fresh_rtt_data_cycle = self_cycle;
+                        tracker.rtt_buffer = rtt_buffer;
+                        let excluded = tracker
+                            .circuit_hash
+                            .is_some_and(crate::rtt_exclusions::is_excluded_hash);
+                        if !excluded {
+                            if let Some(circuit_hash) = tracker.circuit_hash {
+                                rtt_by_circuit
+                                    .entry(circuit_hash)
+                                    .or_default()
+                                    .accumulate(&tracker.rtt_buffer);
+                            }
+                            if let Some(parents) = &tracker.network_json_parents {
+                                net_json_calc.add_rtt_buffer_cycle(parents, &tracker.rtt_buffer);
+                            }
+                        }
                     }
                 }
 
-                let ret = lqos_sys::end_flows(expired_keys);
-                if let Err(e) = ret {
-                    warn!("Failed to end flows: {:?}", e);
+                // Merge in the TCP retries
+                // Reset all entries in the tracker to 0
+                for (_k, circuit) in raw_data.iter_mut() {
+                    circuit.tcp_retransmits = DownUpOrder::zeroed();
+                    circuit.tcp_retransmit_packets = DownUpOrder::zeroed();
                 }
-            }
+                // Apply the new ones
+                for (local_ip, retries) in tcp_retries {
+                    if let Some(tracker) = raw_data.get_mut(local_ip) {
+                        tracker.tcp_retransmit_packets = tcp_retry_packets
+                            .get(local_ip)
+                            .copied()
+                            .unwrap_or_else(DownUpOrder::zeroed);
+                        tracker.tcp_retransmits = *retries;
 
-            // Cleaning run
-            all_flows_lock
-                .flow_data
-                .retain(|_k, v| v.0.last_seen >= expire);
-            all_flows_lock.flow_data.shrink_to_fit();
+                        // Send it upstream
+                        if let Some(parents) = &tracker.network_json_parents {
+                            net_json_calc.add_retransmit_cycle(
+                                parents,
+                                tracker.tcp_retransmits,
+                                tracker.tcp_retransmit_packets,
+                            );
+                        }
+                    }
+                }
+
+                // Per-device QoO (stored for UI display via `NetworkTreeClients`).
+                //
+                // NOTE: `compute_qoq_scores` uses the TOTAL RTT histogram bucket, so scores remain
+                // meaningful even when the current RTT window has few samples. We only update scores
+                // when prerequisites are available; otherwise we keep the last known values so the UI
+                // doesn't flap to unknown ("-") on idle seconds.
+                if let Some(profile) = qoo_profile.as_ref() {
+                    for tracker in raw_data.values_mut() {
+                        if tracker
+                            .circuit_hash
+                            .is_some_and(crate::rtt_exclusions::is_excluded_hash)
+                        {
+                            tracker.qoq = QoqScores::default();
+                            continue;
+                        }
+                        let tcp_packets_delta = tracker.tcp_retransmit_packets;
+                        let loss_download = tcp_retransmit_loss_proxy(
+                            tracker.tcp_retransmits.down,
+                            tcp_packets_delta.down,
+                        );
+                        let loss_upload = tcp_retransmit_loss_proxy(
+                            tracker.tcp_retransmits.up,
+                            tcp_packets_delta.up,
+                        );
+                        let scores = compute_qoq_scores(
+                            profile.as_ref(),
+                            &tracker.rtt_buffer,
+                            loss_download,
+                            loss_upload,
+                        );
+                        if scores.download_total != QOQ_UNKNOWN {
+                            tracker.qoq.download_total = scores.download_total;
+                        }
+                        if scores.upload_total != QOQ_UNKNOWN {
+                            tracker.qoq.upload_total = scores.upload_total;
+                        }
+                    }
+                }
+
+                // Key Expiration
+                let mut removed_flows = 0;
+                if !expired_keys.is_empty() {
+                    removed_flows +=
+                        collect_finished_flow_exports(flow_data, expired_keys, finished_flow_exports);
+                }
+                removed_flows += collect_stale_flow_exports(flow_data, expire, finished_flow_exports);
+                if removed_flows > 0 {
+                    shrink_flow_table_if_sparse(flow_data);
+                }
+
+            });
+
             expire_rtt_flows();
         }
 
@@ -1417,13 +1439,26 @@ fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasu
 
 #[cfg(test)]
 mod tests {
-    use super::{ThroughputEntry, ThroughputTracker};
-    use crate::test_support::runtime_config_test_lock;
-    use crate::throughput_tracker::flow_data::{RttBuffer, RttData};
+    use super::{
+        MIN_QOO_FLOW_BYTES, ThroughputEntry, ThroughputTracker, apply_flow_rtt_and_qoo,
+        collect_finished_flow_exports, collect_stale_flow_exports, update_flow_qoo,
+    };
+    use crate::test_support::{
+        ActiveFlowSnapshotTestContext, active_flow_entry, runtime_config_test_lock,
+    };
+    use crate::throughput_tracker::flow_data::{
+        FlowAnalysis, FlowbeeLocalData, RttBuffer, RttData, active_flow_snapshot,
+        mutate_all_flows, refresh_active_flow_snapshot,
+    };
+    use fxhash::FxHashMap;
     use lqos_bus::TcHandle;
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
-    use lqos_utils::qoo::QoqScores;
+    use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+    use lqos_utils::qoo::{
+        LatencyNormalization, LatencyReq, LossHandling, LowHigh, QOQ_UNKNOWN, QooProfile,
+        QoqScores,
+    };
     use lqos_utils::units::DownUpOrder;
     use lqos_utils::{XdpIpAddress, hash_to_i64};
     use std::ffi::OsString;
@@ -1565,11 +1600,435 @@ mod tests {
         let catalog = NetworkDevicesCatalog::from_snapshots(shaped_catalog, Arc::new(Vec::new()));
         let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
 
-        let matched = ThroughputTracker::shaped_device_for_ip_or_hashes(&catalog, &ip, None, None)
-            .expect("lookup should resolve by IP");
+        let matched =
+            crate::throughput_tracker::resolve_flow_device(&catalog, &ip, None, None)
+                .expect("lookup should resolve by IP");
 
         assert_eq!(matched.circuit_hash, hash_to_i64("circuit-1"));
         assert_eq!(matched.device_hash, hash_to_i64("device-1"));
+    }
+
+    #[test]
+    fn collect_finished_flow_exports_removes_and_queues_live_flow_once() {
+        let mut expired_key = FlowbeeKey::default();
+        expired_key.ip_protocol = 6;
+        expired_key.src_port = 443;
+        expired_key.dst_port = 50_000;
+
+        let mut second_expired_key = expired_key;
+        second_expired_key.dst_port = 50_001;
+
+        let mut live_key = expired_key;
+        live_key.dst_port = 50_002;
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw.packets_sent = DownUpOrder::new(10, 20);
+        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+        let mut second_raw = raw.clone();
+        second_raw.bytes_sent = DownUpOrder::new(3_000, 4_000);
+        second_raw.packets_sent = DownUpOrder::new(30, 40);
+
+        let expired_flow = (
+            FlowbeeLocalData::from_flow(&raw, &expired_key),
+            FlowAnalysis::new(&expired_key),
+        );
+        let second_expired_flow = (
+            FlowbeeLocalData::from_flow(&second_raw, &second_expired_key),
+            FlowAnalysis::new(&second_expired_key),
+        );
+        let live_flow = (
+            FlowbeeLocalData::from_flow(&raw, &live_key),
+            FlowAnalysis::new(&live_key),
+        );
+        let mut flow_data = FxHashMap::default();
+        flow_data.insert(expired_key, expired_flow);
+        flow_data.insert(second_expired_key, second_expired_flow);
+        flow_data.insert(live_key, live_flow);
+        let mut exports = Vec::new();
+
+        let removed = collect_finished_flow_exports(
+            &mut flow_data,
+            &[expired_key, second_expired_key, expired_key],
+            &mut exports,
+        );
+
+        assert_eq!(removed, 2);
+        assert_eq!(exports.len(), 2);
+        assert_eq!(exports[0].0, expired_key);
+        assert_eq!(exports[0].1.0.bytes_sent, raw.bytes_sent);
+        assert_eq!(exports[0].1.0.packets_sent, raw.packets_sent);
+        assert_eq!(exports[0].1.1, FlowAnalysis::new(&expired_key));
+        assert_eq!(exports[1].0, second_expired_key);
+        assert_eq!(exports[1].1.0.bytes_sent, second_raw.bytes_sent);
+        assert_eq!(exports[1].1.0.packets_sent, second_raw.packets_sent);
+        assert_eq!(exports[1].1.1, FlowAnalysis::new(&second_expired_key));
+        assert!(!flow_data.contains_key(&expired_key));
+        assert!(!flow_data.contains_key(&second_expired_key));
+        assert!(flow_data.contains_key(&live_key));
+    }
+
+    #[test]
+    fn collect_stale_flow_exports_removes_unseen_old_flows() {
+        let mut stale_key = FlowbeeKey::default();
+        stale_key.ip_protocol = 6;
+        stale_key.src_port = 443;
+        stale_key.dst_port = 50_010;
+
+        let mut live_key = stale_key;
+        live_key.dst_port = 50_011;
+        let mut boundary_key = stale_key;
+        boundary_key.dst_port = 50_012;
+
+        let mut stale_raw = FlowbeeData::default();
+        stale_raw.start_time = 1;
+        stale_raw.last_seen = 10;
+        stale_raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        stale_raw.packets_sent = DownUpOrder::new(10, 20);
+
+        let mut live_raw = stale_raw.clone();
+        live_raw.last_seen = 200;
+        live_raw.bytes_sent = DownUpOrder::new(3_000, 4_000);
+        let mut boundary_raw = stale_raw.clone();
+        boundary_raw.last_seen = 100;
+        boundary_raw.bytes_sent = DownUpOrder::new(5_000, 6_000);
+
+        let mut flow_data = FxHashMap::default();
+        flow_data.insert(
+            stale_key,
+            (
+                FlowbeeLocalData::from_flow(&stale_raw, &stale_key),
+                FlowAnalysis::new(&stale_key),
+            ),
+        );
+        flow_data.insert(
+            live_key,
+            (
+                FlowbeeLocalData::from_flow(&live_raw, &live_key),
+                FlowAnalysis::new(&live_key),
+            ),
+        );
+        flow_data.insert(
+            boundary_key,
+            (
+                FlowbeeLocalData::from_flow(&boundary_raw, &boundary_key),
+                FlowAnalysis::new(&boundary_key),
+            ),
+        );
+        let mut exports = Vec::new();
+
+        let removed = collect_stale_flow_exports(&mut flow_data, 100, &mut exports);
+
+        assert_eq!(removed, 1);
+        assert_eq!(exports.len(), 1);
+        assert_eq!(exports[0].0, stale_key);
+        assert_eq!(exports[0].1.0.bytes_sent, stale_raw.bytes_sent);
+        assert!(!flow_data.contains_key(&stale_key));
+        assert!(flow_data.contains_key(&boundary_key));
+        assert!(flow_data.contains_key(&live_key));
+    }
+
+    #[test]
+    fn expired_flow_cycle_publishes_removal_before_export_cleanup() {
+        let _ctx = ActiveFlowSnapshotTestContext::empty();
+        let bytes_sent = DownUpOrder::new(1_000, 2_000);
+        let (key, (local, analysis)) = active_flow_entry(
+            [192, 0, 2, 60],
+            [198, 51, 100, 60],
+            50_003,
+            20,
+            DownUpOrder::new(30_000, 40_000),
+            bytes_sent,
+            DownUpOrder::new(10, 20),
+        );
+
+        mutate_all_flows(|flows| {
+            flows.insert(key, (local, analysis));
+        });
+        refresh_active_flow_snapshot();
+        assert_eq!(active_flow_snapshot().len(), 1);
+
+        let mut expired_keys = vec![key, key];
+        crate::throughput_tracker::dedup_flow_keys(&mut expired_keys);
+        let mut finished_flow_exports = Vec::new();
+        mutate_all_flows(|flows| {
+            collect_finished_flow_exports(flows, &expired_keys, &mut finished_flow_exports);
+        });
+        assert_eq!(finished_flow_exports.len(), 1);
+        assert_eq!(active_flow_snapshot().len(), 1);
+
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let mut cleanup_keys = Vec::new();
+        refresh_active_flow_snapshot();
+        assert!(active_flow_snapshot().is_empty());
+        crate::throughput_tracker::finish_expired_flows(
+            &mut finished_flow_exports,
+            expired_keys.as_mut_slice(),
+            &sender,
+            |keys| {
+                let received = receiver
+                    .try_recv()
+                    .expect("expired flow export should be sent before cleanup");
+                assert_eq!(received.0, key);
+                assert_eq!(received.1.0.bytes_sent, bytes_sent);
+                cleanup_keys.extend_from_slice(keys);
+                Ok(())
+            },
+        );
+
+        assert!(receiver.try_recv().is_err());
+        assert!(finished_flow_exports.is_empty());
+        assert_eq!(cleanup_keys, vec![key]);
+    }
+
+    #[test]
+    fn update_flow_qoo_suppresses_sub_threshold_flow_bytes() {
+        fn scores_for_bytes(bytes_sent: DownUpOrder<u64>) -> QoqScores {
+            let mut key = FlowbeeKey::default();
+            key.ip_protocol = 6;
+            key.src_port = 443;
+            key.dst_port = 50_004;
+
+            let mut raw = FlowbeeData::default();
+            raw.start_time = 10;
+            raw.last_seen = 20;
+            raw.bytes_sent = bytes_sent;
+            raw.packets_sent = DownUpOrder::new(10_000, 10_000);
+            raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+            raw.tcp_retransmits = DownUpOrder::new(0, 0);
+
+            let mut flow = FlowbeeLocalData::from_flow(&raw, &key);
+            let mut rtt = RttBuffer::new(
+                RttData::from_nanos(20_000_000),
+                crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download,
+                raw.last_seen,
+            );
+            for _ in 0..5 {
+                rtt.push(
+                    RttData::from_nanos(20_000_000),
+                    crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download,
+                    raw.last_seen,
+                );
+                rtt.push(
+                    RttData::from_nanos(20_000_000),
+                    crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Upload,
+                    raw.last_seen,
+                );
+            }
+            flow.set_rtt_buffer(rtt);
+
+            let profile = QooProfile {
+                name: "test".to_string(),
+                latency: vec![LatencyReq {
+                    percentile: 50,
+                    rtt_ms: LowHigh::lower_is_better(100.0, 20.0),
+                }],
+                loss_fraction: LowHigh::lower_is_better(0.05, 0.0),
+                loss_handling: LossHandling::Strict,
+                latency_normalization: LatencyNormalization::None,
+            };
+
+            update_flow_qoo(&mut flow, &key, Some(&profile));
+            flow.get_qoq_scores()
+        }
+
+        let download_below =
+            scores_for_bytes(DownUpOrder::new(MIN_QOO_FLOW_BYTES - 1, MIN_QOO_FLOW_BYTES + 1));
+        assert_eq!(download_below.download_total, QOQ_UNKNOWN);
+        assert_ne!(download_below.upload_total, QOQ_UNKNOWN);
+
+        let upload_below =
+            scores_for_bytes(DownUpOrder::new(MIN_QOO_FLOW_BYTES + 1, MIN_QOO_FLOW_BYTES - 1));
+        assert_ne!(upload_below.download_total, QOQ_UNKNOWN);
+        assert_eq!(upload_below.upload_total, QOQ_UNKNOWN);
+    }
+
+    #[test]
+    fn apply_flow_rtt_and_qoo_skips_sub_threshold_device_rtt_samples() {
+        let mut key = FlowbeeKey::default();
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 50_005;
+        key.local_ip =
+            XdpIpAddress::from_ip("192.0.2.54".parse().expect("test IP should parse"));
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(MIN_QOO_FLOW_BYTES - 1, MIN_QOO_FLOW_BYTES - 1);
+        raw.packets_sent = DownUpOrder::new(10_000, 10_000);
+        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+
+        let mut flow = FlowbeeLocalData::from_flow(&raw, &key);
+        let mut rtt = RttBuffer::new(
+            RttData::from_nanos(20_000_000),
+            crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download,
+            raw.last_seen,
+        );
+        rtt.push(
+            RttData::from_nanos(20_000_000),
+            crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download,
+            raw.last_seen,
+        );
+        rtt.push(
+            RttData::from_nanos(30_000_000),
+            crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Upload,
+            raw.last_seen,
+        );
+        let entry = make_entry(300, 0, 0);
+        let mut rtt_circuit_tracker = FxHashMap::default();
+
+        apply_flow_rtt_and_qoo(
+            &mut flow,
+            Some(&entry),
+            &mut rtt_circuit_tracker,
+            &key,
+            Some(rtt),
+            0,
+            None,
+        );
+
+        assert!(rtt_circuit_tracker.is_empty());
+    }
+
+    #[test]
+    fn apply_flow_rtt_and_qoo_keeps_qoo_when_retiring_stale_rtt() {
+        let mut key = FlowbeeKey::default();
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 50_005;
+        key.local_ip =
+            XdpIpAddress::from_ip("192.0.2.55".parse().expect("test IP should parse"));
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(MIN_QOO_FLOW_BYTES + 1, MIN_QOO_FLOW_BYTES + 1);
+        raw.packets_sent = DownUpOrder::new(10_000, 10_000);
+        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+
+        let mut flow = FlowbeeLocalData::from_flow(&raw, &key);
+        let mut rtt = RttBuffer::new(
+            RttData::from_nanos(25_000_000),
+            crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download,
+            raw.last_seen,
+        );
+        for _ in 0..5 {
+            rtt.push(
+                RttData::from_nanos(25_000_000),
+                crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download,
+                raw.last_seen,
+            );
+            rtt.push(
+                RttData::from_nanos(45_000_000),
+                crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Upload,
+                raw.last_seen,
+            );
+        }
+        flow.set_rtt_buffer(rtt);
+        flow.set_qoq_scores(QoqScores {
+            download_total: 77,
+            upload_total: 66,
+        });
+        let cached_download_rtt = flow.get_summary_rtt_as_nanos(
+            crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download,
+        );
+        let cached_upload_rtt = flow.get_summary_rtt_as_nanos(
+            crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Upload,
+        );
+
+        let profile = QooProfile {
+            name: "test".to_string(),
+            latency: vec![LatencyReq {
+                percentile: 50,
+                rtt_ms: LowHigh::lower_is_better(100.0, 20.0),
+            }],
+            loss_fraction: LowHigh::lower_is_better(0.05, 0.0),
+            loss_handling: LossHandling::Strict,
+            latency_normalization: LatencyNormalization::None,
+        };
+        let mut rtt_circuit_tracker = FxHashMap::default();
+
+        apply_flow_rtt_and_qoo(
+            &mut flow,
+            None,
+            &mut rtt_circuit_tracker,
+            &key,
+            None,
+            raw.last_seen + 1,
+            Some(&profile),
+        );
+
+        assert_eq!(
+            flow.get_summary_rtt_as_nanos(
+                crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Download
+            ),
+            cached_download_rtt
+        );
+        assert_eq!(
+            flow.get_summary_rtt_as_nanos(
+                crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection::Upload
+            ),
+            cached_upload_rtt
+        );
+        assert_eq!(flow.get_qoq_scores().download_total_f32(), Some(77.0));
+        assert_eq!(flow.get_qoq_scores().upload_total_f32(), Some(66.0));
+    }
+
+    #[test]
+    fn apply_flow_rtt_and_qoo_refreshes_live_flow_metadata() {
+        let mut key = FlowbeeKey::default();
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 50_006;
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(10_000, 20_000);
+        raw.packets_sent = DownUpOrder::new(100, 200);
+        raw.circuit_hash = 100;
+        raw.device_hash = 200;
+
+        let mut flow = FlowbeeLocalData::from_flow(&raw, &key);
+        flow.set_circuit_id_hint(Some("old-circuit"));
+        let mut entry = make_entry(300, 0, 0);
+        entry.circuit_id = Some("new-circuit".to_string());
+        entry.device_hash = Some(400);
+        let mut rtt_circuit_tracker = FxHashMap::default();
+
+        apply_flow_rtt_and_qoo(
+            &mut flow,
+            Some(&entry),
+            &mut rtt_circuit_tracker,
+            &key,
+            None,
+            0,
+            None,
+        );
+
+        assert_eq!(flow.circuit_hash, Some(300));
+        assert_eq!(flow.device_hash, Some(400));
+        assert_eq!(flow.circuit_id_hint.as_deref(), Some("new-circuit"));
+
+        entry.circuit_hash = Some(301);
+        entry.device_hash = Some(401);
+        entry.circuit_id = None;
+        apply_flow_rtt_and_qoo(
+            &mut flow,
+            Some(&entry),
+            &mut rtt_circuit_tracker,
+            &key,
+            None,
+            0,
+            None,
+        );
+
+        assert_eq!(flow.circuit_hash, Some(301));
+        assert_eq!(flow.device_hash, Some(401));
+        assert_eq!(flow.circuit_id_hint.as_deref(), Some("new-circuit"));
     }
 
     #[test]

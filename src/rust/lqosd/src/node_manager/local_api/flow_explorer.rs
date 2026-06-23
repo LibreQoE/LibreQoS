@@ -1,6 +1,6 @@
 use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry, FlowAnalysis, FlowbeeLocalData,
-    RECENT_FLOWS, RttData,
+    RECENT_FLOWS, RttData, retry_times_to_unix_seconds,
 };
 use crate::throughput_tracker::resolve_circuit_metadata_for_ip;
 use lqos_sys::flowbee_data::FlowbeeKey;
@@ -74,20 +74,14 @@ fn all_flows_to_transport(
                 circuit_name = flow.0.local_ip.as_ip().to_string();
             }
 
-            let retransmit_times_down = flow
-                .1
-                .get_retry_times_down()
-                .iter()
-                .filter(|n| **n > 0)
-                .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
-                .collect();
-            let retransmit_times_up = flow
-                .1
-                .get_retry_times_up()
-                .iter()
-                .filter(|n| **n > 0)
-                .map(|t| boot_time + Duration::from_nanos(*t).as_secs())
-                .collect();
+            let retransmit_times_down =
+                retry_times_to_unix_seconds(flow.1.get_retry_times_down(), |timestamp| {
+                    boot_time + Duration::from_nanos(timestamp).as_secs()
+                });
+            let retransmit_times_up =
+                retry_times_to_unix_seconds(flow.1.get_retry_times_up(), |timestamp| {
+                    boot_time + Duration::from_nanos(timestamp).as_secs()
+                });
 
             FlowTimeline {
                 start: boot_time + Duration::from_nanos(flow.1.start_time).as_secs(),
@@ -128,6 +122,9 @@ pub fn protocol_timeline_data(protocol_name: &str) -> Result<Vec<FlowTimeline>, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+    use lqos_sys::flowbee_data::FlowbeeData;
+    use lqos_utils::{XdpIpAddress, units::DownUpOrder};
 
     #[test]
     fn boot_time_helper_propagates_clock_errors() {
@@ -142,5 +139,32 @@ mod tests {
             .expect("test clock values should build a boot time");
 
         assert_eq!(boot_time, 0);
+    }
+
+    #[test]
+    fn flow_timeline_transport_converts_retry_times_to_unix_seconds() {
+        let mut key = FlowbeeKey::default();
+        key.local_ip = XdpIpAddress::from_ip("192.0.2.10".parse().expect("test IP should parse"));
+        key.remote_ip =
+            XdpIpAddress::from_ip("198.51.100.10".parse().expect("test IP should parse"));
+        key.ip_protocol = 6;
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 1_000_000_000;
+        raw.last_seen = 5_000_000_000;
+        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw.tcp_retransmits = DownUpOrder::new(2, 1);
+
+        let mut local = FlowbeeLocalData::from_flow(&raw, &key);
+        local.record_tcp_retry_time(FlowbeeEffectiveDirection::Download, 0);
+        local.record_tcp_retry_time(FlowbeeEffectiveDirection::Download, 2_000_000_000);
+        local.record_tcp_retry_time(FlowbeeEffectiveDirection::Download, 3_000_000_000);
+        local.record_tcp_retry_time(FlowbeeEffectiveDirection::Upload, 4_000_000_000);
+        let analysis = FlowAnalysis::new(&key);
+
+        let rows = all_flows_to_transport(1_700_000_000, vec![(key, local, analysis)]);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].retransmit_times_down, vec![1_700_000_002, 1_700_000_003]);
+        assert_eq!(rows[0].retransmit_times_up, vec![1_700_000_004]);
     }
 }

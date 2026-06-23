@@ -1,4 +1,6 @@
-use crate::throughput_tracker::flow_data::{ALL_FLOWS, FlowbeeLocalData, get_asn_name_and_country};
+use crate::throughput_tracker::flow_data::{
+    ActiveFlowDisplayFields, ActiveFlowSnapshot, for_each_active_flow_for_circuit,
+};
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use lqos_utils::unix_time::time_since_boot;
@@ -114,7 +116,9 @@ pub struct CircuitFlowSankeyRow {
     pub remote_ip: String,
     pub down_bps: u32,
     pub up_bps: u32,
-    pub last_seen_nanos: u64,
+    /// Legacy UI field name; payload value is the flow age at snapshot time.
+    #[serde(rename = "last_seen_nanos")]
+    pub age_nanos_wire: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -139,7 +143,7 @@ struct CircuitFlowSnapshotRow {
     rtt_up_nanos: u64,
     qoo_down: Option<f32>,
     qoo_up: Option<f32>,
-    last_seen_nanos: u64,
+    age_nanos: u64,
     opacity: f64,
     sort_rate_bps: f64,
 }
@@ -188,122 +192,108 @@ fn circuit_display_rate_ceiling_bps(
 }
 
 fn display_rate_bps(
-    local: &FlowbeeLocalData,
+    flow: &ActiveFlowSnapshot,
     ceiling_bps: Option<DownUpOrder<u32>>,
 ) -> DownUpOrder<u32> {
     let Some(ceiling_bps) = ceiling_bps else {
-        return local.rate_estimate_bps;
+        return flow.rate_estimate_bps;
     };
 
     DownUpOrder {
-        down: local.rate_estimate_bps.down.min(ceiling_bps.down),
-        up: local.rate_estimate_bps.up.min(ceiling_bps.up),
+        down: flow.rate_estimate_bps.down.min(ceiling_bps.down),
+        up: flow.rate_estimate_bps.up.min(ceiling_bps.up),
     }
 }
 
-fn flow_rtt_nanos(local: &FlowbeeLocalData) -> DownUpOrder<u64> {
-    let rtt = local.get_rtt_array();
-    DownUpOrder {
-        down: rtt[0].as_nanos(),
-        up: rtt[1].as_nanos(),
+fn circuit_flow_snapshot_row_from_flow(
+    flow: &ActiveFlowSnapshot,
+    device_name: String,
+    display: &ActiveFlowDisplayFields,
+    display_rate_ceiling: Option<DownUpOrder<u32>>,
+    now_as_nanos: u64,
+) -> CircuitFlowSnapshotRow {
+    let display_rate = display_rate_bps(flow, display_rate_ceiling);
+    let current_rate = display_rate.down as u64 + display_rate.up as u64;
+    let packets_sent_down = flow.packets_sent.down;
+    let packets_sent_up = flow.packets_sent.up;
+    let tcp_retransmits_down = flow.tcp_retransmits.down;
+    let tcp_retransmits_up = flow.tcp_retransmits.up;
+    let retransmit_down_pct = if tcp_retransmits_down > 0 && packets_sent_down > 0 {
+        tcp_retransmits_down as f64 / packets_sent_down as f64
+    } else {
+        0.0
+    };
+    let retransmit_up_pct = if tcp_retransmits_up > 0 && packets_sent_up > 0 {
+        tcp_retransmits_up as f64 / packets_sent_up as f64
+    } else {
+        0.0
+    };
+    let age_nanos = flow.age_nanos(now_as_nanos);
+
+    CircuitFlowSnapshotRow {
+        device_name,
+        asn_id: display.remote_asn,
+        asn_name: display.remote_asn_name.clone(),
+        asn_country: display.remote_asn_country.clone(),
+        protocol_name: display.analysis.clone(),
+        remote_ip: display.remote_ip.clone(),
+        down_bps: display_rate.down,
+        up_bps: display_rate.up,
+        bytes_sent_down: flow.bytes_sent.down,
+        bytes_sent_up: flow.bytes_sent.up,
+        packets_sent_down,
+        packets_sent_up,
+        tcp_retransmits_down,
+        tcp_retransmits_up,
+        retransmit_down_pct,
+        retransmit_up_pct,
+        rtt_down_nanos: flow.rtt_nanos.down,
+        rtt_up_nanos: flow.rtt_nanos.up,
+        qoo_down: flow.qoo.down,
+        qoo_up: flow.qoo.up,
+        age_nanos,
+        opacity: 1.0
+            - f64::min(
+                1.0,
+                age_nanos as f64 / RECENT_CIRCUIT_FLOWS_WINDOW_NANOS as f64,
+            ),
+        sort_rate_bps: current_rate as f64,
     }
 }
 
-fn flow_qoo(local: &FlowbeeLocalData) -> DownUpOrder<Option<f32>> {
-    let qoq = local.get_qoq_scores();
-    DownUpOrder {
-        down: qoq.download_total_f32(),
-        up: qoq.upload_total_f32(),
-    }
+fn current_and_recent_cutoff_nanos() -> Option<(u64, u64)> {
+    let now = time_since_boot().ok()?;
+    let now_as_nanos = Duration::from(now).as_nanos() as u64;
+    let recent_cutoff = now_as_nanos.saturating_sub(RECENT_CIRCUIT_FLOWS_WINDOW_NANOS);
+    Some((now_as_nanos, recent_cutoff))
 }
 
 fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
     let circuit_hash = hash_to_i64(circuit_id);
     let catalog = lqos_network_devices::network_devices_catalog();
     let display_rate_ceiling = circuit_display_rate_ceiling_bps(&catalog, circuit_hash);
-    let Ok(now) = time_since_boot() else {
+    let Some((now_as_nanos, recent_cutoff)) = current_and_recent_cutoff_nanos() else {
         return Vec::new();
     };
-    let now_as_nanos = Duration::from(now).as_nanos() as u64;
-    let recent_cutoff = now_as_nanos.saturating_sub(RECENT_CIRCUIT_FLOWS_WINDOW_NANOS);
 
-    let all_flows = ALL_FLOWS.lock();
-    all_flows
-        .flow_data
-        .iter()
-        .filter_map(|(key, (local, analysis))| {
-            if local.last_seen < recent_cutoff {
-                return None;
-            }
-            let device = catalog
-                .device_by_hashes(local.device_hash, local.circuit_hash)
-                .or_else(|| {
-                    catalog
-                        .device_longest_match_for_ip(&key.local_ip)
-                        .map(|(_, device)| device)
-                });
-            let matches_desired = local.circuit_hash == Some(circuit_hash)
-                || device.is_some_and(|device| device.circuit_id == circuit_id);
-            if !matches_desired {
-                return None;
-            }
+    let mut rows = Vec::new();
+    for_each_active_flow_for_circuit(circuit_hash, recent_cutoff, |flow| {
+        let device_name = if flow.device_name.is_empty() {
+            "Unknown".to_string()
+        } else {
+            flow.device_name.clone()
+        };
 
-            let device_name = device
-                .map(|d| d.device_name.clone())
-                .unwrap_or_else(|| "Unknown".to_string());
-
-            let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-            let display_rate = display_rate_bps(local, display_rate_ceiling);
-            let current_rate = display_rate.down as u64 + display_rate.up as u64;
-            let packets_sent_down = local.packets_sent.down;
-            let packets_sent_up = local.packets_sent.up;
-            let tcp_retransmits_down = local.tcp_retransmits.down;
-            let tcp_retransmits_up = local.tcp_retransmits.up;
-            let retransmit_down_pct = if tcp_retransmits_down > 0 && packets_sent_down > 0 {
-                tcp_retransmits_down as f64 / packets_sent_down as f64
-            } else {
-                0.0
-            };
-            let retransmit_up_pct = if tcp_retransmits_up > 0 && packets_sent_up > 0 {
-                tcp_retransmits_up as f64 / packets_sent_up as f64
-            } else {
-                0.0
-            };
-            let rtt = flow_rtt_nanos(local);
-            let qoo = flow_qoo(local);
-            let last_seen_nanos = now_as_nanos.saturating_sub(local.last_seen);
-
-            Some(CircuitFlowSnapshotRow {
-                device_name,
-                asn_id: analysis.asn_id.0,
-                asn_name: geo.name,
-                asn_country: geo.country,
-                protocol_name: analysis.protocol_analysis.to_string(),
-                remote_ip: key.remote_ip.to_string(),
-                down_bps: display_rate.down,
-                up_bps: display_rate.up,
-                bytes_sent_down: local.bytes_sent.down,
-                bytes_sent_up: local.bytes_sent.up,
-                packets_sent_down,
-                packets_sent_up,
-                tcp_retransmits_down,
-                tcp_retransmits_up,
-                retransmit_down_pct,
-                retransmit_up_pct,
-                rtt_down_nanos: rtt.down,
-                rtt_up_nanos: rtt.up,
-                qoo_down: qoo.down,
-                qoo_up: qoo.up,
-                last_seen_nanos,
-                opacity: 1.0
-                    - f64::min(
-                        1.0,
-                        last_seen_nanos as f64 / RECENT_CIRCUIT_FLOWS_WINDOW_NANOS as f64,
-                    ),
-                sort_rate_bps: current_rate as f64,
-            })
-        })
-        .collect()
+        let row = circuit_flow_snapshot_row_from_flow(
+            flow,
+            device_name,
+            &flow.display,
+            display_rate_ceiling,
+            now_as_nanos,
+        );
+        rows.push(row);
+    });
+    rows
 }
 
 fn sort_direction_is_asc(sort_direction: &str) -> bool {
@@ -403,13 +393,19 @@ fn sort_traffic_rows(rows: &mut [CircuitFlowSnapshotRow], sort_column: &str, sor
 }
 
 pub fn circuit_flow_counts(circuit_id: &str) -> (usize, usize) {
-    let rows = flow_snapshot_rows(circuit_id);
-    let asn_count = rows
-        .iter()
-        .map(|row| (row.asn_name.clone(), row.asn_country.clone()))
-        .collect::<std::collections::HashSet<_>>()
-        .len();
-    (rows.len(), asn_count)
+    let circuit_hash = hash_to_i64(circuit_id);
+    let Some((_, recent_cutoff)) = current_and_recent_cutoff_nanos() else {
+        return (0, 0);
+    };
+
+    let mut flow_count = 0;
+    let mut asns = std::collections::HashSet::new();
+    for_each_active_flow_for_circuit(circuit_hash, recent_cutoff, |flow| {
+        flow_count += 1;
+        asns.insert(flow.display.remote_asn);
+    });
+
+    (flow_count, asns.len())
 }
 
 pub fn circuit_traffic_flows_page(query: &CircuitTrafficFlowsQuery) -> CircuitTrafficFlowsPage {
@@ -579,7 +575,7 @@ pub fn circuit_top_asns_data(query: &CircuitTopAsnsQuery) -> CircuitTopAsnsData 
 
 pub fn circuit_flow_sankey_rows(circuit_id: &str) -> Vec<CircuitFlowSankeyRow> {
     let mut rows = flow_snapshot_rows(circuit_id);
-    rows.retain(|row| row.last_seen_nanos <= SANKEY_RECENT_FLOW_WINDOW_NANOS);
+    rows.retain(|row| row.age_nanos <= SANKEY_RECENT_FLOW_WINDOW_NANOS);
     rows.sort_by(|a, b| compare_f64(a.sort_rate_bps, b.sort_rate_bps, false));
     rows.into_iter()
         .take(SANKEY_TOP_FLOW_LIMIT)
@@ -591,14 +587,29 @@ pub fn circuit_flow_sankey_rows(circuit_id: &str) -> Vec<CircuitFlowSankeyRow> {
             remote_ip: row.remote_ip,
             down_bps: row.down_bps,
             up_bps: row.up_bps,
-            last_seen_nanos: row.last_seen_nanos,
+            age_nanos_wire: row.age_nanos,
         })
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{median_f32, median_u64};
+    use super::{
+        CircuitFlowSankeyRow, CircuitTopAsnsQuery, CircuitTrafficFlowsQuery,
+        circuit_flow_counts, circuit_flow_sankey_rows, circuit_flow_snapshot_row_from_flow,
+        circuit_top_asns_data, circuit_traffic_flows_page, flow_snapshot_rows, median_f32,
+        median_u64,
+    };
+    use crate::test_support::{ActiveFlowSnapshotTestContext, active_flow_entry};
+    use crate::throughput_tracker::flow_data::{
+        ActiveFlowDisplayFields, ActiveFlowSnapshot, AsnId, replace_active_flows_for_test,
+        replace_active_flows_live_for_test,
+    };
+    use lqos_config::ShapedDevice;
+    use lqos_sys::flowbee_data::FlowbeeKey;
+    use lqos_utils::units::DownUpOrder;
+    use lqos_utils::{XdpIpAddress, hash_to_i64};
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn median_u64_handles_even_and_odd_lengths() {
@@ -616,5 +627,304 @@ mod tests {
 
         let mut even = vec![40.0_f32, 10.0, 30.0, 20.0];
         assert_eq!(median_f32(&mut even), Some(25.0));
+    }
+
+    #[test]
+    fn circuit_flow_sankey_row_decodes_legacy_last_seen_nanos_wire_field() {
+        let row: CircuitFlowSankeyRow = serde_json::from_value(serde_json::json!({
+            "device_name": "Device Public",
+            "asn_id": 64512,
+            "asn_name": "Example ASN",
+            "protocol_name": "HTTPS",
+            "remote_ip": "198.51.100.10",
+            "down_bps": 70_000_000,
+            "up_bps": 2_000_000,
+            "last_seen_nanos": 2_000_000_000_u64
+        }))
+        .expect("legacy circuit flow row should deserialize");
+
+        assert_eq!(row.age_nanos_wire, 2_000_000_000);
+    }
+
+    #[test]
+    fn public_circuit_flow_readers_use_published_snapshot_and_catalog_matching() {
+        let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "circuit-activity-test",
+            vec![ShapedDevice {
+                circuit_id: "circuit-public".to_string(),
+                circuit_name: "Circuit Public".to_string(),
+                device_id: "device-public".to_string(),
+                device_name: "Device Public".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 42), 32)],
+                download_max_mbps: 100.0,
+                upload_max_mbps: 50.0,
+                ..Default::default()
+            }],
+        );
+        let now_nanos =
+            std::time::Duration::from(lqos_utils::unix_time::time_since_boot().unwrap())
+                .as_nanos() as u64;
+        let fresh = now_nanos.saturating_sub(2 * 1_000_000_000);
+        let fresh_small = now_nanos.saturating_sub(4 * 1_000_000_000);
+        let stale = now_nanos.saturating_sub(40 * 1_000_000_000);
+        let circuit_hash = hash_to_i64("circuit-public");
+
+        let ip_matched = active_flow_entry(
+            [192, 0, 2, 42],
+            [198, 51, 100, 10],
+            50_000,
+            fresh,
+            DownUpOrder::new(70_000_000, 2_000_000),
+            DownUpOrder::new(5_000, 1_000),
+            DownUpOrder::new(50, 10),
+        );
+        let small = active_flow_entry(
+            [192, 0, 2, 42],
+            [198, 51, 100, 11],
+            50_001,
+            fresh_small,
+            DownUpOrder::new(1_000, 1_000),
+            DownUpOrder::new(12_000, 1_000),
+            DownUpOrder::new(120, 10),
+        );
+        let mut hash_matched = active_flow_entry(
+            [192, 0, 2, 99],
+            [198, 51, 100, 14],
+            50_004,
+            fresh,
+            DownUpOrder::new(30_000_000, 1_000_000),
+            DownUpOrder::new(8_000, 1_000),
+            DownUpOrder::new(80, 10),
+        );
+        hash_matched.1.0.circuit_hash = Some(circuit_hash);
+        let stale_flow = active_flow_entry(
+            [192, 0, 2, 42],
+            [198, 51, 100, 12],
+            50_002,
+            stale,
+            DownUpOrder::new(90_000_000, 1_000_000),
+            DownUpOrder::new(90_000, 1_000),
+            DownUpOrder::new(900, 10),
+        );
+        let other_circuit = active_flow_entry(
+            [192, 0, 2, 43],
+            [198, 51, 100, 13],
+            50_003,
+            fresh,
+            DownUpOrder::new(80_000_000, 1_000_000),
+            DownUpOrder::new(80_000, 1_000),
+            DownUpOrder::new(800, 10),
+        );
+        replace_active_flows_for_test(vec![
+            ip_matched,
+            small,
+            hash_matched,
+            stale_flow,
+            other_circuit,
+        ]);
+
+        let page = circuit_traffic_flows_page(&CircuitTrafficFlowsQuery {
+            circuit: "circuit-public".to_string(),
+            page: 1,
+            page_size: 10,
+            hide_small: false,
+            sort_column: "bytes".to_string(),
+            sort_direction: "desc".to_string(),
+        });
+        assert_eq!(page.total_rows, 3);
+        assert_eq!(
+            page.rows
+                .iter()
+                .map(|row| row.remote_ip.as_str())
+                .collect::<Vec<_>>(),
+            vec!["198.51.100.11", "198.51.100.14", "198.51.100.10"]
+        );
+
+        let hidden_small = circuit_traffic_flows_page(&CircuitTrafficFlowsQuery {
+            circuit: "circuit-public".to_string(),
+            page: 1,
+            page_size: 10,
+            hide_small: true,
+            sort_column: "rate".to_string(),
+            sort_direction: "desc".to_string(),
+        });
+        assert_eq!(hidden_small.total_rows, 2);
+        assert_eq!(hidden_small.rows[0].remote_ip, "198.51.100.10");
+        assert_eq!(hidden_small.rows[1].remote_ip, "198.51.100.14");
+
+        let top_asns = circuit_top_asns_data(&CircuitTopAsnsQuery {
+            circuit: "circuit-public".to_string(),
+            hide_small: true,
+        });
+        assert_eq!(top_asns.total_asns, 1);
+        assert_eq!(top_asns.rows[0].flow_count, 2);
+        assert_eq!(top_asns.rows[0].down_bps, 100_000_000);
+
+        let sankey_rows = circuit_flow_sankey_rows("circuit-public");
+        assert_eq!(sankey_rows[0].device_name, "Device Public");
+        let sankey_wire = serde_json::to_value(&sankey_rows[0]).expect("row should serialize");
+        assert!(sankey_wire.get("last_seen_nanos").is_some());
+        assert!(sankey_wire.get("age_nanos").is_none());
+        assert_eq!(
+            sankey_rows
+                .iter()
+                .map(|row| row.remote_ip.as_str())
+                .collect::<Vec<_>>(),
+            vec!["198.51.100.10", "198.51.100.14", "198.51.100.11"]
+        );
+
+        replace_active_flows_live_for_test(Vec::new());
+
+        let stale_page = circuit_traffic_flows_page(&CircuitTrafficFlowsQuery {
+            circuit: "circuit-public".to_string(),
+            page: 1,
+            page_size: 10,
+            hide_small: false,
+            sort_column: "bytes".to_string(),
+            sort_direction: "desc".to_string(),
+        });
+        assert_eq!(stale_page.total_rows, 3);
+        assert_eq!(circuit_flow_sankey_rows("circuit-public").len(), 3);
+    }
+
+    #[test]
+    fn circuit_flow_counts_uses_numeric_asn_identity() {
+        let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "circuit-asn-count-test",
+            vec![ShapedDevice {
+                circuit_id: "circuit-asn-count".to_string(),
+                circuit_name: "Circuit ASN Count".to_string(),
+                device_id: "device-asn-count".to_string(),
+                device_name: "Device ASN Count".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 0), 24)],
+                ..Default::default()
+            }],
+        );
+        let now_nanos =
+            std::time::Duration::from(lqos_utils::unix_time::time_since_boot().unwrap())
+                .as_nanos() as u64;
+        let fresh = now_nanos.saturating_sub(1_000_000_000);
+
+        let mut first = active_flow_entry(
+            [192, 0, 2, 42],
+            [198, 51, 100, 10],
+            50_000,
+            fresh,
+            DownUpOrder::new(70_000_000, 2_000_000),
+            DownUpOrder::new(5_000, 1_000),
+            DownUpOrder::new(50, 10),
+        );
+        first.1.1.asn_id = AsnId(64_512);
+        let mut second = active_flow_entry(
+            [192, 0, 2, 43],
+            [198, 51, 100, 11],
+            50_001,
+            fresh,
+            DownUpOrder::new(30_000_000, 1_000_000),
+            DownUpOrder::new(8_000, 1_000),
+            DownUpOrder::new(80, 10),
+        );
+        second.1.1.asn_id = AsnId(64_513);
+        replace_active_flows_for_test(vec![first, second]);
+
+        let rows = flow_snapshot_rows("circuit-asn-count");
+        let display_identities = rows
+            .iter()
+            .map(|row| (row.asn_name.as_str(), row.asn_country.as_str()))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(display_identities.len(), 1);
+        assert_eq!(circuit_flow_counts("circuit-asn-count"), (2, 2));
+    }
+
+    #[test]
+    fn circuit_flow_snapshot_row_uses_cached_flow_fields_and_clamps_display_rate() {
+        let mut key = FlowbeeKey::default();
+        key.remote_ip = XdpIpAddress::from_ip(IpAddr::from([198, 51, 100, 20]));
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 50_000;
+        let flow = ActiveFlowSnapshot {
+            key,
+            display: ActiveFlowDisplayFields {
+                remote_ip: "198.51.100.20".to_string(),
+                local_ip: "192.0.2.10".to_string(),
+                src_port: 443,
+                dst_port: 50_000,
+                ip_protocol: lqos_bus::FlowbeeProtocol::TCP,
+                remote_asn: 0,
+                remote_asn_name: "Example ASN".to_string(),
+                remote_asn_country: "US".to_string(),
+                analysis: "HTTPS".to_string(),
+            },
+            bytes_sent: DownUpOrder::new(10_000, 20_000),
+            packets_sent: DownUpOrder::new(100, 200),
+            rate_estimate_bps: DownUpOrder::new(100_000_000, 15_000_000),
+            tcp_retransmits: DownUpOrder::new(5, 4),
+            end_status: 0,
+            tos: 0,
+            flags: 0x12,
+            circuit_hash: None,
+            device_hash: None,
+            circuit_id: String::new(),
+            circuit_name: String::new(),
+            device_name: "Device A".to_string(),
+            last_seen: 70_000_000_000,
+            start_time: 65_000_000_000,
+            rtt_nanos: DownUpOrder::new(12_000_000, 34_000_000),
+            qoo: DownUpOrder::new(Some(77.0), Some(66.0)),
+        };
+
+        let row = circuit_flow_snapshot_row_from_flow(
+            &flow,
+            "Device A".to_string(),
+            &flow.display,
+            Some(DownUpOrder::new(50_000_000, 25_000_000)),
+            75_000_000_000,
+        );
+
+        assert_eq!(row.device_name, "Device A");
+        assert_eq!(row.asn_id, 0);
+        assert_eq!(row.asn_name, "Example ASN");
+        assert_eq!(row.asn_country, "US");
+        assert_eq!(row.protocol_name, "HTTPS");
+        assert_eq!(row.remote_ip, "198.51.100.20");
+        assert_eq!(row.down_bps, 50_000_000);
+        assert_eq!(row.up_bps, 15_000_000);
+        assert_eq!(row.bytes_sent_down, 10_000);
+        assert_eq!(row.bytes_sent_up, 20_000);
+        assert_eq!(row.packets_sent_down, 100);
+        assert_eq!(row.packets_sent_up, 200);
+        assert_eq!(row.tcp_retransmits_down, 5);
+        assert_eq!(row.tcp_retransmits_up, 4);
+        assert_eq!(row.rtt_down_nanos, 12_000_000);
+        assert_eq!(row.rtt_up_nanos, 34_000_000);
+        assert_eq!(row.qoo_down, Some(77.0));
+        assert_eq!(row.qoo_up, Some(66.0));
+        assert_eq!(row.age_nanos, 5_000_000_000);
+        assert!((row.opacity - (5.0 / 6.0)).abs() < f64::EPSILON);
+        assert_eq!(row.sort_rate_bps, 65_000_000.0);
+        assert_eq!(row.retransmit_down_pct, 0.05);
+        assert_eq!(row.retransmit_up_pct, 0.02);
+
+        let mut flow_without_device = flow;
+        flow_without_device.device_name = String::new();
+        flow_without_device.packets_sent = DownUpOrder::new(0, 0);
+        flow_without_device.tcp_retransmits = DownUpOrder::new(0, 0);
+        let row = circuit_flow_snapshot_row_from_flow(
+            &flow_without_device,
+            if flow_without_device.device_name.is_empty() {
+                "Unknown".to_string()
+            } else {
+                flow_without_device.device_name.clone()
+            },
+            &flow_without_device.display,
+            None,
+            75_000_000_000,
+        );
+        assert_eq!(row.device_name, "Unknown");
+        assert_eq!(row.retransmit_down_pct, 0.0);
+        assert_eq!(row.retransmit_up_pct, 0.0);
     }
 }
