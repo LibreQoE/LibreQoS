@@ -7,41 +7,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::{AttachmentProbeSpec, is_health_state_fresh, parse_probe_ip};
+use crate::{AttachmentProbeSpec, is_health_state_fresh, parse_probe_ip, probe_unavailable_reason};
 
 pub(super) fn now_unix() -> Option<u64> {
     lqos_utils::unix_time::unix_now().ok()
-}
-
-fn probe_unavailable_reason(local_ip: &str, remote_ip: &str) -> String {
-    let local = local_ip.trim();
-    let remote = remote_ip.trim();
-
-    if local.is_empty() && remote.is_empty() {
-        return "Probe unavailable: missing local and remote management IPs".to_string();
-    }
-    if local.is_empty() {
-        return "Probe unavailable: missing local management IP".to_string();
-    }
-    if remote.is_empty() {
-        return "Probe unavailable: missing remote management IP".to_string();
-    }
-    if parse_probe_ip(local)
-        .zip(parse_probe_ip(remote))
-        .is_some_and(|(local, remote)| local == remote)
-    {
-        return "Probe unavailable: local and remote probe IPs are identical".to_string();
-    }
-    if parse_probe_ip(local).is_none() && parse_probe_ip(remote).is_none() {
-        return "Probe unavailable: local and remote probe IPs are invalid".to_string();
-    }
-    if parse_probe_ip(local).is_none() {
-        return "Probe unavailable: local management IP is invalid".to_string();
-    }
-    if parse_probe_ip(remote).is_none() {
-        return "Probe unavailable: remote management IP is invalid".to_string();
-    }
-    "Probe unavailable".to_string()
 }
 
 fn probeable_pair(local_ip: &str, remote_ip: &str) -> bool {
@@ -84,7 +53,10 @@ fn health_entry_for_unprobeable_spec(
         entry.reason = Some("Health probe disabled".to_string());
     } else {
         entry.status = TopologyAttachmentHealthStatus::ProbeUnavailable;
-        entry.reason = Some(probe_unavailable_reason(&spec.local_ip, &spec.remote_ip));
+        entry.reason = Some(probe_unavailable_reason(
+            Some(&spec.local_ip),
+            Some(&spec.remote_ip),
+        ));
     }
     entry.consecutive_misses = 0;
     entry.consecutive_successes = 0;

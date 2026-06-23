@@ -1990,17 +1990,9 @@ fn probe_enabled_for_option(
         .unwrap_or(option.probe_enabled)
 }
 
-fn probe_unavailable_reason(option: &TopologyAttachmentOption) -> String {
-    let local = option
-        .local_probe_ip
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or_default();
-    let remote = option
-        .remote_probe_ip
-        .as_deref()
-        .map(str::trim)
-        .unwrap_or_default();
+fn probe_unavailable_reason(local_ip: Option<&str>, remote_ip: Option<&str>) -> String {
+    let local = local_ip.map(str::trim).unwrap_or_default();
+    let remote = remote_ip.map(str::trim).unwrap_or_default();
 
     if local.is_empty() && remote.is_empty() {
         return "Probe unavailable: missing local and remote management IPs".to_string();
@@ -2011,19 +2003,21 @@ fn probe_unavailable_reason(option: &TopologyAttachmentOption) -> String {
     if remote.is_empty() {
         return "Probe unavailable: missing remote management IP".to_string();
     }
-    if parse_probe_ip(local)
-        .zip(parse_probe_ip(remote))
+    let local_ip = parse_probe_ip(local);
+    let remote_ip = parse_probe_ip(remote);
+    if local_ip
+        .zip(remote_ip)
         .is_some_and(|(local, remote)| local == remote)
     {
         return "Probe unavailable: local and remote probe IPs are identical".to_string();
     }
-    if parse_probe_ip(local).is_none() && parse_probe_ip(remote).is_none() {
+    if local_ip.is_none() && remote_ip.is_none() {
         return "Probe unavailable: local and remote probe IPs are invalid".to_string();
     }
-    if parse_probe_ip(local).is_none() {
+    if local_ip.is_none() {
         return "Probe unavailable: local management IP is invalid".to_string();
     }
-    if parse_probe_ip(remote).is_none() {
+    if remote_ip.is_none() {
         return "Probe unavailable: remote management IP is invalid".to_string();
     }
     "Probe unavailable".to_string()
@@ -2055,7 +2049,10 @@ fn apply_health_to_option(
     } else if !probeable {
         (
             TopologyAttachmentHealthStatus::ProbeUnavailable,
-            Some(probe_unavailable_reason(option)),
+            Some(probe_unavailable_reason(
+                option.local_probe_ip.as_deref(),
+                option.remote_probe_ip.as_deref(),
+            )),
             None,
         )
     } else if let Some(pair_id) = option.pair_id.as_deref() {
