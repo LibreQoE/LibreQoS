@@ -1,11 +1,10 @@
 use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
 use crate::system_stats::SystemStats;
-use crate::throughput_tracker::flow_data::ALL_FLOWS;
-use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, live_active_flow_count};
 use crate::throughput_tracker::throughput_entry::ThroughputEntry;
 use crate::throughput_tracker::{
     CIRCUIT_RTT_BUFFERS, Lts2Circuit, Lts2Device, RawNetJs, THROUGHPUT_TRACKER, min_max_median_rtt,
-    min_max_median_tcp_retransmits,
+    min_max_median_tcp_retransmits, resolve_flow_device,
 };
 use csv::ReaderBuilder;
 use fxhash::{FxHashMap, FxHashSet};
@@ -126,9 +125,7 @@ fn resolved_circuit_hash_for_submission(
     entry: &ThroughputEntry,
 ) -> Option<i64> {
     entry.circuit_hash.or_else(|| {
-        catalog
-            .device_by_hashes(entry.device_hash, entry.circuit_hash)
-            .or_else(|| catalog.device_longest_match_for_ip(ip).map(|(_, dev)| dev))
+        resolve_flow_device(catalog, ip, entry.device_hash, entry.circuit_hash)
             .map(|device| device.circuit_hash)
     })
 }
@@ -346,7 +343,7 @@ pub(crate) fn submit_throughput_stats(
         {
             warn!("Error sending message to LTS2.");
         }
-        if let Err(e) = crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().flow_data.len() as u64) {
+        if let Err(e) = crate::lts2_sys::flow_count(now, live_active_flow_count()) {
             debug!("Error sending message to LTS2. {e:?}");
         }
 

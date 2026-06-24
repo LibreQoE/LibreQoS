@@ -2,7 +2,7 @@ use super::{
     FlowAnalysis, FlowbeeEffectiveDirection, get_asn_lat_lon, get_asn_name_and_country,
     get_asn_name_by_id,
 };
-use crate::throughput_tracker::flow_data::FlowbeeLocalData;
+use crate::throughput_tracker::flow_data::{FlowbeeLocalData, retry_times_to_unix_seconds};
 use allocative_derive::Allocative;
 use crossbeam_channel::Sender;
 use fxhash::FxHashMap;
@@ -215,7 +215,6 @@ impl TimeBuffer {
                 // It's V4
                 v4_bytes_sent.checked_add(data.bytes_sent);
                 v4_packets_sent.checked_add(data.packets_sent);
-                // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
                     v4_rtt[0]
                         .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
@@ -228,7 +227,6 @@ impl TimeBuffer {
                 // It's V6
                 v6_bytes_sent.checked_add(data.bytes_sent);
                 v6_packets_sent.checked_add(data.packets_sent);
-                // TODO: This is awful code, fix it.
                 if data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download) > 0 {
                     v6_rtt[0]
                         .push(data.get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download));
@@ -462,6 +460,44 @@ impl FinishedFlowAnalysis {
     }
 }
 
+fn finished_flow_retry_times_to_unix(times: &[u64]) -> Vec<i64> {
+    retry_times_to_unix_seconds(times, |timestamp| {
+        boot_time_nanos_to_unix_now(timestamp).unwrap_or(0)
+    })
+    .into_iter()
+    .map(|timestamp| timestamp as i64)
+    .collect()
+}
+
+fn build_two_way_flow(
+    key: &FlowbeeKey,
+    data: &FlowbeeLocalData,
+    start_time: u64,
+    last_seen: u64,
+    circuit_hash: i64,
+) -> crate::lts2_sys::shared_types::TwoWayFlow {
+    crate::lts2_sys::shared_types::TwoWayFlow {
+        start_time,
+        end_time: last_seen,
+        local_ip: key.local_ip.as_ip(),
+        remote_ip: key.remote_ip.as_ip(),
+        protocol: key.ip_protocol,
+        dst_port: key.dst_port,
+        src_port: key.src_port,
+        bytes_down: data.bytes_sent.down,
+        bytes_up: data.bytes_sent.up,
+        retransmit_times_down: finished_flow_retry_times_to_unix(data.get_retry_times_down()),
+        retransmit_times_up: finished_flow_retry_times_to_unix(data.get_retry_times_up()),
+        rtt: [
+            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Download) as f32,
+            data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
+        ],
+        circuit_hash,
+        packets_down: Some(data.packets_sent.down as i64),
+        packets_up: Some(data.packets_sent.up as i64),
+    }
+}
+
 fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     debug!("Finished flow analysis");
     let start_time = boot_time_nanos_to_unix_now(data.start_time).unwrap_or(0);
@@ -480,43 +516,8 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
     });
 
     if !one_way {
-        //data.trim(); // Remove the trailing 30 seconds of zeroes
-        //let tp_buf_dn = data.throughput_buffer.iter().map(|v| v.down).collect();
-        //let tp_buf_up = data.throughput_buffer.iter().map(|v| v.up).collect();
-
-        let retransmit_times_down = data
-            .get_retry_times_down()
-            .iter()
-            .filter(|n| **n > 0)
-            .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-            .collect();
-        let retransmit_times_up = data
-            .get_retry_times_up()
-            .iter()
-            .filter(|n| **n > 0)
-            .map(|t| boot_time_nanos_to_unix_now(*t).unwrap_or(0) as i64)
-            .collect();
-
-        if let Err(e) = crate::lts2_sys::two_way_flow(crate::lts2_sys::shared_types::TwoWayFlow {
-            start_time,
-            end_time: last_seen,
-            local_ip: key.local_ip.as_ip(),
-            remote_ip: key.remote_ip.as_ip(),
-            protocol: key.ip_protocol,
-            dst_port: key.dst_port,
-            src_port: key.src_port,
-            bytes_down: data.bytes_sent.down,
-            bytes_up: data.bytes_sent.up,
-            retransmit_times_down,
-            retransmit_times_up,
-            rtt: [
-                data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Download) as f32,
-                data.get_summary_rtt_as_micros(FlowbeeEffectiveDirection::Upload) as f32,
-            ],
-            circuit_hash: circuit_hash.unwrap_or(0),
-            packets_down: Some(data.packets_sent.down as i64),
-            packets_up: Some(data.packets_sent.up as i64),
-        }) {
+        let flow = build_two_way_flow(&key, &data, start_time, last_seen, circuit_hash.unwrap_or(0));
+        if let Err(e) = crate::lts2_sys::two_way_flow(flow) {
             debug!("Failed to send two-way flow to LTS2: {e:?}");
         }
         if let Ok(time) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
@@ -546,5 +547,71 @@ fn enqueue(key: FlowbeeKey, data: FlowbeeLocalData, analysis: FlowAnalysis) {
         }) {
             debug!("Failed to send one-way flow to LTS2: {e:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::throughput_tracker::flow_data::{RttBuffer, RttData};
+    use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+    use lqos_utils::XdpIpAddress;
+    use lqos_utils::units::DownUpOrder;
+
+    #[test]
+    fn two_way_finished_flow_exports_summary_rtt_in_microseconds() {
+        let mut key = FlowbeeKey::default();
+        key.local_ip = XdpIpAddress::from_ip("192.0.2.10".parse().expect("test IP should parse"));
+        key.remote_ip =
+            XdpIpAddress::from_ip("198.51.100.10".parse().expect("test IP should parse"));
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 50_000;
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw.packets_sent = DownUpOrder::new(10, 20);
+        let mut data = FlowbeeLocalData::from_flow(&raw, &key);
+        let mut rtt = RttBuffer::new(
+            RttData::from_nanos(12_000_000),
+            FlowbeeEffectiveDirection::Download,
+            raw.last_seen,
+        );
+        rtt.push(
+            RttData::from_nanos(12_000_000),
+            FlowbeeEffectiveDirection::Download,
+            raw.last_seen,
+        );
+        rtt.push(
+            RttData::from_nanos(34_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            raw.last_seen,
+        );
+        rtt.push(
+            RttData::from_nanos(34_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            raw.last_seen,
+        );
+        data.set_rtt_buffer(rtt);
+        data.record_tcp_retry_time(FlowbeeEffectiveDirection::Download, 0);
+        data.record_tcp_retry_time(FlowbeeEffectiveDirection::Download, 2_000_000_000);
+        data.record_tcp_retry_time(FlowbeeEffectiveDirection::Upload, 3_000_000_000);
+
+        let flow = build_two_way_flow(&key, &data, 1, 2, 3);
+
+        let expected_down_retry = boot_time_nanos_to_unix_now(2_000_000_000)
+            .expect("boot timestamp should convert") as i64;
+        let expected_up_retry = boot_time_nanos_to_unix_now(3_000_000_000)
+            .expect("boot timestamp should convert") as i64;
+        assert_eq!(flow.rtt, [14_000.0, 35_000.0]);
+        assert_eq!(flow.retransmit_times_down, vec![expected_down_retry]);
+        assert_eq!(flow.retransmit_times_up, vec![expected_up_retry]);
+        assert_eq!(flow.bytes_down, 1_000);
+        assert_eq!(flow.bytes_up, 2_000);
+        assert_eq!(flow.packets_down, Some(10));
+        assert_eq!(flow.packets_up, Some(20));
+        assert_eq!(flow.circuit_hash, 3);
     }
 }

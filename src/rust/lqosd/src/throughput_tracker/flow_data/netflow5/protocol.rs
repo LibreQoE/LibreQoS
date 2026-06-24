@@ -176,6 +176,7 @@ mod tests {
             cpu: 0,
             circuit_hash: None,
             device_hash: None,
+            circuit_id_hint: None,
             tcp_info: None,
         }
     }

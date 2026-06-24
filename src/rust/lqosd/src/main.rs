@@ -42,7 +42,9 @@ use crate::ip_mapping::clear_hot_cache;
 use crate::{
     file_lock::FileLock,
     ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
-    throughput_tracker::flow_data::{FlowActor, flowbee_handle_events, setup_netflow_tracker},
+    throughput_tracker::flow_data::{
+        FlowActor, flowbee_handle_events, live_active_flow_count, setup_netflow_tracker,
+    },
 };
 use anyhow::Result;
 use lqos_bus::{
@@ -60,7 +62,7 @@ use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
 };
-use stats::{BUS_REQUESTS, FLOWS_TRACKED, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
+use stats::{BUS_REQUESTS, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
 use std::{thread, time::Duration};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tracing::{error, info, warn};
@@ -490,7 +492,6 @@ fn memory_debug() {
             let mut fb = allocative::FlameGraphBuilder::default();
             fb.visit_global_roots();
             // fb.visit_root(&*THROUGHPUT_TRACKER);
-            // fb.visit_root(&*ALL_FLOWS);
             // fb.visit_root(&*RECENT_FLOWS);
             // lqos_network_devices::with_network_json_read(|net_json| fb.visit_root(net_json));
             let flamegraph_src = fb.finish();
@@ -653,7 +654,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
                 time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
                 high_watermark: HIGH_WATERMARK.as_down_up(),
-                tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
+                tracked_flows: live_active_flow_count(),
                 rtt_events_per_second: get_rtt_events_per_second(),
             },
             BusRequest::GetPacketHeaderDump(id) => {
