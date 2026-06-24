@@ -368,10 +368,6 @@ fn main() -> Result<()> {
                 let probe_client_for_stormguard = probe_client.clone();
                 probe_provider::install_probe_client(probe_client.clone());
 
-                tokio::spawn(async {
-                    lqos_topology::start_topology().await;
-                });
-
                 tokio::spawn(async move {
                     match lts2_sys::control_channel::start_control_channel(control_channel).await {
                         Ok(_) => info!("Insight control channel started successfully"),
@@ -414,6 +410,8 @@ fn main() -> Result<()> {
                     tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
                     BusRequest,
                 )>(100);
+
+                lqos_topology::start_topology_thread(bus_tx.clone());
 
                 let webserver_disabled = web_config.disable_webserver.unwrap_or(false);
                 if !webserver_disabled {
