@@ -28,6 +28,7 @@ config_lts.js
 config_iprange.js
 config_flows.js
 config_dynamic_circuits.js
+config_radius_accounting.js
 config_integration.js
 config_splynx.js
 config_netzur.js
