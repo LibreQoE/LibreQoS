@@ -11,6 +11,15 @@ use lqos_utils::{HeatmapBlocks, qoq_heatmap::QoqHeatmapBlocks, units::DownUpOrde
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
+/// Result from a bus-backed override mutation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct OverrideMutationResult {
+    /// True when the mutation changed the selected override layer on disk.
+    pub changed: bool,
+    /// Entity identifiers changed by the mutation, such as node names or device IDs.
+    pub changed_entities: Vec<String>,
+}
+
 /// An urgent issue to be displayed prominently in the UI
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct UrgentIssue {
@@ -731,4 +740,7 @@ pub enum BusResponse {
 
     /// Latest Bakery runtime branch-state snapshot for a named TreeGuard node, if any.
     TreeGuardRuntimeNodeBranch(Option<TreeGuardRuntimeNodeBranchSnapshot>),
+
+    /// Result from a bus-backed override mutation.
+    OverrideMutationResult(OverrideMutationResult),
 }

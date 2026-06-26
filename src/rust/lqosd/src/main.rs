@@ -13,6 +13,7 @@ pub mod lts2_sys;
 mod memory_watchdog;
 mod network_devices_hooks;
 mod node_manager;
+mod override_writer;
 mod preflight_checks;
 mod probe_provider;
 mod program_control;
@@ -238,6 +239,7 @@ fn main() -> Result<()> {
     lqos_network_devices::start_daemon_mode(Some(std::sync::Arc::new(
         network_devices_hooks::LqosdNetworkDevicesHooks,
     )))?;
+    override_writer::start_override_writer_actor()?;
     let system_usage_tx = system_stats::start_system_stats()?;
 
     // Handle signals
@@ -981,6 +983,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     qdisc_up_major: snapshot.qdisc_up_major,
                 });
                 BusResponse::TreeGuardRuntimeNodeBranch(snapshot)
+            }
+            BusRequest::ApplyOverrideMutationBatch { layer, mutations } => {
+                override_writer::apply_bus_mutation_batch(*layer, mutations.clone())
             }
             BusRequest::ApiReady => {
                 tool_status::api_seen();

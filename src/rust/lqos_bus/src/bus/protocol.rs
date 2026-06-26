@@ -158,7 +158,10 @@ mod tests {
         BUS_CHUNK_SIZE, MAX_FRAME_BYTES, decode_reply_cbor, decode_session_cbor, encode_reply_cbor,
         encode_session_cbor, read_frame, write_frame,
     };
-    use crate::{BusReply, BusRequest, BusResponse, BusSession, bus::BusClientError};
+    use crate::{
+        BusReply, BusRequest, BusResponse, BusSession, OverrideLayerSelection, OverrideMutation,
+        bus::BusClientError,
+    };
     use tokio::io::{AsyncWriteExt, duplex};
 
     #[test]
@@ -177,6 +180,21 @@ mod tests {
             requests: vec![BusRequest::ClearUrgentIssueByIdentity {
                 code: "XDP_IP_MAPPING_APPLY_FAILED".to_string(),
                 dedupe_key: "XDP_IP_MAPPING_APPLY_FAILED".to_string(),
+            }],
+        };
+        let bytes = encode_session_cbor(&session).expect("encode_session_cbor");
+        let decoded = decode_session_cbor(&bytes).expect("decode_session_cbor");
+        assert_eq!(decoded.requests, session.requests);
+    }
+
+    #[test]
+    fn cbor_round_trip_override_mutation_request() {
+        let session = BusSession {
+            requests: vec![BusRequest::ApplyOverrideMutationBatch {
+                layer: OverrideLayerSelection::Treeguard,
+                mutations: vec![OverrideMutation::ClearNodeVirtualBatch {
+                    node_names: vec!["Node A".to_string(), "Node B".to_string()],
+                }],
             }],
         };
         let bytes = encode_session_cbor(&session).expect("encode_session_cbor");
