@@ -521,8 +521,14 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
 .dashbox .dashbox-title > span:first-of-type {
     margin-left: auto;
 }
-.dashbox .dashbox-title a {
+.dashbox .dashbox-title a,
+.dashbox .dashbox-title button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
     color: var(--bs-secondary-color);
+    font: inherit;
     text-decoration: none;
 }
 
@@ -548,7 +554,9 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
         max-height: 18rem;
     }
 }
-.dashbox .dashbox-title a:hover {
+.dashbox .dashbox-title a:hover,
+.dashbox .dashbox-title button:hover,
+.dashbox .dashbox-title button:focus {
     color: var(--bs-body-color);
 }
 .dashbox > :not(.dashbox-title) {
@@ -613,6 +621,17 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
 .dashgraph {
     width: 100%;
     height: 250px;
+}
+.lqos-dashboard-map {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--lqos-radius-md);
+    border: 1px solid var(--lqos-border);
+    background: var(--lqos-surface-2);
+}
+.lqos-dashboard-map .maplibregl-canvas:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -2px;
 }
 .lqos-loading-block {
     min-height: 220px;

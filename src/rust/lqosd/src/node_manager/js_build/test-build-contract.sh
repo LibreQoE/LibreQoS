@@ -83,6 +83,22 @@ for asset in "${required_template_assets[@]}"; do
   [[ -f "${STATIC_DIR}/${asset}" ]] || fail "Missing required node_manager asset referenced by template.html: ${asset}"
 done
 
+required_dashboard_map_assets=(
+  "vendor/maplibre-gl.css"
+  "vendor/maplibre-gl.js"
+  "vendor/site_map_coastlines.geojson"
+)
+
+for asset in "${required_dashboard_map_assets[@]}"; do
+  [[ -f "${STATIC_DIR}/${asset}" ]] || fail "Missing required dashboard world map asset: ${asset}"
+done
+
+for asset in "${required_dashboard_map_assets[@]}"; do
+  if ! grep -R -F -q "${asset}" "${SRC_DIR}/dashlets/world_map_assets.mjs" "${SRC_DIR}/dashlets/world_map_down.js"; then
+    fail "Dashboard world map asset exists but is not referenced by the source bundle: ${asset}"
+  fi
+done
+
 check_cachebusted_bundle_refs() {
   local file_path="$1"
   local label="$2"
