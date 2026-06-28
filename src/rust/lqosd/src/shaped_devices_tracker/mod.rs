@@ -58,12 +58,12 @@ pub(crate) fn invalidate_executive_cache_snapshot() {
     crate::node_manager::invalidate_executive_cache_snapshot();
 }
 
-fn normalize_circuit_id_key(circuit_id: &str) -> Option<String> {
-    let trimmed = circuit_id.trim();
-    if trimmed.is_empty() {
+fn non_empty_circuit_id_key(circuit_id: &str) -> Option<String> {
+    let key = lqos_utils::normalize_circuit_id_key(circuit_id);
+    if key.is_empty() {
         None
     } else {
-        Some(trimmed.to_ascii_lowercase())
+        Some(key)
     }
 }
 
@@ -82,7 +82,7 @@ fn build_effective_circuit_parent_map(
     let mut by_circuit_id = FxHashMap::default();
     by_circuit_id.reserve(shaping_inputs.circuits.len());
     for circuit in &shaping_inputs.circuits {
-        let Some(circuit_key) = normalize_circuit_id_key(&circuit.circuit_id) else {
+        let Some(circuit_key) = non_empty_circuit_id_key(&circuit.circuit_id) else {
             continue;
         };
         let Some(parent_name) = optional_trimmed_string(&circuit.effective_parent_node_name) else {
@@ -358,7 +358,7 @@ fn watch_for_topology_runtime_status_changing() -> Result<()> {
 }
 
 pub fn effective_parent_for_circuit(circuit_id: &str) -> Option<RuntimeCircuitParent> {
-    let circuit_key = normalize_circuit_id_key(circuit_id)?;
+    let circuit_key = non_empty_circuit_id_key(circuit_id)?;
     EFFECTIVE_CIRCUIT_PARENTS.load().get(&circuit_key).cloned()
 }
 

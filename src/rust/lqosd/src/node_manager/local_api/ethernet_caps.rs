@@ -1,4 +1,5 @@
 use lqos_config::{CircuitEthernetMetadata, CircuitEthernetMetadataFile, load_config};
+use lqos_utils::normalize_circuit_id_key;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
@@ -170,7 +171,7 @@ pub(crate) fn ethernet_cap_badge_map() -> HashMap<String, EthernetCapBadge> {
         let Some(badge) = advisory_to_badge(&advisory) else {
             continue;
         };
-        badges.insert(advisory.circuit_id.to_ascii_lowercase(), badge);
+        badges.insert(normalize_circuit_id_key(&advisory.circuit_id), badge);
     }
     badges
 }

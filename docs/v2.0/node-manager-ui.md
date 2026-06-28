@@ -37,7 +37,8 @@ For the full logical-topology versus queue-topology file flow, see [Topology Dat
 - Tree-page rate edits save persistent `AdjustSiteSpeed` overrides in `lqos_overrides.json`.
 - On UISP `full` builds, legacy `integrationUISPbandwidths.csv` files are auto-migrated into those operator overrides on the next integration run when no operator rate overrides exist yet; otherwise the CSV is ignored.
 - Tree-page operator rate edits require an administrator session, a stable node ID, and a non-generated node. Generated/integration-synthetic nodes remain read-only in this editor.
-- The tree page keeps `Node Details` as a compact summary card and places the override editors as compact inline rows directly beneath the details table.
+- The tree page keeps `Node Details` as a compact summary grid and places the override editors as compact inline rows directly beneath it.
+- `Effective Now` shows an estimated source badge, such as Parent, Override, Attachment, or Mixed. Hover or focus the badge to see the download and upload details.
 - The tree page now shows topology override state as read-only summary only. Parent and attachment edits have moved to `Topology`, and the tree details panel links directly into Topology Manager for the selected node.
 - Runtime-selected attachment hops are collapsed out of the main tree hierarchy. When a site is currently using a specific backhaul or radio path, `Node Details` shows that as `Active Attachment` metadata on the site instead of exposing the attachment as its own branch node.
 - Inactive alternate PtP/wired backhaul attachment stubs are also pruned from the runtime tree. `tree.html` shows the effective path only; dormant alternates remain visible in Topology Manager rather than as standalone runtime nodes.

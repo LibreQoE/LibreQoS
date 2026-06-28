@@ -2,7 +2,7 @@ use crate::hash_cache::ShapedDeviceHashCache;
 use fxhash::FxHashSet;
 use ip_network::IpNetwork;
 use lqos_config::{ConfigShapedDevices, ShapedDevice};
-use lqos_utils::XdpIpAddress;
+use lqos_utils::{XdpIpAddress, normalize_circuit_id_key};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -101,11 +101,11 @@ impl ShapedDevicesCatalog {
 
     /// Returns a cloned list of shaped-device rows that belong to a circuit identifier.
     pub fn devices_for_circuit_id(&self, circuit_id: &str) -> Vec<ShapedDevice> {
-        let safe_id = circuit_id.to_lowercase().trim().to_string();
+        let safe_id = normalize_circuit_id_key(circuit_id);
         self.shaped
             .devices
             .iter()
-            .filter(|device| device.circuit_id.to_lowercase().trim() == safe_id)
+            .filter(|device| normalize_circuit_id_key(&device.circuit_id) == safe_id)
             .cloned()
             .collect()
     }

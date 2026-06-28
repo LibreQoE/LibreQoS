@@ -43,10 +43,25 @@ mod xdp_ip_address;
 /// XDP compatible IP Address
 pub use xdp_ip_address::XdpIpAddress;
 
+/// Normalizes a circuit identifier for case-insensitive catalog and overlay lookups.
+pub fn normalize_circuit_id_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
 /// Insight standard hasher for strings
 pub fn hash_to_i64(text: &str) -> i64 {
     use std::hash::{DefaultHasher, Hasher};
     let mut hasher = DefaultHasher::new();
     hasher.write(text.as_bytes());
     hasher.finish() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_circuit_id_key;
+
+    #[test]
+    fn circuit_id_key_trims_and_ascii_lowercases() {
+        assert_eq!(normalize_circuit_id_key(" Circuit-42 "), "circuit-42");
+    }
 }

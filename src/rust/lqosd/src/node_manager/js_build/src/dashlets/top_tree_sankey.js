@@ -4,6 +4,7 @@ import {lerpGreenToRedViaOrange} from "../helpers/scaling";
 import {isColorBlindMode} from "../helpers/colorblind";
 import {colorByRttMs} from "../helpers/color_scales";
 import {toNumber} from "../lq_js_common/helpers/scaling";
+import {effectiveMax} from "../helpers/network_rates.mjs";
 
 /**
  * Viridis color scale interpolation (0-1 input).
@@ -32,10 +33,6 @@ function lerpViridis(t) {
 import {isRedacted} from "../helpers/redact";
 
 let lastRtt = {};
-
-function effectiveMax(node) {
-    return node.effective_max_throughput || node.max_throughput || [0, 0];
-}
 
 class TopTreeSankeyGraph extends DashboardGraph {
     constructor(id) {
