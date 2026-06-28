@@ -19,6 +19,22 @@ const COMPACT_REASON_LABELS = {
     queue: "Est. Queue",
 };
 
+function renderKey(target) {
+    if (target?.getAttribute) {
+        return target.getAttribute("data-lqos-render-key");
+    }
+    return target?.attributes?.["data-lqos-render-key"] ?? null;
+}
+
+function setRenderKey(target, key) {
+    target.setAttribute("data-lqos-render-key", key);
+}
+
+function clearRenderedTarget(target) {
+    clearElement(target);
+    target.textContent = "";
+}
+
 export function immediateParentNodeFromTree(tree, node) {
     const parentIndex = node?.immediate_parent;
     if (parentIndex === null || parentIndex === undefined || !tree?.[parentIndex]) {
@@ -153,11 +169,17 @@ export function renderEffectiveNowDisplay({target, effective, formatRatePair}) {
     if (!target) {
         return;
     }
-    clearElement(target);
+    const display = formatRatePair(effective[0], effective[1]);
+    const key = `effective:${display}`;
+    if (renderKey(target) === key) {
+        return;
+    }
+    clearRenderedTarget(target);
+    setRenderKey(target, key);
     const doc = target.ownerDocument || document;
     const wrap = doc.createElement("span");
     wrap.classList.add("lqos-tree-detail-value", "lqos-tree-effective-now");
-    wrap.textContent = formatRatePair(effective[0], effective[1]);
+    wrap.textContent = display;
     target.appendChild(wrap);
 }
 
@@ -165,7 +187,14 @@ export function renderLimitedByDisplay({target, summary}) {
     if (!target) {
         return;
     }
-    clearElement(target);
+    const display = summary.compactReason || summary.label;
+    const title = `Estimated effective-rate source. ${summary.title}`;
+    const key = `limited:${display}:${title}`;
+    if (renderKey(target) === key) {
+        return;
+    }
+    clearRenderedTarget(target);
+    setRenderKey(target, key);
     const doc = target.ownerDocument || document;
     const source = doc.createElement("span");
     source.classList.add("lqos-tree-limit-source");
@@ -174,11 +203,11 @@ export function renderLimitedByDisplay({target, summary}) {
     source.setAttribute("data-bs-trigger", "hover focus");
     source.setAttribute("data-bs-container", "body");
     source.setAttribute("tabindex", "0");
-    source.setAttribute("title", `Estimated effective-rate source. ${summary.title}`);
-    source.setAttribute("aria-label", `Estimated effective-rate source. ${summary.title}`);
+    source.setAttribute("title", title);
+    source.setAttribute("aria-label", title);
 
     const text = doc.createElement("span");
-    text.textContent = summary.compactReason || summary.label;
+    text.textContent = display;
     source.appendChild(text);
 
     const icon = doc.createElement("i");

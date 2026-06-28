@@ -53,6 +53,10 @@ class FakeElement {
         this.attributes[name] = String(value);
     }
 
+    getAttribute(name) {
+        return this.attributes[name] ?? null;
+    }
+
     matches(selector) {
         return selector === '[data-bs-toggle="tooltip"]'
             && this.attributes["data-bs-toggle"] === "tooltip";
@@ -267,6 +271,7 @@ test("effective rate renderer keeps the rate value compact", () => {
     assert.deepEqual(wrap.classNames, ["lqos-tree-detail-value", "lqos-tree-effective-now"]);
     assert.equal(wrap.children.length, 0);
     assert.equal(wrap.textContent, "100M / 50M");
+    assert.equal(target.attributes["data-lqos-render-key"], "effective:100M / 50M");
 });
 
 test("limited-by renderer builds accessible source detail", () => {
@@ -297,9 +302,13 @@ test("limited-by renderer builds accessible source detail", () => {
     assert.equal(source.attributes.tabindex, "0");
     assert.equal(source.attributes.title, `Estimated effective-rate source. ${summary.title}`);
     assert.equal(source.attributes["aria-label"], `Estimated effective-rate source. ${summary.title}`);
+    assert.equal(
+        target.attributes["data-lqos-render-key"],
+        `limited:Est. Parent:Estimated effective-rate source. ${summary.title}`,
+    );
 });
 
-test("limited-by renderer disposes stale tooltip state before rebuilding", () => {
+test("limited-by renderer preserves stable tooltip state between refreshes", () => {
     const target = new FakeElement(fakeDocument, "dd");
     const summary = {
         kind: "parent",
@@ -313,6 +322,23 @@ test("limited-by renderer disposes stale tooltip state before rebuilding", () =>
     };
 
     renderLimitedByDisplay(args);
+    const oldSource = target.children[0];
+    renderLimitedByDisplay(args);
+
+    assert.equal(target.children.length, 1);
+    assert.equal(target.children[0], oldSource);
+});
+
+test("limited-by renderer disposes stale tooltip state when the source changes", () => {
+    const target = new FakeElement(fakeDocument, "dd");
+    const summary = {
+        kind: "parent",
+        label: "Parent",
+        compactReason: "Est. Parent",
+        title: "Download: inherited from parent Alpha at 100M. Upload: inherited from parent Alpha at 50M.",
+    };
+
+    renderLimitedByDisplay({target, summary});
     const oldSource = target.children[0];
     let disposed = false;
     globalThis.bootstrap = {
@@ -329,7 +355,14 @@ test("limited-by renderer disposes stale tooltip state before rebuilding", () =>
     };
 
     try {
-        renderLimitedByDisplay(args);
+        renderLimitedByDisplay({
+            target,
+            summary: {
+                ...summary,
+                compactReason: "Est. Override",
+                title: "Download: matches operator rate override at 100M. Upload: matches operator rate override at 50M.",
+            },
+        });
     } finally {
         delete globalThis.bootstrap;
     }
@@ -381,4 +414,11 @@ test("tree details markup keeps compact definition grid IDs", () => {
     );
     const positions = expected.map((id) => html.indexOf(`id="${id}"`));
     assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+});
+
+test("tree details CSS keeps desktop detail values aligned in four columns", () => {
+    const css = readFileSync(resolve(__dirname, "../../static2/node_manager.css"), "utf8");
+
+    assert.match(css, /\.lqos-tree-detail-grid\s*{[^}]*grid-template-columns:\s*minmax\(8\.5rem, max-content\) minmax\(0, 1fr\)\s*minmax\(8\.5rem, max-content\) minmax\(0, 1fr\);/s);
+    assert.match(css, /\.lqos-tree-detail-item\s*{\s*display: contents;\s*}/);
 });
