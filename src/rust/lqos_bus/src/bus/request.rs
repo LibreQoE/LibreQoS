@@ -6,6 +6,27 @@ use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
+/// Override layer selected for a bus-backed override mutation.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Allocative)]
+pub enum OverrideLayerSelection {
+    /// Operator-owned overrides (`lqos_overrides.json`).
+    Operator,
+    /// StormGuard-owned overrides (`lqos_overrides.stormguard.json`).
+    Stormguard,
+    /// TreeGuard-owned overrides (`lqos_overrides.treeguard.json`).
+    Treeguard,
+}
+
+/// A single override mutation that `lqosd` should apply through its override writer actor.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
+pub enum OverrideMutation {
+    /// Remove node-virtual state for multiple node names in one load/save cycle.
+    ClearNodeVirtualBatch {
+        /// Exact node names from `network.json`.
+        node_names: Vec<String>,
+    },
+}
+
 /// Per-interface Bakery qdisc-budget report entry.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
 pub struct BakeryCapacityReportInterface {
@@ -480,6 +501,14 @@ pub enum BusRequest {
         node_name: String,
     },
 
+    /// Apply a batch of override mutations through the `lqosd` override writer actor.
+    ApplyOverrideMutationBatch {
+        /// Override layer to mutate.
+        layer: OverrideLayerSelection,
+        /// Mutations to apply in one load/save cycle.
+        mutations: Vec<OverrideMutation>,
+    },
+
     /// Announce that the API is ready
     ApiReady,
 
@@ -693,6 +722,7 @@ impl BusRequest {
             Self::TreeGuardSetNodeVirtual { .. } => "TreeGuardSetNodeVirtual",
             Self::TreeGuardGetNodeVirtualStatus { .. } => "TreeGuardGetNodeVirtualStatus",
             Self::TreeGuardGetNodeVirtualBranchState { .. } => "TreeGuardGetNodeVirtualBranchState",
+            Self::ApplyOverrideMutationBatch { .. } => "ApplyOverrideMutationBatch",
             Self::ApiReady => "ApiReady",
             Self::ChatbotReady => "ChatbotReady",
             Self::SchedulerReady => "SchedulerReady",
@@ -832,7 +862,7 @@ pub enum TopFlowType {
 
 #[cfg(test)]
 mod tests {
-    use super::{BusRequest, TopFlowType};
+    use super::{BusRequest, OverrideLayerSelection, OverrideMutation, TopFlowType};
 
     #[test]
     fn request_kind_omits_payload_details() {
@@ -849,5 +879,19 @@ mod tests {
             .kind(),
             "TopFlows"
         );
+    }
+
+    #[test]
+    fn override_write_request_kinds_and_timeout_classification_are_explicit() {
+        let batch_write_request = BusRequest::ApplyOverrideMutationBatch {
+            layer: OverrideLayerSelection::Treeguard,
+            mutations: vec![OverrideMutation::ClearNodeVirtualBatch {
+                node_names: vec!["Node A".to_string(), "Node B".to_string()],
+            }],
+        };
+
+        assert_eq!(batch_write_request.kind(), "ApplyOverrideMutationBatch");
+
+        assert!(!batch_write_request.can_fail_fast_on_timeout());
     }
 }

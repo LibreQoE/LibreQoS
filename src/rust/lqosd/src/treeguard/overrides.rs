@@ -5,31 +5,6 @@
 use crate::treeguard::TreeguardError;
 use lqos_overrides::{OverrideLayer, OverrideStore};
 
-/// Removes any node-virtualization overrides for a `network.json` node.
-///
-/// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
-///
-/// Returns `Ok(true)` if the file was changed, `Ok(false)` if no change was needed.
-pub(crate) fn clear_node_virtual(node_name: &str) -> Result<bool, TreeguardError> {
-    let mut overrides = OverrideStore::load_layer(OverrideLayer::Treeguard).map_err(|e| {
-        TreeguardError::OverridesLoad {
-            details: e.to_string(),
-        }
-    })?;
-
-    let removed = overrides.remove_network_node_virtual_by_name_count(node_name);
-    if removed == 0 {
-        return Ok(false);
-    }
-
-    OverrideStore::save_layer(OverrideLayer::Treeguard, &overrides).map_err(|e| {
-        TreeguardError::OverridesSave {
-            details: e.to_string(),
-        }
-    })?;
-    Ok(true)
-}
-
 /// Persists a per-device SQM override token for a list of devices.
 ///
 /// This function is not pure: it reads and writes `lqos_overrides.treeguard.json`.
