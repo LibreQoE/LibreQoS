@@ -12,6 +12,7 @@ import {
     ratePairsMatch,
     ratesApproximatelyEqual,
     renderEffectiveNowDisplay,
+    renderLimitedByDisplay,
 } from "./tree_limit_reason.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -252,7 +253,23 @@ test("parent lookup follows the selected node's immediate parent index", () => {
     assert.equal(immediateParentNodeFromTree(tree, {...selected, immediate_parent: 99}), null);
 });
 
-test("effective rate renderer builds accessible source badge", () => {
+test("effective rate renderer keeps the rate value compact", () => {
+    const target = new FakeElement(fakeDocument, "dd");
+
+    renderEffectiveNowDisplay({
+        target,
+        effective: [100, 50],
+        formatRatePair: (down, up) => `${down}M / ${up}M`,
+    });
+
+    const wrap = target.children[0];
+
+    assert.deepEqual(wrap.classNames, ["lqos-tree-detail-value", "lqos-tree-effective-now"]);
+    assert.equal(wrap.children.length, 0);
+    assert.equal(wrap.textContent, "100M / 50M");
+});
+
+test("limited-by renderer builds accessible source detail", () => {
     const target = new FakeElement(fakeDocument, "dd");
     const summary = {
         kind: "parent",
@@ -261,32 +278,28 @@ test("effective rate renderer builds accessible source badge", () => {
         title: "Download: inherited from parent Alpha at 100M. Upload: inherited from parent Alpha at 50M.",
     };
 
-    renderEffectiveNowDisplay({
+    renderLimitedByDisplay({
         target,
-        effective: [100, 50],
         summary,
-        formatRatePair: (down, up) => `${down}M / ${up}M`,
     });
 
-    const wrap = target.children[0];
-    const value = wrap.children[0];
-    const badge = wrap.children[1];
+    const source = target.children[0];
+    const value = source.children[0];
+    const icon = source.children[1];
 
-    assert.deepEqual(wrap.classNames, ["lqos-tree-detail-value", "lqos-tree-effective-now"]);
-    assert.equal(wrap.children.length, 2);
-    assert.equal(value.textContent, "100M / 50M");
-    assert.equal(badge.textContent, "Est. Parent");
-    assert.ok(badge.classNames.includes("lqos-tree-limit-source"));
-    assert.ok(badge.classNames.includes("text-bg-warning"));
-    assert.equal(badge.attributes["data-bs-toggle"], "tooltip");
-    assert.equal(badge.attributes["data-bs-trigger"], "hover focus");
-    assert.equal(badge.attributes["data-bs-container"], "body");
-    assert.equal(badge.attributes.tabindex, "0");
-    assert.equal(badge.attributes.title, `Estimated effective-rate source. ${summary.title}`);
-    assert.equal(badge.attributes["aria-label"], `Estimated effective-rate source. ${summary.title}`);
+    assert.deepEqual(source.classNames, ["lqos-tree-limit-source"]);
+    assert.equal(source.children.length, 2);
+    assert.equal(value.textContent, "Est. Parent");
+    assert.equal(icon.attributes["aria-hidden"], "true");
+    assert.equal(source.attributes["data-bs-toggle"], "tooltip");
+    assert.equal(source.attributes["data-bs-trigger"], "hover focus");
+    assert.equal(source.attributes["data-bs-container"], "body");
+    assert.equal(source.attributes.tabindex, "0");
+    assert.equal(source.attributes.title, `Estimated effective-rate source. ${summary.title}`);
+    assert.equal(source.attributes["aria-label"], `Estimated effective-rate source. ${summary.title}`);
 });
 
-test("effective rate renderer disposes stale tooltip state before rebuilding", () => {
+test("limited-by renderer disposes stale tooltip state before rebuilding", () => {
     const target = new FakeElement(fakeDocument, "dd");
     const summary = {
         kind: "parent",
@@ -296,18 +309,16 @@ test("effective rate renderer disposes stale tooltip state before rebuilding", (
     };
     const args = {
         target,
-        effective: [100, 50],
         summary,
-        formatRatePair: (down, up) => `${down}M / ${up}M`,
     };
 
-    renderEffectiveNowDisplay(args);
-    const oldBadge = target.children[0].children[1];
+    renderLimitedByDisplay(args);
+    const oldSource = target.children[0];
     let disposed = false;
     globalThis.bootstrap = {
         Tooltip: {
             getInstance(el) {
-                assert.equal(el, oldBadge);
+                assert.equal(el, oldSource);
                 return {
                     dispose() {
                         disposed = true;
@@ -318,7 +329,7 @@ test("effective rate renderer disposes stale tooltip state before rebuilding", (
     };
 
     try {
-        renderEffectiveNowDisplay(args);
+        renderLimitedByDisplay(args);
     } finally {
         delete globalThis.bootstrap;
     }
@@ -345,6 +356,7 @@ test("tree details markup keeps compact definition grid IDs", () => {
         "nodeSettingsBaseConfigured",
         "nodeSettingsEffectiveNow",
         "nodeSettingsOverride",
+        "nodeSettingsLimitedBy",
         "nodeTopologyOverrideValue",
         "nodeSettingsActiveAttachment",
     ];
@@ -353,15 +365,19 @@ test("tree details markup keeps compact definition grid IDs", () => {
     });
     assert.match(
         html,
-        /<div class="lqos-tree-detail-item">\s*<dt class="lqos-tree-detail-label">Base Configured Rate<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsBaseConfigured">-/,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-col-start">\s*<dt class="lqos-tree-detail-label">Base Configured Rate<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsBaseConfigured">-/,
     );
     assert.match(
         html,
-        /<div class="lqos-tree-detail-item">\s*<dt class="lqos-tree-detail-label">Effective Now<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsEffectiveNow">-/,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end">\s*<dt class="lqos-tree-detail-label">Effective Now<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsEffectiveNow">-/,
     );
     assert.match(
         html,
-        /<div class="lqos-tree-detail-item lqos-tree-detail-item-wide">\s*<dt class="lqos-tree-detail-label">Active Attachment<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsActiveAttachment">-/,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end">\s*<dt class="lqos-tree-detail-label">Limited By<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsLimitedBy">-/,
+    );
+    assert.match(
+        html,
+        /<div class="lqos-tree-detail-item lqos-tree-detail-row-end lqos-tree-detail-last-row lqos-tree-detail-final-cell">\s*<dt class="lqos-tree-detail-label">Active Attachment<\/dt>\s*<dd class="lqos-tree-detail-body" id="nodeSettingsActiveAttachment">-/,
     );
     const positions = expected.map((id) => html.indexOf(`id="${id}"`));
     assert.deepEqual([...positions].sort((a, b) => a - b), positions);

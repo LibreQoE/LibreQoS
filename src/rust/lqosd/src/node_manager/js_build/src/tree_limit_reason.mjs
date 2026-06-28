@@ -149,24 +149,7 @@ export function buildNodeLimitSummary({
     };
 }
 
-export function limitSourceBadgeClass(kind) {
-    switch (kind) {
-        case "parent":
-            return "text-bg-warning";
-        case "override":
-            return "text-bg-info";
-        case "attachment":
-            return "text-bg-primary";
-        case "mixed":
-            return "text-bg-secondary";
-        case "queue":
-            return "text-bg-danger";
-        default:
-            return "text-bg-dark";
-    }
-}
-
-export function renderEffectiveNowDisplay({target, effective, summary, formatRatePair}) {
+export function renderEffectiveNowDisplay({target, effective, formatRatePair}) {
     if (!target) {
         return;
     }
@@ -174,22 +157,34 @@ export function renderEffectiveNowDisplay({target, effective, summary, formatRat
     const doc = target.ownerDocument || document;
     const wrap = doc.createElement("span");
     wrap.classList.add("lqos-tree-detail-value", "lqos-tree-effective-now");
-
-    const value = doc.createElement("span");
-    value.textContent = formatRatePair(effective[0], effective[1]);
-    wrap.appendChild(value);
-
-    const badge = doc.createElement("span");
-    badge.classList.add("badge", "rounded-pill", "lqos-tree-limit-source", limitSourceBadgeClass(summary.kind));
-    badge.textContent = summary.compactReason || summary.label;
-    badge.setAttribute("data-bs-toggle", "tooltip");
-    badge.setAttribute("data-bs-placement", "top");
-    badge.setAttribute("data-bs-trigger", "hover focus");
-    badge.setAttribute("data-bs-container", "body");
-    badge.setAttribute("tabindex", "0");
-    badge.setAttribute("title", `Estimated effective-rate source. ${summary.title}`);
-    badge.setAttribute("aria-label", `Estimated effective-rate source. ${summary.title}`);
-    wrap.appendChild(badge);
-
+    wrap.textContent = formatRatePair(effective[0], effective[1]);
     target.appendChild(wrap);
+}
+
+export function renderLimitedByDisplay({target, summary}) {
+    if (!target) {
+        return;
+    }
+    clearElement(target);
+    const doc = target.ownerDocument || document;
+    const source = doc.createElement("span");
+    source.classList.add("lqos-tree-limit-source");
+    source.setAttribute("data-bs-toggle", "tooltip");
+    source.setAttribute("data-bs-placement", "top");
+    source.setAttribute("data-bs-trigger", "hover focus");
+    source.setAttribute("data-bs-container", "body");
+    source.setAttribute("tabindex", "0");
+    source.setAttribute("title", `Estimated effective-rate source. ${summary.title}`);
+    source.setAttribute("aria-label", `Estimated effective-rate source. ${summary.title}`);
+
+    const text = doc.createElement("span");
+    text.textContent = summary.compactReason || summary.label;
+    source.appendChild(text);
+
+    const icon = doc.createElement("i");
+    icon.classList.add("fa", "fa-circle-info");
+    icon.setAttribute("aria-hidden", "true");
+    source.appendChild(icon);
+
+    target.appendChild(source);
 }

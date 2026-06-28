@@ -19,6 +19,7 @@ import {
     ratePairsMatch,
     ratesApproximatelyEqual,
     renderEffectiveNowDisplay,
+    renderLimitedByDisplay,
 } from "./tree_limit_reason.mjs";
 
 var tree = null;
@@ -994,8 +995,9 @@ function renderTopologyOverrideValue(overrideData) {
 }
 
 function renderEffectiveNowValue(node) {
-    const target = document.getElementById("nodeSettingsEffectiveNow");
-    if (!target) {
+    const effectiveTarget = document.getElementById("nodeSettingsEffectiveNow");
+    const limitedByTarget = document.getElementById("nodeSettingsLimitedBy");
+    if (!effectiveTarget && !limitedByTarget) {
         return;
     }
     const effective = effectiveMax(node);
@@ -1005,7 +1007,8 @@ function renderEffectiveNowValue(node) {
         rateOverrideData: nodeRateOverrideState.data,
         topologyOverrideData: nodeTopologyOverrideState.data,
     });
-    renderEffectiveNowDisplay({target, effective, summary, formatRatePair});
+    renderEffectiveNowDisplay({target: effectiveTarget, effective, formatRatePair});
+    renderLimitedByDisplay({target: limitedByTarget, summary});
 }
 
 function renderNodeTopologySettings(node) {
