@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs::read_to_string,
     io::Write,
     path::{Path, PathBuf},
@@ -912,6 +913,33 @@ impl OverrideFile {
             _ => true,
         });
         before.saturating_sub(self.network_adjustments.len())
+    }
+
+    /// Remove virtual-node overrides for all names in `node_names` in one pass.
+    /// Returns the sorted list of node names that had at least one override removed.
+    pub fn remove_network_node_virtual_by_names(&mut self, node_names: &[String]) -> Vec<String> {
+        if node_names.is_empty() {
+            return Vec::new();
+        }
+
+        let requested_names = node_names
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let mut removed_names = HashSet::new();
+        self.network_adjustments.retain(|adj| match adj {
+            NetworkAdjustment::SetNodeVirtual { node_name, .. }
+                if requested_names.contains(node_name.as_str()) =>
+            {
+                removed_names.insert(node_name.clone());
+                false
+            }
+            _ => true,
+        });
+
+        let mut removed_names = removed_names.into_iter().collect::<Vec<_>>();
+        removed_names.sort();
+        removed_names
     }
 
     /// Returns the stored topology parent override for `node_id`, if present.
