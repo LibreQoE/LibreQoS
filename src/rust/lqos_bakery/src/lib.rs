@@ -26,6 +26,7 @@ mod queue_math;
 mod utils;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use lqos_utils::normalize_circuit_id_key;
 use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::VecDeque;
@@ -586,10 +587,6 @@ fn ip_list_from_shaped_device(device: &lqos_config::ShapedDevice) -> String {
     ips.sort();
     ips.dedup();
     ips.join(",")
-}
-
-fn normalize_circuit_id_key(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
 }
 
 fn find_free_dynamic_circuit_minor(

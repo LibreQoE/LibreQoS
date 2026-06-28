@@ -707,6 +707,25 @@ html[data-bs-theme="light"] .sidebar .navbar-toggler-icon {
     display: block;
     max-width: 100%;
 }
+.lqos-inline-value-badge {
+    align-items: baseline;
+    display: inline-flex;
+    max-width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+}
+.lqos-inline-value-badge-text {
+    display: inline-block;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
+}
+.lqos-inline-value-badge-item {
+    flex: 0 0 auto;
+}
 .flow-rtt-exclude-btn.btn.btn-sm {
     padding-top: 0.175rem;
     padding-bottom: 0.175rem;

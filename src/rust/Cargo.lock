@@ -2213,6 +2213,7 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "lqos_sys",
+ "lqos_utils",
  "parking_lot",
  "serde",
  "serde_json",

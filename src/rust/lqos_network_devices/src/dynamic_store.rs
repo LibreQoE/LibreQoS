@@ -1,7 +1,7 @@
 use crate::DynamicCircuit;
 use anyhow::{Context, Result};
 use lqos_config::ShapedDevice;
-use lqos_utils::hash_to_i64;
+use lqos_utils::{hash_to_i64, normalize_circuit_id_key};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::Write;
@@ -30,10 +30,6 @@ fn recompute_hashes(device: &mut ShapedDevice) {
     device.circuit_hash = hash_to_i64(&device.circuit_id);
     device.device_hash = hash_to_i64(&device.device_id);
     device.parent_hash = hash_to_i64(&device.parent_node);
-}
-
-fn normalize_circuit_id_key(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
 }
 
 fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {

@@ -34,10 +34,17 @@ import {
     setIconText,
     setPacketCaptureDownloadButton,
 } from "./circuit_packet_capture_dom.mjs";
+import {
+    applyMaxRateDisplay,
+    formatRatePairValue,
+    hasUsableRatePair,
+} from "./circuit_rate_display.mjs";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
 });
+
+const CIRCUIT_RATE_REFRESH_MS = 30000;
 
 let circuit_id = decodeURI(params.id);
 let plan = null;
@@ -86,6 +93,8 @@ let topAsnPollTimer = null;
 let topAsnRequestInFlight = false;
 let trafficPollTimer = null;
 let trafficRequestInFlight = false;
+let circuitRatePollTimer = null;
+let circuitRateRequestInFlight = false;
 let queuingActivityVisibilityHandler = null;
 const DEFAULT_RTT_THRESHOLDS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
 let currentRttThresholds = { ...DEFAULT_RTT_THRESHOLDS };
@@ -118,9 +127,7 @@ function ethernetTooltipHtml(advisory) {
 }
 
 function formatPlanSpeedPair(downloadMbps, uploadMbps) {
-    const down = toNumber(downloadMbps, 0).toFixed(1);
-    const up = toNumber(uploadMbps, 0).toFixed(1);
-    return `${down} / ${up} Mbps`;
+    return `${formatRatePairValue({down: downloadMbps, up: uploadMbps})} Mbps`;
 }
 
 function renderEthernetAdvisory(advisory) {
@@ -1178,6 +1185,72 @@ function requestCircuitById(onSuccess, onError) {
         onSuccess(payload);
     });
     wsClient.send({ CircuitById: { id: circuit_id } });
+}
+
+function applyCircuitRatePayload(payload) {
+    const circuits = payload.devices || [];
+    const circuit = circuits[0];
+    if (!circuit) {
+        return null;
+    }
+
+    const assignedRate = {
+        down: toNumber(circuit.download_max_mbps, 0),
+        up: toNumber(circuit.upload_max_mbps, 0),
+    };
+    const effectiveRate = hasUsableRatePair(payload.effective_rate_mbps)
+        ? payload.effective_rate_mbps
+        : null;
+    applyMaxRateDisplay(
+        document.getElementById("bwMax"),
+        assignedRate,
+        effectiveRate,
+        initTooltipsWithin,
+    );
+    return {assignedRate, circuit};
+}
+
+function applyCircuitHeaderPayload(payload) {
+    const circuits = payload.devices || [];
+    const rateHeader = applyCircuitRatePayload(payload);
+    if (!rateHeader) {
+        return null;
+    }
+
+    const {assignedRate, circuit} = rateHeader;
+    const advisory = payload.ethernet_advisory || null;
+    const parentNode = resolveCircuitParentNode(payload, circuits);
+    $("#circuitName").text(circuit.circuit_name);
+    $("#circuitName").attr("title", circuit.circuit_name || "");
+    applyParentNodeLink(parentNode?.name || "");
+    $("#bwMin").text(formatPlanSpeedPair(circuit.download_min_mbps, circuit.upload_min_mbps));
+    renderEthernetAdvisory(advisory);
+    return {assignedRate, circuit, parentNode};
+}
+
+function requestCircuitRateRefresh() {
+    if (circuitRateRequestInFlight) {
+        return;
+    }
+    circuitRateRequestInFlight = true;
+    requestCircuitById(
+        (payload) => {
+            circuitRateRequestInFlight = false;
+            const header = applyCircuitRatePayload(payload);
+            if (header) {
+                plan = header.assignedRate;
+            }
+        },
+        () => {
+            circuitRateRequestInFlight = false;
+        },
+    );
+}
+
+function startCircuitRateRefresh() {
+    if (circuitRatePollTimer === null) {
+        circuitRatePollTimer = window.setInterval(requestCircuitRateRefresh, CIRCUIT_RATE_REFRESH_MS);
+    }
 }
 
 function applyCircuitSummary(summary) {
@@ -2582,21 +2655,14 @@ function loadInitial() {
     loadRttThresholds();
     requestCircuitById((payload) => {
         const circuits = payload.devices || [];
-        const advisory = payload.ethernet_advisory || null;
         queueStatsMode = payload.queue_stats_mode || "live";
-        let circuit = circuits[0];
-        const parentNode = resolveCircuitParentNode(payload, circuits);
+        const header = applyCircuitHeaderPayload(payload);
+        if (!header) {
+            return;
+        }
+        const {circuit, parentNode, assignedRate} = header;
         circuitConfigDevices = circuits;
-        $("#circuitName").text(circuit.circuit_name);
-        $("#circuitName").attr("title", circuit.circuit_name || "");
-        applyParentNodeLink(parentNode?.name || "");
-        $("#bwMax").text(formatPlanSpeedPair(circuit.download_max_mbps, circuit.upload_max_mbps));
-        $("#bwMin").text(formatPlanSpeedPair(circuit.download_min_mbps, circuit.upload_min_mbps));
-        renderEthernetAdvisory(advisory);
-        plan = {
-            down: toNumber(circuit.download_max_mbps, 0),
-            up: toNumber(circuit.upload_max_mbps, 0),
-        };
+        plan = assignedRate;
         latestCircuitDevices = circuits;
         circuitSqmOverride = circuit.sqm_override || "";
         setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up);
@@ -2611,6 +2677,7 @@ function loadInitial() {
         connectCircuitSummaryChannel();
         subscribeToCake();
         wireupAnalysis(circuits);
+        startCircuitRateRefresh();
     }, () => {
         alert("Circuit with id " + circuit_id + " not found");
     });
@@ -2638,6 +2705,7 @@ function cleanupCircuitPage() {
     sankeyPollTimer = clearPollingTimer(sankeyPollTimer);
     topAsnPollTimer = clearPollingTimer(topAsnPollTimer);
     trafficPollTimer = clearPollingTimer(trafficPollTimer);
+    circuitRatePollTimer = clearPollingTimer(circuitRatePollTimer);
     if (funnelSubscription) {
         funnelSubscription.dispose();
         funnelSubscription = null;

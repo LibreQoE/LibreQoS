@@ -3,6 +3,7 @@ use crate::shaped_devices_tracker::circuit_live::fresh_circuit_live_snapshot;
 use crate::shaped_devices_tracker::effective_parent_for_circuit;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_config::ShapedDevice;
+use lqos_utils::normalize_circuit_id_key;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -285,7 +286,7 @@ pub fn tree_attached_circuits(query: TreeAttachedCircuitsQuery) -> TreeAttachedC
                         circuit_id: row.circuit_id.clone(),
                         circuit_name: row.circuit_name.clone(),
                         ethernet_cap_badge: ethernet_badges
-                            .get(&row.circuit_id.to_ascii_lowercase())
+                            .get(&normalize_circuit_id_key(&row.circuit_id))
                             .cloned(),
                         parent_node: live
                             .map(|live| live.parent_node.clone())

@@ -3,13 +3,9 @@ use fxhash::FxHashMap;
 use ip_network::IpNetwork;
 use ip_network_table::IpNetworkTable;
 use lqos_config::ShapedDevice;
-use lqos_utils::XdpIpAddress;
+use lqos_utils::{XdpIpAddress, normalize_circuit_id_key};
 use std::net::IpAddr;
 use std::sync::Arc;
-
-fn normalize_circuit_id_key(circuit_id: &str) -> String {
-    circuit_id.trim().to_ascii_lowercase()
-}
 
 /// Snapshot handle for shaped devices plus runtime dynamic circuits.
 ///
