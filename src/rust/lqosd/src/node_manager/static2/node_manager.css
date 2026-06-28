@@ -1853,15 +1853,62 @@ h5 {
     flex: 1 1 auto;
     align-content: center;
 }
-.lqos-tree-state-panel .lqos-table-wrap,
-.lqos-tree-details-panel .lqos-table-wrap {
+.lqos-tree-state-panel .lqos-table-wrap {
     height: 100%;
+}
+.lqos-tree-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--lqos-border);
+    border-radius: var(--lqos-radius-sm);
+    background: color-mix(in srgb, var(--lqos-surface-2) 60%, transparent);
+}
+.lqos-tree-detail-item {
+    display: grid;
+    grid-template-columns: minmax(7.75rem, max-content) minmax(0, 1fr);
+    gap: 0.6rem;
+    align-items: center;
+    min-width: 0;
+    padding: 0.58rem 0.7rem;
+    border-bottom: 1px solid var(--lqos-border);
+}
+.lqos-tree-detail-item:nth-child(odd) {
+    border-right: 1px solid var(--lqos-border);
+}
+.lqos-tree-detail-item-wide {
+    grid-column: 1 / -1;
+    border-right: 0;
+    border-bottom: 0;
+}
+.lqos-tree-detail-label {
+    color: var(--lqos-muted);
+    font-size: 0.86rem;
+    font-weight: 650;
+    line-height: 1.2;
+}
+.lqos-tree-detail-body {
+    min-width: 0;
+    margin: 0;
+    color: var(--lqos-text);
+    font-size: 0.95rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
 }
 .lqos-tree-detail-value {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 0.4rem;
+}
+.lqos-tree-effective-now {
+    flex-wrap: nowrap;
+    max-width: 100%;
+}
+.lqos-tree-limit-source {
+    flex: 0 0 auto;
+    cursor: help;
 }
 .lqos-tree-inline-overrides {
     display: flex;
@@ -1870,6 +1917,24 @@ h5 {
 }
 .lqos-tree-inline-overrides > div:empty {
     display: none;
+}
+@media (max-width: 1199.98px) {
+    .lqos-tree-detail-grid {
+        grid-template-columns: 1fr;
+    }
+    .lqos-tree-detail-item,
+    .lqos-tree-detail-item:nth-child(odd) {
+        border-right: 0;
+    }
+}
+@media (max-width: 575.98px) {
+    .lqos-tree-detail-item {
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+    }
+    .lqos-tree-effective-now {
+        flex-wrap: wrap;
+    }
 }
 .lqos-tree-editor {
     display: flex;

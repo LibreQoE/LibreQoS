@@ -2,6 +2,7 @@ import { colorByQoqScore, colorByRttMs } from "./helpers/color_scales";
 import { isColorBlindMode } from "./helpers/colorblind";
 import { isDarkMode } from "./helpers/dark_mode";
 import { isRedacted } from "./helpers/redact";
+import { effectiveMax } from "./helpers/network_rates.mjs";
 import { scaleNumber, toNumber } from "./lq_js_common/helpers/scaling";
 import { get_ws_client, subscribeWS } from "./pubsub/ws";
 
@@ -274,14 +275,6 @@ function metricColorForMode(mode, metricValue) {
         return "#8893a5";
     }
     return colorByRttMs(numeric);
-}
-
-function configuredMaxThroughput(node) {
-    return node?.configured_max_throughput || node?.max_throughput || [0, 0];
-}
-
-function effectiveMaxThroughput(node) {
-    return node?.effective_max_throughput || configuredMaxThroughput(node);
 }
 
 function averageOrNull(sum, count) {
@@ -1258,7 +1251,7 @@ class SiteMapPage {
             const qooUp = averageOrNull(value.qooUpSum, value.qooUpCount);
             const rttDownMs = averageOrNull(value.rttDownSum, value.rttDownCount);
             const rttUpMs = averageOrNull(value.rttUpSum, value.rttUpCount);
-            const maxMbps = effectiveMaxThroughput(node);
+            const maxMbps = effectiveMax(node);
             const limitDownMbps = toNumber(maxMbps?.[0], 0);
             const limitUpMbps = toNumber(maxMbps?.[1], 0);
 

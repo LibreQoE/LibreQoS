@@ -76,32 +76,28 @@
             <div class="d-flex align-items-center justify-content-between gap-2">
                 <h5 class="mb-0"><i class="fa fa-circle-info"></i> Node Details</h5>
             </div>
-            <div class="lqos-table-wrap">
-                <table class="lqos-table lqos-table-compact">
-                    <tbody>
-                        <tr class="small">
-                            <td class="table-label-cell">Base Configured Rate</td>
-                            <td class="table-value-cell" id="nodeSettingsBaseConfigured">-</td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Rate Override</td>
-                            <td class="table-value-cell" id="nodeSettingsOverride"></td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Topology Override</td>
-                            <td class="table-value-cell" id="nodeTopologyOverrideValue"></td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Active Attachment</td>
-                            <td class="table-value-cell" id="nodeSettingsActiveAttachment">-</td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Effective Now</td>
-                            <td class="table-value-cell" id="nodeSettingsEffectiveNow">-</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+            <dl class="lqos-tree-detail-grid">
+                <div class="lqos-tree-detail-item">
+                    <dt class="lqos-tree-detail-label">Base Configured Rate</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsBaseConfigured">-</dd>
+                </div>
+                <div class="lqos-tree-detail-item">
+                    <dt class="lqos-tree-detail-label">Effective Now</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsEffectiveNow">-</dd>
+                </div>
+                <div class="lqos-tree-detail-item">
+                    <dt class="lqos-tree-detail-label">Rate Override</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsOverride"></dd>
+                </div>
+                <div class="lqos-tree-detail-item">
+                    <dt class="lqos-tree-detail-label">Topology Override</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeTopologyOverrideValue"></dd>
+                </div>
+                <div class="lqos-tree-detail-item lqos-tree-detail-item-wide">
+                    <dt class="lqos-tree-detail-label">Active Attachment</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsActiveAttachment">-</dd>
+                </div>
+            </dl>
             <div class="lqos-tree-inline-overrides">
                 <div id="nodeOverrideDisabledReason"></div>
                 <div id="nodeOverrideEditorSection">

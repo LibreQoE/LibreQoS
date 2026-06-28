@@ -2,10 +2,7 @@ import {clearDiv, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {formatThroughput, formatRetransmit, formatCakeStat} from "../helpers/scaling";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
-
-function effectiveMax(node) {
-    return node.effective_max_throughput || node.max_throughput || [0, 0];
-}
+import {effectiveMax} from "../helpers/network_rates.mjs";
 
 function retransmitPacketsForNode(node, direction) {
     return toNumber(
