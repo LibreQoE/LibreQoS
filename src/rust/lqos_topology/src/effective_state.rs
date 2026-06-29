@@ -46,35 +46,6 @@ pub fn is_health_state_fresh(config: &Config, health: &TopologyAttachmentHealthS
     now.saturating_sub(generated_unix) <= health_state_stale_after_seconds(config)
 }
 
-fn auto_attachment_option() -> TopologyAttachmentOption {
-    TopologyAttachmentOption {
-        attachment_id: TOPOLOGY_ATTACHMENT_AUTO_ID.to_string(),
-        attachment_name: "Auto".to_string(),
-        attachment_kind: "auto".to_string(),
-        attachment_role: TopologyAttachmentRole::Unknown,
-        pair_id: None,
-        peer_attachment_id: None,
-        peer_attachment_name: None,
-        capacity_mbps: None,
-        download_bandwidth_mbps: None,
-        upload_bandwidth_mbps: None,
-        transport_cap_mbps: None,
-        transport_cap_reason: None,
-        rate_source: TopologyAttachmentRateSource::Unknown,
-        can_override_rate: false,
-        rate_override_disabled_reason: None,
-        has_rate_override: false,
-        local_probe_ip: None,
-        remote_probe_ip: None,
-        probe_enabled: false,
-        probeable: false,
-        health_status: TopologyAttachmentHealthStatus::Disabled,
-        health_reason: None,
-        suppressed_until_unix: None,
-        effective_selected: false,
-    }
-}
-
 fn overlay_manual_groups(
     canonical: &TopologyEditorStateFile,
     overrides: &TopologyOverridesFile,
@@ -87,7 +58,7 @@ fn overlay_manual_groups(
             else {
                 continue;
             };
-            let mut options = vec![auto_attachment_option()];
+            let mut options = vec![topology_auto_attachment_option()];
             for attachment in &group.attachments {
                 let local_probe_ip = parse_probe_ip(&attachment.local_probe_ip);
                 let remote_probe_ip = parse_probe_ip(&attachment.remote_probe_ip);

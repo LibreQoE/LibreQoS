@@ -4677,6 +4677,7 @@ dependencies = [
  "lqos_bus",
  "lqos_config",
  "lqos_overrides",
+ "lqos_topology",
  "lqos_topology_compile",
  "lqos_utils",
  "petgraph",

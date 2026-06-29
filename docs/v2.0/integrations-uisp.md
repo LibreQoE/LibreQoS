@@ -32,6 +32,8 @@ LibreQoS supports multiple topology strategies for UISP integration to balance C
 
 **Performance Note:** When using `full` strategy with large networks, consider using `promote_to_root` to distribute CPU load across multiple cores.
 
+In `full` mode, UISP switches, routers, and radios exported as AP/device branches can use Queue Auto virtualization. See [Advanced Configuration Reference](configuration-advanced.md#queueauto-decision-flow).
+
 ## 5-Minute Validation After UISP Config Changes
 
 1. Run the integration once:

@@ -24,7 +24,7 @@ use lqos_config::{
     TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
     TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
     TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
-    TopologyQueueVisibilityPolicy,
+    TopologyQueueVisibilityPolicy, topology_auto_attachment_option,
 };
 #[cfg(test)]
 use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
@@ -289,15 +289,13 @@ fn resolve_root_site(
     )
 }
 
-pub async fn build_imported_full2_bundle(
+async fn build_imported_full2_bundle_from_data(
     config: Arc<Config>,
-    ip_ranges: IpRanges,
+    uisp_data: UispData,
     require_configured_root_site: bool,
+    build_started: Instant,
 ) -> Result<ImportedTopologyBundle, UispIntegrationError> {
-    let build_started = Instant::now();
     let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
-    // Fetch the data
-    let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
 
     let bandwidth_overrides =
         crate::strategies::legacy_bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
@@ -633,12 +631,6 @@ pub async fn build_imported_full2_bundle(
                         );
 
                         if is_real_topology_node(&graph, node) {
-                            let queue_visibility_policy =
-                                if matches!(&graph[node], GraphMapping::Site { .. }) {
-                                    TopologyQueueVisibilityPolicy::QueueAuto
-                                } else {
-                                    TopologyQueueVisibilityPolicy::QueueVisible
-                                };
                             topology_parent_candidates.push(TopologyParentCandidatesNode {
                                 node_id: graph[node].network_json_id(),
                                 node_name: name.to_owned(),
@@ -669,7 +661,7 @@ pub async fn build_imported_full2_bundle(
                                     .map(|candidate| candidate.node_name.clone()),
                                 can_move: !allowed_parents.is_empty(),
                                 allowed_parents,
-                                queue_visibility_policy,
+                                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
                                 preferred_attachment_id: None,
                                 preferred_attachment_name: None,
                                 effective_attachment_id: None,
@@ -952,6 +944,22 @@ pub async fn build_imported_full2_bundle(
         },
         ethernet_advisories,
     })
+}
+
+pub async fn build_imported_full2_bundle(
+    config: Arc<Config>,
+    ip_ranges: IpRanges,
+    require_configured_root_site: bool,
+) -> Result<ImportedTopologyBundle, UispIntegrationError> {
+    let build_started = Instant::now();
+    let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+    build_imported_full2_bundle_from_data(
+        config,
+        uisp_data,
+        require_configured_root_site,
+        build_started,
+    )
+    .await
 }
 
 fn add_device_links_to_graph(
@@ -1778,32 +1786,7 @@ fn topology_allowed_parents_from_groups_cached(
     let mut allowed_parents = Vec::with_capacity(groups.len());
     for group in groups {
         let parent = {
-            let mut attachment_options = vec![TopologyAttachmentOption {
-                attachment_id: TOPOLOGY_ATTACHMENT_AUTO_ID.to_string(),
-                attachment_name: "Auto".to_string(),
-                attachment_kind: "auto".to_string(),
-                attachment_role: TopologyAttachmentRole::Unknown,
-                pair_id: None,
-                peer_attachment_id: None,
-                peer_attachment_name: None,
-                capacity_mbps: None,
-                download_bandwidth_mbps: None,
-                upload_bandwidth_mbps: None,
-                transport_cap_mbps: None,
-                transport_cap_reason: None,
-                rate_source: TopologyAttachmentRateSource::Unknown,
-                can_override_rate: false,
-                rate_override_disabled_reason: None,
-                has_rate_override: false,
-                local_probe_ip: None,
-                remote_probe_ip: None,
-                probe_enabled: false,
-                probeable: false,
-                health_status: lqos_config::TopologyAttachmentHealthStatus::Disabled,
-                health_reason: None,
-                suppressed_until_unix: None,
-                effective_selected: false,
-            }];
+            let mut attachment_options = vec![topology_auto_attachment_option()];
             let mut seen_attachment_ids = HashSet::from([TOPOLOGY_ATTACHMENT_AUTO_ID.to_string()]);
 
             attachment_options.extend(
@@ -2202,18 +2185,23 @@ mod topology_override_tests {
     use super::{
         GraphType, TopologyAllowedParentGroup, TopologyAttachmentOverrideSelection,
         TopologyParentOverrideSelection, UispDevice, build_constrained_route,
+        build_imported_full2_bundle_from_data,
         export_parent_anchor_for_override, first_probe_ip_for_device, immediate_parent_from_route,
         is_upstream_parent_candidate, logical_parent_for_candidate,
         resolve_attachment_parent_candidate, resolve_parent_candidate,
         topology_allowed_parent_groups_for_node, topology_allowed_parents_from_groups,
         topology_parent_candidates_for_node,
     };
+    use crate::strategies::common::UispData;
     use crate::strategies::full2::graph_mapping::GraphMapping;
     use crate::strategies::full2::link_mapping::LinkMapping;
-    use crate::uisp_types::UispAttachmentRateSource;
-    use lqos_config::TopologyAttachmentRole;
+    use crate::uisp_types::{UispAttachmentRateSource, UispSite, UispSiteType};
+    use lqos_config::{TopologyAttachmentRole, TopologyQueueVisibilityPolicy};
     use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
+    use serde_json::{Map, Value, json};
     use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+    use uisp::{DataLink, Device, Site};
 
     fn site(name: &str, id: &str) -> GraphMapping {
         GraphMapping::Site {
@@ -2232,6 +2220,267 @@ mod topology_override_tests {
             download_mbps: 1000,
             upload_mbps: 1000,
         }
+    }
+
+    fn unique_temp_dir(name: &str) -> std::path::PathBuf {
+        let unique = format!(
+            "libreqos-uisp-full2-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&path).expect("temp dir should be created");
+        path
+    }
+
+    fn raw_site(id: &str, name: &str, site_type: &str) -> Site {
+        serde_json::from_value(json!({
+            "id": id,
+            "identification": {
+                "id": id,
+                "name": name,
+                "type": site_type,
+                "suspended": false
+            }
+        }))
+        .expect("raw site fixture should deserialize")
+    }
+
+    fn raw_device(id: &str, name: &str, site_id: &str) -> Device {
+        serde_json::from_value(json!({
+            "identification": {
+                "id": id,
+                "hostname": name,
+                "site": {
+                    "id": site_id
+                }
+            }
+        }))
+        .expect("raw device fixture should deserialize")
+    }
+
+    struct LinkEndpoint<'a> {
+        site_id: &'a str,
+        site_name: &'a str,
+        device_id: &'a str,
+        device_name: &'a str,
+    }
+
+    fn data_link_endpoint(endpoint: &LinkEndpoint<'_>) -> serde_json::Value {
+        json!({
+            "site": {
+                "identification": {
+                    "id": endpoint.site_id,
+                    "name": endpoint.site_name
+                }
+            },
+            "device": {
+                "identification": {
+                    "id": endpoint.device_id,
+                    "name": endpoint.device_name
+                }
+            }
+        })
+    }
+
+    fn device_data_link(id: &str, from: LinkEndpoint<'_>, to: LinkEndpoint<'_>) -> DataLink {
+        serde_json::from_value(json!({
+            "id": id,
+            "from": data_link_endpoint(&from),
+            "to": data_link_endpoint(&to),
+            "canDelete": true
+        }))
+        .expect("data link fixture should deserialize")
+    }
+
+    fn parsed_site(id: &str, name: &str) -> UispSite {
+        UispSite {
+            id: id.to_string(),
+            name: name.to_string(),
+            site_type: UispSiteType::Site,
+            max_down_mbps: 10_000,
+            max_up_mbps: 10_000,
+            ..Default::default()
+        }
+    }
+
+    fn parsed_device(id: &str, name: &str, site_id: &str) -> UispDevice {
+        UispDevice {
+            id: id.to_string(),
+            name: name.to_string(),
+            mac: String::new(),
+            role: None,
+            wireless_mode: None,
+            site_id: site_id.to_string(),
+            raw_download: 10_000,
+            raw_upload: 10_000,
+            download: 10_000,
+            upload: 10_000,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: UispAttachmentRateSource::Static,
+        }
+    }
+
+    fn find_network_node_by_id<'a>(
+        value: &'a Value,
+        target_id: &str,
+    ) -> Option<&'a Map<String, Value>> {
+        let map = value.as_object()?;
+        if map.get("id").and_then(Value::as_str) == Some(target_id) {
+            return Some(map);
+        }
+
+        map.values()
+            .find_map(|child| find_network_node_by_id(child, target_id))
+    }
+
+    #[tokio::test]
+    async fn full2_import_emits_queue_auto_for_device_backed_branches() {
+        let temp_dir = unique_temp_dir("uisp-full2-queue-auto");
+        let mut config = lqos_config::Config {
+            lqos_directory: temp_dir.to_string_lossy().to_string(),
+            state_directory: Some(temp_dir.join("state").to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+        config.uisp_integration.site = "Root Site".to_string();
+        config.queues.generated_pn_download_mbps = 10_000;
+        config.queues.generated_pn_upload_mbps = 10_000;
+        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
+        let config_for_topology = config.clone();
+
+        let root_site = raw_site("site-root", "Root Site", "site");
+        let child_site = raw_site("site-child", "Child Site", "site");
+        let root_device = raw_device("device-root-switch", "Root Switch", "site-root");
+        let child_device = raw_device("device-child-switch", "Child Switch", "site-child");
+        let root_parsed_device = parsed_device("device-root-switch", "Root Switch", "site-root");
+        let child_parsed_device =
+            parsed_device("device-child-switch", "Child Switch", "site-child");
+        let uisp_data = UispData::from_parts(
+            vec![root_site, child_site],
+            vec![root_device, child_device],
+            vec![device_data_link(
+                "link-root-child",
+                LinkEndpoint {
+                    site_id: "site-root",
+                    site_name: "Root Site",
+                    device_id: "device-root-switch",
+                    device_name: "Root Switch",
+                },
+                LinkEndpoint {
+                    site_id: "site-child",
+                    site_name: "Child Site",
+                    device_id: "device-child-switch",
+                    device_name: "Child Switch",
+                },
+            )],
+            vec![
+                parsed_site("site-root", "Root Site"),
+                parsed_site("site-child", "Child Site"),
+            ],
+            vec![root_parsed_device, child_parsed_device],
+        );
+
+        let bundle = build_imported_full2_bundle_from_data(
+            Arc::new(config),
+            uisp_data,
+            true,
+            std::time::Instant::now(),
+        )
+        .await
+        .expect("in-memory UISP import should build");
+        let editor = bundle
+            .native_editor
+            .as_ref()
+            .expect("full2 import should include native editor state");
+        let root_switch = editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-root-switch")
+            .expect("root switch should be exported as a topology editor node");
+
+        assert_eq!(
+            root_switch.queue_visibility_policy,
+            TopologyQueueVisibilityPolicy::QueueAuto
+        );
+
+        let compiled = lqos_topology_compile::compile_topology(
+            bundle,
+            lqos_topology_compile::TopologyCompileMode::Full,
+        )
+        .expect("full topology should compile from full2 import");
+        let compiled_child_switch = compiled
+            .editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-child-switch")
+            .expect("compiled editor should include the child switch");
+        assert_eq!(
+            compiled_child_switch.queue_visibility_policy,
+            TopologyQueueVisibilityPolicy::QueueAuto
+        );
+        assert_eq!(
+            compiled_child_switch.current_parent_node_id.as_deref(),
+            Some("uisp:device:device-root-switch")
+        );
+        assert!(
+            compiled_child_switch
+                .allowed_parents
+                .iter()
+                .any(|parent| parent.parent_node_id == "uisp:device:device-root-switch")
+        );
+        let compiled_child_site = compiled
+            .editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("compiled editor should include the child site");
+        assert_eq!(
+            compiled_child_site.queue_visibility_policy,
+            TopologyQueueVisibilityPolicy::QueueAuto
+        );
+        assert_eq!(
+            compiled_child_site.current_parent_node_id.as_deref(),
+            Some("uisp:device:device-child-switch")
+        );
+        assert!(
+            compiled_child_site
+                .allowed_parents
+                .iter()
+                .any(|parent| parent.parent_node_id == "uisp:device:device-child-switch")
+        );
+
+        let artifacts = lqos_topology::build_effective_topology_artifacts_from_canonical(
+            &config_for_topology,
+            &compiled.canonical,
+            &lqos_overrides::TopologyOverridesFile::default(),
+            &lqos_config::TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("effective topology should compile from full2 canonical output");
+        let effective_network = artifacts
+            .effective_network
+            .as_ref()
+            .expect("effective topology should include a network tree");
+        let effective_root_switch =
+            find_network_node_by_id(effective_network, "uisp:device:device-root-switch")
+                .expect("root switch should remain visible in the effective tree");
+
+        assert_eq!(
+            effective_root_switch.get("virtual").and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 
     fn build_test_graph() -> (
