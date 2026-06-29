@@ -24,3 +24,6 @@ lqos_bus = { path = "../lqos_bus" }
 petgraph = {  version = "0.7.1", features = ["serde-1"] }
 lqos_overrides = { path = "../lqos_overrides" }
 lqos_topology_compile = { path = "../lqos_topology_compile" }
+
+[dev-dependencies]
+lqos_topology = { path = "../lqos_topology" }

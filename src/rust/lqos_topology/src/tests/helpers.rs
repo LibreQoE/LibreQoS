@@ -3,7 +3,7 @@
         apply_effective_topology_to_canonical_state as try_apply_effective_topology_to_canonical_state,
         apply_effective_topology_to_network_json as try_apply_effective_topology_to_network_json,
         apply_effective_topology_to_network_json_from_canonical as try_apply_effective_topology_to_network_json_from_canonical,
-        apply_health_to_option, auto_attachment_option, build_effective_topology_artifacts,
+        apply_health_to_option, build_effective_topology_artifacts,
         build_effective_topology_artifacts_from_canonical, build_shaping_inputs,
         collect_direct_circuit_node_ids, collect_direct_circuit_node_names,
         compute_effective_state, parse_probe_ip, publish_effective_topology_artifacts,
@@ -18,8 +18,8 @@
         TopologyCanonicalRateInputSource, TopologyCanonicalStateFile, TopologyEditorNode,
         TopologyEditorStateFile, TopologyEffectiveAttachmentState, TopologyEffectiveNodeState,
         TopologyEffectiveStateFile, TopologyQueueVisibilityPolicy, TopologyRuntimeStatusFile,
-        topology_effective_network_path, topology_effective_state_path,
-        topology_runtime_status_path, topology_shaping_inputs_path,
+        topology_auto_attachment_option as auto_attachment_option, topology_effective_network_path,
+        topology_effective_state_path, topology_runtime_status_path, topology_shaping_inputs_path,
     };
     use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile};
     use serde_json::{Value, json};

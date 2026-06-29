@@ -33,6 +33,7 @@ El ajuste `Root UISP Site` solo es obligatorio en modo de topología `full`. En 
 - `network.json` queda para despliegues DIY o manuales.
 - Use la WebUI para confirmar que la importación y la profundidad del árbol son las esperadas.
 - En modo integración, trate ediciones de archivos como temporales.
+- En modo `full`, los switches, routers y radios de UISP exportados como ramas AP/dispositivo pueden usar virtualización Queue Auto. Consulte [Nodos virtuales](configuration-advanced-es.md#nodos-virtuales-solo-lógicos).
 
 ## Validación en 5 minutos después de cambios UISP
 
