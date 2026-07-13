@@ -115,6 +115,19 @@ pub enum ExecutionMode {
     LiveUpdate,
 }
 
+/// One HTB class that StormGuard must restore before leaving live mode.
+#[derive(Debug, Clone, Allocative)]
+pub struct StormGuardRestoreAdjustment {
+    /// Network interface containing the class.
+    pub interface_name: String,
+    /// Fully qualified HTB class identifier.
+    pub class_id: TcHandle,
+    /// Planned guaranteed class rate in Mbps.
+    pub planned_rate: u64,
+    /// Planned class ceiling in Mbps.
+    pub planned_ceil: u64,
+}
+
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
@@ -255,6 +268,8 @@ pub enum BakeryCommands {
     },
     /// Change a specific HTB class rate on-the-fly; optionally dry-run.
     StormGuardAdjustment {
+        /// Bakery shaping-tree generation used to resolve this class handle.
+        tree_generation: u64,
         /// If true, log the tc command instead of executing it.
         dry_run: bool,
         /// Network interface name (e.g., `eth0`) containing the class.
@@ -263,6 +278,45 @@ pub enum BakeryCommands {
         class_id: String,
         /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
         new_rate: u64,
+        /// Original guaranteed class rate in Mbps.
+        planned_rate: u64,
+        /// Original class ceiling in Mbps.
+        planned_ceil: u64,
+        /// Optional synchronous completion reply.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
+    /// Restore planned HTB rates and clear retained StormGuard replay state after success.
+    ResetStormGuardAdjustments {
+        /// Bakery shaping-tree generation used to resolve the supplied class handles.
+        tree_generation: u64,
+        /// Complete set of StormGuard-managed HTB classes to restore.
+        adjustments: Vec<StormGuardRestoreAdjustment>,
+        /// Restore the supplied adjustments when Bakery has no in-process ownership cache.
+        restore_untracked: bool,
+        /// Optional synchronous completion reply.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
+    /// Discard retained StormGuard class ownership after a shaping-tree rebuild.
+    DiscardStormGuardAdjustments {
+        /// Bakery shaping-tree generation whose cached ownership may be discarded.
+        tree_generation: u64,
+        /// Optional synchronous completion reply.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
+    /// Apply a StormGuard circuit SQM update immediately and acknowledge the live result.
+    StormGuardCircuitAdjustment {
+        /// Bakery shaping-tree generation used to resolve this circuit.
+        tree_generation: u64,
+        /// Stable circuit hash in Bakery state.
+        circuit_hash: i64,
+        /// Requested per-circuit SQM override, or `None` to restore the configured default.
+        sqm_override: Option<String>,
+        /// Optional synchronous completion reply.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<bool, String>>>,
     },
     /// Runtime TreeGuard request to virtualize or restore a non-top-level site without a full reload.
     TreeGuardSetNodeVirtual {

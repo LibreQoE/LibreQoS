@@ -1,5 +1,6 @@
 use crate::queue_structure::{
-    queue_network::QueueNetwork, queue_node::QueueNode, read_queueing_structure,
+    QueueStructureError, queue_network::QueueNetwork, queue_node::QueueNode,
+    read_queueing_structure,
 };
 use arc_swap::ArcSwap;
 use lqos_utils::file_watcher::FileWatcher;
@@ -26,17 +27,14 @@ static INITIAL_EFFECTIVE_RATES: Lazy<EffectiveRates> = Lazy::new(|| {
 ///
 /// This contains only named queue nodes that map cleanly back to authored network-tree
 /// entries. Circuit/device rows and generated placeholder nodes are intentionally excluded.
-pub static EFFECTIVE_NODE_RATES: Lazy<ArcSwap<HashMap<String, (f64, f64)>>> = Lazy::new(|| {
-    ArcSwap::new(Arc::new(INITIAL_EFFECTIVE_RATES.nodes.clone()))
-});
+pub static EFFECTIVE_NODE_RATES: Lazy<ArcSwap<HashMap<String, (f64, f64)>>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(INITIAL_EFFECTIVE_RATES.nodes.clone())));
 /// Global effective circuit-rate overlay derived from `queuingStructure.json`.
 ///
 /// This contains the currently programmed circuit queue rates keyed by normalized circuit ID.
-pub static EFFECTIVE_CIRCUIT_RATES: Lazy<ArcSwap<HashMap<String, (f64, f64)>>> = Lazy::new(|| {
-    ArcSwap::new(Arc::new(INITIAL_EFFECTIVE_RATES.circuits.clone()))
-});
-/// Set to true when the queue structure changes. This is here rather than in StormGuard
-/// to avoid circular dependencies.
+pub static EFFECTIVE_CIRCUIT_RATES: Lazy<ArcSwap<HashMap<String, (f64, f64)>>> =
+    Lazy::new(|| ArcSwap::new(Arc::new(INITIAL_EFFECTIVE_RATES.circuits.clone())));
+/// Set when StormGuard should reconsider a non-live queue-plan snapshot.
 pub static QUEUE_STRUCTURE_CHANGED_STORMGUARD: AtomicBool = AtomicBool::new(false);
 
 #[allow(missing_docs)]
@@ -122,33 +120,39 @@ pub fn spawn_queue_structure_monitor() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn update_queue_structure() {
+/// Reloads the queue structure from its generated JSON file.
+///
+/// This is exposed for consumers that must synchronize an in-memory snapshot with a
+/// successfully applied shaping-tree generation instead of waiting for the file watcher.
+pub fn reload_queue_structure() -> Result<(), QueueStructureError> {
     debug!("queueingStructure.json reload requested");
-    match read_queueing_structure() {
-        Ok(queues) => {
-            let effective_rates = build_effective_rates(&queues);
-            let new_queue_structure = QueueStructure {
-                maybe_queues: Some(queues),
-            };
-            QUEUE_STRUCTURE.store(Arc::new(new_queue_structure));
-            EFFECTIVE_NODE_RATES.store(Arc::new(effective_rates.nodes));
-            EFFECTIVE_CIRCUIT_RATES.store(Arc::new(effective_rates.circuits));
-            QUEUE_STRUCTURE_CHANGED_STORMGUARD.store(true, std::sync::atomic::Ordering::Relaxed);
+    let queues = read_queueing_structure()?;
+    let effective_rates = build_effective_rates(&queues);
+    let new_queue_structure = QueueStructure {
+        maybe_queues: Some(queues),
+    };
+    QUEUE_STRUCTURE.store(Arc::new(new_queue_structure));
+    EFFECTIVE_NODE_RATES.store(Arc::new(effective_rates.nodes));
+    EFFECTIVE_CIRCUIT_RATES.store(Arc::new(effective_rates.circuits));
+    Ok(())
+}
+
+fn update_queue_structure() {
+    if let Err(err) = reload_queue_structure() {
+        if QUEUE_STRUCTURE.load().maybe_queues.is_some() {
+            warn!(
+                "Failed to reload queuingStructure.json ({err:?}); preserving last-known-good snapshot"
+            );
+        } else {
+            warn!(
+                "Failed to load queuingStructure.json ({err:?}); leaving queue structure unavailable"
+            );
+            QUEUE_STRUCTURE.store(Arc::new(QueueStructure { maybe_queues: None }));
+            EFFECTIVE_NODE_RATES.store(Arc::new(HashMap::new()));
+            EFFECTIVE_CIRCUIT_RATES.store(Arc::new(HashMap::new()));
         }
-        Err(err) => {
-            if QUEUE_STRUCTURE.load().maybe_queues.is_some() {
-                warn!(
-                    "Failed to reload queuingStructure.json ({err:?}); preserving last-known-good snapshot"
-                );
-            } else {
-                warn!(
-                    "Failed to load queuingStructure.json ({err:?}); leaving queue structure unavailable"
-                );
-                QUEUE_STRUCTURE.store(Arc::new(QueueStructure { maybe_queues: None }));
-                EFFECTIVE_NODE_RATES.store(Arc::new(HashMap::new()));
-                EFFECTIVE_CIRCUIT_RATES.store(Arc::new(HashMap::new()));
-            }
-        }
+    } else {
+        QUEUE_STRUCTURE_CHANGED_STORMGUARD.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

@@ -23,6 +23,7 @@ use anyhow::{Context, Result};
 use lqos_config::{
     Config, ConfigShapedDevices, NetworkJson, TopologyShapingInputsFile,
 };
+use lqos_topology_compile::TopologyImportFile;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -152,6 +153,16 @@ fn load_shaped_devices_for_config(config: &lqos_config::Config) -> Result<Loaded
     })
 }
 
+fn load_source_shaped_devices_for_config(config: &Config) -> Result<ConfigShapedDevices> {
+    if lqos_config::integration_ingress_enabled(config) {
+        return Ok(TopologyImportFile::load(config)?
+            .map(|topology_import| topology_import.into_imported_bundle().shaped_devices)
+            .unwrap_or_default());
+    }
+
+    ConfigShapedDevices::load_for_config(config).context("Unable to load ShapedDevices.csv")
+}
+
 /// Loads shaped-device configuration from disk.
 ///
 /// When integration-backed topology ingress is enabled, this prefers ready runtime shaping inputs,
@@ -159,6 +170,18 @@ fn load_shaped_devices_for_config(config: &lqos_config::Config) -> Result<Loaded
 /// Manual mode loads `ShapedDevices.csv`.
 pub fn load_shaped_devices() -> Result<ConfigShapedDevices> {
     Ok(load_shaped_devices_with_source()?.shaped)
+}
+
+/// Loads the operator or integration source shaped-device rows without runtime overrides.
+///
+/// Integration-ingress mode reads `topology_import.json`; manual mode reads
+/// `ShapedDevices.csv`. This deliberately bypasses ready runtime shaping inputs so callers can
+/// detect source settings hidden by an effective adaptive override.
+///
+/// Side effects: reads the configured source file from disk.
+pub fn load_source_shaped_devices() -> Result<ConfigShapedDevices> {
+    let config = lqos_config::load_config().context("Unable to load /etc/lqos.conf")?;
+    load_source_shaped_devices_for_config(config.as_ref())
 }
 
 pub(crate) fn load_shaped_devices_with_source() -> Result<LoadedShapedDevices> {

@@ -1,12 +1,12 @@
 mod queing_structure_json_monitor;
 mod queue_network;
 mod queue_node;
-pub use queing_structure_json_monitor::spawn_queue_structure_monitor;
 #[doc(hidden)]
 pub use queing_structure_json_monitor::{
     EFFECTIVE_CIRCUIT_RATES, EFFECTIVE_NODE_RATES, QUEUE_STRUCTURE,
     QUEUE_STRUCTURE_CHANGED_STORMGUARD, QueueStructure,
 };
+pub use queing_structure_json_monitor::{reload_queue_structure, spawn_queue_structure_monitor};
 use queue_network::QueueNetwork;
 #[doc(hidden)]
 pub use queue_node::QueueNode;
