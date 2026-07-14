@@ -181,6 +181,161 @@ class TestIntegrationSplynxStableIds(unittest.TestCase):
         self.assertEqual(child.parentId, "1")
         self.assertEqual(child.parentIndex, net.findNodeIndexById("1"))
 
+    def test_duplicate_hardware_names_are_disambiguated_by_id(self):
+        names = integrationSplynx.disambiguate_duplicate_hardware_names({
+            "1122": " Telkom-Braeview-Sec-South  ",
+            "1980": "Telkom-Braeview-Sec-South",
+            "2000": "Unique AP",
+        })
+
+        self.assertEqual(names["1122"], "Telkom-Braeview-Sec-South (1122)")
+        self.assertEqual(names["1980"], "Telkom-Braeview-Sec-South (1980)")
+        self.assertEqual(names["2000"], "Unique AP")
+
+    def test_display_name_normalization_collapses_internal_whitespace(self):
+        self.assertEqual(
+            integrationSplynx.normalize_splynx_display_name("Tower   South\tSector", "1"),
+            "Tower South Sector",
+        )
+
+    def test_disambiguated_name_can_use_original_bandwidth_key(self):
+        download, upload = integrationSplynx.bandwidth_for_node_name(
+            {
+                "Telkom-Braeview-Sec-South": {
+                    "download": 500,
+                    "upload": 200,
+                }
+            },
+            "Telkom-Braeview-Sec-South (1122)",
+            "Telkom-Braeview-Sec-South",
+        )
+
+        self.assertEqual(download, 500)
+        self.assertEqual(upload, 200)
+
+    def test_bandwidth_lookup_preserves_exact_upstream_name_fallback(self):
+        download, upload = integrationSplynx.bandwidth_for_node_name(
+            {
+                " Sentech Brixton_Sentech - Brixton - Tarana - Sec - South ": {
+                    "download": 800,
+                    "upload": 300,
+                }
+            },
+            "Sentech Brixton_Sentech - Brixton - Tarana - Sec - South",
+            " Sentech Brixton_Sentech - Brixton - Tarana - Sec - South ",
+        )
+
+        self.assertEqual(download, 800)
+        self.assertEqual(upload, 300)
+
+    def test_duplicate_infrastructure_names_both_export_to_network_json(self):
+        net = integrationCommon.NetworkGraph()
+        hardware_name_extended = integrationSplynx.disambiguate_duplicate_hardware_names({
+            "1122": "Telkom-Braeview-Sec-South",
+            "1980": "Telkom-Braeview-Sec-South",
+        })
+        integrationSplynx.createInfrastructureNodes(
+            net,
+            monitoring=[
+                {"id": "1122", "gps": None},
+                {"id": "1980", "gps": None},
+            ],
+            hardware_name={
+                "1122": "Telkom-Braeview-Sec-South",
+                "1980": "Telkom-Braeview-Sec-South",
+            },
+            hardware_parent={},
+            hardware_type={"1122": "AP", "1980": "AP"},
+            siteBandwidth={},
+            hardware_name_extended=hardware_name_extended,
+            hardware_bandwidth_names={
+                "1122": "Telkom-Braeview-Sec-South",
+                "1980": "Telkom-Braeview-Sec-South",
+            },
+        )
+
+        net.prepareTree()
+        network_json = net.buildNetworkJson()
+
+        self.assertIn("Telkom-Braeview-Sec-South (1122)", network_json)
+        self.assertIn("Telkom-Braeview-Sec-South (1980)", network_json)
+        self.assertEqual(
+            network_json["Telkom-Braeview-Sec-South (1122)"]["id"],
+            "splynx:ap:1122",
+        )
+        self.assertEqual(
+            network_json["Telkom-Braeview-Sec-South (1980)"]["id"],
+            "splynx:ap:1980",
+        )
+
+    def test_duplicate_infrastructure_names_preserve_shaped_device_parent_ids(self):
+        net = integrationCommon.NetworkGraph()
+        hardware_name_extended = integrationSplynx.disambiguate_duplicate_hardware_names({
+            "1122": "Telkom-Braeview-Sec-South",
+            "1980": "Telkom-Braeview-Sec-South",
+        })
+        integrationSplynx.createInfrastructureNodes(
+            net,
+            monitoring=[
+                {"id": "1122", "gps": None},
+                {"id": "1980", "gps": None},
+            ],
+            hardware_name={
+                "1122": "Telkom-Braeview-Sec-South",
+                "1980": "Telkom-Braeview-Sec-South",
+            },
+            hardware_parent={},
+            hardware_type={"1122": "AP", "1980": "AP"},
+            siteBandwidth={},
+            hardware_name_extended=hardware_name_extended,
+            hardware_bandwidth_names={
+                "1122": "Telkom-Braeview-Sec-South",
+                "1980": "Telkom-Braeview-Sec-South",
+            },
+        )
+        integrationSplynx.createClientAndDevice(
+            net,
+            serviceItem={
+                "id": 1968,
+                "customer_id": 1,
+                "tariff_id": 1,
+                "mac": "",
+            },
+            cust_id_to_name={1: "Octofin"},
+            downloadForTariffID={1: 100},
+            uploadForTariffID={1: 50},
+            parent_node_id="1122",
+            ipv4_list=["192.0.2.1"],
+            ipv6_list=[],
+        )
+        integrationSplynx.createClientAndDevice(
+            net,
+            serviceItem={
+                "id": 35055,
+                "customer_id": 2,
+                "tariff_id": 1,
+                "mac": "",
+            },
+            cust_id_to_name={2: "Second Circuit"},
+            downloadForTariffID={1: 100},
+            uploadForTariffID={1: 50},
+            parent_node_id="1980",
+            ipv4_list=["192.0.2.2"],
+            ipv6_list=[],
+        )
+
+        net.prepareTree()
+        shaped_devices_csv, _circuit_anchors = net.buildShapedDevicesArtifacts()
+        rows = {
+            row["Circuit ID"]: row
+            for row in csv.DictReader(io.StringIO(shaped_devices_csv))
+        }
+
+        self.assertEqual(rows["1968"]["Parent Node"], "Telkom-Braeview-Sec-South (1122)")
+        self.assertEqual(rows["1968"]["Parent Node ID"], "splynx:ap:1122")
+        self.assertEqual(rows["35055"]["Parent Node"], "Telkom-Braeview-Sec-South (1980)")
+        self.assertEqual(rows["35055"]["Parent Node ID"], "splynx:ap:1980")
+
     def test_find_best_parent_node_normalizes_service_and_sector_ids(self):
         parent_node_id, assignment_method = integrationSplynx.findBestParentNode(
             {"router_id": 10, "access_device": 0},
