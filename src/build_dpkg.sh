@@ -70,7 +70,6 @@ RUSTPROGS=(
   lqos_map_perf
   uisp_integration
   lqos_overrides
-  lqos_topology
 )
 
 ####################################################
