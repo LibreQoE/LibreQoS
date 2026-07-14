@@ -72,7 +72,6 @@ PROGS=(
     lqos_map_perf
     uisp_integration
     lqos_overrides
-    lqos_topology
 )
 BUILD_PACKAGES=(
     lqosd
