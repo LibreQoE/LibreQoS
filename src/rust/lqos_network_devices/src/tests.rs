@@ -1,6 +1,7 @@
 use crate::{
     DynamicCircuit, ShapedDevicesCatalog, load_shaped_devices_for_config,
-    resolve_parent_node_reference, runtime_inputs, with_network_json_write,
+    load_source_shaped_devices_for_config, resolve_parent_node_reference, runtime_inputs,
+    with_network_json_write,
 };
 use lqos_config::{
     CircuitAnchorsFile, Config, ConfigShapedDevices, NetworkJsonNode, ShapedDevice,
@@ -367,7 +368,7 @@ fn runtime_inputs_leave_runtime_fallback_circuits_unparented() {
 }
 
 #[test]
-fn load_shaped_devices_uses_topology_import_when_runtime_inputs_are_empty() {
+fn source_loader_bypasses_ready_runtime_inputs() {
     let _guard = TEST_LOCK.lock();
 
     let lqos_directory = unique_temp_dir("lqos-network-devices-runtime-empty");
@@ -384,10 +385,24 @@ fn load_shaped_devices_uses_topology_import_when_runtime_inputs_are_empty() {
         "csv-circuit",
         "192.0.2.10/32",
     );
+    let runtime_inputs = TopologyShapingInputsFile {
+        circuits: vec![TopologyShapingCircuitInput {
+            circuit_id: "runtime-circuit".to_string(),
+            circuit_name: "Runtime Circuit".to_string(),
+            effective_parent_node_name: "Runtime Parent".to_string(),
+            effective_parent_node_id: "runtime-parent".to_string(),
+            devices: vec![TopologyShapingDeviceInput {
+                device_id: "runtime-device".to_string(),
+                ..TopologyShapingDeviceInput::default()
+            }],
+            ..TopologyShapingCircuitInput::default()
+        }],
+        shaping_generation: "shape-1".to_string(),
+        ..TopologyShapingInputsFile::default()
+    };
     std::fs::write(
         &runtime_path,
-        serde_json::to_string_pretty(&TopologyShapingInputsFile::default())
-            .expect("empty shaping inputs should encode"),
+        serde_json::to_string_pretty(&runtime_inputs).expect("runtime shaping inputs should encode"),
     )
     .expect("runtime shaping inputs should write");
     let mut import_devices = ConfigShapedDevices::default();
@@ -432,7 +447,12 @@ fn load_shaped_devices_uses_topology_import_when_runtime_inputs_are_empty() {
     let loaded = load_shaped_devices_for_config(&config)
         .expect("preferred shaped-device source should load");
     assert_eq!(loaded.shaped.devices.len(), 1);
-    assert_eq!(loaded.shaped.devices[0].circuit_id, "import-circuit");
+    assert_eq!(loaded.shaped.devices[0].circuit_id, "runtime-circuit");
+
+    let source =
+        load_source_shaped_devices_for_config(&config).expect("raw integration source should load");
+    assert_eq!(source.devices.len(), 1);
+    assert_eq!(source.devices[0].circuit_id, "import-circuit");
 }
 
 #[test]

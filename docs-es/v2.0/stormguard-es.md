@@ -41,6 +41,8 @@ minimum_upload_percentage = 0.5
 
 Si está probando, comience con `dry_run = true`.
 
+Al deshabilitar StormGuard, o al volver a `dry_run = true` después de usarlo en modo activo, las colas administradas recuperan sus tasas garantizadas y límites máximos configurados, y se eliminan los ajustes adaptativos persistidos por StormGuard. Los ajustes administrados por el operador no se modifican.
+
 ## UI y depuración
 
 - WebUI (Node Manager) incluye una pestaña dedicada de StormGuard además de las vistas de estado y depuración.

@@ -26,6 +26,8 @@ pub struct WatchingSite {
 pub struct WatchingSiteDependency {
     pub name: String,
     pub class_id: TcHandle,
+    pub original_min_download_mbps: u64,
+    pub original_min_upload_mbps: u64,
     pub original_max_download_mbps: u64,
     pub original_max_upload_mbps: u64,
 }

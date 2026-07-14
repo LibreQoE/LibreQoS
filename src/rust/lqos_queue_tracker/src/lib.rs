@@ -23,7 +23,8 @@ pub use interval::set_queue_refresh_interval;
 #[doc(hidden)]
 pub use queue_structure::{
     EFFECTIVE_CIRCUIT_RATES, EFFECTIVE_NODE_RATES, QUEUE_STRUCTURE,
-    QUEUE_STRUCTURE_CHANGED_STORMGUARD, QueueNode, QueueStructure, spawn_queue_structure_monitor,
+    QUEUE_STRUCTURE_CHANGED_STORMGUARD, QueueNode, QueueStructure, reload_queue_structure,
+    spawn_queue_structure_monitor,
 };
 pub use queue_types::deserialize_tc_tree; // Exported for the benchmarker
 pub use tracking::spawn_queue_monitor;

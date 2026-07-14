@@ -68,6 +68,7 @@ active_ping_timeout_seconds = 1.0
 
 You can list as many sites as you want in `targets`, or turn on `all_sites` and carve out exceptions with `exclude_sites`.
 `dry_run` is the recommended starting point while tuning the thresholds for a network.
+Disabling StormGuard, or switching a live deployment back to `dry_run`, restores its managed queues to their planned rates and clears StormGuard-owned adaptive overrides.
 
 ## How it works
 

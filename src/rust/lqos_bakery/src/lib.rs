@@ -58,7 +58,7 @@ pub use commands::{
     BakeryCommands, RuntimeNodeOperationAction as BakeryRuntimeNodeOperationAction,
     RuntimeNodeOperationFailureReason as BakeryRuntimeNodeOperationFailureReason,
     RuntimeNodeOperationSnapshot as BakeryRuntimeNodeOperationSnapshot,
-    RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus,
+    RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus, StormGuardRestoreAdjustment,
 };
 use lqos_bus::{
     BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
@@ -246,6 +246,22 @@ impl MigrationBranchVerification {
 struct StormguardOverrideKey {
     interface: String,
     class: TcHandle,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StormguardOverrideValue {
+    planned_rate: u64,
+    planned_ceil: u64,
+}
+
+struct StormguardAdjustmentRequest {
+    tree_generation: u64,
+    dry_run: bool,
+    interface_name: String,
+    class_id: String,
+    new_rate: u64,
+    planned_rate: u64,
+    planned_ceil: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -1483,6 +1499,10 @@ fn circuits_with_pending_migration_targets(
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 /// True while Bakery is applying a full reload batch to `tc`.
 static FULL_RELOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+/// Monotonic count of committed Bakery shaping-tree changes.
+static STORMGUARD_TREE_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// Latest generation produced by a successful full tree rebuild.
+static STORMGUARD_TREE_REBUILD_GENERATION: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 pub(crate) fn test_state_lock() -> &'static std::sync::Mutex<()> {
     static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
@@ -3705,6 +3725,16 @@ pub fn full_reload_in_progress() -> bool {
     FULL_RELOAD_IN_PROGRESS.load(Ordering::Relaxed)
 }
 
+/// Returns the Bakery shaping-tree generation observed by StormGuard.
+pub fn stormguard_tree_generation() -> u64 {
+    STORMGUARD_TREE_GENERATION.load(Ordering::Acquire)
+}
+
+/// Returns the latest generation that replaced class handles with a full tree rebuild.
+pub fn stormguard_tree_rebuild_generation() -> u64 {
+    STORMGUARD_TREE_REBUILD_GENERATION.load(Ordering::Acquire)
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 struct MappedLimitStats {
     enforced_limit: Option<usize>,
@@ -4040,8 +4070,9 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         .ok()
         .map(|config| QdiscHandleState::load(&config))
         .unwrap_or_default();
-    // Persist latest StormGuard ceilings keyed by interface + class so we can replay after rebuilds.
-    let mut stormguard_overrides: HashMap<StormguardOverrideKey, u64> = HashMap::new();
+    // Retain each StormGuard-owned class's original plan until disable/reset reconciliation.
+    let mut stormguard_overrides: HashMap<StormguardOverrideKey, StormguardOverrideValue> =
+        HashMap::new();
     let mut virtualized_sites: HashMap<i64, VirtualizedSiteState> = HashMap::new();
     let mut runtime_node_operations: HashMap<i64, RuntimeNodeOperation> = HashMap::new();
     let mut next_runtime_operation_id: u64 = 1;
@@ -5088,78 +5119,92 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 );
             }
             BakeryCommands::StormGuardAdjustment {
+                tree_generation,
                 dry_run,
                 interface_name,
                 class_id,
                 new_rate,
+                planned_rate,
+                planned_ceil,
+                reply,
             } => {
-                let has_mq_run = MQ_CREATED.load(Relaxed);
-                if !has_mq_run {
-                    debug!("StormGuardAdjustment received before MQ setup, skipping.");
-                    continue;
+                let result = apply_stormguard_adjustment(
+                    StormguardAdjustmentRequest {
+                        tree_generation,
+                        dry_run,
+                        interface_name,
+                        class_id,
+                        new_rate,
+                        planned_rate,
+                        planned_ceil,
+                    },
+                    &mut stormguard_overrides,
+                );
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
                 }
-                let Ok(config) = lqos_config::load_config() else {
-                    error!("Failed to load configuration, skipping StormGuardAdjustment.");
-                    continue;
-                };
-                let Ok(tc_handle) = TcHandle::from_string(&class_id) else {
-                    warn!(
-                        "StormGuardAdjustment has invalid class_id [{}], skipping.",
-                        class_id
-                    );
-                    continue;
-                };
-                if !dry_run {
-                    let key = StormguardOverrideKey {
-                        interface: interface_name.to_string(),
-                        class: tc_handle,
-                    };
-                    stormguard_overrides.insert(key, new_rate);
-                }
-                if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
-                    info!(
-                        "Skipping StormGuard live class change for {} {} because {}.",
-                        interface_name, class_id, reason
-                    );
-                    continue;
-                }
-                let normalized_class = tc_handle.as_tc_string();
-                // Build the HTB command
-                let args = vec![
-                    "class".to_string(),
-                    "replace".to_string(),
-                    "dev".to_string(),
-                    interface_name.to_string(),
-                    "classid".to_string(),
-                    normalized_class.clone(),
-                    "htb".to_string(),
-                    "rate".to_string(),
-                    format!("{}mbit", new_rate.saturating_sub(1)),
-                    "ceil".to_string(),
-                    format!("{}mbit", new_rate),
-                ];
-                if dry_run {
-                    info!("DRY RUN: /sbin/tc {}", args.join(" "));
+            }
+            BakeryCommands::ResetStormGuardAdjustments {
+                tree_generation,
+                adjustments,
+                restore_untracked,
+                reply,
+            } => {
+                let current_generation = stormguard_tree_generation();
+                let result = if tree_generation != current_generation {
+                    Err(format!(
+                        "StormGuard reset used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
+                    ))
+                } else if batch.is_some() {
+                    Err("Bakery queue rebuild batch is still open".to_string())
                 } else {
-                    let output = std::process::Command::new("/sbin/tc").args(&args).output();
-                    match output {
-                        Err(e) => {
-                            warn!("Failed to run tc command: {}", e);
-                        }
-                        Ok(out) => {
-                            if !out.status.success() {
-                                warn!(
-                                    "tc command failed: {}",
-                                    String::from_utf8_lossy(&out.stderr)
-                                );
-                            } else {
-                                debug!(
-                                    "tc command succeeded: {}",
-                                    String::from_utf8_lossy(&out.stdout)
-                                );
-                            }
-                        }
-                    }
+                    reset_stormguard_adjustments(
+                        &adjustments,
+                        restore_untracked,
+                        &mut stormguard_overrides,
+                    )
+                };
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
+            BakeryCommands::DiscardStormGuardAdjustments {
+                tree_generation,
+                reply,
+            } => {
+                let current_generation = stormguard_tree_generation();
+                let result = if tree_generation != current_generation {
+                    Err(format!(
+                        "StormGuard discard used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
+                    ))
+                } else if batch.is_some() {
+                    Err("Bakery queue rebuild batch is still open".to_string())
+                } else {
+                    stormguard_overrides.clear();
+                    Ok(())
+                };
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
+            BakeryCommands::StormGuardCircuitAdjustment {
+                tree_generation,
+                circuit_hash,
+                sqm_override,
+                reply,
+            } => {
+                let current_generation = stormguard_tree_generation();
+                let result = if tree_generation != current_generation {
+                    Err(format!(
+                        "StormGuard circuit adjustment used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
+                    ))
+                } else if batch.is_some() {
+                    Err("Bakery queue rebuild batch is still open".to_string())
+                } else {
+                    apply_stormguard_circuit_adjustment(circuit_hash, sqm_override, &mut circuits)
+                };
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
                 }
             }
             BakeryCommands::TreeGuardSetNodeVirtual {
@@ -5201,7 +5246,7 @@ fn handle_commit_batch(
     qdisc_handles: &mut QdiscHandleState,
     tx: &Sender<BakeryCommands>,
     migrations: &mut HashMap<i64, Migration>,
-    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
+    stormguard_overrides: &HashMap<StormguardOverrideKey, StormguardOverrideValue>,
     virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
     runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
 ) {
@@ -5271,7 +5316,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -5318,7 +5362,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -5364,7 +5407,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -5414,7 +5456,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary.clone(),
@@ -5483,7 +5524,40 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
+            virtualized_sites,
+            runtime_node_operations,
+            summary,
+        );
+        return;
+    }
+
+    if stormguard_site_changes_intersect_ownership(&site_change_mode, &config, stormguard_overrides)
+    {
+        let summary = "Bakery full reload triggered to keep StormGuard class ownership synchronized with a changed shaping plan.".to_string();
+        let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+            raw_batch.clone(),
+            &baseline_circuits,
+            effective_limit,
+        );
+        log_mapped_limit_decision(
+            "StormGuard-consistent rebuild",
+            mapped_limit,
+            mapped_limit_stats,
+        );
+        if mapped_limit_stats.dropped_mapped > 0 {
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
+        announce_full_reload(&summary);
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            mq_layout,
+            qdisc_handles,
+            &config,
+            new_batch,
+            resolved_mq_layout,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -5536,13 +5610,18 @@ fn handle_commit_batch(
                     &config,
                     raw_batch.clone(),
                     resolved_mq_layout.clone(),
-                    stormguard_overrides,
                     virtualized_sites,
                     runtime_node_operations,
                     summary,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
+        }
+        if stormguard_live_enabled(&config) {
+            // Publish the generation only after every live speed command is in this same channel.
+            // Previously queued StormGuard work retains the old generation and will be rejected;
+            // work created for the new generation is queued behind the new site plan.
+            STORMGUARD_TREE_GENERATION.fetch_add(1, Ordering::Release);
         }
     }
 
@@ -5830,7 +5909,6 @@ fn handle_commit_batch(
                         &config,
                         raw_batch.clone(),
                         resolved_mq_layout.clone(),
-                        stormguard_overrides,
                         virtualized_sites,
                         runtime_node_operations,
                         summary,
@@ -6179,6 +6257,29 @@ fn handle_tick(
     execute_and_record_live_change(&commands, "pruning lazy queues");
 }
 
+fn stormguard_site_changes_intersect_ownership(
+    site_change_mode: &SiteDiffResult,
+    config: &Arc<Config>,
+    overrides: &HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> bool {
+    let SiteDiffResult::SpeedChanges { changes } = site_change_mode else {
+        return false;
+    };
+
+    changes.iter().any(|change| {
+        let Some((down_class, up_class)) = site_class_handles(change) else {
+            return false;
+        };
+        overrides.contains_key(&StormguardOverrideKey {
+            interface: config.isp_interface(),
+            class: down_class,
+        }) || overrides.contains_key(&StormguardOverrideKey {
+            interface: config.internet_interface(),
+            class: up_class,
+        })
+    })
+}
+
 fn handle_change_site_speed_live(
     site_hash: i64,
     download_bandwidth_min: f32,
@@ -6295,7 +6396,14 @@ fn handle_change_site_speed_live(
                 ),
             ],
         ];
-        execute_and_record_live_change(&commands, "changing site speed live");
+        let result = execute_and_record_live_change(&commands, "changing site speed live");
+        if !result.ok {
+            mark_reload_required(format!(
+                "Bakery live site speed update failed: {}",
+                summarize_apply_result("changing site speed live", &result)
+            ));
+            return;
+        }
         // Update the site speeds in the site map - create a new Arc with updated values
         let new_site = Arc::new(BakeryCommands::AddSite {
             site_hash,
@@ -10913,7 +11021,6 @@ fn full_reload(
     config: &Arc<Config>,
     new_batch: Vec<Arc<BakeryCommands>>,
     resolved_mq_layout: Option<MqDeviceLayout>,
-    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
     virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
     runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
     trigger_summary: String,
@@ -11045,7 +11152,13 @@ fn full_reload(
             "A successful Bakery full reload re-established baseline state; incremental topology mutations can resume.",
         );
         FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
-        apply_stormguard_overrides(stormguard_overrides, config);
+        let rebuild_generation = STORMGUARD_TREE_GENERATION
+            .load(Ordering::Relaxed)
+            .wrapping_add(1);
+        STORMGUARD_TREE_REBUILD_GENERATION.store(rebuild_generation, Ordering::Release);
+        STORMGUARD_TREE_GENERATION.store(rebuild_generation, Ordering::Release);
+        // StormGuard replays persisted adjustments after the queue tracker publishes the rebuilt
+        // structure. Replaying cached class handles here could target reassigned handles.
     } else {
         *sites = previous_sites;
         *circuits = previous_circuits;
@@ -11185,55 +11298,482 @@ fn process_batch(
     }
 }
 
-fn apply_stormguard_overrides(
-    overrides: &HashMap<StormguardOverrideKey, u64>,
-    config: &Arc<Config>,
+fn stormguard_live_enabled(config: &Config) -> bool {
+    config
+        .stormguard
+        .as_ref()
+        .is_some_and(|stormguard| stormguard.enabled && !stormguard.dry_run)
+}
+
+fn record_stormguard_override(
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+    key: StormguardOverrideKey,
+    planned_rate: u64,
+    planned_ceil: u64,
 ) {
-    if config.queues.queue_mode.is_observe() {
-        push_bakery_event(
-            "stormguard_override_replay_skipped",
-            "info",
-            "Skipping StormGuard HTB override replay because queue_mode is observe.".to_string(),
+    overrides.entry(key).or_insert(StormguardOverrideValue {
+        planned_rate,
+        planned_ceil,
+    });
+}
+
+fn apply_stormguard_adjustment(
+    request: StormguardAdjustmentRequest,
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> Result<(), String> {
+    let current_generation = stormguard_tree_generation();
+    if request.tree_generation != current_generation {
+        return Err(format!(
+            "StormGuard class change used shaping-tree generation {}, but Bakery is at generation {current_generation}",
+            request.tree_generation
+        ));
+    }
+    if !MQ_CREATED.load(Relaxed) {
+        return Err("StormGuard class change received before MQ setup".to_string());
+    }
+    let config = lqos_config::load_config().map_err(|error| {
+        format!("failed to load configuration for StormGuard class change: {error}")
+    })?;
+    let tc_handle = TcHandle::from_string(&request.class_id)
+        .map_err(|error| format!("invalid StormGuard class ID {}: {error}", request.class_id))?;
+    if !request.dry_run && !stormguard_live_enabled(&config) {
+        return Err("StormGuard is disabled or in dry-run mode".to_string());
+    }
+    if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+        return Err(format!(
+            "StormGuard live class change is blocked because {reason}"
+        ));
+    }
+
+    let args = stormguard_htb_command(
+        &request.interface_name,
+        tc_handle,
+        request.new_rate.saturating_sub(1),
+        request.new_rate,
+    );
+    if request.dry_run {
+        info!("DRY RUN: /sbin/tc {}", args.join(" "));
+        return Ok(());
+    }
+
+    let output = std::process::Command::new("/sbin/tc")
+        .args(&args)
+        .output()
+        .map_err(|error| format!("failed to run StormGuard tc command: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "StormGuard tc command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    record_stormguard_override(
+        overrides,
+        StormguardOverrideKey {
+            interface: request.interface_name,
+            class: tc_handle,
+        },
+        request.planned_rate,
+        request.planned_ceil,
+    );
+    debug!(
+        "StormGuard tc command succeeded: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    Ok(())
+}
+
+fn stormguard_htb_command(
+    interface_name: &str,
+    class_id: TcHandle,
+    rate: u64,
+    ceil: u64,
+) -> Vec<String> {
+    vec![
+        "class".to_string(),
+        "replace".to_string(),
+        "dev".to_string(),
+        interface_name.to_string(),
+        "classid".to_string(),
+        class_id.as_tc_string(),
+        "htb".to_string(),
+        "rate".to_string(),
+        format!("{}mbit", rate),
+        "ceil".to_string(),
+        format!("{}mbit", ceil),
+    ]
+}
+
+fn stormguard_restorations(
+    adjustments: &[StormGuardRestoreAdjustment],
+    restore_untracked: bool,
+    overrides: &HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> Vec<StormGuardRestoreAdjustment> {
+    let mut restorations: HashMap<StormguardOverrideKey, StormGuardRestoreAdjustment> =
+        HashMap::new();
+    if restore_untracked {
+        for adjustment in adjustments {
+            restorations.insert(
+                StormguardOverrideKey {
+                    interface: adjustment.interface_name.clone(),
+                    class: adjustment.class_id,
+                },
+                adjustment.clone(),
+            );
+        }
+    }
+    for (key, value) in overrides {
+        restorations.insert(
+            key.clone(),
+            StormGuardRestoreAdjustment {
+                interface_name: key.interface.clone(),
+                class_id: key.class,
+                planned_rate: value.planned_rate,
+                planned_ceil: value.planned_ceil,
+            },
         );
-        return;
     }
-    if overrides.is_empty() {
-        return;
+    restorations.into_values().collect()
+}
+
+fn reset_stormguard_adjustments(
+    adjustments: &[StormGuardRestoreAdjustment],
+    restore_untracked: bool,
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> Result<(), String> {
+    if overrides.is_empty() && (!restore_untracked || adjustments.is_empty()) {
+        overrides.clear();
+        debug!("Cleared inactive Bakery StormGuard replay state.");
+        return Ok(());
     }
+    if !MQ_CREATED.load(Relaxed) {
+        return Err("Bakery MQ setup has not completed".to_string());
+    }
+    let config = lqos_config::load_config()
+        .map_err(|error| format!("failed to load configuration: {error}"))?;
+    if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+        return Err(format!("live queue mutation is blocked because {reason}"));
+    }
+
+    let restorations = stormguard_restorations(adjustments, restore_untracked, overrides);
+    invalidate_live_tc_snapshots();
+    let mut live_classes: HashMap<String, HashSet<TcHandle>> = HashMap::new();
     let mut commands = Vec::new();
-    for (key, rate) in overrides.iter() {
-        commands.push(vec![
-            "class".to_string(),
-            "replace".to_string(),
-            "dev".to_string(),
-            key.interface.clone(),
-            "classid".to_string(),
-            key.class.as_tc_string(),
-            "htb".to_string(),
-            "rate".to_string(),
-            format!("{}mbit", rate.saturating_sub(1)),
-            "ceil".to_string(),
-            format!("{}mbit", rate),
-        ]);
+    for restoration in restorations {
+        if !live_classes.contains_key(&restoration.interface_name) {
+            let snapshot = read_live_class_snapshot(&restoration.interface_name)?;
+            live_classes.insert(
+                restoration.interface_name.clone(),
+                snapshot.into_keys().collect(),
+            );
+        }
+        if live_classes
+            .get(&restoration.interface_name)
+            .is_some_and(|classes| classes.contains(&restoration.class_id))
+        {
+            commands.push(stormguard_htb_command(
+                &restoration.interface_name,
+                restoration.class_id,
+                restoration.planned_rate,
+                restoration.planned_ceil,
+            ));
+        } else {
+            debug!(
+                "StormGuard restore skipped absent class {} on {}.",
+                restoration.class_id.as_tc_string(),
+                restoration.interface_name
+            );
+        }
     }
-    let result = execute_in_memory(&commands, "replaying StormGuard overrides");
+    if !commands.is_empty() {
+        let result = execute_in_memory(&commands, "restoring StormGuard planned rates");
+        if !result.ok {
+            return Err(summarize_apply_result(
+                "restoring StormGuard planned rates",
+                &result,
+            ));
+        }
+    }
+
+    overrides.clear();
+    debug!("Restored planned StormGuard rates and cleared retained adjustments.");
+    Ok(())
+}
+
+fn apply_stormguard_circuit_adjustment(
+    circuit_hash: i64,
+    sqm_override: Option<String>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+) -> Result<bool, String> {
+    let Some(existing) = circuits.get(&circuit_hash) else {
+        return Ok(false);
+    };
+    let command = circuit_with_sqm_override(existing.as_ref(), sqm_override)?;
+    if !MQ_CREATED.load(Relaxed) {
+        return Err("Bakery MQ setup has not completed".to_string());
+    }
+    let config = lqos_config::load_config()
+        .map_err(|error| format!("failed to load configuration: {error}"))?;
+    if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+        return Err(format!("live queue mutation is blocked because {reason}"));
+    }
+    let commands = add_commands_for_circuit(&command, &config, ExecutionMode::Builder)
+        .filter(|commands| !commands.is_empty())
+        .ok_or_else(|| "StormGuard circuit adjustment produced no live tc commands".to_string())?;
+    let result = execute_in_memory(&commands, "applying StormGuard circuit SQM adjustment");
     if !result.ok {
-        push_bakery_event(
-            "stormguard_override_replay_failed",
-            "error",
-            summarize_apply_result("replaying StormGuard overrides", &result),
-        );
+        return Err(summarize_apply_result(
+            "applying StormGuard circuit SQM adjustment",
+            &result,
+        ));
     }
+    circuits.insert(circuit_hash, Arc::new(command));
+    Ok(true)
+}
+
+fn circuit_with_sqm_override(
+    existing: &BakeryCommands,
+    sqm_override: Option<String>,
+) -> Result<BakeryCommands, String> {
+    let mut command = existing.clone();
+    let BakeryCommands::AddCircuit {
+        sqm_override: current,
+        ..
+    } = &mut command
+    else {
+        return Err("existing Bakery circuit state is not AddCircuit".to_string());
+    };
+    *current = sqm_override;
+    Ok(command)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lqos_config::Config;
+    use lqos_config::{Config, StormguardConfig};
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     static TC_BYPASS_SETTER_CALLS: Mutex<Vec<bool>> = Mutex::new(Vec::new());
+
+    #[test]
+    fn stormguard_live_requires_enabled_non_dry_run_config() {
+        let mut config = Config::default();
+        assert!(!stormguard_live_enabled(&config));
+
+        config.stormguard = Some(StormguardConfig {
+            enabled: true,
+            dry_run: true,
+            ..StormguardConfig::default()
+        });
+        assert!(!stormguard_live_enabled(&config));
+
+        if let Some(stormguard) = &mut config.stormguard {
+            stormguard.dry_run = false;
+        }
+        assert!(stormguard_live_enabled(&config));
+    }
+
+    #[test]
+    fn stormguard_restore_command_uses_planned_rate() -> anyhow::Result<()> {
+        let command = stormguard_htb_command("eth0", TcHandle::from_string("1:2")?, 4, 10);
+        assert_eq!(
+            command,
+            [
+                "class", "replace", "dev", "eth0", "classid", "0x1:0x2", "htb", "rate", "4mbit",
+                "ceil", "10mbit"
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_override_retains_original_rate_pair() -> anyhow::Result<()> {
+        let key = StormguardOverrideKey {
+            interface: "eth0".to_string(),
+            class: TcHandle::from_string("1:2")?,
+        };
+        let mut overrides = HashMap::new();
+        record_stormguard_override(&mut overrides, key.clone(), 4, 10);
+        record_stormguard_override(&mut overrides, key.clone(), 99, 100);
+        let Some(value) = overrides.get(&key) else {
+            anyhow::bail!("missing StormGuard override");
+        };
+        assert_eq!(value.planned_rate, 4);
+        assert_eq!(value.planned_ceil, 10);
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_rejects_stale_tree_generation_before_live_mutation() {
+        let current_generation = stormguard_tree_generation();
+        let result = apply_stormguard_adjustment(
+            StormguardAdjustmentRequest {
+                tree_generation: current_generation.wrapping_add(1),
+                dry_run: false,
+                interface_name: "eth0".to_string(),
+                class_id: "1:2".to_string(),
+                new_rate: 5,
+                planned_rate: 10,
+                planned_ceil: 10,
+            },
+            &mut HashMap::new(),
+        );
+
+        let error = result.expect_err("stale generation must be rejected");
+        assert!(error.contains("generation"));
+    }
+
+    #[test]
+    fn stormguard_circuit_adjustment_reports_missing_bakery_state() {
+        let result =
+            apply_stormguard_circuit_adjustment(42, Some("cake".to_string()), &mut HashMap::new());
+        assert_eq!(result, Ok(false));
+    }
+
+    #[test]
+    fn stormguard_rebuild_gate_only_matches_changed_owned_site() {
+        let config = Arc::new(Config {
+            bridge: Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: false,
+                to_internet: "internet0".to_string(),
+                to_network: "isp0".to_string(),
+                mtu: None,
+            }),
+            ..Config::default()
+        });
+        let changed_site = mk_add_site(42, 0x1_0000, 0x2_0000, 0x10);
+        let change_mode = SiteDiffResult::SpeedChanges {
+            changes: vec![changed_site.as_ref().clone()],
+        };
+        let (down_class, up_class) =
+            site_class_handles(changed_site.as_ref()).expect("site class handles");
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            StormguardOverrideKey {
+                interface: config.isp_interface(),
+                class: down_class,
+            },
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        );
+
+        assert!(stormguard_site_changes_intersect_ownership(
+            &change_mode,
+            &config,
+            &overrides
+        ));
+
+        overrides.clear();
+        overrides.insert(
+            StormguardOverrideKey {
+                interface: config.internet_interface(),
+                class: up_class,
+            },
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        );
+        assert!(stormguard_site_changes_intersect_ownership(
+            &change_mode,
+            &config,
+            &overrides
+        ));
+
+        overrides.clear();
+        overrides.insert(
+            StormguardOverrideKey {
+                interface: config.isp_interface(),
+                class: TcHandle::from_u32(0x9_0009),
+            },
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        );
+        assert!(!stormguard_site_changes_intersect_ownership(
+            &change_mode,
+            &config,
+            &overrides
+        ));
+    }
+
+    #[test]
+    fn stormguard_reset_prefers_successful_bakery_ownership() -> anyhow::Result<()> {
+        let class = TcHandle::from_string("1:2")?;
+        let supplied = [
+            StormGuardRestoreAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: class,
+                planned_rate: 99,
+                planned_ceil: 100,
+            },
+            StormGuardRestoreAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: TcHandle::from_string("1:3")?,
+                planned_rate: 7,
+                planned_ceil: 20,
+            },
+        ];
+        let key = StormguardOverrideKey {
+            interface: "eth0".to_string(),
+            class,
+        };
+        let mut overrides = HashMap::new();
+        record_stormguard_override(&mut overrides, key, 4, 10);
+
+        let restorations = stormguard_restorations(&supplied, true, &overrides);
+        assert_eq!(restorations.len(), 2);
+        let cached = restorations
+            .iter()
+            .find(|adjustment| adjustment.class_id == class)
+            .ok_or_else(|| anyhow::anyhow!("missing cached restoration"))?;
+        assert_eq!(cached.planned_rate, 4);
+        assert_eq!(cached.planned_ceil, 10);
+
+        let startup = stormguard_restorations(&supplied, true, &HashMap::new());
+        assert_eq!(startup.len(), 2);
+        assert!(stormguard_restorations(&supplied, false, &HashMap::new()).is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_circuit_sqm_change_preserves_qdisc_handles() -> anyhow::Result<()> {
+        let existing = BakeryCommands::AddCircuit {
+            circuit_hash: 42,
+            circuit_name: Some("Circuit A".to_string()),
+            site_name: Some("Site A".to_string()),
+            parent_class_id: TcHandle::from_string("1:1")?,
+            up_parent_class_id: TcHandle::from_string("2:1")?,
+            class_minor: 3,
+            download_bandwidth_min: 5.0,
+            upload_bandwidth_min: 2.0,
+            download_bandwidth_max: 10.0,
+            upload_bandwidth_max: 4.0,
+            class_major: 1,
+            up_class_major: 2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            ip_addresses: "192.0.2.1".to_string(),
+            sqm_override: Some("cake".to_string()),
+        };
+        let updated = circuit_with_sqm_override(&existing, None).map_err(anyhow::Error::msg)?;
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle,
+            up_qdisc_handle,
+            sqm_override,
+            ..
+        } = updated
+        else {
+            anyhow::bail!("expected AddCircuit");
+        };
+        assert_eq!(down_qdisc_handle, Some(0x9000));
+        assert_eq!(up_qdisc_handle, Some(0x9001));
+        assert_eq!(sqm_override, None);
+        Ok(())
+    }
 
     fn recording_tc_bypass_setter(enabled: bool) -> anyhow::Result<()> {
         TC_BYPASS_SETTER_CALLS

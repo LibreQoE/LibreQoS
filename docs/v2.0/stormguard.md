@@ -41,6 +41,8 @@ minimum_upload_percentage = 0.5
 
 If you are testing, start with `dry_run = true` so you can observe decisions before allowing live limit changes.
 
+Disabling StormGuard, or changing an active deployment back to `dry_run = true`, restores its managed queues to their configured rates and ceilings and removes StormGuard's persisted adaptive overrides. Operator-managed overrides are not changed.
+
 ## UI and Debugging
 
 - WebUI provides a dedicated StormGuard dashboard tab plus status and debug views.
