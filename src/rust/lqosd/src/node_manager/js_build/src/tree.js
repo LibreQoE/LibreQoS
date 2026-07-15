@@ -8,6 +8,11 @@ import {
 import {colorByQoqScore} from "./helpers/color_scales";
 import {BitsPerSecondGauge} from "./graphs/bits_gauge";
 import {QooScoreGauge} from "./graphs/qoo_score_gauge";
+import {TreeStormguardGraph} from "./graphs/tree_stormguard_graph";
+import {
+    formatStormguardMbps,
+    formatStormguardMs,
+} from "./dashlets/stormguard_shared";
 import {enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
@@ -21,6 +26,15 @@ import {
     renderEffectiveNowDisplay,
     renderLimitedByDisplay,
 } from "./tree_limit_reason.mjs";
+import {
+    StormguardHistory,
+    formatStormguardSettings,
+    normalizeStormguardDebug,
+    normalizeStormguardRuntime,
+    shouldShowStormguardTab,
+    stormguardNodeContext,
+    summarizeStormguardHistory,
+} from "./tree_stormguard.mjs";
 
 var tree = null;
 var parent = 0;
@@ -29,6 +43,12 @@ var subscribed = false;
 var expandedNodes = new Set();
 var childrenByParentId = new Map();
 var stormguardNodes = new Set();
+var stormguardDebugBySite = new Map();
+var stormguardRuntime = normalizeStormguardRuntime(null);
+var stormguardDirection = "download";
+var stormguardHistory = new StormguardHistory();
+var treeStormguardGraph = null;
+var treeStormguardResizeObserver = null;
 var treeBitsGauge = null;
 var treeQooGauge = null;
 var lastAttachedCircuitsPage = null;
@@ -273,6 +293,139 @@ function isSyntheticRootNode(node) {
 
 function currentNode() {
     return tree && tree[parent] ? tree[parent][1] : null;
+}
+
+function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element && element.textContent !== value) element.textContent = value;
+}
+
+function stormguardRuntimeBadgeClass(phase) {
+    if (phase === "live") return "badge text-bg-success";
+    if (phase === "dry_run") return "badge text-bg-warning";
+    if (phase === "degraded") return "badge text-bg-danger";
+    if (phase === "cleanup_pending") return "badge text-bg-warning";
+    if (phase === "disabled") return "badge text-bg-secondary";
+    return "badge text-bg-info";
+}
+
+function formatAttempt(direction) {
+    if (!direction?.last_attempt_outcome) return "No action attempted yet";
+    const target = direction.last_attempt_target_mbps === null || direction.last_attempt_target_mbps === undefined
+        ? ""
+        : ` at ${formatStormguardMbps(direction.last_attempt_target_mbps)} Mbps`;
+    const error = direction.last_attempt_error ? ` — ${direction.last_attempt_error}` : "";
+    return `${direction.last_attempt_action || "action"}${target}: ${direction.last_attempt_outcome}${error}`;
+}
+
+function ensureTreeStormguardGraph() {
+    if (!treeStormguardGraph && document.getElementById("treeStormguardGraph")) {
+        treeStormguardGraph = new TreeStormguardGraph("treeStormguardGraph");
+        const graphElement = document.getElementById("treeStormguardGraph");
+        if (typeof ResizeObserver !== "undefined" && graphElement) {
+            treeStormguardResizeObserver = new ResizeObserver(() => {
+                if (document.getElementById("treeStormguardPane")?.classList.contains("active")) {
+                    treeStormguardGraph?.chart?.resize();
+                }
+            });
+            treeStormguardResizeObserver.observe(graphElement);
+        }
+    }
+    return treeStormguardGraph;
+}
+
+function renderTreeStormguard() {
+    const tabItem = document.getElementById("treeStormguardTabItem");
+    const pane = document.getElementById("treeStormguardPane");
+    const visible = shouldShowStormguardTab(stormguardRuntime);
+    const focusWillBeHidden = !visible
+        && (tabItem?.contains(document.activeElement) || pane?.contains(document.activeElement));
+    tabItem?.classList.toggle("d-none", !visible);
+    if (!visible) {
+        const stormguardTab = document.getElementById("tree-stormguard-tab");
+        const overviewTab = document.getElementById("tree-overview-tab");
+        if (stormguardTab?.classList.contains("active")) {
+            window.bootstrap?.Tab.getOrCreateInstance(overviewTab)?.show();
+        }
+        if (focusWillBeHidden) overviewTab?.focus();
+        return;
+    }
+
+    const badge = document.getElementById("treeStormguardRuntimeBadge");
+    if (badge) {
+        badge.className = stormguardRuntimeBadgeClass(stormguardRuntime.phase);
+        badge.textContent = stormguardRuntime.phase.replaceAll("_", " ");
+    }
+    const runtimeParts = [
+        stormguardRuntime.message,
+        `Bakery ${stormguardRuntime.bakeryReady ? "ready" : "not ready"}`,
+        stormguardRuntime.cleanupPending ? "cleanup pending" : "cleanup clear",
+        stormguardRuntime.lastError,
+    ].filter(Boolean);
+    setText("treeStormguardRuntimeMessage", runtimeParts.join(" · "));
+
+    const node = currentNode();
+    const siteName = typeof node?.name === "string" ? node.name : "";
+    const context = stormguardNodeContext(siteName, stormguardDebugBySite, stormguardNodes);
+    const entry = context.entry;
+    setText("treeStormguardContext", context.message);
+    document.getElementById("treeStormguardManagedContent")?.classList.toggle("d-none", !entry);
+    if (!entry) return;
+
+    const direction = entry[stormguardDirection];
+    setText(
+        "treeStormguardLimits",
+        `${formatStormguardMbps(entry.download?.queue_mbps)} / ${formatStormguardMbps(entry.upload?.queue_mbps)} Mbps`,
+    );
+    setText(
+        "treeStormguardBounds",
+        `D ${formatStormguardMbps(entry.download?.min_mbps)}–${formatStormguardMbps(entry.download?.max_mbps)} · U ${formatStormguardMbps(entry.upload?.min_mbps)}–${formatStormguardMbps(entry.upload?.max_mbps)} Mbps`,
+    );
+    setText(
+        "treeStormguardMode",
+        `${stormguardRuntime.mode.replaceAll("_", " ")} · ${(direction?.strategy || stormguardRuntime.strategy || "unknown").replaceAll("_", " ")}`,
+    );
+    setText("treeStormguardSettings", formatStormguardSettings(stormguardRuntime));
+    if (!direction) {
+        setText("treeStormguardDecision", `${stormguardDirection}: diagnostics unavailable`);
+        setText("treeStormguardCooldown", "—");
+        setText("treeStormguardReason", `No ${stormguardDirection} diagnostics are available.`);
+        setText("treeStormguardRttSource", "—");
+        setText("treeStormguardOutcome", "No action data available");
+        setText("treeStormguardGraphSummary", `No ${stormguardDirection} graph history is available yet.`);
+        ensureTreeStormguardGraph()?.render([]);
+        return;
+    }
+    const candidate = direction.candidate_action
+        ? `${direction.candidate_action}${direction.candidate_target_mbps ? ` → ${direction.candidate_target_mbps} Mbps` : ""}`
+        : "hold";
+    setText("treeStormguardDecision", `${stormguardDirection}: ${candidate}`);
+    setText(
+        "treeStormguardCooldown",
+        direction.cooldown_remaining_secs === null || direction.cooldown_remaining_secs === undefined
+            ? direction.state || "—"
+            : `${Number(direction.cooldown_remaining_secs).toFixed(1)} seconds remaining`,
+    );
+    setText(
+        "treeStormguardReason",
+        [direction.decision_reason, direction.decision_blocker].filter(Boolean).join(" · ") || "No decision details yet",
+    );
+    const flowIndex = stormguardDirection === "download" ? 0 : 1;
+    const flowCount = entry.passiveRttFlowCounts[flowIndex];
+    const pingDetail = entry.activePingTarget
+        ? `; active target ${entry.activePingTarget} at weight ${entry.activePingWeight ?? 0}`
+        : "";
+    setText(
+        "treeStormguardRttSource",
+        `${direction.rtt_source || "none"}; ${flowCount} passive RTT flow${flowCount === 1 ? "" : "s"}${pingDetail}; effective ${formatStormguardMs(direction.rtt)}`,
+    );
+    setText("treeStormguardOutcome", formatAttempt(direction));
+    const historyPoints = stormguardHistory.points(siteName, stormguardDirection, Date.now());
+    setText(
+        "treeStormguardGraphSummary",
+        summarizeStormguardHistory(historyPoints, stormguardDirection),
+    );
+    ensureTreeStormguardGraph()?.render(historyPoints);
 }
 
 function immediateParentNode(node) {
@@ -1429,7 +1582,10 @@ function getInitialTree() {
         requestTreeAttachedCircuitsWatch(true);
 
         if (!subscribed) {
-            subscribeWS(["NetworkTree", "StormguardStatus"], onMessage);
+            subscribeWS(
+                ["NetworkTree", "StormguardStatus", "StormguardDebug", "StormguardRuntime"],
+                onMessage,
+            );
             subscribed = true;
         }
     });
@@ -1441,6 +1597,7 @@ function fillHeader(node) {
     renderBreadcrumb();
     renderContextMeta(node);
     updateTreeGauges(node);
+    renderTreeStormguard();
     const configured = configuredMax(node);
     const effective = effectiveMax(node);
     const configuredDown = formatLimitValue(configured[0]);
@@ -1934,7 +2091,8 @@ function attachedCircuitsUpdate(msg) {
 
 function stormguardUpdate(msg) {
     const nextNodes = new Set();
-    msg.data.forEach((entry) => {
+    const rows = Array.isArray(msg?.data) ? msg.data : [];
+    rows.forEach((entry) => {
         if (!Array.isArray(entry) || typeof entry[0] !== "string" || entry[0].length === 0) {
             return;
         }
@@ -1954,11 +2112,32 @@ function stormguardUpdate(msg) {
     }
 }
 
+function stormguardDebugUpdate(msg) {
+    stormguardDebugBySite = normalizeStormguardDebug(msg?.data);
+    const timestamp = Date.now();
+    const selectedSite = currentNode()?.name;
+    const retainedSites = new Set(typeof selectedSite === "string" ? [selectedSite] : []);
+    stormguardHistory.retainSites(retainedSites);
+    const entry = stormguardDebugBySite.get(selectedSite);
+    if (entry?.download) stormguardHistory.push(entry.site, "download", entry.download, timestamp);
+    if (entry?.upload) stormguardHistory.push(entry.site, "upload", entry.upload, timestamp);
+    renderTreeStormguard();
+}
+
+function stormguardRuntimeUpdate(msg) {
+    stormguardRuntime = normalizeStormguardRuntime(msg?.data);
+    renderTreeStormguard();
+}
+
 function onMessage(msg) {
     if (msg.event === "NetworkTree") {
         treeUpdate(msg);
     } else if (msg.event === "StormguardStatus") {
         stormguardUpdate(msg);
+    } else if (msg.event === "StormguardDebug") {
+        stormguardDebugUpdate(msg);
+    } else if (msg.event === "StormguardRuntime") {
+        stormguardRuntimeUpdate(msg);
     }
 }
 
@@ -1993,6 +2172,18 @@ document.getElementById("nodeOverrideSave")?.addEventListener("click", () => {
 });
 document.getElementById("nodeOverrideClear")?.addEventListener("click", () => {
     clearNodeRateOverride();
+});
+document.querySelectorAll('input[name="treeStormguardDirection"]').forEach((input) => {
+    input.addEventListener("change", (event) => {
+        if (event.target.checked) {
+            stormguardDirection = event.target.value;
+            renderTreeStormguard();
+        }
+    });
+});
+document.getElementById("tree-stormguard-tab")?.addEventListener("shown.bs.tab", () => {
+    renderTreeStormguard();
+    treeStormguardGraph?.chart?.resize();
 });
 wsClient.on("TreeAttachedCircuitsSnapshot", attachedCircuitsUpdate);
 wsClient.on("TreeAttachedCircuitsUpdate", attachedCircuitsUpdate);
