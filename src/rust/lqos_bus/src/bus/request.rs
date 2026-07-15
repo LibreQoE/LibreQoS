@@ -447,6 +447,9 @@ pub enum BusRequest {
     /// Get current Stormguard debug snapshot
     GetStormguardDebug,
 
+    /// Get current StormGuard lifecycle and dependency health.
+    GetStormguardRuntimeStatus,
+
     /// Get current Bakery statistics
     GetBakeryStats,
 
@@ -717,6 +720,7 @@ impl BusRequest {
             Self::BakeryAddCircuit { .. } => "BakeryAddCircuit",
             Self::GetStormguardStats => "GetStormguardStats",
             Self::GetStormguardDebug => "GetStormguardDebug",
+            Self::GetStormguardRuntimeStatus => "GetStormguardRuntimeStatus",
             Self::GetBakeryStats => "GetBakeryStats",
             Self::BakeryReportPreflight { .. } => "BakeryReportPreflight",
             Self::TreeGuardSetNodeVirtual { .. } => "TreeGuardSetNodeVirtual",
@@ -804,6 +808,7 @@ impl BusRequest {
                 | Self::IpProtocolSummary
                 | Self::GetStormguardStats
                 | Self::GetStormguardDebug
+                | Self::GetStormguardRuntimeStatus
                 | Self::GetBakeryStats
                 | Self::TreeGuardGetNodeVirtualStatus { .. }
                 | Self::TreeGuardGetNodeVirtualBranchState { .. }

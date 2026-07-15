@@ -63,6 +63,7 @@ use crate::throughput_tracker::flow_data::{
 };
 use lqos_bus::{
     Circuit, FlowbeeSummaryData, LtsCapabilitiesSummary, QueueStoreTransit, StormguardDebugEntry,
+    StormguardRuntimeStatus,
 };
 use lqos_config::QooProfileInfo;
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
@@ -1029,6 +1030,9 @@ pub enum WsResponse {
     },
     StormguardDebug {
         data: Vec<StormguardDebugEntry>,
+    },
+    StormguardRuntime {
+        data: StormguardRuntimeStatus,
     },
     BakeryStatus {
         data: BakeryStatusData,

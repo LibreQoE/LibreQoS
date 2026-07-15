@@ -102,6 +102,7 @@ impl NetworkJson {
             current_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
             current_tcp_retransmit_packets: DownUpOrder::zeroed(),
+            current_rtt_flows: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
@@ -277,6 +278,7 @@ impl NetworkJson {
                 node.current_icmp_packets = previous_node.current_icmp_packets;
                 node.current_tcp_retransmits = previous_node.current_tcp_retransmits;
                 node.current_tcp_retransmit_packets = previous_node.current_tcp_retransmit_packets;
+                node.current_rtt_flows = previous_node.current_rtt_flows;
                 node.current_marks = previous_node.current_marks;
                 node.current_drops = previous_node.current_drops;
                 node.rtt_buffer = previous_node.rtt_buffer.clone();
@@ -297,6 +299,7 @@ impl NetworkJson {
             n.current_icmp_packets.set_to_zero();
             n.current_tcp_retransmits.set_to_zero();
             n.current_tcp_retransmit_packets.set_to_zero();
+            n.current_rtt_flows.set_to_zero();
             n.rtt_buffer.clear();
             n.current_drops.set_to_zero();
             n.current_marks.set_to_zero();
@@ -335,6 +338,17 @@ impl NetworkJson {
             // Safety first: use "get" to ensure that the node exists
             if let Some(node) = self.nodes.get_mut(*idx) {
                 node.rtt_buffer.accumulate(rtt);
+            } else {
+                warn!("No network tree entry for index {idx}");
+            }
+        }
+    }
+
+    /// Record how many TCP flows contributed fresh RTT data in this cycle.
+    pub fn add_rtt_flow_cycle(&mut self, targets: &[usize], flows: DownUpOrder<u32>) {
+        for idx in targets {
+            if let Some(node) = self.nodes.get_mut(*idx) {
+                node.current_rtt_flows.checked_add(flows);
             } else {
                 warn!("No network tree entry for index {idx}");
             }
@@ -517,6 +531,7 @@ fn recurse_node(
         current_icmp_packets: DownUpOrder::zeroed(),
         current_tcp_retransmits: DownUpOrder::zeroed(),
         current_tcp_retransmit_packets: DownUpOrder::zeroed(),
+        current_rtt_flows: DownUpOrder::zeroed(),
         current_drops: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
@@ -601,6 +616,7 @@ mod test {
             current_icmp_packets: DownUpOrder::zeroed(),
             current_tcp_retransmits: DownUpOrder::zeroed(),
             current_tcp_retransmit_packets: DownUpOrder::zeroed(),
+            current_rtt_flows: DownUpOrder::zeroed(),
             current_drops: DownUpOrder::zeroed(),
             current_marks: DownUpOrder::zeroed(),
             parents: Vec::new(),
@@ -709,6 +725,26 @@ mod test {
         let encoded = serde_json::to_value(&transport).expect("transport must serialize");
         assert_eq!(encoded["max_throughput"], serde_json::json!([1.5, 0.5]));
         assert_eq!(encoded["runtime_virtualized"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn rtt_contributing_flow_counts_accumulate_and_reset_each_cycle() {
+        let mut parsed = parse_network_json_from_value(serde_json::json!({
+            "Site": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 50,
+                "children": {}
+            }
+        }));
+        parsed.add_rtt_flow_cycle(&[0, 1], DownUpOrder::new(2, 1));
+        parsed.add_rtt_flow_cycle(&[1], DownUpOrder::new(3, 4));
+        assert_eq!(parsed.nodes[0].current_rtt_flows, DownUpOrder::new(2, 1));
+        assert_eq!(parsed.nodes[1].current_rtt_flows, DownUpOrder::new(5, 5));
+        assert_eq!(parsed.nodes[1].clone_to_transit().current_rtt_flows, (5, 5));
+
+        parsed.zero_throughput_and_rtt();
+        assert_eq!(parsed.nodes[0].current_rtt_flows, DownUpOrder::zeroed());
+        assert_eq!(parsed.nodes[1].current_rtt_flows, DownUpOrder::zeroed());
     }
 
     #[test]

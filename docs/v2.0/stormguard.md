@@ -41,7 +41,7 @@ minimum_upload_percentage = 0.5
 
 If you are testing, start with `dry_run = true` so you can observe decisions before allowing live limit changes.
 
-Disabling StormGuard, or changing an active deployment back to `dry_run = true`, restores its managed queues to their configured rates and ceilings and removes StormGuard's persisted adaptive overrides. Operator-managed overrides are not changed.
+Disabling StormGuard, or changing an active deployment back to `dry_run = true`, restores its managed queues to their configured rates and ceilings and removes StormGuard's persisted adaptive overrides. Operator-managed overrides are not changed. On startup, this cleanup can run before Bakery finishes normal queue initialization, but only for live classes that match StormGuard's persisted ownership record and the current shaping-tree generation. Cleanup waits during a full reload and retains its ownership record until Bakery confirms the restoration.
 
 ## UI and Debugging
 
@@ -55,6 +55,28 @@ Disabling StormGuard, or changing an active deployment back to `dry_run = true`,
   - current effective limits
   - evaluation metrics
   - rule/decision context
+- The Network Tree shows a contextual **StormGuard** tab while StormGuard is enabled or cleanup/degraded state remains. Select a watched node to see its current download/upload limits, bounds, strategy, cooldown, decision reason, last outcome, and a browser-local five-minute graph. The tab explains when the selected node is not managed and links to StormGuard configuration for edits.
+
+Runtime health is reported as one of these states:
+
+- `disabled`: StormGuard is off and no cleanup remains.
+- `initializing`: configuration, topology, or Bakery dependencies are not ready yet.
+- `dry_run`: decisions are being evaluated without live queue changes.
+- `live`: acknowledged live adjustments are allowed.
+- `cleanup_pending`: owned queue state still needs restoration.
+- `degraded`: an error prevents normal evaluation or cleanup; inspect the displayed last error and service log.
+
+## Diagnostic Log
+
+When `log_file` is configured, StormGuard appends one semicolon-delimited row per watched site and direction each second. The first field is a schema version. The version 1 header is:
+
+```text
+schema_version;timestamp_unix_ms;site;direction;mode;strategy;queue_mbps;min_mbps;max_mbps;throughput_mbps;throughput_ma_mbps;retransmit_fraction;retransmit_ma;passive_rtt_ms;active_ping_rtt_ms;active_ping_target;active_ping_weight;effective_rtt_ms;rtt_ma_ms;baseline_rtt_ms;delay_ms;passive_rtt_flow_count;decision_score;candidate_action;candidate_target_mbps;decision_reason;decision_blocker;state;cooldown_remaining_secs;last_attempt_action;last_attempt_target_mbps;last_attempt_outcome;last_attempt_unix_ms;last_attempt_error;rtt_source
+```
+
+Unavailable values are empty fields. The file is appended across daemon restarts, with a header written only for a new or empty file. At 64 MiB, StormGuard rotates the file to `<log_file>.1`; the previous `.1` is replaced, so at most one backup is retained.
+
+Application outcomes distinguish `applied`, `dry_run`, `skipped`, and `failed`. A failed adjustment does not change StormGuard's current limit or start its cooldown, so it remains eligible for retry.
 
 Use this during rollout validation.
 

@@ -10,6 +10,7 @@ use tracing::warn;
 #[derive(Debug)]
 pub enum CircuitFallbackOutcome {
     Applied { persisted: bool },
+    AppliedUnpersisted { error: String },
     Cleared { persisted: bool },
     DryRun { action: String },
     Skipped { reason: String },
@@ -154,10 +155,11 @@ pub async fn apply_circuit_fallback(
                     Err(error) => Err(error),
                 };
                 if let Err(rollback_error) = rollback {
-                    warn!(
+                    let error = format!(
                         "StormGuard could not persist or roll back circuit fallback for {circuit_id}; retaining in-memory ownership: persistence={persistence_error}; rollback={rollback_error}"
                     );
-                    return Ok(CircuitFallbackOutcome::Applied { persisted: false });
+                    warn!("{error}");
+                    return Ok(CircuitFallbackOutcome::AppliedUnpersisted { error });
                 }
                 return Err(persistence_error).context(
                     "failed to persist StormGuard circuit fallback; live change was rolled back",

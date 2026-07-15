@@ -11,24 +11,23 @@ use crate::adaptive_actions::{
     load_persisted_circuit_fallbacks, wait_for_bakery_reply,
 };
 use crate::config::StormguardConfig;
-use crate::datalog::LogCommand;
 use crate::site_state::analysis::SaturationLevel;
 use crate::site_state::recommendation::{
     Recommendation, RecommendationAction, RecommendationDirection,
 };
 use crate::site_state::ring_buffer::RingBuffer;
-use crate::site_state::site::SiteState;
+use crate::site_state::site::{ActionAttempt, DirectionDecision, SiteState};
 use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use anyhow::{Context, anyhow};
 use crossbeam_channel::Sender;
-use lqos_bakery::{BakeryCommands, StormGuardRestoreAdjustment};
+use lqos_bakery::{BakeryCommands, StormGuardClassAdjustment, StormGuardRestoreAdjustment};
 use lqos_bus::{StormguardDebugDirection, StormguardDebugEntry, TcHandle};
 use lqos_config::NetworkJsonTransport;
 use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 use lqos_queue_tracker::QUEUE_STRUCTURE;
 use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
 pub struct SiteStateTracker {
@@ -43,21 +42,42 @@ struct CircuitQueueRecommendationContext<'a> {
     site: &'a mut SiteState,
     config: &'a StormguardConfig,
     recommendation: &'a Recommendation,
-    summary: &'a str,
     circuit_id: &'a str,
     cooldown_secs: f32,
-    log_sender: &'a std::sync::mpsc::Sender<LogCommand>,
     bakery_sender: Sender<BakeryCommands>,
 }
 
-struct HtbChangeRequest {
-    tree_generation: u64,
-    dry_run: bool,
-    interface_name: String,
-    class_handle: TcHandle,
-    new_rate: u64,
-    planned_rate: u64,
-    planned_ceil: u64,
+#[derive(Default)]
+pub(crate) struct ApplicationReport {
+    pub(crate) errors: Vec<String>,
+    pub(crate) acknowledged_success: bool,
+}
+
+fn unix_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
+}
+
+fn successful_application_outcome(dry_run: bool) -> &'static str {
+    if dry_run { "dry_run" } else { "applied" }
+}
+
+fn active_rtt_source(
+    passive_rtt: Option<f64>,
+    active_rtt: Option<f64>,
+    weight: f32,
+) -> &'static str {
+    match (passive_rtt, active_rtt) {
+        (Some(_), Some(_)) if weight <= 0.0 => "passive",
+        (Some(_), Some(_)) if weight >= 1.0 => "active",
+        (Some(_), Some(_)) => "blended",
+        (None, Some(_)) => "active",
+        (Some(_), None) => "passive",
+        (None, None) => "none",
+    }
 }
 
 async fn reset_bakery_adjustments(
@@ -106,13 +126,8 @@ pub(crate) async fn clear_retained_circuit_fallbacks(
     bakery_sender: Sender<BakeryCommands>,
 ) -> anyhow::Result<()> {
     for circuit_id in circuit_ids {
-        match clear_circuit_fallback(
-            circuit_id,
-            false,
-            tree_generation,
-            bakery_sender.clone(),
-        )
-        .await?
+        match clear_circuit_fallback(circuit_id, false, tree_generation, bakery_sender.clone())
+            .await?
         {
             CircuitFallbackOutcome::Cleared { .. } | CircuitFallbackOutcome::Skipped { .. } => {}
             outcome => {
@@ -347,6 +362,7 @@ impl SiteStateTracker {
                     current_rtt_ms: None,
                     passive_rtt_ms: None,
                     active_ping_rtt_ms: None,
+                    passive_rtt_flow_counts: (0, 0),
                     rtt_sample_for_baseline_ms: None,
                     rtt_baseline_ms: None,
                     last_passive_rtt_ms: None,
@@ -354,6 +370,10 @@ impl SiteStateTracker {
                     passive_rtt_updated_this_tick: false,
                     last_action_download: None,
                     last_action_upload: None,
+                    download_decision: DirectionDecision::default(),
+                    upload_decision: DirectionDecision::default(),
+                    last_attempt_download: None,
+                    last_attempt_upload: None,
                     ticks_since_last_probe_download: 0,
                     ticks_since_last_probe_upload: 0,
                 },
@@ -433,27 +453,19 @@ impl SiteStateTracker {
                     "Replaying persisted StormGuard {} override for {}: {} -> {}",
                     direction, name, planned_rate, current_rate
                 );
-                for (class_id, planned_rate, planned_ceil, rate) in
-                    Self::dependent_adjustments(&site.config, direction, current_rate)
-                {
-                    Self::apply_htb_change_confirmed(
-                        config,
-                        &interface_name,
-                        class_id,
-                        rate,
-                        (planned_rate, planned_ceil),
-                        self.tree_generation,
-                        bakery_sender.clone(),
-                    )
-                    .await?;
-                }
-                Self::apply_htb_change_confirmed(
-                    config,
+                let adjustments = Self::site_adjustment_batch(
+                    &site.config,
+                    direction,
+                    planned_rate,
+                    current_rate,
                     &interface_name,
                     queue.class_id,
-                    current_rate,
-                    (Self::queue_minimum_rate(queue, direction), planned_rate),
+                    Self::queue_minimum_rate(queue, direction),
+                );
+                Self::send_adjustment_batch_confirmed(
                     self.tree_generation,
+                    config.dry_run,
+                    adjustments,
                     bakery_sender.clone(),
                 )
                 .await?;
@@ -553,6 +565,7 @@ impl SiteStateTracker {
             target.throughput_down.add(down_mbps);
             target.throughput_up.add(up_mbps);
             target.current_throughput = (down_mbps, up_mbps);
+            target.passive_rtt_flow_counts = node_info.current_rtt_flows;
 
             // Retransmits (as a percentage of TCP packets)
             let retransmits_down = if node_info.current_tcp_packets.0 > 0 {
@@ -751,6 +764,8 @@ impl SiteStateTracker {
 
                         let can_increase = queue_mbps < max_mbps;
                         let can_decrease = queue_mbps > min_mbps;
+                        let decision = site.decision(direction);
+                        let attempt = site.last_attempt(direction);
 
                         StormguardDebugDirection {
                             queue_mbps,
@@ -775,6 +790,35 @@ impl SiteStateTracker {
                             saturation_max: saturation_max.to_string(),
                             can_increase,
                             can_decrease,
+                            decision_score: decision.score,
+                            candidate_action: decision
+                                .candidate_action
+                                .map(action_string)
+                                .map(str::to_string),
+                            candidate_target_mbps: decision.target_mbps,
+                            decision_reason: decision.reason.clone(),
+                            decision_blocker: decision.blocker.clone(),
+                            last_attempt_action: attempt
+                                .map(|attempt| action_string(attempt.action).to_string()),
+                            last_attempt_target_mbps: attempt.map(|attempt| attempt.target_mbps),
+                            last_attempt_outcome: attempt.map(|attempt| attempt.outcome.clone()),
+                            last_attempt_unix_ms: attempt.map(|attempt| attempt.unix_ms),
+                            last_attempt_error: attempt.and_then(|attempt| attempt.error.clone()),
+                            rtt_source: if matches!(
+                                config.strategy,
+                                lqos_config::StormguardStrategy::DelayProbeActive
+                            ) {
+                                active_rtt_source(
+                                    site.passive_rtt_ms,
+                                    site.active_ping_rtt_ms,
+                                    config.active_ping_weight,
+                                )
+                            } else if site.passive_rtt_ms.is_some() {
+                                "passive"
+                            } else {
+                                "none"
+                            }
+                            .to_string(),
                         }
                     };
 
@@ -782,6 +826,9 @@ impl SiteStateTracker {
                     site: name.clone(),
                     download: make_direction(RecommendationDirection::Download),
                     upload: make_direction(RecommendationDirection::Upload),
+                    active_ping_target: config.active_ping_target.clone(),
+                    active_ping_weight: config.active_ping_weight,
+                    passive_rtt_flow_counts: site.passive_rtt_flow_counts,
                 })
             })
             .collect()
@@ -791,23 +838,48 @@ impl SiteStateTracker {
         &mut self,
         recommendations: Vec<(Recommendation, String)>,
         config: &StormguardConfig,
-        log_sender: std::sync::mpsc::Sender<LogCommand>,
         bakery_sender: Sender<BakeryCommands>,
-    ) {
+    ) -> ApplicationReport {
+        let mut application_errors = Vec::new();
+        let mut acknowledged_success = false;
         // We'll need the queues to apply HTB commands
         let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
             info!("No queue structure - cannot get stats");
-            return;
+            application_errors.push(
+                "StormGuard cannot apply recommendations because queue state is unavailable"
+                    .to_string(),
+            );
+            for (recommendation, _) in recommendations {
+                if let Some(site) = self.sites.get_mut(&recommendation.site) {
+                    Self::record_skipped_application(
+                        site,
+                        &recommendation,
+                        "queue structure unavailable",
+                    );
+                }
+            }
+            return ApplicationReport {
+                errors: application_errors,
+                acknowledged_success,
+            };
         };
-        let mut pending_site_updates: HashSet<String> = HashSet::new();
 
-        for (recommendation, summary) in recommendations {
+        for (recommendation, _summary) in recommendations {
             // Find the Site Object
             let Some(site) = self.sites.get_mut(&recommendation.site) else {
                 continue;
             };
             // Find the Site Config
             let Some(site_config) = config.sites.get(&recommendation.site) else {
+                Self::record_skipped_application(
+                    site,
+                    &recommendation,
+                    "watched-site configuration unavailable",
+                );
+                application_errors.push(format!(
+                    "StormGuard watched-site configuration is unavailable for {}",
+                    recommendation.site
+                ));
                 continue;
             };
 
@@ -820,6 +892,15 @@ impl SiteStateTracker {
                 }
             }) else {
                 info!("Queue {} not found in queue structure", recommendation.site);
+                Self::record_skipped_application(
+                    site,
+                    &recommendation,
+                    "watched queue is absent from the shaping tree",
+                );
+                application_errors.push(format!(
+                    "StormGuard watched queue {} is absent from the shaping tree",
+                    recommendation.site
+                ));
                 continue;
             };
             let cooldown_secs = Self::cooldown_for_action(config, &recommendation.action);
@@ -830,19 +911,29 @@ impl SiteStateTracker {
 
             // Circuit queues host qdiscs; prefer the TreeGuard-style fallback path.
             if let Some(circuit_id) = queue.circuit_id.as_deref() {
-                Self::handle_circuit_queue_recommendation(CircuitQueueRecommendationContext {
-                    tree_generation: self.tree_generation,
-                    active_circuit_fallbacks: &mut self.active_circuit_fallbacks,
-                    site,
-                    config,
-                    recommendation: &recommendation,
-                    summary: &summary,
-                    circuit_id,
-                    cooldown_secs,
-                    log_sender: &log_sender,
-                    bakery_sender: bakery_sender.clone(),
-                })
-                .await;
+                if let Some(error) =
+                    Self::handle_circuit_queue_recommendation(CircuitQueueRecommendationContext {
+                        tree_generation: self.tree_generation,
+                        active_circuit_fallbacks: &mut self.active_circuit_fallbacks,
+                        site,
+                        config,
+                        recommendation: &recommendation,
+                        circuit_id,
+                        cooldown_secs,
+                        bakery_sender: bakery_sender.clone(),
+                    })
+                    .await
+                {
+                    application_errors.push(error);
+                }
+                if site
+                    .last_attempt(recommendation.direction)
+                    .is_some_and(|attempt| {
+                        matches!(attempt.outcome.as_str(), "applied" | "dry_run")
+                    })
+                {
+                    acknowledged_success = true;
+                }
                 continue;
             }
 
@@ -852,155 +943,150 @@ impl SiteStateTracker {
             let class_handle = queue.class_id;
 
             // Find the new bandwidth
-            let current_rate = Self::site_rate(site, recommendation.direction) as f64;
-            let max_rate = Self::planned_rate(site_config, recommendation.direction) as f64;
-            let min_rate = Self::minimum_rate(site_config, recommendation.direction) as f64;
-
-            let new_rate_multiplier = Self::multiplier_for_action(config, &recommendation.action);
-            let new_rate = current_rate * new_rate_multiplier;
-            let new_rate = new_rate.round();
-
-            // Are we allowed to do it?
-            if new_rate > max_rate {
-                continue;
-            }
-            if new_rate < min_rate {
-                continue;
-            }
-
-            // Apply the new rate to the QUEUE object
-            let new_rate = u64::max(4, new_rate as u64);
-            if new_rate == current_rate as u64 {
-                // No change
-                continue;
-            }
-
-            if config.dry_run {
-                Self::apply_dependents(
-                    &site.config,
-                    recommendation.direction,
-                    new_rate,
-                    config,
-                    &interface_name,
-                    self.tree_generation,
-                    bakery_sender.clone(),
-                );
-                Self::apply_htb_change(
-                    config,
-                    &interface_name,
-                    class_handle,
-                    new_rate,
-                    (
-                        Self::queue_minimum_rate(queue, recommendation.direction),
-                        Self::planned_rate(&site.config, recommendation.direction),
-                    ),
-                    self.tree_generation,
-                    bakery_sender.clone(),
-                );
-                Self::enter_cooldown(
+            let current_rate = Self::site_rate(site, recommendation.direction);
+            let Some(new_rate) = site.decision(recommendation.direction).target_mbps else {
+                Self::record_skipped_application(
                     site,
-                    recommendation.direction,
-                    cooldown_secs,
-                    recommendation.action,
+                    &recommendation,
+                    "decision has no applicable target rate",
                 );
-                let _ = log_sender.send(LogCommand::SpeedChange {
-                    site: recommendation.site.clone(),
-                    download: site.queue_download_mbps,
-                    upload: site.queue_upload_mbps,
-                    state: format!("{summary}; dry_run_target={new_rate}"),
-                });
+                continue;
+            };
+            let min_rate = Self::minimum_rate(site_config, recommendation.direction);
+            let max_rate = Self::planned_rate(site_config, recommendation.direction);
+            if !(min_rate..=max_rate).contains(&new_rate) {
+                Self::record_skipped_application(
+                    site,
+                    &recommendation,
+                    "decision target is outside the configured bounds",
+                );
                 continue;
             }
 
-            // Apply to the site
-            Self::set_site_rate(site, recommendation.direction, new_rate);
-
-            // Actually make the change
-            Self::apply_dependents(
+            let adjustments = Self::site_adjustment_batch(
                 &site.config,
                 recommendation.direction,
+                current_rate,
                 new_rate,
-                config,
-                &interface_name,
-                self.tree_generation,
-                bakery_sender.clone(),
-            );
-            Self::apply_htb_change(
-                config,
                 &interface_name,
                 class_handle,
-                new_rate,
-                (
-                    Self::queue_minimum_rate(queue, recommendation.direction),
-                    Self::planned_rate(&site.config, recommendation.direction),
-                ),
-                self.tree_generation,
-                bakery_sender.clone(),
+                Self::queue_minimum_rate(queue, recommendation.direction),
             );
-            pending_site_updates.insert(site.config.name.clone());
+            let apply_result = Self::send_adjustment_batch_confirmed(
+                self.tree_generation,
+                config.dry_run,
+                adjustments.clone(),
+                bakery_sender.clone(),
+            )
+            .await;
+            if let Err(error) = apply_result {
+                Self::record_failed_application(
+                    site,
+                    recommendation.direction,
+                    recommendation.action,
+                    new_rate,
+                    error.to_string(),
+                );
+                warn!(
+                    "StormGuard {} adjustment for {} failed: {}",
+                    recommendation.direction, recommendation.site, error
+                );
+                application_errors.push(error.to_string());
+                continue;
+            }
 
-            // Finish Up by entering cooldown
-            debug!("Recommendation applied: entering cooldown");
-            Self::enter_cooldown(
+            if !config.dry_run {
+                let update = Self::site_override_update_with_target(
+                    site,
+                    recommendation.direction,
+                    new_rate,
+                );
+                if let Err(error) = apply_site_override_updates(&[update]) {
+                    let rollback_adjustments = adjustments
+                        .into_iter()
+                        .map(|adjustment| StormGuardClassAdjustment {
+                            new_rate: adjustment.previous_rate,
+                            previous_rate: adjustment.new_rate,
+                            ..adjustment
+                        })
+                        .collect();
+                    let rollback_error = Self::send_adjustment_batch_confirmed(
+                        self.tree_generation,
+                        false,
+                        rollback_adjustments,
+                        bakery_sender.clone(),
+                    )
+                    .await
+                    .err();
+                    let error = match rollback_error {
+                        Some(rollback_error) => format!(
+                            "failed to persist StormGuard rate: {error}; rollback failed: {rollback_error}"
+                        ),
+                        None => format!(
+                            "failed to persist StormGuard rate: {error}; live classes restored"
+                        ),
+                    };
+                    Self::record_failed_application(
+                        site,
+                        recommendation.direction,
+                        recommendation.action,
+                        new_rate,
+                        error.clone(),
+                    );
+                    warn!(
+                        "StormGuard persistence failed for {}: {error}",
+                        recommendation.site
+                    );
+                    application_errors.push(error);
+                    continue;
+                }
+            }
+            Self::complete_successful_application(
                 site,
                 recommendation.direction,
-                cooldown_secs,
                 recommendation.action,
+                new_rate,
+                cooldown_secs,
+                config.dry_run,
             );
-
-            // Report
-            let _ = log_sender.send(LogCommand::SpeedChange {
-                site: recommendation.site.clone(),
-                download: site.queue_download_mbps,
-                upload: site.queue_upload_mbps,
-                state: summary,
-            });
+            acknowledged_success = true;
         }
 
-        if !pending_site_updates.is_empty() {
-            let updates: Vec<SiteOverrideUpdate> = pending_site_updates
-                .into_iter()
-                .filter_map(|site_name| {
-                    self.sites
-                        .get(&site_name)
-                        .map(Self::site_override_update_from_state)
-                })
-                .collect();
-            if let Err(e) = apply_site_override_updates(&updates) {
-                warn!("Failed to batch StormGuard site override updates: {}", e);
-            }
+        ApplicationReport {
+            errors: application_errors,
+            acknowledged_success,
         }
     }
 
-    async fn handle_circuit_queue_recommendation(ctx: CircuitQueueRecommendationContext<'_>) {
+    async fn handle_circuit_queue_recommendation(
+        ctx: CircuitQueueRecommendationContext<'_>,
+    ) -> Option<String> {
         let CircuitQueueRecommendationContext {
             tree_generation,
             active_circuit_fallbacks,
             site,
             config,
             recommendation,
-            summary,
             circuit_id,
             cooldown_secs,
-            log_sender,
             bakery_sender,
         } = ctx;
         let outcome = if !config.circuit_fallback_enabled {
-            CircuitFallbackOutcome::Skipped {
+            Ok(CircuitFallbackOutcome::Skipped {
                 reason: "Circuit fallback disabled in config.".to_string(),
-            }
+            })
         } else if matches!(
             recommendation.action,
             RecommendationAction::Increase | RecommendationAction::IncreaseFast
         ) && !active_circuit_fallbacks.contains(circuit_id)
         {
-            CircuitFallbackOutcome::Skipped {
+            Ok(CircuitFallbackOutcome::Skipped {
                 reason: "No active StormGuard circuit fallback to clear.".to_string(),
-            }
+            })
         } else {
             match recommendation.action {
                 RecommendationAction::Decrease | RecommendationAction::DecreaseFast => {
-                    match apply_circuit_fallback(
+                    apply_circuit_fallback(
                         circuit_id,
                         &config.circuit_fallback_sqm,
                         config.circuit_fallback_persist,
@@ -1009,45 +1095,23 @@ impl SiteStateTracker {
                         bakery_sender,
                     )
                     .await
-                    {
-                        Ok(outcome) => outcome,
-                        Err(e) => {
-                            warn!(
-                                "StormGuard fallback failed for circuit {} ({}): {}",
-                                circuit_id, recommendation.site, e
-                            );
-                            CircuitFallbackOutcome::Skipped {
-                                reason: format!("Fallback error: {e}"),
-                            }
-                        }
-                    }
+                    .map_err(|error| format!("Fallback error: {error}"))
                 }
                 RecommendationAction::Increase | RecommendationAction::IncreaseFast => {
-                    match clear_circuit_fallback(
+                    clear_circuit_fallback(
                         circuit_id,
                         config.dry_run,
                         tree_generation,
                         bakery_sender,
                     )
                     .await
-                    {
-                        Ok(outcome) => outcome,
-                        Err(e) => {
-                            warn!(
-                                "StormGuard fallback clear failed for circuit {} ({}): {}",
-                                circuit_id, recommendation.site, e
-                            );
-                            CircuitFallbackOutcome::Skipped {
-                                reason: format!("Fallback clear error: {e}"),
-                            }
-                        }
-                    }
+                    .map_err(|error| format!("Fallback clear error: {error}"))
                 }
             }
         };
 
-        let (outcome_text, enters_cooldown) = match outcome {
-            CircuitFallbackOutcome::Applied { persisted } => {
+        let (outcome_text, enters_cooldown, outcome_label, outcome_error) = match outcome {
+            Ok(CircuitFallbackOutcome::Applied { persisted }) => {
                 active_circuit_fallbacks.insert(circuit_id.to_string());
                 info!(
                     "StormGuard applied circuit fallback for {} ({})",
@@ -1059,9 +1123,24 @@ impl SiteStateTracker {
                         config.circuit_fallback_sqm
                     ),
                     true,
+                    "applied",
+                    None,
                 )
             }
-            CircuitFallbackOutcome::Cleared { persisted } => {
+            Ok(CircuitFallbackOutcome::AppliedUnpersisted { error }) => {
+                active_circuit_fallbacks.insert(circuit_id.to_string());
+                warn!(
+                    "StormGuard circuit fallback is live but unhealthy for {} ({}): {}",
+                    recommendation.site, circuit_id, error
+                );
+                (
+                    format!("circuit_fallback=applied_unpersisted error={error}"),
+                    false,
+                    "failed",
+                    Some(error),
+                )
+            }
+            Ok(CircuitFallbackOutcome::Cleared { persisted }) => {
                 active_circuit_fallbacks.remove(circuit_id);
                 info!(
                     "StormGuard cleared circuit fallback for {} ({})",
@@ -1070,25 +1149,61 @@ impl SiteStateTracker {
                 (
                     format!("circuit_fallback=cleared persisted={persisted}"),
                     true,
+                    "applied",
+                    None,
                 )
             }
-            CircuitFallbackOutcome::DryRun { action } => {
+            Ok(CircuitFallbackOutcome::DryRun { action }) => {
                 info!(
                     "StormGuard dry-run circuit fallback for {} ({}): {}",
                     recommendation.site, circuit_id, action
                 );
-                (format!("circuit_fallback=dry_run {action}"), true)
+                (
+                    format!("circuit_fallback=dry_run {action}"),
+                    true,
+                    "dry_run",
+                    None,
+                )
             }
-            CircuitFallbackOutcome::Skipped { reason } => {
+            Ok(CircuitFallbackOutcome::Skipped { reason }) => {
                 warn!(
                     "StormGuard skipped circuit fallback for {} ({}): {}",
                     recommendation.site, circuit_id, reason
                 );
-                (format!("circuit_fallback=skipped reason={reason}"), false)
+                (
+                    format!("circuit_fallback=skipped reason={reason}"),
+                    false,
+                    "skipped",
+                    Some(reason),
+                )
+            }
+            Err(reason) => {
+                warn!(
+                    "StormGuard circuit fallback failed for {} ({}): {}",
+                    recommendation.site, circuit_id, reason
+                );
+                (
+                    format!("circuit_fallback=failed reason={reason}"),
+                    false,
+                    "failed",
+                    Some(reason),
+                )
             }
         };
 
-        if Self::circuit_outcome_enters_cooldown(&enters_cooldown) {
+        let attempted_target = Self::site_rate(site, recommendation.direction);
+        site.record_attempt(
+            recommendation.direction,
+            ActionAttempt {
+                action: recommendation.action,
+                target_mbps: attempted_target,
+                outcome: outcome_label.to_string(),
+                unix_ms: unix_time_ms(),
+                error: outcome_error,
+            },
+        );
+
+        if enters_cooldown {
             Self::enter_cooldown(
                 site,
                 recommendation.direction,
@@ -1096,12 +1211,8 @@ impl SiteStateTracker {
                 recommendation.action,
             );
         }
-        let _ = log_sender.send(LogCommand::SpeedChange {
-            site: recommendation.site.clone(),
-            download: site.queue_download_mbps,
-            upload: site.queue_upload_mbps,
-            state: format!("{summary}; {outcome_text}"),
-        });
+        debug!("StormGuard circuit fallback outcome: {outcome_text}");
+        (outcome_label == "failed").then_some(outcome_text)
     }
 
     fn site_rate(site: &SiteState, direction: RecommendationDirection) -> u64 {
@@ -1109,6 +1220,12 @@ impl SiteStateTracker {
             RecommendationDirection::Download => site.queue_download_mbps,
             RecommendationDirection::Upload => site.queue_upload_mbps,
         }
+    }
+
+    fn attempt_target(site: &SiteState, direction: RecommendationDirection) -> u64 {
+        site.decision(direction)
+            .target_mbps
+            .unwrap_or_else(|| Self::site_rate(site, direction))
     }
 
     fn planned_rate(site: &crate::config::WatchingSite, direction: RecommendationDirection) -> u64 {
@@ -1142,15 +1259,6 @@ impl SiteStateTracker {
         }
     }
 
-    fn multiplier_for_action(config: &StormguardConfig, action: &RecommendationAction) -> f64 {
-        match action {
-            RecommendationAction::IncreaseFast => config.increase_fast_multiplier,
-            RecommendationAction::Increase => config.increase_multiplier,
-            RecommendationAction::Decrease => config.decrease_multiplier,
-            RecommendationAction::DecreaseFast => config.decrease_fast_multiplier,
-        }
-    }
-
     fn cooldown_for_action(config: &StormguardConfig, action: &RecommendationAction) -> f32 {
         match action {
             RecommendationAction::IncreaseFast => config.increase_fast_cooldown_seconds,
@@ -1181,33 +1289,38 @@ impl SiteStateTracker {
         }
     }
 
-    fn apply_dependents(
+    fn site_adjustment_batch(
         site: &crate::config::WatchingSite,
         direction: RecommendationDirection,
+        previous_rate: u64,
         new_rate: u64,
-        config: &StormguardConfig,
         interface_name: &str,
-        tree_generation: u64,
-        bakery_sender: Sender<BakeryCommands>,
-    ) {
-        for (class_id, planned_rate, planned_ceil, rate) in
+        site_class_id: TcHandle,
+        site_planned_rate: u64,
+    ) -> Vec<StormGuardClassAdjustment> {
+        let mut adjustments: Vec<StormGuardClassAdjustment> =
             Self::dependent_adjustments(site, direction, new_rate)
-        {
-            info!(
-                "Applying rate change to dependent class {}: {} Mbps",
-                class_id.as_tc_string(),
-                rate
-            );
-            Self::apply_htb_change(
-                config,
-                interface_name,
-                class_id,
-                rate,
-                (planned_rate, planned_ceil),
-                tree_generation,
-                bakery_sender.clone(),
-            );
-        }
+                .into_iter()
+                .map(
+                    |(class_id, planned_rate, planned_ceil, rate)| StormGuardClassAdjustment {
+                        interface_name: interface_name.to_string(),
+                        class_id,
+                        new_rate: rate,
+                        previous_rate: previous_rate.min(planned_ceil),
+                        planned_rate,
+                        planned_ceil,
+                    },
+                )
+                .collect();
+        adjustments.push(StormGuardClassAdjustment {
+            interface_name: interface_name.to_string(),
+            class_id: site_class_id,
+            new_rate,
+            previous_rate,
+            planned_rate: site_planned_rate,
+            planned_ceil: Self::planned_rate(site, direction),
+        });
+        adjustments
     }
 
     fn dependent_adjustments(
@@ -1217,7 +1330,7 @@ impl SiteStateTracker {
     ) -> Vec<(TcHandle, u64, u64, u64)> {
         site.dependent_nodes
             .iter()
-            .filter_map(|dependent| {
+            .map(|dependent| {
                 let original_rate = match direction {
                     RecommendationDirection::Download => dependent.original_max_download_mbps,
                     RecommendationDirection::Upload => dependent.original_max_upload_mbps,
@@ -1226,12 +1339,12 @@ impl SiteStateTracker {
                     RecommendationDirection::Download => dependent.original_min_download_mbps,
                     RecommendationDirection::Upload => dependent.original_min_upload_mbps,
                 };
-                (original_rate >= target_rate).then_some((
+                (
                     dependent.class_id,
                     original_min_rate,
                     original_rate,
-                    target_rate,
-                ))
+                    target_rate.min(original_rate),
+                )
             })
             .collect()
     }
@@ -1246,8 +1359,23 @@ impl SiteStateTracker {
         }
     }
 
-    fn circuit_outcome_enters_cooldown(enters_cooldown: &bool) -> bool {
-        *enters_cooldown
+    fn site_override_update_with_target(
+        site: &SiteState,
+        direction: RecommendationDirection,
+        target_mbps: u64,
+    ) -> SiteOverrideUpdate {
+        let mut update = Self::site_override_update_from_state(site);
+        match direction {
+            RecommendationDirection::Download => {
+                update.download_bandwidth_mbps =
+                    (target_mbps != site.config.max_download_mbps).then_some(target_mbps as f32);
+            }
+            RecommendationDirection::Upload => {
+                update.upload_bandwidth_mbps =
+                    (target_mbps != site.config.max_upload_mbps).then_some(target_mbps as f32);
+            }
+        }
+        update
     }
 
     fn enter_cooldown(
@@ -1277,120 +1405,84 @@ impl SiteStateTracker {
         }
     }
 
-    fn apply_htb_change(
-        config: &StormguardConfig,
-        interface_name: &str,
-        class_handle: TcHandle,
-        new_rate: u64,
-        planned_rates: (u64, u64),
-        tree_generation: u64,
-        bakery_sender: Sender<BakeryCommands>,
+    fn record_failed_application(
+        site: &mut SiteState,
+        direction: RecommendationDirection,
+        action: RecommendationAction,
+        target_mbps: u64,
+        error: String,
     ) {
-        let request = Self::htb_change_request(
-            config,
-            interface_name,
-            class_handle,
-            new_rate,
-            planned_rates,
-            tree_generation,
+        site.record_attempt(
+            direction,
+            ActionAttempt {
+                action,
+                target_mbps,
+                outcome: "failed".to_string(),
+                unix_ms: unix_time_ms(),
+                error: Some(error),
+            },
         );
-        if let Err(e) = Self::send_htb_change(request, bakery_sender, None) {
-            warn!("Failed to send StormGuard adjustment command: {}", e);
-        }
-
-        // // Build the HTB command
-        // let args = vec![
-        //     "class".to_string(),
-        //     "change".to_string(),
-        //     "dev".to_string(),
-        //     interface_name.to_string(),
-        //     "classid".to_string(),
-        //     class_id.to_string(),
-        //     "htb".to_string(),
-        //     "rate".to_string(),
-        //     format!("{}mbit", new_rate - 1),
-        //     "ceil".to_string(),
-        //     format!("{}mbit", new_rate),
-        // ];
-        // if config.dry_run {
-        //     warn!("DRY RUN: /sbin/tc {}", args.join(" "));
-        // } else {
-        //     let output = std::process::Command::new("/sbin/tc")
-        //         .args(&args)
-        //         .output();
-        //     match output {
-        //         Err(e) => {
-        //             warn!("Failed to run tc command: {}", e);
-        //         }
-        //         Ok(out) => {
-        //             if !out.status.success() {
-        //                 warn!("tc command failed: {}", String::from_utf8_lossy(&out.stderr));
-        //             } else {
-        //                 info!("tc command succeeded: {}", String::from_utf8_lossy(&out.stdout));
-        //             }
-        //         }
-        //     }
-        // }
     }
 
-    async fn apply_htb_change_confirmed(
-        config: &StormguardConfig,
-        interface_name: &str,
-        class_handle: TcHandle,
-        new_rate: u64,
-        planned_rates: (u64, u64),
+    fn record_skipped_application(
+        site: &mut SiteState,
+        recommendation: &Recommendation,
+        reason: &str,
+    ) {
+        let target_mbps = Self::attempt_target(site, recommendation.direction);
+        site.record_attempt(
+            recommendation.direction,
+            ActionAttempt {
+                action: recommendation.action,
+                target_mbps,
+                outcome: "skipped".to_string(),
+                unix_ms: unix_time_ms(),
+                error: Some(reason.to_string()),
+            },
+        );
+    }
+
+    fn complete_successful_application(
+        site: &mut SiteState,
+        direction: RecommendationDirection,
+        action: RecommendationAction,
+        target_mbps: u64,
+        cooldown_secs: f32,
+        dry_run: bool,
+    ) {
+        if !dry_run {
+            Self::set_site_rate(site, direction, target_mbps);
+        }
+        site.record_attempt(
+            direction,
+            ActionAttempt {
+                action,
+                target_mbps,
+                outcome: successful_application_outcome(dry_run).to_string(),
+                unix_ms: unix_time_ms(),
+                error: None,
+            },
+        );
+        debug!("Recommendation applied: entering cooldown");
+        Self::enter_cooldown(site, direction, cooldown_secs, action);
+    }
+
+    async fn send_adjustment_batch_confirmed(
         tree_generation: u64,
+        dry_run: bool,
+        adjustments: Vec<StormGuardClassAdjustment>,
         bakery_sender: Sender<BakeryCommands>,
     ) -> anyhow::Result<()> {
-        let request = Self::htb_change_request(
-            config,
-            interface_name,
-            class_handle,
-            new_rate,
-            planned_rates,
-            tree_generation,
-        );
         let (reply_sender, reply_receiver) = std::sync::mpsc::channel();
-        Self::send_htb_change(request, bakery_sender, Some(reply_sender))?;
-        wait_for_bakery_reply(reply_receiver, "replay persisted StormGuard class change").await
-    }
-
-    fn htb_change_request(
-        config: &StormguardConfig,
-        interface_name: &str,
-        class_handle: TcHandle,
-        new_rate: u64,
-        planned_rates: (u64, u64),
-        tree_generation: u64,
-    ) -> HtbChangeRequest {
-        HtbChangeRequest {
-            tree_generation,
-            dry_run: config.dry_run,
-            interface_name: interface_name.to_owned(),
-            class_handle,
-            new_rate,
-            planned_rate: planned_rates.0,
-            planned_ceil: planned_rates.1,
-        }
-    }
-
-    fn send_htb_change(
-        request: HtbChangeRequest,
-        bakery_sender: Sender<BakeryCommands>,
-        reply: Option<std::sync::mpsc::Sender<Result<(), String>>>,
-    ) -> anyhow::Result<()> {
         bakery_sender
-            .send(BakeryCommands::StormGuardAdjustment {
-                tree_generation: request.tree_generation,
-                dry_run: request.dry_run,
-                interface_name: request.interface_name,
-                class_id: request.class_handle.as_tc_string(),
-                new_rate: request.new_rate,
-                planned_rate: request.planned_rate,
-                planned_ceil: request.planned_ceil,
-                reply,
+            .send(BakeryCommands::StormGuardAdjustmentBatch {
+                tree_generation,
+                dry_run,
+                adjustments,
+                reply: reply_sender,
             })
-            .context("failed to send StormGuard class change to Bakery")
+            .context("failed to send StormGuard adjustment batch to Bakery")?;
+        wait_for_bakery_reply(reply_receiver, "apply StormGuard adjustment batch").await
     }
 }
 
@@ -1432,6 +1524,7 @@ mod tests {
             current_rtt_ms: None,
             passive_rtt_ms: None,
             active_ping_rtt_ms: None,
+            passive_rtt_flow_counts: (0, 0),
             rtt_sample_for_baseline_ms: None,
             rtt_baseline_ms: None,
             last_passive_rtt_ms: None,
@@ -1439,6 +1532,10 @@ mod tests {
             passive_rtt_updated_this_tick: false,
             last_action_download: None,
             last_action_upload: None,
+            download_decision: DirectionDecision::default(),
+            upload_decision: DirectionDecision::default(),
+            last_attempt_download: None,
+            last_attempt_upload: None,
             ticks_since_last_probe_download: 0,
             ticks_since_last_probe_upload: 0,
         }
@@ -1513,7 +1610,7 @@ mod tests {
     }
 
     #[test]
-    fn dependent_adjustment_skips_classes_below_target_rate() -> anyhow::Result<()> {
+    fn dependent_adjustment_restores_classes_only_to_their_planned_ceiling() -> anyhow::Result<()> {
         let mut site = site_state(50, 50, 100, 100).config;
         site.dependent_nodes.push(WatchingSiteDependency {
             name: "Dependent A".to_string(),
@@ -1523,17 +1620,93 @@ mod tests {
             original_max_download_mbps: 37,
             original_max_upload_mbps: 19,
         });
-        assert!(
-            SiteStateTracker::dependent_adjustments(&site, RecommendationDirection::Download, 40,)
-                .is_empty()
+        assert_eq!(
+            SiteStateTracker::dependent_adjustments(&site, RecommendationDirection::Download, 40,),
+            [(TcHandle::from_string("1:2")?, 7, 37, 37)]
         );
         Ok(())
     }
 
     #[test]
-    fn skipped_circuit_outcomes_do_not_enter_cooldown() {
-        assert!(!SiteStateTracker::circuit_outcome_enters_cooldown(&false));
-        assert!(SiteStateTracker::circuit_outcome_enters_cooldown(&true));
+    fn successful_outcomes_distinguish_dry_run_from_live_application() {
+        assert_eq!(successful_application_outcome(true), "dry_run");
+        assert_eq!(successful_application_outcome(false), "applied");
+    }
+
+    #[test]
+    fn active_rtt_source_respects_endpoint_weights() {
+        assert_eq!(active_rtt_source(Some(20.0), Some(40.0), 0.0), "passive");
+        assert_eq!(active_rtt_source(Some(20.0), Some(40.0), 0.5), "blended");
+        assert_eq!(active_rtt_source(Some(20.0), Some(40.0), 1.0), "active");
+    }
+
+    #[test]
+    fn failed_application_keeps_rate_and_remains_out_of_cooldown() {
+        let mut site = site_state(50, 25, 100, 50);
+        SiteStateTracker::record_failed_application(
+            &mut site,
+            RecommendationDirection::Download,
+            RecommendationAction::Decrease,
+            45,
+            "synthetic Bakery failure".to_string(),
+        );
+
+        assert_eq!(site.queue_download_mbps, 50);
+        assert_eq!(site.download_state, StormguardState::Running);
+        let attempt = site
+            .last_attempt(RecommendationDirection::Download)
+            .expect("failed attempt");
+        assert_eq!(attempt.outcome, "failed");
+        assert_eq!(attempt.target_mbps, 45);
+        assert_eq!(attempt.error.as_deref(), Some("synthetic Bakery failure"));
+    }
+
+    #[test]
+    fn acknowledged_live_application_updates_rate_and_enters_cooldown() {
+        let mut site = site_state(50, 25, 100, 50);
+        SiteStateTracker::complete_successful_application(
+            &mut site,
+            RecommendationDirection::Download,
+            RecommendationAction::Decrease,
+            45,
+            3.0,
+            false,
+        );
+
+        assert_eq!(site.queue_download_mbps, 45);
+        assert!(matches!(
+            site.download_state,
+            StormguardState::Cooldown { .. }
+        ));
+        assert_eq!(
+            site.last_attempt(RecommendationDirection::Download)
+                .map(|attempt| attempt.outcome.as_str()),
+            Some("applied")
+        );
+    }
+
+    #[test]
+    fn dry_run_records_outcome_without_changing_rate() {
+        let mut site = site_state(50, 25, 100, 50);
+        SiteStateTracker::complete_successful_application(
+            &mut site,
+            RecommendationDirection::Download,
+            RecommendationAction::Decrease,
+            45,
+            3.0,
+            true,
+        );
+
+        assert_eq!(site.queue_download_mbps, 50);
+        assert!(matches!(
+            site.download_state,
+            StormguardState::Cooldown { .. }
+        ));
+        assert_eq!(
+            site.last_attempt(RecommendationDirection::Download)
+                .map(|attempt| attempt.outcome.as_str()),
+            Some("dry_run")
+        );
     }
 
     #[test]
@@ -1572,6 +1745,13 @@ mod tests {
                     RecommendationAction::DecreaseFast | RecommendationAction::Decrease
                 )
         }));
+        let decision = site.decision(RecommendationDirection::Download);
+        assert!(decision.score.is_none());
+        assert!(decision.target_mbps.is_some());
+        assert!(decision.reason.contains("decrease 40.0"));
+        assert!(decision.reason.starts_with("severe delay or retransmit signal"));
+        assert!(!decision.reason.contains("Some("));
+        assert!(!decision.reason.contains("None"));
     }
 
     #[test]
@@ -1592,6 +1772,11 @@ mod tests {
                     RecommendationAction::Increase | RecommendationAction::IncreaseFast
                 )
         }));
+        let reason = &site
+            .decision(RecommendationDirection::Download)
+            .reason;
+        assert!(reason.contains("probe requirements"));
+        assert!(reason.contains("current probe age=11 ticks"));
     }
 
     #[test]
@@ -1611,5 +1796,92 @@ mod tests {
                     RecommendationAction::DecreaseFast | RecommendationAction::Decrease
                 )
         }));
+    }
+
+    #[test]
+    fn cooldown_records_candidate_without_emitting_recommendation() {
+        let cfg = test_config(StormguardStrategy::DelayProbe);
+        let mut site = site_state(20, 20, 50, 50);
+        site.download_state = StormguardState::Cooldown {
+            start: Instant::now(),
+            duration_secs: 60.0,
+        };
+        site.current_throughput = (18.0, 0.0);
+        site.current_rtt_ms = Some(900.0);
+        site.rtt_baseline_ms = Some(600.0);
+
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        assert!(
+            !recs
+                .iter()
+                .any(|(r, _)| { r.direction == RecommendationDirection::Download })
+        );
+        let decision = site.decision(RecommendationDirection::Download);
+        assert_eq!(decision.blocker.as_deref(), Some("cooldown"));
+        assert!(decision.candidate_action.is_some());
+        assert!(decision.target_mbps.is_some());
+    }
+
+    #[test]
+    fn legacy_strategy_exposes_its_numeric_score() {
+        let cfg = test_config(StormguardStrategy::LegacyScore);
+        let mut site = site_state(20, 20, 50, 50);
+        site.current_throughput = (1.0, 1.0);
+        let mut recs = Vec::new();
+        site.recommendations(&mut recs, &cfg);
+        let download = site.decision(RecommendationDirection::Download);
+        assert!(download.score.is_some());
+        assert!(download.reason.contains("legacy score inputs"));
+        assert!(!download.reason.contains("Some("));
+        assert!(!download.reason.contains("None"));
+        assert!(
+            site.decision(RecommendationDirection::Upload)
+                .score
+                .is_some()
+        );
+    }
+
+    #[tokio::test]
+    async fn acknowledged_batch_reply_propagates_success_and_failure() -> anyhow::Result<()> {
+        let adjustment = StormGuardClassAdjustment {
+            interface_name: "eth0".to_string(),
+            class_id: TcHandle::from_string("1:2")?,
+            new_rate: 50,
+            previous_rate: 60,
+            planned_rate: 10,
+            planned_ceil: 100,
+        };
+
+        for expected in [Ok(()), Err("synthetic failure".to_string())] {
+            let (sender, receiver) = crossbeam_channel::bounded(1);
+            let expected_reply = expected.clone();
+            let worker = std::thread::spawn(move || {
+                let BakeryCommands::StormGuardAdjustmentBatch { reply, .. } =
+                    receiver.recv().expect("batch command")
+                else {
+                    panic!("unexpected Bakery command");
+                };
+                reply.send(expected_reply).expect("batch reply");
+            });
+            let result = SiteStateTracker::send_adjustment_batch_confirmed(
+                1,
+                false,
+                vec![adjustment.clone()],
+                sender,
+            )
+            .await;
+            worker.join().expect("Bakery reply worker");
+            match expected {
+                Ok(()) => assert!(result.is_ok()),
+                Err(message) => assert!(
+                    result
+                        .expect_err("failure should propagate")
+                        .to_string()
+                        .contains(&message)
+                ),
+            }
+        }
+        Ok(())
     }
 }

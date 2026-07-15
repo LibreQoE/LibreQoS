@@ -858,6 +858,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 };
                 BusResponse::StormguardDebug(cloned)
             }
+            BusRequest::GetStormguardRuntimeStatus => {
+                BusResponse::StormguardRuntimeStatus(lqos_stormguard::runtime_status())
+            }
             BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
                 lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
             ),
