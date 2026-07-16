@@ -1,13 +1,23 @@
 import {
+    bindSecretField,
     loadConfig,
     renderConfigMenu,
     saveConfig,
     sendWsRequest,
 } from "./config/config_helper";
+import {
+    copyLocalApiToken,
+    generateLocalApiToken,
+} from "./config/local_api_token";
 
 const licenseKeyInput = document.getElementById("licenseKey");
 const toggleLicenseKeyButton = document.getElementById("toggleLicenseKey");
 const clearLicenseKeyButton = document.getElementById("clearLicenseKey");
+const localApiTokenInput = document.getElementById("localApiBearerToken");
+const toggleLocalApiTokenButton = document.getElementById("toggleLocalApiBearerToken");
+const generateLocalApiTokenButton = document.getElementById("generateLocalApiBearerToken");
+const copyLocalApiTokenButton = document.getElementById("copyLocalApiBearerToken");
+const clearLocalApiTokenButton = document.getElementById("clearLocalApiBearerToken");
 const saveButton = document.getElementById("saveButton");
 const retryButton = document.getElementById("retryLicenseCheck");
 
@@ -45,17 +55,34 @@ function updateConfig() {
         uisp_reporting_interval_seconds: parseInt(document.getElementById("uispInterval").value, 10) || null,
         lts_url: document.getElementById("ltsUrl").value.trim() || null,
     };
+    window.config.local_api = {
+        bearer_token: localApiTokenInput.value.trim() || null,
+    };
 }
 
-function setLicenseKeyVisibility(revealed) {
-    licenseKeyInput.type = revealed ? "text" : "password";
-    toggleLicenseKeyButton.innerHTML = revealed
+function setSecretVisibility(input, button, revealed, label) {
+    input.type = revealed ? "text" : "password";
+    button.innerHTML = revealed
         ? '<i class="fa fa-eye-slash"></i>'
         : '<i class="fa fa-eye"></i>';
-    toggleLicenseKeyButton.setAttribute(
+    button.setAttribute(
         "aria-label",
-        revealed ? "Hide license key" : "Reveal license key",
+        revealed ? `Hide ${label}` : `Reveal ${label}`,
     );
+}
+
+function updateLocalApiTokenActions() {
+    const hasCurrentToken = localApiTokenInput.value.trim().length > 0;
+    toggleLocalApiTokenButton.disabled = !hasCurrentToken;
+    copyLocalApiTokenButton.disabled = !hasCurrentToken;
+    if (!hasCurrentToken) {
+        setSecretVisibility(
+            localApiTokenInput,
+            toggleLocalApiTokenButton,
+            false,
+            "local API bearer token",
+        );
+    }
 }
 
 function formatMappedCircuitLimit(limit) {
@@ -71,38 +98,42 @@ function renderCapabilityBadges(capabilities) {
         return;
     }
 
+    const apiDocsStatus = capabilities.can_use_api_link
+        ? (window.apiServiceAvailable
+            ? { label: "API Docs: available", tone: "success" }
+            : { label: "API Docs: service unavailable", tone: "warning" })
+        : { label: "API Docs: license required", tone: "secondary" };
     const badgeSpec = [
         {
-            enabled: capabilities.can_view_insight_ui,
+            tone: capabilities.can_view_insight_ui ? "success" : "secondary",
             label: "Insight UI",
         },
+        apiDocsStatus,
         {
-            enabled: capabilities.can_use_api_link,
-            label: "API Docs",
-        },
-        {
-            enabled: capabilities.can_use_support_tickets,
+            tone: capabilities.can_use_support_tickets ? "success" : "secondary",
             label: "Support",
         },
         {
-            enabled: capabilities.can_use_chatbot,
+            tone: capabilities.can_use_chatbot ? "success" : "secondary",
             label: "Libby",
         },
         {
-            enabled: capabilities.can_receive_remote_commands,
+            tone: capabilities.can_receive_remote_commands ? "success" : "secondary",
             label: "Remote Control",
         },
         {
-            enabled: capabilities.can_submit_long_term_stats,
+            tone: capabilities.can_submit_long_term_stats ? "success" : "secondary",
             label: "Stats Submit",
         },
     ];
 
     container.innerHTML = badgeSpec
         .map((badge) => {
-            const css = badge.enabled
+            const css = badge.tone === "success"
                 ? "badge rounded-pill text-bg-success-subtle text-success-emphasis border border-success-subtle"
-                : "badge rounded-pill text-bg-light text-secondary border";
+                : badge.tone === "warning"
+                    ? "badge rounded-pill text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                    : "badge rounded-pill text-bg-light text-secondary border";
             return `<span class="${css}">${badge.label}</span>`;
         })
         .join("");
@@ -169,14 +200,72 @@ function fetchCapabilities(request = { LtsCapabilities: {} }) {
 }
 
 function wireActions() {
-    setLicenseKeyVisibility(false);
+    setSecretVisibility(licenseKeyInput, toggleLicenseKeyButton, false, "license key");
+    setSecretVisibility(
+        localApiTokenInput,
+        toggleLocalApiTokenButton,
+        false,
+        "local API bearer token",
+    );
+    updateLocalApiTokenActions();
 
     toggleLicenseKeyButton.addEventListener("click", () => {
-        setLicenseKeyVisibility(licenseKeyInput.type === "password");
+        setSecretVisibility(
+            licenseKeyInput,
+            toggleLicenseKeyButton,
+            licenseKeyInput.type === "password",
+            "license key",
+        );
     });
 
     clearLicenseKeyButton.addEventListener("click", () => {
         licenseKeyInput.value = "";
+    });
+
+    toggleLocalApiTokenButton.addEventListener("click", () => {
+        setSecretVisibility(
+            localApiTokenInput,
+            toggleLocalApiTokenButton,
+            localApiTokenInput.type === "password",
+            "local API bearer token",
+        );
+    });
+
+    localApiTokenInput.addEventListener("input", updateLocalApiTokenActions);
+    clearLocalApiTokenButton.addEventListener("click", updateLocalApiTokenActions);
+
+    generateLocalApiTokenButton.addEventListener("click", () => {
+        try {
+            localApiTokenInput.value = generateLocalApiToken();
+            setSecretVisibility(
+                localApiTokenInput,
+                toggleLocalApiTokenButton,
+                true,
+                "local API bearer token",
+            );
+            localApiTokenInput.dispatchEvent(new Event("input"));
+        } catch (error) {
+            alert(error instanceof Error ? error.message : "Unable to generate a secure token.");
+        }
+    });
+
+    copyLocalApiTokenButton.addEventListener("click", async () => {
+        const copyStatus = document.getElementById("localApiCopyStatus");
+        try {
+            await copyLocalApiToken(localApiTokenInput);
+            if (copyStatus) {
+                copyStatus.textContent = "Local API bearer token copied.";
+            }
+            copyLocalApiTokenButton.innerHTML = '<i class="fa fa-check me-1"></i> Copied';
+            setTimeout(() => {
+                copyLocalApiTokenButton.innerHTML = '<i class="fa fa-copy me-1"></i> Copy';
+            }, 1500);
+        } catch (error) {
+            if (copyStatus) {
+                copyStatus.textContent = "";
+            }
+            alert(error instanceof Error ? error.message : "Unable to copy the token.");
+        }
     });
 
     retryButton.addEventListener("click", () => {
@@ -205,6 +294,7 @@ function wireActions() {
         saveConfig(
             () => {
                 saveButton.disabled = false;
+                updateLocalApiTokenActions();
                 fetchCapabilities();
                 alert("Configuration saved successfully!");
             },
@@ -230,6 +320,17 @@ loadConfig(() => {
     document.getElementById("uispInterval").value = lts.uisp_reporting_interval_seconds ?? 300;
     document.getElementById("ltsUrl").value = lts.lts_url ?? "";
     licenseKeyInput.value = lts.license_key ?? "";
+    localApiTokenInput.value = "";
+
+    bindSecretField({
+        section: "local_api",
+        field: "bearer_token",
+        inputId: "localApiBearerToken",
+        statusId: "localApiBearerTokenStatus",
+        clearButtonId: "clearLocalApiBearerToken",
+        configuredMessage: "A local API token is stored but cannot be shown again. Leave blank to keep it, or generate a replacement.",
+        emptyMessage: "No local API token is stored.",
+    });
 
     wireActions();
     fetchCapabilities();

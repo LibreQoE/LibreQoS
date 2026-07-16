@@ -26,7 +26,9 @@ mod queue_math;
 mod utils;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
-use lqos_utils::normalize_circuit_id_key;
+use lqos_utils::{
+    is_valid_ip_mapping_text, normalize_circuit_id_key, unique_mapped_circuit_hashes,
+};
 use parking_lot::RwLock;
 use std::cmp::Reverse;
 use std::collections::VecDeque;
@@ -61,8 +63,8 @@ pub use commands::{
     RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus, StormGuardRestoreAdjustment,
 };
 use lqos_bus::{
-    BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
-    UrgentSource,
+    BusRequest, BusResponse, DEFAULT_MAPPED_CIRCUIT_LIMIT, InsightLicenseSummary,
+    LibreqosBusClient, TcHandle, UrgentSeverity, UrgentSource,
 };
 use lqos_config::{
     CircuitIdentityGroupInput, ClassIdentityPlannerConstraints, Config, LazyQueueMode,
@@ -1538,8 +1540,6 @@ pub const BAKERY_MEMORY_GUARD_TOTAL_RAM_DIVISOR: u64 = 8;
 pub fn bakery_memory_guard_min_available_bytes(total_bytes: u64) -> u64 {
     BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES.max(total_bytes / BAKERY_MEMORY_GUARD_TOTAL_RAM_DIVISOR)
 }
-/// Maximum number of mapped circuits allowed without Insight.
-const DEFAULT_MAPPED_CIRCUITS_LIMIT: usize = 1000;
 /// Minimum interval between repeated mapped-circuit-limit urgent issues.
 const CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS: u64 = 30 * 60;
 /// Last timestamp at which we emitted a mapped-circuit-limit urgent issue.
@@ -3760,7 +3760,9 @@ fn is_mapped_add_circuit(cmd: &BakeryCommands) -> bool {
     let BakeryCommands::AddCircuit { ip_addresses, .. } = cmd else {
         return false;
     };
-    !parse_ip_list(ip_addresses).is_empty()
+    parse_ip_list(ip_addresses)
+        .iter()
+        .any(|mapping| is_valid_ip_mapping_text(mapping))
 }
 
 fn mapped_circuit_hash(cmd: &BakeryCommands) -> Option<i64> {
@@ -3785,7 +3787,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
             };
         }
     };
@@ -3795,7 +3797,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
             };
         };
         let Ok(reply) = bus
@@ -3805,7 +3807,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
             };
         };
 
@@ -3822,7 +3824,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
                 let effective_limit = if licensed {
                     max_circuits_usize
                 } else {
-                    Some(DEFAULT_MAPPED_CIRCUITS_LIMIT)
+                    Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize)
                 };
                 return ResolvedMappedLimit {
                     licensed,
@@ -3834,7 +3836,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
         ResolvedMappedLimit {
             licensed: false,
             max_circuits: None,
-            effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
         }
     })
 }
@@ -3844,16 +3846,11 @@ fn filter_batch_by_mapped_circuit_limit(
     existing_circuits: &HashMap<i64, Arc<BakeryCommands>>,
     effective_limit: Option<usize>,
 ) -> (Vec<Arc<BakeryCommands>>, MappedLimitStats) {
-    let mut mapped_candidates: Vec<i64> = Vec::new();
-    let mut seen = HashSet::new();
-
-    for cmd in &batch {
-        if let Some(hash) = mapped_circuit_hash(cmd.as_ref())
-            && seen.insert(hash)
-        {
-            mapped_candidates.push(hash);
-        }
-    }
+    let mapped_candidates = unique_mapped_circuit_hashes(
+        batch
+            .iter()
+            .filter_map(|command| mapped_circuit_hash(command.as_ref())),
+    );
 
     let requested = mapped_candidates.len();
     let Some(effective_limit) = effective_limit else {
@@ -12109,9 +12106,12 @@ mod tests {
         let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
             batch,
             &existing,
-            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
         );
-        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(
+            stats.enforced_limit,
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize)
+        );
         assert_eq!(stats.requested_mapped, 1001);
         assert_eq!(stats.allowed_mapped, 1000);
         assert_eq!(stats.dropped_mapped, 1);
@@ -12136,9 +12136,12 @@ mod tests {
         let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
             batch,
             &existing,
-            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
         );
-        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(
+            stats.enforced_limit,
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize)
+        );
         assert_eq!(stats.requested_mapped, 1000);
         assert_eq!(stats.allowed_mapped, 1000);
         assert_eq!(stats.dropped_mapped, 0);

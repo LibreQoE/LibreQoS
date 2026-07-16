@@ -109,6 +109,41 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <h6 class="lqos-config-section-title">Local API Bearer Token</h6>
+                        <div class="lqos-config-section-subtitle">Authenticate local API clients without using an Insight license key. Copy a generated token before saving; saved tokens are never shown again.</div>
+
+                        <div class="row g-3 align-items-end">
+                            <div class="col-12 col-xl-8">
+                                <label for="localApiBearerToken" class="form-label">Bearer Token</label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control font-monospace" id="localApiBearerToken" autocomplete="new-password" spellcheck="false" aria-describedby="localApiBearerTokenStatus localApiBearerTokenHelp">
+                                    <button type="button" class="btn btn-outline-secondary" id="toggleLocalApiBearerToken" aria-label="Reveal current local API bearer token">
+                                        <i class="fa fa-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" id="copyLocalApiBearerToken" aria-label="Copy local API bearer token">
+                                        <i class="fa fa-copy me-1"></i> Copy
+                                    </button>
+                                </div>
+                                <div class="form-text" id="localApiBearerTokenStatus">Loading token status...</div>
+                                <div class="form-text" id="localApiBearerTokenHelp">Send this value in the <code>x-bearer</code> header. Treat it like a password.</div>
+                                <div class="visually-hidden" id="localApiCopyStatus" aria-live="polite"></div>
+                            </div>
+                            <div class="col-12 col-sm-6 col-xl-2">
+                                <button type="button" id="generateLocalApiBearerToken" class="btn btn-outline-primary w-100">
+                                    <i class="fa fa-key me-1"></i> Generate
+                                </button>
+                            </div>
+                            <div class="col-12 col-sm-6 col-xl-2">
+                                <button type="button" id="clearLocalApiBearerToken" class="btn btn-outline-danger w-100" aria-label="Clear local API bearer token">
+                                    <i class="fa fa-trash me-1"></i> Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 

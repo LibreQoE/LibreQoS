@@ -1,12 +1,26 @@
 <!-- API & Chatbot (Libby) overview -->
 
-<!-- Subscription notice -->
+<!-- License gate -->
 <div id="apiInsightNotice" class="alert alert-info d-none" role="alert">
   <div class="d-flex align-items-center">
     <div class="me-2 text-info"><i class="fa fa-circle-info fa-lg"></i></div>
     <div>
-      <div class="fw-semibold">The LibreQoS API requires an entitled license.</div>
-      <a class="alert-link" href="config_lts.html">Review License &amp; Services</a> to enable API access on this node.
+      <div class="fw-semibold">Networks with more than 1,000 valid mapped circuits require an entitled license for API access.</div>
+      <div>
+        API-only access is available through the <a class="alert-link" href="lts_trial.html">Try Insight</a> link, at half price.
+        You can also <a class="alert-link" href="config_lts.html">review License &amp; Services</a>.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Service notice -->
+<div id="apiServiceNotice" class="alert alert-warning d-none" role="alert">
+  <div class="d-flex align-items-center">
+    <div class="me-2 text-warning"><i class="fa fa-triangle-exclamation fa-lg"></i></div>
+    <div>
+      <div class="fw-semibold">API access is allowed, but the local API service is not currently available.</div>
+      <div>Check the <code>lqos_api</code> service status before opening Swagger.</div>
     </div>
   </div>
 </div>
@@ -42,7 +56,7 @@
   <div class="card-body">
     <h4 class="h6 card-title mb-2"><i class="fa-solid fa-plug me-2"></i>Getting started</h4>
     <p class="mb-2 text-secondary">
-      Open <strong>License &amp; Services</strong> from the top menu to enter or review your key.
+      Open <strong>License &amp; Services</strong> to generate a local bearer token or review your license key.
       On direct HTTP installs, Swagger stays on <code>http://your-node-ip:9122/api-docs</code>.
       If optional HTTPS is enabled through Caddy, use <code>/api/v1/api-docs</code> on your HTTPS LibreQoS URL.
     </p>
@@ -53,13 +67,13 @@
 
 <script>
   (function(){
-    const notice = document.getElementById('apiInsightNotice');
-    if (!notice) return;
+    const licenseNotice = document.getElementById('apiInsightNotice');
+    const serviceNotice = document.getElementById('apiServiceNotice');
     const hasApiDocs = typeof window.hasApiDocs !== 'undefined' ? !!window.hasApiDocs : false;
-    if (!hasApiDocs) {
-      notice.classList.remove('d-none');
-    } else {
-      notice.classList.add('d-none');
-    }
+    const serviceAvailable = typeof window.apiServiceAvailable !== 'undefined'
+      ? !!window.apiServiceAvailable
+      : false;
+    licenseNotice?.classList.toggle('d-none', hasApiDocs);
+    serviceNotice?.classList.toggle('d-none', !hasApiDocs || serviceAvailable);
   })();
 </script>

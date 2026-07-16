@@ -104,6 +104,12 @@ pub struct PowercodeSecretState {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct LocalApiSecretState {
+    #[serde(default)]
+    pub bearer_token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ConfigSecretState {
     #[serde(default)]
     pub uisp_integration: UispSecretState,
@@ -117,6 +123,8 @@ pub struct ConfigSecretState {
     pub netzur_integration: NetzurSecretState,
     #[serde(default)]
     pub powercode_integration: PowercodeSecretState,
+    #[serde(default)]
+    pub local_api: LocalApiSecretState,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -160,6 +168,12 @@ pub struct PowercodeSecretClearRequest {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct LocalApiSecretClearRequest {
+    #[serde(default)]
+    pub bearer_token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ConfigSecretClearRequest {
     #[serde(default)]
     pub uisp_integration: UispSecretClearRequest,
@@ -173,6 +187,8 @@ pub struct ConfigSecretClearRequest {
     pub netzur_integration: NetzurSecretClearRequest,
     #[serde(default)]
     pub powercode_integration: PowercodeSecretClearRequest,
+    #[serde(default)]
+    pub local_api: LocalApiSecretClearRequest,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -202,6 +218,12 @@ fn redact_string_secret(value: &mut String) -> bool {
     configured
 }
 
+fn redact_optional_string_secret(value: &mut Option<String>) -> bool {
+    let configured = value.as_deref().is_some_and(has_secret);
+    *value = None;
+    configured
+}
+
 fn redact_config_secrets(config: &mut Config) -> ConfigSecretState {
     let mut secret_state = ConfigSecretState::default();
 
@@ -214,6 +236,8 @@ fn redact_config_secrets(config: &mut Config) -> ConfigSecretState {
         redact_string_secret(&mut config.sonar_integration.sonar_api_key);
     secret_state.powercode_integration.powercode_api_key =
         redact_string_secret(&mut config.powercode_integration.powercode_api_key);
+    secret_state.local_api.bearer_token =
+        redact_optional_string_secret(&mut config.local_api.bearer_token);
 
     if let Some(netzur) = config.netzur_integration.as_mut() {
         secret_state.netzur_integration.api_key = redact_string_secret(&mut netzur.api_key);
@@ -232,6 +256,21 @@ fn merge_string_secret(incoming: &mut String, existing: &str, clear: bool) {
         incoming.clear();
     } else if incoming.trim().is_empty() {
         *incoming = existing.to_string();
+    }
+}
+
+fn merge_optional_string_secret(
+    incoming: &mut Option<String>,
+    existing: &Option<String>,
+    clear: bool,
+) {
+    if clear {
+        *incoming = None;
+    } else if incoming
+        .as_deref()
+        .is_none_or(|value| value.trim().is_empty())
+    {
+        *incoming = existing.clone();
     }
 }
 
@@ -264,6 +303,11 @@ fn apply_secret_updates(
         &mut incoming.powercode_integration.powercode_api_key,
         &existing.powercode_integration.powercode_api_key,
         clear_secrets.powercode_integration.powercode_api_key,
+    );
+    merge_optional_string_secret(
+        &mut incoming.local_api.bearer_token,
+        &existing.local_api.bearer_token,
+        clear_secrets.local_api.bearer_token,
     );
 
     match (
@@ -1196,6 +1240,7 @@ mod tests {
     #[test]
     fn redacts_secret_fields_and_marks_presence() {
         let mut config = Config::default();
+        config.local_api.bearer_token = Some("local-api-token".to_string());
         config.uisp_integration.token = "uisp-token".to_string();
         config.splynx_integration.api_key = "splynx-key".to_string();
         config.splynx_integration.api_secret = "splynx-secret".to_string();
@@ -1222,11 +1267,13 @@ mod tests {
         assert!(secret_state.sonar_integration.sonar_api_key);
         assert!(secret_state.netzur_integration.api_key);
         assert!(secret_state.powercode_integration.powercode_api_key);
+        assert!(secret_state.local_api.bearer_token);
         assert!(config.uisp_integration.token.is_empty());
         assert!(config.splynx_integration.api_key.is_empty());
         assert!(config.splynx_integration.api_secret.is_empty());
         assert!(config.sonar_integration.sonar_api_key.is_empty());
         assert!(config.powercode_integration.powercode_api_key.is_empty());
+        assert!(config.local_api.bearer_token.is_none());
         assert!(
             config
                 .visp_integration
@@ -1256,6 +1303,7 @@ mod tests {
     #[test]
     fn applies_secret_updates_with_preserve_replace_and_clear() {
         let mut existing = Config::default();
+        existing.local_api.bearer_token = Some("old-local-api-token".to_string());
         existing.uisp_integration.token = "old-uisp".to_string();
         existing.splynx_integration.api_key = "old-key".to_string();
         existing.splynx_integration.api_secret = "old-secret".to_string();
@@ -1273,6 +1321,7 @@ mod tests {
             .api_key = "old-netzur".to_string();
 
         let mut incoming = existing.clone();
+        incoming.local_api.bearer_token = None;
         incoming.uisp_integration.token.clear();
         incoming.splynx_integration.api_key = "new-key".to_string();
         incoming.splynx_integration.api_secret.clear();
@@ -1290,6 +1339,7 @@ mod tests {
             .clear();
 
         let mut clear_secrets = ConfigSecretClearRequest::default();
+        clear_secrets.local_api.bearer_token = true;
         clear_secrets.splynx_integration.api_secret = true;
         clear_secrets.sonar_integration.sonar_api_key = true;
         clear_secrets.netzur_integration.api_key = true;
@@ -1328,6 +1378,44 @@ mod tests {
             incoming.powercode_integration.powercode_api_key,
             "old-powercode"
         );
+        assert!(incoming.local_api.bearer_token.is_none());
+    }
+
+    #[test]
+    fn local_api_secret_updates_preserve_replace_and_clear() {
+        let mut existing = Config::default();
+        existing.local_api.bearer_token = Some("stored-token".to_string());
+
+        let mut preserved = existing.clone();
+        preserved.local_api.bearer_token = None;
+        apply_secret_updates(
+            &existing,
+            &mut preserved,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(
+            preserved.local_api.bearer_token.as_deref(),
+            Some("stored-token")
+        );
+
+        let mut replaced = existing.clone();
+        replaced.local_api.bearer_token = Some("replacement-token".to_string());
+        apply_secret_updates(
+            &existing,
+            &mut replaced,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(
+            replaced.local_api.bearer_token.as_deref(),
+            Some("replacement-token")
+        );
+
+        let mut cleared = existing.clone();
+        cleared.local_api.bearer_token = None;
+        let mut clear = ConfigSecretClearRequest::default();
+        clear.local_api.bearer_token = true;
+        apply_secret_updates(&existing, &mut cleared, &clear);
+        assert!(cleared.local_api.bearer_token.is_none());
     }
 
     #[test]

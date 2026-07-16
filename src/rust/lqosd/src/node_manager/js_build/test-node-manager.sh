@@ -17,6 +17,7 @@ node --test \
   "${SCRIPT_DIR}/src/config/shaped_device_identity.test.mjs" \
   "${SCRIPT_DIR}/src/config/shaped_device_wire.test.mjs" \
   "${SCRIPT_DIR}/src/config/config_interface_mtu.test.mjs" \
+  "${SCRIPT_DIR}/src/config/local_api_token.test.mjs" \
   "${SCRIPT_DIR}/src/config/network_mode_storage.test.mjs" \
   "${SCRIPT_DIR}/src/config/ssl_redirect.test.mjs" \
   "${SCRIPT_DIR}/src/dashlets/world_map_assets.test.mjs" \

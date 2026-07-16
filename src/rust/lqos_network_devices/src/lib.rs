@@ -217,6 +217,18 @@ pub fn network_devices_catalog() -> NetworkDevicesCatalog {
     )
 }
 
+/// Returns the canonical count of unique static or dynamic circuits with a valid IP mapping.
+pub fn mapped_circuit_count() -> usize {
+    let shaped = state::shaped_devices_snapshot();
+    let dynamic = state::dynamic_circuits_snapshot();
+    combined_catalog::mapped_circuit_count_for_devices(
+        shaped
+            .devices
+            .iter()
+            .chain(dynamic.iter().map(|circuit| &circuit.shaped)),
+    )
+}
+
 /// Returns the current in-memory shaped-device hash cache snapshot.
 pub fn shaped_device_hash_cache_snapshot() -> Arc<ShapedDeviceHashCache> {
     state::shaped_device_hash_cache_snapshot()

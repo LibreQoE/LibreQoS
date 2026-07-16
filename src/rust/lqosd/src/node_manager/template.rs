@@ -163,13 +163,15 @@ pub async fn apply_templates(
             cobrand_logo_status_html(config.as_ref());
 
         // "LTS script" - which is increasingly becoming a misnomer
+        let api_service_available = is_api_available();
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.mappedCircuitLimit = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.apiServiceAvailable = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.mappedCircuitLimit = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
             js_tf(capabilities.can_view_insight_ui),
             js_tf(capabilities.can_view_insight_ui),
             js_tf(capabilities.can_use_support_tickets),
             js_tf(capabilities.can_use_chatbot),
             js_tf(capabilities.can_use_api_link),
+            js_tf(api_service_available),
             js_tf(capabilities.control_service_reachable),
             serde_json::to_string(&capabilities.license_state_label)
                 .unwrap_or_else(|_| "\"Unknown\"".to_string()),
@@ -198,8 +200,8 @@ pub async fn apply_templates(
             .replace("%%COBRAND_LOGO%%", &cobrand_logo)
             .replace("%%COBRAND_LOGO_DESCRIBEDBY%%", cobrand_logo_describedby)
             .replace("%%COBRAND_LOGO_STATUS%%", cobrand_logo_status);
-        // Handle API_LINK placeholder (require service + valid Insight)
-        let api_link = if is_api_available() && capabilities.can_use_api_link {
+        // Handle API_LINK placeholder using service health and current access policy.
+        let api_link = if api_service_available && capabilities.can_use_api_link {
             API_LINK_ACTIVE
         } else {
             API_LINK_INACTIVE

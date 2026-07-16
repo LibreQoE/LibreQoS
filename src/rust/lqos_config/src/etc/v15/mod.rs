@@ -10,6 +10,7 @@ mod flows;
 pub mod influxdb;
 mod integration_common;
 mod ip_ranges;
+mod local_api;
 mod long_term_stats;
 mod mikrotik_ipv6;
 mod netzur_integration;

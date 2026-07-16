@@ -16,6 +16,8 @@ pub mod directory_watcher;
 /// Utilities for handling strings in hex format
 pub mod hex_string;
 
+/// Shared mapped-circuit licensing definitions.
+pub mod mapped_circuits;
 /// Utilities for scaling bits and packets to human-readable format
 pub mod packet_scale;
 /// Cross-process PID-file locking helpers.
@@ -24,6 +26,10 @@ mod string_table_enum;
 
 /// Rolling heatmap data storage for executive summary views.
 pub mod temporal_heatmap;
+pub use mapped_circuits::{
+    DEFAULT_MAPPED_CIRCUIT_LIMIT, is_valid_ip_mapping_text, is_valid_ipv4_prefix,
+    is_valid_ipv6_prefix, unique_mapped_circuit_hashes,
+};
 /// Re-export HeatmapBlocks for downstream crates.
 pub use temporal_heatmap::HeatmapBlocks;
 /// Quality-of-Outcome (QoO) scoring utilities and profile loading.
