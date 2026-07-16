@@ -2,12 +2,19 @@
 
 ## Requisitos
 
-El servicio `lqos_api` (API del nodo) requiere una suscripción activa a LibreQoS Insight.
+A partir de LibreQoS 2.2, el servicio `lqos_api` usa la misma política de circuitos mapeados que LibreQoS:
 
-Esto es independiente de los límites base de shaping:
+- Las redes con 1.000 circuitos mapeados válidos o menos pueden usar la API sin una suscripción a Insight.
+- Las redes con más de 1.000 circuitos mapeados válidos requieren un derecho válido de API o Insight.
+- El conteo usa circuitos configurados únicos con mapeos válidos, no tráfico reciente. Varios dispositivos del mismo circuito cuentan una sola vez y las filas sin mapeo IP no cuentan.
+- Una licencia activa o un grant firmado almacenado localmente puede autorizar el acceso a la API por encima del límite gratuito.
+
+Es la misma población usada por el límite base de shaping:
 - `ShapedDevices.csv` puede contener entradas ilimitadas.
-- Sin una suscripción/licencia Insight válida, LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo.
-- Conteos superiores de circuitos mapeados dependen de una licencia Insight activa.
+- Sin una licencia o grant con derecho válido, LibreQoS admite solo los primeros 1.000 circuitos mapeados válidos al estado de shaping activo.
+- Los conteos superiores requieren una licencia con derecho de API o Insight.
+
+El acceso solo a la API está disponible mediante el enlace **Try Insight** de la WebUI a la mitad del precio de Insight completo.
 
 ## Fuente de verdad y pruebas
 
@@ -57,7 +64,9 @@ sudo systemctl status lqos_api
 La mayoría de endpoints requieren:
 
 - Header: `x-bearer`
-- Valor: su clave de licencia Insight
+- Valor: el token Bearer de la API local configurado en **License & Services**, o su clave de licencia Insight/API-only
+
+El token local autentica al cliente, pero no evita el límite de licenciamiento por circuitos mapeados. Genere un token de 256 bits en **License & Services**, cópielo a su cliente de API antes de guardar y trátelo como una contraseña. Los tokens guardados no vuelven a mostrarse; genere uno nuevo si pierde el original.
 
 ## Qué pueden hacer los ISPs con la API
 

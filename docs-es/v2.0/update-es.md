@@ -8,6 +8,8 @@ Si usas el puente XDP, el tráfico dejará de pasar por el puente mientras lqosd
 
 ```{important}
 Desde v2.0, la ingesta de circuitos mapeados depende de un estado válido de licencia/grant con derecho. Sin un estado válido de licencia/grant de Insight o Local, LibreQoS solo lee los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Esto incluye estado local de grant/licencia expirado o inválido por cualquier motivo. Vea [Comportamiento de licenciamiento de Insight](insight-es.md#límites-de-circuitos-mapeados-y-estado-de-licencia) y [Solución de problemas](troubleshooting-es.md).
+
+A partir de v2.2, la API del nodo usa la misma política. Las redes con 1.000 circuitos mapeados válidos o menos pueden usar la API sin una suscripción a Insight; las redes mayores requieren un derecho válido de API o Insight. Las llamadas continúan autenticadas con un token Bearer de la API local o una clave de licencia existente.
 ```
 
 Ejecuta:

@@ -2,12 +2,19 @@
 
 ## Requirements
 
-The `lqos_api` (Node API service) requires an active LibreQoS Insight subscription.
+Starting with LibreQoS 2.2, the `lqos_api` Node API follows the same mapped-circuit policy as base LibreQoS:
 
-This is separate from base shaping limits:
+- Networks with 1,000 or fewer valid mapped circuits can use the API without an Insight subscription.
+- Networks with more than 1,000 valid mapped circuits require a valid API or Insight entitlement.
+- The count is based on unique configured circuit mappings, not recent traffic. Multiple devices in one circuit count once, and rows without an IP mapping do not count.
+- A valid live license or locally cached signed grant can authorize API access above the free limit.
+
+This is the same population used for the base shaping limit:
 - `ShapedDevices.csv` can contain unlimited entries.
-- Without a valid Insight subscription/license, LibreQoS admits only the first 1000 valid mapped circuits into active shaping state.
-- Higher mapped-circuit counts depend on active Insight licensing.
+- Without a valid entitled license/grant, LibreQoS admits only the first 1,000 valid mapped circuits into active shaping state.
+- Higher mapped-circuit counts depend on an entitled API or Insight license.
+
+API-only access is available through the **Try Insight** link in the WebUI at half the price of full Insight.
 
 ## Source of Truth and Testing
 
@@ -57,7 +64,9 @@ sudo systemctl status lqos_api
 Most endpoints require:
 
 - Header: `x-bearer`
-- Value: your Insight license key
+- Value: either the local API bearer token configured under **License & Services**, or your Insight/API-only license key
+
+The local bearer token authenticates the caller. It does not bypass the mapped-circuit licensing limit. Generate a 256-bit token in **License & Services**, copy it into your API client before saving, and treat it like a password. Saved tokens are not displayed again; generate a replacement if the original is lost.
 
 ## What ISPs Can Do with the API
 

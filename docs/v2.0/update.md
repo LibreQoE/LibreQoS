@@ -8,6 +8,8 @@ If you use the XDP bridge, traffic will briefly stop passing through the bridge 
 
 ```{important}
 Starting in v2.0, mapped-circuit ingest depends on valid entitled license/grant state. Without a valid Insight or Local license/grant state, LibreQoS reads only the first 1000 valid mapped circuits into active shaping state. This includes expired or otherwise invalid local grant/license state. See [Insight Licensing Behavior](insight.md#mapped-circuit-limits-and-license-state) and [Troubleshooting](troubleshooting.md).
+
+Starting in v2.2, the Node API uses the same mapped-circuit policy. Networks with 1,000 or fewer valid mapped circuits may use the API without an Insight subscription; larger networks require a valid API or Insight entitlement. API calls remain authenticated with a local API bearer token or an existing license key.
 ```
 
 Run:

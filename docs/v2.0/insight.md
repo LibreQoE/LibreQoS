@@ -125,6 +125,8 @@ Without a valid Insight or Local license/grant state, LibreQoS admits only the f
 
 A valid entitled license/grant state enables mapped-circuit counts above the default 1000 limit.
 
+Starting with LibreQoS 2.2, the Node API uses this same unique valid mapped-circuit count. API access is available without an Insight subscription at 1,000 or fewer mapped circuits. Above 1,000, the API requires a valid live entitlement or locally cached signed grant. API clients must still authenticate with either a local API bearer token or an Insight/API-only license key.
+
 The default 1000-limit behavior applies when license/grant state is:
 - missing
 - expired
