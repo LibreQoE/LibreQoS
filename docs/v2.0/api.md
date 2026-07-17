@@ -64,9 +64,11 @@ sudo systemctl status lqos_api
 Most endpoints require:
 
 - Header: `x-bearer`
-- Value: either the local API bearer token configured under **License & Services**, or your Insight/API-only license key
+- Value: a named local API key from **License & Services**, the legacy local bearer token, or your Insight/API-only license key
 
-The local bearer token authenticates the caller. It does not bypass the mapped-circuit licensing limit. Generate a 256-bit token in **License & Services**, copy it into your API client before saving, and treat it like a password. Saved tokens are not displayed again; generate a replacement if the original is lost.
+Local API keys authenticate callers; they do not bypass the mapped-circuit licensing limit. Administrators can create up to 16 named keys in **License & Services**. LibreQoS displays each generated key once, stores only its SHA-256 digest and non-secret metadata in `/etc/lqos.conf`, and cannot recover it later. Copy the complete `lqos_api_...` value into the client immediately and treat it like a password.
+
+Named keys do not expire automatically. Revoke keys that are no longer needed; creation and revocation may take up to 30 seconds to reach `lqos_api`. Existing license keys and the older single `local_api.bearer_token` remain compatible. The UI labels the older value as **Legacy local API key** and lets an administrator remove it after clients have moved to named keys.
 
 ## What ISPs Can Do with the API
 

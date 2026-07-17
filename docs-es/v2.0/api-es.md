@@ -64,9 +64,11 @@ sudo systemctl status lqos_api
 La mayoría de endpoints requieren:
 
 - Header: `x-bearer`
-- Valor: el token Bearer de la API local configurado en **License & Services**, o su clave de licencia Insight/API-only
+- Valor: una clave local con nombre creada en **License & Services**, el token local heredado o su clave de licencia Insight/API-only
 
-El token local autentica al cliente, pero no evita el límite de licenciamiento por circuitos mapeados. Genere un token de 256 bits en **License & Services**, cópielo a su cliente de API antes de guardar y trátelo como una contraseña. Los tokens guardados no vuelven a mostrarse; genere uno nuevo si pierde el original.
+Las claves locales autentican al cliente, pero no evitan el límite de licenciamiento por circuitos mapeados. Un administrador puede crear hasta 16 claves con nombre en **License & Services**. LibreQoS muestra cada clave una sola vez, guarda únicamente su resumen SHA-256 y metadatos no secretos en `/etc/lqos.conf`, y no puede recuperarla después. Copie de inmediato el valor completo `lqos_api_...` al cliente y trátelo como una contraseña.
+
+Las claves con nombre no caducan automáticamente. Revoque las que ya no necesite; la creación y la revocación pueden tardar hasta 30 segundos en surtir efecto en `lqos_api`. Las claves de licencia existentes y el antiguo `local_api.bearer_token` siguen siendo compatibles. La interfaz identifica este último como **Legacy local API key** y permite eliminarlo después de migrar los clientes.
 
 ## Qué pueden hacer los ISPs con la API
 
