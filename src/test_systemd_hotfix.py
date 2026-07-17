@@ -77,13 +77,11 @@ class SystemdHotfixScriptTest(unittest.TestCase):
                 #!/bin/sh
                 [ "${HOTFIX_TEST_APT_CACHE_FAIL:-0}" = "1" ] && exit 12
 
-                command="$1"
                 package="$2"
                 version="${HOTFIX_TEST_CANDIDATE_VERSION:-255.4-1ubuntu9999+libreqos1}"
                 priority="${HOTFIX_TEST_CANDIDATE_PRIORITY:-1001}"
                 repo_line="${HOTFIX_TEST_REPO_LINE:-        500 https://repo.libreqos.com noble/main amd64 Packages}"
-                madison_repo_url="${HOTFIX_TEST_MADISON_REPO_URL:-https://repo.libreqos.com}"
-                madison_dist_component="${HOTFIX_TEST_MADISON_DIST_COMPONENT:-noble/main}"
+                release_line="${HOTFIX_TEST_RELEASE_LINE:-}"
 
                 case ",${HOTFIX_TEST_INCONSISTENT_PACKAGES:-}," in
                   *,"$package",*) version="${HOTFIX_TEST_OTHER_VERSION:-255.4-1ubuntu9999+libreqos2}" ;;
@@ -93,11 +91,6 @@ class SystemdHotfixScriptTest(unittest.TestCase):
                   version="(none)"
                 fi
 
-                if [ "$command" = "madison" ]; then
-                  printf '   %s | %s | %s %s amd64 Packages\\n' "$package" "$version" "$madison_repo_url" "$madison_dist_component"
-                  exit 0
-                fi
-
                 cat <<POLICY
                 $package:
                   Installed: 255.4-1ubuntu8.16
@@ -105,6 +98,7 @@ class SystemdHotfixScriptTest(unittest.TestCase):
                   Version table:
                      $version $priority
                 $repo_line
+                $release_line
                      255.4-1ubuntu8.16 500
                         500 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages
                 POLICY
@@ -175,7 +169,6 @@ class SystemdHotfixScriptTest(unittest.TestCase):
                 "HOTFIX_TEST_REPO_LINE": (
                     "        500 https://repo.libreqos.com/ noble/main amd64 Packages"
                 ),
-                "HOTFIX_TEST_MADISON_REPO_URL": "https://example.invalid",
             }
         )
 
@@ -183,9 +176,16 @@ class SystemdHotfixScriptTest(unittest.TestCase):
         self.assertIn("systemd=255.4-1ubuntu9999+libreqos1", apt_log)
         self.assertIn("package_version=255.4-1ubuntu9999+libreqos1", marker)
 
-    def test_auto_uses_madison_when_policy_source_line_is_unrecognized(self):
+    def test_auto_uses_policy_release_metadata_when_source_component_is_unrecognized(self):
         result, apt_log, marker = self.run_install(
-            {"HOTFIX_TEST_REPO_LINE": "        release o=LibreQoS,l=LibreQoS,n=noble"}
+            {
+                "HOTFIX_TEST_REPO_LINE": (
+                    "        500 https://repo.libreqos.com noble amd64 Packages"
+                ),
+                "HOTFIX_TEST_RELEASE_LINE": (
+                    "        release o=LibreQoS,n=noble,l=LibreQoS,c=main,b=amd64"
+                ),
+            }
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -230,7 +230,6 @@ class SystemdHotfixScriptTest(unittest.TestCase):
                 "HOTFIX_TEST_REPO_LINE": (
                     "        500 https://example.invalid noble/main amd64 Packages"
                 ),
-                "HOTFIX_TEST_MADISON_REPO_URL": "https://example.invalid",
             }
         )
 
@@ -243,12 +242,46 @@ class SystemdHotfixScriptTest(unittest.TestCase):
                 "HOTFIX_TEST_REPO_LINE": (
                     "        500 https://repo.libreqos.com.evil noble/main amd64 Packages"
                 ),
-                "HOTFIX_TEST_MADISON_REPO_URL": "https://repo.libreqos.com.evil",
             }
         )
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("is not from https://repo.libreqos.com noble/main", result.stderr)
+
+    def test_auto_rejects_release_metadata_from_different_source_stanza(self):
+        result, _, _ = self.run_install(
+            {
+                "HOTFIX_TEST_REPO_LINE": textwrap.dedent(
+                    """
+                            500 https://repo.libreqos.com noble amd64 Packages
+                            release o=Mirror,n=noble,l=Mirror,c=main,b=amd64
+                            500 https://mirror.invalid noble/main amd64 Packages
+                            release o=LibreQoS,n=noble,l=LibreQoS,c=main,b=amd64
+                    """
+                ).rstrip(),
+            }
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("is not from https://repo.libreqos.com noble/main", result.stderr)
+
+    def test_auto_accepts_release_metadata_after_unrelated_source_stanza(self):
+        result, apt_log, marker = self.run_install(
+            {
+                "HOTFIX_TEST_REPO_LINE": textwrap.dedent(
+                    """
+                            500 https://mirror.invalid noble/main amd64 Packages
+                            release o=Mirror,n=noble,l=Mirror,c=main,b=amd64
+                            500 https://repo.libreqos.com noble amd64 Packages
+                            release o=LibreQoS,n=noble,l=LibreQoS,c=main,b=amd64
+                    """
+                ).rstrip(),
+            }
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("systemd=255.4-1ubuntu9999+libreqos1", apt_log)
+        self.assertIn("package_version=255.4-1ubuntu9999+libreqos1", marker)
 
     def test_exact_override_bypasses_candidate_resolution(self):
         result, apt_log, marker = self.run_install(
