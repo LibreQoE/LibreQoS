@@ -153,6 +153,14 @@ pub(crate) fn lock_config_update_blocking() -> MutexGuard<'static, ()> {
     CONFIG_UPDATE_LOCK.blocking_lock()
 }
 
+/// Replaces a proposed configuration's API credentials with the current
+/// authoritative local API section and Insight/API license key.
+pub(crate) fn preserve_api_credentials(mut proposed: Config, current: &Config) -> Config {
+    proposed.local_api = current.local_api.clone();
+    proposed.long_term_stats.license_key = current.long_term_stats.license_key.clone();
+    proposed
+}
+
 /// Persists an updated configuration through `lqosd`'s local bus.
 pub(super) async fn persist_config(config: Config) -> Result<(), String> {
     let mut responses = bus_request_with_timeout(
@@ -243,8 +251,8 @@ pub async fn remove_legacy(login: LoginResult) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_key, build_key, create, remove_legacy, remove_legacy_from_config, revoke,
-        revoke_from_config,
+        append_key, build_key, create, preserve_api_credentials, remove_legacy,
+        remove_legacy_from_config, revoke, revoke_from_config,
     };
     use crate::node_manager::auth::LoginResult;
     use lqos_config::{Config, MAX_LOCAL_API_KEYS};
@@ -347,6 +355,30 @@ mod tests {
         assert_eq!(
             remove_legacy(LoginResult::ReadOnly).await,
             Err("Unauthorized".into())
+        );
+    }
+
+    #[test]
+    fn generic_config_updates_preserve_authoritative_api_credentials() {
+        let mut current = Config::default();
+        current.local_api.bearer_token = Some("legacy".to_string());
+        let creation = append_key(&mut current, "Monitor", Uuid::from_u128(7), &[7; 32], 7)
+            .expect("fixture key should be valid");
+        let mut proposed = Config::default();
+        proposed.local_api.bearer_token = Some("replacement".to_string());
+
+        current.long_term_stats.license_key = Some("license-secret".to_string());
+        proposed.long_term_stats.license_key = Some("replacement-license".to_string());
+        let merged = preserve_api_credentials(proposed, &current);
+        assert_eq!(merged.local_api, current.local_api);
+        assert_eq!(
+            merged.long_term_stats.license_key,
+            current.long_term_stats.license_key
+        );
+        assert!(
+            !toml::to_string(&merged)
+                .expect("config should serialize")
+                .contains(&creation.api_key)
         );
     }
 }

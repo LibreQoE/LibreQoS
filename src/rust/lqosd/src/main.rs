@@ -509,6 +509,21 @@ fn memory_debug() {
 #[cfg(not(feature = "flamegraphs"))]
 fn memory_debug() {}
 
+fn update_lqosd_config_from_bus(config: &lqos_config::Config) -> BusResponse {
+    match lqos_config::update_config(config) {
+        Ok(()) => {
+            if let Ok(cfg) = lqos_config::load_config() {
+                let _ = stick::recompute_stick_offset(&cfg);
+            }
+            BusResponse::Ack
+        }
+        Err(err) => {
+            error!("Error updating config: {err:?}");
+            BusResponse::Fail(err.to_string())
+        }
+    }
+}
+
 fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
     for req in requests.iter() {
         //println!("Request: {:?}", req);
@@ -612,18 +627,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 lqos_bus::BusResponse::Ack
             }
             BusRequest::UpdateLqosDTuning(..) => tuning::tune_lqosd_from_bus(req),
-            BusRequest::UpdateLqosdConfig(config) => match lqos_config::update_config(config) {
-                Ok(()) => {
-                    if let Ok(cfg) = lqos_config::load_config() {
-                        let _ = stick::recompute_stick_offset(&cfg);
-                    }
-                    BusResponse::Ack
-                }
-                Err(err) => {
-                    error!("Error updating config: {err:?}");
-                    BusResponse::Fail(err.to_string())
-                }
-            },
+            BusRequest::UpdateLqosdConfig(config) => update_lqosd_config_from_bus(config),
             BusRequest::CreateDynamicCircuit { shaped_device } => {
                 crate::dynamic_circuits::create_dynamic_circuit((**shaped_device).clone())
             }
@@ -1197,6 +1201,23 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     licensed,
                     max_circuits,
                 })
+            }
+            BusRequest::UpdateLqosdConfigPreserveApiCredentials(config) => {
+                let _guard =
+                    node_manager::local_api::local_api_keys::lock_config_update_blocking();
+                match lqos_config::load_config() {
+                    Ok(current) => {
+                        let config = node_manager::local_api::local_api_keys::preserve_api_credentials(
+                            (**config).clone(),
+                            &current,
+                        );
+                        update_lqosd_config_from_bus(&config)
+                    }
+                    Err(error) => {
+                        error!("Unable to load config while preserving local API keys: {error:?}");
+                        BusResponse::Fail(error.to_string())
+                    }
+                }
             }
         });
     }
