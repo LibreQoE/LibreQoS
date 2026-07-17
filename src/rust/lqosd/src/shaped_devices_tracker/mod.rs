@@ -43,6 +43,10 @@ pub static EFFECTIVE_CIRCUIT_PARENTS: Lazy<ArcSwap<FxHashMap<String, RuntimeCirc
     Lazy::new(|| ArcSwap::new(Arc::new(FxHashMap::default())));
 static LAST_TOPOLOGY_STATUS_IDENTITY: Lazy<Mutex<Option<TopologyRuntimeShapingPayloadIdentity>>> =
     Lazy::new(|| Mutex::new(None));
+#[cfg(test)]
+static CIRCUIT_SNAPSHOT_TEST_HOOK: Lazy<
+    Mutex<Option<(std::thread::ThreadId, std::sync::mpsc::Sender<()>)>>,
+> = Lazy::new(|| Mutex::new(None));
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeCircuitParent {
@@ -684,10 +688,6 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
     })
 }
 
-pub fn resolve_parent_node_alias(parent_node: &str) -> Option<String> {
-    lqos_network_devices::resolve_parent_node(parent_node).map(|resolved| resolved.name)
-}
-
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
         if let Some(index) = net_json.get_index_for_name(circuit_id) {
@@ -711,34 +711,49 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
     })
 }
 
-pub fn get_all_circuits() -> BusResponse {
-    if let Ok(kernel_now) = time_since_boot() {
-        let catalog = lqos_network_devices::network_devices_catalog();
-        let data = THROUGHPUT_TRACKER
-            .raw_data
-            .lock()
-            .iter()
-            .map(|(k, v)| {
-                let last_seen_nanos = if v.last_seen > 0 {
-                    let last_seen_nanos = v.last_seen as u128;
-                    let since_boot = Duration::from(kernel_now).as_nanos();
-                    //println!("since_boot: {:?}, last_seen: {:?}", since_boot, last_seen_nanos);
-                    since_boot.saturating_sub(last_seen_nanos) as u64
-                } else {
-                    u64::MAX
-                };
+struct PendingCircuitParent {
+    circuit: Circuit,
+    configured_parent: Option<String>,
+}
 
-                // Map to circuit et al
-                let mut circuit_id = v.circuit_id.clone();
+fn snapshot_circuits(desired_circuit_id: Option<&str>) -> Vec<PendingCircuitParent> {
+    let Ok(kernel_now) = time_since_boot() else {
+        return Vec::new();
+    };
+    let since_boot_nanos = Duration::from(kernel_now).as_nanos();
+    let desired_hash = desired_circuit_id.map(hash_to_i64);
+    let catalog = lqos_network_devices::network_devices_catalog();
+
+    let pending = {
+        let raw_data = THROUGHPUT_TRACKER.raw_data.lock();
+        raw_data
+            .iter()
+            .filter_map(|(ip, entry)| {
+                let device = catalog
+                    .device_by_hashes(entry.device_hash, entry.circuit_hash)
+                    .or_else(|| {
+                        catalog
+                            .device_longest_match_for_ip(ip)
+                            .map(|(_, device)| device)
+                    });
+                if let Some(desired_circuit_id) = desired_circuit_id {
+                    let desired_hash = desired_hash.expect("desired hash accompanies desired id");
+                    let matches_desired = entry.circuit_hash == Some(desired_hash)
+                        || entry.circuit_id.as_deref() == Some(desired_circuit_id)
+                        || device.is_some_and(|device| device.circuit_hash == desired_hash)
+                        || device.is_some_and(|device| device.circuit_id == desired_circuit_id);
+                    if !matches_desired {
+                        return None;
+                    }
+                }
+
+                let mut circuit_id = entry.circuit_id.clone();
                 let mut circuit_name = None;
                 let mut device_id = None;
                 let mut device_name = None;
                 let mut parent_node = None;
-                // Plan is expressed in Mbps as f32
-                let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
-                let device = catalog
-                    .device_by_hashes(v.device_hash, v.circuit_hash)
-                    .or_else(|| catalog.device_longest_match_for_ip(k).map(|(_, dev)| dev));
+                let mut configured_parent = None;
+                let mut plan = DownUpOrder { down: 0.0, up: 0.0 };
                 if let Some(device) = device {
                     if circuit_id.as_deref().unwrap_or_default().is_empty() {
                         circuit_id = Some(device.circuit_id.clone());
@@ -746,218 +761,225 @@ pub fn get_all_circuits() -> BusResponse {
                     circuit_name = Some(device.circuit_name.clone());
                     device_id = Some(device.device_id.clone());
                     device_name = Some(device.device_name.clone());
-                    parent_node = Some(
-                        effective_parent_for_circuit(&device.circuit_id)
-                            .map(|parent| parent.name)
-                            .or_else(|| resolve_parent_node_alias(&device.parent_node))
-                            .unwrap_or_else(|| device.parent_node.clone()),
-                    );
+                    if let Some(effective_parent) = effective_parent_for_circuit(&device.circuit_id)
+                    {
+                        parent_node = Some(effective_parent.name);
+                    } else {
+                        configured_parent = Some(device.parent_node.clone());
+                    }
                     plan.down = device.download_max_mbps.round();
                     plan.up = device.upload_max_mbps.round();
                 }
-
-                Circuit {
-                    ip: k.as_ip(),
-                    bytes_per_second: v.bytes_per_second,
-                    actual_bytes_per_second: v.actual_bytes_per_second,
-                    median_latency: v.median_latency(),
-                    rtt_current_p50_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    rtt_current_p95_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    rtt_total_p50_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    rtt_total_p95_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    qoo: DownUpOrder {
-                        down: v.qoq.download_total_f32(),
-                        up: v.qoq.upload_total_f32(),
-                    },
-                    tcp_retransmit_sample: down_up_retransmit_sample(
-                        v.tcp_retransmits,
-                        v.tcp_retransmit_packets,
-                    ),
-                    circuit_id,
-                    device_id,
-                    circuit_name,
-                    device_name,
-                    parent_node,
-                    plan,
-                    last_seen_nanos,
+                if circuit_id.is_none() {
+                    circuit_id = desired_circuit_id.map(str::to_string);
                 }
+
+                let last_seen_nanos = if entry.last_seen > 0 {
+                    since_boot_nanos.saturating_sub(entry.last_seen as u128) as u64
+                } else {
+                    u64::MAX
+                };
+                let percentile = |bucket, direction, percentile| {
+                    entry
+                        .rtt_buffer
+                        .percentile(bucket, direction, percentile)
+                        .map(|rtt| rtt.as_nanos())
+                };
+
+                Some(PendingCircuitParent {
+                    circuit: Circuit {
+                        ip: ip.as_ip(),
+                        bytes_per_second: entry.bytes_per_second,
+                        actual_bytes_per_second: entry.actual_bytes_per_second,
+                        median_latency: entry.median_latency(),
+                        rtt_current_p50_nanos: DownUpOrder {
+                            down: percentile(
+                                RttBucket::Current,
+                                FlowbeeEffectiveDirection::Download,
+                                50,
+                            ),
+                            up: percentile(
+                                RttBucket::Current,
+                                FlowbeeEffectiveDirection::Upload,
+                                50,
+                            ),
+                        },
+                        rtt_current_p95_nanos: DownUpOrder {
+                            down: percentile(
+                                RttBucket::Current,
+                                FlowbeeEffectiveDirection::Download,
+                                95,
+                            ),
+                            up: percentile(
+                                RttBucket::Current,
+                                FlowbeeEffectiveDirection::Upload,
+                                95,
+                            ),
+                        },
+                        rtt_total_p50_nanos: DownUpOrder {
+                            down: percentile(
+                                RttBucket::Total,
+                                FlowbeeEffectiveDirection::Download,
+                                50,
+                            ),
+                            up: percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 50),
+                        },
+                        rtt_total_p95_nanos: DownUpOrder {
+                            down: percentile(
+                                RttBucket::Total,
+                                FlowbeeEffectiveDirection::Download,
+                                95,
+                            ),
+                            up: percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95),
+                        },
+                        qoo: DownUpOrder {
+                            down: entry.qoq.download_total_f32(),
+                            up: entry.qoq.upload_total_f32(),
+                        },
+                        tcp_retransmit_sample: down_up_retransmit_sample(
+                            entry.tcp_retransmits,
+                            entry.tcp_retransmit_packets,
+                        ),
+                        circuit_id,
+                        device_id,
+                        circuit_name,
+                        device_name,
+                        parent_node,
+                        plan,
+                        last_seen_nanos,
+                    },
+                    configured_parent,
+                })
             })
-            .collect();
-        BusResponse::CircuitData(data)
-    } else {
-        BusResponse::CircuitData(Vec::new())
+            .collect()
+    };
+    #[cfg(test)]
+    {
+        let mut hook = CIRCUIT_SNAPSHOT_TEST_HOOK.lock();
+        if hook
+            .as_ref()
+            .is_some_and(|(thread_id, _)| *thread_id == std::thread::current().id())
+            && let Some((_, sender)) = hook.take()
+        {
+            let _ = sender.send(());
+        }
     }
+    pending
+}
+
+fn resolve_pending_circuit_parents_with(
+    pending: Vec<PendingCircuitParent>,
+    mut resolve_parent: impl FnMut(&str) -> Option<String>,
+) -> Vec<Circuit> {
+    let mut resolved_parents: FxHashMap<String, String> = FxHashMap::default();
+    pending
+        .into_iter()
+        .map(|mut pending| {
+            if let Some(configured_parent) = pending.configured_parent {
+                let resolved_parent =
+                    if let Some(resolved) = resolved_parents.get(&configured_parent) {
+                        resolved.clone()
+                    } else {
+                        let resolved = resolve_parent(&configured_parent)
+                            .unwrap_or_else(|| configured_parent.clone());
+                        resolved_parents.insert(configured_parent, resolved.clone());
+                        resolved
+                    };
+                pending.circuit.parent_node = Some(resolved_parent);
+            }
+            pending.circuit
+        })
+        .collect()
+}
+
+fn resolve_pending_circuit_parents(pending: Vec<PendingCircuitParent>) -> Vec<Circuit> {
+    if pending
+        .iter()
+        .all(|pending| pending.configured_parent.is_none())
+    {
+        return pending.into_iter().map(|pending| pending.circuit).collect();
+    }
+
+    let configured_parents = pending
+        .iter()
+        .filter_map(|pending| pending.configured_parent.as_deref())
+        .collect::<FxHashSet<_>>();
+    let resolved_parents = lqos_network_devices::with_network_json_read(|network_json| {
+        let lookup =
+            lqos_network_devices::ParentNodeLookup::from_nodes(network_json.get_nodes_when_ready());
+        configured_parents
+            .into_iter()
+            .filter_map(|parent| {
+                lookup
+                    .resolve(parent, None)
+                    .map(|resolved| (parent.to_string(), resolved.name))
+            })
+            .collect::<FxHashMap<_, _>>()
+    });
+    resolve_pending_circuit_parents_with(pending, |parent| resolved_parents.get(parent).cloned())
+}
+
+pub fn get_all_circuits() -> BusResponse {
+    BusResponse::CircuitData(resolve_pending_circuit_parents(snapshot_circuits(None)))
 }
 
 pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
-    if let Ok(kernel_now) = time_since_boot() {
-        let desired_hash = hash_to_i64(&desired_circuit_id);
-        let catalog = lqos_network_devices::network_devices_catalog();
-        let data = THROUGHPUT_TRACKER
-            .raw_data
-            .lock()
-            .iter()
-            .filter_map(|(k, v)| {
-                let device = catalog
-                    .device_by_hashes(v.device_hash, v.circuit_hash)
-                    .or_else(|| catalog.device_longest_match_for_ip(k).map(|(_, dev)| dev));
-                let matches_desired = v.circuit_hash == Some(desired_hash)
-                    || v.circuit_id.as_deref() == Some(desired_circuit_id.as_str())
-                    || device.is_some_and(|device| device.circuit_hash == desired_hash)
-                    || device.is_some_and(|device| device.circuit_id == desired_circuit_id);
-                if !matches_desired {
-                    return None;
-                }
-                let last_seen_nanos = if v.last_seen > 0 {
-                    let last_seen_nanos = v.last_seen as u128;
-                    let since_boot = Duration::from(kernel_now).as_nanos();
-                    //println!("since_boot: {:?}, last_seen: {:?}", since_boot, last_seen_nanos);
-                    since_boot.saturating_sub(last_seen_nanos) as u64
-                } else {
-                    u64::MAX
-                };
-
-                // Map to circuit et al
-                let mut circuit_id = v.circuit_id.clone();
-                let mut circuit_name = None;
-                let mut device_id = None;
-                let mut device_name = None;
-                let mut parent_node = None;
-                // Plan is expressed in Mbps as f32
-                let mut plan: DownUpOrder<f32> = DownUpOrder { down: 0.0, up: 0.0 };
-                if let Some(device) = device {
-                    if circuit_id.as_deref().unwrap_or_default().is_empty() {
-                        circuit_id = Some(device.circuit_id.clone());
-                    }
-                    circuit_name = Some(device.circuit_name.clone());
-                    device_id = Some(device.device_id.clone());
-                    device_name = Some(device.device_name.clone());
-                    parent_node = Some(
-                        effective_parent_for_circuit(&device.circuit_id)
-                            .map(|parent| parent.name)
-                            .or_else(|| resolve_parent_node_alias(&device.parent_node))
-                            .unwrap_or_else(|| device.parent_node.clone()),
-                    );
-                    plan.down = device.download_max_mbps.round();
-                    plan.up = device.upload_max_mbps.round();
-                }
-
-                let circuit_id = Some(circuit_id.unwrap_or_else(|| desired_circuit_id.clone()));
-                Some(Circuit {
-                    ip: k.as_ip(),
-                    bytes_per_second: v.bytes_per_second,
-                    actual_bytes_per_second: v.actual_bytes_per_second,
-                    median_latency: v.median_latency(),
-                    rtt_current_p50_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    rtt_current_p95_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    rtt_total_p50_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 50)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    rtt_total_p95_nanos: DownUpOrder {
-                        down: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Download, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                        up: v
-                            .rtt_buffer
-                            .percentile(RttBucket::Total, FlowbeeEffectiveDirection::Upload, 95)
-                            .map(|rtt| rtt.as_nanos()),
-                    },
-                    qoo: DownUpOrder {
-                        down: v.qoq.download_total_f32(),
-                        up: v.qoq.upload_total_f32(),
-                    },
-                    tcp_retransmit_sample: down_up_retransmit_sample(
-                        v.tcp_retransmits,
-                        v.tcp_retransmit_packets,
-                    ),
-                    circuit_id,
-                    device_id,
-                    circuit_name,
-                    device_name,
-                    parent_node,
-                    plan,
-                    last_seen_nanos,
-                })
-            })
-            .collect();
-        BusResponse::CircuitData(data)
-    } else {
-        BusResponse::CircuitData(Vec::new())
-    }
+    BusResponse::CircuitData(resolve_pending_circuit_parents(snapshot_circuits(Some(
+        &desired_circuit_id,
+    ))))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lqos_config::{
-        Config, TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyShapingCircuitInput,
-        TopologyShapingDeviceInput, TopologyShapingInputsFile,
+    use crate::test_support::runtime_config_test_lock;
+    use crate::throughput_tracker::{
+        RawThroughputTestEntry, RttBuffer, replace_raw_throughput_for_test,
     };
+    use lqos_config::{
+        Config, ConfigShapedDevices, ShapedDevice, TOPOLOGY_RUNTIME_STATUS_FILENAME,
+        TopologyShapingCircuitInput, TopologyShapingDeviceInput, TopologyShapingInputsFile,
+    };
+    use lqos_utils::XdpIpAddress;
+    use std::cell::Cell;
     use std::fs;
     use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::{Arc, mpsc};
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    struct CircuitLookupStateGuard {
+        old_shaped_devices: Option<Arc<ConfigShapedDevices>>,
+        old_network_nodes: Option<Vec<NetworkJsonNode>>,
+        old_effective_parents: Option<Arc<FxHashMap<String, RuntimeCircuitParent>>>,
+    }
+
+    struct CircuitSnapshotTestHookGuard;
+
+    impl Drop for CircuitSnapshotTestHookGuard {
+        fn drop(&mut self) {
+            CIRCUIT_SNAPSHOT_TEST_HOOK.lock().take();
+        }
+    }
+
+    impl Drop for CircuitLookupStateGuard {
+        fn drop(&mut self) {
+            if let Some(nodes) = self.old_network_nodes.take() {
+                lqos_network_devices::with_network_json_write(|network_json| {
+                    network_json.nodes = nodes;
+                });
+            }
+            if let Some(shaped_devices) = self.old_shaped_devices.take() {
+                lqos_network_devices::swap_shaped_devices_snapshot(
+                    "circuit-lookup-test-restore",
+                    shaped_devices,
+                );
+            }
+            if let Some(effective_parents) = self.old_effective_parents.take() {
+                EFFECTIVE_CIRCUIT_PARENTS.store(effective_parents);
+            }
+        }
+    }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -989,6 +1011,249 @@ mod tests {
             .to_string(),
         )
         .expect("status should write");
+    }
+
+    fn pending_circuit(
+        parent_node: Option<&str>,
+        configured_parent: Option<&str>,
+    ) -> PendingCircuitParent {
+        PendingCircuitParent {
+            circuit: Circuit {
+                ip: "192.0.2.1".parse().expect("test IP should parse"),
+                bytes_per_second: DownUpOrder::default(),
+                actual_bytes_per_second: DownUpOrder::default(),
+                median_latency: None,
+                rtt_current_p50_nanos: DownUpOrder::default(),
+                rtt_current_p95_nanos: DownUpOrder::default(),
+                rtt_total_p50_nanos: DownUpOrder::default(),
+                rtt_total_p95_nanos: DownUpOrder::default(),
+                qoo: DownUpOrder::default(),
+                tcp_retransmit_sample: DownUpOrder::default(),
+                circuit_id: Some("test-circuit".to_string()),
+                device_id: Some("test-device".to_string()),
+                parent_node: parent_node.map(str::to_string),
+                circuit_name: Some("Test Circuit".to_string()),
+                device_name: Some("Test Device".to_string()),
+                plan: DownUpOrder::default(),
+                last_seen_nanos: 0,
+            },
+            configured_parent: configured_parent.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn pending_circuit_parent_resolution_is_cached_and_fallback_safe() {
+        let pending = vec![
+            pending_circuit(None, Some("Tower Alias")),
+            pending_circuit(None, Some("Tower Alias")),
+            pending_circuit(None, Some("Unknown Parent")),
+            pending_circuit(Some("Effective Parent"), None),
+        ];
+        let resolution_calls = Cell::new(0usize);
+
+        let circuits = resolve_pending_circuit_parents_with(pending, |parent| {
+            resolution_calls.set(resolution_calls.get() + 1);
+            (parent == "Tower Alias").then(|| "Canonical Tower".to_string())
+        });
+
+        assert_eq!(resolution_calls.get(), 2);
+        assert_eq!(circuits[0].parent_node.as_deref(), Some("Canonical Tower"));
+        assert_eq!(circuits[1].parent_node.as_deref(), Some("Canonical Tower"));
+        assert_eq!(circuits[2].parent_node.as_deref(), Some("Unknown Parent"));
+        assert_eq!(circuits[3].parent_node.as_deref(), Some("Effective Parent"));
+    }
+
+    #[test]
+    fn circuit_bus_readers_release_raw_data_before_resolving_parents() {
+        let _runtime_guard = runtime_config_test_lock()
+            .lock()
+            .expect("runtime config test lock should not be poisoned");
+        let effective_circuit_id = "deadlock-effective-circuit";
+        let effective_device_id = "deadlock-effective-device";
+        let alias_circuit_id = "deadlock-alias-circuit";
+        let alias_device_id = "deadlock-alias-device";
+        let effective_circuit_hash = hash_to_i64(effective_circuit_id);
+        let effective_device_hash = hash_to_i64(effective_device_id);
+        let alias_circuit_hash = hash_to_i64(alias_circuit_id);
+        let alias_device_hash = hash_to_i64(alias_device_id);
+        let mut shaped_devices = ConfigShapedDevices::default();
+        shaped_devices.replace_with_new_data(vec![
+            ShapedDevice {
+                circuit_id: effective_circuit_id.to_string(),
+                circuit_name: "Effective Parent Circuit".to_string(),
+                device_id: effective_device_id.to_string(),
+                device_name: "Effective Parent Device".to_string(),
+                parent_node: "Tower Alias".to_string(),
+                circuit_hash: effective_circuit_hash,
+                device_hash: effective_device_hash,
+                download_max_mbps: 100.0,
+                upload_max_mbps: 20.0,
+                ..ShapedDevice::default()
+            },
+            ShapedDevice {
+                circuit_id: alias_circuit_id.to_string(),
+                circuit_name: "Alias Parent Circuit".to_string(),
+                device_id: alias_device_id.to_string(),
+                device_name: "Alias Parent Device".to_string(),
+                parent_node: "Tower Alias".to_string(),
+                circuit_hash: alias_circuit_hash,
+                device_hash: alias_device_hash,
+                download_max_mbps: 200.0,
+                upload_max_mbps: 40.0,
+                ..ShapedDevice::default()
+            },
+        ]);
+        let old_shaped_devices = lqos_network_devices::swap_shaped_devices_snapshot(
+            "circuit-lookup-test",
+            Arc::new(shaped_devices),
+        );
+        let old_network_nodes =
+            lqos_network_devices::with_network_json_read(|network_json| network_json.nodes.clone());
+        let mut effective_parents = FxHashMap::default();
+        effective_parents.insert(
+            effective_circuit_id.to_string(),
+            RuntimeCircuitParent {
+                name: "Effective Tower".to_string(),
+                id: Some("effective-tower-id".to_string()),
+            },
+        );
+        let old_effective_parents = EFFECTIVE_CIRCUIT_PARENTS.swap(Arc::new(effective_parents));
+        let _state_guard = CircuitLookupStateGuard {
+            old_shaped_devices: Some(old_shaped_devices),
+            old_network_nodes: Some(old_network_nodes),
+            old_effective_parents: Some(old_effective_parents),
+        };
+        lqos_network_devices::with_network_json_write(|network_json| {
+            network_json.nodes = vec![NetworkJsonNode {
+                name: "Canonical Tower".to_string(),
+                id: Some("canonical-tower-id".to_string()),
+                virtual_node: false,
+                max_throughput: (0.0, 0.0),
+                current_throughput: DownUpOrder::default(),
+                current_packets: DownUpOrder::default(),
+                current_tcp_packets: DownUpOrder::default(),
+                current_udp_packets: DownUpOrder::default(),
+                current_icmp_packets: DownUpOrder::default(),
+                current_tcp_retransmits: DownUpOrder::default(),
+                current_tcp_retransmit_packets: DownUpOrder::default(),
+                current_marks: DownUpOrder::default(),
+                current_drops: DownUpOrder::default(),
+                rtt_buffer: RttBuffer::default(),
+                parents: Vec::new(),
+                immediate_parent: None,
+                node_type: None,
+                latitude: None,
+                longitude: None,
+                active_attachment_name: Some("Tower Alias".to_string()),
+                heatmap: None,
+                qoq_heatmap: None,
+            }];
+        });
+        let _raw_guard = replace_raw_throughput_for_test(
+            1,
+            vec![
+                RawThroughputTestEntry {
+                    ip: XdpIpAddress::from_ip("192.0.2.10".parse().expect("test IP should parse")),
+                    circuit_hash: Some(effective_circuit_hash),
+                    device_hash: Some(effective_device_hash),
+                    most_recent_cycle: 1,
+                    bytes_per_second: DownUpOrder::new(1_000, 200),
+                    tcp_packets: DownUpOrder::default(),
+                    tcp_retransmits: DownUpOrder::default(),
+                },
+                RawThroughputTestEntry {
+                    ip: XdpIpAddress::from_ip("192.0.2.11".parse().expect("test IP should parse")),
+                    circuit_hash: Some(alias_circuit_hash),
+                    device_hash: Some(alias_device_hash),
+                    most_recent_cycle: 1,
+                    bytes_per_second: DownUpOrder::new(2_000, 400),
+                    tcp_packets: DownUpOrder::default(),
+                    tcp_retransmits: DownUpOrder::default(),
+                },
+            ],
+        );
+
+        let (network_locked_tx, network_locked_rx) = mpsc::channel();
+        let (release_network_tx, release_network_rx) = mpsc::channel();
+        let network_writer = thread::spawn(move || {
+            lqos_network_devices::with_network_json_write(|_| {
+                network_locked_tx
+                    .send(())
+                    .expect("test should signal network lock acquisition");
+                let _ = release_network_rx.recv_timeout(Duration::from_secs(2));
+            });
+        });
+        network_locked_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("network writer should acquire the lock");
+
+        let (start_reader_tx, start_reader_rx) = mpsc::channel();
+        let (snapshot_complete_tx, snapshot_complete_rx) = mpsc::channel();
+        let circuit_reader = thread::spawn(move || {
+            start_reader_rx
+                .recv()
+                .expect("test should start the circuit reader");
+            get_all_circuits()
+        });
+        *CIRCUIT_SNAPSHOT_TEST_HOOK.lock() =
+            Some((circuit_reader.thread().id(), snapshot_complete_tx));
+        let _hook_guard = CircuitSnapshotTestHookGuard;
+        start_reader_tx
+            .send(())
+            .expect("test should start the circuit reader");
+        snapshot_complete_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("circuit reader should finish its raw-data snapshot");
+        let raw_data_was_released = THROUGHPUT_TRACKER.raw_data.try_lock().is_some();
+
+        release_network_tx
+            .send(())
+            .expect("test should release the network writer");
+        network_writer
+            .join()
+            .expect("network writer should finish cleanly");
+        let BusResponse::CircuitData(all_circuits) = circuit_reader
+            .join()
+            .expect("circuit reader should finish cleanly")
+        else {
+            panic!("GetAllCircuits should return circuit data");
+        };
+        assert!(
+            raw_data_was_released,
+            "raw_data must be unlocked before waiting for network.json"
+        );
+        assert_eq!(all_circuits.len(), 2);
+        let effective_circuit = all_circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id.as_deref() == Some(effective_circuit_id))
+            .expect("effective-parent circuit should be present");
+        assert_eq!(
+            effective_circuit.parent_node.as_deref(),
+            Some("Effective Tower")
+        );
+        let alias_circuit = all_circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id.as_deref() == Some(alias_circuit_id))
+            .expect("alias-parent circuit should be present");
+        assert_eq!(
+            alias_circuit.parent_node.as_deref(),
+            Some("Canonical Tower")
+        );
+
+        let BusResponse::CircuitData(selected_circuits) =
+            get_circuit_by_id(alias_circuit_id.to_string())
+        else {
+            panic!("GetCircuitById should return circuit data");
+        };
+        assert_eq!(selected_circuits.len(), 1);
+        assert_eq!(
+            selected_circuits[0].circuit_id.as_deref(),
+            Some(alias_circuit_id)
+        );
+        assert_eq!(
+            selected_circuits[0].parent_node.as_deref(),
+            Some("Canonical Tower")
+        );
     }
 
     #[test]

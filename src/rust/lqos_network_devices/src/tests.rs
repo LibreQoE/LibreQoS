@@ -1,7 +1,7 @@
 use crate::{
-    DynamicCircuit, ShapedDevicesCatalog, load_shaped_devices_for_config,
-    load_source_shaped_devices_for_config, resolve_parent_node_reference, runtime_inputs,
-    with_network_json_write,
+    DynamicCircuit, ParentNodeLookup, ShapedDevicesCatalog, load_shaped_devices_for_config,
+    load_source_shaped_devices_for_config, resolve_parent_node_reference,
+    resolve_parent_node_reference_in_nodes, runtime_inputs, with_network_json_write,
 };
 use lqos_config::{
     CircuitAnchorsFile, Config, ConfigShapedDevices, NetworkJsonNode, ShapedDevice,
@@ -160,6 +160,27 @@ fn resolve_parent_node_reference_prefers_id_then_name_then_alias() {
     let by_alias = resolve_parent_node_reference("B-alias", None)
         .expect("Expected active attachment alias to resolve");
     assert_eq!(by_alias.name, "Site B");
+}
+
+#[test]
+fn borrowed_parent_node_resolver_uses_the_same_precedence() {
+    let nodes = vec![
+        make_node("Root", Some("root"), None),
+        make_node("Site A", Some("node-a"), Some("shared")),
+        make_node("shared", Some("node-b"), None),
+    ];
+
+    let by_id = resolve_parent_node_reference_in_nodes(&nodes, "shared", Some("node-a"))
+        .expect("node id should take precedence");
+    assert_eq!(by_id.name, "Site A");
+
+    let by_name = resolve_parent_node_reference_in_nodes(&nodes, "shared", None)
+        .expect("canonical name should take precedence over an alias");
+    assert_eq!(by_name.id.as_deref(), Some("node-b"));
+
+    let lookup = ParentNodeLookup::from_nodes(&nodes);
+    assert_eq!(lookup.resolve("shared", Some("node-a")), Some(by_id));
+    assert_eq!(lookup.resolve("shared", None), Some(by_name));
 }
 
 #[test]

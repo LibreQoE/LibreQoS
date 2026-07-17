@@ -31,7 +31,10 @@ pub use catalog::{CircuitRateCaps, ShapedDevicesCatalog};
 pub use combined_catalog::NetworkDevicesCatalog;
 pub use dynamic::{CircuitObservation, DynamicCircuit};
 pub use hash_cache::ShapedDeviceHashCache;
-pub use topology::{ResolvedParentNode, resolve_parent_node, resolve_parent_node_reference};
+pub use topology::{
+    ParentNodeLookup, ResolvedParentNode, resolve_parent_node, resolve_parent_node_reference,
+    resolve_parent_node_reference_in_nodes,
+};
 
 /// Provenance for caller-provided shaped-device snapshots.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
