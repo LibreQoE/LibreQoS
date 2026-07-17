@@ -13,10 +13,10 @@ use crate::lts2_sys::control_channel::ControlChannelCommand;
 use crate::node_manager::auth::{LoginResult, login_from_cookie_header};
 use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
-    ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
-    node_rate_overrides, node_topology_overrides, packet_analysis, reload_libreqos, scheduler,
-    search, shaped_device_api, shaped_devices_page, topology_manager, topology_probes, unknown_ips,
-    urgent, warnings,
+    ethernet_caps, executive, flow_explorer, flow_map, local_api_keys, lts, network_tree,
+    network_tree_lite, node_rate_overrides, node_topology_overrides, packet_analysis,
+    reload_libreqos, scheduler, search, shaped_device_api, shaped_devices_page, topology_manager,
+    topology_probes, unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -1783,6 +1783,48 @@ async fn receive_channel_message(
             };
             let response = WsResponse::UpdateConfigResult { ok, message };
             if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CreateLocalApiKey { name } => {
+            let response = match local_api_keys::create(*request_state.login, name).await {
+                Ok(key) => WsResponse::CreateLocalApiKeyResult {
+                    ok: true,
+                    message: "API key created".to_string(),
+                    key: Some(key),
+                },
+                Err(message) => WsResponse::CreateLocalApiKeyResult {
+                    ok: false,
+                    message,
+                    key: None,
+                },
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::RevokeLocalApiKey { id } => {
+            let result = local_api_keys::revoke(*request_state.login, id).await;
+            let (ok, message) = match result {
+                Ok(()) => (true, "API key revoked".to_string()),
+                Err(message) => (false, message),
+            };
+            if send_ws_response(&tx, WsResponse::RevokeLocalApiKeyResult { ok, message }).await {
+                return true;
+            }
+        }
+        WsRequest::RemoveLegacyLocalApiKey => {
+            let result = local_api_keys::remove_legacy(*request_state.login).await;
+            let (ok, message) = match result {
+                Ok(()) => (true, "Legacy local API key removed".to_string()),
+                Err(message) => (false, message),
+            };
+            if send_ws_response(
+                &tx,
+                WsResponse::RemoveLegacyLocalApiKeyResult { ok, message },
+            )
+            .await
+            {
                 return true;
             }
         }

@@ -2594,6 +2594,7 @@ dependencies = [
  "timerfd",
  "tokio",
  "tokio-tungstenite",
+ "toml",
  "tower-http",
  "tracing",
  "tracing-subscriber",

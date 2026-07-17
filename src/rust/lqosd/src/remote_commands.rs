@@ -44,6 +44,32 @@ fn run_command(command: RemoteCommand) -> RemoteCommandAction {
     )
 }
 
+fn update_insight_config_and_restart_scheduler(update: impl FnOnce(&mut lqos_config::Config)) {
+    let updated = {
+        let _guard = crate::node_manager::local_api::local_api_keys::lock_config_update_blocking();
+        match lqos_config::load_config() {
+            Ok(config) => {
+                let mut config = (*config).clone();
+                update(&mut config);
+                if let Err(error) = lqos_config::update_config(&config) {
+                    tracing::error!("Failed to update Insight configuration: {error}");
+                    false
+                } else {
+                    true
+                }
+            }
+            Err(error) => {
+                tracing::error!("Failed to load configuration for an Insight update: {error:?}");
+                false
+            }
+        }
+    };
+    if updated {
+        let _ = crate::scheduler_control::enable_scheduler();
+        let _ = crate::scheduler_control::restart_scheduler();
+    }
+}
+
 fn run_command_with(
     command: RemoteCommand,
     can_receive_remote_commands: bool,
@@ -59,27 +85,15 @@ fn run_command_with(
             RemoteCommandAction::Continue
         }
         RemoteCommand::SetInsightControlledTopology { enabled } => {
-            if let Ok(config) = lqos_config::load_config() {
-                let mut config = (*config).clone();
+            update_insight_config_and_restart_scheduler(|config| {
                 config.long_term_stats.enable_insight_topology = Some(enabled);
-                if let Err(e) = lqos_config::update_config(&config) {
-                    tracing::error!("Failed to update config: {}", e);
-                }
-                let _ = crate::scheduler_control::enable_scheduler();
-                let _ = crate::scheduler_control::restart_scheduler();
-            }
+            });
             RemoteCommandAction::Continue
         }
         RemoteCommand::SetInsightRole { role } => {
-            if let Ok(config) = lqos_config::load_config() {
-                let mut config = (*config).clone();
+            update_insight_config_and_restart_scheduler(|config| {
                 config.long_term_stats.insight_topology_role = Some(role);
-                if let Err(e) = lqos_config::update_config(&config) {
-                    tracing::error!("Failed to update config: {}", e);
-                }
-                let _ = crate::scheduler_control::enable_scheduler();
-                let _ = crate::scheduler_control::restart_scheduler();
-            }
+            });
             RemoteCommandAction::Continue
         }
         RemoteCommand::RestartLqosd => {

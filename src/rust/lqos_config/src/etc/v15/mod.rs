@@ -11,6 +11,7 @@ pub mod influxdb;
 mod integration_common;
 mod ip_ranges;
 mod local_api;
+pub use local_api::{LocalApiKeyConfig, MAX_LOCAL_API_KEYS};
 mod long_term_stats;
 mod mikrotik_ipv6;
 mod netzur_integration;
