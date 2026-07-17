@@ -350,6 +350,8 @@ Recommended checks:
 2. Review `lqosd` logs for requested/allowed/dropped counts.
 3. Reduce mapped circuit count (short term) or update licensing/limits (long term).
 
+The Node API follows the same count starting with LibreQoS 2.2. At 1,000 or fewer mapped circuits, confirm that a named local API key (or compatible legacy/license key) is configured and that `lqos_api` is running. New and revoked named keys may take up to 30 seconds to take effect. Above 1,000, also confirm that the effective API or Insight entitlement is valid.
+
 ### Urgent issue codes and first actions
 
 WebUI urgent issues include machine-readable codes. Use them to triage quickly.

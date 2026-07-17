@@ -130,6 +130,8 @@ Sin un estado válido de licencia/grant de Insight o Local, LibreQoS admite solo
 
 Un estado válido de licencia/grant con derecho habilita conteos de circuitos mapeados por encima del límite predeterminado de 1000.
 
+A partir de LibreQoS 2.2, la API del nodo usa este mismo conteo de circuitos mapeados válidos únicos. El acceso a la API está disponible sin una suscripción a Insight para 1.000 circuitos mapeados o menos. Por encima de 1.000, la API requiere un derecho activo válido o un grant firmado almacenado localmente. Los clientes todavía deben autenticarse con una clave local con nombre, el token local heredado o una clave de licencia Insight/API-only. Los administradores crean y revocan las claves con nombre en **License & Services**; los cambios pueden tardar hasta 30 segundos en surtir efecto en `lqos_api`.
+
 El comportamiento predeterminado del límite de 1000 aplica cuando el estado de licencia/grant está:
 - ausente
 - expirado

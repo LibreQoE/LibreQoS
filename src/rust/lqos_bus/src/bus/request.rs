@@ -671,6 +671,11 @@ pub enum BusRequest {
 
     /// Retrieve current Insight license summary (licensed + optional max circuits).
     GetInsightLicenseSummary,
+
+    /// Update configuration while preserving authoritative API credentials.
+    ///
+    /// This variant is appended to preserve existing bincode discriminants.
+    UpdateLqosdConfigPreserveApiCredentials(Box<lqos_config::Config>),
 }
 
 impl BusRequest {
@@ -780,6 +785,9 @@ impl BusRequest {
             Self::GetGlobalWarnings => "GetGlobalWarnings",
             Self::GetLtsCapabilities => "GetLtsCapabilities",
             Self::GetInsightLicenseSummary => "GetInsightLicenseSummary",
+            Self::UpdateLqosdConfigPreserveApiCredentials(_) => {
+                "UpdateLqosdConfigPreserveApiCredentials"
+            }
         }
     }
 

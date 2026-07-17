@@ -102,6 +102,9 @@ collation_period_seconds = 10
 license_key = "(data)"
 uisp_reporting_interval_seconds = 300
 
+[local_api]
+bearer_token = ""
+
 [ip_ranges]
 ignore_subnets = []
 allow_subnets = [ "172.16.0.0/12", "10.0.0.0/8", "100.64.0.0/16", "192.168.0.0/16" ]

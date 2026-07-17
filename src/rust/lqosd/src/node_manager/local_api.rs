@@ -12,6 +12,7 @@ pub(crate) mod executive;
 pub(crate) mod executive_cache;
 pub(crate) mod flow_explorer;
 pub(crate) mod flow_map;
+pub(crate) mod local_api_keys;
 pub mod lts;
 pub(crate) mod network_mode;
 pub(crate) mod network_tree;

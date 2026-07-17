@@ -20,10 +20,10 @@ pub mod test_data;
 mod v15;
 pub use v15::{
     BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
-    MikrotikIpv6Config, QueueMode, RttThresholds, SingleInterfaceConfig, SslConfig,
-    StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig,
-    TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig, TreeguardQooConfig, Tunables,
-    normalize_external_hostname,
+    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, QueueMode, RttThresholds,
+    SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy, TopologyConfig,
+    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
+    TreeguardLinksConfig, TreeguardQooConfig, Tunables, normalize_external_hostname,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
@@ -477,7 +477,6 @@ pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigE
 /// Update the configuration on disk
 pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     debug!("Updating stored configuration");
-    CONFIG.store(Some(Arc::new(new_config.clone())).into());
 
     // Does the configuration exist?
     let config_path = Path::new("/etc/lqos.conf");
@@ -501,6 +500,11 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
             source: e,
         }
     })?;
+
+    // Publish the new in-process snapshot only after persistence succeeds. A
+    // failed write must not leave callers using credentials that never reached
+    // disk and cannot be recovered after restart.
+    CONFIG.store(Some(Arc::new(new_config.clone())).into());
 
     Ok(())
 }

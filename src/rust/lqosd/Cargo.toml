@@ -79,3 +79,6 @@ allocative_derive.workspace = true
 #[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
 #jemallocator = {  workspace = true }
 futures-util = "0.3.31"
+
+[dev-dependencies]
+toml = { workspace = true }

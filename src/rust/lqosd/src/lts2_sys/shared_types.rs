@@ -168,6 +168,18 @@ pub enum LtsStatus {
     SelfHosted = 3,
     ApiOnly = 4,
     Full = 5,
+    ForeverFreeApi = 6,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LtsStatus;
+
+    #[test]
+    fn forever_free_api_parses_from_license_state_six() {
+        assert_eq!(LtsStatus::from_i32(6), LtsStatus::ForeverFreeApi);
+        assert_eq!(LtsStatus::ForeverFreeApi.label(), "Forever Free API");
+    }
 }
 
 impl LtsStatus {
@@ -180,6 +192,7 @@ impl LtsStatus {
             3 => LtsStatus::SelfHosted,
             4 => LtsStatus::ApiOnly,
             5 => LtsStatus::Full,
+            6 => LtsStatus::ForeverFreeApi,
             _ => LtsStatus::Invalid,
         }
     }
@@ -193,6 +206,7 @@ impl LtsStatus {
             LtsStatus::SelfHosted => "Self Hosted",
             LtsStatus::ApiOnly => "Local API",
             LtsStatus::Full => "Insight",
+            LtsStatus::ForeverFreeApi => "Forever Free API",
         }
     }
 }

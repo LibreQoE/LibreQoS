@@ -80,6 +80,12 @@ async fn handle_requests_with_deadline_for_duration(
 ) -> BusReply {
     let request_count = requests.len();
     let request_kinds = requests.iter().map(BusRequest::kind).collect::<Vec<_>>();
+    debug!(
+        source = request_source,
+        request_count,
+        request_kinds = %request_kind_summary(&request_kinds),
+        "Handling bus request"
+    );
     let can_fail_fast = requests.iter().all(BusRequest::can_fail_fast_on_timeout);
     let start = Instant::now();
     let mut handler = spawn_blocking(move || {
@@ -331,8 +337,6 @@ impl UnixSocketServer {
                             warn!("Invalid data on local socket");
                             break;
                         };
-                        debug!("Received request: {:?}", request);
-
                         // Handle the request and build the response
                         let response = handle_requests_with_deadline(
                             handle_bus_requests,

@@ -7,7 +7,6 @@ use crate::node_manager::local_api::circuit_count;
 use axum::http::StatusCode;
 pub use last_24_hours::*;
 use lqos_bus::LtsCapabilitiesSummary;
-use lqos_bus::{BusRequest, bus_request_with_timeout};
 use lqos_config::load_config;
 use serde::{Deserialize, Serialize};
 pub use shaper_status::ShaperStatus;
@@ -18,7 +17,6 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 const SIGNUP_POLL_INTERVAL: Duration = Duration::from_secs(10);
-const CONFIG_BUS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const SERVICE_RESTART_TIMEOUT: Duration = Duration::from_secs(10);
 const INSIGHT_FREE_TRIAL_STATUS_CODE: i32 = 2;
 const INSIGHT_TRIAL_DAYS_HINT: i32 = 30;
@@ -128,21 +126,20 @@ async fn apply_insight_license(
         return Err(StatusCode::BAD_GATEWAY);
     }
 
+    let _guard = super::local_api_keys::lock_config_update().await;
     let mut cfg = load_config()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .as_ref()
         .clone();
     cfg.long_term_stats.gather_stats = true;
     cfg.long_term_stats.license_key = Some(license_key.clone());
-    bus_request_with_timeout(
-        vec![BusRequest::UpdateLqosdConfig(Box::new(cfg))],
-        CONFIG_BUS_REQUEST_TIMEOUT,
-    )
-    .await
-    .map_err(|err| {
-        warn!("Unable to update config with Insight license: {err}");
-        StatusCode::GATEWAY_TIMEOUT
-    })?;
+    super::local_api_keys::persist_config(cfg)
+        .await
+        .map_err(|err| {
+            warn!("Unable to update config with Insight license: {err}");
+            StatusCode::GATEWAY_TIMEOUT
+        })?;
+    drop(_guard);
     crate::lts2_sys::capabilities::set_signup_bootstrap_active(false);
     crate::lts2_sys::capabilities::clear_bootstrap_suppression();
     crate::lts2_sys::capabilities::wake_control_channel();

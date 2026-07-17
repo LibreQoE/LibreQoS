@@ -17,6 +17,10 @@
 
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
+
+/// Maximum number of valid mapped circuits allowed without an entitled license.
+pub use lqos_utils::DEFAULT_MAPPED_CIRCUIT_LIMIT;
+
 mod bus;
 mod ip_stats;
 pub use ip_stats::{

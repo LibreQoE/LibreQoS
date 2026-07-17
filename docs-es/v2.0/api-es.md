@@ -2,12 +2,19 @@
 
 ## Requisitos
 
-El servicio `lqos_api` (API del nodo) requiere una suscripción activa a LibreQoS Insight.
+A partir de LibreQoS 2.2, el servicio `lqos_api` usa la misma política de circuitos mapeados que LibreQoS:
 
-Esto es independiente de los límites base de shaping:
+- Las redes con 1.000 circuitos mapeados válidos o menos pueden usar la API sin una suscripción a Insight.
+- Las redes con más de 1.000 circuitos mapeados válidos requieren un derecho válido de API o Insight.
+- El conteo usa circuitos configurados únicos con mapeos válidos, no tráfico reciente. Varios dispositivos del mismo circuito cuentan una sola vez y las filas sin mapeo IP no cuentan.
+- Una licencia activa o un grant firmado almacenado localmente puede autorizar el acceso a la API por encima del límite gratuito.
+
+Es la misma población usada por el límite base de shaping:
 - `ShapedDevices.csv` puede contener entradas ilimitadas.
-- Sin una suscripción/licencia Insight válida, LibreQoS admite solo los primeros 1000 circuitos mapeados válidos al estado de shaping activo.
-- Conteos superiores de circuitos mapeados dependen de una licencia Insight activa.
+- Sin una licencia o grant con derecho válido, LibreQoS admite solo los primeros 1.000 circuitos mapeados válidos al estado de shaping activo.
+- Los conteos superiores requieren una licencia con derecho de API o Insight.
+
+El acceso solo a la API está disponible mediante el enlace **Try Insight** de la WebUI a la mitad del precio de Insight completo.
 
 ## Fuente de verdad y pruebas
 
@@ -57,7 +64,11 @@ sudo systemctl status lqos_api
 La mayoría de endpoints requieren:
 
 - Header: `x-bearer`
-- Valor: su clave de licencia Insight
+- Valor: una clave local con nombre creada en **License & Services**, el token local heredado o su clave de licencia Insight/API-only
+
+Las claves locales autentican al cliente, pero no evitan el límite de licenciamiento por circuitos mapeados. Un administrador puede crear hasta 16 claves con nombre en **License & Services**. LibreQoS muestra cada clave una sola vez, guarda únicamente su resumen SHA-256 y metadatos no secretos en `/etc/lqos.conf`, y no puede recuperarla después. Copie de inmediato el valor completo `lqos_api_...` al cliente y trátelo como una contraseña.
+
+Las claves con nombre no caducan automáticamente. Revoque las que ya no necesite; la creación y la revocación pueden tardar hasta 30 segundos en surtir efecto en `lqos_api`. Las claves de licencia existentes y el antiguo `local_api.bearer_token` siguen siendo compatibles. La interfaz identifica este último como **Legacy local API key** y permite eliminarlo después de migrar los clientes.
 
 ## Qué pueden hacer los ISPs con la API
 
