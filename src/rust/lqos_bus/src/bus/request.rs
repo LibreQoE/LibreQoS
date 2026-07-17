@@ -720,6 +720,8 @@ impl BusRequest {
             Self::GetNodeNamesFromIds(_) => "GetNodeNamesFromIds",
             Self::GetAllCircuits => "GetAllCircuits",
             Self::GetCircuitById { .. } => "GetCircuitById",
+            Self::GetAllCircuitRollups => "GetAllCircuitRollups",
+            Self::GetCircuitRollupById { .. } => "GetCircuitRollupById",
             Self::GetFunnel { .. } => "GetFunnel",
             Self::GetLqosStats => "GetLqosStats",
             Self::GatherPacketData(_) => "GatherPacketData",
@@ -783,6 +785,9 @@ impl BusRequest {
             Self::GetTreeSummaryL2 => "GetTreeSummaryL2",
             Self::Search { .. } => "Search",
             Self::GetGlobalWarnings => "GetGlobalWarnings",
+            Self::GetQoo => "GetQoo",
+            Self::GetSiteQoo { .. } => "GetSiteQoo",
+            Self::GetCircuitQoo { .. } => "GetCircuitQoo",
             Self::GetLtsCapabilities => "GetLtsCapabilities",
             Self::GetInsightLicenseSummary => "GetInsightLicenseSummary",
             Self::UpdateLqosdConfigPreserveApiCredentials(_) => {
