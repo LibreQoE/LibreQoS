@@ -299,6 +299,15 @@ pub enum BusRequest {
         circuit_id: String,
     },
 
+    /// Get live usage rollups aggregated by circuit ID.
+    GetAllCircuitRollups,
+
+    /// Get one live usage rollup aggregated by circuit ID.
+    GetCircuitRollupById {
+        /// Circuit ID to query.
+        circuit_id: String,
+    },
+
     /// Retrieve stats for all queues above a named circuit id
     GetFunnel {
         /// Circuit being analyzed, as the named circuit id
@@ -620,6 +629,21 @@ pub enum BusRequest {
 
     /// Retrieve queue marks/drops totals
     GetQueueStatsTotal,
+
+    /// Retrieve current top-level QoO history.
+    GetQoo,
+
+    /// Retrieve current QoO history for a site by site name.
+    GetSiteQoo {
+        /// Site name to query.
+        site_name: String,
+    },
+
+    /// Retrieve current QoO history for a circuit by circuit ID.
+    GetCircuitQoo {
+        /// Circuit ID to query.
+        circuit_id: String,
+    },
 
     /// Retrieve per-circuit capacity utilization
     GetCircuitCapacity,

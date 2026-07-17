@@ -7,7 +7,11 @@ use crate::{
     ip_stats::{FlowbeeSummaryData, PacketHeader},
 };
 use allocative::Allocative;
-use lqos_utils::{HeatmapBlocks, qoq_heatmap::QoqHeatmapBlocks, units::DownUpOrder};
+use lqos_utils::{
+    HeatmapBlocks,
+    qoq_heatmap::QoqHeatmapBlocks,
+    units::{DownUpOrder, TcpRetransmitSample},
+};
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -87,6 +91,53 @@ pub struct LtsCapabilitiesSummary {
     /// Effective mapped-circuit limit. `None` means unlimited.
     pub mapped_circuit_limit: Option<u64>,
 }
+
+/// QoO history and latest values for a dashboard entity.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct QooData {
+    /// Stable key for this QoO row.
+    pub key: String,
+    /// Entity kind: "global", "site", or "circuit".
+    pub entity_kind: String,
+    /// Display label for this QoO row.
+    pub label: String,
+    /// Site name for site rows.
+    pub site_name: Option<String>,
+    /// Circuit ID for circuit rows.
+    pub circuit_id: Option<String>,
+    /// Fifteen QoO history blocks, oldest to newest.
+    pub blocks: QoqHeatmapBlocks,
+    /// Latest download and upload QoO score.
+    pub latest: DownUpOrder<Option<f32>>,
+}
+
+/// Live traffic and quality rollup for one logical circuit ID.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct CircuitRollup {
+    /// Circuit ID from ShapedDevices.csv.
+    pub circuit_id: String,
+    /// Circuit name from ShapedDevices.csv.
+    pub circuit_name: String,
+    /// Effective parent node for this circuit.
+    pub parent_node: String,
+    /// Device names contributing to this circuit rollup.
+    pub device_names: Vec<String>,
+    /// Active IP addresses contributing to this circuit rollup.
+    pub ip_addrs: Vec<String>,
+    /// Circuit plan in Mbps.
+    pub plan_mbps: DownUpOrder<f32>,
+    /// Current bytes-per-second passing through this circuit.
+    pub bytes_per_second: DownUpOrder<u64>,
+    /// Current RTT p50 in nanoseconds, per direction.
+    pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
+    /// Current QoO score, per direction.
+    pub qoo: DownUpOrder<Option<f32>>,
+    /// TCP retransmit samples for this circuit at the current time.
+    pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
+    /// Most recent activity age for this circuit, in nanoseconds since boot.
+    pub last_seen_nanos: u64,
+}
+
 /// Serializable snapshot of BakeryStats for bus transmission
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct BakeryStatsSnapshot {
@@ -588,6 +639,12 @@ pub enum BusResponse {
     /// Circuit data
     CircuitData(Vec<Circuit>),
 
+    /// Live circuit data aggregated by circuit ID.
+    CircuitRollups(Vec<CircuitRollup>),
+
+    /// Live circuit data for one circuit ID.
+    CircuitRollup(Option<CircuitRollup>),
+
     /// Statistics from lqosd
     LqosdStats {
         /// Number of bus requests handled
@@ -713,6 +770,9 @@ pub enum BusResponse {
 
     /// Queue stats totals (marks/drops)
     QueueStatsTotal(QueueStatsTotal),
+
+    /// Current QoO data.
+    Qoo(Option<QooData>),
 
     /// Circuit capacity utilization
     CircuitCapacity(Vec<CircuitCapacityRow>),

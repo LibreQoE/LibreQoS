@@ -51,6 +51,8 @@ pub(crate) struct ExecutiveCacheSnapshot {
     pub generated_at_unix_ms: u64,
     pub dashboard: ExecutiveDashboardSummary,
     pub entities: Vec<ExecutiveEntitySnapshot>,
+    pub site_entity_index: FxHashMap<String, usize>,
+    pub circuit_entity_index: FxHashMap<String, usize>,
     pub leaderboard_rows: FxHashMap<ExecutiveLeaderboardKind, Vec<ExecutiveLeaderboardRow>>,
 }
 
@@ -72,12 +74,36 @@ impl Default for ExecutiveCacheSnapshot {
                 top_asns: Vec::new(),
             },
             entities: Vec::new(),
+            site_entity_index: FxHashMap::default(),
+            circuit_entity_index: FxHashMap::default(),
             leaderboard_rows: FxHashMap::default(),
         }
     }
 }
 
 impl ExecutiveCacheSnapshot {
+    /// Returns the cached entity row for a site name, using case-insensitive exact matching.
+    pub(crate) fn site_entity(&self, site_name: &str) -> Option<&ExecutiveEntitySnapshot> {
+        let normalized_site_name = site_name.trim().to_lowercase();
+        if normalized_site_name.is_empty() {
+            return None;
+        }
+        self.site_entity_index
+            .get(&normalized_site_name)
+            .and_then(|idx| self.entities.get(*idx))
+    }
+
+    /// Returns the cached entity row for an exact circuit ID.
+    pub(crate) fn circuit_entity(&self, circuit_id: &str) -> Option<&ExecutiveEntitySnapshot> {
+        let circuit_id = circuit_id.trim();
+        if circuit_id.is_empty() {
+            return None;
+        }
+        self.circuit_entity_index
+            .get(circuit_id)
+            .and_then(|idx| self.entities.get(*idx))
+    }
+
     /// Builds transport rows for one requested metric from cached raw executive entities.
     pub(crate) fn heatmap_rows_for_metric(
         &self,
@@ -114,6 +140,31 @@ impl ExecutiveCacheSnapshot {
             })
             .collect()
     }
+}
+
+pub(crate) fn build_entity_indexes(
+    entities: &[ExecutiveEntitySnapshot],
+) -> (FxHashMap<String, usize>, FxHashMap<String, usize>) {
+    let mut site_entity_index = FxHashMap::default();
+    let mut circuit_entity_index = FxHashMap::default();
+    for (idx, entity) in entities.iter().enumerate() {
+        match entity.entity_kind {
+            ExecutiveEntityKind::Site => {
+                site_entity_index
+                    .entry(entity.label.trim().to_lowercase())
+                    .or_insert(idx);
+            }
+            ExecutiveEntityKind::Circuit => {
+                if let Some(circuit_id) = entity.circuit_id.as_ref() {
+                    circuit_entity_index
+                        .entry(circuit_id.trim().to_string())
+                        .or_insert(idx);
+                }
+            }
+            ExecutiveEntityKind::Asn => {}
+        }
+    }
+    (site_entity_index, circuit_entity_index)
 }
 
 static EXECUTIVE_CACHE_SNAPSHOT: Lazy<ArcSwap<ExecutiveCacheSnapshot>> =
@@ -179,18 +230,12 @@ fn non_null_count(values: &[Option<f32>]) -> usize {
 }
 
 fn latest_qoo(blocks: Option<&QoqHeatmapBlocks>) -> Option<f32> {
-    let blocks = blocks?;
-    let mut present = Vec::new();
-    if let Some(download) = latest_value(&blocks.download_total) {
-        present.push(download);
-    }
-    if let Some(upload) = latest_value(&blocks.upload_total) {
-        present.push(upload);
-    }
-    if present.is_empty() {
-        None
-    } else {
-        Some(present.iter().sum::<f32>() / present.len() as f32)
+    let latest = blocks?.latest_values();
+    match (latest.down, latest.up) {
+        (Some(download), Some(upload)) => Some((download + upload) / 2.0),
+        (Some(download), None) => Some(download),
+        (None, Some(upload)) => Some(upload),
+        (None, None) => None,
     }
 }
 
@@ -818,6 +863,7 @@ pub(crate) fn rebuild_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> 
         site_heatmap_rows(),
         asn_heatmap_rows(),
     );
+    let (site_entity_index, circuit_entity_index) = build_entity_indexes(&entities);
     let oversubscribed_sites = build_oversubscribed_sites(&entities);
     let top_download = top_metric_rows(&entities, ExecutiveMetric::Download, EXECUTIVE_TOP_LIMIT);
     let top_upload = top_metric_rows(&entities, ExecutiveMetric::Upload, EXECUTIVE_TOP_LIMIT);
@@ -844,6 +890,8 @@ pub(crate) fn rebuild_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> 
             top_asns,
         },
         entities,
+        site_entity_index,
+        circuit_entity_index,
         leaderboard_rows,
     });
     EXECUTIVE_CACHE_SNAPSHOT.store(snapshot.clone());
@@ -862,4 +910,79 @@ pub(crate) fn fresh_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> {
         return EXECUTIVE_CACHE_SNAPSHOT.load_full();
     }
     rebuild_executive_cache_snapshot()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ExecutiveEntitySnapshot, latest_qoo, top_metric_rows};
+    use crate::node_manager::local_api::executive::{ExecutiveEntityKind, ExecutiveMetric};
+    use lqos_utils::{qoq_heatmap::QoqHeatmapBlocks, temporal_heatmap::TemporalHeatmap};
+
+    fn qoo_blocks(
+        download_values: &[(usize, f32)],
+        upload_values: &[(usize, f32)],
+    ) -> QoqHeatmapBlocks {
+        let mut download_total = [None; 15];
+        let mut upload_total = [None; 15];
+        for &(idx, value) in download_values {
+            download_total[idx] = Some(value);
+        }
+        for &(idx, value) in upload_values {
+            upload_total[idx] = Some(value);
+        }
+        QoqHeatmapBlocks {
+            download_total,
+            upload_total,
+        }
+    }
+
+    fn qoo_entity(label: &str, blocks: QoqHeatmapBlocks) -> ExecutiveEntitySnapshot {
+        ExecutiveEntitySnapshot {
+            row_key: format!("site:{label}"),
+            entity_kind: ExecutiveEntityKind::Site,
+            label: label.to_string(),
+            circuit_id: None,
+            asn: None,
+            tree: None,
+            heatmap: TemporalHeatmap::new().blocks(),
+            qoq_blocks: Some(blocks),
+        }
+    }
+
+    #[test]
+    fn latest_qoo_averages_or_falls_back_to_available_direction() {
+        let both = qoo_blocks(&[(14, 90.0)], &[(14, 70.0)]);
+        let download_only = qoo_blocks(&[(14, 88.0)], &[]);
+        let upload_only = qoo_blocks(&[], &[(14, 66.0)]);
+        let empty = qoo_blocks(&[], &[]);
+
+        assert_eq!(latest_qoo(Some(&both)), Some(80.0));
+        assert_eq!(latest_qoo(Some(&download_only)), Some(88.0));
+        assert_eq!(latest_qoo(Some(&upload_only)), Some(66.0));
+        assert_eq!(latest_qoo(Some(&empty)), None);
+        assert_eq!(latest_qoo(None), None);
+    }
+
+    #[test]
+    fn top_qoo_rows_rank_by_latest_qoo_with_sample_penalty() {
+        let sparse_low_qoo = qoo_entity("Sparse Low", qoo_blocks(&[(14, 10.0)], &[(14, 10.0)]));
+        let sampled_high_qoo = qoo_entity(
+            "Sampled High",
+            qoo_blocks(&[(12, 80.0), (13, 80.0), (14, 80.0)], &[]),
+        );
+        let sampled_low_qoo = qoo_entity(
+            "Sampled Low",
+            qoo_blocks(&[(12, 20.0), (13, 20.0), (14, 20.0)], &[]),
+        );
+
+        let rows = top_metric_rows(
+            &[sparse_low_qoo, sampled_high_qoo, sampled_low_qoo],
+            ExecutiveMetric::Qoo,
+            3,
+        );
+
+        assert_eq!(rows[0].label, "Sampled Low");
+        assert_eq!(rows[1].label, "Sampled High");
+        assert_eq!(rows[2].label, "Sparse Low");
+    }
 }

@@ -649,6 +649,12 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetCircuitById { circuit_id } => {
                 shaped_devices_tracker::get_circuit_by_id(circuit_id.clone())
             }
+            BusRequest::GetAllCircuitRollups => BusResponse::CircuitRollups(
+                shaped_devices_tracker::circuit_live::all_circuit_rollups(),
+            ),
+            BusRequest::GetCircuitRollupById { circuit_id } => BusResponse::CircuitRollup(
+                shaped_devices_tracker::circuit_live::circuit_rollup_by_id(circuit_id),
+            ),
             BusRequest::GetFunnel { target: parent } => shaped_devices_tracker::get_funnel(parent),
             BusRequest::GetLqosStats => BusResponse::LqosdStats {
                 bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
@@ -1163,6 +1169,18 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let totals = queue_stats_total_data();
                 BusResponse::QueueStatsTotal(totals)
             }
+            BusRequest::GetQoo => {
+                let data = node_manager::local_api::executive::qoo_global();
+                BusResponse::Qoo(Some(data))
+            }
+            BusRequest::GetSiteQoo { site_name } => {
+                let data = node_manager::local_api::executive::qoo_site(site_name);
+                BusResponse::Qoo(data)
+            }
+            BusRequest::GetCircuitQoo { circuit_id } => {
+                let data = node_manager::local_api::executive::qoo_circuit(circuit_id);
+                BusResponse::Qoo(data)
+            }
             BusRequest::GetCircuitCapacity => {
                 let data = circuit_capacity_data();
                 BusResponse::CircuitCapacity(data)
@@ -1431,5 +1449,27 @@ mod tests {
 
         assert!(matches!(responses.as_slice(), [BusResponse::Ack]));
         assert!(!urgent::list().iter().any(|issue| issue.code == code));
+    }
+
+    #[test]
+    fn bus_qoo_requests_dispatch_to_qoo_responses() {
+        let requests = [
+            BusRequest::GetQoo,
+            BusRequest::GetSiteQoo {
+                site_name: "missing-site".to_string(),
+            },
+            BusRequest::GetCircuitQoo {
+                circuit_id: "missing-circuit".to_string(),
+            },
+        ];
+        let mut responses = Vec::new();
+
+        handle_bus_requests(&requests, &mut responses);
+
+        assert!(matches!(responses.as_slice(), [
+            BusResponse::Qoo(Some(global)),
+            BusResponse::Qoo(None),
+            BusResponse::Qoo(None),
+        ] if global.key == "global"));
     }
 }

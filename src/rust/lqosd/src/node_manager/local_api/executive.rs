@@ -1,4 +1,6 @@
-use crate::node_manager::local_api::executive_cache::fresh_executive_cache_snapshot;
+use crate::node_manager::local_api::executive_cache::{
+    ExecutiveCacheSnapshot, ExecutiveEntitySnapshot, fresh_executive_cache_snapshot,
+};
 use lqos_bus::ExecutiveSummaryHeader;
 use lqos_utils::{HeatmapBlocks, qoq_heatmap::QoqHeatmapBlocks};
 use serde::{Deserialize, Serialize};
@@ -189,6 +191,64 @@ pub struct ExecutiveLeaderboardPage {
     pub rows: Vec<ExecutiveLeaderboardRow>,
 }
 
+fn qoo_site_from_snapshot(
+    snapshot: &ExecutiveCacheSnapshot,
+    site_name: &str,
+) -> Option<lqos_bus::QooData> {
+    snapshot.site_entity(site_name).and_then(entity_qoo_data)
+}
+
+fn qoo_circuit_from_snapshot(
+    snapshot: &ExecutiveCacheSnapshot,
+    circuit_id: &str,
+) -> Option<lqos_bus::QooData> {
+    snapshot
+        .circuit_entity(circuit_id)
+        .and_then(entity_qoo_data)
+}
+
+fn qoo_data(
+    key: String,
+    entity_kind: &'static str,
+    label: String,
+    site_name: Option<String>,
+    circuit_id: Option<String>,
+    blocks: QoqHeatmapBlocks,
+) -> lqos_bus::QooData {
+    lqos_bus::QooData {
+        key,
+        entity_kind: entity_kind.to_string(),
+        label,
+        site_name,
+        circuit_id,
+        latest: blocks.latest_values(),
+        blocks,
+    }
+}
+
+fn entity_qoo_data(entity: &ExecutiveEntitySnapshot) -> Option<lqos_bus::QooData> {
+    let blocks = entity.qoq_blocks.clone()?;
+    match entity.entity_kind {
+        ExecutiveEntityKind::Site => Some(qoo_data(
+            entity.row_key.clone(),
+            "site",
+            entity.label.clone(),
+            Some(entity.label.clone()),
+            None,
+            blocks,
+        )),
+        ExecutiveEntityKind::Circuit => Some(qoo_data(
+            entity.row_key.clone(),
+            "circuit",
+            entity.label.clone(),
+            None,
+            entity.circuit_id.clone(),
+            blocks,
+        )),
+        ExecutiveEntityKind::Asn => None,
+    }
+}
+
 /// Rows for the standalone executive leaderboard pages.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind")]
@@ -275,15 +335,13 @@ fn latest_value(row: &ExecutiveHeatmapPageRow, metric: &ExecutiveMetric) -> Opti
             .as_ref()
             .and_then(|blocks| blocks.values.iter().rev().flatten().copied().next()),
         ExecutiveMetric::Qoo => row.split_blocks.as_ref().and_then(|blocks| {
-            let values = [
-                blocks.download.iter().rev().flatten().copied().next(),
-                blocks.upload.iter().rev().flatten().copied().next(),
-            ];
-            let present: Vec<f32> = values.into_iter().flatten().collect();
-            if present.is_empty() {
-                None
-            } else {
-                Some(present.iter().sum::<f32>() / present.len() as f32)
+            let download = blocks.download.iter().rev().flatten().copied().next();
+            let upload = blocks.upload.iter().rev().flatten().copied().next();
+            match (download, upload) {
+                (Some(download), Some(upload)) => Some((download + upload) / 2.0),
+                (Some(download), None) => Some(download),
+                (None, Some(upload)) => Some(upload),
+                (None, None) => None,
             }
         }),
         ExecutiveMetric::Rtt => row
@@ -307,9 +365,9 @@ fn sample_count(row: &ExecutiveHeatmapPageRow, metric: &ExecutiveMetric) -> usiz
                 blocks
                     .download
                     .iter()
-                    .chain(blocks.upload.iter())
                     .filter(|value| value.is_some())
                     .count()
+                    .max(blocks.upload.iter().filter(|value| value.is_some()).count())
             })
             .unwrap_or(0),
         ExecutiveMetric::Rtt => row
@@ -351,6 +409,32 @@ fn leaderboard_matches_search(row: &ExecutiveLeaderboardRow, search: &Option<Str
 /// Returns the compact executive dashboard summary for published websocket updates.
 pub fn executive_dashboard_summary() -> ExecutiveDashboardSummary {
     fresh_executive_cache_snapshot().dashboard.clone()
+}
+
+/// Returns the current top-level QoO history from the executive dashboard cache.
+pub(crate) fn qoo_global() -> lqos_bus::QooData {
+    let snapshot = fresh_executive_cache_snapshot();
+    let blocks = snapshot.dashboard.global_qoq.clone();
+    qoo_data(
+        "global".to_string(),
+        "global",
+        "Global QoO".to_string(),
+        None,
+        None,
+        blocks,
+    )
+}
+
+/// Returns the current QoO history for a site name.
+pub(crate) fn qoo_site(site_name: &str) -> Option<lqos_bus::QooData> {
+    let snapshot = fresh_executive_cache_snapshot();
+    qoo_site_from_snapshot(&snapshot, site_name)
+}
+
+/// Returns the current QoO history for a circuit ID.
+pub(crate) fn qoo_circuit(circuit_id: &str) -> Option<lqos_bus::QooData> {
+    let snapshot = fresh_executive_cache_snapshot();
+    qoo_circuit_from_snapshot(&snapshot, circuit_id)
 }
 
 /// Returns one filtered, sorted executive heatmap detail page.
@@ -469,11 +553,38 @@ pub fn executive_leaderboard_page(
 
 #[cfg(test)]
 mod tests {
+    use crate::node_manager::local_api::executive_cache::{
+        ExecutiveCacheSnapshot, ExecutiveEntitySnapshot, build_entity_indexes,
+    };
+    use lqos_utils::{qoq_heatmap::QoqHeatmapBlocks, temporal_heatmap::TemporalHeatmap};
+
     use super::{
         ExecutiveEntityKind, ExecutiveHeatmapPageQuery, ExecutiveHeatmapSort,
-        ExecutiveLeaderboardKind, ExecutiveLeaderboardPageQuery, ExecutiveMetric,
-        executive_heatmap_page, executive_leaderboard_page,
+        ExecutiveLeaderboardKind, ExecutiveLeaderboardPageQuery, ExecutiveMetric, entity_qoo_data,
+        executive_heatmap_page, executive_leaderboard_page, qoo_circuit_from_snapshot,
+        qoo_site_from_snapshot,
     };
+
+    fn qoo_blocks(download_latest: Option<f32>, upload_latest: Option<f32>) -> QoqHeatmapBlocks {
+        let mut download_total = [None; 15];
+        let mut upload_total = [None; 15];
+        download_total[14] = download_latest;
+        upload_total[14] = upload_latest;
+        QoqHeatmapBlocks {
+            download_total,
+            upload_total,
+        }
+    }
+
+    fn snapshot_with_entities(entities: Vec<ExecutiveEntitySnapshot>) -> ExecutiveCacheSnapshot {
+        let (site_entity_index, circuit_entity_index) = build_entity_indexes(&entities);
+        ExecutiveCacheSnapshot {
+            entities,
+            site_entity_index,
+            circuit_entity_index,
+            ..ExecutiveCacheSnapshot::default()
+        }
+    }
 
     #[test]
     fn executive_heatmap_page_preserves_client_request_id() {
@@ -508,5 +619,210 @@ mod tests {
             page.query.client_request_id.as_deref(),
             Some("leaderboard-req-1")
         );
+    }
+
+    #[test]
+    fn latest_qoo_reads_newest_heatmap_blocks() {
+        let latest = qoo_blocks(Some(98.0), Some(87.5)).latest_values();
+
+        assert_eq!(latest.down, Some(98.0));
+        assert_eq!(latest.up, Some(87.5));
+    }
+
+    #[test]
+    fn latest_qoo_reads_latest_non_empty_heatmap_blocks() {
+        let mut download_total = [None; 15];
+        let mut upload_total = [None; 15];
+        download_total[12] = Some(96.0);
+        upload_total[13] = Some(88.0);
+        let latest = QoqHeatmapBlocks {
+            download_total,
+            upload_total,
+        }
+        .latest_values();
+
+        assert_eq!(latest.down, Some(96.0));
+        assert_eq!(latest.up, Some(88.0));
+    }
+
+    #[test]
+    fn entity_qoo_data_preserves_site_keying() {
+        let entity = ExecutiveEntitySnapshot {
+            row_key: "site:North".to_string(),
+            entity_kind: ExecutiveEntityKind::Site,
+            label: "North".to_string(),
+            circuit_id: None,
+            asn: None,
+            tree: None,
+            heatmap: TemporalHeatmap::new().blocks(),
+            qoq_blocks: Some(qoo_blocks(Some(91.0), Some(89.0))),
+        };
+
+        let qoo = entity_qoo_data(&entity).expect("site QoO should be returned");
+
+        assert_eq!(qoo.key, "site:North");
+        assert_eq!(qoo.entity_kind, "site");
+        assert_eq!(qoo.site_name.as_deref(), Some("North"));
+        assert_eq!(qoo.circuit_id, None);
+        assert_eq!(qoo.latest.down, Some(91.0));
+        assert_eq!(qoo.latest.up, Some(89.0));
+    }
+
+    #[test]
+    fn entity_qoo_data_preserves_circuit_keying() {
+        let entity = ExecutiveEntitySnapshot {
+            row_key: "circuit:Circuit-1".to_string(),
+            entity_kind: ExecutiveEntityKind::Circuit,
+            label: "Circuit One".to_string(),
+            circuit_id: Some("Circuit-1".to_string()),
+            asn: None,
+            tree: None,
+            heatmap: TemporalHeatmap::new().blocks(),
+            qoq_blocks: Some(qoo_blocks(Some(81.0), Some(79.0))),
+        };
+
+        let qoo = entity_qoo_data(&entity).expect("circuit QoO should be returned");
+
+        assert_eq!(qoo.key, "circuit:Circuit-1");
+        assert_eq!(qoo.entity_kind, "circuit");
+        assert_eq!(qoo.site_name, None);
+        assert_eq!(qoo.circuit_id.as_deref(), Some("Circuit-1"));
+    }
+
+    #[test]
+    fn qoo_site_lookup_trims_and_matches_unicode_case_insensitive_name() {
+        let snapshot = snapshot_with_entities(vec![ExecutiveEntitySnapshot {
+            row_key: "site:École".to_string(),
+            entity_kind: ExecutiveEntityKind::Site,
+            label: "École".to_string(),
+            circuit_id: None,
+            asn: None,
+            tree: None,
+            heatmap: TemporalHeatmap::new().blocks(),
+            qoq_blocks: Some(qoo_blocks(Some(91.0), Some(89.0))),
+        }]);
+
+        let qoo = qoo_site_from_snapshot(&snapshot, "  école  ").expect("site QoO should match");
+
+        assert_eq!(qoo.key, "site:École");
+        assert_eq!(qoo.site_name.as_deref(), Some("École"));
+        assert_eq!(qoo.latest.down, Some(91.0));
+    }
+
+    #[test]
+    fn qoo_circuit_lookup_trims_and_requires_exact_id() {
+        let snapshot = snapshot_with_entities(vec![ExecutiveEntitySnapshot {
+            row_key: "circuit:Circuit-1".to_string(),
+            entity_kind: ExecutiveEntityKind::Circuit,
+            label: "Circuit One".to_string(),
+            circuit_id: Some("Circuit-1".to_string()),
+            asn: None,
+            tree: None,
+            heatmap: TemporalHeatmap::new().blocks(),
+            qoq_blocks: Some(qoo_blocks(Some(81.0), Some(79.0))),
+        }]);
+
+        let qoo =
+            qoo_circuit_from_snapshot(&snapshot, " Circuit-1 ").expect("circuit QoO should match");
+
+        assert_eq!(qoo.key, "circuit:Circuit-1");
+        assert_eq!(qoo.circuit_id.as_deref(), Some("Circuit-1"));
+        assert!(qoo_circuit_from_snapshot(&snapshot, "circuit-1").is_none());
+    }
+
+    #[test]
+    fn qoo_lookup_returns_none_for_missing_or_empty_keys() {
+        let snapshot = snapshot_with_entities(Vec::new());
+
+        assert!(qoo_site_from_snapshot(&snapshot, " ").is_none());
+        assert!(qoo_site_from_snapshot(&snapshot, "missing").is_none());
+        assert!(qoo_circuit_from_snapshot(&snapshot, " ").is_none());
+        assert!(qoo_circuit_from_snapshot(&snapshot, "missing").is_none());
+    }
+
+    #[test]
+    fn qoo_lookup_preserves_first_match_for_duplicate_keys() {
+        let snapshot = snapshot_with_entities(vec![
+            ExecutiveEntitySnapshot {
+                row_key: "site:first".to_string(),
+                entity_kind: ExecutiveEntityKind::Site,
+                label: "North".to_string(),
+                circuit_id: None,
+                asn: None,
+                tree: None,
+                heatmap: TemporalHeatmap::new().blocks(),
+                qoq_blocks: Some(qoo_blocks(Some(91.0), Some(89.0))),
+            },
+            ExecutiveEntitySnapshot {
+                row_key: "site:second".to_string(),
+                entity_kind: ExecutiveEntityKind::Site,
+                label: "NORTH".to_string(),
+                circuit_id: None,
+                asn: None,
+                tree: None,
+                heatmap: TemporalHeatmap::new().blocks(),
+                qoq_blocks: Some(qoo_blocks(Some(81.0), Some(79.0))),
+            },
+            ExecutiveEntitySnapshot {
+                row_key: "circuit:first".to_string(),
+                entity_kind: ExecutiveEntityKind::Circuit,
+                label: "Circuit One".to_string(),
+                circuit_id: Some("Circuit-1".to_string()),
+                asn: None,
+                tree: None,
+                heatmap: TemporalHeatmap::new().blocks(),
+                qoq_blocks: Some(qoo_blocks(Some(71.0), Some(69.0))),
+            },
+            ExecutiveEntitySnapshot {
+                row_key: "circuit:second".to_string(),
+                entity_kind: ExecutiveEntityKind::Circuit,
+                label: "Circuit One Duplicate".to_string(),
+                circuit_id: Some("Circuit-1".to_string()),
+                asn: None,
+                tree: None,
+                heatmap: TemporalHeatmap::new().blocks(),
+                qoq_blocks: Some(qoo_blocks(Some(61.0), Some(59.0))),
+            },
+        ]);
+
+        let site = qoo_site_from_snapshot(&snapshot, "north").expect("site QoO should match");
+        let circuit = qoo_circuit_from_snapshot(&snapshot, "Circuit-1")
+            .expect("circuit QoO should match");
+
+        assert_eq!(site.key, "site:first");
+        assert_eq!(circuit.key, "circuit:first");
+    }
+
+    #[test]
+    fn qoo_lookup_trims_source_keys() {
+        let snapshot = snapshot_with_entities(vec![
+            ExecutiveEntitySnapshot {
+                row_key: "site:padded".to_string(),
+                entity_kind: ExecutiveEntityKind::Site,
+                label: " North ".to_string(),
+                circuit_id: None,
+                asn: None,
+                tree: None,
+                heatmap: TemporalHeatmap::new().blocks(),
+                qoq_blocks: Some(qoo_blocks(Some(91.0), Some(89.0))),
+            },
+            ExecutiveEntitySnapshot {
+                row_key: "circuit:padded".to_string(),
+                entity_kind: ExecutiveEntityKind::Circuit,
+                label: "Circuit One".to_string(),
+                circuit_id: Some(" Circuit-1 ".to_string()),
+                asn: None,
+                tree: None,
+                heatmap: TemporalHeatmap::new().blocks(),
+                qoq_blocks: Some(qoo_blocks(Some(71.0), Some(69.0))),
+            },
+        ]);
+
+        let site = qoo_site_from_snapshot(&snapshot, "north").expect("site QoO should match");
+        let circuit = qoo_circuit_from_snapshot(&snapshot, "Circuit-1")
+            .expect("circuit QoO should match");
+
+        assert_eq!(site.key, "site:padded");
+        assert_eq!(circuit.key, "circuit:padded");
     }
 }
