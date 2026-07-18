@@ -414,16 +414,6 @@ def _resolve_effective_parent_node(circuit, parent_node_ids, parent_node_aliases
     return parent_node, parent_node_id
 
 
-def _attachment_lookup_candidates(node_key, node_data):
-    candidates = []
-    node_id = str(node_data.get('id', '') or '').strip()
-    node_name = str(node_data.get('name', '') or '').strip()
-    for candidate in (node_id, str(node_key).strip(), node_name):
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-    return candidates
-
-
 def _circuit_attachment_name_candidates(circuit):
     candidates = []
     for candidate_name in (
@@ -466,6 +456,40 @@ def _normalize_circuit_shaping_parent(circuit, parent_node_ids=None):
     circuit['shapingParentNodeID'] = parent_id
     circuit['shapingParentKey'] = f"id:{parent_id}" if parent_id else f"name:{parent_name}"
     return parent_name, parent_id
+
+
+def _index_circuit_by_shaping_parent(circuit, parent_node_ids, circuits_by_parent_id, circuits_by_parent_name):
+    parent_name, parent_id = _normalize_circuit_shaping_parent(circuit, parent_node_ids)
+    if parent_id:
+        circuits_by_parent_id.setdefault(parent_id, []).append(circuit)
+    if parent_name and parent_name != 'none':
+        circuits_by_parent_name.setdefault(parent_name, []).append(circuit)
+
+
+def _select_circuits_for_parent_node(node_key, node_data, circuits_by_parent_id, circuits_by_parent_name):
+    node_id = str(node_data.get('id', '') or '').strip()
+    node_name = str(node_data.get('name', '') or '').strip()
+    selected_circuits = []
+    seen_circuit_ids = set()
+
+    def add_candidate_circuits(circuits):
+        for circuit in circuits:
+            circuit_id = str(circuit.get('circuitID', '') or '')
+            if circuit_id in seen_circuit_ids:
+                continue
+            selected_circuits.append(circuit)
+            seen_circuit_ids.add(circuit_id)
+
+    if node_id:
+        add_candidate_circuits(circuits_by_parent_id.get(node_id, []))
+
+    name_candidates = []
+    for candidate in (str(node_key).strip(), node_name):
+        if candidate and candidate not in name_candidates:
+            name_candidates.append(candidate)
+    for candidate in name_candidates:
+        add_candidate_circuits(circuits_by_parent_name.get(candidate, []))
+    return selected_circuits
 
 
 def _validate_planned_circuit_attachment(node_name, node_data, circuit, planned_identity):
@@ -1858,11 +1882,12 @@ def refreshShapers():
         circuits_by_parent_id = {}
         circuits_by_parent_name = {}
         for circuit in subscriberCircuits:
-            parent_name, parent_id = _normalize_circuit_shaping_parent(circuit, parent_node_ids)
-            if parent_id:
-                circuits_by_parent_id.setdefault(parent_id, []).append(circuit)
-            elif parent_name and parent_name != 'none':
-                circuits_by_parent_name.setdefault(parent_name, []).append(circuit)
+            _index_circuit_by_shaping_parent(
+                circuit,
+                parent_node_ids,
+                circuits_by_parent_id,
+                circuits_by_parent_name,
+            )
 
         # Parse network structure and add devices from ShapedDevices.csv
         print("Parsing network structure and tallying devices")
@@ -2107,20 +2132,12 @@ def refreshShapers():
                         "has_children": has_children,
                     }
                 )
-                node_id = str(data[node].get('id', '') or '').strip()
-                node_name = str(data[node].get('name', '') or '').strip()
-                selected_circuits = []
-                if node_id and node_id in circuits_by_parent_id:
-                    selected_circuits = list(circuits_by_parent_id[node_id])
-                else:
-                    seen_circuit_ids = set()
-                    for candidate in (node, node_name):
-                        for circuit in circuits_by_parent_name.get(candidate, []):
-                            circuit_id = planner_circuit_identity_key(circuit)
-                            if circuit_id in seen_circuit_ids:
-                                continue
-                            selected_circuits.append(circuit)
-                            seen_circuit_ids.add(circuit_id)
+                selected_circuits = _select_circuits_for_parent_node(
+                    node,
+                    data[node],
+                    circuits_by_parent_id,
+                    circuits_by_parent_name,
+                )
                 if selected_circuits:
                     sorted_circuits = sorted(
                         selected_circuits,
@@ -2258,25 +2275,12 @@ def refreshShapers():
                 queue = queue_token + 1
                 circuitsForThisNetworkNode = []
 
-                node_id = str(node_data.get('id', '') or '').strip()
-                node_name = str(node_data.get('name', '') or '').strip()
-                parent_candidates = _attachment_lookup_candidates(node, node_data)
-
-                selected_circuits = []
-                if node_id and node_id in circuits_by_parent_id:
-                    selected_circuits = list(circuits_by_parent_id[node_id])
-                else:
-                    seen_circuit_ids = set()
-                    name_candidates = (
-                        parent_candidates[1:] if node_id and parent_candidates else parent_candidates
-                    )
-                    for candidate in name_candidates:
-                        for circuit in circuits_by_parent_name.get(candidate, []):
-                            circuit_id = str(circuit.get('circuitID', '') or '')
-                            if circuit_id in seen_circuit_ids:
-                                continue
-                            selected_circuits.append(circuit)
-                            seen_circuit_ids.add(circuit_id)
+                selected_circuits = _select_circuits_for_parent_node(
+                    node,
+                    node_data,
+                    circuits_by_parent_id,
+                    circuits_by_parent_name,
+                )
 
                 if selected_circuits:
                     override_min_down = None

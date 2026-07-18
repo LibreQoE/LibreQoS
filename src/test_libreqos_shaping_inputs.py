@@ -96,10 +96,6 @@ def tearDownModule():
 
 
 class TestLibreQoSShapingInputs(unittest.TestCase):
-    def test_attachment_lookup_candidates_preserve_generated_parent_name_without_node_id(self):
-        candidates = LibreQoS._attachment_lookup_candidates("Generated_PN_1", {})
-        self.assertEqual(candidates, ["Generated_PN_1"])
-
     def test_runtime_resolved_circuit_attachment_candidates_ignore_logical_parent(self):
         candidates = LibreQoS._circuit_attachment_name_candidates(
             {
@@ -143,6 +139,45 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
         self.assertEqual(parent_name, "Physical_AP")
         self.assertEqual(parent_id, "")
         self.assertEqual(circuit["shapingParentKey"], "name:Physical_AP")
+
+    def test_circuit_parent_selection_keeps_name_fallback_when_parent_id_is_present(self):
+        id_backed_circuit = {
+            "circuitID": "circuit-1",
+            "ParentNode": "Globe",
+            "ParentNodeID": "libreqos:legacy-network-json:node:3bc50e457b7f164b",
+        }
+        name_only_circuit = {
+            "circuitID": "circuit-2",
+            "ParentNode": "Globe",
+        }
+        circuits_by_parent_id = {}
+        circuits_by_parent_name = {}
+
+        for circuit in (id_backed_circuit, name_only_circuit):
+            LibreQoS._index_circuit_by_shaping_parent(
+                circuit,
+                {},
+                circuits_by_parent_id,
+                circuits_by_parent_name,
+            )
+
+        self.assertEqual(
+            circuits_by_parent_id["libreqos:legacy-network-json:node:3bc50e457b7f164b"],
+            [id_backed_circuit],
+        )
+        self.assertEqual(circuits_by_parent_name["Globe"], [id_backed_circuit, name_only_circuit])
+        self.assertEqual(
+            LibreQoS._select_circuits_for_parent_node(
+                "Globe",
+                {
+                    "id": "libreqos:legacy-network-json:node:3bc50e457b7f164b",
+                    "name": "Globe",
+                },
+                circuits_by_parent_id,
+                circuits_by_parent_name,
+            ),
+            [id_backed_circuit, name_only_circuit],
+        )
 
     def test_validate_planned_circuit_attachment_rejects_major_mismatch(self):
         with self.assertRaisesRegex(ValueError, "Planned circuit class majors do not match"):
