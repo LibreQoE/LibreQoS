@@ -834,6 +834,140 @@
     }
 
 
+    fn load_stale_idless_legacy_canonical_state() -> (Config, TopologyCanonicalStateFile) {
+        let lqos_directory = unique_temp_dir("lqos-topology-legacy-id-heal");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let mut stale_canonical = TopologyCanonicalStateFile::from_legacy_network_json(&json!({
+            "Globe": {
+                "children": {
+                    "Nested AP": {
+                        "children": {},
+                        "downloadBandwidthMbps": 250,
+                        "type": "ap",
+                        "uploadBandwidthMbps": 250
+                    }
+                },
+                "downloadBandwidthMbps": 500,
+                "type": "site",
+                "uploadBandwidthMbps": 500
+            },
+            "PLDT": {
+                "children": {},
+                "downloadBandwidthMbps": 500,
+                "type": "site",
+                "uploadBandwidthMbps": 500
+            }
+        }));
+        stale_canonical.compatibility_network_json["Globe"]
+            .as_object_mut()
+            .expect("Globe should be an object")
+            .remove("id");
+        stale_canonical.compatibility_network_json["Globe"]["children"]["Nested AP"]
+            .as_object_mut()
+            .expect("Nested AP should be an object")
+            .remove("id");
+        stale_canonical.compatibility_network_json["PLDT"]
+            .as_object_mut()
+            .expect("PLDT should be an object")
+            .remove("id");
+        stale_canonical
+            .save(&config)
+            .expect("stale canonical state should write");
+
+        let canonical =
+            TopologyCanonicalStateFile::load(&config).expect("stale canonical state should load");
+        (config, canonical)
+    }
+
+    #[test]
+    fn legacy_idless_sites_load_heals_compatibility_network() {
+        let (_config, canonical) = load_stale_idless_legacy_canonical_state();
+        let globe_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Globe")
+            .expect("Globe should be imported")
+            .node_id
+            .as_str();
+        let nested_ap_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Nested AP")
+            .expect("Nested AP should be imported")
+            .node_id
+            .as_str();
+        let pldt_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "PLDT")
+            .expect("PLDT should be imported")
+            .node_id
+            .as_str();
+
+        assert_eq!(
+            canonical.compatibility_network_json["Globe"]["id"].as_str(),
+            Some(globe_id)
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["Globe"]["children"]["Nested AP"]["id"].as_str(),
+            Some(nested_ap_id)
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["id"].as_str(),
+            Some(pldt_id)
+        );
+    }
+
+
+    #[test]
+    fn legacy_idless_sites_publish_valid_effective_network() {
+        let (config, canonical) = load_stale_idless_legacy_canonical_state();
+        let globe_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Globe")
+            .expect("Globe should be imported")
+            .node_id
+            .as_str();
+        let nested_ap_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Nested AP")
+            .expect("Nested AP should be imported")
+            .node_id
+            .as_str();
+        let pldt_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "PLDT")
+            .expect("PLDT should be imported")
+            .node_id
+            .as_str();
+
+        let artifacts = build_effective_topology_artifacts_from_canonical(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("idless legacy site topology should publish");
+        let effective_network = artifacts
+            .effective_network
+            .expect("legacy topology should publish effective network");
+
+        assert_eq!(effective_network["Globe"]["id"].as_str(), Some(globe_id));
+        assert_eq!(
+            effective_network["Globe"]["children"]["Nested AP"]["id"].as_str(),
+            Some(nested_ap_id)
+        );
+        assert_eq!(effective_network["PLDT"]["id"].as_str(), Some(pldt_id));
+    }
+
+
     #[test]
     fn runtime_squashing_collapses_backhaul_pairs_after_attachment_selection() {
         let mut config = Config::default();

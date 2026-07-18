@@ -789,8 +789,145 @@ pub(crate) fn legacy_id_for_name(name: &str) -> String {
 fn legacy_node_id(node: &Map<String, Value>, fallback_name: &str) -> String {
     node.get("id")
         .and_then(Value::as_str)
+        .filter(|id| !id.trim().is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| legacy_id_for_name(fallback_name))
+}
+
+type LegacyIdByTreeParent<'a> = HashMap<(&'a str, &'a str), Option<&'a str>>;
+type LegacyIdByParentName<'a> = HashMap<(&'a str, Option<&'a str>), Option<&'a str>>;
+type LegacyIdByName<'a> = HashMap<&'a str, Option<&'a str>>;
+
+fn legacy_node_id_lookups(
+    nodes: &[TopologyCanonicalNode],
+) -> (
+    LegacyIdByTreeParent<'_>,
+    LegacyIdByParentName<'_>,
+    LegacyIdByName<'_>,
+) {
+    let mut by_tree_parent_id = HashMap::new();
+    let mut by_parent_name = HashMap::new();
+    let mut by_name = HashMap::new();
+
+    for node in nodes {
+        let node_id = (!node.node_id.trim().is_empty()).then_some(node.node_id.as_str());
+        if let Some(tree_parent_id) = node.current_attachment_id.as_deref() {
+            by_tree_parent_id
+                .entry((node.node_name.as_str(), tree_parent_id))
+                .and_modify(|entry| *entry = None)
+                .or_insert(node_id);
+        }
+        by_parent_name
+            .entry((
+                node.node_name.as_str(),
+                node.current_parent_node_name.as_deref(),
+            ))
+            .and_modify(|entry| *entry = None)
+            .or_insert(node_id);
+        by_name
+            .entry(node.node_name.as_str())
+            .and_modify(|entry| *entry = None)
+            .or_insert(node_id);
+    }
+
+    (by_tree_parent_id, by_parent_name, by_name)
+}
+
+fn legacy_node_id_from_lookups<'a>(
+    node_name: &str,
+    tree_parent_id: Option<&str>,
+    parent_node_name: Option<&str>,
+    by_tree_parent_id: &LegacyIdByTreeParent<'a>,
+    by_parent_name: &LegacyIdByParentName<'a>,
+    by_name: &LegacyIdByName<'a>,
+) -> Option<&'a str> {
+    tree_parent_id
+        .and_then(|parent_id| by_tree_parent_id.get(&(node_name, parent_id)))
+        .copied()
+        .flatten()
+        .or_else(|| {
+            by_parent_name
+                .get(&(node_name, parent_node_name))
+                .copied()
+                .flatten()
+        })
+        .or_else(|| by_name.get(node_name).copied().flatten())
+}
+
+fn add_missing_legacy_node_ids(
+    map: &mut Map<String, Value>,
+    parent_node_id: Option<&str>,
+    parent_node_name: Option<&str>,
+    by_tree_parent_id: &LegacyIdByTreeParent<'_>,
+    by_parent_name: &LegacyIdByParentName<'_>,
+    by_name: &LegacyIdByName<'_>,
+) {
+    for (key, value) in map {
+        let Some(node) = value.as_object_mut() else {
+            continue;
+        };
+        let node_name = node
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or(key)
+            .to_string();
+        if node
+            .get("id")
+            .and_then(Value::as_str)
+            .is_none_or(|id| id.trim().is_empty())
+        {
+            let node_id = legacy_node_id_from_lookups(
+                &node_name,
+                parent_node_id,
+                parent_node_name,
+                by_tree_parent_id,
+                by_parent_name,
+                by_name,
+            )
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| legacy_id_for_name(&node_name));
+            node.insert("id".to_string(), Value::String(node_id));
+        }
+        let node_id = node
+            .get("id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        if let Some(children) = node.get_mut("children").and_then(Value::as_object_mut) {
+            add_missing_legacy_node_ids(
+                children,
+                node_id.as_deref(),
+                Some(&node_name),
+                by_tree_parent_id,
+                by_parent_name,
+                by_name,
+            );
+        }
+    }
+}
+
+fn normalize_legacy_canonical_node_ids(nodes: &mut [TopologyCanonicalNode]) {
+    for node in nodes.iter_mut() {
+        if node.node_id.trim().is_empty() {
+            node.node_id = legacy_id_for_name(&node.node_name);
+        }
+    }
+}
+
+fn normalize_legacy_network_json_node_ids(
+    network_json: &mut Value,
+    canonical_nodes: &[TopologyCanonicalNode],
+) {
+    if let Some(map) = network_json.as_object_mut() {
+        let (by_tree_parent_id, by_parent_name, by_name) = legacy_node_id_lookups(canonical_nodes);
+        add_missing_legacy_node_ids(
+            map,
+            None,
+            None,
+            &by_tree_parent_id,
+            &by_parent_name,
+            &by_name,
+        );
+    }
 }
 
 fn import_legacy_network_children(
@@ -905,7 +1042,9 @@ impl TopologyCanonicalStateFile {
             return Ok(Self::default());
         }
         let raw = std::fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
+        let mut state: Self = serde_json::from_str(&raw)?;
+        state.normalize_legacy_compatibility_network_json_ids();
+        Ok(state)
     }
 
     /// Loads canonical topology state, falling back to importing legacy `network.json`
@@ -1213,7 +1352,10 @@ impl TopologyCanonicalStateFile {
         if let Some(map) = network_json.as_object() {
             import_legacy_network_children(map, None, None, &mut nodes);
         }
+        normalize_legacy_canonical_node_ids(&mut nodes);
         nodes.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
+        let mut compatibility_network_json = network_json.clone();
+        normalize_legacy_network_json_node_ids(&mut compatibility_network_json, &nodes);
         Self {
             schema_version: default_topology_canonical_schema_version(),
             source: "legacy/network.json".to_string(),
@@ -1221,7 +1363,22 @@ impl TopologyCanonicalStateFile {
             ingress_identity: topology_ingress_fingerprint_for_network_json(network_json),
             ingress_kind: TopologyCanonicalIngressKind::LegacyNetworkJson,
             nodes,
-            compatibility_network_json: network_json.clone(),
+            compatibility_network_json,
+        }
+    }
+
+    fn normalize_legacy_compatibility_network_json_ids(&mut self) {
+        if self.ingress_kind == TopologyCanonicalIngressKind::LegacyNetworkJson
+            || self.source == "legacy/network.json"
+        {
+            self.ingress_kind = TopologyCanonicalIngressKind::LegacyNetworkJson;
+            normalize_legacy_canonical_node_ids(&mut self.nodes);
+            self.nodes
+                .sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
+            normalize_legacy_network_json_node_ids(
+                &mut self.compatibility_network_json,
+                &self.nodes,
+            );
         }
     }
 }
@@ -1594,6 +1751,346 @@ mod tests {
         assert_eq!(
             child.current_parent_node_id.as_deref(),
             Some(parent.node_id.as_str())
+        );
+    }
+
+    #[test]
+    fn legacy_network_json_import_adds_missing_ids_to_compatibility_tree() {
+        let canonical = TopologyCanonicalStateFile::from_legacy_network_json(&json!({
+            "Globe": {
+                "children": {},
+                "downloadBandwidthMbps": 500,
+                "type": "site",
+                "uploadBandwidthMbps": 500
+            },
+            "PLDT": {
+                "children": {
+                    "Existing AP": {
+                        "children": {},
+                        "id": "operator-ap-id",
+                        "type": "ap"
+                    },
+                    "Nested AP": {
+                        "children": {
+                            "Leaf Site": {
+                                "children": {},
+                                "id": null,
+                                "type": "site"
+                            }
+                        },
+                        "type": "ap"
+                    },
+                    "Bad ID AP": {
+                        "children": {},
+                        "id": 0,
+                        "type": "ap"
+                    },
+                    "Blank ID AP": {
+                        "children": {},
+                        "id": "",
+                        "type": "ap"
+                    }
+                },
+                "downloadBandwidthMbps": 500,
+                "type": "site",
+                "uploadBandwidthMbps": 500
+            }
+        }));
+
+        assert_eq!(
+            canonical.compatibility_network_json["Globe"]["id"].as_str(),
+            Some(legacy_id_for_name("Globe").as_str())
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["id"].as_str(),
+            Some(legacy_id_for_name("PLDT").as_str())
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["children"]["Existing AP"]["id"].as_str(),
+            Some("operator-ap-id")
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["children"]["Nested AP"]["id"].as_str(),
+            Some(legacy_id_for_name("Nested AP").as_str())
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["children"]["Nested AP"]["children"]
+                ["Leaf Site"]["id"]
+                .as_str(),
+            Some(legacy_id_for_name("Leaf Site").as_str())
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["children"]["Bad ID AP"]["id"].as_str(),
+            Some(legacy_id_for_name("Bad ID AP").as_str())
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["children"]["Blank ID AP"]["id"].as_str(),
+            Some(legacy_id_for_name("Blank ID AP").as_str())
+        );
+    }
+
+    #[test]
+    fn load_normalizes_old_legacy_canonical_state_missing_compatibility_ids() {
+        let lqos_directory = unique_temp_dir("lqos-config-canonical-id-heal");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
+        fs::write(
+            topology_state_dir.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            serde_json::to_string_pretty(&json!({
+                "schema_version": 1,
+                "source": "legacy/network.json",
+                "nodes": [
+                    {
+                        "node_id": "operator-globe-id",
+                        "node_name": "Globe",
+                        "node_kind": "site"
+                    },
+                    {
+                        "node_id": "operator-nested-ap-id",
+                        "node_name": "Nested AP",
+                        "node_kind": "ap",
+                        "current_parent_node_name": "Globe"
+                    },
+                    {
+                        "node_id": "operator-pldt-id",
+                        "node_name": "PLDT",
+                        "node_kind": "site"
+                    },
+                    {
+                        "node_id": "operator-pldt-nested-ap-id",
+                        "node_name": "Nested AP",
+                        "node_kind": "ap",
+                        "current_parent_node_name": "PLDT"
+                    },
+                    {
+                        "node_id": "operator-alpha-id",
+                        "node_name": "Alpha",
+                        "node_kind": "site"
+                    },
+                    {
+                        "node_id": "operator-beta-id",
+                        "node_name": "Beta",
+                        "node_kind": "site"
+                    },
+                    {
+                        "node_id": "operator-alpha-relay-id",
+                        "node_name": "Relay",
+                        "node_kind": "ap",
+                        "current_parent_node_id": "operator-alpha-id",
+                        "current_parent_node_name": "Alpha",
+                        "current_attachment_id": "operator-alpha-id"
+                    },
+                    {
+                        "node_id": "operator-beta-relay-id",
+                        "node_name": "Relay",
+                        "node_kind": "ap",
+                        "current_parent_node_id": "operator-beta-id",
+                        "current_parent_node_name": "Beta",
+                        "current_attachment_id": "operator-beta-id"
+                    },
+                    {
+                        "node_id": "operator-alpha-shared-ap-id",
+                        "node_name": "Shared AP",
+                        "node_kind": "ap",
+                        "current_parent_node_id": "operator-alpha-id",
+                        "current_parent_node_name": "Alpha",
+                        "current_attachment_id": "operator-alpha-relay-id",
+                        "current_attachment_name": "Relay"
+                    },
+                    {
+                        "node_id": "operator-beta-shared-ap-id",
+                        "node_name": "Shared AP",
+                        "node_kind": "ap",
+                        "current_parent_node_id": "operator-beta-id",
+                        "current_parent_node_name": "Beta",
+                        "current_attachment_id": "operator-beta-relay-id",
+                        "current_attachment_name": "Relay"
+                    },
+                    {
+                        "node_id": "",
+                        "node_name": "Blank Canonical",
+                        "node_kind": "site"
+                    }
+                ],
+                "compatibility_network_json": {
+                    "Globe": {
+                        "children": {
+                            "Nested AP": {
+                                "children": {},
+                                "id": false,
+                                "type": "ap"
+                            }
+                        },
+                        "downloadBandwidthMbps": 500,
+                        "type": "site",
+                        "uploadBandwidthMbps": 500
+                    },
+                    "PLDT": {
+                        "children": {
+                            "Nested AP": {
+                                "children": {},
+                                "type": "ap"
+                            }
+                        },
+                        "downloadBandwidthMbps": 500,
+                        "type": "site",
+                        "uploadBandwidthMbps": 500
+                    },
+                    "Alpha": {
+                        "children": {
+                            "Relay": {
+                                "children": {
+                                    "Shared AP": {
+                                        "children": {},
+                                        "type": "ap"
+                                    }
+                                },
+                                "type": "ap"
+                            }
+                        },
+                        "downloadBandwidthMbps": 500,
+                        "type": "site",
+                        "uploadBandwidthMbps": 500
+                    },
+                    "Beta": {
+                        "children": {
+                            "Relay": {
+                                "children": {
+                                    "Shared AP": {
+                                        "children": {},
+                                        "type": "ap"
+                                    }
+                                },
+                                "type": "ap"
+                            }
+                        },
+                        "downloadBandwidthMbps": 500,
+                        "type": "site",
+                        "uploadBandwidthMbps": 500
+                    },
+                    "Blank Canonical": {
+                        "children": {},
+                        "id": "",
+                        "downloadBandwidthMbps": 500,
+                        "type": "site",
+                        "uploadBandwidthMbps": 500
+                    }
+                }
+            }))
+            .expect("canonical state should serialize"),
+        )
+        .expect("canonical state should write");
+
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+
+        let loaded =
+            TopologyCanonicalStateFile::load(&config).expect("canonical state should load");
+        assert_eq!(
+            loaded.ingress_kind,
+            TopologyCanonicalIngressKind::LegacyNetworkJson
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["Globe"]["id"].as_str(),
+            Some("operator-globe-id")
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["Globe"]["children"]["Nested AP"]["id"].as_str(),
+            Some("operator-nested-ap-id")
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["PLDT"]["id"].as_str(),
+            Some("operator-pldt-id")
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["PLDT"]["children"]["Nested AP"]["id"].as_str(),
+            Some("operator-pldt-nested-ap-id")
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["Alpha"]["children"]["Relay"]["id"].as_str(),
+            Some("operator-alpha-relay-id")
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["Beta"]["children"]["Relay"]["id"].as_str(),
+            Some("operator-beta-relay-id")
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["Alpha"]["children"]["Relay"]["children"]
+                ["Shared AP"]["id"]
+                .as_str(),
+            Some("operator-alpha-shared-ap-id")
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["Beta"]["children"]["Relay"]["children"]["Shared AP"]
+                ["id"]
+                .as_str(),
+            Some("operator-beta-shared-ap-id")
+        );
+        let blank_canonical_id = legacy_id_for_name("Blank Canonical");
+        assert!(
+            loaded
+                .nodes
+                .iter()
+                .any(|node| node.node_name == "Blank Canonical"
+                    && node.node_id == blank_canonical_id)
+        );
+        assert_eq!(
+            loaded.compatibility_network_json["Blank Canonical"]["id"].as_str(),
+            Some(blank_canonical_id.as_str())
+        );
+    }
+
+    #[test]
+    fn legacy_id_healing_uses_hash_when_name_only_lookup_is_ambiguous() {
+        let lqos_directory = unique_temp_dir("lqos-config-canonical-id-ambiguous");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
+        fs::write(
+            topology_state_dir.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            serde_json::to_string_pretty(&json!({
+                "schema_version": 1,
+                "source": "legacy/network.json",
+                "nodes": [
+                    {
+                        "node_id": "operator-shared-ap-a",
+                        "node_name": "Shared AP",
+                        "node_kind": "ap",
+                        "current_parent_node_id": "parent-a",
+                        "current_parent_node_name": "Parent A"
+                    },
+                    {
+                        "node_id": "operator-shared-ap-b",
+                        "node_name": "Shared AP",
+                        "node_kind": "ap",
+                        "current_parent_node_id": "parent-b",
+                        "current_parent_node_name": "Parent B"
+                    }
+                ],
+                "compatibility_network_json": {
+                    "Shared AP": {
+                        "children": {},
+                        "type": "ap"
+                    }
+                }
+            }))
+            .expect("canonical state should serialize"),
+        )
+        .expect("canonical state should write");
+
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let loaded =
+            TopologyCanonicalStateFile::load(&config).expect("canonical state should load");
+
+        assert_eq!(
+            loaded.compatibility_network_json["Shared AP"]["id"].as_str(),
+            Some(legacy_id_for_name("Shared AP").as_str())
         );
     }
 
