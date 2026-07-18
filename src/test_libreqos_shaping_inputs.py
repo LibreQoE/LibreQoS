@@ -4,7 +4,6 @@ import json
 import os
 import sys
 import tempfile
-import time
 import types
 import unittest
 from unittest.mock import patch
@@ -72,6 +71,9 @@ def install_libreqos_stubs():
     lqlib.automatic_import_visp = lambda: False
     lqlib.topology_import_ingress_enabled = lambda: False
     lqlib.calculate_topology_source_generation = lambda: "test-generation"
+    lqlib.validated_runtime_shaping_inputs_path = lambda: None
+    lqlib.calculate_shaping_inputs_generation = lambda _path: "shape-1"
+    lqlib.calculate_effective_network_generation = lambda _path: "effective-1"
     lqlib.plan_top_level_cpu_bins = lambda *_args, **_kwargs: {}
     lqlib.plan_class_identities = lambda *_args, **_kwargs: {}
     lqlib.fast_queues_fq_codel = lambda: False
@@ -199,130 +201,51 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
                 },
             )
 
-    def test_shaping_inputs_freshness_tracks_circuit_anchors(self):
+    def test_shaping_inputs_freshness_requires_active_runtime_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
-            shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
-            network_json = os.path.join(temp_dir, "network.json")
-            circuit_anchors = os.path.join(temp_dir, "circuit_anchors.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
 
-            for path in (shaping_inputs, shaped_devices, network_json, circuit_anchors):
-                with open(path, "w", encoding="utf-8") as handle:
-                    handle.write("{}\n")
+            self.assertFalse(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
 
-            now = time.time()
-            os.utime(shaped_devices, (now - 20, now - 20))
-            os.utime(network_json, (now - 20, now - 20))
-            os.utime(shaping_inputs, (now - 10, now - 10))
-            os.utime(circuit_anchors, (now - 5, now - 5))
-
-            self.assertFalse(
-                LibreQoS._shaping_inputs_are_fresh(
-                    shaping_inputs, shaped_devices, network_json, circuit_anchors
-                )
-            )
-
-    def test_shaping_inputs_freshness_accepts_ready_topology_runtime_status(self):
+    def test_shaping_inputs_freshness_accepts_matching_active_runtime_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
-            shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
-            network_json = os.path.join(temp_dir, "network.effective.json")
-            topology_state = os.path.join(temp_dir, "state", "topology")
-            os.makedirs(topology_state, exist_ok=True)
-            status_path = os.path.join(topology_state, "topology_runtime_status.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
 
-            for path in (shaping_inputs, shaped_devices, network_json):
-                with open(path, "w", encoding="utf-8") as handle:
-                    handle.write("{}\n")
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=shaping_inputs,
+            ):
+                self.assertTrue(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
 
-            now = time.time()
-            os.utime(shaped_devices, (now - 20, now - 20))
-            os.utime(shaping_inputs, (now - 10, now - 10))
-            os.utime(network_json, (now - 5, now - 5))
-
-            with open(status_path, "w", encoding="utf-8") as handle:
-                json.dump(
-                    {
-                        "source_generation": "test-generation",
-                        "shaping_generation": "shape-1",
-                        "ready": True,
-                        "shaping_inputs_path": shaping_inputs,
-                    },
-                    handle,
-                )
-
-            with patch.object(LibreQoS, "get_libreqos_directory", return_value=temp_dir):
-                self.assertTrue(
-                    LibreQoS._shaping_inputs_are_fresh(
-                        shaping_inputs, shaped_devices, network_json
-                    )
-                )
-
-    def test_shaping_inputs_freshness_rejects_stale_topology_runtime_status_generation(self):
+    def test_shaping_inputs_freshness_rejects_mismatched_active_runtime_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
-            shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
-            network_json = os.path.join(temp_dir, "network.effective.json")
-            topology_state = os.path.join(temp_dir, "state", "topology")
-            os.makedirs(topology_state, exist_ok=True)
-            status_path = os.path.join(topology_state, "topology_runtime_status.json")
+            other_inputs = os.path.join(temp_dir, "other_shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=other_inputs,
+            ):
+                self.assertFalse(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
 
-            for path in (shaping_inputs, shaped_devices, network_json):
-                with open(path, "w", encoding="utf-8") as handle:
-                    handle.write("{}\n")
-
-            now = time.time()
-            os.utime(shaped_devices, (now - 20, now - 20))
-            os.utime(shaping_inputs, (now - 10, now - 10))
-            os.utime(network_json, (now - 5, now - 5))
-
-            with open(status_path, "w", encoding="utf-8") as handle:
-                json.dump(
-                    {
-                        "source_generation": "old-generation",
-                        "shaping_generation": "shape-1",
-                        "ready": True,
-                        "shaping_inputs_path": shaping_inputs,
-                    },
-                    handle,
-                )
-
-            with patch.object(LibreQoS, "get_libreqos_directory", return_value=temp_dir):
-                self.assertFalse(
-                    LibreQoS._shaping_inputs_are_fresh(
-                        shaping_inputs, shaped_devices, network_json
-                    )
-                )
-
-    def test_shaping_inputs_freshness_rejects_ready_status_without_shaping_generation(self):
+    def test_shaping_inputs_freshness_rejects_runtime_gate_errors(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
-            shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
-            network_json = os.path.join(temp_dir, "network.effective.json")
-            topology_state = os.path.join(temp_dir, "state", "topology")
-            os.makedirs(topology_state, exist_ok=True)
-            status_path = os.path.join(topology_state, "topology_runtime_status.json")
-
-            for path in (shaping_inputs, shaped_devices, network_json):
-                with open(path, "w", encoding="utf-8") as handle:
-                    handle.write("{}\n")
-
-            with open(status_path, "w", encoding="utf-8") as handle:
-                json.dump(
-                    {
-                        "source_generation": "test-generation",
-                        "ready": True,
-                        "shaping_inputs_path": shaping_inputs,
-                    },
-                    handle,
-                )
-
-            with patch.object(LibreQoS, "get_libreqos_directory", return_value=temp_dir):
-                self.assertFalse(
-                    LibreQoS._shaping_inputs_are_fresh(
-                        shaping_inputs, shaped_devices, network_json
-                    )
-                )
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                side_effect=OSError("bad status"),
+            ):
+                self.assertFalse(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
 
     def test_load_subscriber_circuits_accepts_diy_id_alias(self):
         header = [
@@ -374,26 +297,120 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
         self.assertEqual(len(circuits), 1)
         self.assertEqual(circuits[0]["AnchorNodeID"], "uisp:site:site-100")
 
-    def test_load_subscriber_circuits_for_shaping_requires_runtime_artifacts_for_diy(self):
-        with patch.object(LibreQoS, "_shaping_inputs_are_fresh", return_value=False):
-            with self.assertRaises(LibreQoS.RefreshFailure):
-                LibreQoS.loadSubscriberCircuitsForShaping(
-                    "/tmp/ShapedDevices.csv",  # nosec B108
-                    "/tmp/network.json",  # nosec B108
-                )
+    def test_load_subscriber_circuits_for_shaping_requires_runtime_artifacts_for_integration(self):
+        with patch.object(LibreQoS, "_runtime_shaping_inputs_are_validated", return_value=False):
+            with patch.object(LibreQoS, "topology_import_ingress_enabled", return_value=True):
+                with self.assertRaises(LibreQoS.RefreshFailure):
+                    LibreQoS.loadSubscriberCircuitsForShaping("/tmp/ShapedDevices.csv")  # nosec B108
 
     def test_load_subscriber_circuits_for_shaping_requires_valid_runtime_payload(self):
-        with patch.object(LibreQoS, "_shaping_inputs_are_fresh", return_value=True):
+        with patch.object(LibreQoS, "_runtime_shaping_inputs_are_validated", return_value=True):
             with patch.object(
                 LibreQoS,
                 "loadSubscriberCircuitsFromShapingInputs",
                 side_effect=ValueError("bad payload"),
             ):
                 with self.assertRaises(LibreQoS.RefreshFailure):
-                    LibreQoS.loadSubscriberCircuitsForShaping(
-                        "/tmp/ShapedDevices.csv",  # nosec B108
-                        "/tmp/network.json",  # nosec B108
+                    LibreQoS.loadSubscriberCircuitsForShaping("/tmp/ShapedDevices.csv")  # nosec B108
+
+    def test_load_subscriber_circuits_for_shaping_consumes_fresh_runtime_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaping_dir = os.path.join(temp_dir, "state", "shaping")
+            os.makedirs(shaping_dir, exist_ok=True)
+            shaping_inputs = os.path.join(shaping_dir, "shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "shaping_generation": "shape-1",
+                        "circuits": [
+                            {
+                                "circuit_id": "circuit-1",
+                                "circuit_name": "Circuit 1",
+                                "effective_parent_node_name": "Globe",
+                                "effective_parent_node_id": "libreqos:legacy-network-json:node:1",
+                                "download_min_mbps": 10,
+                                "upload_min_mbps": 10,
+                                "download_max_mbps": 100,
+                                "upload_max_mbps": 100,
+                                "devices": [],
+                            }
+                        ],
+                    },
+                    handle,
+                )
+
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=shaping_inputs,
+            ):
+                with patch.object(
+                    LibreQoS,
+                    "get_shaping_inputs_path",
+                    return_value=shaping_inputs,
+                ):
+                    circuits, missing_parents = LibreQoS.loadSubscriberCircuitsForShaping(
+                        "/tmp/ShapedDevices.csv"  # nosec B108
                     )
+
+        self.assertEqual(len(circuits), 1)
+        self.assertEqual(circuits[0]["circuitID"], "circuit-1")
+        self.assertEqual(circuits[0]["ParentNode"], "Globe")
+        self.assertEqual(missing_parents, {})
+
+    def test_load_subscriber_circuits_for_shaping_falls_back_to_manual_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
+            with open(shaped_devices, "w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    [
+                        "Circuit ID",
+                        "Circuit Name",
+                        "Device ID",
+                        "Device Name",
+                        "Parent Node",
+                        "MAC",
+                        "IPv4",
+                        "IPv6",
+                        "Download Min Mbps",
+                        "Upload Min Mbps",
+                        "Download Max Mbps",
+                        "Upload Max Mbps",
+                        "Comment",
+                    ]
+                )
+                writer.writerow(
+                    [
+                        "manual-1",
+                        "Manual 1",
+                        "device-1",
+                        "Radio 1",
+                        "Globe",
+                        "aa:bb:cc:dd:ee:ff",
+                        "192.0.2.10/32",
+                        "",
+                        "10",
+                        "10",
+                        "100",
+                        "100",
+                        "",
+                    ]
+                )
+
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=None,
+            ):
+                circuits, missing_parents = LibreQoS.loadSubscriberCircuitsForShaping(
+                    shaped_devices
+                )
+
+        self.assertEqual(len(circuits), 1)
+        self.assertEqual(circuits[0]["circuitID"], "manual-1")
+        self.assertEqual(circuits[0]["ParentNode"], "Globe")
+        self.assertEqual(missing_parents, {})
 
 
 if __name__ == "__main__":

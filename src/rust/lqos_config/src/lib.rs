@@ -88,6 +88,7 @@ pub use topology_parent_candidates::{
     TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,
     TopologyParentCandidatesFile, TopologyParentCandidatesNode, topology_parent_candidates_path,
 };
+#[allow(deprecated)]
 pub use topology_runtime_state::{
     TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_COMPILED_SHAPING_FILENAME,
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
@@ -98,11 +99,13 @@ pub use topology_runtime_state::{
     TopologyRuntimeStateError, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
     TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
     active_runtime_shaping_inputs_path, active_runtime_shaping_inputs_path_from_status,
-    compute_effective_network_generation, compute_topology_source_generation,
+    compute_effective_network_file_generation, compute_effective_network_generation,
+    compute_shaping_inputs_file_generation, compute_topology_source_generation,
     load_active_runtime_shaping_inputs, load_active_runtime_shaping_inputs_from_status,
     topology_attachment_health_state_path, topology_compiled_shaping_path,
     topology_effective_network_path, topology_effective_state_path, topology_import_path,
     topology_runtime_status_path, topology_shaping_inputs_path,
+    validated_runtime_shaping_inputs_path,
 };
 
 /// Returns whether an integration-backed topology ingress is enabled in the

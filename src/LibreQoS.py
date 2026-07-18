@@ -83,9 +83,9 @@ except ImportError:
         return True
 
 try:
-    from liblqos_python import calculate_topology_source_generation  # type: ignore
-except Exception:
-    def calculate_topology_source_generation():
+    from liblqos_python import validated_runtime_shaping_inputs_path  # type: ignore
+except ImportError:
+    def validated_runtime_shaping_inputs_path():
         return None
 
 try:
@@ -244,10 +244,6 @@ def get_network_json_path():
 
 def get_shaping_inputs_path():
     return get_runtime_state_path("shaping", "shaping_inputs.json")
-
-
-def get_circuit_anchors_path():
-    return get_runtime_state_path("topology", "circuit_anchors.json")
 
 
 def get_planner_state_path():
@@ -514,75 +510,21 @@ def _validate_planned_circuit_attachment(node_name, node_data, circuit, planned_
     return planned_major, planned_up_major
 
 
-def _current_topology_source_generation():
-    try:
-        generation = calculate_topology_source_generation()
-    except Exception:
-        return None
-    if generation is None:
-        return None
-    generation = str(generation).strip()
-    return generation if generation != '' else None
-
-
-def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
-    current_generation = _current_topology_source_generation()
-    if current_generation is None:
-        return None
-
-    status_path = get_topology_runtime_status_path()
-    try:
-        with open(status_path, 'r', encoding='utf-8') as handle:
-            status = json.load(handle)
-    except FileNotFoundError:
-        return None
-    except Exception:
-        return None
-
-    if not isinstance(status, dict):
-        return False
-
-    status_generation = str(status.get('source_generation', '') or '').strip()
-    if status_generation != current_generation:
-        return False
-    if not bool(status.get('ready')):
-        return False
-
-    status_shaping_generation = str(status.get('shaping_generation', '') or '').strip()
-    if status_shaping_generation == '':
-        return False
-
-    status_shaping_inputs_path = str(status.get('shaping_inputs_path', '') or '').strip()
-    if status_shaping_inputs_path != '':
-        try:
-            if os.path.abspath(status_shaping_inputs_path) != os.path.abspath(shaping_inputs_path):
-                return False
-        except Exception:
-            return False
-        if not os.path.isfile(status_shaping_inputs_path):
-            return False
-
-    return True
-
-
-def _shaping_inputs_are_fresh(shaping_inputs_path, shaped_devices_file, network_json_file, circuit_anchors_file=None):
+def _runtime_shaping_inputs_are_validated(shaping_inputs_path):
     if not os.path.isfile(shaping_inputs_path):
         return False
-    topology_runtime_ready = _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path)
-    if topology_runtime_ready is True:
-        return True
-    if topology_runtime_ready is False:
+    try:
+        active_path = validated_runtime_shaping_inputs_path()
+    except (OSError, RuntimeError):
+        return False
+    if active_path is None:
+        return False
+    active_path = str(active_path).strip()
+    if active_path == '':
         return False
     try:
-        shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
-        if os.path.isfile(shaped_devices_file) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_file):
-            return False
-        if os.path.isfile(network_json_file) and shaping_inputs_mtime < os.path.getmtime(network_json_file):
-            return False
-        if circuit_anchors_file and os.path.isfile(circuit_anchors_file) and shaping_inputs_mtime < os.path.getmtime(circuit_anchors_file):
-            return False
-        return True
-    except OSError:
+        return os.path.abspath(active_path) == os.path.abspath(shaping_inputs_path)
+    except Exception:
         return False
 
 
@@ -661,10 +603,9 @@ def loadSubscriberCircuitsFromShapingInputs(shapingInputsPath):
     return subscriberCircuits, dictForCircuitsWithoutParentNodes
 
 
-def loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile):
+def loadSubscriberCircuitsForShaping(shapedDevicesFile):
     shaping_inputs_path = get_shaping_inputs_path()
-    circuit_anchors_path = get_circuit_anchors_path()
-    if _shaping_inputs_are_fresh(shaping_inputs_path, shapedDevicesFile, networkJSONfile, circuit_anchors_path):
+    if _runtime_shaping_inputs_are_validated(shaping_inputs_path):
         try:
             subscriberCircuits, dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsFromShapingInputs(shaping_inputs_path)
             print("Loaded shaping inputs from " + shaping_inputs_path)
@@ -673,6 +614,8 @@ def loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile):
             raise RefreshFailure(
                 f"Unable to load required shaping_inputs.json at {shaping_inputs_path}: {e}"
             ) from e
+    if not topology_import_ingress_enabled():
+        return loadSubscriberCircuits(shapedDevicesFile)
     raise RefreshFailure(
         "Missing or stale shaping_inputs.json. Run topology runtime before shaping."
     )
@@ -1438,7 +1381,7 @@ def refreshShapers():
     if safeToRunRefresh == True:
 
         # Load Subscriber Circuits & Devices
-        subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile)
+        subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsForShaping(shapedDevicesFile)
         runtime_override_count = apply_effective_runtime_circuit_overrides(subscriberCircuits)
         if runtime_override_count > 0:
             print(

@@ -127,8 +127,8 @@ pub fn publish_effective_topology_artifacts(
                 source_generation,
                 None,
                 effective_generation.as_deref(),
-                true,
-                None,
+                false,
+                Some("Topology runtime did not produce shaping inputs.".to_string()),
             )?;
         }
     }

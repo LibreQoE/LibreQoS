@@ -184,22 +184,30 @@ fn empty_json_object() -> Value {
 }
 
 fn topology_import_ingress_enabled(config: &Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
+    crate::integration_ingress_enabled(config)
+}
+
+fn canonical_ingress_kind_matches_mode(
+    ingress_kind: TopologyCanonicalIngressKind,
+    integration_ingress: bool,
+) -> bool {
+    matches!(
+        (ingress_kind, integration_ingress),
+        (TopologyCanonicalIngressKind::NativeIntegration, true)
+            | (TopologyCanonicalIngressKind::LegacyNetworkJson, false)
+    )
+}
+
+fn current_legacy_network_json_identity(
+    config: &Config,
+) -> Result<Option<String>, TopologyCanonicalStateError> {
+    let legacy_network_path = Path::new(&config.lqos_directory).join("network.json");
+    if !legacy_network_path.exists() {
+        return Ok(None);
+    }
+    let raw = std::fs::read_to_string(legacy_network_path)?;
+    let network = serde_json::from_str::<Value>(&raw)?;
+    Ok(topology_ingress_fingerprint_for_network_json(&network))
 }
 
 pub(crate) fn topology_ingress_fingerprint_from_tokens<I>(tokens: I) -> Option<String>
@@ -281,19 +289,21 @@ pub(crate) fn current_topology_ingress_identity(
     config: &Config,
 ) -> Result<Option<String>, TopologyCanonicalStateError> {
     let integration_ingress = topology_import_ingress_enabled(config);
-    if integration_ingress {
-        let topology_import_path = config.topology_state_file_path(TOPOLOGY_IMPORT_FILENAME);
-        if topology_import_path.exists() {
-            let raw = std::fs::read_to_string(topology_import_path)?;
-            let imported = serde_json::from_str::<Value>(&raw)?;
-            if let Some(identity) = imported
-                .get("ingress_identity")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                return Ok(Some(identity.to_string()));
-            }
+    if !integration_ingress {
+        return current_legacy_network_json_identity(config);
+    }
+
+    let topology_import_path = config.topology_state_file_path(TOPOLOGY_IMPORT_FILENAME);
+    if topology_import_path.exists() {
+        let raw = std::fs::read_to_string(topology_import_path)?;
+        let imported = serde_json::from_str::<Value>(&raw)?;
+        if let Some(identity) = imported
+            .get("ingress_identity")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return Ok(Some(identity.to_string()));
         }
     }
 
@@ -311,17 +321,7 @@ pub(crate) fn current_topology_ingress_identity(
         return Ok(Some(identity.to_string()));
     }
 
-    if integration_ingress {
-        return Ok(None);
-    }
-
-    let legacy_network_path = Path::new(&config.lqos_directory).join("network.json");
-    if !legacy_network_path.exists() {
-        return Ok(None);
-    }
-    let raw = std::fs::read_to_string(legacy_network_path)?;
-    let network = serde_json::from_str::<Value>(&raw)?;
-    Ok(topology_ingress_fingerprint_for_network_json(&network))
+    Ok(None)
 }
 
 fn quarantine_target_path(config: &Config, path: &Path, stamp: u64, attempt: usize) -> PathBuf {
@@ -1054,16 +1054,47 @@ impl TopologyCanonicalStateFile {
     /// may read `network.json` from `config.lqos_directory`.
     pub fn load_with_legacy_fallback(config: &Config) -> Result<Self, TopologyCanonicalStateError> {
         let state = Self::load(config)?;
-        if !state.nodes.is_empty() {
-            let is_current = match state.matches_current_ingress(config) {
-                Ok(is_current) => is_current,
-                Err(err) => {
+        let integration_ingress = topology_import_ingress_enabled(config);
+        if !integration_ingress {
+            let legacy_network_path = Path::new(&config.lqos_directory).join("network.json");
+            if !legacy_network_path.exists() {
+                return Ok(state);
+            }
+            let raw = std::fs::read_to_string(legacy_network_path)?;
+            let network = serde_json::from_str::<Value>(&raw)?;
+            let imported = Self::from_legacy_network_json(&network);
+            let imported_identity = imported.topology_ingress_fingerprint();
+            let stale_state = !state.nodes.is_empty()
+                && (!canonical_ingress_kind_matches_mode(state.ingress_kind, false)
+                    || state.topology_ingress_fingerprint() != imported_identity);
+            if stale_state {
+                let quarantine_result = quarantine_stale_topology_state(
+                    config,
+                    &format!(
+                        "canonical topology source '{}' is stale for current manual topology ingress",
+                        state.source
+                    ),
+                );
+                if let Err(err) = quarantine_result {
                     warn!(
-                        "Unable to validate topology canonical state against current ingress; preserving existing state: {err}"
+                        "Unable to quarantine stale topology state before manual network.json import; using current manual topology anyway: {err}"
                     );
-                    true
                 }
-            };
+            }
+            return Ok(imported);
+        }
+
+        if !state.nodes.is_empty() {
+            let is_current = canonical_ingress_kind_matches_mode(state.ingress_kind, true)
+                && match state.matches_current_ingress(config) {
+                    Ok(is_current) => is_current,
+                    Err(err) => {
+                        warn!(
+                            "Unable to validate topology canonical state against current ingress; preserving existing state: {err}"
+                        );
+                        true
+                    }
+                };
             if is_current {
                 return Ok(state);
             }
@@ -1076,17 +1107,7 @@ impl TopologyCanonicalStateFile {
             )?;
         }
 
-        if topology_import_ingress_enabled(config) {
-            return Ok(state);
-        }
-
-        let legacy_network_path = Path::new(&config.lqos_directory).join("network.json");
-        if !legacy_network_path.exists() {
-            return Ok(state);
-        }
-        let raw = std::fs::read_to_string(legacy_network_path)?;
-        let network = serde_json::from_str::<Value>(&raw)?;
-        Ok(Self::from_legacy_network_json(&network))
+        Ok(Self::default())
     }
 
     /// Saves the canonical topology state atomically.
@@ -2186,7 +2207,7 @@ mod tests {
     }
 
     #[test]
-    fn current_ingress_identity_prevents_quarantining_matching_native_state() {
+    fn manual_mode_reimports_legacy_network_even_when_native_state_identity_matches() {
         let lqos_directory = unique_temp_dir("lqos-config-canonical-ingress-identity");
         let ingress_identity = topology_ingress_identity_from_tokens([
             "import:uisp/full2".to_string(),
@@ -2303,13 +2324,17 @@ mod tests {
             .expect("load with fallback should succeed");
 
         assert!(loaded.find_node("uisp:device:current-ap").is_some());
+        assert_eq!(
+            loaded.ingress_kind,
+            TopologyCanonicalIngressKind::LegacyNetworkJson
+        );
         assert!(
-            topology_state_dir
+            !topology_state_dir
                 .join(TOPOLOGY_CANONICAL_STATE_FILENAME)
                 .exists()
         );
         assert!(
-            topology_state_dir
+            !topology_state_dir
                 .join(TOPOLOGY_EDITOR_STATE_FILENAME)
                 .exists()
         );
@@ -2324,15 +2349,83 @@ mod tests {
             Vec::<String>::new()
         };
         assert!(
-            !quarantined
+            quarantined
                 .iter()
                 .any(|name| name.starts_with("topology_canonical_state.json.stale-"))
         );
         assert!(
-            !quarantined
+            quarantined
                 .iter()
                 .any(|name| name.starts_with("topology_editor_state.json.stale-"))
         );
+    }
+
+    #[test]
+    fn manual_mode_preserves_existing_canonical_when_network_json_is_missing() {
+        let lqos_directory = unique_temp_dir("lqos-config-missing-manual-network-json");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
+        let canonical = TopologyCanonicalStateFile {
+            schema_version: 1,
+            source: "legacy/network.json".to_string(),
+            generated_unix: Some(1),
+            ingress_identity: Some("previous-manual-identity".to_string()),
+            ingress_kind: TopologyCanonicalIngressKind::LegacyNetworkJson,
+            nodes: vec![TopologyCanonicalNode {
+                node_id: "tower-1".to_string(),
+                node_name: "Tower 1".to_string(),
+                latitude: None,
+                longitude: None,
+                node_kind: "Site".to_string(),
+                is_virtual: false,
+                current_parent_node_id: None,
+                current_parent_node_name: None,
+                current_attachment_id: None,
+                current_attachment_name: None,
+                can_move: false,
+                allowed_parents: Vec::new(),
+                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
+                rate_input: super::TopologyCanonicalRateInput {
+                    intrinsic_download_mbps: Some(100),
+                    intrinsic_upload_mbps: Some(100),
+                    legacy_imported_download_mbps: Some(100),
+                    legacy_imported_upload_mbps: Some(100),
+                    source: TopologyCanonicalRateInputSource::ImportedNetworkJson,
+                },
+            }],
+            compatibility_network_json: json!({
+                "Tower 1": {
+                    "id": "tower-1",
+                    "children": {},
+                    "type": "Site"
+                }
+            }),
+        };
+        fs::write(
+            topology_state_dir.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            serde_json::to_string_pretty(&canonical).expect("canonical should serialize"),
+        )
+        .expect("canonical should write");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+
+        let loaded = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
+            .expect("load with missing network.json should preserve state");
+
+        assert_eq!(
+            loaded.ingress_kind,
+            TopologyCanonicalIngressKind::LegacyNetworkJson
+        );
+        assert!(loaded.find_node("tower-1").is_some());
+        assert!(
+            topology_state_dir
+                .join(TOPOLOGY_CANONICAL_STATE_FILENAME)
+                .exists()
+        );
+        assert!(!config.quarantine_state_directory_path().exists());
     }
 
     #[test]
@@ -2431,6 +2524,48 @@ mod tests {
         let identity =
             current_topology_ingress_identity(&config).expect("ingress identity should load");
         assert!(identity.is_none());
+    }
+
+    #[test]
+    fn current_topology_ingress_identity_uses_network_json_in_manual_mode() {
+        let lqos_directory = unique_temp_dir("lqos-config-manual-network-json-identity");
+        let network_json = json!({
+            "Legacy Tower": {
+                "children": {},
+                "type": "Site",
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 100
+            }
+        });
+        fs::write(
+            lqos_directory.join("network.json"),
+            serde_json::to_string_pretty(&network_json).expect("network json should serialize"),
+        )
+        .expect("network json should write");
+        fs::write(
+            lqos_directory.join(TOPOLOGY_PARENT_CANDIDATES_FILENAME),
+            serde_json::to_string_pretty(&TopologyParentCandidatesFile {
+                source: "uisp/ap_site".to_string(),
+                ingress_identity: Some("stale-parent-candidates-identity".to_string()),
+                nodes: Vec::new(),
+            })
+            .expect("parent candidates should serialize"),
+        )
+        .expect("parent candidates should write");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+
+        let identity = current_topology_ingress_identity(&config)
+            .expect("ingress identity should load")
+            .expect("manual network.json identity should exist");
+        let expected = TopologyCanonicalStateFile::from_legacy_network_json(&network_json)
+            .topology_ingress_fingerprint()
+            .expect("legacy fingerprint should compute");
+
+        assert_eq!(identity, expected);
     }
 
     #[test]

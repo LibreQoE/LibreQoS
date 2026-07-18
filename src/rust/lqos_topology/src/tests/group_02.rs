@@ -398,6 +398,100 @@
         assert!(shaping_inputs.warnings.is_empty());
     }
 
+    #[test]
+    fn manual_runtime_import_resolves_idless_legacy_parent_names() {
+        let lqos_directory = unique_temp_dir("lqos-topology-manual-idless-parent-resolution");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        fs::write(
+            lqos_directory.join("network.json"),
+            serde_json::to_string_pretty(&json!({
+                "Globe": {
+                    "children": {},
+                    "type": "Site",
+                    "downloadBandwidthMbps": 500,
+                    "uploadBandwidthMbps": 500
+                },
+                "PLDT": {
+                    "children": {},
+                    "type": "Site",
+                    "downloadBandwidthMbps": 500,
+                    "uploadBandwidthMbps": 500
+                }
+            }))
+            .expect("network json should serialize"),
+        )
+        .expect("network.json should write");
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"globe-1\",\"Globe 1\",\"device-1\",\"Radio 1\",\"Globe\",\"\",\"\",\"aa:bb:cc:dd:ee:01\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+                "\"pldt-1\",\"PLDT 1\",\"device-2\",\"Radio 2\",\"PLDT\",\"\",\"\",\"aa:bb:cc:dd:ee:02\",\"192.0.2.11/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
+            .expect("manual runtime should import network.json");
+        let globe_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Globe")
+            .expect("Globe should be imported")
+            .node_id
+            .clone();
+        let pldt_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "PLDT")
+            .expect("PLDT should be imported")
+            .node_id
+            .clone();
+        let artifacts = build_effective_topology_artifacts_from_canonical(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("manual idless topology should publish");
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build")
+            .expect("shaping inputs should exist");
+
+        assert!(
+            shaping_inputs
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("unresolved in runtime topology"))
+        );
+        let globe = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "globe-1")
+            .expect("Globe circuit should exist");
+        assert_eq!(globe.effective_parent_node_name, "Globe");
+        assert_eq!(globe.effective_parent_node_id, globe_id);
+        assert_eq!(
+            globe.resolution_source,
+            TopologyShapingResolutionSource::LegacyParent
+        );
+        let pldt = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "pldt-1")
+            .expect("PLDT circuit should exist");
+        assert_eq!(pldt.effective_parent_node_name, "PLDT");
+        assert_eq!(pldt.effective_parent_node_id, pldt_id);
+        assert_eq!(
+            pldt.resolution_source,
+            TopologyShapingResolutionSource::LegacyParent
+        );
+    }
+
 
     #[test]
     fn shaping_inputs_skip_virtual_effective_nodes_when_resolving_physical_parent() {
