@@ -24,7 +24,7 @@ def install_common_stubs():
     lqlib.promote_to_root_list = lambda: []
     lqlib.client_bandwidth_multiplier = lambda: 1.0
     lqlib.write_compiled_topology_from_python_graph_payload = lambda *_args, **_kwargs: None
-    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"
+    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"  # nosec B108
     sys.modules["liblqos_python"] = lqlib
 
 
