@@ -16,8 +16,8 @@ use lqos_config::{
     TopologyRuntimeStatusFile, TopologyShapingCircuitInput, TopologyShapingDeviceInput,
     TopologyShapingInputsFile, TopologyShapingResolutionSource, circuit_anchors_path,
     compute_effective_network_generation, detect_shaping_cpus, plan_top_level_assignments,
-    topology_effective_network_path, topology_effective_state_path, topology_runtime_status_path,
-    topology_auto_attachment_option, topology_shaping_inputs_path,
+    topology_auto_attachment_option, topology_effective_network_path,
+    topology_effective_state_path, topology_runtime_status_path, topology_shaping_inputs_path,
 };
 use lqos_overrides::{
     CircuitAdjustment, NetworkAdjustment, OverrideStore, TopologyAttachmentMode,

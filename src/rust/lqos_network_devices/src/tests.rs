@@ -86,6 +86,17 @@ fn write_runtime_status(
     shaping_inputs_path: &std::path::Path,
     source_generation: &str,
 ) {
+    let effective_network_path = path
+        .parent()
+        .expect("runtime status path should have a parent")
+        .join("network.effective.json");
+    std::fs::write(&effective_network_path, "{}\n").expect("effective network should write");
+    let shaping_generation = lqos_config::compute_shaping_inputs_file_generation(shaping_inputs_path)
+        .expect("shaping generation should compute");
+    let effective_generation =
+        lqos_config::compute_effective_network_file_generation(&effective_network_path)
+            .expect("effective generation should compute");
+
     std::fs::write(
         path,
         serde_json::json!({
@@ -93,9 +104,10 @@ fn write_runtime_status(
             "ready": ready,
             "shaping_inputs_path": shaping_inputs_path,
             "effective_state_path": "",
-            "effective_network_path": "",
+            "effective_network_path": effective_network_path,
             "source_generation": source_generation,
-            "shaping_generation": "shape-1",
+            "shaping_generation": shaping_generation,
+            "effective_generation": effective_generation,
         })
         .to_string(),
     )

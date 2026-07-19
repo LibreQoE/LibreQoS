@@ -356,8 +356,8 @@ pub struct TopologyRuntimeStatusFile {
     pub error: Option<String>,
 }
 
-/// Shaping-relevant runtime status identity used by consumers that only need
-/// to know whether the active shaping payload changed.
+/// Runtime status identity used by consumers that need to know whether the
+/// active shaping payload or effective-network export changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TopologyRuntimeShapingPayloadIdentity {
     /// Whether runtime outputs are ready.
@@ -366,6 +366,8 @@ pub struct TopologyRuntimeShapingPayloadIdentity {
     pub source_generation: String,
     /// Stable generation hash of the shaping payload.
     pub shaping_generation: String,
+    /// Stable generation hash of the effective network export.
+    pub effective_generation: String,
     /// Path to the active shaping inputs payload.
     pub shaping_inputs_path: String,
 }
@@ -432,26 +434,49 @@ pub fn topology_shaping_inputs_path(config: &Config) -> PathBuf {
     config.shaping_state_read_path(TOPOLOGY_SHAPING_INPUTS_FILENAME)
 }
 
-/// Returns the currently active runtime shaping-inputs path when the topology
-/// runtime has published a ready generation that matches the current source
-/// inputs.
+/// Returns the runtime shaping-inputs path only after validating the status,
+/// source generation, shaping payload generation, and effective-network generation.
 ///
-/// This function is pure: it has no side effects.
-pub fn active_runtime_shaping_inputs_path(
+/// Side effects: reads `topology_runtime_status.json` and the candidate
+/// `shaping_inputs.json` and `network.effective.json`.
+pub fn validated_runtime_shaping_inputs_path(
     config: &Config,
 ) -> Result<Option<PathBuf>, TopologyRuntimeStateError> {
     let current_generation = compute_topology_source_generation(config)?;
     let status = TopologyRuntimeStatusFile::load(config)?;
-    Ok(active_runtime_shaping_inputs_path_from_status(
-        &status,
-        &current_generation,
-    ))
+    Ok(
+        load_active_runtime_shaping_inputs_for_status(&status, &current_generation)?
+            .map(|(path, _)| path),
+    )
 }
 
-/// Returns the active runtime shaping-inputs path from an already-loaded status file.
+/// Deprecated compatibility wrapper for older callers.
 ///
-/// This function is pure: it has no side effects.
+/// Side effects: validates the same files as [`validated_runtime_shaping_inputs_path`].
+#[deprecated(
+    note = "use validated_runtime_shaping_inputs_path; this function validates runtime artifacts before returning a path"
+)]
+pub fn active_runtime_shaping_inputs_path(
+    config: &Config,
+) -> Result<Option<PathBuf>, TopologyRuntimeStateError> {
+    validated_runtime_shaping_inputs_path(config)
+}
+
+/// Deprecated compatibility wrapper for older callers that already loaded status.
+///
+/// This only checks the readiness metadata in `status`; it does not validate the
+/// on-disk shaping or effective-network artifacts.
+#[deprecated(
+    note = "use validated_runtime_shaping_inputs_path or load_active_runtime_shaping_inputs for artifact validation"
+)]
 pub fn active_runtime_shaping_inputs_path_from_status(
+    status: &TopologyRuntimeStatusFile,
+    current_generation: &str,
+) -> Option<PathBuf> {
+    ready_runtime_shaping_inputs_path_from_status(status, current_generation)
+}
+
+fn ready_runtime_shaping_inputs_path_from_status(
     status: &TopologyRuntimeStatusFile,
     current_generation: &str,
 ) -> Option<PathBuf> {
@@ -471,16 +496,82 @@ pub fn active_runtime_shaping_inputs_path_from_status(
     Some(PathBuf::from(path))
 }
 
+fn load_shaping_inputs_at_path(
+    path: &Path,
+) -> Result<TopologyShapingInputsFile, TopologyRuntimeStateError> {
+    let raw = std::fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&raw)?)
+}
+
+/// Computes the semantic shaping generation for one runtime shaping-input file.
+///
+/// Side effects: reads the supplied shaping-input file.
+pub fn compute_shaping_inputs_file_generation(
+    path: &Path,
+) -> Result<String, TopologyRuntimeStateError> {
+    load_shaping_inputs_at_path(path)?.compute_shaping_generation()
+}
+
+/// Computes the semantic effective-network generation for one runtime effective network file.
+///
+/// Side effects: reads the supplied effective-network file.
+pub fn compute_effective_network_file_generation(
+    path: &Path,
+) -> Result<String, TopologyRuntimeStateError> {
+    let raw = std::fs::read_to_string(path)?;
+    let effective_network = serde_json::from_str::<Value>(&raw)?;
+    compute_effective_network_generation(&effective_network)
+}
+
+fn effective_network_generation_matches_status(
+    status: &TopologyRuntimeStatusFile,
+) -> Result<bool, TopologyRuntimeStateError> {
+    let path = status.effective_network_path.trim();
+    let expected_generation = status.effective_generation.trim();
+    if path.is_empty() {
+        return Ok(false);
+    }
+    let path = Path::new(path);
+    if !path.exists() {
+        return Ok(false);
+    }
+    if expected_generation.is_empty() {
+        return Ok(false);
+    }
+    let computed_generation = compute_effective_network_file_generation(path)?;
+    Ok(computed_generation == expected_generation)
+}
+
+fn load_active_runtime_shaping_inputs_for_status(
+    status: &TopologyRuntimeStatusFile,
+    current_generation: &str,
+) -> Result<Option<(PathBuf, TopologyShapingInputsFile)>, TopologyRuntimeStateError> {
+    let Some(path) = ready_runtime_shaping_inputs_path_from_status(status, current_generation)
+    else {
+        return Ok(None);
+    };
+    if !effective_network_generation_matches_status(status)? {
+        return Ok(None);
+    }
+    let shaping_inputs = load_shaping_inputs_at_path(&path)?;
+    let computed_generation = shaping_inputs.compute_shaping_generation()?;
+    if computed_generation != status.shaping_generation.trim() {
+        return Ok(None);
+    }
+    Ok(Some((path, shaping_inputs)))
+}
+
 /// Loads the currently active runtime shaping-inputs file when the topology
 /// runtime has published one.
 pub fn load_active_runtime_shaping_inputs(
     config: &Config,
 ) -> Result<Option<TopologyShapingInputsFile>, TopologyRuntimeStateError> {
-    let Some(path) = active_runtime_shaping_inputs_path(config)? else {
-        return Ok(None);
-    };
-    let raw = std::fs::read_to_string(&path)?;
-    Ok(Some(serde_json::from_str(&raw)?))
+    let current_generation = compute_topology_source_generation(config)?;
+    let status = TopologyRuntimeStatusFile::load(config)?;
+    Ok(
+        load_active_runtime_shaping_inputs_for_status(&status, &current_generation)?
+            .map(|(_, shaping_inputs)| shaping_inputs),
+    )
 }
 
 /// Loads the active runtime shaping-inputs file from an already-loaded status file.
@@ -489,12 +580,10 @@ pub fn load_active_runtime_shaping_inputs_from_status(
     status: &TopologyRuntimeStatusFile,
 ) -> Result<Option<TopologyShapingInputsFile>, TopologyRuntimeStateError> {
     let current_generation = compute_topology_source_generation(config)?;
-    let Some(path) = active_runtime_shaping_inputs_path_from_status(status, &current_generation)
-    else {
-        return Ok(None);
-    };
-    let raw = std::fs::read_to_string(&path)?;
-    Ok(Some(serde_json::from_str(&raw)?))
+    Ok(
+        load_active_runtime_shaping_inputs_for_status(status, &current_generation)?
+            .map(|(_, shaping_inputs)| shaping_inputs),
+    )
 }
 
 /// Returns the path of the topology runtime readiness status file.
@@ -559,16 +648,20 @@ pub fn compute_topology_source_generation(
     let shaped_devices_path = config.legacy_runtime_file_path("ShapedDevices.csv");
     let circuit_anchors_path = config.topology_state_read_path(CIRCUIT_ANCHORS_FILENAME);
 
-    let canonical_active = if file_exists_with_nonempty_nodes(&canonical_path)? {
-        let canonical = TopologyCanonicalStateFile::load(config)
-            .map_err(|err| TopologyRuntimeStateError::SourceGeneration(err.to_string()))?;
-        canonical
-            .matches_current_ingress(config)
-            .map_err(|err| TopologyRuntimeStateError::SourceGeneration(err.to_string()))?
-    } else {
-        false
-    };
-    let editor_active = if !canonical_active && file_exists_with_nonempty_nodes(&editor_path)? {
+    let canonical_active =
+        if use_topology_import && file_exists_with_nonempty_nodes(&canonical_path)? {
+            let canonical = TopologyCanonicalStateFile::load(config)
+                .map_err(|err| TopologyRuntimeStateError::SourceGeneration(err.to_string()))?;
+            canonical
+                .matches_current_ingress(config)
+                .map_err(|err| TopologyRuntimeStateError::SourceGeneration(err.to_string()))?
+        } else {
+            false
+        };
+    let editor_active = if use_topology_import
+        && !canonical_active
+        && file_exists_with_nonempty_nodes(&editor_path)?
+    {
         let editor = TopologyEditorStateFile::load(config)
             .map_err(|err| TopologyRuntimeStateError::SourceGeneration(err.to_string()))?;
         editor
@@ -604,32 +697,30 @@ pub fn compute_topology_source_generation(
         hash_file_state(&mut hasher, "ShapedDevices.csv", &shaped_devices_path)?;
         hash_file_state(&mut hasher, CIRCUIT_ANCHORS_FILENAME, &circuit_anchors_path)?;
     }
-    if use_topology_import {
+    hash_file_state(
+        &mut hasher,
+        "lqos_overrides.json",
+        &operator_overrides_path(config),
+    )?;
+
+    if config
+        .stormguard
+        .as_ref()
+        .is_some_and(|stormguard| stormguard.enabled && !stormguard.dry_run)
+    {
         hash_file_state(
             &mut hasher,
-            "lqos_overrides.json",
-            &operator_overrides_path(config),
+            "lqos_overrides.stormguard.json",
+            &stormguard_overrides_path(config),
         )?;
+    }
 
-        if config
-            .stormguard
-            .as_ref()
-            .is_some_and(|stormguard| stormguard.enabled && !stormguard.dry_run)
-        {
-            hash_file_state(
-                &mut hasher,
-                "lqos_overrides.stormguard.json",
-                &stormguard_overrides_path(config),
-            )?;
-        }
-
-        if config.treeguard.enabled {
-            hash_file_state(
-                &mut hasher,
-                "lqos_overrides.treeguard.json",
-                &treeguard_overrides_path(config),
-            )?;
-        }
+    if config.treeguard.enabled {
+        hash_file_state(
+            &mut hasher,
+            "lqos_overrides.treeguard.json",
+            &treeguard_overrides_path(config),
+        )?;
     }
     if canonical_active {
         hash_file_state(
@@ -803,6 +894,7 @@ impl TopologyRuntimeStatusFile {
             ready: self.ready,
             source_generation: self.source_generation.clone(),
             shaping_generation: self.shaping_generation.clone(),
+            effective_generation: self.effective_generation.clone(),
             shaping_inputs_path: self.shaping_inputs_path.clone(),
         }
     }
@@ -815,8 +907,10 @@ mod tests {
         TOPOLOGY_COMPILED_SHAPING_FILENAME, TOPOLOGY_EDITOR_STATE_FILENAME,
         TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TopologyRuntimeStatusFile,
         TopologyShapingCircuitInput, TopologyShapingInputsFile,
-        compute_effective_network_generation, compute_topology_source_generation,
-        topology_runtime_status_path,
+        compute_effective_network_file_generation, compute_effective_network_generation,
+        compute_shaping_inputs_file_generation, compute_topology_source_generation,
+        load_active_runtime_shaping_inputs, topology_runtime_status_path,
+        validated_runtime_shaping_inputs_path,
     };
     use crate::{
         TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
@@ -847,6 +941,19 @@ mod tests {
             ),
         )
         .expect("ShapedDevices.csv should write");
+    }
+
+    fn write_effective_network(config: &Config, raw: &str) -> (PathBuf, String) {
+        let path = super::topology_effective_network_path(config);
+        fs::create_dir_all(
+            path.parent()
+                .expect("effective network path should have a parent"),
+        )
+        .expect("topology state dir should exist");
+        fs::write(&path, raw).expect("effective network should write");
+        let generation = compute_effective_network_file_generation(&path)
+            .expect("effective generation should compute");
+        (path, generation)
     }
 
     #[test]
@@ -928,7 +1035,30 @@ mod tests {
         .expect("topology_canonical_state.json should write");
         let after_canonical = compute_topology_source_generation(&config)
             .expect("generation should compute after canonical change");
-        assert_ne!(after_anchors, after_canonical);
+        assert_eq!(after_anchors, after_canonical);
+    }
+
+    #[test]
+    fn topology_source_generation_tracks_manual_override_files() {
+        let lqos_directory = unique_temp_dir("lqos-config-topology-generation-manual-overrides");
+        write_required_inputs(&lqos_directory);
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+
+        let before = compute_topology_source_generation(&config)
+            .expect("generation should compute before override change");
+        fs::write(
+            lqos_directory.join("lqos_overrides.json"),
+            r#"{"schema_version":1,"network_adjustments":[{"node_id":"tower-1","download_mbps":100}]}"#,
+        )
+        .expect("operator overrides should write");
+        let after = compute_topology_source_generation(&config)
+            .expect("generation should compute after override change");
+
+        assert_ne!(before, after);
     }
 
     #[test]
@@ -1386,9 +1516,14 @@ mod tests {
             shaping_generation: "shape-2".to_string(),
             ..first.clone()
         };
+        let changed_effective = TopologyRuntimeStatusFile {
+            effective_generation: "effective-2".to_string(),
+            ..first.clone()
+        };
 
         assert!(first.semantic_equals_for_publish(&second));
         assert!(!first.semantic_equals_for_publish(&changed));
+        assert!(!first.semantic_equals_for_publish(&changed_effective));
         assert_eq!(
             first.shaping_payload_identity(),
             second.shaping_payload_identity()
@@ -1396,6 +1531,194 @@ mod tests {
         assert_ne!(
             first.shaping_payload_identity(),
             changed.shaping_payload_identity()
+        );
+        assert_ne!(
+            first.shaping_payload_identity(),
+            changed_effective.shaping_payload_identity()
+        );
+    }
+
+    #[test]
+    fn active_shaping_inputs_rejects_status_when_payload_generation_changed() {
+        let lqos_directory = unique_temp_dir("lqos-config-topology-shaping-generation-stale");
+        write_required_inputs(&lqos_directory);
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let source_generation =
+            compute_topology_source_generation(&config).expect("source generation should compute");
+        let mut shaping_inputs = TopologyShapingInputsFile {
+            schema_version: 1,
+            generated_unix: Some(1),
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "circuit-1".to_string(),
+                effective_parent_node_name: "Tower 1".to_string(),
+                effective_parent_node_id: "tower-1".to_string(),
+                ..TopologyShapingCircuitInput::default()
+            }],
+            ..TopologyShapingInputsFile::default()
+        };
+        shaping_inputs.shaping_generation = shaping_inputs
+            .compute_shaping_generation()
+            .expect("shaping generation should compute");
+        shaping_inputs
+            .save(&config)
+            .expect("shaping inputs should save");
+        let shaping_path = super::topology_shaping_inputs_path(&config);
+        let (effective_path, effective_generation) = write_effective_network(&config, "{}\n");
+        TopologyRuntimeStatusFile {
+            schema_version: 1,
+            source_generation,
+            shaping_generation: shaping_inputs.shaping_generation.clone(),
+            effective_generation,
+            ready: true,
+            effective_network_path: effective_path.to_string_lossy().to_string(),
+            shaping_inputs_path: shaping_path.to_string_lossy().to_string(),
+            ..TopologyRuntimeStatusFile::default()
+        }
+        .save(&config)
+        .expect("status should save");
+
+        assert!(
+            validated_runtime_shaping_inputs_path(&config)
+                .expect("active path check should succeed")
+                .is_some()
+        );
+        assert!(
+            load_active_runtime_shaping_inputs(&config)
+                .expect("active shaping inputs should load")
+                .is_some()
+        );
+
+        let mut changed = shaping_inputs;
+        changed.circuits[0].effective_parent_node_name = "Tower 2".to_string();
+        changed
+            .save(&config)
+            .expect("changed shaping inputs should save");
+        assert_ne!(
+            compute_shaping_inputs_file_generation(&shaping_path)
+                .expect("changed generation should compute"),
+            changed.shaping_generation
+        );
+
+        assert!(
+            validated_runtime_shaping_inputs_path(&config)
+                .expect("active path check should succeed")
+                .is_none()
+        );
+        assert!(
+            load_active_runtime_shaping_inputs(&config)
+                .expect("active shaping inputs should check")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn active_shaping_inputs_rejects_status_when_effective_generation_changed() {
+        let lqos_directory = unique_temp_dir("lqos-config-topology-effective-generation-stale");
+        write_required_inputs(&lqos_directory);
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let source_generation =
+            compute_topology_source_generation(&config).expect("source generation should compute");
+        let mut shaping_inputs = TopologyShapingInputsFile {
+            schema_version: 1,
+            generated_unix: Some(1),
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "circuit-1".to_string(),
+                effective_parent_node_name: "Tower 1".to_string(),
+                effective_parent_node_id: "tower-1".to_string(),
+                ..TopologyShapingCircuitInput::default()
+            }],
+            ..TopologyShapingInputsFile::default()
+        };
+        shaping_inputs.shaping_generation = shaping_inputs
+            .compute_shaping_generation()
+            .expect("shaping generation should compute");
+        shaping_inputs
+            .save(&config)
+            .expect("shaping inputs should save");
+        let (effective_path, effective_generation) = write_effective_network(&config, "{}\n");
+        TopologyRuntimeStatusFile {
+            schema_version: 1,
+            source_generation,
+            shaping_generation: shaping_inputs.shaping_generation.clone(),
+            effective_generation,
+            ready: true,
+            effective_network_path: effective_path.to_string_lossy().to_string(),
+            shaping_inputs_path: super::topology_shaping_inputs_path(&config)
+                .to_string_lossy()
+                .to_string(),
+            ..TopologyRuntimeStatusFile::default()
+        }
+        .save(&config)
+        .expect("status should save");
+
+        assert!(
+            load_active_runtime_shaping_inputs(&config)
+                .expect("active shaping inputs should load")
+                .is_some()
+        );
+
+        fs::write(&effective_path, "{\"Tower 2\":{\"children\":{}}}\n")
+            .expect("effective network should rewrite");
+        assert!(
+            load_active_runtime_shaping_inputs(&config)
+                .expect("active shaping inputs should check")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn active_shaping_inputs_rejects_status_without_effective_network_metadata() {
+        let lqos_directory = unique_temp_dir("lqos-config-topology-effective-generation-missing");
+        write_required_inputs(&lqos_directory);
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let source_generation =
+            compute_topology_source_generation(&config).expect("source generation should compute");
+        let mut shaping_inputs = TopologyShapingInputsFile {
+            schema_version: 1,
+            generated_unix: Some(1),
+            circuits: vec![TopologyShapingCircuitInput {
+                circuit_id: "circuit-1".to_string(),
+                effective_parent_node_name: "Tower 1".to_string(),
+                effective_parent_node_id: "tower-1".to_string(),
+                ..TopologyShapingCircuitInput::default()
+            }],
+            ..TopologyShapingInputsFile::default()
+        };
+        shaping_inputs.shaping_generation = shaping_inputs
+            .compute_shaping_generation()
+            .expect("shaping generation should compute");
+        shaping_inputs
+            .save(&config)
+            .expect("shaping inputs should save");
+        TopologyRuntimeStatusFile {
+            schema_version: 1,
+            source_generation,
+            shaping_generation: shaping_inputs.shaping_generation,
+            ready: true,
+            shaping_inputs_path: super::topology_shaping_inputs_path(&config)
+                .to_string_lossy()
+                .to_string(),
+            ..TopologyRuntimeStatusFile::default()
+        }
+        .save(&config)
+        .expect("status should save");
+
+        assert!(
+            load_active_runtime_shaping_inputs(&config)
+                .expect("active shaping inputs should check")
+                .is_none()
         );
     }
 

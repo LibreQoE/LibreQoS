@@ -13,7 +13,7 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive as _scheduler_alive_native, scheduler_error as _scheduler_error_native, \
-    calculate_topology_source_generation, topology_import_ingress_enabled, \
+    calculate_topology_source_generation, calculate_shaping_inputs_generation, calculate_effective_network_generation, topology_import_ingress_enabled, \
     scheduler_progress as _scheduler_progress_native, overrides_network_adjustments_materialized, \
     overrides_materialized, \
     scheduler_output as _scheduler_output_native, wait_for_bus_ready
@@ -1268,6 +1268,68 @@ def topology_runtime_readiness_detail():
         return (
             False,
             f"Topology runtime shaping inputs are not available at {shaping_inputs_path}.",
+            current_generation,
+        )
+
+    effective_generation = str(status.get("effective_generation") or "").strip()
+    effective_network_path = str(status.get("effective_network_path") or "").strip()
+    if not effective_network_path:
+        return (
+            False,
+            "Topology runtime did not publish an effective network path for the current source generation.",
+            current_generation,
+        )
+    if not os.path.isfile(effective_network_path):
+        return (
+            False,
+            f"Topology runtime effective network is not available at {effective_network_path}.",
+            current_generation,
+        )
+    if not effective_generation:
+        return (
+            False,
+            "Topology runtime did not publish an effective network generation for the current source generation.",
+            current_generation,
+        )
+    try:
+        computed_effective_generation = calculate_effective_network_generation(effective_network_path)
+    except Exception as e:
+        return (
+            False,
+            f"Topology runtime effective network generation could not be verified: {e}",
+            current_generation,
+        )
+    if computed_effective_generation is None:
+        return (
+            False,
+            "Topology runtime effective network generation could not be verified.",
+            current_generation,
+        )
+    if str(computed_effective_generation).strip() != effective_generation:
+        return (
+            False,
+            "Topology runtime effective network does not match the published runtime generation.",
+            current_generation,
+        )
+
+    try:
+        computed_shaping_generation = calculate_shaping_inputs_generation(shaping_inputs_path)
+    except Exception as e:
+        return (
+            False,
+            f"Topology runtime shaping inputs generation could not be verified: {e}",
+            current_generation,
+        )
+    if computed_shaping_generation is None:
+        return (
+            False,
+            "Topology runtime shaping inputs generation could not be verified.",
+            current_generation,
+        )
+    if str(computed_shaping_generation).strip() != shaping_generation:
+        return (
+            False,
+            "Topology runtime shaping inputs do not match the published runtime generation.",
             current_generation,
         )
 

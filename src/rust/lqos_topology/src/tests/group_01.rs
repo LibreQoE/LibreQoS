@@ -591,6 +591,42 @@
 
 
     #[test]
+    fn publish_marks_runtime_not_ready_when_shaping_inputs_are_absent() {
+        let lqos_directory = unique_temp_dir("lqos-topology-publish-no-shaping-inputs");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let shaping_inputs_path = topology_shaping_inputs_path(&config);
+        fs::create_dir_all(
+            shaping_inputs_path
+                .parent()
+                .expect("shaping inputs path should have a parent"),
+        )
+        .expect("shaping state directory should exist");
+        fs::write(&shaping_inputs_path, "{\"previous\":\"stale\"}\n")
+            .expect("stale shaping inputs should write");
+
+        publish_effective_topology_artifacts(&config, &sample_runtime_artifacts(), "generation-1")
+            .expect("runtime artifacts should publish without shaping inputs");
+
+        let status = TopologyRuntimeStatusFile::load(&config).expect("status should load");
+        assert_eq!(status.source_generation, "generation-1");
+        assert!(!status.ready);
+        assert!(status.shaping_generation.is_empty());
+        assert!(!status.effective_generation.is_empty());
+        assert_eq!(
+            status.error.as_deref(),
+            Some("Topology runtime did not produce shaping inputs.")
+        );
+        assert!(!shaping_inputs_path.exists());
+        assert!(topology_effective_state_path(&config).exists());
+        assert!(topology_effective_network_path(&config).exists());
+    }
+
+
+    #[test]
     fn effective_publish_lock_rejects_live_holder_without_removing_lock() {
         let lqos_directory = unique_temp_dir("lqos-topology-effective-publish-lock");
         let config = Config {

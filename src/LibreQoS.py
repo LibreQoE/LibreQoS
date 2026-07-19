@@ -83,9 +83,9 @@ except ImportError:
         return True
 
 try:
-    from liblqos_python import calculate_topology_source_generation  # type: ignore
-except Exception:
-    def calculate_topology_source_generation():
+    from liblqos_python import validated_runtime_shaping_inputs_path  # type: ignore
+except ImportError:
+    def validated_runtime_shaping_inputs_path():
         return None
 
 try:
@@ -244,10 +244,6 @@ def get_network_json_path():
 
 def get_shaping_inputs_path():
     return get_runtime_state_path("shaping", "shaping_inputs.json")
-
-
-def get_circuit_anchors_path():
-    return get_runtime_state_path("topology", "circuit_anchors.json")
 
 
 def get_planner_state_path():
@@ -414,16 +410,6 @@ def _resolve_effective_parent_node(circuit, parent_node_ids, parent_node_aliases
     return parent_node, parent_node_id
 
 
-def _attachment_lookup_candidates(node_key, node_data):
-    candidates = []
-    node_id = str(node_data.get('id', '') or '').strip()
-    node_name = str(node_data.get('name', '') or '').strip()
-    for candidate in (node_id, str(node_key).strip(), node_name):
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
-    return candidates
-
-
 def _circuit_attachment_name_candidates(circuit):
     candidates = []
     for candidate_name in (
@@ -468,6 +454,40 @@ def _normalize_circuit_shaping_parent(circuit, parent_node_ids=None):
     return parent_name, parent_id
 
 
+def _index_circuit_by_shaping_parent(circuit, parent_node_ids, circuits_by_parent_id, circuits_by_parent_name):
+    parent_name, parent_id = _normalize_circuit_shaping_parent(circuit, parent_node_ids)
+    if parent_id:
+        circuits_by_parent_id.setdefault(parent_id, []).append(circuit)
+    if parent_name and parent_name != 'none':
+        circuits_by_parent_name.setdefault(parent_name, []).append(circuit)
+
+
+def _select_circuits_for_parent_node(node_key, node_data, circuits_by_parent_id, circuits_by_parent_name):
+    node_id = str(node_data.get('id', '') or '').strip()
+    node_name = str(node_data.get('name', '') or '').strip()
+    selected_circuits = []
+    seen_circuit_ids = set()
+
+    def add_candidate_circuits(circuits):
+        for circuit in circuits:
+            circuit_id = str(circuit.get('circuitID', '') or '')
+            if circuit_id in seen_circuit_ids:
+                continue
+            selected_circuits.append(circuit)
+            seen_circuit_ids.add(circuit_id)
+
+    if node_id:
+        add_candidate_circuits(circuits_by_parent_id.get(node_id, []))
+
+    name_candidates = []
+    for candidate in (str(node_key).strip(), node_name):
+        if candidate and candidate not in name_candidates:
+            name_candidates.append(candidate)
+    for candidate in name_candidates:
+        add_candidate_circuits(circuits_by_parent_name.get(candidate, []))
+    return selected_circuits
+
+
 def _validate_planned_circuit_attachment(node_name, node_data, circuit, planned_identity):
     site_major = _parse_int_token(node_data.get('classMajor'))
     site_up_major = _parse_int_token(node_data.get('up_classMajor'))
@@ -490,75 +510,21 @@ def _validate_planned_circuit_attachment(node_name, node_data, circuit, planned_
     return planned_major, planned_up_major
 
 
-def _current_topology_source_generation():
-    try:
-        generation = calculate_topology_source_generation()
-    except Exception:
-        return None
-    if generation is None:
-        return None
-    generation = str(generation).strip()
-    return generation if generation != '' else None
-
-
-def _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path):
-    current_generation = _current_topology_source_generation()
-    if current_generation is None:
-        return None
-
-    status_path = get_topology_runtime_status_path()
-    try:
-        with open(status_path, 'r', encoding='utf-8') as handle:
-            status = json.load(handle)
-    except FileNotFoundError:
-        return None
-    except Exception:
-        return None
-
-    if not isinstance(status, dict):
-        return False
-
-    status_generation = str(status.get('source_generation', '') or '').strip()
-    if status_generation != current_generation:
-        return False
-    if not bool(status.get('ready')):
-        return False
-
-    status_shaping_generation = str(status.get('shaping_generation', '') or '').strip()
-    if status_shaping_generation == '':
-        return False
-
-    status_shaping_inputs_path = str(status.get('shaping_inputs_path', '') or '').strip()
-    if status_shaping_inputs_path != '':
-        try:
-            if os.path.abspath(status_shaping_inputs_path) != os.path.abspath(shaping_inputs_path):
-                return False
-        except Exception:
-            return False
-        if not os.path.isfile(status_shaping_inputs_path):
-            return False
-
-    return True
-
-
-def _shaping_inputs_are_fresh(shaping_inputs_path, shaped_devices_file, network_json_file, circuit_anchors_file=None):
+def _runtime_shaping_inputs_are_validated(shaping_inputs_path):
     if not os.path.isfile(shaping_inputs_path):
         return False
-    topology_runtime_ready = _topology_runtime_status_supports_shaping_inputs(shaping_inputs_path)
-    if topology_runtime_ready is True:
-        return True
-    if topology_runtime_ready is False:
+    try:
+        active_path = validated_runtime_shaping_inputs_path()
+    except (OSError, RuntimeError):
+        return False
+    if active_path is None:
+        return False
+    active_path = str(active_path).strip()
+    if active_path == '':
         return False
     try:
-        shaping_inputs_mtime = os.path.getmtime(shaping_inputs_path)
-        if os.path.isfile(shaped_devices_file) and shaping_inputs_mtime < os.path.getmtime(shaped_devices_file):
-            return False
-        if os.path.isfile(network_json_file) and shaping_inputs_mtime < os.path.getmtime(network_json_file):
-            return False
-        if circuit_anchors_file and os.path.isfile(circuit_anchors_file) and shaping_inputs_mtime < os.path.getmtime(circuit_anchors_file):
-            return False
-        return True
-    except OSError:
+        return os.path.abspath(active_path) == os.path.abspath(shaping_inputs_path)
+    except Exception:
         return False
 
 
@@ -637,10 +603,9 @@ def loadSubscriberCircuitsFromShapingInputs(shapingInputsPath):
     return subscriberCircuits, dictForCircuitsWithoutParentNodes
 
 
-def loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile):
+def loadSubscriberCircuitsForShaping(shapedDevicesFile):
     shaping_inputs_path = get_shaping_inputs_path()
-    circuit_anchors_path = get_circuit_anchors_path()
-    if _shaping_inputs_are_fresh(shaping_inputs_path, shapedDevicesFile, networkJSONfile, circuit_anchors_path):
+    if _runtime_shaping_inputs_are_validated(shaping_inputs_path):
         try:
             subscriberCircuits, dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsFromShapingInputs(shaping_inputs_path)
             print("Loaded shaping inputs from " + shaping_inputs_path)
@@ -649,6 +614,8 @@ def loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile):
             raise RefreshFailure(
                 f"Unable to load required shaping_inputs.json at {shaping_inputs_path}: {e}"
             ) from e
+    if not topology_import_ingress_enabled():
+        return loadSubscriberCircuits(shapedDevicesFile)
     raise RefreshFailure(
         "Missing or stale shaping_inputs.json. Run topology runtime before shaping."
     )
@@ -1414,7 +1381,7 @@ def refreshShapers():
     if safeToRunRefresh == True:
 
         # Load Subscriber Circuits & Devices
-        subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsForShaping(shapedDevicesFile, networkJSONfile)
+        subscriberCircuits,	dictForCircuitsWithoutParentNodes = loadSubscriberCircuitsForShaping(shapedDevicesFile)
         runtime_override_count = apply_effective_runtime_circuit_overrides(subscriberCircuits)
         if runtime_override_count > 0:
             print(
@@ -1858,11 +1825,12 @@ def refreshShapers():
         circuits_by_parent_id = {}
         circuits_by_parent_name = {}
         for circuit in subscriberCircuits:
-            parent_name, parent_id = _normalize_circuit_shaping_parent(circuit, parent_node_ids)
-            if parent_id:
-                circuits_by_parent_id.setdefault(parent_id, []).append(circuit)
-            elif parent_name and parent_name != 'none':
-                circuits_by_parent_name.setdefault(parent_name, []).append(circuit)
+            _index_circuit_by_shaping_parent(
+                circuit,
+                parent_node_ids,
+                circuits_by_parent_id,
+                circuits_by_parent_name,
+            )
 
         # Parse network structure and add devices from ShapedDevices.csv
         print("Parsing network structure and tallying devices")
@@ -2107,20 +2075,12 @@ def refreshShapers():
                         "has_children": has_children,
                     }
                 )
-                node_id = str(data[node].get('id', '') or '').strip()
-                node_name = str(data[node].get('name', '') or '').strip()
-                selected_circuits = []
-                if node_id and node_id in circuits_by_parent_id:
-                    selected_circuits = list(circuits_by_parent_id[node_id])
-                else:
-                    seen_circuit_ids = set()
-                    for candidate in (node, node_name):
-                        for circuit in circuits_by_parent_name.get(candidate, []):
-                            circuit_id = planner_circuit_identity_key(circuit)
-                            if circuit_id in seen_circuit_ids:
-                                continue
-                            selected_circuits.append(circuit)
-                            seen_circuit_ids.add(circuit_id)
+                selected_circuits = _select_circuits_for_parent_node(
+                    node,
+                    data[node],
+                    circuits_by_parent_id,
+                    circuits_by_parent_name,
+                )
                 if selected_circuits:
                     sorted_circuits = sorted(
                         selected_circuits,
@@ -2258,25 +2218,12 @@ def refreshShapers():
                 queue = queue_token + 1
                 circuitsForThisNetworkNode = []
 
-                node_id = str(node_data.get('id', '') or '').strip()
-                node_name = str(node_data.get('name', '') or '').strip()
-                parent_candidates = _attachment_lookup_candidates(node, node_data)
-
-                selected_circuits = []
-                if node_id and node_id in circuits_by_parent_id:
-                    selected_circuits = list(circuits_by_parent_id[node_id])
-                else:
-                    seen_circuit_ids = set()
-                    name_candidates = (
-                        parent_candidates[1:] if node_id and parent_candidates else parent_candidates
-                    )
-                    for candidate in name_candidates:
-                        for circuit in circuits_by_parent_name.get(candidate, []):
-                            circuit_id = str(circuit.get('circuitID', '') or '')
-                            if circuit_id in seen_circuit_ids:
-                                continue
-                            selected_circuits.append(circuit)
-                            seen_circuit_ids.add(circuit_id)
+                selected_circuits = _select_circuits_for_parent_node(
+                    node,
+                    node_data,
+                    circuits_by_parent_id,
+                    circuits_by_parent_name,
+                )
 
                 if selected_circuits:
                     override_min_down = None

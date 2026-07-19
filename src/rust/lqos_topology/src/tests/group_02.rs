@@ -398,6 +398,100 @@
         assert!(shaping_inputs.warnings.is_empty());
     }
 
+    #[test]
+    fn manual_runtime_import_resolves_idless_legacy_parent_names() {
+        let lqos_directory = unique_temp_dir("lqos-topology-manual-idless-parent-resolution");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        fs::write(
+            lqos_directory.join("network.json"),
+            serde_json::to_string_pretty(&json!({
+                "Globe": {
+                    "children": {},
+                    "type": "Site",
+                    "downloadBandwidthMbps": 500,
+                    "uploadBandwidthMbps": 500
+                },
+                "PLDT": {
+                    "children": {},
+                    "type": "Site",
+                    "downloadBandwidthMbps": 500,
+                    "uploadBandwidthMbps": 500
+                }
+            }))
+            .expect("network json should serialize"),
+        )
+        .expect("network.json should write");
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"globe-1\",\"Globe 1\",\"device-1\",\"Radio 1\",\"Globe\",\"\",\"\",\"aa:bb:cc:dd:ee:01\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+                "\"pldt-1\",\"PLDT 1\",\"device-2\",\"Radio 2\",\"PLDT\",\"\",\"\",\"aa:bb:cc:dd:ee:02\",\"192.0.2.11/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
+            .expect("manual runtime should import network.json");
+        let globe_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Globe")
+            .expect("Globe should be imported")
+            .node_id
+            .clone();
+        let pldt_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "PLDT")
+            .expect("PLDT should be imported")
+            .node_id
+            .clone();
+        let artifacts = build_effective_topology_artifacts_from_canonical(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("manual idless topology should publish");
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build")
+            .expect("shaping inputs should exist");
+
+        assert!(
+            shaping_inputs
+                .warnings
+                .iter()
+                .all(|warning| !warning.contains("unresolved in runtime topology"))
+        );
+        let globe = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "globe-1")
+            .expect("Globe circuit should exist");
+        assert_eq!(globe.effective_parent_node_name, "Globe");
+        assert_eq!(globe.effective_parent_node_id, globe_id);
+        assert_eq!(
+            globe.resolution_source,
+            TopologyShapingResolutionSource::LegacyParent
+        );
+        let pldt = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "pldt-1")
+            .expect("PLDT circuit should exist");
+        assert_eq!(pldt.effective_parent_node_name, "PLDT");
+        assert_eq!(pldt.effective_parent_node_id, pldt_id);
+        assert_eq!(
+            pldt.resolution_source,
+            TopologyShapingResolutionSource::LegacyParent
+        );
+    }
+
 
     #[test]
     fn shaping_inputs_skip_virtual_effective_nodes_when_resolving_physical_parent() {
@@ -831,6 +925,140 @@
                 Some(name.as_str())
             );
         }
+    }
+
+
+    fn load_stale_idless_legacy_canonical_state() -> (Config, TopologyCanonicalStateFile) {
+        let lqos_directory = unique_temp_dir("lqos-topology-legacy-id-heal");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let mut stale_canonical = TopologyCanonicalStateFile::from_legacy_network_json(&json!({
+            "Globe": {
+                "children": {
+                    "Nested AP": {
+                        "children": {},
+                        "downloadBandwidthMbps": 250,
+                        "type": "ap",
+                        "uploadBandwidthMbps": 250
+                    }
+                },
+                "downloadBandwidthMbps": 500,
+                "type": "site",
+                "uploadBandwidthMbps": 500
+            },
+            "PLDT": {
+                "children": {},
+                "downloadBandwidthMbps": 500,
+                "type": "site",
+                "uploadBandwidthMbps": 500
+            }
+        }));
+        stale_canonical.compatibility_network_json["Globe"]
+            .as_object_mut()
+            .expect("Globe should be an object")
+            .remove("id");
+        stale_canonical.compatibility_network_json["Globe"]["children"]["Nested AP"]
+            .as_object_mut()
+            .expect("Nested AP should be an object")
+            .remove("id");
+        stale_canonical.compatibility_network_json["PLDT"]
+            .as_object_mut()
+            .expect("PLDT should be an object")
+            .remove("id");
+        stale_canonical
+            .save(&config)
+            .expect("stale canonical state should write");
+
+        let canonical =
+            TopologyCanonicalStateFile::load(&config).expect("stale canonical state should load");
+        (config, canonical)
+    }
+
+    #[test]
+    fn legacy_idless_sites_load_heals_compatibility_network() {
+        let (_config, canonical) = load_stale_idless_legacy_canonical_state();
+        let globe_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Globe")
+            .expect("Globe should be imported")
+            .node_id
+            .as_str();
+        let nested_ap_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Nested AP")
+            .expect("Nested AP should be imported")
+            .node_id
+            .as_str();
+        let pldt_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "PLDT")
+            .expect("PLDT should be imported")
+            .node_id
+            .as_str();
+
+        assert_eq!(
+            canonical.compatibility_network_json["Globe"]["id"].as_str(),
+            Some(globe_id)
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["Globe"]["children"]["Nested AP"]["id"].as_str(),
+            Some(nested_ap_id)
+        );
+        assert_eq!(
+            canonical.compatibility_network_json["PLDT"]["id"].as_str(),
+            Some(pldt_id)
+        );
+    }
+
+
+    #[test]
+    fn legacy_idless_sites_publish_valid_effective_network() {
+        let (config, canonical) = load_stale_idless_legacy_canonical_state();
+        let globe_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Globe")
+            .expect("Globe should be imported")
+            .node_id
+            .as_str();
+        let nested_ap_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "Nested AP")
+            .expect("Nested AP should be imported")
+            .node_id
+            .as_str();
+        let pldt_id = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_name == "PLDT")
+            .expect("PLDT should be imported")
+            .node_id
+            .as_str();
+
+        let artifacts = build_effective_topology_artifacts_from_canonical(
+            &config,
+            &canonical,
+            &TopologyOverridesFile::default(),
+            &TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("idless legacy site topology should publish");
+        let effective_network = artifacts
+            .effective_network
+            .expect("legacy topology should publish effective network");
+
+        assert_eq!(effective_network["Globe"]["id"].as_str(), Some(globe_id));
+        assert_eq!(
+            effective_network["Globe"]["children"]["Nested AP"]["id"].as_str(),
+            Some(nested_ap_id)
+        );
+        assert_eq!(effective_network["PLDT"]["id"].as_str(), Some(pldt_id));
     }
 
 

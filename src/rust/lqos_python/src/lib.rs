@@ -1082,6 +1082,9 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_topology_source_generation, m)?)?;
+    m.add_function(wrap_pyfunction!(validated_runtime_shaping_inputs_path, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_shaping_inputs_generation, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_effective_network_generation, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_shaping_runtime_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_progress, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
@@ -3140,6 +3143,38 @@ fn calculate_topology_source_generation() -> PyResult<Option<String>> {
         Ok(generation) => Ok(Some(generation)),
         Err(_) => Ok(None),
     }
+}
+
+#[pyfunction]
+fn validated_runtime_shaping_inputs_path() -> PyResult<Option<String>> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Ok(None);
+    };
+    lqos_config::validated_runtime_shaping_inputs_path(config.as_ref())
+        .map(|path| path.map(|path| path.to_string_lossy().to_string()))
+        .map_err(|err| {
+            PyOSError::new_err(format!(
+                "Unable to validate runtime shaping inputs path: {err}"
+            ))
+        })
+}
+
+#[pyfunction]
+fn calculate_shaping_inputs_generation(path: String) -> PyResult<String> {
+    lqos_config::compute_shaping_inputs_file_generation(Path::new(&path)).map_err(|err| {
+        PyOSError::new_err(format!(
+            "Unable to compute shaping inputs generation for {path}: {err}"
+        ))
+    })
+}
+
+#[pyfunction]
+fn calculate_effective_network_generation(path: String) -> PyResult<String> {
+    lqos_config::compute_effective_network_file_generation(Path::new(&path)).map_err(|err| {
+        PyOSError::new_err(format!(
+            "Unable to compute effective network generation for {path}: {err}"
+        ))
+    })
 }
 
 fn shaping_runtime_sqm_fingerprint() -> Result<String> {
