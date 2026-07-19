@@ -6,6 +6,8 @@ mod ip_range;
 mod preflight;
 mod service_handoff;
 mod setup_actions;
+#[cfg(test)]
+mod test_support;
 mod web;
 mod webusers;
 

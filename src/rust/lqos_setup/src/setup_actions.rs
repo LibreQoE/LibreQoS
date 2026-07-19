@@ -255,16 +255,12 @@ fn load_existing_or_default(event_log: &mut Vec<String>) -> Result<lqos_config::
 mod tests {
     use super::{build_candidate_config, load_existing_or_default};
     use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
-    use once_cell::sync::Lazy;
-    use parking_lot::Mutex;
+    use crate::test_support::ConfigEnvGuard;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    static CONFIG_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
     #[test]
     fn existing_unreadable_config_blocks_default_fallback() {
-        let _guard = CONFIG_ENV_LOCK.lock();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock before epoch")
@@ -274,27 +270,17 @@ mod tests {
             std::process::id()
         ));
         fs::write(&path, "not valid toml = [\n").expect("write invalid config");
-        let old_lqos_config = std::env::var_os("LQOS_CONFIG");
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &path);
-        }
-        lqos_config::clear_cached_config();
+        let _env_guard = ConfigEnvGuard::set_lqos_config(&path);
 
         let error = load_existing_or_default(&mut Vec::new()).expect_err("should block");
 
         assert!(error.to_string().contains("could not be loaded"));
 
-        match old_lqos_config {
-            Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
-            None => unsafe { std::env::remove_var("LQOS_CONFIG") },
-        }
-        lqos_config::clear_cached_config();
         fs::remove_file(path).expect("remove temp config");
     }
 
     #[test]
     fn build_candidate_config_preserves_existing_mtu_for_same_mode() {
-        let _guard = CONFIG_ENV_LOCK.lock();
         let previous_builder = {
             let mut builder = CURRENT_CONFIG.lock();
             let previous = builder.clone();
