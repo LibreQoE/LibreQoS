@@ -939,6 +939,7 @@ mod tests {
     use lqos_config::{
         Config, ConfigShapedDevices, ShapedDevice, TOPOLOGY_RUNTIME_STATUS_FILENAME,
         TopologyShapingCircuitInput, TopologyShapingDeviceInput, TopologyShapingInputsFile,
+        compute_effective_network_file_generation, compute_shaping_inputs_file_generation,
     };
     use lqos_utils::XdpIpAddress;
     use std::cell::Cell;
@@ -997,6 +998,17 @@ mod tests {
         shaping_inputs_path: &std::path::Path,
         source_generation: &str,
     ) {
+        let effective_network_path = path
+            .parent()
+            .expect("runtime status path should have a parent")
+            .join("network.effective.json");
+        fs::write(&effective_network_path, "{}\n").expect("effective network should write");
+        let shaping_generation = compute_shaping_inputs_file_generation(shaping_inputs_path)
+            .expect("shaping generation should compute");
+        let effective_generation =
+            compute_effective_network_file_generation(&effective_network_path)
+                .expect("effective generation should compute");
+
         fs::write(
             path,
             serde_json::json!({
@@ -1004,9 +1016,10 @@ mod tests {
                 "ready": ready,
                 "shaping_inputs_path": shaping_inputs_path,
                 "effective_state_path": "",
-                "effective_network_path": "",
+                "effective_network_path": effective_network_path,
                 "source_generation": source_generation,
-                "shaping_generation": "shape-1",
+                "shaping_generation": shaping_generation,
+                "effective_generation": effective_generation,
             })
             .to_string(),
         )
@@ -1395,7 +1408,7 @@ mod tests {
         .expect("active shaping should write");
         fs::write(
             &csv_path,
-            "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\ncsv-circuit,CSV Circuit,csv-device,CSV Device,CSV Parent,,192.168.55.10/32,,0,0,100,100,\n",
+            "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\ncsv-circuit,CSV Circuit,csv-device,CSV Device,CSV Parent,aa:bb:cc:dd:ee:ff,192.168.55.10/32,,0,0,100,100,\n",
         )
         .expect("csv should write");
 
