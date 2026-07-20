@@ -36,6 +36,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+type PyObject = Py<PyAny>;
+
 // ===== Planner CBOR I/O =====
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -166,11 +168,11 @@ fn plan_top_level_cpu_bins(
     hysteresis_threshold: Option<f64>,
 ) -> PyResult<PyObject> {
     let items_any = items.bind(py);
-    let items_list = items_any.downcast::<PyList>()?;
+    let items_list = items_any.cast::<PyList>()?;
     let planner_items: Vec<lqos_config::TopLevelPlannerItem> = items_list
         .iter()
         .map(|item| -> PyResult<lqos_config::TopLevelPlannerItem> {
-            let dict = item.downcast::<PyDict>()?;
+            let dict = item.cast::<PyDict>()?;
             let id = get_string(dict, "id", String::new());
             let weight = get_f64(dict, "weight", 1.0);
             Ok(lqos_config::TopLevelPlannerItem { id, weight })
@@ -180,7 +182,7 @@ fn plan_top_level_cpu_bins(
     let prev_assign_map = match prev_assign {
         Some(obj) => {
             let any = obj.bind(py);
-            let dict = any.downcast::<PyDict>()?;
+            let dict = any.cast::<PyDict>()?;
             dict.iter()
                 .filter_map(|(k, v)| {
                     Some((k.extract::<String>().ok()?, v.extract::<String>().ok()?))
@@ -192,7 +194,7 @@ fn plan_top_level_cpu_bins(
     let last_change_map = match last_change_ts {
         Some(obj) => {
             let any = obj.bind(py);
-            let dict = any.downcast::<PyDict>()?;
+            let dict = any.cast::<PyDict>()?;
             dict.iter()
                 .filter_map(|(k, v)| Some((k.extract::<String>().ok()?, v.extract::<f64>().ok()?)))
                 .collect::<BTreeMap<_, _>>()
@@ -258,11 +260,11 @@ fn plan_class_identities(
     stick_offset: u16,
     circuit_padding: u32,
 ) -> PyResult<PyObject> {
-    let sites_list = sites.bind(py).downcast::<PyList>()?;
+    let sites_list = sites.bind(py).cast::<PyList>()?;
     let site_inputs: Vec<lqos_config::SiteIdentityInput> = sites_list
         .iter()
         .map(|item| -> PyResult<lqos_config::SiteIdentityInput> {
-            let dict = item.downcast::<PyDict>()?;
+            let dict = item.cast::<PyDict>()?;
             Ok(lqos_config::SiteIdentityInput {
                 site_key: get_string(dict, "site_key", String::new()),
                 parent_path: get_string(dict, "parent_path", String::new()),
@@ -272,14 +274,14 @@ fn plan_class_identities(
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let groups_list = circuit_groups.bind(py).downcast::<PyList>()?;
+    let groups_list = circuit_groups.bind(py).cast::<PyList>()?;
     let circuit_group_inputs: Vec<lqos_config::CircuitIdentityGroupInput> = groups_list
         .iter()
         .map(|item| -> PyResult<lqos_config::CircuitIdentityGroupInput> {
-            let dict = item.downcast::<PyDict>()?;
+            let dict = item.cast::<PyDict>()?;
             let ids = match dict.get_item("circuit_ids")? {
                 Some(value) => value
-                    .downcast::<PyList>()?
+                    .cast::<PyList>()?
                     .iter()
                     .filter_map(|entry| entry.extract::<String>().ok())
                     .collect::<Vec<_>>(),
@@ -295,11 +297,11 @@ fn plan_class_identities(
 
     let previous_sites = match site_state {
         Some(obj) => {
-            let dict = obj.bind(py).downcast::<PyDict>()?;
+            let dict = obj.bind(py).cast::<PyDict>()?;
             dict.iter()
                 .filter_map(|(k, v)| {
                     let key = k.extract::<String>().ok()?;
-                    let entry = v.downcast::<PyDict>().ok()?;
+                    let entry = v.cast::<PyDict>().ok()?;
                     Some((
                         key,
                         lqos_config::PlannerSiteIdentityState {
@@ -318,11 +320,11 @@ fn plan_class_identities(
 
     let previous_circuits = match circuit_state {
         Some(obj) => {
-            let dict = obj.bind(py).downcast::<PyDict>()?;
+            let dict = obj.bind(py).cast::<PyDict>()?;
             dict.iter()
                 .filter_map(|(k, v)| {
                     let key = k.extract::<String>().ok()?;
-                    let entry = v.downcast::<PyDict>().ok()?;
+                    let entry = v.cast::<PyDict>().ok()?;
                     Some((
                         key,
                         lqos_config::PlannerCircuitIdentityState {
@@ -411,7 +413,7 @@ fn plan_class_identities(
 fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<bool> {
     use std::fs;
     use std::io::Write;
-    let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
+    let dict = state.cast_bound::<pyo3::types::PyDict>(py)?;
     // Build strongly typed struct, preserving integer keys
     let algo_version = get_string(dict, "algo_version", default_algo_version());
     let updated_at = get_f64(dict, "updated_at", 0.0);
@@ -420,7 +422,7 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
     let site_count = get_i64(dict, "site_count", 0);
     let mut site_names: Vec<i64> = Vec::new();
     if let Ok(Some(sn)) = dict.get_item("site_names")
-        && let Ok(list) = sn.downcast::<pyo3::types::PyList>()
+        && let Ok(list) = sn.cast::<pyo3::types::PyList>()
     {
         for item in list.iter() {
             if let Some(n) = to_i64_any(&item) {
@@ -431,11 +433,11 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
     // site_map
     let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
     if let Ok(Some(sm_any)) = dict.get_item("site_map")
-        && let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>()
+        && let Ok(sm_dict) = sm_any.cast::<pyo3::types::PyDict>()
     {
         for (k, v) in sm_dict.iter() {
             if let Some(key) = to_i64_any(&k)
-                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+                && let Ok(entry) = v.cast::<pyo3::types::PyDict>()
             {
                 let cpu = get_i64(entry, "cpu", 0);
                 let major = get_i64(entry, "major", 0);
@@ -459,11 +461,11 @@ fn write_planner_cbor(py: Python, path: String, state: PyObject) -> PyResult<boo
     // circuit_map
     let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
     if let Ok(Some(cm_any)) = dict.get_item("circuit_map")
-        && let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>()
+        && let Ok(cm_dict) = cm_any.cast::<pyo3::types::PyDict>()
     {
         for (k, v) in cm_dict.iter() {
             if let Some(key) = to_i64_any(&k)
-                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+                && let Ok(entry) = v.cast::<pyo3::types::PyDict>()
             {
                 let cpu = get_i64(entry, "cpu", 0);
                 let major = get_i64(entry, "major", 0);
@@ -740,7 +742,7 @@ fn fetch_planner_remote(
 #[pyfunction]
 fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     // Extract needed values and serialize as compressed CBOR
-    let dict = state.downcast_bound::<pyo3::types::PyDict>(py)?;
+    let dict = state.cast_bound::<pyo3::types::PyDict>(py)?;
     let algo_version = get_string(dict, "algo_version", default_algo_version());
     let updated_at = get_f64(dict, "updated_at", 0.0);
     let queues_available = get_i64(dict, "queuesAvailable", 0);
@@ -749,7 +751,7 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     // site_names
     let mut site_names: Vec<i64> = Vec::new();
     if let Ok(Some(sn)) = dict.get_item("site_names")
-        && let Ok(list) = sn.downcast::<pyo3::types::PyList>()
+        && let Ok(list) = sn.cast::<pyo3::types::PyList>()
     {
         for item in list.iter() {
             if let Some(n) = to_i64_any(&item) {
@@ -760,11 +762,11 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     // site_map
     let mut site_map: BTreeMap<i64, PlannerSiteEntry> = BTreeMap::new();
     if let Ok(Some(sm_any)) = dict.get_item("site_map")
-        && let Ok(sm_dict) = sm_any.downcast::<pyo3::types::PyDict>()
+        && let Ok(sm_dict) = sm_any.cast::<pyo3::types::PyDict>()
     {
         for (k, v) in sm_dict.iter() {
             if let Some(key) = to_i64_any(&k)
-                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+                && let Ok(entry) = v.cast::<pyo3::types::PyDict>()
             {
                 let cpu = get_i64(entry, "cpu", 0);
                 let major = get_i64(entry, "major", 0);
@@ -788,11 +790,11 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
     // circuit_map
     let mut circuit_map: BTreeMap<i64, PlannerCircuitEntry> = BTreeMap::new();
     if let Ok(Some(cm_any)) = dict.get_item("circuit_map")
-        && let Ok(cm_dict) = cm_any.downcast::<pyo3::types::PyDict>()
+        && let Ok(cm_dict) = cm_any.cast::<pyo3::types::PyDict>()
     {
         for (k, v) in cm_dict.iter() {
             if let Some(key) = to_i64_any(&k)
-                && let Ok(entry) = v.downcast::<pyo3::types::PyDict>()
+                && let Ok(entry) = v.cast::<pyo3::types::PyDict>()
             {
                 let cpu = get_i64(entry, "cpu", 0);
                 let major = get_i64(entry, "major", 0);
@@ -1080,6 +1082,9 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_topology_source_generation, m)?)?;
+    m.add_function(wrap_pyfunction!(validated_runtime_shaping_inputs_path, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_shaping_inputs_generation, m)?)?;
+    m.add_function(wrap_pyfunction!(calculate_effective_network_generation, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_shaping_runtime_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_progress, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
@@ -3138,6 +3143,38 @@ fn calculate_topology_source_generation() -> PyResult<Option<String>> {
         Ok(generation) => Ok(Some(generation)),
         Err(_) => Ok(None),
     }
+}
+
+#[pyfunction]
+fn validated_runtime_shaping_inputs_path() -> PyResult<Option<String>> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Ok(None);
+    };
+    lqos_config::validated_runtime_shaping_inputs_path(config.as_ref())
+        .map(|path| path.map(|path| path.to_string_lossy().to_string()))
+        .map_err(|err| {
+            PyOSError::new_err(format!(
+                "Unable to validate runtime shaping inputs path: {err}"
+            ))
+        })
+}
+
+#[pyfunction]
+fn calculate_shaping_inputs_generation(path: String) -> PyResult<String> {
+    lqos_config::compute_shaping_inputs_file_generation(Path::new(&path)).map_err(|err| {
+        PyOSError::new_err(format!(
+            "Unable to compute shaping inputs generation for {path}: {err}"
+        ))
+    })
+}
+
+#[pyfunction]
+fn calculate_effective_network_generation(path: String) -> PyResult<String> {
+    lqos_config::compute_effective_network_file_generation(Path::new(&path)).map_err(|err| {
+        PyOSError::new_err(format!(
+            "Unable to compute effective network generation for {path}: {err}"
+        ))
+    })
 }
 
 fn shaping_runtime_sqm_fingerprint() -> Result<String> {

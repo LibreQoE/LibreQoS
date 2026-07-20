@@ -101,3 +101,20 @@ test("timeout listener fires timeout and removes pending handler", async () => {
     assert.deepEqual(seen, ["timeout"]);
     assert.equal(wsClient.handlerCount("UrgentList"), 0);
 });
+
+test("websocket handshake does not copy the session cookie into auth payload", async () => {
+    let cookieRead = false;
+    Object.defineProperty(globalThis.document, "cookie", {
+        configurable: true,
+        get() {
+            cookieRead = true;
+            return "User-Token=v1.secret.signature";
+        },
+    });
+
+    const { websocketHelloReply } = await import("./ws_auth.mjs");
+    const reply = websocketHelloReply("ack");
+
+    assert.equal(cookieRead, false);
+    assert.equal(reply.HelloReply.token, "");
+});

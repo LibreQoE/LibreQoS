@@ -1,6 +1,6 @@
 //! Rolling 15-minute heatmap storage for QoQ (0..100) scores.
 //!
-//! This mirrors the structure of `temporal_heatmap`, but stores four QoQ series:
+//! This mirrors the structure of `temporal_heatmap`, but stores two QoQ series:
 //! - download_total, upload_total
 
 const RAW_SAMPLES: usize = 60;
@@ -9,6 +9,8 @@ const TOTAL_BLOCKS: usize = SUMMARY_BLOCKS + 1;
 
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
+
+use crate::units::DownUpOrder;
 
 /// Heatmap block medians for QoQ (0..100) scores.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Allocative)]
@@ -29,6 +31,24 @@ pub struct QoqHeatmapBlocks {
     ///
     /// `None` means "no samples available for that block".
     pub upload_total: [Option<f32>; TOTAL_BLOCKS],
+}
+
+impl QoqHeatmapBlocks {
+    /// Returns the current in-progress download and upload QoO/QoQ scores.
+    pub fn current_values(&self) -> DownUpOrder<Option<f32>> {
+        DownUpOrder {
+            down: self.download_total.last().copied().flatten(),
+            up: self.upload_total.last().copied().flatten(),
+        }
+    }
+
+    /// Returns the latest non-empty download and upload QoO/QoQ scores.
+    pub fn latest_values(&self) -> DownUpOrder<Option<f32>> {
+        DownUpOrder {
+            down: self.download_total.iter().rev().flatten().copied().next(),
+            up: self.upload_total.iter().rev().flatten().copied().next(),
+        }
+    }
 }
 
 /// Fixed-size rolling QoQ heatmap storage for 15 minutes of data.
@@ -151,7 +171,7 @@ impl Default for TemporalQoqHeatmap {
 
 #[cfg(test)]
 mod tests {
-    use super::{TOTAL_BLOCKS, TemporalQoqHeatmap};
+    use super::{QoqHeatmapBlocks, TOTAL_BLOCKS, TemporalQoqHeatmap};
 
     #[test]
     fn new_is_empty() {
@@ -168,5 +188,39 @@ mod tests {
         let blocks = heatmap.blocks();
         assert_eq!(blocks.download_total[TOTAL_BLOCKS - 1], Some(10.0));
         assert_eq!(blocks.upload_total[TOTAL_BLOCKS - 1], Some(20.0));
+    }
+
+    #[test]
+    fn latest_values_read_newest_non_empty_blocks() {
+        let mut download_total = [None; TOTAL_BLOCKS];
+        let mut upload_total = [None; TOTAL_BLOCKS];
+        download_total[TOTAL_BLOCKS - 3] = Some(91.0);
+        upload_total[TOTAL_BLOCKS - 2] = Some(82.0);
+
+        let latest = QoqHeatmapBlocks {
+            download_total,
+            upload_total,
+        }
+        .latest_values();
+
+        assert_eq!(latest.down, Some(91.0));
+        assert_eq!(latest.up, Some(82.0));
+    }
+
+    #[test]
+    fn current_values_read_current_block_only() {
+        let mut download_total = [None; TOTAL_BLOCKS];
+        let mut upload_total = [None; TOTAL_BLOCKS];
+        download_total[TOTAL_BLOCKS - 2] = Some(91.0);
+        upload_total[TOTAL_BLOCKS - 2] = Some(82.0);
+
+        let current = QoqHeatmapBlocks {
+            download_total,
+            upload_total,
+        }
+        .current_values();
+
+        assert_eq!(current.down, None);
+        assert_eq!(current.up, None);
     }
 }

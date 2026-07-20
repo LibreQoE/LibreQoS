@@ -1,11 +1,13 @@
 use crate::node_manager::ws::messages::{ThroughputData, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use lqos_bus::{BusReply, BusRequest, BusResponse};
+use lqos_bus::{BusRequest, BusResponse};
 use lqos_config::load_config;
 use lqos_utils::units::DownUpOrder;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
+
+use super::request_internal_bus;
 
 pub async fn throughput(
     channels: Arc<PubSub>,
@@ -18,18 +20,9 @@ pub async fn throughput(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::GetCurrentThroughput;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("Throughput: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("Throughput", bus_tx, request).await else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!("Throughput: failed to receive throughput from bus: {:?}", e);
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CurrentThroughput {

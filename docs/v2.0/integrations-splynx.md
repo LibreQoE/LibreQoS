@@ -26,7 +26,9 @@ LibreQoS supports multiple topology strategies for Splynx integration to balance
 
 When Splynx cannot infer a circuit parent from `access_device` or router metadata, LibreQoS leaves the circuit unparented for shaping instead of attaching it to a synthetic site or AP. Fix the parent in Splynx or Topology Manager if the circuit should appear under a real site or AP.
 
-In `ap_site` mode, LibreQoS treats Splynx Network Sites as site containers and monitoring rows with `access_device = 1` as AP/access nodes. Large site containers can be virtualized automatically when they exceed `queue_auto_virtualize_threshold_mbps`, have child queue branches, and have no circuits directly attached to the site node ID. Set a node virtual override to `false` when a specific site must remain as a physical queue.
+If two Splynx monitoring hardware rows have the same title, LibreQoS appends the Splynx hardware ID to those duplicate topology node names. For example, duplicate APs named `Tower South` appear as `Tower South (1122)` and `Tower South (1980)`.
+
+In `ap_site` mode, LibreQoS treats Splynx Network Sites as site containers and monitoring rows with `access_device = 1` as AP/access nodes. Large site and AP branches, including uplink or aggregation branches represented as `Site` or `AP` nodes, can be virtualized automatically when they exceed `queue_auto_virtualize_threshold_mbps`, have child queue branches, and have no circuits directly attached to the node ID. Set a node virtual override to `false` when a specific node must remain as a physical queue.
 
 Configure the shared topology mode in `/etc/lqos.conf` under the `[topology]` section:
 

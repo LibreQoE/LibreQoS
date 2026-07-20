@@ -70,6 +70,15 @@ Use this skill for Rust work in this repo.
 - Keep RustDoc current for changed public items and note side effects for non-pure functions.
 - Avoid allocation in hot paths.
 
+## Async And Tokio
+
+- Treat async code as latency-sensitive shared execution. Do not add blocking work to a Tokio task without checking the impact on the runtime.
+- Review every synchronous call made from an async context for blocking potential, including filesystem I/O, process spawning, DNS/network clients, compression, parsing of large inputs, CPU-heavy loops, mutex contention, and sleep/wait calls.
+- Use async APIs when they exist and fit the surrounding code.
+- Use `tokio::task::spawn_blocking` for unavoidable blocking or CPU-heavy work called from async code, and keep the closure narrow so ownership, cancellation behavior, and error handling stay obvious.
+- Do not hold async locks, runtime handles, or request-scoped borrows across `spawn_blocking` boundaries unless the ownership and lifetime implications are explicit and safe.
+- Prefer `tokio::sync` primitives inside async tasks. Use blocking locks only when there is a clear reason and no `.await` can occur while the guard is held.
+
 ## Notes
 
 - Existing code does not fully match all preferred conventions yet. Treat these as direction for new and touched code, not as a reason to perform unrelated cleanup.

@@ -16,8 +16,9 @@ pub struct TopologyConfig {
 
     /// Practical per-node queue budget used by `queue_auto` visibility policy.
     ///
-    /// Site-like aggregation nodes at or above this threshold may be hidden from the
-    /// queue-visible runtime tree when LibreQoS can safely promote their children.
+    /// Eligible high-capacity `Site` and `AP` branches at or above this threshold may
+    /// be hidden from the queue-visible runtime tree when LibreQoS can safely promote
+    /// their children.
     #[serde(default = "default_queue_auto_virtualize_threshold_mbps")]
     pub queue_auto_virtualize_threshold_mbps: u64,
 }

@@ -7,6 +7,8 @@ import {
 import {scaleNanos} from "../lq_js_common/helpers/scaling";
 import {redactCell} from "./redact";
 import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
+import {clearElement} from "./dom_clear.mjs";
+export {safeRelativeHref, simpleLinkRow} from "./safe_dom.mjs";
 
 export function heading5Icon(icon, text) {
     let h5 = document.createElement("h5");
@@ -42,7 +44,7 @@ export function simpleRow(text, redact=false) {
     return td;
 }
 
-export function simpleRowHtml(text) {
+export function simpleRowTrustedHtml(text) {
     let td = document.createElement("td");
     td.innerHTML = text;
     return td;
@@ -57,10 +59,7 @@ export function clearDashDiv(id, target) {
 }
 
 export function clearDiv(target, targetLength=0) {
-    disposeTooltipsWithin(target);
-    while (target.children.length > targetLength) {
-        target.removeChild(target.lastChild);
-    }
+    clearElement(target, targetLength);
 }
 
 export function enableTooltips() {

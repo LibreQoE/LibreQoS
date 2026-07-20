@@ -123,6 +123,8 @@ circuits per successful case instead of the earlier smaller smoke-test default.
 
 TreeGuard circuit SQM decisions are also runtime overrides. The scheduler does not materialize TreeGuard-owned SQM changes back into the base `ShapedDevices.csv`, so clearing TreeGuard does not permanently rewrite operator-authored circuit SQM policy.
 
+TreeGuard only manages static circuits from `ShapedDevices.csv`. Dynamic circuits, including unknown-IP promotion overlays, remain under the dynamic-circuit and Bakery overlay lifecycle and are not enrolled in TreeGuard SQM switching.
+
 TreeGuard also refuses to manage nodes that are already marked `"virtual": true` in the base `network.json`. If stale legacy TreeGuard-owned node-virtualization overrides exist for those nodes, TreeGuard clears that legacy override state and falls back to the base topology definition.
 
 For circuit SQM management, TreeGuard treats duplicate `device_id` values as unsafe identity collisions. If the same `device_id` appears in more than one circuit in `ShapedDevices.csv`, TreeGuard skips those affected circuits and clears any TreeGuard-owned SQM overrides for those duplicate device IDs.

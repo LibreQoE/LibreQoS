@@ -16,6 +16,7 @@ use crate::treeguard::{bakery, decisions, overrides};
 use crossbeam_channel::{Receiver, Sender};
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::{BakeryRuntimeNodeOperationFailureReason, BakeryRuntimeNodeOperationStatus};
+use lqos_bus::{OverrideLayerSelection, OverrideMutation};
 use lqos_config::{NetworkJsonNode, load_config};
 use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
 use lqos_utils::hash_to_i64;
@@ -59,6 +60,24 @@ struct TreeguardWarningGroupState {
 #[derive(Default)]
 struct TreeguardWarningLimiter {
     groups: BTreeMap<String, TreeguardWarningGroupState>,
+}
+
+#[derive(Clone)]
+struct PendingLinkCleanup {
+    node_name: String,
+    reason: String,
+}
+
+struct PendingLinkCleanupContext<'a> {
+    status: &'a mut TreeguardStatusData,
+    activity: &'a mut VecDeque<TreeguardActivityEntry>,
+    now_unix: u64,
+    dry_run: bool,
+    runtime_virtualized_nodes: &'a mut FxHashSet<String>,
+    pending_link_operations: &'a mut FxHashMap<String, PendingLinkOperation>,
+    link_virtualization_backoff_until_unix: &'a mut FxHashMap<String, u64>,
+    managed_nodes: &'a mut FxHashSet<String>,
+    link_states: &'a mut FxHashMap<String, LinkState>,
 }
 
 impl TreeguardWarningLimiter {
@@ -279,7 +298,7 @@ fn current_topology_totals() -> (usize, usize) {
 
     let catalog = lqos_network_devices::network_devices_catalog();
     let mut circuit_ids: FxHashSet<&str> = FxHashSet::default();
-    for device in catalog.iter_all_devices() {
+    for device in catalog.iter_static_devices() {
         let circuit_id = device.circuit_id.trim();
         if circuit_id.is_empty() {
             continue;
@@ -307,7 +326,7 @@ fn direct_circuit_counts_by_node(
     shaped_devices: &lqos_network_devices::NetworkDevicesCatalog,
 ) -> FxHashMap<String, usize> {
     let mut circuits_by_node: FxHashMap<String, FxHashSet<&str>> = FxHashMap::default();
-    for device in shaped_devices.iter_all_devices() {
+    for device in shaped_devices.iter_static_devices() {
         let node_name = device.parent_node.trim();
         let circuit_id = device.circuit_id.trim();
         if node_name.is_empty() || circuit_id.is_empty() {
@@ -454,7 +473,6 @@ struct CircuitInventoryEntry {
 #[derive(Clone, Debug, Default)]
 struct CircuitInventory {
     shaped_devices_generation: u64,
-    dynamic_signature: u64,
     circuit_ids: Vec<String>,
     entries: FxHashMap<String, CircuitInventoryEntry>,
     all_device_ids: FxHashSet<String>,
@@ -610,54 +628,21 @@ fn ensure_circuit_inventory(
     runtime_state: &mut TreeguardRuntimeState,
     shaped: &lqos_network_devices::NetworkDevicesCatalog,
 ) {
-    use std::hash::{Hash, Hasher};
-
-    fn dynamic_overlay_signature(dynamic: &[lqos_network_devices::DynamicCircuit]) -> u64 {
-        use fxhash::FxHasher;
-
-        let mut entry_sigs: Vec<u64> = Vec::with_capacity(dynamic.len());
-        for circuit in dynamic {
-            let dev = &circuit.shaped;
-            let mut h = FxHasher::default();
-            dev.circuit_id.trim().hash(&mut h);
-            dev.device_id.trim().hash(&mut h);
-            dev.parent_node.trim().hash(&mut h);
-            dev.download_max_mbps.to_bits().hash(&mut h);
-            dev.upload_max_mbps.to_bits().hash(&mut h);
-            dev.sqm_override
-                .as_deref()
-                .unwrap_or("")
-                .trim()
-                .hash(&mut h);
-            entry_sigs.push(h.finish());
-        }
-        entry_sigs.sort_unstable();
-
-        let mut outer = FxHasher::default();
-        entry_sigs.hash(&mut outer);
-        outer.finish()
-    }
-
     let generation = shaped.shaped_devices().generation();
-    let dynamic_signature = dynamic_overlay_signature(shaped.dynamic_circuits());
-    if runtime_state.circuit_inventory.shaped_devices_generation == generation
-        && runtime_state.circuit_inventory.dynamic_signature == dynamic_signature
-    {
+    if runtime_state.circuit_inventory.shaped_devices_generation == generation {
         return;
     }
 
-    runtime_state.circuit_inventory = build_circuit_inventory(shaped, dynamic_signature);
+    runtime_state.circuit_inventory = build_circuit_inventory(shaped);
     runtime_state.circuit_batch_cursor = 0;
 }
 
 fn build_circuit_inventory(
     shaped: &lqos_network_devices::NetworkDevicesCatalog,
-    dynamic_signature: u64,
 ) -> CircuitInventory {
     let mut circuits_by_device_id: FxHashMap<String, FxHashSet<String>> = FxHashMap::default();
-    circuits_by_device_id
-        .reserve(shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len());
-    for device in shaped.iter_all_devices() {
+    circuits_by_device_id.reserve(shaped.shaped_devices().devices_len());
+    for device in shaped.iter_static_devices() {
         let device_id = device.device_id.trim();
         let circuit_id = device.circuit_id.trim();
         if device_id.is_empty() || circuit_id.is_empty() {
@@ -682,10 +667,10 @@ fn build_circuit_inventory(
         .collect();
 
     let mut by_circuit_id: FxHashMap<String, Vec<lqos_config::ShapedDevice>> = FxHashMap::default();
-    by_circuit_id.reserve(shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len());
+    by_circuit_id.reserve(shaped.shaped_devices().devices_len());
     let mut all_device_ids = FxHashSet::default();
-    all_device_ids.reserve(shaped.shaped_devices().devices_len() + shaped.dynamic_circuits().len());
-    for device in shaped.iter_all_devices() {
+    all_device_ids.reserve(shaped.shaped_devices().devices_len());
+    for device in shaped.iter_static_devices() {
         if device.circuit_id.trim().is_empty() {
             continue;
         }
@@ -762,7 +747,6 @@ fn build_circuit_inventory(
 
     CircuitInventory {
         shaped_devices_generation: shaped.shaped_devices().generation(),
-        dynamic_signature,
         circuit_ids,
         entries,
         all_device_ids,
@@ -779,6 +763,25 @@ fn circuit_evaluation_batch_size(managed_circuits: usize, all_circuits: bool) ->
 
     let target = managed_circuits.div_ceil(TREEGUARD_CIRCUIT_TARGET_SWEEP_SECONDS);
     managed_circuits.min(target.max(TREEGUARD_CIRCUIT_MIN_BATCH_SIZE))
+}
+
+fn enrolled_treeguard_circuits(
+    circuit_inventory: &CircuitInventory,
+    configured_circuits: &[String],
+    all_circuits: bool,
+) -> Vec<String> {
+    if all_circuits {
+        return circuit_inventory.circuit_ids.clone();
+    }
+
+    let mut enrolled: Vec<String> = configured_circuits
+        .iter()
+        .filter(|circuit_id| circuit_inventory.entries.contains_key(circuit_id.as_str()))
+        .cloned()
+        .collect();
+    enrolled.sort();
+    enrolled.dedup();
+    enrolled
 }
 
 fn collect_circuit_batch<'a>(
@@ -807,6 +810,25 @@ fn collect_circuit_batch<'a>(
 
     *cursor = index;
     batch
+}
+
+fn out_of_scope_treeguard_sqm_device_ids(
+    treeguard_device_ids_with_overrides: &FxHashSet<String>,
+    circuit_inventory: &CircuitInventory,
+    desired_device_ids: &FxHashSet<String>,
+    all_circuits: bool,
+) -> Vec<String> {
+    treeguard_device_ids_with_overrides
+        .iter()
+        .filter(|device_id| {
+            if all_circuits {
+                !circuit_inventory.all_device_ids.contains(*device_id)
+            } else {
+                !desired_device_ids.contains(*device_id)
+            }
+        })
+        .cloned()
+        .collect()
 }
 
 /// Executes a single TreeGuard tick.
@@ -887,6 +909,8 @@ fn run_tick(
     let managed_nodes = &mut runtime_state.managed_nodes;
     let managed_device_ids = &mut runtime_state.managed_device_ids;
     let duplicate_device_conflict_circuits = &mut runtime_state.duplicate_device_conflict_circuits;
+    let mut pending_link_cleanups = Vec::new();
+    let mut selected_link_decisions_to_apply = Vec::new();
 
     let top_level_auto_virtualize = tg.links.enabled && tg.links.top_level_auto_virtualize;
     if tg.enabled
@@ -1045,27 +1069,11 @@ fn run_tick(
             };
         removed.extend(runtime_virtualized_nodes.iter().cloned());
         for node_name in removed {
-            clear_legacy_treeguard_virtual_override(
-                status,
-                activity,
-                now_unix,
-                &node_name,
+            queue_link_cleanup(
+                &mut pending_link_cleanups,
+                node_name,
                 "TreeGuard disabled or links disabled",
             );
-            restore_runtime_virtualization_if_needed(
-                status,
-                activity,
-                now_unix,
-                &node_name,
-                "TreeGuard disabled or links disabled",
-                tg.dry_run,
-                runtime_virtualized_nodes,
-                pending_link_operations,
-                link_virtualization_backoff_until_unix,
-                link_states,
-            );
-            managed_nodes.remove(&node_name);
-            link_states.remove(&node_name);
         }
     } else {
         lqos_network_devices::with_network_json_read(|net_json| {
@@ -1140,27 +1148,11 @@ fn run_tick(
                 );
             }
             for node_name in removed {
-                clear_legacy_treeguard_virtual_override(
-                    status,
-                    activity,
-                    now_unix,
-                    &node_name,
+                queue_link_cleanup(
+                    &mut pending_link_cleanups,
+                    node_name,
                     "Node removed from allowlist",
                 );
-                restore_runtime_virtualization_if_needed(
-                    status,
-                    activity,
-                    now_unix,
-                    &node_name,
-                    "Node removed from allowlist",
-                    tg.dry_run,
-                    runtime_virtualized_nodes,
-                    pending_link_operations,
-                    link_virtualization_backoff_until_unix,
-                    link_states,
-                );
-                managed_nodes.remove(&node_name);
-                link_states.remove(&node_name);
             }
             let nodes = net_json.get_nodes_when_ready();
             let parent_by_index: Vec<Option<usize>> =
@@ -1210,27 +1202,11 @@ fn run_tick(
                     status.warnings.push(format!(
                     "TreeGuard links: node '{node_name}' has an operator virtual override; TreeGuard will not manage it."
                 ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
+                    queue_link_cleanup(
+                        &mut pending_link_cleanups,
+                        node_name.clone(),
                         "Operator override present; TreeGuard will not manage this node.",
                     );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Operator override present; TreeGuard will not manage this node.",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        pending_link_operations,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
                     continue;
                 }
 
@@ -1238,54 +1214,22 @@ fn run_tick(
                     status.warnings.push(format!(
                         "TreeGuard links allowlist: node '{node_name}' not found in network.json."
                     ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
+                    queue_link_cleanup(
+                        &mut pending_link_cleanups,
+                        node_name.clone(),
                         "Node no longer exists in network.json",
                     );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node no longer exists in network.json",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        pending_link_operations,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
                     continue;
                 };
                 let Some(node) = nodes.get(index) else {
                     status.warnings.push(format!(
                         "TreeGuard links allowlist: node '{node_name}' index not present."
                     ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
+                    queue_link_cleanup(
+                        &mut pending_link_cleanups,
+                        node_name.clone(),
                         "Node index no longer exists in network.json",
                     );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node index no longer exists in network.json",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        pending_link_operations,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
                     continue;
                 };
 
@@ -1293,27 +1237,11 @@ fn run_tick(
                     status.warnings.push(format!(
                     "TreeGuard links: node '{node_name}' is marked virtual in base network.json; TreeGuard will not manage it."
                 ));
-                    clear_legacy_treeguard_virtual_override(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
+                    queue_link_cleanup(
+                        &mut pending_link_cleanups,
+                        node_name.clone(),
                         "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
                     );
-                    restore_runtime_virtualization_if_needed(
-                        status,
-                        activity,
-                        now_unix,
-                        node_name,
-                        "Node is marked virtual in base network.json; TreeGuard refuses to manage base-virtual nodes.",
-                        tg.dry_run,
-                        runtime_virtualized_nodes,
-                        pending_link_operations,
-                        link_virtualization_backoff_until_unix,
-                        link_states,
-                    );
-                    managed_nodes.remove(node_name);
-                    link_states.remove(node_name);
                     continue;
                 }
 
@@ -1589,39 +1517,53 @@ fn run_tick(
             ));
             }
 
-            for decision in selected_link_decisions {
-                let Some(state) = link_states.get_mut(&decision.node_name) else {
-                    continue;
-                };
-                apply_link_virtualization_decision(
-                    status,
-                    activity,
-                    now_unix,
-                    &decision.node_name,
-                    decision.target,
-                    decision.is_top_level,
-                    decision.reason,
-                    tg.dry_run,
-                    state,
-                    pending_link_operations,
-                    link_virtualization_backoff_until_unix,
-                );
-            }
+            selected_link_decisions_to_apply.extend(selected_link_decisions);
         });
+    }
+
+    {
+        let mut link_cleanup_context = PendingLinkCleanupContext {
+            status,
+            activity,
+            now_unix,
+            dry_run: tg.dry_run,
+            runtime_virtualized_nodes,
+            pending_link_operations,
+            link_virtualization_backoff_until_unix,
+            managed_nodes,
+            link_states,
+        };
+        process_pending_link_cleanups(&mut link_cleanup_context, &pending_link_cleanups);
+    }
+
+    for decision in selected_link_decisions_to_apply {
+        let Some(state) = link_states.get_mut(&decision.node_name) else {
+            continue;
+        };
+        apply_link_virtualization_decision(
+            status,
+            activity,
+            now_unix,
+            &decision.node_name,
+            decision.target,
+            decision.is_top_level,
+            decision.reason,
+            tg.dry_run,
+            state,
+            pending_link_operations,
+            link_virtualization_backoff_until_unix,
+        );
     }
 
     // --- Circuit sampling + decisions (SQM switching) ---
     let manage_circuits = tg.enabled && tg.circuits.enabled;
     let circuit_inventory = &runtime_state.circuit_inventory;
 
-    let enrolled_circuits: Vec<String> = if tg.circuits.all_circuits {
-        circuit_inventory.circuit_ids.clone()
-    } else {
-        let mut v = tg.circuits.circuits.clone();
-        v.sort();
-        v.dedup();
-        v
-    };
+    let enrolled_circuits = enrolled_treeguard_circuits(
+        circuit_inventory,
+        &tg.circuits.circuits,
+        tg.circuits.all_circuits,
+    );
     status.managed_circuits = enrolled_circuits.len();
 
     let allowlisted_circuits: FxHashSet<String> = if tg.circuits.all_circuits {
@@ -1692,17 +1634,12 @@ fn run_tick(
             .as_ref()
             .map(overrides_sqm_device_ids)
             .unwrap_or_default();
-        let removed: Vec<String> = treeguard_device_ids_with_overrides
-            .iter()
-            .filter(|device_id| {
-                if tg.circuits.all_circuits {
-                    !circuit_inventory.all_device_ids.contains(*device_id)
-                } else {
-                    !desired_device_ids.contains(*device_id)
-                }
-            })
-            .cloned()
-            .collect();
+        let removed: Vec<String> = out_of_scope_treeguard_sqm_device_ids(
+            &treeguard_device_ids_with_overrides,
+            circuit_inventory,
+            &desired_device_ids,
+            tg.circuits.all_circuits,
+        );
         if !removed.is_empty() {
             match overrides::clear_device_overrides(&removed) {
                 Ok(changed) => {
@@ -2044,48 +1981,123 @@ fn pause_for_bakery_reload_with_flag(
     false
 }
 
-fn clear_legacy_treeguard_virtual_override(
-    status: &mut TreeguardStatusData,
-    activity: &mut VecDeque<TreeguardActivityEntry>,
-    now_unix: u64,
-    node_name: &str,
+fn queue_link_cleanup(
+    pending_link_cleanups: &mut Vec<PendingLinkCleanup>,
+    node_name: String,
     reason: &str,
 ) {
-    match overrides::clear_node_virtual(node_name) {
-        Ok(changed) => {
-            if changed {
+    pending_link_cleanups.push(PendingLinkCleanup {
+        node_name,
+        reason: reason.to_string(),
+    });
+}
+
+fn process_pending_link_cleanups(
+    context: &mut PendingLinkCleanupContext<'_>,
+    pending_link_cleanups: &[PendingLinkCleanup],
+) {
+    if pending_link_cleanups.is_empty() {
+        return;
+    }
+
+    let (node_names, cleanup_by_node) = collect_link_cleanup_nodes(pending_link_cleanups);
+
+    let mutation = OverrideMutation::ClearNodeVirtualBatch {
+        node_names: node_names.clone(),
+    };
+    match crate::override_writer::apply_mutation_batch(
+        OverrideLayerSelection::Treeguard,
+        vec![mutation],
+    ) {
+        Ok(result) => {
+            for node_name in result.changed_entities {
+                let reason = cleanup_by_node
+                    .get(&node_name)
+                    .cloned()
+                    .unwrap_or_else(|| "TreeGuard cleanup".to_string());
                 push_activity(
-                    activity,
+                    context.activity,
                     TreeguardActivityEntry {
-                        time: now_unix.to_string(),
+                        time: context.now_unix.to_string(),
                         entity_type: "node".to_string(),
-                        entity_id: node_name.to_string(),
+                        entity_id: node_name,
                         action: "clear_virtual_override".to_string(),
                         persisted: true,
-                        reason: reason.to_string(),
+                        reason,
                         ..Default::default()
                     },
                 );
             }
         }
-        Err(e) => {
-            status.warnings.push(format!(
-                "TreeGuard links: failed to clear legacy virtual override for node '{node_name}': {e}"
+        Err(err) => {
+            let details = err.to_string();
+            context.status.warnings.push(format!(
+                "TreeGuard links: failed to clear {} legacy virtual override(s): {details}",
+                node_names.len()
             ));
-            push_activity(
-                activity,
-                TreeguardActivityEntry {
-                    time: now_unix.to_string(),
-                    entity_type: "node".to_string(),
-                    entity_id: node_name.to_string(),
-                    action: "clear_virtual_override_failed".to_string(),
-                    persisted: false,
-                    reason: format!("Overrides write failed: {e}"),
-                    ..Default::default()
-                },
-            );
+            for node_name in &node_names {
+                push_activity(
+                    context.activity,
+                    TreeguardActivityEntry {
+                        time: context.now_unix.to_string(),
+                        entity_type: "node".to_string(),
+                        entity_id: node_name.clone(),
+                        action: "clear_virtual_override_failed".to_string(),
+                        persisted: false,
+                        reason: format!("Overrides write failed: {details}"),
+                        ..Default::default()
+                    },
+                );
+            }
         }
     }
+
+    for node_name in node_names {
+        let reason = cleanup_by_node
+            .get(&node_name)
+            .cloned()
+            .unwrap_or_else(|| "TreeGuard cleanup".to_string());
+        restore_runtime_virtualization_if_needed(
+            context.status,
+            context.activity,
+            context.now_unix,
+            &node_name,
+            &reason,
+            context.dry_run,
+            context.runtime_virtualized_nodes,
+            context.pending_link_operations,
+            context.link_virtualization_backoff_until_unix,
+            context.link_states,
+        );
+        context.managed_nodes.remove(&node_name);
+        context.link_states.remove(&node_name);
+    }
+}
+
+fn collect_link_cleanup_nodes(
+    pending_link_cleanups: &[PendingLinkCleanup],
+) -> (Vec<String>, FxHashMap<String, String>) {
+    let mut cleanup_reasons_by_node: FxHashMap<String, Vec<String>> = FxHashMap::default();
+    let mut node_names = Vec::with_capacity(pending_link_cleanups.len());
+    for cleanup in pending_link_cleanups {
+        cleanup_reasons_by_node
+            .entry(cleanup.node_name.clone())
+            .or_default()
+            .push(cleanup.reason.clone());
+        node_names.push(cleanup.node_name.clone());
+    }
+    node_names.sort();
+    node_names.dedup();
+
+    let cleanup_by_node = cleanup_reasons_by_node
+        .into_iter()
+        .map(|(node_name, mut reasons)| {
+            reasons.sort();
+            reasons.dedup();
+            (node_name, reasons.join("; "))
+        })
+        .collect();
+    (node_names, cleanup_by_node)
 }
 
 fn current_link_virtual_state(
@@ -3306,10 +3318,13 @@ fn update_above_since(
 mod tests {
     use super::{
         CircuitSqmApplyContext, CircuitSqmTransition, CircuitTickContext, LinkVirtualState,
-        PendingLinkVirtualizationDecision, TreeguardRuntimeState, apply_circuit_sqm_change,
-        apply_link_virtualization_decision, base_circuit_sqm_state, circuit_evaluation_batch_size,
+        PendingLinkCleanup, PendingLinkVirtualizationDecision, TreeguardRuntimeState,
+        apply_circuit_sqm_change, apply_link_virtualization_decision, base_circuit_sqm_state,
+        build_circuit_inventory, circuit_evaluation_batch_size,
         circuit_sqm_transition_from_decision, clear_structural_ineligible_if_topology_changed,
-        collect_circuit_batch, empty_status_snapshot, latched_structural_ineligible_reason,
+        collect_circuit_batch, collect_link_cleanup_nodes, direct_circuit_counts_by_node,
+        empty_status_snapshot, enrolled_treeguard_circuits, ensure_circuit_inventory,
+        latched_structural_ineligible_reason, out_of_scope_treeguard_sqm_device_ids,
         pause_for_bakery_reload_with_flag, process_circuit_tick, run_tick,
         select_link_virtualization_candidates, treeguard_manages_circuit_direction,
         try_consume_circuit_change_budget,
@@ -3331,6 +3346,7 @@ mod tests {
     use lqos_bus::TcHandle;
     use lqos_config::ConfigShapedDevices;
     use lqos_config::ShapedDevice;
+    use lqos_network_devices::{DynamicCircuit, NetworkDevicesCatalog, ShapedDevicesCatalog};
     use lqos_queue_tracker::{QUEUE_STRUCTURE, QueueNode, QueueStructure};
     use lqos_utils::rtt::RttBuffer;
     use lqos_utils::units::DownUpOrder;
@@ -3363,6 +3379,197 @@ mod tests {
             is_top_level,
             value_score,
         }
+    }
+
+    fn treeguard_test_catalog(
+        static_devices: Vec<ShapedDevice>,
+        dynamic_devices: Vec<ShapedDevice>,
+    ) -> NetworkDevicesCatalog {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(static_devices);
+        let shaped_catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
+        let dynamic = dynamic_devices
+            .into_iter()
+            .map(|shaped| DynamicCircuit {
+                shaped,
+                last_seen_unix: 1,
+            })
+            .collect();
+        NetworkDevicesCatalog::from_snapshots(shaped_catalog, Arc::new(dynamic))
+    }
+
+    fn treeguard_test_device(circuit_id: &str, device_id: &str, parent_node: &str) -> ShapedDevice {
+        ShapedDevice {
+            circuit_id: circuit_id.to_string(),
+            circuit_name: circuit_id.to_string(),
+            device_id: device_id.to_string(),
+            device_name: device_id.to_string(),
+            parent_node: parent_node.to_string(),
+            download_max_mbps: 100.0,
+            upload_max_mbps: 20.0,
+            ..ShapedDevice::default()
+        }
+    }
+
+    #[test]
+    fn link_cleanup_collection_collapses_duplicate_nodes() {
+        let pending = vec![
+            PendingLinkCleanup {
+                node_name: "Tower B".to_string(),
+                reason: "stale link".to_string(),
+            },
+            PendingLinkCleanup {
+                node_name: "Tower A".to_string(),
+                reason: "removed from topology".to_string(),
+            },
+            PendingLinkCleanup {
+                node_name: "Tower B".to_string(),
+                reason: "duplicate stale link".to_string(),
+            },
+        ];
+
+        let (node_names, cleanup_by_node) = collect_link_cleanup_nodes(&pending);
+
+        assert_eq!(
+            node_names,
+            vec!["Tower A".to_string(), "Tower B".to_string()]
+        );
+        assert_eq!(
+            cleanup_by_node.get("Tower B").map(String::as_str),
+            Some("duplicate stale link; stale link")
+        );
+    }
+
+    #[test]
+    fn treeguard_circuit_inventory_excludes_dynamic_circuits() {
+        let static_device = treeguard_test_device("static-circuit", "static-device", "Tower A");
+        let dynamic_device = treeguard_test_device(
+            "[dyn] (Default) 192.0.2.42",
+            "[dyn] (Default) 192.0.2.42",
+            "Tower A",
+        );
+        let catalog = treeguard_test_catalog(vec![static_device], vec![dynamic_device]);
+
+        let inventory = build_circuit_inventory(&catalog);
+
+        assert_eq!(inventory.circuit_ids, vec!["static-circuit".to_string()]);
+        assert!(inventory.entries.contains_key("static-circuit"));
+        assert!(!inventory.entries.contains_key("[dyn] (Default) 192.0.2.42"));
+        assert!(inventory.all_device_ids.contains("static-device"));
+        assert!(
+            !inventory
+                .all_device_ids
+                .contains("[dyn] (Default) 192.0.2.42")
+        );
+    }
+
+    #[test]
+    fn treeguard_dynamic_overlay_changes_do_not_reset_circuit_batch_cursor() {
+        let static_device = treeguard_test_device("static-circuit", "static-device", "Tower A");
+        let first_dynamic = treeguard_test_device(
+            "[dyn] (Default) 192.0.2.42",
+            "[dyn] (Default) 192.0.2.42",
+            "Tower A",
+        );
+        let second_dynamic = treeguard_test_device(
+            "[dyn] (Default) 192.0.2.43",
+            "[dyn] (Default) 192.0.2.43",
+            "Tower A",
+        );
+        let first_catalog =
+            treeguard_test_catalog(vec![static_device.clone()], vec![first_dynamic]);
+        let second_catalog = treeguard_test_catalog(vec![static_device], vec![second_dynamic]);
+        let mut runtime_state = TreeguardRuntimeState {
+            circuit_inventory: build_circuit_inventory(&first_catalog),
+            circuit_batch_cursor: 1,
+            ..TreeguardRuntimeState::default()
+        };
+
+        ensure_circuit_inventory(&mut runtime_state, &second_catalog);
+
+        assert_eq!(runtime_state.circuit_batch_cursor, 1);
+        assert_eq!(
+            runtime_state.circuit_inventory.circuit_ids,
+            vec!["static-circuit".to_string()]
+        );
+    }
+
+    #[test]
+    fn treeguard_cleans_dynamic_sqm_overrides_as_out_of_scope() {
+        let static_device = treeguard_test_device("static-circuit", "static-device", "Tower A");
+        let dynamic_device = treeguard_test_device(
+            "[dyn] (Default) 192.0.2.42",
+            "[dyn] (Default) 192.0.2.42",
+            "Tower A",
+        );
+        let catalog = treeguard_test_catalog(vec![static_device], vec![dynamic_device]);
+        let inventory = build_circuit_inventory(&catalog);
+        let desired_device_ids = FxHashSet::default();
+        let treeguard_device_ids_with_overrides = FxHashSet::from_iter([
+            "static-device".to_string(),
+            "[dyn] (Default) 192.0.2.42".to_string(),
+        ]);
+
+        let mut removed = out_of_scope_treeguard_sqm_device_ids(
+            &treeguard_device_ids_with_overrides,
+            &inventory,
+            &desired_device_ids,
+            true,
+        );
+        removed.sort();
+
+        assert_eq!(removed, vec!["[dyn] (Default) 192.0.2.42".to_string()]);
+    }
+
+    #[test]
+    fn treeguard_explicit_enrollment_excludes_dynamic_circuits() {
+        let static_device = treeguard_test_device("static-circuit", "static-device", "Tower A");
+        let dynamic_device = treeguard_test_device(
+            "[dyn] (Default) 192.0.2.42",
+            "[dyn] (Default) 192.0.2.42",
+            "Tower A",
+        );
+        let catalog = treeguard_test_catalog(vec![static_device], vec![dynamic_device]);
+        let inventory = build_circuit_inventory(&catalog);
+        let configured = vec![
+            "[dyn] (Default) 192.0.2.42".to_string(),
+            "static-circuit".to_string(),
+        ];
+
+        let enrolled = enrolled_treeguard_circuits(&inventory, &configured, false);
+
+        assert_eq!(enrolled, vec!["static-circuit".to_string()]);
+    }
+
+    #[test]
+    fn treeguard_all_circuits_enrollment_uses_static_inventory() {
+        let static_device = treeguard_test_device("static-circuit", "static-device", "Tower A");
+        let dynamic_device = treeguard_test_device(
+            "[dyn] (Default) 192.0.2.42",
+            "[dyn] (Default) 192.0.2.42",
+            "Tower A",
+        );
+        let catalog = treeguard_test_catalog(vec![static_device], vec![dynamic_device]);
+        let inventory = build_circuit_inventory(&catalog);
+
+        let enrolled = enrolled_treeguard_circuits(&inventory, &[], true);
+
+        assert_eq!(enrolled, vec!["static-circuit".to_string()]);
+    }
+
+    #[test]
+    fn treeguard_link_circuit_counts_ignore_dynamic_circuits() {
+        let static_device = treeguard_test_device("static-circuit", "static-device", "Tower A");
+        let dynamic_device = treeguard_test_device(
+            "[dyn] (Default) 192.0.2.42",
+            "[dyn] (Default) 192.0.2.42",
+            "Tower A",
+        );
+        let catalog = treeguard_test_catalog(vec![static_device], vec![dynamic_device]);
+
+        let counts = direct_circuit_counts_by_node(&catalog);
+
+        assert_eq!(counts.get("Tower A"), Some(&1));
     }
 
     #[test]

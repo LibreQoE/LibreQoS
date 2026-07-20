@@ -1,8 +1,13 @@
 import {loadConfig, renderConfigMenu} from "./config/config_helper";
 import {hydrateDraftMtu, MTU_MAX, MTU_MIN, parseOptionalMtu} from "./config/network_mode_mtu.mjs";
+import {
+    clearNetworkModeState,
+    DRAFT_KEY,
+    loadNetworkModeState,
+    PENDING_OPERATION_KEY,
+    saveNetworkModeState,
+} from "./config/network_mode_storage.mjs";
 
-const DRAFT_KEY = "lqos-network-mode-draft";
-const PENDING_OPERATION_KEY = "lqos-network-mode-pending";
 const NETPLAN_TRY_TIMEOUT_MS = 30_000;
 const RECONNECT_POLL_INTERVAL_MS = 2_000;
 const BRIDGE_MTU_HELP = "Applies to the bridge members and br0.";
@@ -364,29 +369,17 @@ function populateFormFromConfig(config) {
 }
 
 function loadDraft() {
-    try {
-        const raw = localStorage.getItem(DRAFT_KEY);
-        if (!raw) return null;
-        return JSON.parse(raw);
-    } catch (_) {
-        return null;
-    }
+    return loadNetworkModeState(DRAFT_KEY);
 }
 
 function saveDraft() {
     const draft = buildCandidateConfig();
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    saveNetworkModeState(DRAFT_KEY, draft);
     return draft;
 }
 
 function loadPendingOperation() {
-    try {
-        const raw = localStorage.getItem(PENDING_OPERATION_KEY);
-        if (!raw) return null;
-        return JSON.parse(raw);
-    } catch (_) {
-        return null;
-    }
+    return loadNetworkModeState(PENDING_OPERATION_KEY);
 }
 
 function pendingDeadlineMs(operation) {
@@ -421,14 +414,14 @@ function setPendingOperation(operation, extra = {}) {
         ...extra,
         saved_at_ms: Date.now(),
     };
-    localStorage.setItem(PENDING_OPERATION_KEY, JSON.stringify(currentPendingOperation));
+    saveNetworkModeState(PENDING_OPERATION_KEY, currentPendingOperation);
     renderRecoveryPanel();
     ensureRecoveryPolling();
 }
 
 function clearPendingOperation() {
     currentPendingOperation = null;
-    localStorage.removeItem(PENDING_OPERATION_KEY);
+    clearNetworkModeState(PENDING_OPERATION_KEY);
     if (reconnectPollTimer) {
         clearInterval(reconnectPollTimer);
         reconnectPollTimer = null;
@@ -838,7 +831,7 @@ function applyNetworkChanges(mode = "Apply") {
                     action_label: actionLabel,
                 });
             }
-            localStorage.removeItem(DRAFT_KEY);
+            clearNetworkModeState(DRAFT_KEY);
             window.config = candidate;
             renderRecoveryPanel();
             window.scrollTo({ top: 0, behavior: "smooth" });
@@ -865,6 +858,7 @@ function actOnPending(endpoint) {
     postJson(endpoint, { operation_id: operationId })
         .then((response) => {
             clearPendingOperation();
+            clearNetworkModeState(DRAFT_KEY);
             alert(response?.message || "Operation completed");
             return Promise.allSettled([refreshHelperStatus(), inspectCandidate()]);
         })
@@ -896,6 +890,7 @@ function rollbackLatestBackup() {
 
     postJson("/local-api/network-mode/rollback", { backup_id: backupId })
         .then((response) => {
+            clearNetworkModeState(DRAFT_KEY);
             alert(response?.message || "Rollback completed");
             return Promise.all([refreshHelperStatus(), inspectCandidate()]);
         })
@@ -960,7 +955,7 @@ function wireActions() {
         if (!validateConfig()) return;
         saveDraft();
         inspectCandidate();
-        alert("Network mode draft saved in this browser. Use Apply Network Changes to commit both lqos.conf and netplan together.");
+        alert("Network mode draft saved for this browser tab. Use Apply Network Changes to commit both lqos.conf and netplan together.");
     });
     document.getElementById("inspectButton").addEventListener("click", inspectCandidate);
     document.getElementById("applyButton").addEventListener("click", () => applyNetworkChanges("Apply"));

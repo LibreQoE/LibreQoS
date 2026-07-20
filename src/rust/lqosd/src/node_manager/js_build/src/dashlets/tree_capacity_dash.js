@@ -1,4 +1,4 @@
-import {clearDashDiv, simpleRowHtml, theading} from "../helpers/builders";
+import {clearDashDiv, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {formatRtt, formatPercent} from "../helpers/scaling";
 import {DashletBaseInsight} from "./insight_dashlet_base";
 
@@ -74,9 +74,9 @@ export class TreeCapacityDash extends DashletBaseInsight {
                 linkCol.appendChild(link);
 
                 row.appendChild(linkCol);
-                row.appendChild(simpleRowHtml(formatPercent(down*100)));
-                row.appendChild(simpleRowHtml(formatPercent(up*100)));
-                row.appendChild(simpleRowHtml(formatRtt(node.rtt)));
+                row.appendChild(simpleRowTrustedHtml(formatPercent(down*100)));
+                row.appendChild(simpleRowTrustedHtml(formatPercent(up*100)));
+                row.appendChild(simpleRowTrustedHtml(formatRtt(node.rtt)));
 
                 tbody.appendChild(row);
             });

@@ -37,7 +37,7 @@ pub struct DeviceWeightRequest {
 /// This struct is used to receive a response from the Long Term Stats API
 /// It contains the circuit_id and the weight of the device
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 pub struct DeviceWeightResponse {
     #[pyo3(get)]
     pub circuit_id: String,

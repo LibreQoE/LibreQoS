@@ -160,7 +160,7 @@ export class ThroughputRingDash extends DashletBaseInsight{
     updateTooltip() {
         let container = document.getElementById(this.id);
         if (!container) return;
-        let tooltipAnchor = container.querySelector(".dashbox-title a[data-bs-toggle='tooltip']");
+        let tooltipAnchor = container.querySelector(".dashbox-title [data-bs-toggle='tooltip']");
         if (!tooltipAnchor) return;
         let html = this.tooltip();
         tooltipAnchor.setAttribute("title", html);

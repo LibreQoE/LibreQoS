@@ -42,14 +42,14 @@ pub use cpu_topology::{
 };
 pub use etc::{
     BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode,
-    MikrotikIpv6Config, QueueMode, RadiusAccountingClient, RadiusAccountingConfig,
-    RadiusClientSource, RadiusDynamicCircuitApplicationConfig, RadiusFallbackSpeedProfile,
-    RadiusSharedSecretSource, RateProfileValidationError, RttThresholds, SingleInterfaceConfig,
-    SslConfig, StormguardConfig, StormguardStrategy, TopologyConfig, TreeguardCircuitsConfig,
-    TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode, TreeguardLinksConfig,
-    TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge, enable_long_term_stats,
-    load_config, normalize_external_hostname, treeguard_cpu_mode_migration_notice, update_config,
-    validate_rate_profile_mbps,
+    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, QueueMode, RadiusAccountingClient,
+    RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
+    RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
+    RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
+    TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
+    TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge,
+    enable_long_term_stats, load_config, normalize_external_hostname,
+    treeguard_cpu_mode_migration_notice, update_config, validate_rate_profile_mbps,
 };
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
@@ -84,12 +84,13 @@ pub use topology_editor_state::{
     TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
     TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,
     TopologyAttachmentRole, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
-    TopologyQueueVisibilityPolicy, topology_editor_state_path,
+    TopologyQueueVisibilityPolicy, topology_auto_attachment_option, topology_editor_state_path,
 };
 pub use topology_parent_candidates::{
     TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,
     TopologyParentCandidatesFile, TopologyParentCandidatesNode, topology_parent_candidates_path,
 };
+#[allow(deprecated)]
 pub use topology_runtime_state::{
     TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_COMPILED_SHAPING_FILENAME,
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
@@ -100,11 +101,13 @@ pub use topology_runtime_state::{
     TopologyRuntimeStateError, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
     TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
     active_runtime_shaping_inputs_path, active_runtime_shaping_inputs_path_from_status,
-    compute_effective_network_generation, compute_topology_source_generation,
+    compute_effective_network_file_generation, compute_effective_network_generation,
+    compute_shaping_inputs_file_generation, compute_topology_source_generation,
     load_active_runtime_shaping_inputs, load_active_runtime_shaping_inputs_from_status,
     topology_attachment_health_state_path, topology_compiled_shaping_path,
     topology_effective_network_path, topology_effective_state_path, topology_import_path,
     topology_runtime_status_path, topology_shaping_inputs_path,
+    validated_runtime_shaping_inputs_path,
 };
 
 /// Returns whether an integration-backed topology ingress is enabled in the

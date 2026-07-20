@@ -10,13 +10,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::lts2_sys::control_channel::ControlChannelCommand;
-use crate::node_manager::auth::{LoginResult, login_from_token};
+use crate::node_manager::auth::{LoginResult, login_from_cookie_header};
 use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
-    ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
-    node_rate_overrides, node_topology_overrides, packet_analysis, reload_libreqos, scheduler,
-    search, shaped_device_api, shaped_devices_page, topology_manager, topology_probes, unknown_ips,
-    urgent, warnings,
+    ethernet_caps, executive, flow_explorer, flow_map, local_api_keys, lts, network_tree,
+    network_tree_lite, node_rate_overrides, node_topology_overrides, packet_analysis,
+    reload_libreqos, scheduler, search, shaped_device_api, shaped_devices_page, topology_manager,
+    topology_probes, unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -38,15 +38,16 @@ use axum::{
         WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderMap, StatusCode, header},
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode, Uri, header},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
 use lqos_bus::BusRequest;
 use lqos_probe::ProbeClient;
+use once_cell::sync::Lazy;
 use serde_cbor::Value as CborValue;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{Semaphore, mpsc::Sender};
 use tracing::{info, warn};
 
 pub(crate) mod messages;
@@ -58,7 +59,22 @@ mod ticker;
 const WS_VERSION: &str = include_str!("../../../../VERSION_STRING");
 const HANDSHAKE_TIMEOUT_SECS: u64 = 10;
 const CONTROL_CHANNEL_SEND_TIMEOUT: Duration = Duration::from_secs(5);
+const TOPOLOGY_MANAGER_BLOCKING_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT_SECS: u64 = 15;
+static TOPOLOGY_MANAGER_READ_PERMITS: Lazy<Arc<Semaphore>> =
+    Lazy::new(|| Arc::new(Semaphore::new(1)));
+static TOPOLOGY_MANAGER_BLOCKING_PERMITS: Lazy<Arc<Semaphore>> =
+    Lazy::new(|| Arc::new(Semaphore::new(1)));
+
+struct WsUpgradeContext {
+    channels: Arc<PubSub>,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
+    probe_client: ProbeClient,
+    shaper_query: Sender<ShaperQueryCommand>,
+    browser_language: Option<String>,
+    login: LoginResult,
+}
 
 async fn send_control_command(
     control_tx: &tokio::sync::mpsc::Sender<ControlChannelCommand>,
@@ -72,6 +88,78 @@ async fn send_control_command(
             false
         }
     }
+}
+
+async fn run_topology_manager_blocking<F>(
+    operation: &'static str,
+    work: F,
+) -> Result<topology_manager::TopologyManagerStateData, StatusCode>
+where
+    F: FnOnce() -> Result<topology_manager::TopologyManagerStateData, StatusCode> + Send + 'static,
+{
+    run_topology_manager_blocking_with_timeout(
+        operation,
+        TOPOLOGY_MANAGER_BLOCKING_TIMEOUT,
+        TOPOLOGY_MANAGER_READ_PERMITS.clone(),
+        work,
+    )
+    .await
+}
+
+async fn run_topology_manager_mutation_blocking<F>(
+    operation: &'static str,
+    work: F,
+) -> Result<topology_manager::TopologyManagerStateData, StatusCode>
+where
+    F: FnOnce() -> Result<topology_manager::TopologyManagerStateData, StatusCode> + Send + 'static,
+{
+    run_topology_manager_blocking_with_timeout(
+        operation,
+        TOPOLOGY_MANAGER_BLOCKING_TIMEOUT,
+        TOPOLOGY_MANAGER_BLOCKING_PERMITS.clone(),
+        work,
+    )
+    .await
+}
+
+async fn run_topology_manager_blocking_with_timeout<F>(
+    operation: &'static str,
+    timeout_duration: Duration,
+    permits: Arc<Semaphore>,
+    work: F,
+) -> Result<topology_manager::TopologyManagerStateData, StatusCode>
+where
+    F: FnOnce() -> Result<topology_manager::TopologyManagerStateData, StatusCode> + Send + 'static,
+{
+    let permit = match tokio::time::timeout(timeout_duration, permits.acquire_owned()).await {
+        Ok(Ok(permit)) => permit,
+        Ok(Err(_)) => {
+            warn!(
+                operation,
+                "Topology manager blocking semaphore is unavailable"
+            );
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+        Err(_) => {
+            warn!(
+                operation,
+                timeout_ms = timeout_duration.as_millis(),
+                "Timed out waiting for topology manager blocking slot"
+            );
+            return Err(StatusCode::GATEWAY_TIMEOUT);
+        }
+    };
+
+    tokio::task::block_in_place(move || {
+        let _permit = permit;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+            Ok(result) => result,
+            Err(_) => {
+                warn!(operation, "Topology manager blocking task panicked");
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    })
 }
 
 /// Provides an Axum router for the websocket system. Exposes a single /ws route that supports
@@ -115,7 +203,12 @@ async fn ws_handler(
     Extension(probe_client): Extension<ProbeClient>,
     Extension(shaper_query): Extension<Sender<ShaperQueryCommand>>,
     headers: HeaderMap,
-) -> impl IntoResponse {
+) -> Response {
+    if !websocket_origin_allowed(&headers) {
+        warn!("Rejected websocket upgrade with cross-origin Origin header");
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     let has_cookie = headers.contains_key(header::COOKIE);
     let user_agent = headers
         .get(header::USER_AGENT)
@@ -127,30 +220,74 @@ async fn ws_handler(
         .get(header::ACCEPT_LANGUAGE)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
+    let login = login_from_cookie_header(
+        headers
+            .get(header::COOKIE)
+            .and_then(|value| value.to_str().ok()),
+    )
+    .await;
     ws.on_upgrade(move |socket| async move {
         handle_socket(
             socket,
-            channels,
-            bus_tx,
-            control_tx,
-            probe_client,
-            shaper_query,
-            browser_language,
+            WsUpgradeContext {
+                channels,
+                bus_tx,
+                control_tx,
+                probe_client,
+                shaper_query,
+                browser_language,
+                login,
+            },
         )
         .await;
     })
+    .into_response()
 }
 
-async fn handle_socket(
-    socket: WebSocket,
-    channels: Arc<PubSub>,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
-    probe_client: ProbeClient,
-    shaper_query: Sender<ShaperQueryCommand>,
-    browser_language: Option<String>,
-) {
+fn websocket_origin_allowed(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    else {
+        return true;
+    };
+
+    let Some(host) = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    else {
+        return false;
+    };
+
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    let Some(scheme) = uri.scheme_str() else {
+        return false;
+    };
+    if scheme != "http" && scheme != "https" {
+        return false;
+    }
+
+    uri.authority()
+        .map(|authority| authority.as_str().eq_ignore_ascii_case(host))
+        .unwrap_or(false)
+}
+
+async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
     info!("Websocket connected");
+
+    let WsUpgradeContext {
+        channels,
+        bus_tx,
+        control_tx,
+        probe_client,
+        shaper_query,
+        browser_language,
+        mut login,
+    } = context;
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -166,7 +303,6 @@ async fn handle_socket(
     });
     let mut subscribed_channels = HashSet::new();
     let mut handshake_complete = false;
-    let mut login = LoginResult::Denied;
     let handshake_timeout =
         tokio::time::sleep(std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS));
     tokio::pin!(handshake_timeout);
@@ -264,6 +400,10 @@ struct WsRequestState<'a> {
     shaper_query: Sender<ShaperQueryCommand>,
 }
 
+fn can_write_dashboard_themes(login: LoginResult) -> bool {
+    login == LoginResult::Admin
+}
+
 async fn receive_channel_message(
     msg: Message,
     channels: Arc<PubSub>,
@@ -314,13 +454,10 @@ async fn receive_channel_message(
                 warn!("Websocket handshake ack mismatch");
                 return true;
             }
-            let token = reply.token.trim();
-            let login_result = login_from_token(token).await;
-            if login_result == LoginResult::Denied {
-                warn!("Websocket handshake token rejected");
+            if *request_state.login == LoginResult::Denied {
+                warn!("Websocket handshake cookie rejected");
                 return true;
             }
-            *request_state.login = login_result;
             *handshake_complete = true;
             info!("Websocket handshake completed");
             return false;
@@ -352,17 +489,25 @@ async fn receive_channel_message(
             }
         }
         WsRequest::DashletSave { name, entries } => {
-            let data = dashboard_themes::DashletSave { name, entries };
-            let result = dashboard_themes::save_theme_data(&data);
-            let response = match result {
-                Ok(_) => WsResponse::DashletSaveResult {
-                    ok: true,
-                    error: None,
-                },
-                Err(err) => WsResponse::DashletSaveResult {
+            let response = if can_write_dashboard_themes(*request_state.login) {
+                let data = dashboard_themes::DashletSave { name, entries };
+                match dashboard_themes::save_theme_data(&data) {
+                    Ok(_) => WsResponse::DashletSaveResult {
+                        ok: true,
+                        error: None,
+                    },
+                    Err(err) => WsResponse::DashletSaveResult {
+                        ok: false,
+                        error: Some(err),
+                    },
+                }
+            } else {
+                WsResponse::DashletSaveResult {
                     ok: false,
-                    error: Some(err),
-                },
+                    error: Some(
+                        "Only administrators can save shared dashboard layouts.".to_string(),
+                    ),
+                }
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -376,16 +521,24 @@ async fn receive_channel_message(
             }
         }
         WsRequest::DashletDelete { name } => {
-            let result = dashboard_themes::delete_theme_file(&name);
-            let response = match result {
-                Ok(_) => WsResponse::DashletDeleteResult {
-                    ok: true,
-                    error: None,
-                },
-                Err(err) => WsResponse::DashletDeleteResult {
+            let response = if can_write_dashboard_themes(*request_state.login) {
+                match dashboard_themes::delete_theme_file(&name) {
+                    Ok(_) => WsResponse::DashletDeleteResult {
+                        ok: true,
+                        error: None,
+                    },
+                    Err(err) => WsResponse::DashletDeleteResult {
+                        ok: false,
+                        error: Some(err),
+                    },
+                }
+            } else {
+                WsResponse::DashletDeleteResult {
                     ok: false,
-                    error: Some(err),
-                },
+                    error: Some(
+                        "Only administrators can delete shared dashboard layouts.".to_string(),
+                    ),
+                }
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -660,29 +813,31 @@ async fn receive_channel_message(
             }
         }
         WsRequest::AsnFlowTimeline { asn } => {
-            let response = WsResponse::AsnFlowTimeline {
-                asn,
-                data: flow_explorer::flow_timeline_data(asn),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::flow_timeline_data(asn)
+                .map(|data| WsResponse::AsnFlowTimeline { asn, data });
+            if send_flow_timeline_response(&tx, "ASN", response).await {
                 return true;
             }
         }
         WsRequest::CountryFlowTimeline { iso_code } => {
-            let response = WsResponse::CountryFlowTimeline {
-                iso_code: iso_code.clone(),
-                data: flow_explorer::country_timeline_data(&iso_code),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::country_timeline_data(&iso_code).map(|data| {
+                WsResponse::CountryFlowTimeline {
+                    iso_code: iso_code.clone(),
+                    data,
+                }
+            });
+            if send_flow_timeline_response(&tx, "country", response).await {
                 return true;
             }
         }
         WsRequest::ProtocolFlowTimeline { protocol } => {
-            let response = WsResponse::ProtocolFlowTimeline {
-                protocol: protocol.clone(),
-                data: flow_explorer::protocol_timeline_data(&protocol),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::protocol_timeline_data(&protocol).map(|data| {
+                WsResponse::ProtocolFlowTimeline {
+                    protocol: protocol.clone(),
+                    data,
+                }
+            });
+            if send_flow_timeline_response(&tx, "protocol", response).await {
                 return true;
             }
         }
@@ -1631,6 +1786,48 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::CreateLocalApiKey { name } => {
+            let response = match local_api_keys::create(*request_state.login, name).await {
+                Ok(key) => WsResponse::CreateLocalApiKeyResult {
+                    ok: true,
+                    message: "API key created".to_string(),
+                    key: Some(key),
+                },
+                Err(message) => WsResponse::CreateLocalApiKeyResult {
+                    ok: false,
+                    message,
+                    key: None,
+                },
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::RevokeLocalApiKey { id } => {
+            let result = local_api_keys::revoke(*request_state.login, id).await;
+            let (ok, message) = match result {
+                Ok(()) => (true, "API key revoked".to_string()),
+                Err(message) => (false, message),
+            };
+            if send_ws_response(&tx, WsResponse::RevokeLocalApiKeyResult { ok, message }).await {
+                return true;
+            }
+        }
+        WsRequest::RemoveLegacyLocalApiKey => {
+            let result = local_api_keys::remove_legacy(*request_state.login).await;
+            let (ok, message) = match result {
+                Ok(()) => (true, "Legacy local API key removed".to_string()),
+                Err(message) => (false, message),
+            };
+            if send_ws_response(
+                &tx,
+                WsResponse::RemoveLegacyLocalApiKeyResult { ok, message },
+            )
+            .await
+            {
+                return true;
+            }
+        }
         WsRequest::UpdateNetworkJsonOnly { network_json } => {
             let result = config::update_network_json_only_data(*request_state.login, network_json);
             let (ok, message) = match result {
@@ -1838,7 +2035,12 @@ async fn receive_channel_message(
             }
         }
         WsRequest::GetTopologyManagerState => {
-            match topology_manager::get_topology_manager_state(*request_state.login) {
+            let login = *request_state.login;
+            match run_topology_manager_blocking("get_topology_manager_state", move || {
+                topology_manager::get_topology_manager_state(login)
+            })
+            .await
+            {
                 Ok(data) => {
                     let response = WsResponse::GetTopologyManagerState { data };
                     if send_ws_response(&tx, response).await {
@@ -1890,8 +2092,12 @@ async fn receive_channel_message(
             }
         }
         WsRequest::SetTopologyManagerOverride { update } => {
-            let result =
-                topology_manager::set_topology_manager_override(*request_state.login, update);
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_override",
+                move || topology_manager::set_topology_manager_override(login, update),
+            )
+            .await;
             match result {
                 Ok(data) => {
                     let response = WsResponse::SetTopologyManagerOverrideResult {
@@ -1930,8 +2136,12 @@ async fn receive_channel_message(
             }
         }
         WsRequest::ClearTopologyManagerOverride { clear } => {
-            let result =
-                topology_manager::clear_topology_manager_override(*request_state.login, clear);
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "clear_topology_manager_override",
+                move || topology_manager::clear_topology_manager_override(login, clear),
+            )
+            .await;
             match result {
                 Ok(data) => {
                     let response = WsResponse::ClearTopologyManagerOverrideResult {
@@ -1970,8 +2180,12 @@ async fn receive_channel_message(
             }
         }
         WsRequest::SetTopologyManagerProbePolicy { update } => {
-            let result =
-                topology_manager::set_topology_manager_probe_policy(*request_state.login, update);
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_probe_policy",
+                move || topology_manager::set_topology_manager_probe_policy(login, update),
+            )
+            .await;
             match result {
                 Ok(data) => {
                     let response = WsResponse::SetTopologyManagerProbePolicyResult {
@@ -2010,10 +2224,14 @@ async fn receive_channel_message(
             }
         }
         WsRequest::SetTopologyManagerAttachmentRateOverride { update } => {
-            let result = topology_manager::set_topology_manager_attachment_rate_override(
-                *request_state.login,
-                update,
-            );
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_attachment_rate_override",
+                move || {
+                    topology_manager::set_topology_manager_attachment_rate_override(login, update)
+                },
+            )
+            .await;
             match result {
                 Ok(data) => {
                     let response = WsResponse::SetTopologyManagerAttachmentRateOverrideResult {
@@ -2052,10 +2270,14 @@ async fn receive_channel_message(
             }
         }
         WsRequest::ClearTopologyManagerAttachmentRateOverride { clear } => {
-            let result = topology_manager::clear_topology_manager_attachment_rate_override(
-                *request_state.login,
-                clear,
-            );
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "clear_topology_manager_attachment_rate_override",
+                move || {
+                    topology_manager::clear_topology_manager_attachment_rate_override(login, clear)
+                },
+            )
+            .await;
             match result {
                 Ok(data) => {
                     let response = WsResponse::ClearTopologyManagerAttachmentRateOverrideResult {
@@ -2094,10 +2316,14 @@ async fn receive_channel_message(
             }
         }
         WsRequest::SetTopologyManagerManualAttachmentGroup { update } => {
-            let result = topology_manager::set_topology_manager_manual_attachment_group(
-                *request_state.login,
-                update,
-            );
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_manual_attachment_group",
+                move || {
+                    topology_manager::set_topology_manager_manual_attachment_group(login, update)
+                },
+            )
+            .await;
             match result {
                 Ok(data) => {
                     let response = WsResponse::SetTopologyManagerManualAttachmentGroupResult {
@@ -2136,10 +2362,14 @@ async fn receive_channel_message(
             }
         }
         WsRequest::ClearTopologyManagerManualAttachmentGroup { clear } => {
-            let result = topology_manager::clear_topology_manager_manual_attachment_group(
-                *request_state.login,
-                clear,
-            );
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "clear_topology_manager_manual_attachment_group",
+                move || {
+                    topology_manager::clear_topology_manager_manual_attachment_group(login, clear)
+                },
+            )
+            .await;
             match result {
                 Ok(data) => {
                     let response = WsResponse::ClearTopologyManagerManualAttachmentGroupResult {
@@ -2485,6 +2715,26 @@ fn maybe_schedule_lts_signup_shutdown(
     }
 }
 
+async fn send_flow_timeline_response(
+    tx: &Sender<Arc<Vec<u8>>>,
+    label: &str,
+    response: Result<WsResponse, lqos_utils::unix_time::TimeError>,
+) -> bool {
+    match response {
+        Ok(response) => send_ws_response(tx, response).await,
+        Err(err) => {
+            warn!("Unable to build {label} flow timeline: {err}");
+            send_ws_response(
+                tx,
+                WsResponse::Error {
+                    message: format!("Unable to build {label} flow timeline"),
+                },
+            )
+            .await
+        }
+    }
+}
+
 fn decode_ws_request(payload: &[u8]) -> Result<WsRequest, String> {
     let prefix = payload_prefix_hex(payload, 24);
     let hint = payload_hint(payload);
@@ -2540,16 +2790,24 @@ fn payload_hint(payload: &[u8]) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_ws_request, maybe_schedule_lts_signup_shutdown};
+    use super::{
+        can_write_dashboard_themes, decode_ws_request, maybe_schedule_lts_signup_shutdown,
+        run_topology_manager_blocking_with_timeout, run_topology_manager_mutation_blocking,
+        websocket_origin_allowed,
+    };
+    use crate::node_manager::auth::LoginResult;
     use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
     use crate::node_manager::ws::messages::WsRequest;
     use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
+    use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
     use serde_cbor::Value as CborValue;
     use std::collections::BTreeMap;
     use std::sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     };
+    use std::time::Duration;
+    use tokio::sync::Semaphore;
 
     fn text(value: &str) -> CborValue {
         CborValue::Text(value.to_string())
@@ -2591,6 +2849,130 @@ mod tests {
             ("upload_max_mbps", float(200.0)),
             ("comment", text("")),
         ])
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_propagates_status_errors() {
+        let result = run_topology_manager_blocking_with_timeout(
+            "test_status_error",
+            Duration::from_millis(50),
+            Arc::new(Semaphore::new(1)),
+            || Err(StatusCode::BAD_REQUEST),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_returns_success_data() {
+        let result =
+            run_topology_manager_blocking_with_timeout(
+                "test_success",
+                Duration::from_millis(50),
+                Arc::new(Semaphore::new(1)),
+                || {
+                    Ok(crate::node_manager::local_api::topology_manager::TopologyManagerStateData {
+                    writable: true,
+                    source: "test".to_string(),
+                    schema_version: 1,
+                    nodes: Vec::new(),
+                    global_warnings: Vec::new(),
+                })
+                },
+            )
+            .await
+            .expect("topology manager state should be returned");
+
+        assert!(result.writable);
+        assert_eq!(result.source, "test");
+        assert_eq!(result.schema_version, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_maps_panics_to_internal_server_error() {
+        let result = run_topology_manager_blocking_with_timeout(
+            "test_panic",
+            Duration::from_millis(50),
+            Arc::new(Semaphore::new(1)),
+            || panic!("topology manager test panic"),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_times_out_waiting_for_slot() {
+        let permits = Arc::new(Semaphore::new(1));
+        let held_permit = permits
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("test semaphore is open");
+
+        let result = run_topology_manager_blocking_with_timeout(
+            "test_timeout",
+            Duration::from_millis(5),
+            permits,
+            || panic!("work should not start without a topology manager slot"),
+        )
+        .await;
+
+        drop(held_permit);
+        assert_eq!(result.unwrap_err(), StatusCode::GATEWAY_TIMEOUT);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_mutations_are_serialized() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let first_active = active.clone();
+        let first_max = max_active.clone();
+        let first = tokio::spawn(async move {
+            run_topology_manager_mutation_blocking("test_mutation_one", move || {
+                let now_active = first_active.fetch_add(1, Ordering::SeqCst) + 1;
+                first_max.fetch_max(now_active, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(20));
+                first_active.fetch_sub(1, Ordering::SeqCst);
+                Err(StatusCode::BAD_REQUEST)
+            })
+            .await
+        });
+
+        let second_active = active.clone();
+        let second_max = max_active.clone();
+        let second = tokio::spawn(async move {
+            run_topology_manager_mutation_blocking("test_mutation_two", move || {
+                let now_active = second_active.fetch_add(1, Ordering::SeqCst) + 1;
+                second_max.fetch_max(now_active, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(20));
+                second_active.fetch_sub(1, Ordering::SeqCst);
+                Err(StatusCode::BAD_REQUEST)
+            })
+            .await
+        });
+
+        assert_eq!(first.await.unwrap().unwrap_err(), StatusCode::BAD_REQUEST);
+        assert_eq!(second.await.unwrap().unwrap_err(), StatusCode::BAD_REQUEST);
+        assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_mutation_maps_panics_to_internal_server_error() {
+        let result = run_topology_manager_mutation_blocking("test_mutation_panic", || {
+            panic!("topology manager mutation test panic");
+        })
+        .await;
+
+        assert_eq!(result.unwrap_err(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let recovered = run_topology_manager_mutation_blocking("test_mutation_after_panic", || {
+            Err(StatusCode::BAD_REQUEST)
+        })
+        .await;
+        assert_eq!(recovered.unwrap_err(), StatusCode::BAD_REQUEST);
     }
 
     fn create_shaped_device_payload(device: CborValue) -> Vec<u8> {
@@ -2674,6 +3056,53 @@ mod tests {
             panic!("response should encode as a CBOR map");
         };
         entries.contains_key(&text("request_id"))
+    }
+
+    fn origin_headers(host: &str, origin: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_str(host).unwrap());
+        if let Some(origin) = origin {
+            headers.insert(header::ORIGIN, HeaderValue::from_str(origin).unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn read_only_websocket_users_cannot_write_dashboard_themes() {
+        assert!(can_write_dashboard_themes(LoginResult::Admin));
+        assert!(!can_write_dashboard_themes(LoginResult::ReadOnly));
+        assert!(!can_write_dashboard_themes(LoginResult::Denied));
+    }
+
+    #[test]
+    fn websocket_origin_allows_same_origin_and_non_browser_clients() {
+        assert!(websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("https://node.example.test:9123")
+        )));
+        assert!(websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            None
+        )));
+    }
+
+    #[test]
+    fn websocket_origin_rejects_cross_origin_and_invalid_origin() {
+        assert!(!websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("https://evil.example.test")
+        )));
+        assert!(!websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("null")
+        )));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://node.example.test:9123"),
+        );
+        assert!(!websocket_origin_allowed(&headers));
     }
 
     #[test]

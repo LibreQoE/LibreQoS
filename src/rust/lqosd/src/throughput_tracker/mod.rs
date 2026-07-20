@@ -4,8 +4,8 @@ mod throughput_entry;
 mod tracking_data;
 
 use self::flow_data::{
-    ALL_FLOWS, FlowAnalysis, FlowbeeLocalData, get_asn_name_and_country, get_asn_name_by_id,
-    snapshot_asn_heatmaps,
+    ActiveFlowSnapshot, FlowAnalysis, FlowbeeLocalData, active_flow_snapshot, get_asn_name_by_id,
+    live_active_flow_count, refresh_active_flow_snapshot, snapshot_asn_heatmaps,
 };
 use self::throughput_entry::ThroughputEntry;
 use crate::system_stats::SystemStats;
@@ -19,16 +19,21 @@ pub(crate) use flow_data::RttBuffer;
 use fxhash::{FxHashMap, FxHashSet};
 use lqos_bakery::{BakeryCommands, full_reload_in_progress};
 use lqos_bus::{
-    AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, FlowbeeProtocol,
-    IpStats, SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
+    AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, IpStats,
+    SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
 };
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, queue_stats_stale};
 use lqos_sys::flowbee_data::FlowbeeKey;
+#[cfg(test)]
+use lqos_utils::qoo::QoqScores;
 use lqos_utils::rtt::RttBucket;
+#[cfg(test)]
+use lqos_utils::rtt::RttData;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample, down_up_retransmit_sample};
 use lqos_utils::{XdpIpAddress, hash_to_i64, unix_time::time_since_boot};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::net::IpAddr;
 use std::sync::Arc;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
@@ -37,6 +42,7 @@ use tracing::{debug, info, warn};
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
 const RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS: u64 = 5;
+type FinishedFlowExport = (FlowbeeKey, (FlowbeeLocalData, FlowAnalysis));
 
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
 pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
@@ -68,24 +74,54 @@ pub(crate) fn circuit_current_qoo(circuit_hash: i64) -> DownUpOrder<Option<f32>>
         return DownUpOrder::default();
     };
     let blocks = heatmap.blocks();
-    DownUpOrder {
-        down: blocks.download_total.last().copied().flatten(),
-        up: blocks.upload_total.last().copied().flatten(),
+    blocks.current_values()
+}
+
+fn finish_expired_flows(
+    finished_flow_exports: &mut Vec<FinishedFlowExport>,
+    expired_flows: &mut [FlowbeeKey],
+    netflow_sender: &crossbeam_channel::Sender<FinishedFlowExport>,
+    end_flows: impl FnOnce(&mut [FlowbeeKey]) -> anyhow::Result<()>,
+) {
+    for export in finished_flow_exports.drain(..) {
+        if let Err(e) = netflow_sender.send(export) {
+            warn!("Failed to send finished flow export: {:?}", e);
+        }
+    }
+
+    if !expired_flows.is_empty()
+        && let Err(e) = end_flows(expired_flows)
+    {
+        warn!("Failed to end flows: {:?}", e);
     }
 }
 
-fn resolve_circuit_metadata_for_entry(
-    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+fn dedup_flow_keys(keys: &mut Vec<FlowbeeKey>) {
+    let mut seen = FxHashSet::default();
+    keys.retain(|key| seen.insert(*key));
+}
+
+/// Resolves the shaped-device row for an active flow from its hashes, then its local IP.
+pub(crate) fn resolve_flow_device<'a>(
+    catalog: &'a lqos_network_devices::NetworkDevicesCatalog,
     ip: &XdpIpAddress,
-    entry: &ThroughputEntry,
+    device_hash: Option<i64>,
+    circuit_hash: Option<i64>,
+) -> Option<&'a lqos_config::ShapedDevice> {
+    catalog
+        .device_by_hashes(device_hash, circuit_hash)
+        .or_else(|| catalog.device_longest_match_for_ip(ip).map(|(_, dev)| dev))
+}
+
+/// Resolves circuit ID/name metadata for an active-flow or throughput row.
+pub(crate) fn flow_circuit_metadata_from_device(
+    device: Option<&lqos_config::ShapedDevice>,
+    circuit_id_hint: Option<&str>,
 ) -> (String, String) {
-    let mut circuit_id = entry.circuit_id.clone().unwrap_or_default();
+    let mut circuit_id = circuit_id_hint.unwrap_or_default().to_string();
     let mut circuit_name = String::new();
 
-    if let Some(device) = catalog
-        .device_by_hashes(entry.device_hash, entry.circuit_hash)
-        .or_else(|| catalog.device_longest_match_for_ip(ip).map(|(_, dev)| dev))
-    {
+    if let Some(device) = device {
         if circuit_id.is_empty() {
             circuit_id = device.circuit_id.clone();
         }
@@ -95,6 +131,17 @@ fn resolve_circuit_metadata_for_entry(
     (circuit_id, circuit_name)
 }
 
+fn resolve_circuit_metadata_for_entry(
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+    ip: &XdpIpAddress,
+    entry: &ThroughputEntry,
+) -> (String, String) {
+    flow_circuit_metadata_from_device(
+        resolve_flow_device(catalog, ip, entry.device_hash, entry.circuit_hash),
+        entry.circuit_id.as_deref(),
+    )
+}
+
 pub(crate) fn resolve_circuit_metadata_for_ip(ip: &XdpIpAddress) -> (String, String) {
     let catalog = lqos_network_devices::network_devices_catalog();
     let throughput = THROUGHPUT_TRACKER.raw_data.lock();
@@ -102,6 +149,87 @@ pub(crate) fn resolve_circuit_metadata_for_ip(ip: &XdpIpAddress) -> (String, Str
         return (String::new(), String::new());
     };
     resolve_circuit_metadata_for_entry(&catalog, ip, entry)
+}
+
+#[cfg(test)]
+pub(crate) struct RawThroughputTestEntry {
+    pub(crate) ip: XdpIpAddress,
+    pub(crate) circuit_hash: Option<i64>,
+    pub(crate) device_hash: Option<i64>,
+    pub(crate) most_recent_cycle: u64,
+    pub(crate) bytes_per_second: DownUpOrder<u64>,
+    pub(crate) tcp_packets: DownUpOrder<u64>,
+    pub(crate) tcp_retransmits: DownUpOrder<u64>,
+}
+
+#[cfg(test)]
+pub(crate) struct RawThroughputTestGuard {
+    old_cycle: u64,
+    old_raw_data: Option<std::collections::HashMap<XdpIpAddress, ThroughputEntry>>,
+}
+
+#[cfg(test)]
+impl Drop for RawThroughputTestGuard {
+    fn drop(&mut self) {
+        THROUGHPUT_TRACKER
+            .cycle
+            .store(self.old_cycle, std::sync::atomic::Ordering::Relaxed);
+        if let Some(old_raw_data) = self.old_raw_data.take() {
+            *THROUGHPUT_TRACKER.raw_data.lock() = old_raw_data;
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn replace_raw_throughput_for_test(
+    cycle: u64,
+    entries: Vec<RawThroughputTestEntry>,
+) -> RawThroughputTestGuard {
+    let old_cycle = THROUGHPUT_TRACKER
+        .cycle
+        .swap(cycle, std::sync::atomic::Ordering::Relaxed);
+    let mut raw_data = THROUGHPUT_TRACKER.raw_data.lock();
+    let old_raw_data = std::mem::take(&mut *raw_data);
+    for entry in entries {
+        raw_data.insert(
+            entry.ip,
+            ThroughputEntry {
+                circuit_id: None,
+                circuit_hash: entry.circuit_hash,
+                device_hash: entry.device_hash,
+                network_json_parents: None,
+                first_cycle: 0,
+                most_recent_cycle: entry.most_recent_cycle,
+                bytes: DownUpOrder::zeroed(),
+                actual_bytes: DownUpOrder::zeroed(),
+                packets: DownUpOrder::zeroed(),
+                tcp_packets: entry.tcp_packets,
+                udp_packets: DownUpOrder::zeroed(),
+                icmp_packets: DownUpOrder::zeroed(),
+                prev_bytes: DownUpOrder::zeroed(),
+                prev_actual_bytes: DownUpOrder::zeroed(),
+                prev_packets: DownUpOrder::zeroed(),
+                prev_tcp_packets: DownUpOrder::zeroed(),
+                prev_udp_packets: DownUpOrder::zeroed(),
+                prev_icmp_packets: DownUpOrder::zeroed(),
+                bytes_per_second: entry.bytes_per_second,
+                actual_bytes_per_second: DownUpOrder::zeroed(),
+                packets_per_second: DownUpOrder::zeroed(),
+                tc_handle: TcHandle::from_u32(0),
+                rtt_buffer: RttBuffer::default(),
+                recent_rtt_data: [RttData::from_nanos(0); 60],
+                last_fresh_rtt_data_cycle: 0,
+                last_seen: 0,
+                tcp_retransmits: entry.tcp_retransmits,
+                tcp_retransmit_packets: DownUpOrder::zeroed(),
+                qoq: QoqScores::default(),
+            },
+        );
+    }
+    RawThroughputTestGuard {
+        old_cycle,
+        old_raw_data: Some(old_raw_data),
+    }
 }
 
 /// Create the throughput monitor thread, and begin polling for
@@ -216,6 +344,7 @@ fn throughput_task(
     let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut tcp_retry_packets: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
     let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
+    let mut finished_flow_exports: Vec<FinishedFlowExport> = Vec::new();
 
     // Counter for occasional stats
     let mut stats_counter = 0;
@@ -250,7 +379,6 @@ fn throughput_task(
             reload_backoff_logged = false;
         }
 
-        // Formerly a "spawn blocking" blob
         {
             lqos_network_devices::with_network_json_write(|net_json_calc| {
                 timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
@@ -265,13 +393,13 @@ fn throughput_task(
                     timer_metrics.start.elapsed().as_secs_f64();
                 THROUGHPUT_TRACKER.apply_flow_data(FlowApplyContext {
                     timeout_seconds,
-                    sender: netflow_sender.clone(),
                     net_json_calc,
                     rtt_circuit_tracker: &mut rtt_circuit_tracker,
                     rtt_by_circuit: &mut rtt_by_circuit,
                     tcp_retries: &mut tcp_retries,
                     tcp_retry_packets: &mut tcp_retry_packets,
                     expired_keys: &mut expired_flows,
+                    finished_flow_exports: &mut finished_flow_exports,
                 });
                 CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
                 THROUGHPUT_TRACKER.record_circuit_heatmaps();
@@ -279,18 +407,6 @@ fn throughput_task(
                     .map(|config| config.enable_site_heatmaps)
                     .unwrap_or(true);
                 net_json_calc.record_site_heatmaps(enable_site_heatmaps);
-
-                // Clean up work tables
-                rtt_circuit_tracker.clear();
-                rtt_by_circuit.clear();
-                tcp_retries.clear();
-                tcp_retry_packets.clear();
-                expired_flows.clear();
-                rtt_circuit_tracker.shrink_to_fit();
-                rtt_by_circuit.shrink_to_fit();
-                tcp_retries.shrink_to_fit();
-                tcp_retry_packets.shrink_to_fit();
-                expired_flows.shrink_to_fit();
 
                 timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
                 if bakery_reload_in_progress {
@@ -306,6 +422,23 @@ fn throughput_task(
                 THROUGHPUT_TRACKER.next_cycle();
                 timer_metrics.next_cycle = timer_metrics.start.elapsed().as_secs_f64();
             });
+
+            dedup_flow_keys(&mut expired_flows);
+            refresh_active_flow_snapshot();
+            finish_expired_flows(
+                &mut finished_flow_exports,
+                expired_flows.as_mut_slice(),
+                &netflow_sender,
+                lqos_sys::end_flows,
+            );
+
+            // Clean up work tables after post-update exports and BPF cleanup.
+            rtt_circuit_tracker.clear();
+            rtt_by_circuit.clear();
+            tcp_retries.clear();
+            tcp_retry_packets.clear();
+            expired_flows.clear();
+
             timer_metrics.finish_update_cycle = timer_metrics.start.elapsed().as_secs_f64();
             let duration_ms = start.elapsed().as_micros();
             TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
@@ -319,7 +452,6 @@ fn throughput_task(
             );
         } else if let Some(last) = last_submitted_to_lts {
             let elapsed_f64 = last.elapsed().as_secs_f64();
-            // Temporary: place this in a thread to not block the timer
             let my_system_usage_actor = system_usage_actor.clone();
             // Submit if a reasonable amount of time has passed - drop if there was a long hitch
             if elapsed_f64 < 2.0 {
@@ -405,7 +537,7 @@ pub fn host_counters() -> BusResponse {
 }
 
 #[inline(always)]
-fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
+pub(crate) fn retire_check(cycle: u64, recent_cycle: u64) -> bool {
     cycle < recent_cycle + RETIRE_AFTER_SECONDS
 }
 
@@ -1085,147 +1217,77 @@ pub fn all_unknown_ips() -> BusResponse {
     BusResponse::AllUnknownIps(result)
 }
 
-/// For debugging: dump all active flows!
+fn flow_summary_from_snapshot(flow: &ActiveFlowSnapshot) -> lqos_bus::FlowbeeSummaryData {
+    lqos_bus::FlowbeeSummaryData {
+        remote_ip: flow.display.remote_ip.clone(),
+        local_ip: flow.display.local_ip.clone(),
+        src_port: flow.display.src_port,
+        dst_port: flow.display.dst_port,
+        ip_protocol: flow.display.ip_protocol.clone(),
+        bytes_sent: flow.bytes_sent,
+        packets_sent: flow.packets_sent,
+        rate_estimate_bps: flow.rate_estimate_bps,
+        tcp_retransmits: flow.tcp_retransmits,
+        end_status: flow.end_status,
+        tos: flow.tos,
+        flags: flow.flags,
+        remote_asn: flow.display.remote_asn,
+        remote_asn_name: flow.display.remote_asn_name.clone(),
+        remote_asn_country: flow.display.remote_asn_country.clone(),
+        analysis: flow.display.analysis.clone(),
+        last_seen: flow.last_seen,
+        start_time: flow.start_time,
+        rtt_nanos: flow.rtt_nanos,
+        circuit_id: flow.circuit_id.clone(),
+        circuit_name: flow.circuit_name.clone(),
+    }
+}
+
+/// Returns all rows from the latest active-flow snapshot.
 pub fn dump_active_flows() -> BusResponse {
-    let lock = ALL_FLOWS.lock();
-    let result: Vec<lqos_bus::FlowbeeSummaryData> = lock
-        .flow_data
-        .iter()
-        .map(|(key, row)| {
-            let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-
-            let (circuit_id, circuit_name) = (String::new(), String::new());
-
-            lqos_bus::FlowbeeSummaryData {
-                remote_ip: key.remote_ip.as_ip().to_string(),
-                local_ip: key.local_ip.as_ip().to_string(),
-                src_port: key.src_port,
-                dst_port: key.dst_port,
-                ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
-                bytes_sent: row.0.bytes_sent,
-                packets_sent: row.0.packets_sent,
-                rate_estimate_bps: row.0.rate_estimate_bps,
-                tcp_retransmits: row.0.tcp_retransmits,
-                end_status: row.0.end_status,
-                tos: row.0.tos,
-                flags: row.0.get_flags(),
-                remote_asn: row.1.asn_id.0,
-                remote_asn_name: geo.name,
-                remote_asn_country: geo.country,
-                analysis: row.1.protocol_analysis.to_string(),
-                last_seen: row.0.last_seen,
-                start_time: row.0.start_time,
-                rtt_nanos: DownUpOrder::new(
-                    row.0
-                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
-                    row.0
-                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
-                ),
-                circuit_id,
-                circuit_name,
-            }
-        })
-        .collect();
+    let snapshot = active_flow_snapshot();
+    let result: Vec<lqos_bus::FlowbeeSummaryData> =
+        snapshot.iter().map(flow_summary_from_snapshot).collect();
 
     BusResponse::AllActiveFlows(result)
 }
 
 /// Count active flows
 pub fn count_active_flows() -> BusResponse {
-    let lock = ALL_FLOWS.lock();
-    BusResponse::CountActiveFlows(lock.flow_data.len() as u64)
+    BusResponse::CountActiveFlows(live_active_flow_count())
+}
+
+fn compare_top_flow(
+    a: &ActiveFlowSnapshot,
+    b: &ActiveFlowSnapshot,
+    flow_type: &TopFlowType,
+) -> Ordering {
+    match flow_type {
+        TopFlowType::RateEstimate => b.rate_estimate_bps.sum().cmp(&a.rate_estimate_bps.sum()),
+        TopFlowType::Bytes => b.bytes_sent.sum().cmp(&a.bytes_sent.sum()),
+        TopFlowType::Packets => b.packets_sent.sum().cmp(&a.packets_sent.sum()),
+        TopFlowType::Drops => b.tcp_retransmits.sum().cmp(&a.tcp_retransmits.sum()),
+        TopFlowType::RoundTripTime => a.rtt_nanos.down.cmp(&b.rtt_nanos.down),
+    }
 }
 
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
-    let lock = ALL_FLOWS.lock();
-    let mut table: Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))> = lock
-        .flow_data
-        .iter()
-        .map(|(key, value)| (*key, value.clone()))
-        .collect();
-    std::mem::drop(lock); // Early lock release
+    let snapshot = active_flow_snapshot();
+    let mut table: Vec<&ActiveFlowSnapshot> = snapshot.iter().collect();
+    let limit = n as usize;
 
-    match flow_type {
-        TopFlowType::RateEstimate => {
-            table.sort_by(|a, b| {
-                let a_total = a.1.0.rate_estimate_bps.sum();
-                let b_total = b.1.0.rate_estimate_bps.sum();
-                b_total.cmp(&a_total)
-            });
-        }
-        TopFlowType::Bytes => {
-            table.sort_by(|a, b| {
-                let a_total = a.1.0.bytes_sent.sum();
-                let b_total = b.1.0.bytes_sent.sum();
-                b_total.cmp(&a_total)
-            });
-        }
-        TopFlowType::Packets => {
-            table.sort_by(|a, b| {
-                let a_total = a.1.0.packets_sent.sum();
-                let b_total = b.1.0.packets_sent.sum();
-                b_total.cmp(&a_total)
-            });
-        }
-        TopFlowType::Drops => {
-            table.sort_by(|a, b| {
-                let a_total = a.1.0.tcp_retransmits.sum();
-                let b_total = b.1.0.tcp_retransmits.sum();
-                b_total.cmp(&a_total)
-            });
-        }
-        TopFlowType::RoundTripTime => {
-            table.sort_by(|a, b| {
-                let a_total = a.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
-                let b_total = b.1.0.get_rtt(FlowbeeEffectiveDirection::Download);
-                a_total.cmp(&b_total)
-            });
-        }
+    if limit == 0 {
+        table.clear();
+    } else if limit < table.len() {
+        table.select_nth_unstable_by(limit, |a, b| compare_top_flow(a, b, &flow_type));
+        table.truncate(limit);
     }
-
-    let catalog = lqos_network_devices::network_devices_catalog();
-    let throughput = THROUGHPUT_TRACKER.raw_data.lock();
+    table.sort_by(|a, b| compare_top_flow(a, b, &flow_type));
 
     let result = table
         .iter()
-        .take(n as usize)
-        .map(|(ip, flow)| {
-            let geo = get_asn_name_and_country(ip.remote_ip.as_ip());
-            let (circuit_id, circuit_name) = throughput
-                .get(&ip.local_ip)
-                .map(|te| resolve_circuit_metadata_for_entry(&catalog, &ip.local_ip, te))
-                .unwrap_or_default();
-
-            lqos_bus::FlowbeeSummaryData {
-                remote_ip: ip.remote_ip.as_ip().to_string(),
-                local_ip: ip.local_ip.as_ip().to_string(),
-                src_port: ip.src_port,
-                dst_port: ip.dst_port,
-                ip_protocol: FlowbeeProtocol::from(ip.ip_protocol),
-                bytes_sent: flow.0.bytes_sent,
-                packets_sent: flow.0.packets_sent,
-                rate_estimate_bps: flow.0.rate_estimate_bps,
-                tcp_retransmits: flow.0.tcp_retransmits,
-                end_status: flow.0.end_status,
-                tos: flow.0.tos,
-                flags: flow.0.get_flags(),
-                remote_asn: flow.1.asn_id.0,
-                remote_asn_name: geo.name,
-                remote_asn_country: geo.country,
-                analysis: flow.1.protocol_analysis.to_string(),
-                last_seen: flow.0.last_seen,
-                start_time: flow.0.start_time,
-                rtt_nanos: DownUpOrder::new(
-                    flow.0
-                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
-                    flow.0
-                        .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
-                ),
-                circuit_id,
-                circuit_name,
-            }
-        })
+        .map(|flow| flow_summary_from_snapshot(flow))
         .collect();
 
     BusResponse::TopFlows(result)
@@ -1235,44 +1297,11 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
 pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
         let ip = XdpIpAddress::from_ip(ip);
-        let lock = ALL_FLOWS.lock();
-        let (circuit_id, circuit_name) = resolve_circuit_metadata_for_ip(&ip);
-        let matching_flows: Vec<_> = lock
-            .flow_data
+        let snapshot = active_flow_snapshot();
+        let matching_flows: Vec<_> = snapshot
             .iter()
-            .filter(|(key, _)| key.local_ip == ip)
-            .map(|(key, row)| {
-                let geo = get_asn_name_and_country(key.remote_ip.as_ip());
-
-                lqos_bus::FlowbeeSummaryData {
-                    remote_ip: key.remote_ip.as_ip().to_string(),
-                    local_ip: key.local_ip.as_ip().to_string(),
-                    src_port: key.src_port,
-                    dst_port: key.dst_port,
-                    ip_protocol: FlowbeeProtocol::from(key.ip_protocol),
-                    bytes_sent: row.0.bytes_sent,
-                    packets_sent: row.0.packets_sent,
-                    rate_estimate_bps: row.0.rate_estimate_bps,
-                    tcp_retransmits: row.0.tcp_retransmits,
-                    end_status: row.0.end_status,
-                    tos: row.0.tos,
-                    flags: row.0.get_flags(),
-                    remote_asn: row.1.asn_id.0,
-                    remote_asn_name: geo.name,
-                    remote_asn_country: geo.country,
-                    analysis: row.1.protocol_analysis.to_string(),
-                    last_seen: row.0.last_seen,
-                    start_time: row.0.start_time,
-                    rtt_nanos: DownUpOrder::new(
-                        row.0
-                            .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Download),
-                        row.0
-                            .get_summary_rtt_as_nanos(FlowbeeEffectiveDirection::Upload),
-                    ),
-                    circuit_id: circuit_id.clone(),
-                    circuit_name: circuit_name.clone(),
-                }
-            })
+            .filter(|flow| flow.key.local_ip == ip)
+            .map(flow_summary_from_snapshot)
             .collect();
 
         return BusResponse::FlowsByIp(matching_flows);
@@ -1368,7 +1397,7 @@ impl RawNetJsBody {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lts2Circuit {
     pub circuit_id: String,
     pub circuit_name: String,
@@ -1391,7 +1420,7 @@ pub struct Lts2Circuit {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lts2Device {
     pub device_id: String,
     pub device_name: String,
@@ -1406,26 +1435,33 @@ pub struct Lts2Device {
 mod compatibility_tests {
     use super::{
         CIRCUIT_RTT_BUFFERS, Lts2Circuit, RawNetJsBody, circuit_current_qoo,
-        circuit_current_rtt_p50_nanos, resolve_circuit_metadata_for_entry,
+        circuit_current_rtt_p50_nanos, finish_expired_flows, resolve_circuit_metadata_for_entry,
+        resolve_flow_device,
     };
-    use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, RttData};
+    use crate::test_support::ActiveFlowSnapshotTestContext;
+    use crate::throughput_tracker::flow_data::{
+        FlowAnalysis, FlowbeeEffectiveDirection, FlowbeeLocalData, RttData, active_flow_snapshot,
+        active_flow_test_lock, mutate_all_flows, refresh_active_flow_snapshot,
+        replace_active_flows_live_for_test,
+    };
     use crate::throughput_tracker::throughput_entry::ThroughputEntry;
     use fxhash::FxHashMap;
-    use lqos_bus::TcHandle;
+    use lqos_bus::{BusResponse, TcHandle, TopFlowType};
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
-    use lqos_utils::XdpIpAddress;
+    use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
+    use lqos_utils::{XdpIpAddress, hash_to_i64};
     use lqos_utils::qoo::QoqScores;
     use lqos_utils::qoq_heatmap::TemporalQoqHeatmap;
     use lqos_utils::rtt::RttBuffer;
     use lqos_utils::units::DownUpOrder;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use serde_json::to_value;
     use std::net::Ipv4Addr;
     use std::sync::Arc;
 
     #[allow(dead_code)]
-    #[derive(Debug, Deserialize)]
+    #[derive(Debug, Deserialize, Serialize)]
     struct OldLts2Device {
         device_id: String,
         device_name: String,
@@ -1437,7 +1473,7 @@ mod compatibility_tests {
     }
 
     #[allow(dead_code)]
-    #[derive(Debug, Deserialize)]
+    #[derive(Debug, Deserialize, Serialize)]
     struct OldLts2Circuit {
         circuit_id: String,
         circuit_name: String,
@@ -1487,6 +1523,545 @@ mod compatibility_tests {
 
         assert_eq!(decoded.download_max_mbps, 7);
         assert_eq!(decoded.upload_max_mbps, 4);
+    }
+
+    #[test]
+    fn current_lts2_circuit_round_trips_exact_rate_fields() {
+        let current = Lts2Circuit {
+            circuit_id: "cid".to_string(),
+            circuit_name: "Circuit".to_string(),
+            circuit_hash: 7,
+            download_min_mbps: 3,
+            upload_min_mbps: 2,
+            download_max_mbps: 7,
+            upload_max_mbps: 4,
+            download_min_mbps_exact: Some(2.5),
+            upload_min_mbps_exact: Some(1.5),
+            download_max_mbps_exact: Some(6.6),
+            upload_max_mbps_exact: Some(3.3),
+            parent_node: 9,
+            parent_node_name: Some("Parent".to_string()),
+            devices: Vec::new(),
+        };
+
+        let bytes = serde_cbor::to_vec(&current).expect("current payload serializes");
+        let decoded: Lts2Circuit =
+            serde_cbor::from_slice(&bytes).expect("current payload round trips");
+
+        assert_eq!(decoded.download_min_mbps_exact, Some(2.5));
+        assert_eq!(decoded.upload_min_mbps_exact, Some(1.5));
+        assert_eq!(decoded.download_max_mbps_exact, Some(6.6));
+        assert_eq!(decoded.upload_max_mbps_exact, Some(3.3));
+    }
+
+    #[test]
+    fn current_receivers_default_missing_exact_rate_fields() {
+        let old = OldLts2Circuit {
+            circuit_id: "cid".to_string(),
+            circuit_name: "Circuit".to_string(),
+            circuit_hash: 7,
+            download_min_mbps: 3,
+            upload_min_mbps: 2,
+            download_max_mbps: 7,
+            upload_max_mbps: 4,
+            parent_node: 9,
+            parent_node_name: Some("Parent".to_string()),
+            devices: Vec::new(),
+        };
+
+        let bytes = serde_cbor::to_vec(&old).expect("legacy payload serializes");
+        let decoded: Lts2Circuit =
+            serde_cbor::from_slice(&bytes).expect("current shape accepts missing exact fields");
+
+        assert_eq!(decoded.download_max_mbps, 7);
+        assert_eq!(decoded.upload_max_mbps, 4);
+        assert_eq!(decoded.download_min_mbps_exact, None);
+        assert_eq!(decoded.upload_min_mbps_exact, None);
+        assert_eq!(decoded.download_max_mbps_exact, None);
+        assert_eq!(decoded.upload_max_mbps_exact, None);
+    }
+
+    #[test]
+    fn finish_expired_flows_sends_exports_and_invokes_cleanup_once() {
+        let mut key = FlowbeeKey::default();
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 54_321;
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw.packets_sent = DownUpOrder::new(10, 20);
+        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+        raw.circuit_hash = 123;
+        raw.device_hash = 456;
+
+        let export = (
+            key,
+            (
+                FlowbeeLocalData::from_flow(&raw, &key),
+                FlowAnalysis::new(&key),
+            ),
+        );
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        let mut finished_flow_exports = vec![export];
+        let mut expired_flows = vec![key];
+        let mut cleanup_keys = Vec::new();
+
+        finish_expired_flows(
+            &mut finished_flow_exports,
+            expired_flows.as_mut_slice(),
+            &sender,
+            |keys| {
+                cleanup_keys.extend_from_slice(keys);
+                Ok(())
+            },
+        );
+
+        let received = receiver
+            .try_recv()
+            .expect("finished flow export should be sent");
+        assert_eq!(received.0, key);
+        assert!(receiver.try_recv().is_err());
+        assert!(finished_flow_exports.is_empty());
+        assert_eq!(expired_flows, vec![key]);
+        assert_eq!(cleanup_keys, vec![key]);
+    }
+
+    #[test]
+    fn finish_expired_flows_runs_cleanup_when_export_receiver_is_closed() {
+        let mut key = FlowbeeKey::default();
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 54_320;
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw.packets_sent = DownUpOrder::new(10, 20);
+        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        drop(receiver);
+        let mut finished_flow_exports = vec![(
+            key,
+            (
+                FlowbeeLocalData::from_flow(&raw, &key),
+                FlowAnalysis::new(&key),
+            ),
+        )];
+        let mut expired_flows = vec![key];
+        let mut cleanup_keys = Vec::new();
+
+        finish_expired_flows(
+            &mut finished_flow_exports,
+            expired_flows.as_mut_slice(),
+            &sender,
+            |keys| {
+                cleanup_keys.extend_from_slice(keys);
+                Ok(())
+            },
+        );
+
+        assert!(finished_flow_exports.is_empty());
+        assert_eq!(cleanup_keys, vec![key]);
+    }
+
+    #[test]
+    fn dedup_flow_keys_keeps_first_seen_order() {
+        let mut key_1 = FlowbeeKey::default();
+        key_1.ip_protocol = 6;
+        key_1.src_port = 443;
+        key_1.dst_port = 54_310;
+        let mut key_2 = key_1;
+        key_2.dst_port = 54_311;
+        let mut key_3 = key_1;
+        key_3.dst_port = 54_312;
+        let mut keys = vec![key_1, key_2, key_1, key_3, key_2];
+
+        super::dedup_flow_keys(&mut keys);
+
+        assert_eq!(keys, vec![key_1, key_2, key_3]);
+    }
+
+    #[test]
+    fn post_write_snapshot_refresh_publishes_live_writes() {
+        let _guard = active_flow_test_lock();
+        let mut key = FlowbeeKey::default();
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 54_322;
+
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(3_000, 4_000);
+        raw.packets_sent = DownUpOrder::new(30, 40);
+        raw.rate_estimate_bps = DownUpOrder::new(50_000, 60_000);
+
+        mutate_all_flows(|flows| flows.clear());
+        refresh_active_flow_snapshot();
+        assert!(active_flow_snapshot().is_empty());
+
+        mutate_all_flows(|flows| {
+            flows.insert(
+                key,
+                (
+                    FlowbeeLocalData::from_flow(&raw, &key),
+                    FlowAnalysis::new(&key),
+                ),
+            );
+        });
+        assert!(active_flow_snapshot().is_empty());
+
+        refresh_active_flow_snapshot();
+
+        let snapshot = active_flow_snapshot();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].key, key);
+
+        mutate_all_flows(|flows| flows.clear());
+        refresh_active_flow_snapshot();
+    }
+
+    #[test]
+    fn active_flow_bus_readers_use_published_snapshot_fields() {
+        let _guard = active_flow_test_lock();
+        let local_ip_1 = XdpIpAddress::from_ip("192.0.2.10".parse().expect("test IP should parse"));
+        let local_ip_2 = XdpIpAddress::from_ip("192.0.2.11".parse().expect("test IP should parse"));
+        let remote_ip_1 =
+            XdpIpAddress::from_ip("198.51.100.20".parse().expect("test IP should parse"));
+        let remote_ip_2 =
+            XdpIpAddress::from_ip("198.51.100.21".parse().expect("test IP should parse"));
+
+        let mut key_1 = FlowbeeKey::default();
+        key_1.local_ip = local_ip_1;
+        key_1.remote_ip = remote_ip_1;
+        key_1.ip_protocol = 6;
+        key_1.src_port = 443;
+        key_1.dst_port = 50_000;
+
+        let mut key_2 = key_1;
+        key_2.local_ip = local_ip_2;
+        key_2.remote_ip = remote_ip_2;
+        key_2.dst_port = 50_001;
+
+        let mut raw_1 = FlowbeeData::default();
+        raw_1.start_time = 10_000_000_000;
+        raw_1.last_seen = 20_000_000_000;
+        raw_1.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw_1.packets_sent = DownUpOrder::new(10, 20);
+        raw_1.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+        raw_1.tcp_retransmits = DownUpOrder::new(1, 2);
+        raw_1.tos = 4;
+        raw_1.flags = 0x12;
+        raw_1.circuit_hash = 9_001;
+        raw_1.device_hash = 9_002;
+
+        let mut raw_2 = raw_1.clone();
+        raw_2.bytes_sent = DownUpOrder::new(10_000, 20_000);
+        raw_2.packets_sent = DownUpOrder::new(100, 200);
+        raw_2.rate_estimate_bps = DownUpOrder::new(300_000, 400_000);
+        raw_2.tcp_retransmits = DownUpOrder::new(9, 9);
+
+        mutate_all_flows(|flows| {
+            flows.clear();
+            let mut local_1 = FlowbeeLocalData::from_flow(&raw_1, &key_1);
+            let mut rtt_1 = RttBuffer::new(
+                RttData::from_nanos(1_000_000),
+                FlowbeeEffectiveDirection::Download,
+                raw_1.last_seen,
+            );
+            rtt_1.push(
+                RttData::from_nanos(1_000_000),
+                FlowbeeEffectiveDirection::Download,
+                raw_1.last_seen,
+            );
+            local_1.set_rtt_buffer(rtt_1);
+            let mut local_2 = FlowbeeLocalData::from_flow(&raw_2, &key_2);
+            let mut rtt_2 = RttBuffer::new(
+                RttData::from_nanos(100_000_000),
+                FlowbeeEffectiveDirection::Download,
+                raw_2.last_seen,
+            );
+            rtt_2.push(
+                RttData::from_nanos(100_000_000),
+                FlowbeeEffectiveDirection::Download,
+                raw_2.last_seen,
+            );
+            local_2.set_rtt_buffer(rtt_2);
+            flows.insert(
+                key_1,
+                (local_1, FlowAnalysis::new(&key_1)),
+            );
+            flows.insert(
+                key_2,
+                (local_2, FlowAnalysis::new(&key_2)),
+            );
+        });
+        let BusResponse::CountActiveFlows(count) = super::count_active_flows() else {
+            panic!("active flow count response should match request");
+        };
+        assert_eq!(count, 2);
+        refresh_active_flow_snapshot();
+
+        let BusResponse::CountActiveFlows(count) = super::count_active_flows() else {
+            panic!("active flow count response should match request");
+        };
+        assert_eq!(count, 2);
+
+        let BusResponse::AllActiveFlows(all_flows) = super::dump_active_flows() else {
+            panic!("active flow dump response should match request");
+        };
+        let first = all_flows
+            .iter()
+            .find(|flow| flow.local_ip == "192.0.2.10")
+            .expect("first flow should be in active-flow dump");
+        assert_eq!(first.remote_ip, "198.51.100.20");
+        assert_eq!(first.src_port, 443);
+        assert_eq!(first.dst_port, 50_000);
+        assert_eq!(first.bytes_sent, raw_1.bytes_sent);
+        assert_eq!(first.packets_sent, raw_1.packets_sent);
+        assert_eq!(first.rate_estimate_bps, raw_1.rate_estimate_bps);
+        assert_eq!(first.tcp_retransmits, raw_1.tcp_retransmits);
+        assert_eq!(first.tos, raw_1.tos);
+        assert_eq!(first.flags, raw_1.flags);
+        assert_eq!(first.remote_asn, 0);
+        assert_eq!(first.remote_asn_name, "");
+        assert_eq!(first.remote_asn_country, "");
+        assert_eq!(first.analysis, "HTTPS");
+        assert_eq!(first.last_seen, raw_1.last_seen);
+        assert_eq!(first.start_time, raw_1.start_time);
+        assert_eq!(first.circuit_id, "");
+        assert_eq!(first.circuit_name, "");
+
+        let BusResponse::TopFlows(top_flows) = super::top_flows(1, TopFlowType::Bytes) else {
+            panic!("top flows response should match request");
+        };
+        assert_eq!(top_flows.len(), 1);
+        assert_eq!(top_flows[0].local_ip, "192.0.2.11");
+        assert_eq!(top_flows[0].bytes_sent, raw_2.bytes_sent);
+
+        let BusResponse::TopFlows(top_flows) = super::top_flows(1, TopFlowType::RateEstimate)
+        else {
+            panic!("top flows response should match request");
+        };
+        assert_eq!(top_flows.len(), 1);
+        assert_eq!(top_flows[0].local_ip, "192.0.2.11");
+        assert_eq!(top_flows[0].rate_estimate_bps, raw_2.rate_estimate_bps);
+
+        let BusResponse::TopFlows(top_flows) = super::top_flows(1, TopFlowType::Packets) else {
+            panic!("top flows response should match request");
+        };
+        assert_eq!(top_flows.len(), 1);
+        assert_eq!(top_flows[0].local_ip, "192.0.2.11");
+        assert_eq!(top_flows[0].packets_sent, raw_2.packets_sent);
+
+        let BusResponse::TopFlows(top_flows) = super::top_flows(1, TopFlowType::Drops) else {
+            panic!("top flows response should match request");
+        };
+        assert_eq!(top_flows.len(), 1);
+        assert_eq!(top_flows[0].local_ip, "192.0.2.11");
+        assert_eq!(top_flows[0].tcp_retransmits, raw_2.tcp_retransmits);
+
+        let BusResponse::TopFlows(top_flows) = super::top_flows(1, TopFlowType::RoundTripTime)
+        else {
+            panic!("top flows response should match request");
+        };
+        assert_eq!(top_flows.len(), 1);
+        assert_eq!(top_flows[0].local_ip, "192.0.2.10");
+        assert!(top_flows[0].rtt_nanos.down > 0);
+
+        let BusResponse::TopFlows(top_flows) = super::top_flows(0, TopFlowType::Bytes) else {
+            panic!("top flows response should match request");
+        };
+        assert!(top_flows.is_empty());
+
+        let BusResponse::TopFlows(top_flows) = super::top_flows(10, TopFlowType::Bytes) else {
+            panic!("top flows response should match request");
+        };
+        assert_eq!(
+            top_flows
+                .iter()
+                .map(|flow| flow.local_ip.as_str())
+                .collect::<Vec<_>>(),
+            vec!["192.0.2.11", "192.0.2.10"]
+        );
+
+        let BusResponse::FlowsByIp(flows_by_ip) = super::flows_by_ip("192.0.2.10") else {
+            panic!("flows-by-ip response should match request");
+        };
+        assert_eq!(flows_by_ip.len(), 1);
+        assert_eq!(flows_by_ip[0].local_ip, "192.0.2.10");
+        assert_eq!(flows_by_ip[0].remote_ip, "198.51.100.20");
+
+        replace_active_flows_live_for_test(Vec::new());
+        let BusResponse::CountActiveFlows(count) = super::count_active_flows() else {
+            panic!("active flow count response should match request");
+        };
+        assert_eq!(count, 0);
+        let BusResponse::FlowsByIp(flows_by_ip) = super::flows_by_ip("192.0.2.10") else {
+            panic!("flows-by-ip response should match request");
+        };
+        assert_eq!(flows_by_ip.len(), 1);
+
+        mutate_all_flows(|flows| flows.clear());
+        refresh_active_flow_snapshot();
+    }
+
+    #[test]
+    fn active_flow_snapshot_publishes_catalog_metadata_for_bus_readers() {
+        let mut ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "active-flow-test",
+            vec![ShapedDevice {
+                circuit_id: "circuit-meta".to_string(),
+                circuit_name: "Circuit Metadata".to_string(),
+                device_id: "device-meta".to_string(),
+                device_name: "Device Metadata".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 20), 32)],
+                ..Default::default()
+            }],
+        );
+        let local_ip = XdpIpAddress::from_ip("192.0.2.20".parse().expect("test IP should parse"));
+        let remote_ip =
+            XdpIpAddress::from_ip("198.51.100.30".parse().expect("test IP should parse"));
+
+        let mut key = FlowbeeKey::default();
+        key.local_ip = local_ip;
+        key.remote_ip = remote_ip;
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 50_100;
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw.packets_sent = DownUpOrder::new(10, 20);
+        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+        let mut local = FlowbeeLocalData::from_flow(&raw, &key);
+        local.set_circuit_id_hint(Some("stale-circuit"));
+
+        mutate_all_flows(|flows| {
+            flows.clear();
+            flows.insert(key, (local, FlowAnalysis::new(&key)));
+        });
+        refresh_active_flow_snapshot();
+
+        let BusResponse::FlowsByIp(flows_by_ip) = super::flows_by_ip("192.0.2.20") else {
+            panic!("flows-by-ip response should match request");
+        };
+        assert_eq!(flows_by_ip.len(), 1);
+        assert_eq!(flows_by_ip[0].circuit_id, "stale-circuit");
+        assert_eq!(flows_by_ip[0].circuit_name, "Circuit Metadata");
+        let snapshot = active_flow_snapshot();
+        assert_eq!(snapshot[0].circuit_hash, Some(hash_to_i64("circuit-meta")));
+        assert_eq!(snapshot[0].device_hash, Some(hash_to_i64("device-meta")));
+        assert_eq!(snapshot[0].device_name, "Device Metadata");
+
+        ctx.replace_shaped_devices(
+            "active-flow-test-updated",
+            vec![ShapedDevice {
+                circuit_id: "circuit-meta-updated".to_string(),
+                circuit_name: "Circuit Metadata Updated".to_string(),
+                device_id: "device-meta-updated".to_string(),
+                device_name: "Device Metadata Updated".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 20), 32)],
+                ..Default::default()
+            }],
+        );
+
+        let BusResponse::FlowsByIp(flows_by_ip) = super::flows_by_ip("192.0.2.20") else {
+            panic!("flows-by-ip response should match request");
+        };
+        assert_eq!(flows_by_ip[0].circuit_id, "stale-circuit");
+
+        refresh_active_flow_snapshot();
+        let BusResponse::FlowsByIp(flows_by_ip) = super::flows_by_ip("192.0.2.20") else {
+            panic!("flows-by-ip response should match request");
+        };
+        assert_eq!(flows_by_ip[0].circuit_id, "stale-circuit");
+        assert_eq!(flows_by_ip[0].circuit_name, "Circuit Metadata Updated");
+        assert_eq!(active_flow_snapshot()[0].device_name, "Device Metadata Updated");
+
+        mutate_all_flows(|flows| flows.clear());
+        refresh_active_flow_snapshot();
+    }
+
+    #[test]
+    fn active_flow_snapshot_prefers_hash_lookup_over_ip_fallback() {
+        let ip_matched_device = ShapedDevice {
+            circuit_id: "ip-circuit".to_string(),
+            circuit_name: "IP Circuit".to_string(),
+            device_id: "ip-device".to_string(),
+            device_name: "IP Device".to_string(),
+            parent_node: "Parent".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 0, 2, 30), 32)],
+            ..Default::default()
+        };
+        let hash_matched_device = ShapedDevice {
+            circuit_id: "hash-circuit".to_string(),
+            circuit_name: "Hash Circuit".to_string(),
+            device_id: "hash-device".to_string(),
+            device_name: "Hash Device".to_string(),
+            parent_node: "Parent".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 0, 2, 31), 32)],
+            ..Default::default()
+        };
+        let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "active-flow-hash-precedence-test",
+            vec![ip_matched_device, hash_matched_device],
+        );
+
+        let local_ip = XdpIpAddress::from_ip("192.0.2.30".parse().expect("test IP should parse"));
+        let catalog = lqos_network_devices::network_devices_catalog();
+        let resolved = resolve_flow_device(
+            &catalog,
+            &local_ip,
+            Some(hash_to_i64("hash-device")),
+            Some(hash_to_i64("hash-circuit")),
+        )
+        .expect("hash-backed device should resolve");
+        assert_eq!(resolved.device_id, "hash-device");
+
+        let mut key = FlowbeeKey::default();
+        key.local_ip = local_ip;
+        key.remote_ip =
+            XdpIpAddress::from_ip("198.51.100.40".parse().expect("test IP should parse"));
+        key.ip_protocol = 6;
+        key.src_port = 443;
+        key.dst_port = 50_110;
+        let mut raw = FlowbeeData::default();
+        raw.start_time = 10;
+        raw.last_seen = 20;
+        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
+        raw.packets_sent = DownUpOrder::new(10, 20);
+        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
+        raw.device_hash = hash_to_i64("hash-device") as u64;
+        raw.circuit_hash = hash_to_i64("hash-circuit") as u64;
+
+        mutate_all_flows(|flows| {
+            flows.clear();
+            flows.insert(
+                key,
+                (
+                    FlowbeeLocalData::from_flow(&raw, &key),
+                    FlowAnalysis::new(&key),
+                ),
+            );
+        });
+        refresh_active_flow_snapshot();
+
+        let snapshot = active_flow_snapshot();
+        assert_eq!(snapshot[0].circuit_id, "hash-circuit");
+        assert_eq!(snapshot[0].circuit_name, "Hash Circuit");
+        assert_eq!(snapshot[0].device_name, "Hash Device");
+
+        mutate_all_flows(|flows| flows.clear());
+        refresh_active_flow_snapshot();
     }
 
     #[test]
@@ -1548,7 +2123,7 @@ mod compatibility_tests {
         let shaped_catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
         let catalog = NetworkDevicesCatalog::from_snapshots(shaped_catalog, Arc::new(Vec::new()));
         let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
-        let entry = ThroughputEntry {
+        let mut entry = ThroughputEntry {
             circuit_id: None,
             circuit_hash: None,
             device_hash: None,
@@ -1583,6 +2158,12 @@ mod compatibility_tests {
         let (circuit_id, circuit_name) = resolve_circuit_metadata_for_entry(&catalog, &ip, &entry);
 
         assert_eq!(circuit_id, "circuit-1");
+        assert_eq!(circuit_name, "Circuit Alpha");
+
+        entry.circuit_id = Some("hint-circuit".to_string());
+        let (circuit_id, circuit_name) = resolve_circuit_metadata_for_entry(&catalog, &ip, &entry);
+
+        assert_eq!(circuit_id, "hint-circuit");
         assert_eq!(circuit_name, "Circuit Alpha");
     }
 

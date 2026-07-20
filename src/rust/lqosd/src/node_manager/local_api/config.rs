@@ -7,7 +7,6 @@ use axum::body::Bytes;
 use axum::http::StatusCode;
 use axum::http::header;
 use default_net::get_interfaces;
-use lqos_bus::{BusRequest, BusResponse, bus_request_with_timeout};
 use lqos_config::{
     Config, ConfigShapedDevices, NetworkJson, ShapedDevice, UserRole, WebUser, WebUsers,
 };
@@ -17,14 +16,13 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::{Cursor, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const COBRAND_FILE_NAME: &str = "cobrand.png";
 const COBRAND_DISPLAY_HEIGHT_PX: u64 = 48;
 const COBRAND_MAX_DISPLAY_WIDTH_PX: u64 = 176;
 const COBRAND_MAX_DECODE_BYTES: usize = 64 * 1024 * 1024;
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
-const CONFIG_BUS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CobrandUploadValidationError {
@@ -104,6 +102,12 @@ pub struct PowercodeSecretState {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct LocalApiSecretState {
+    #[serde(default)]
+    pub bearer_token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ConfigSecretState {
     #[serde(default)]
     pub uisp_integration: UispSecretState,
@@ -117,6 +121,8 @@ pub struct ConfigSecretState {
     pub netzur_integration: NetzurSecretState,
     #[serde(default)]
     pub powercode_integration: PowercodeSecretState,
+    #[serde(default)]
+    pub local_api: LocalApiSecretState,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -202,6 +208,12 @@ fn redact_string_secret(value: &mut String) -> bool {
     configured
 }
 
+fn redact_optional_string_secret(value: &mut Option<String>) -> bool {
+    let configured = value.as_deref().is_some_and(has_secret);
+    *value = None;
+    configured
+}
+
 fn redact_config_secrets(config: &mut Config) -> ConfigSecretState {
     let mut secret_state = ConfigSecretState::default();
 
@@ -214,6 +226,11 @@ fn redact_config_secrets(config: &mut Config) -> ConfigSecretState {
         redact_string_secret(&mut config.sonar_integration.sonar_api_key);
     secret_state.powercode_integration.powercode_api_key =
         redact_string_secret(&mut config.powercode_integration.powercode_api_key);
+    secret_state.local_api.bearer_token =
+        redact_optional_string_secret(&mut config.local_api.bearer_token);
+    for key in &mut config.local_api.keys {
+        key.token_sha256.clear();
+    }
 
     if let Some(netzur) = config.netzur_integration.as_mut() {
         secret_state.netzur_integration.api_key = redact_string_secret(&mut netzur.api_key);
@@ -265,6 +282,9 @@ fn apply_secret_updates(
         &existing.powercode_integration.powercode_api_key,
         clear_secrets.powercode_integration.powercode_api_key,
     );
+    // Local API credentials are authoritative server state and may only be
+    // changed by dedicated key-management requests.
+    incoming.local_api = existing.local_api.clone();
 
     match (
         existing.netzur_integration.as_ref(),
@@ -801,22 +821,11 @@ pub async fn update_lqosd_config_data(
     if login != LoginResult::Admin {
         return Err("Unauthorized".to_string());
     }
+    let _guard = super::local_api_keys::lock_config_update().await;
     let existing =
         lqos_config::load_config().map_err(|_| "Unable to load the current config".to_string())?;
     apply_secret_updates(existing.as_ref(), &mut config, &clear_secrets);
-    let mut responses = bus_request_with_timeout(
-        vec![BusRequest::UpdateLqosdConfig(Box::new(config))],
-        CONFIG_BUS_REQUEST_TIMEOUT,
-    )
-    .await
-    .map_err(|err| format!("Unable to update config: {err}"))?;
-
-    match responses.pop() {
-        Some(BusResponse::Ack) => Ok(()),
-        Some(BusResponse::Fail(message)) => Err(message),
-        Some(other) => Err(format!("Unexpected config update response: {other:?}")),
-        None => Err("No response received for config update".to_string()),
-    }
+    super::local_api_keys::persist_config(config).await
 }
 
 /// Persists both `network.json` and `ShapedDevices.csv` for administrative
@@ -1046,12 +1055,13 @@ mod tests {
     use axum::Extension;
     use axum::body::Bytes;
     use axum::http::HeaderMap;
-    use lqos_config::Config;
+    use lqos_config::{Config, LocalApiKeyConfig};
     use serde_json::json;
     use std::ffi::OsString;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use uuid::Uuid;
     const VALID_PNG: &[u8] = &[
         0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H', b'D',
         b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
@@ -1196,6 +1206,13 @@ mod tests {
     #[test]
     fn redacts_secret_fields_and_marks_presence() {
         let mut config = Config::default();
+        config.local_api.bearer_token = Some("local-api-token".to_string());
+        config.local_api.keys.push(LocalApiKeyConfig {
+            id: Uuid::from_u128(1).hyphenated().to_string(),
+            name: "Monitoring".to_string(),
+            token_sha256: "a".repeat(64),
+            created_at_unix: 1,
+        });
         config.uisp_integration.token = "uisp-token".to_string();
         config.splynx_integration.api_key = "splynx-key".to_string();
         config.splynx_integration.api_secret = "splynx-secret".to_string();
@@ -1222,11 +1239,15 @@ mod tests {
         assert!(secret_state.sonar_integration.sonar_api_key);
         assert!(secret_state.netzur_integration.api_key);
         assert!(secret_state.powercode_integration.powercode_api_key);
+        assert!(secret_state.local_api.bearer_token);
         assert!(config.uisp_integration.token.is_empty());
         assert!(config.splynx_integration.api_key.is_empty());
         assert!(config.splynx_integration.api_secret.is_empty());
         assert!(config.sonar_integration.sonar_api_key.is_empty());
         assert!(config.powercode_integration.powercode_api_key.is_empty());
+        assert!(config.local_api.bearer_token.is_none());
+        assert_eq!(config.local_api.keys[0].name, "Monitoring");
+        assert!(config.local_api.keys[0].token_sha256.is_empty());
         assert!(
             config
                 .visp_integration
@@ -1256,6 +1277,7 @@ mod tests {
     #[test]
     fn applies_secret_updates_with_preserve_replace_and_clear() {
         let mut existing = Config::default();
+        existing.local_api.bearer_token = Some("old-local-api-token".to_string());
         existing.uisp_integration.token = "old-uisp".to_string();
         existing.splynx_integration.api_key = "old-key".to_string();
         existing.splynx_integration.api_secret = "old-secret".to_string();
@@ -1273,6 +1295,7 @@ mod tests {
             .api_key = "old-netzur".to_string();
 
         let mut incoming = existing.clone();
+        incoming.local_api.bearer_token = None;
         incoming.uisp_integration.token.clear();
         incoming.splynx_integration.api_key = "new-key".to_string();
         incoming.splynx_integration.api_secret.clear();
@@ -1328,6 +1351,53 @@ mod tests {
             incoming.powercode_integration.powercode_api_key,
             "old-powercode"
         );
+        assert_eq!(incoming.local_api, existing.local_api);
+    }
+
+    #[test]
+    fn normal_config_updates_preserve_local_api_credentials() {
+        let mut existing = Config::default();
+        existing.local_api.bearer_token = Some("stored-token".to_string());
+        existing.local_api.keys.push(LocalApiKeyConfig {
+            id: Uuid::from_u128(1).hyphenated().to_string(),
+            name: "Automation".to_string(),
+            token_sha256: "b".repeat(64),
+            created_at_unix: 10,
+        });
+
+        let mut preserved = existing.clone();
+        preserved.local_api.bearer_token = None;
+        apply_secret_updates(
+            &existing,
+            &mut preserved,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(
+            preserved.local_api.bearer_token.as_deref(),
+            Some("stored-token")
+        );
+        assert_eq!(preserved.local_api.keys, existing.local_api.keys);
+
+        let mut replaced = existing.clone();
+        replaced.local_api.bearer_token = Some("replacement-token".to_string());
+        apply_secret_updates(
+            &existing,
+            &mut replaced,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(
+            replaced.local_api.bearer_token.as_deref(),
+            Some("stored-token")
+        );
+
+        let mut cleared = existing.clone();
+        cleared.local_api.bearer_token = None;
+        apply_secret_updates(
+            &existing,
+            &mut cleared,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(cleared.local_api, existing.local_api);
     }
 
     #[test]

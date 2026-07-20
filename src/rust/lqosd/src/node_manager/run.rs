@@ -10,7 +10,7 @@ use crate::system_stats::SystemStats;
 use anyhow::{Result, bail};
 use axum::Router;
 use axum::http::StatusCode;
-use axum::response::Redirect;
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use lqos_bus::BusRequest;
 use lqos_config::load_config;
@@ -18,7 +18,6 @@ use lqos_probe::ProbeClient;
 use std::path::Path;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc::Sender;
-use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
 
@@ -59,6 +58,7 @@ pub async fn spawn_webserver(
         .route("/doLogin", post(auth::try_login))
         .route("/firstLogin", post(auth::first_user))
         .route("/health", get(health_check))
+        .route("/template.html", get(not_found))
         .route("/configuration.html", get(redirect_configuration_page))
         // Backwards compatible aliases for historical misspellings.
         .route_service(
@@ -82,11 +82,14 @@ pub async fn spawn_webserver(
         .nest("/vendor", vendor_route()?) // Serve /vendor as purely static
         .nest("/", static_routes()?)
         .nest("/local-api", local_api(shaper_tx))
-        .fallback_service(ServeDir::new(static_path))
-        .layer(CorsLayer::very_permissive());
+        .fallback_service(ServeDir::new(static_path));
 
     info!("Webserver listening on: [{listen_address}]");
-    axum::serve(listener, router).await?;
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -103,4 +106,24 @@ async fn redirect_configuration_page() -> Redirect {
 /// Provides a simple OK status
 async fn health_check() -> (StatusCode, &'static str) {
     (StatusCode::OK, "OK")
+}
+
+async fn not_found() -> Response {
+    StatusCode::NOT_FOUND.into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn node_manager_router_sources_do_not_enable_cors_layer() {
+        let sources = [
+            include_str!("run.rs"),
+            include_str!("local_api.rs"),
+            include_str!("ws.rs"),
+        ];
+        for source in sources {
+            assert!(!source.contains(concat!("Cors", "Layer")));
+            assert!(!source.contains(concat!("tower_http::", "cors")));
+        }
+    }
 }

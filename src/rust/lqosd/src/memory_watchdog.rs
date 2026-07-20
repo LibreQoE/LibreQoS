@@ -5,7 +5,8 @@
 //! diagnostic context while leaving restart decisions to system policy and
 //! operators.
 
-use crate::stats::{BUS_REQUESTS, FLOWS_TRACKED, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
+use crate::stats::{BUS_REQUESTS, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
+use crate::throughput_tracker::flow_data::live_active_flow_count;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -151,7 +152,7 @@ struct MemoryDiagnostics {
 impl MemoryDiagnostics {
     fn read() -> Self {
         Self {
-            flows_tracked: FLOWS_TRACKED.load(Ordering::Relaxed),
+            flows_tracked: live_active_flow_count(),
             bus_requests: BUS_REQUESTS.load(Ordering::Relaxed),
             time_to_poll_hosts_us: TIME_TO_POLL_HOSTS.load(Ordering::Relaxed),
             high_watermark_down: HIGH_WATERMARK.get_down(),

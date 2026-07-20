@@ -11,6 +11,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
+use crate::lts2_sys::shared_types::LtsStatus;
 use lqos_utils::unix_time::unix_now;
 
 #[cfg(unix)]
@@ -221,11 +222,12 @@ pub fn current_valid_grant() -> Option<LicenseGrant> {
 
 pub fn current_license_limits() -> (bool, Option<u64>) {
     let caps = crate::lts2_sys::capabilities::current_capabilities();
-    if caps.mapped_circuit_limit == Some(1000) {
-        (false, None)
-    } else {
-        (true, caps.mapped_circuit_limit)
-    }
+    let status = LtsStatus::from_i32(caps.license_state);
+    let licensed = !matches!(status, LtsStatus::Invalid | LtsStatus::NotChecked);
+    (
+        licensed,
+        licensed.then_some(caps.mapped_circuit_limit).flatten(),
+    )
 }
 
 fn store_grant_state(grant: Option<LicenseGrant>) {
@@ -412,6 +414,42 @@ mod tests {
                 &envelope,
                 now,
                 &wrong_signer.public_key,
+                lqosd.public_key.as_slice(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn expired_license_grant_is_rejected() {
+        let signer = SigningKeyPair::gen_with_defaults();
+        let lqosd = SigningKeyPair::gen_with_defaults();
+        let now = 1_700_000_000i64;
+        let grant = LicenseGrant {
+            license_state: LtsStatus::ForeverFreeApi as i32,
+            trial_expiration: 0,
+            grant_expires: now,
+            issued_at: now - 3600,
+            license_uuid: Some(Uuid::new_v4()),
+            node_id: Some("node-1".to_string()),
+            max_circuits: Some(1_500),
+            lqosd_public_key: lqosd.public_key.as_slice().to_vec(),
+        };
+        let payload = serde_cbor::to_vec(&grant).expect("grant should serialize");
+        let signed = signer
+            .sign_with_defaults(payload.clone())
+            .expect("grant should sign");
+        let (signature, _message) = signed.into_parts();
+        let envelope = LicenseGrantEnvelope {
+            payload,
+            signature: signature.as_slice().to_vec(),
+        };
+
+        assert!(
+            verify_grant_with_time_and_keys(
+                &envelope,
+                now,
+                &signer.public_key,
                 lqosd.public_key.as_slice(),
             )
             .is_err()

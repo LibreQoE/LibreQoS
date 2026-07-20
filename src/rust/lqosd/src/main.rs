@@ -13,6 +13,7 @@ pub mod lts2_sys;
 mod memory_watchdog;
 mod network_devices_hooks;
 mod node_manager;
+mod override_writer;
 mod preflight_checks;
 mod probe_provider;
 mod program_control;
@@ -43,7 +44,9 @@ use crate::ip_mapping::clear_hot_cache;
 use crate::{
     file_lock::FileLock,
     ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
-    throughput_tracker::flow_data::{FlowActor, flowbee_handle_events, setup_netflow_tracker},
+    throughput_tracker::flow_data::{
+        FlowActor, flowbee_handle_events, live_active_flow_count, setup_netflow_tracker,
+    },
 };
 use anyhow::Result;
 use lqos_bus::{
@@ -61,7 +64,7 @@ use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
 };
-use stats::{BUS_REQUESTS, FLOWS_TRACKED, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
+use stats::{BUS_REQUESTS, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
 use std::{thread, time::Duration};
 use throughput_tracker::flow_data::get_rtt_events_per_second;
 use tracing::{error, info, warn};
@@ -238,6 +241,7 @@ fn main() -> Result<()> {
     lqos_network_devices::start_daemon_mode(Some(std::sync::Arc::new(
         network_devices_hooks::LqosdNetworkDevicesHooks,
     )))?;
+    override_writer::start_override_writer_actor()?;
     let system_usage_tx = system_stats::start_system_stats()?;
 
     // Handle signals
@@ -368,10 +372,6 @@ fn main() -> Result<()> {
                 let probe_client_for_stormguard = probe_client.clone();
                 probe_provider::install_probe_client(probe_client.clone());
 
-                tokio::spawn(async {
-                    lqos_topology::start_topology().await;
-                });
-
                 tokio::spawn(async move {
                     match lts2_sys::control_channel::start_control_channel(control_channel).await {
                         Ok(_) => info!("Insight control channel started successfully"),
@@ -424,6 +424,8 @@ fn main() -> Result<()> {
                 {
                     error!("RADIUS accounting listener was not started: {err}");
                 }
+
+                lqos_topology::start_topology_thread(bus_tx.clone());
 
                 let webserver_disabled = web_config.disable_webserver.unwrap_or(false);
                 if !webserver_disabled {
@@ -502,7 +504,6 @@ fn memory_debug() {
             let mut fb = allocative::FlameGraphBuilder::default();
             fb.visit_global_roots();
             // fb.visit_root(&*THROUGHPUT_TRACKER);
-            // fb.visit_root(&*ALL_FLOWS);
             // fb.visit_root(&*RECENT_FLOWS);
             // lqos_network_devices::with_network_json_read(|net_json| fb.visit_root(net_json));
             let flamegraph_src = fb.finish();
@@ -519,6 +520,21 @@ fn memory_debug() {
 
 #[cfg(not(feature = "flamegraphs"))]
 fn memory_debug() {}
+
+fn update_lqosd_config_from_bus(config: &lqos_config::Config) -> BusResponse {
+    match lqos_config::update_config(config) {
+        Ok(()) => {
+            if let Ok(cfg) = lqos_config::load_config() {
+                let _ = stick::recompute_stick_offset(&cfg);
+            }
+            BusResponse::Ack
+        }
+        Err(err) => {
+            error!("Error updating config: {err:?}");
+            BusResponse::Fail(err.to_string())
+        }
+    }
+}
 
 fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
     for req in requests.iter() {
@@ -623,18 +639,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 lqos_bus::BusResponse::Ack
             }
             BusRequest::UpdateLqosDTuning(..) => tuning::tune_lqosd_from_bus(req),
-            BusRequest::UpdateLqosdConfig(config) => match lqos_config::update_config(config) {
-                Ok(()) => {
-                    if let Ok(cfg) = lqos_config::load_config() {
-                        let _ = stick::recompute_stick_offset(&cfg);
-                    }
-                    BusResponse::Ack
-                }
-                Err(err) => {
-                    error!("Error updating config: {err:?}");
-                    BusResponse::Fail(err.to_string())
-                }
-            },
+            BusRequest::UpdateLqosdConfig(config) => update_lqosd_config_from_bus(config),
             BusRequest::CreateDynamicCircuit { shaped_device } => {
                 crate::dynamic_circuits::create_dynamic_circuit((**shaped_device).clone())
             }
@@ -660,12 +665,18 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetCircuitById { circuit_id } => {
                 shaped_devices_tracker::get_circuit_by_id(circuit_id.clone())
             }
+            BusRequest::GetAllCircuitRollups => BusResponse::CircuitRollups(
+                shaped_devices_tracker::circuit_live::all_circuit_rollups(),
+            ),
+            BusRequest::GetCircuitRollupById { circuit_id } => BusResponse::CircuitRollup(
+                shaped_devices_tracker::circuit_live::circuit_rollup_by_id(circuit_id),
+            ),
             BusRequest::GetFunnel { target: parent } => shaped_devices_tracker::get_funnel(parent),
             BusRequest::GetLqosStats => BusResponse::LqosdStats {
                 bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
                 time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
                 high_watermark: HIGH_WATERMARK.as_down_up(),
-                tracked_flows: FLOWS_TRACKED.load(std::sync::atomic::Ordering::Relaxed),
+                tracked_flows: live_active_flow_count(),
                 rtt_events_per_second: get_rtt_events_per_second(),
             },
             BusRequest::GetPacketHeaderDump(id) => {
@@ -995,6 +1006,9 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 });
                 BusResponse::TreeGuardRuntimeNodeBranch(snapshot)
             }
+            BusRequest::ApplyOverrideMutationBatch { layer, mutations } => {
+                override_writer::apply_bus_mutation_batch(*layer, mutations.clone())
+            }
             BusRequest::ApiReady => {
                 tool_status::api_seen();
                 BusResponse::Ack
@@ -1128,6 +1142,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetAsnFlowTimeline { asn } => {
                 let data = node_manager::flow_timeline_data(*asn)
+                    .unwrap_or_else(|err| {
+                        warn!("Unable to build ASN flow timeline: {err}");
+                        Vec::new()
+                    })
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
@@ -1135,6 +1153,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetCountryFlowTimeline { iso_code } => {
                 let data = node_manager::country_timeline_data(iso_code)
+                    .unwrap_or_else(|err| {
+                        warn!("Unable to build country flow timeline: {err}");
+                        Vec::new()
+                    })
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
@@ -1142,6 +1164,10 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetProtocolFlowTimeline { protocol } => {
                 let data = node_manager::protocol_timeline_data(protocol)
+                    .unwrap_or_else(|err| {
+                        warn!("Unable to build protocol flow timeline: {err}");
+                        Vec::new()
+                    })
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
@@ -1158,6 +1184,18 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetQueueStatsTotal => {
                 let totals = queue_stats_total_data();
                 BusResponse::QueueStatsTotal(totals)
+            }
+            BusRequest::GetQoo => {
+                let data = node_manager::local_api::executive::qoo_global();
+                BusResponse::Qoo(Some(data))
+            }
+            BusRequest::GetSiteQoo { site_name } => {
+                let data = node_manager::local_api::executive::qoo_site(site_name);
+                BusResponse::Qoo(data)
+            }
+            BusRequest::GetCircuitQoo { circuit_id } => {
+                let data = node_manager::local_api::executive::qoo_circuit(circuit_id);
+                BusResponse::Qoo(data)
             }
             BusRequest::GetCircuitCapacity => {
                 let data = circuit_capacity_data();
@@ -1193,6 +1231,23 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     licensed,
                     max_circuits,
                 })
+            }
+            BusRequest::UpdateLqosdConfigPreserveApiCredentials(config) => {
+                let _guard =
+                    node_manager::local_api::local_api_keys::lock_config_update_blocking();
+                match lqos_config::load_config() {
+                    Ok(current) => {
+                        let config = node_manager::local_api::local_api_keys::preserve_api_credentials(
+                            (**config).clone(),
+                            &current,
+                        );
+                        update_lqosd_config_from_bus(&config)
+                    }
+                    Err(error) => {
+                        error!("Unable to load config while preserving local API keys: {error:?}");
+                        BusResponse::Fail(error.to_string())
+                    }
+                }
             }
         });
     }
@@ -1427,5 +1482,27 @@ mod tests {
 
         assert!(matches!(responses.as_slice(), [BusResponse::Ack]));
         assert!(!urgent::list().iter().any(|issue| issue.code == code));
+    }
+
+    #[test]
+    fn bus_qoo_requests_dispatch_to_qoo_responses() {
+        let requests = [
+            BusRequest::GetQoo,
+            BusRequest::GetSiteQoo {
+                site_name: "missing-site".to_string(),
+            },
+            BusRequest::GetCircuitQoo {
+                circuit_id: "missing-circuit".to_string(),
+            },
+        ];
+        let mut responses = Vec::new();
+
+        handle_bus_requests(&requests, &mut responses);
+
+        assert!(matches!(responses.as_slice(), [
+            BusResponse::Qoo(Some(global)),
+            BusResponse::Qoo(None),
+            BusResponse::Qoo(None),
+        ] if global.key == "global"));
     }
 }

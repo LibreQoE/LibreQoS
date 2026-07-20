@@ -55,6 +55,9 @@ function ensureOptionalConfigSections(config) {
     if (!config.ssl || typeof config.ssl !== "object") {
         config.ssl = {};
     }
+    if (!config.local_api || typeof config.local_api !== "object") {
+        config.local_api = {};
+    }
     if (!config.uisp_integration || typeof config.uisp_integration !== "object") {
         config.uisp_integration = {};
     }

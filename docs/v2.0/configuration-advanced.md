@@ -119,8 +119,8 @@ In the WebUI, this lives at `Configuration -> Integration - Common` as `Queue Au
 How it works:
 
 - `queue_auto_virtualize_threshold_mbps` is the static queue-policy threshold used by `lqos_topology`.
-- `QueueAuto` only hides a node when it is a `Site`, has child branches, and its final effective node rate is at or above the threshold.
-- That same threshold rule applies to top-level `QueueAuto` sites and non-top-level `QueueAuto` sites.
+- Queue Auto can hide a `Site` or `AP` node when it has child branches and its final effective node rate is at or above the threshold.
+- That same threshold rule applies to top-level and non-top-level eligible nodes.
 - Nodes with directly attached circuits stay queue-visible by default.
 
 This static queue policy is now the primary way to avoid wasting HTB depth or creating artificial aggregate choke points. TreeGuard runtime link virtualization remains available, but is disabled by default.
@@ -131,7 +131,7 @@ This static queue policy is now the primary way to avoid wasting HTB depth or cr
 
 ```{mermaid}
 flowchart TD
-    A[Node queue policy = QueueAuto] --> B{Is this a Site node?}
+    A[Node queue policy allows auto visibility] --> B{Is this a Site or AP node?}
     B -->|No| C[Keep queue-visible]
     B -->|Yes| D{Does it have child branches?}
     D -->|No| E[Keep queue-visible]
@@ -142,9 +142,9 @@ flowchart TD
 
 Current rule summary:
 
-- Non-`Site` nodes stay queue-visible under `QueueAuto`.
-- A `Site` with no child branches stays queue-visible.
-- A top-level or non-top-level `Site` with child branches only becomes static virtual when its final effective node rate is at or above `queue_auto_virtualize_threshold_mbps`.
+- Node kinds other than `Site` and `AP` stay queue-visible under Queue Auto.
+- An eligible node with no child branches stays queue-visible.
+- A top-level or non-top-level eligible node with child branches only becomes static virtual when its final effective node rate is at or above `queue_auto_virtualize_threshold_mbps`.
 - The rate used for this decision is the recompiled runtime-effective rate, not an earlier raw attachment max.
 
 When a node becomes static virtual:
@@ -193,6 +193,7 @@ attach_to = "" # optional network.json node name
 Notes:
 - `ip_range` must be a CIDR. `0.0.0.0` (and `::`) are allowed shorthands for the match-all `/0` networks.
 - `attach_to` is a `network.json` node name (optional; empty is allowed).
+- Unknown-IP promotions are applied to Bakery asynchronously. Repeated observations for the same promoted circuit are deduplicated while the live overlay is queued or waiting for Bakery.
 
 #### RADIUS accounting (optional)
 
@@ -387,6 +388,7 @@ Notes:
 - During shaping, virtual nodes are removed and their children are promoted to the nearest non-virtual ancestor (see `queuingStructure.json` for the active physical plan).
 - `ShapedDevices.csv` can still use a virtual node as a `Parent Node` for display/grouping; LibreQoS will attach those circuits for shaping to the nearest non-virtual ancestor (top-level virtual nodes will be treated as unparented for shaping).
 - Avoid name collisions after promotion (two nodes with the same name ending up at the same level).
+- Queue Auto can also virtualize high-capacity aggregation, uplink, or AP branches represented as `Site` or `AP` nodes when they exceed `queue_auto_virtualize_threshold_mbps` and have child queue branches. This keeps one large logical branch from becoming a single CPU queue bottleneck.
 
 #### CPU Considerations
 

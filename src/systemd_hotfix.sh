@@ -11,7 +11,7 @@ HOTFIX_APT_SOURCE_PATH="${HOTFIX_APT_SOURCE_PATH:-/etc/apt/sources.list.d/libreq
 HOTFIX_APT_PREFERENCES_PATH="${HOTFIX_APT_PREFERENCES_PATH:-/etc/apt/preferences.d/libreqos-systemd-hotfix}"
 HOTFIX_APT_PIN_ORIGIN="${HOTFIX_APT_PIN_ORIGIN:-LibreQoS}"
 HOTFIX_APT_PIN_LABEL="${HOTFIX_APT_PIN_LABEL:-LibreQoS}"
-HOTFIX_PACKAGE_VERSION="${HOTFIX_PACKAGE_VERSION:-255.4-1ubuntu8.15+libreqos1}"
+HOTFIX_PACKAGE_VERSION="${HOTFIX_PACKAGE_VERSION:-auto}"
 SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS="${SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS:-255.4-1ubuntu8 255.4-1ubuntu8.*}"
 HOTFIX_MARKER="${HOTFIX_MARKER:-/opt/libreqos/src/.systemd_hotfix_installed}"
 HOTFIX_SKIP_REBOOT_PROMPT="${HOTFIX_SKIP_REBOOT_PROMPT:-0}"
@@ -58,7 +58,7 @@ Environment:
   HOTFIX_APT_PREFERENCES_PATH      Destination apt pin file installed on the host
   HOTFIX_APT_PIN_ORIGIN            Expected Release Origin field, defaults to LibreQoS
   HOTFIX_APT_PIN_LABEL             Expected Release Label field, defaults to LibreQoS
-  HOTFIX_PACKAGE_VERSION           Backported package version to install
+  HOTFIX_PACKAGE_VERSION           Backported package version to install, or auto to use the current LibreQoS repo candidate
   SUPPORTED_UBUNTU_SYSTEMD_VERSION_GLOBS Space-separated stock Ubuntu version globs eligible for replacement
   HOTFIX_MARKER                    Marker file written after install
   HOTFIX_SKIP_REBOOT_PROMPT        Set to 1 to suppress the reboot prompt after install
@@ -143,10 +143,149 @@ resolved_hotfix_package_names() {
 }
 
 resolved_hotfix_package_specs() {
+    local version="$1"
     local package
     while IFS= read -r package; do
-        printf '%s=%s\n' "$package" "$HOTFIX_PACKAGE_VERSION"
+        printf '%s=%s\n' "$package" "$version"
     done < <(resolved_hotfix_package_names)
+}
+
+apt_candidate_version() {
+    local package="$1"
+    LC_ALL=C apt-cache policy "$package" | awk '$1 == "Candidate:" { print $2; exit }'
+}
+
+apt_candidate_pin_priority() {
+    local package="$1"
+    local version="$2"
+
+    LC_ALL=C apt-cache policy "$package" | awk -v version="$version" '
+        $1 == "***" && $2 == version { print $3; found = 1; exit }
+        $1 == version { print $2; found = 1; exit }
+        END { if (!found) exit 1 }
+    '
+}
+
+apt_candidate_has_hotfix_repo() {
+    local package="$1"
+    local version="$2"
+    local repo_url="${HOTFIX_REPO_URL%/}"
+
+    LC_ALL=C apt-cache policy "$package" | awk \
+        -v version="$version" \
+        -v repo_url="$repo_url" \
+        -v dist="$HOTFIX_REPO_DIST" \
+        -v component="$HOTFIX_REPO_COMPONENT" \
+        -v dist_component="${HOTFIX_REPO_DIST}/${HOTFIX_REPO_COMPONENT}" \
+        -v origin="$HOTFIX_APT_PIN_ORIGIN" \
+        -v label="$HOTFIX_APT_PIN_LABEL" '
+        function normalized_url(url) {
+            sub(/\/+$/, "", url)
+            return url
+        }
+
+        function release_value(key, parts, count, i, item) {
+            for (i = 1; i <= count; i++) {
+                item = parts[i]
+                sub(/^[ \t]+/, "", item)
+                sub(/[ \t]+$/, "", item)
+                if (index(item, key "=") == 1) {
+                    return substr(item, length(key) + 2)
+                }
+            }
+            return ""
+        }
+
+        function reset_source() {
+            source_matches = 0
+            release_matches = 0
+        }
+
+        function accept_source() {
+            if (source_matches && release_matches) {
+                found = 1
+                exit
+            }
+        }
+
+        BEGIN {
+            repo_url = normalized_url(repo_url)
+        }
+
+        ($1 == "***" && $2 == version) || ($1 == version && $2 ~ /^[0-9]+$/) {
+            in_version = 1
+            reset_source()
+            next
+        }
+
+        in_version && (($1 == "***" && $2 != version) || ($1 != "***" && $1 !~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/)) {
+            accept_source()
+            in_version = 0
+            reset_source()
+        }
+
+        in_version && $1 == "release" {
+            sub(/^[ \t]*release[ \t]+/, "", $0)
+            count = split($0, parts, ",")
+            if (release_value("o", parts, count) == origin &&
+                release_value("l", parts, count) == label &&
+                release_value("n", parts, count) == dist &&
+                release_value("c", parts, count) == component) {
+                release_matches = 1
+                accept_source()
+            }
+        }
+
+        in_version && $1 ~ /^[0-9]+$/ && $2 ~ /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\// {
+            accept_source()
+            source_url = normalized_url($2)
+            reset_source()
+            source_matches = (source_url == repo_url)
+            if ($3 == dist_component) {
+                release_matches = 1
+            }
+            accept_source()
+            next
+        }
+
+        END {
+            accept_source()
+            if (!found) exit 1
+        }
+    '
+}
+
+resolve_hotfix_package_version() {
+    local package version priority resolved_version
+
+    if [[ "$HOTFIX_PACKAGE_VERSION" != "auto" ]]; then
+        [[ -n "$HOTFIX_PACKAGE_VERSION" ]] || fail "HOTFIX_PACKAGE_VERSION must not be empty."
+        printf '%s\n' "$HOTFIX_PACKAGE_VERSION"
+        return
+    fi
+
+    while IFS= read -r package; do
+        version="$(apt_candidate_version "$package")"
+        [[ -n "$version" && "$version" != "(none)" ]] || fail "No APT candidate is available for $package."
+        [[ "$version" == *"+libreqos"* ]] || fail "LibreQoS hotfix candidate is not available for $package. APT candidate is $version."
+
+        priority="$(apt_candidate_pin_priority "$package" "$version" || true)"
+        [[ "$priority" =~ ^[0-9]+$ ]] || fail "Unable to verify LibreQoS APT pin priority for $package=$version."
+        (( priority >= 1001 )) || fail "APT candidate for $package=$version is not pinned from the LibreQoS hotfix repo."
+        # apt-cache reports the pin on the version line; the matching source line can remain at archive priority 500.
+        apt_candidate_has_hotfix_repo "$package" "$version" || \
+            fail "APT candidate for $package=$version is not from $HOTFIX_REPO_URL $HOTFIX_REPO_DIST/$HOTFIX_REPO_COMPONENT."
+
+        if [[ -z "${resolved_version:-}" ]]; then
+            resolved_version="$version"
+            continue
+        fi
+
+        [[ "$version" == "$resolved_version" ]] || fail "Inconsistent LibreQoS hotfix package versions: expected $resolved_version but $package candidate is $version."
+    done < <(resolved_hotfix_package_names)
+
+    [[ -n "${resolved_version:-}" ]] || fail "No hotfix packages were selected for this host."
+    printf '%s\n' "$resolved_version"
 }
 
 joined_hotfix_packages() {
@@ -282,26 +421,30 @@ bootstrap_repo() {
 
 download_bundle() {
     local workdir
+    local package_version
 
     require_command apt-get
+    require_command apt-cache
     bootstrap_repo
+    package_version="$(resolve_hotfix_package_version)"
 
     workdir="$(mktemp -d /tmp/libreqos-systemd-hotfix.XXXXXX)"
     (
         cd "$workdir"
         while IFS= read -r package; do
             apt-get download "$package"
-        done < <(resolved_hotfix_package_specs)
+        done < <(resolved_hotfix_package_specs "$package_version")
     )
 
     printf '%s\n' "$workdir"
 }
 
 write_marker() {
+    local package_version="$1"
     local package
     {
         printf 'installed_at=%s\n' "$(date -Iseconds)"
-        printf 'package_version=%s\n' "$HOTFIX_PACKAGE_VERSION"
+        printf 'package_version=%s\n' "$package_version"
         printf 'repo_url=%s\n' "$HOTFIX_REPO_URL"
         printf 'key_url=%s\n' "$HOTFIX_KEY_URL"
         printf 'apt_source_path=%s\n' "$HOTFIX_APT_SOURCE_PATH"
@@ -309,7 +452,7 @@ write_marker() {
         printf 'systemd_version=%s\n' "$(current_systemd_version)"
         while IFS= read -r package; do
             printf 'package_name=%s\n' "$package"
-            printf 'package_spec=%s=%s\n' "$package" "$HOTFIX_PACKAGE_VERSION"
+            printf 'package_spec=%s=%s\n' "$package" "$package_version"
         done < <(resolved_hotfix_package_names)
     } | run_as_root tee "$HOTFIX_MARKER" >/dev/null
 }
@@ -338,17 +481,21 @@ offer_reboot() {
 install_bundle() {
     local package_specs=()
     local package
+    local package_version
 
     require_command apt-get
+    require_command apt-cache
     ensure_applicable_host
     bootstrap_repo
+    package_version="$(resolve_hotfix_package_version)"
+    log "Resolved LibreQoS systemd hotfix package version: $package_version"
 
     while IFS= read -r package; do
         package_specs+=("$package")
-    done < <(resolved_hotfix_package_specs)
+    done < <(resolved_hotfix_package_specs "$package_version")
 
     run_as_root apt-get install -y "${package_specs[@]}"
-    write_marker
+    write_marker "$package_version"
     log "Hotfix installed."
     offer_reboot
 }

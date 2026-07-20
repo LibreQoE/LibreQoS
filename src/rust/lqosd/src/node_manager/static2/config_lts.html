@@ -109,6 +109,35 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <div class="d-flex flex-column flex-md-row align-items-md-start justify-content-between gap-3 mb-3">
+                            <div>
+                                <h6 class="lqos-config-section-title" id="localApiKeysHeading" tabindex="-1">Local API Keys</h6>
+                                <div class="lqos-config-section-subtitle mb-0">Named keys authenticate local API clients without using an Insight license key. Send a key in the <code>x-bearer</code> header. New and revoked keys may take up to 30 seconds to affect the API service.</div>
+                            </div>
+                            <button type="button" id="generateLocalApiKey" class="btn btn-outline-primary flex-shrink-0">
+                                <i class="fa fa-key me-1"></i> Generate API Key
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-2" aria-describedby="localApiKeysHelp">
+                                <thead><tr><th scope="col">Name</th><th scope="col">Created</th><th scope="col">Key ID</th><th scope="col" class="text-end">Action</th></tr></thead>
+                                <tbody id="localApiKeysTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div id="localApiKeysEmpty" class="text-secondary small py-2">No named local API keys are configured.</div>
+                        <div class="form-text" id="localApiKeysHelp"><span id="localApiKeyCount">0 of 16 keys</span>. Raw keys are displayed only once and cannot be recovered.</div>
+                        <div class="visually-hidden" id="localApiKeysStatus" aria-live="polite"></div>
+                        <div id="legacyLocalApiKey" class="border rounded p-3 mt-4 d-none">
+                            <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                                <div><div class="fw-semibold">Legacy local API key</div><div class="small text-secondary">An older plaintext <code>bearer_token</code> remains configured for compatibility. Replace it with a named key when practical.</div></div>
+                                <button type="button" id="removeLegacyLocalApiKey" class="btn btn-outline-danger flex-shrink-0"><i class="fa fa-trash me-1"></i> Remove Legacy Key</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -116,6 +145,33 @@
             <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
         </div>
     </form>
+</div>
+
+<div class="modal fade" id="localApiKeyModal" tabindex="-1" aria-labelledby="localApiKeyModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="localApiKeyModalTitle">Generate Local API Key</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="localApiKeyNameStep">
+                <label for="localApiKeyName" class="form-label">Key name</label>
+                <input type="text" class="form-control" id="localApiKeyName" maxlength="64" autocomplete="off" aria-describedby="localApiKeyNameHelp localApiKeyNameError">
+                <div class="form-text" id="localApiKeyNameHelp">Use a unique name of no more than 64 characters that identifies the application or operator.</div>
+                <div class="invalid-feedback" id="localApiKeyNameError"></div>
+                <div class="small text-secondary mt-3" id="localApiKeyOperationStatus" role="status" aria-live="polite" tabindex="-1"></div>
+            </div>
+            <div id="localApiKeyResultStep" class="d-none">
+                <div class="alert alert-warning" role="alert">Copy this key now. It cannot be recovered after this dialog closes.</div>
+                <label for="newLocalApiKey" class="form-label">API key</label>
+                <div class="input-group">
+                    <input type="password" class="form-control font-monospace" id="newLocalApiKey" readonly autocomplete="off" spellcheck="false">
+                    <button type="button" class="btn btn-outline-secondary" id="toggleNewLocalApiKey" aria-label="Reveal generated API key"><i class="fa fa-eye"></i></button>
+                    <button type="button" class="btn btn-outline-secondary" id="copyNewLocalApiKey"><i class="fa fa-copy me-1"></i> Copy</button>
+                </div>
+                <div class="form-text">Send the complete value in the <code>x-bearer</code> header.</div>
+                <div class="visually-hidden" id="newLocalApiKeyCopyStatus" aria-live="polite"></div>
+            </div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button><button type="button" class="btn btn-primary" id="confirmGenerateLocalApiKey">Generate API Key</button></div>
+    </div></div>
 </div>
 
 <script src="config_lts.js%CACHEBUSTERS%"></script>

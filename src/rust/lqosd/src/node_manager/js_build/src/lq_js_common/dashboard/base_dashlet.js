@@ -11,6 +11,7 @@ export class BaseDashlet {
         this.graphs = [];
         this.graphDivs = [];
         this.zoomed = false;
+        this.zoomReturnFocus = null;
         this.disposed = false;
     }
 
@@ -166,13 +167,14 @@ export class BaseDashlet {
         if (tt !== null) {
             let tooltip = document.createElement("span");
             tooltip.style.marginLeft = "5px";
-            let button = document.createElement("a");
-            //button.type = "button";
-            //button.classList.add("btn", "btn-sm", "btn-info");
+            let button = document.createElement("button");
+            button.type = "button";
             button.title = tt;
+            button.setAttribute("aria-label", `${this.title()} information`);
             button.setAttribute("data-bs-toggle", "tooltip");
             button.setAttribute("data-bs-placement", "top");
             button.setAttribute("data-bs-html", "true");
+            button.setAttribute("data-bs-trigger", "hover focus");
             button.innerHTML = "<i class='fas fa-info-circle'></i>";
             tooltip.appendChild(button);
             title.appendChild(tooltip);
@@ -181,8 +183,10 @@ export class BaseDashlet {
         if (this.supportsZoom()) {
             let zoom = document.createElement("span");
             zoom.style.marginLeft = "5px";
-            let button = document.createElement("a");
+            let button = document.createElement("button");
+            button.type = "button";
             button.title = "Zoom";
+            button.setAttribute("aria-label", `Zoom ${this.title()}`);
             button.innerHTML = "<i class='fas fa-search-plus'></i>";
             button.onclick = () => {
                 this.openZoom();
@@ -210,18 +214,24 @@ export class BaseDashlet {
         }
 
         this.zoomed = true;
+        this.zoomReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
         let zoomDiv = document.createElement("div");
         zoomDiv.classList.add("zoomed");
         zoomDiv.id = this.zoomContainerId();
         zoomDiv.classList.add("dashbox");
+        zoomDiv.setAttribute("role", "dialog");
+        zoomDiv.setAttribute("aria-modal", "false");
+        zoomDiv.setAttribute("aria-label", `Zoomed ${this.title()}`);
 
         let title = document.createElement("h5");
         title.classList.add("dashbox-title");
         title.innerText = this.title();
 
-        let closeBtn = document.createElement("a");
-        closeBtn.title = "Zoom";
+        let closeBtn = document.createElement("button");
+        closeBtn.type = "button";
+        closeBtn.title = "Close zoom";
+        closeBtn.setAttribute("aria-label", `Close zoomed ${this.title()}`);
         closeBtn.innerHTML = "<i class='fas fa-search-minus'></i>";
         closeBtn.style.marginLeft = "5px";
         closeBtn.onclick = () => {
@@ -245,6 +255,7 @@ export class BaseDashlet {
                 console.error("Failed to set up zoomed dashlet", e);
             }
             zoomDiv.scrollIntoView({behavior: "smooth"});
+            closeBtn.focus();
         });
     }
 
@@ -262,6 +273,10 @@ export class BaseDashlet {
             zoomDiv.remove();
         }
         this.zoomed = false;
+        if (this.zoomReturnFocus?.isConnected) {
+            this.zoomReturnFocus.focus();
+        }
+        this.zoomReturnFocus = null;
     }
 
     dispose() {
@@ -285,7 +300,9 @@ export class BaseDashlet {
             return;
         }
         try {
-            if (graph.chart && graph.chart.dispose) {
+            if (typeof graph.dispose === "function") {
+                graph.dispose();
+            } else if (graph.chart && graph.chart.dispose) {
                 graph.chart.dispose();
             }
         } catch (_) {}

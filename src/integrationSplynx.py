@@ -90,6 +90,47 @@ def normalize_splynx_graph_id(value):
 	return str(value)
 
 
+def normalize_splynx_display_name(value, fallback):
+	"""
+	Normalize upstream Splynx display names while preserving operator text.
+	"""
+	name = " ".join(str(value or "").split())
+	if name:
+		return name
+	return str(fallback)
+
+
+def disambiguate_duplicate_hardware_names(hardware_names):
+	"""
+	Append Splynx hardware IDs only when display names collide.
+	"""
+	normalized_names = {
+		hardware_id: normalize_splynx_display_name(display_name, hardware_id)
+		for hardware_id, display_name in hardware_names.items()
+	}
+	names_by_display = {}
+	for hardware_id, display_name in normalized_names.items():
+		names_by_display.setdefault(display_name, []).append(hardware_id)
+
+	unique_names = dict(normalized_names)
+	for display_name, hardware_ids in names_by_display.items():
+		if len(hardware_ids) < 2:
+			continue
+		for hardware_id in hardware_ids:
+			unique_names[hardware_id] = f"{display_name} ({hardware_id})"
+	return unique_names
+
+
+def bandwidth_for_node_name(siteBandwidth, display_name, fallback_name=None):
+	"""
+	Return bandwidth settings for the displayed node name or its original Splynx name.
+	"""
+	for name in (display_name, fallback_name):
+		if name in siteBandwidth:
+			return siteBandwidth[name]["download"], siteBandwidth[name]["upload"]
+	return 10000, 10000
+
+
 def supplement_existing_devices_with_online_ips(net, allServices, service_ids_handled, customersOnline, cust_id_to_name, allocated_ipv4s, allocated_ipv6s, device_by_service_id=None):
 	"""
 	For services already handled (devices created from static IPs), supplement missing
@@ -270,16 +311,23 @@ def run_splynx_pipeline(strategy_name: str):
 
 	# Build hardware maps for parent selection
 	hardware_name = {}
+	hardware_raw_name = {}
 	hardware_parent = {}
 	hardware_type = {}
 	hardware_name_extended = {}
+	hardware_bandwidth_names = {}
 	ap_nodes = {}
 	if monitoring:
 		for dev in monitoring:
 			dev_id = normalize_splynx_graph_id(dev.get('id'))
 			if dev_id is None:
 				continue
-			dev_name = dev.get('title') or dev.get('name') or dev.get('address') or dev.get('ip') or str(dev_id)
+			raw_dev_name = dev.get('title') or dev.get('name') or dev.get('address') or dev.get('ip')
+			hardware_raw_name[dev_id] = str(raw_dev_name) if raw_dev_name else str(dev_id)
+			dev_name = normalize_splynx_display_name(
+				raw_dev_name,
+				dev_id,
+			)
 			hardware_name[dev_id] = dev_name
 			parent_id = normalize_splynx_graph_id(dev.get('parent_id'))
 			if parent_id is not None:
@@ -303,14 +351,26 @@ def run_splynx_pipeline(strategy_name: str):
 			if dev_id is None:
 				continue
 			dev_title = hardware_name.get(dev_id, str(dev_id))
+			raw_dev_title = hardware_raw_name.get(dev_id, str(dev_id))
 			if 'parent_id' in dev and dev_id in hardware_parent and hardware_parent[dev_id] in hardware_name:
-				hardware_name_extended[dev_id] = hardware_name[hardware_parent[dev_id]] + "_" + dev_title
+				hardware_name_extended[dev_id] = normalize_splynx_display_name(
+					hardware_name[hardware_parent[dev_id]] + "_" + dev_title,
+					dev_id,
+				)
+				hardware_bandwidth_names[dev_id] = (
+					hardware_raw_name.get(hardware_parent[dev_id], str(hardware_parent[dev_id]))
+					+ "_"
+					+ raw_dev_title
+				)
 			if dev_id not in hardware_name_extended:
 				hardware_name_extended[dev_id] = dev_title
+				hardware_bandwidth_names[dev_id] = raw_dev_title
+		hardware_name_extended = disambiguate_duplicate_hardware_names(hardware_name_extended)
 
 	# Network sites mappings (new Splynx model)
 	site_id_to_node_id = {}
 	site_id_to_name = {}
+	site_id_to_bandwidth_name = {}
 	site_id_to_address = {}
 	site_id_to_coords = {}
 	if network_sites:
@@ -319,12 +379,15 @@ def run_splynx_pipeline(strategy_name: str):
 			if site_id is None:
 				continue
 			node_id = f"ns_{site_id}"
-			name = site.get('title') or site.get('description') or str(site_id)
+			raw_name = site.get('title') or site.get('description')
+			name = normalize_splynx_display_name(raw_name, site_id)
 			address = site.get('address') or name
 			site_id_to_node_id[site_id] = node_id
 			site_id_to_name[site_id] = name
+			site_id_to_bandwidth_name[site_id] = str(raw_name) if raw_name else str(site_id)
 			site_id_to_address[site_id] = address
 			site_id_to_coords[site_id] = parse_gps_pair(site.get('gps'))
+		site_id_to_name = disambiguate_duplicate_hardware_names(site_id_to_name)
 
 	def ap_node_id(raw_id):
 		return f"ap_{raw_id}"
@@ -346,11 +409,11 @@ def run_splynx_pipeline(strategy_name: str):
 			for site_id, node_id in site_id_to_node_id.items():
 				nodeName = site_id_to_name.get(site_id, str(site_id))
 				address = site_id_to_address.get(site_id, nodeName)
-				download = 10000
-				upload = 10000
-				if nodeName in siteBandwidth:
-					download = siteBandwidth[nodeName]["download"]
-					upload = siteBandwidth[nodeName]["upload"]
+				download, upload = bandwidth_for_node_name(
+					siteBandwidth,
+					nodeName,
+					site_id_to_bandwidth_name.get(site_id),
+				)
 				node = NetworkNode(id=node_id, displayName=nodeName, type=NodeType.site,
 					parentId=None, download=download, upload=upload, address=address,
 					networkJsonId=f"splynx:network_site:{site_id}",
@@ -360,11 +423,11 @@ def run_splynx_pipeline(strategy_name: str):
 			created_ap = 0
 			for ap_id, ap_device in ap_nodes.items():
 				nodeName = hardware_name_extended.get(ap_id, hardware_name.get(ap_id, str(ap_id)))
-				download = 10000
-				upload = 10000
-				if nodeName in siteBandwidth:
-					download = siteBandwidth[nodeName]["download"]
-					upload = siteBandwidth[nodeName]["upload"]
+				download, upload = bandwidth_for_node_name(
+					siteBandwidth,
+					nodeName,
+					hardware_bandwidth_names.get(ap_id),
+				)
 				parent_id = None
 				site_id = ap_device.get('network_site_id')
 				if site_id in site_id_to_node_id:
@@ -381,19 +444,19 @@ def run_splynx_pipeline(strategy_name: str):
 		if strategy_name == 'ap_only':
 			print(f"Creating {len(ap_nodes)} AP nodes")
 			for ap_id, ap_device in ap_nodes.items():
-				download = 10000
-				upload = 10000
 				nodeName = hardware_name_extended.get(ap_id, hardware_name.get(ap_id, str(ap_id)))
-				if nodeName in siteBandwidth:
-					download = siteBandwidth[nodeName]["download"]
-					upload = siteBandwidth[nodeName]["upload"]
+				download, upload = bandwidth_for_node_name(
+					siteBandwidth,
+					nodeName,
+					hardware_bandwidth_names.get(ap_id),
+				)
 				latitude, longitude = parse_gps_pair(ap_device.get('gps'))
 				node = NetworkNode(id=ap_id, displayName=nodeName, type=NodeType.ap, parentId=None, download=download, upload=upload, address=None, networkJsonId=f"splynx:ap:{ap_id}", latitude=latitude, longitude=longitude)
 				net.addRawNode(node)
 			return
 		# ap_site and full
 		print("Creating site and AP infrastructure")
-		createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended)
+		createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended, hardware_bandwidth_names)
 
 	# Parent selector per strategy
 	def select_parent(serviceItem):
@@ -733,7 +796,7 @@ def createClientAndDevice(net, serviceItem, cust_id_to_name, downloadForTariffID
 	
 	return circuit_id
 
-def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended):
+def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, hardware_type, siteBandwidth, hardware_name_extended, hardware_bandwidth_names=None):
 	"""
 	Create site and AP nodes from monitoring data.
 	"""
@@ -746,12 +809,12 @@ def createInfrastructureNodes(net, monitoring, hardware_name, hardware_parent, h
 		parent_id = None
 		if device_num in hardware_parent.keys():
 			parent_id = normalize_splynx_graph_id(hardware_parent[device_num])
-		download = 10000
-		upload = 10000
 		nodeName = hardware_name_extended[device_num]
-		if nodeName in siteBandwidth:
-			download = siteBandwidth[nodeName]["download"]
-			upload = siteBandwidth[nodeName]["upload"]
+		download, upload = bandwidth_for_node_name(
+			siteBandwidth,
+			nodeName,
+			(hardware_bandwidth_names or {}).get(device_num),
+		)
 		nodeType = hardware_type[device_num]
 		latitude, longitude = monitoring_gps.get(device_num, (None, None))
 		if nodeType == 'AP':

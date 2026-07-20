@@ -16,6 +16,7 @@ use crate::node_manager::local_api::executive::{
     ExecutiveDashboardSummary, ExecutiveHeatmapPage, ExecutiveHeatmapPageQuery,
     ExecutiveLeaderboardPage, ExecutiveLeaderboardPageQuery,
 };
+use crate::node_manager::local_api::local_api_keys::LocalApiKeyCreation;
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::node_manager::local_api::node_rate_overrides::{
     NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
@@ -192,6 +193,13 @@ pub enum WsRequest {
         #[serde(default)]
         clear_secrets: ConfigSecretClearRequest,
     },
+    CreateLocalApiKey {
+        name: String,
+    },
+    RevokeLocalApiKey {
+        id: String,
+    },
+    RemoveLegacyLocalApiKey,
     UpdateNetworkJsonOnly {
         network_json: Value,
     },
@@ -679,6 +687,20 @@ pub enum WsResponse {
         data: Vec<ShapedDevice>,
     },
     UpdateConfigResult {
+        ok: bool,
+        message: String,
+    },
+    CreateLocalApiKeyResult {
+        ok: bool,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        key: Option<LocalApiKeyCreation>,
+    },
+    RevokeLocalApiKeyResult {
+        ok: bool,
+        message: String,
+    },
+    RemoveLegacyLocalApiKeyResult {
         ok: bool,
         message: String,
     },

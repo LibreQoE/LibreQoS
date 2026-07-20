@@ -13,7 +13,7 @@ from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
     automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive as _scheduler_alive_native, scheduler_error as _scheduler_error_native, \
-    calculate_topology_source_generation, topology_import_ingress_enabled, \
+    calculate_topology_source_generation, calculate_shaping_inputs_generation, calculate_effective_network_generation, topology_import_ingress_enabled, \
     scheduler_progress as _scheduler_progress_native, overrides_network_adjustments_materialized, \
     overrides_materialized, \
     scheduler_output as _scheduler_output_native, wait_for_bus_ready
@@ -33,6 +33,7 @@ shaping_runtime_hash = 0
 INTEGRATION_FAILURE_PREVIEW_LINES = 30
 INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
 TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
+TOPOLOGY_RUNTIME_REFRESH_PHASE_WARN_SECONDS = 1.0
 STARTUP_TOPOLOGY_RUNTIME_MAX_WAIT_SECONDS = 120
 PARTIAL_TOPOLOGY_RUNTIME_MAX_WAIT_SECONDS = 120
 SCHEDULER_STARTUP_STEP_COUNT = 5
@@ -58,6 +59,18 @@ last_integration_failure_message = ""
 
 class RequiredOverrideReadError(RuntimeError):
     """Raised when scheduler reloads cannot safely materialize operator overrides."""
+
+
+def mark_shaping_runtime_hash_applied(applied_hash):
+    """
+    Record the runtime payload that a completed shaper refresh targeted.
+
+    If topology runtime publishes a newer payload while refreshShapers() is
+    running, the next topology tick must still see that newer payload as
+    unapplied and run another refresh.
+    """
+    global shaping_runtime_hash
+    shaping_runtime_hash = applied_hash
 
 
 def configure_scheduler_stdio():
@@ -1093,7 +1106,6 @@ def write_network_json(path: str, network: dict):
 
 
 def importAndShapeFullReload():
-    global shaping_runtime_hash
     importFromCRM()
     publish_scheduler_progress(True, "starting_topology_runtime", "Starting topology runtime", 4, SCHEDULER_STARTUP_STEP_COUNT)
     if not ensure_topology_runtime_process(wait_for_outputs=True):
@@ -1109,6 +1121,7 @@ def importAndShapeFullReload():
         )
         return False
     publish_scheduler_progress(True, "initial_shaping_reload", "Refreshing shaper state", 5, SCHEDULER_STARTUP_STEP_COUNT)
+    refresh_target_hash = calculate_shaping_runtime_hash()
     if not enable_insight_topology():
         try:
             refreshShapers()
@@ -1116,9 +1129,7 @@ def importAndShapeFullReload():
             if _defer_stale_shaping_inputs_failure(e, startup=True):
                 return False
             raise
-        shaping_runtime_hash = calculate_shaping_runtime_hash()
-    else:
-        shaping_runtime_hash = calculate_shaping_runtime_hash()
+    mark_shaping_runtime_hash_applied(refresh_target_hash)
     if shaping_runtime_hash != 0:
         set_scheduler_status_bus_enabled(True)
         return True
@@ -1126,8 +1137,6 @@ def importAndShapeFullReload():
 
 
 def importAndShapePartialReload():
-    global shaping_runtime_hash
-
     importFromCRM(
         integration_phase="partial_integration",
         integration_label="Running scheduled integration refresh",
@@ -1166,7 +1175,7 @@ def importAndShapePartialReload():
                 return
             report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
             return
-        shaping_runtime_hash = calculate_shaping_runtime_hash()
+        mark_shaping_runtime_hash_applied(new_hash)
         if shaping_runtime_hash != 0:
             set_scheduler_status_bus_enabled(True)
     publish_ready_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
@@ -1259,6 +1268,68 @@ def topology_runtime_readiness_detail():
         return (
             False,
             f"Topology runtime shaping inputs are not available at {shaping_inputs_path}.",
+            current_generation,
+        )
+
+    effective_generation = str(status.get("effective_generation") or "").strip()
+    effective_network_path = str(status.get("effective_network_path") or "").strip()
+    if not effective_network_path:
+        return (
+            False,
+            "Topology runtime did not publish an effective network path for the current source generation.",
+            current_generation,
+        )
+    if not os.path.isfile(effective_network_path):
+        return (
+            False,
+            f"Topology runtime effective network is not available at {effective_network_path}.",
+            current_generation,
+        )
+    if not effective_generation:
+        return (
+            False,
+            "Topology runtime did not publish an effective network generation for the current source generation.",
+            current_generation,
+        )
+    try:
+        computed_effective_generation = calculate_effective_network_generation(effective_network_path)
+    except Exception as e:
+        return (
+            False,
+            f"Topology runtime effective network generation could not be verified: {e}",
+            current_generation,
+        )
+    if computed_effective_generation is None:
+        return (
+            False,
+            "Topology runtime effective network generation could not be verified.",
+            current_generation,
+        )
+    if str(computed_effective_generation).strip() != effective_generation:
+        return (
+            False,
+            "Topology runtime effective network does not match the published runtime generation.",
+            current_generation,
+        )
+
+    try:
+        computed_shaping_generation = calculate_shaping_inputs_generation(shaping_inputs_path)
+    except Exception as e:
+        return (
+            False,
+            f"Topology runtime shaping inputs generation could not be verified: {e}",
+            current_generation,
+        )
+    if computed_shaping_generation is None:
+        return (
+            False,
+            "Topology runtime shaping inputs generation could not be verified.",
+            current_generation,
+        )
+    if str(computed_shaping_generation).strip() != shaping_generation:
+        return (
+            False,
+            "Topology runtime shaping inputs do not match the published runtime generation.",
             current_generation,
         )
 
@@ -1468,9 +1539,10 @@ def _continue_startup_topology_runtime_wait():
             SCHEDULER_STARTUP_STEP_COUNT,
         )
         try:
+            refresh_target_hash = calculate_shaping_runtime_hash()
             if not enable_insight_topology():
                 refreshShapers()
-            shaping_runtime_hash = calculate_shaping_runtime_hash()
+            mark_shaping_runtime_hash_applied(refresh_target_hash)
         except ValidationFailure as e:
             _reset_startup_topology_runtime_wait()
             report_scheduler_validation_failure(
@@ -1539,7 +1611,6 @@ def _continue_startup_topology_runtime_wait():
 
 
 def _continue_partial_topology_runtime_wait():
-    global shaping_runtime_hash
     global partial_topology_runtime_generation
     global partial_topology_runtime_started_monotonic
     global partial_topology_runtime_last_report_state
@@ -1594,7 +1665,7 @@ def _continue_partial_topology_runtime_wait():
                 _reset_partial_topology_runtime_wait()
                 report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
                 return
-            shaping_runtime_hash = calculate_shaping_runtime_hash()
+            mark_shaping_runtime_hash_applied(new_hash)
             if shaping_runtime_hash == 0:
                 _reset_partial_topology_runtime_wait()
                 report_scheduler_runtime_failure(
@@ -1657,9 +1728,14 @@ def ensure_topology_runtime_process(wait_for_outputs=False):
     return True
 
 
-def topology_runtime_refresh_tick():
-    global shaping_runtime_hash
+def _record_slow_topology_runtime_refresh_phase(phase: str, started: float, slow_phases: list[str]):
+    elapsed = time.monotonic() - started
+    if elapsed >= TOPOLOGY_RUNTIME_REFRESH_PHASE_WARN_SECONDS:
+        slow_phases.append(f"{phase} {elapsed:.1f}s")
+    return elapsed
 
+
+def topology_runtime_refresh_tick():
     if startup_topology_runtime_pending:
         _continue_startup_topology_runtime_wait()
         return
@@ -1671,25 +1747,49 @@ def topology_runtime_refresh_tick():
     if shaping_runtime_hash == 0:
         return
 
+    tick_started = time.monotonic()
+    slow_phases = []
+    phase_started = time.monotonic()
     ensure_topology_runtime_process()
+    _record_slow_topology_runtime_refresh_phase("ensure_runtime_process", phase_started, slow_phases)
+
+    phase_started = time.monotonic()
     ready, _, _ = topology_runtime_readiness_detail()
+    _record_slow_topology_runtime_refresh_phase("readiness_detail", phase_started, slow_phases)
     if not ready:
         return
+
+    phase_started = time.monotonic()
     new_hash = calculate_shaping_runtime_hash()
+    _record_slow_topology_runtime_refresh_phase("calculate_shaping_runtime_hash", phase_started, slow_phases)
     if new_hash == 0 or new_hash == shaping_runtime_hash:
         return
 
+    refresh_started = time.monotonic()
     try:
         refreshShapers()
     except ValidationFailure as e:
+        elapsed = time.monotonic() - refresh_started
+        phase_summary = f"; slow phases: {', '.join(slow_phases)}" if slow_phases else ""
+        print(
+            f"Topology runtime refresh for shaping runtime hash {new_hash} "
+            f"(previous {shaping_runtime_hash}) blocked by validation after {elapsed:.1f}s{phase_summary}"
+        )
         report_scheduler_validation_failure("Topology runtime refresh blocked by validation", e)
         return
     except Exception as e:
+        elapsed = time.monotonic() - refresh_started
+        phase_summary = f"; slow phases: {', '.join(slow_phases)}" if slow_phases else ""
+        print(
+            f"Topology runtime refresh for shaping runtime hash {new_hash} "
+            f"(previous {shaping_runtime_hash}) failed after {elapsed:.1f}s{phase_summary}"
+        )
         if _defer_stale_shaping_inputs_failure(e, startup=False):
             return
         report_scheduler_runtime_failure("Topology runtime refresh failed", e)
         return
-    shaping_runtime_hash = calculate_shaping_runtime_hash()
+    refresh_elapsed = _record_slow_topology_runtime_refresh_phase("refreshShapers", refresh_started, slow_phases)
+    mark_shaping_runtime_hash_applied(new_hash)
     if shaping_runtime_hash == 0:
         report_scheduler_runtime_failure(
             "Topology runtime refresh failed",
@@ -1697,6 +1797,13 @@ def topology_runtime_refresh_tick():
         )
         return
     clear_scheduler_error_unless_integration_failed()
+    total_elapsed = time.monotonic() - tick_started
+    if slow_phases:
+        print(
+            f"Topology runtime refresh applied shaping runtime hash {new_hash} "
+            f"in {total_elapsed:.1f}s (refreshShapers {refresh_elapsed:.1f}s); "
+            f"slow phases: {', '.join(slow_phases)}"
+        )
     publish_ready_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
 
 

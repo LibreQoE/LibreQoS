@@ -4,8 +4,10 @@ use crate::node_manager::local_api::flow_map;
 use crate::node_manager::ws::messages::{EtherProtocolsData, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use lqos_bus::{BusReply, BusRequest, BusResponse};
+use lqos_bus::{BusRequest, BusResponse};
 use tokio::sync::mpsc::Sender;
+
+use super::request_internal_bus;
 
 pub async fn endpoints_by_country(
     channels: Arc<PubSub>,
@@ -37,21 +39,9 @@ pub async fn ether_protocols(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::EtherProtocolSummary;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("EtherProtocols: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("EtherProtocols", bus_tx, request).await else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "EtherProtocols: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::EtherProtocols {
@@ -91,21 +81,9 @@ pub async fn ip_protocols(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::IpProtocolSummary;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("IpProtocols: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("IpProtocols", bus_tx, request).await else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "IpProtocols: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::IpProtocols(ip_data) = reply {
@@ -126,21 +104,9 @@ pub async fn flow_duration(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::FlowDuration;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("FlowDurations: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("FlowDurations", bus_tx, request).await else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "FlowDurations: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::FlowDuration(flow_data) = reply {

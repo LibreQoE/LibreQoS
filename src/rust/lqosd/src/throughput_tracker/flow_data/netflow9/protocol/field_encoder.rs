@@ -52,10 +52,12 @@ fn encode_ipv4(direction: usize, key: &FlowbeeKey, target: &mut Vec<u8>) -> anyh
     let local = key.local_ip.as_ip();
     let remote = key.remote_ip.as_ip();
     if let (IpAddr::V4(local), IpAddr::V4(remote)) = (local, remote) {
+        let src_ip = u32::from_ne_bytes(local.octets());
+        let dst_ip = u32::from_ne_bytes(remote.octets());
         if direction == 0 {
-            target.extend_from_slice(&local.octets());
+            target.extend_from_slice(&src_ip.to_be_bytes());
         } else {
-            target.extend_from_slice(&remote.octets());
+            target.extend_from_slice(&dst_ip.to_be_bytes());
         }
     } else {
         anyhow::bail!("Expected IPv4 addresses, got {:?}", (local, remote));

@@ -51,6 +51,21 @@ for page in "${served_pages[@]}"; do
   [[ -f "${STATIC_DIR}/${page}" ]] || fail "Page is served by static_pages.rs but missing from static2: ${page}"
 done
 
+declare -A directly_handled_html=(
+  ["first-run.html"]=1
+  ["login.html"]=1
+  ["template.html"]=1
+)
+
+for html_path in "${STATIC_DIR}"/*.html; do
+  [[ -e "${html_path}" ]] || continue
+  page="$(basename "${html_path}")"
+  [[ -n "${directly_handled_html[${page}]:-}" ]] && continue
+  if ! printf '%s\n' "${served_pages[@]}" | grep -qx -- "${page}"; then
+    fail "HTML page is present in static2 but not in the authenticated static_pages.rs route list: ${page}"
+  fi
+done
+
 required_template_assets=(
   "node_manager.css"
   "vendor/bootstrap.min.css"
@@ -66,6 +81,22 @@ required_template_assets=(
 
 for asset in "${required_template_assets[@]}"; do
   [[ -f "${STATIC_DIR}/${asset}" ]] || fail "Missing required node_manager asset referenced by template.html: ${asset}"
+done
+
+required_dashboard_map_assets=(
+  "vendor/maplibre-gl.css"
+  "vendor/maplibre-gl.js"
+  "vendor/site_map_coastlines.geojson"
+)
+
+for asset in "${required_dashboard_map_assets[@]}"; do
+  [[ -f "${STATIC_DIR}/${asset}" ]] || fail "Missing required dashboard world map asset: ${asset}"
+done
+
+for asset in "${required_dashboard_map_assets[@]}"; do
+  if ! grep -R -F -q "${asset}" "${SRC_DIR}/dashlets/world_map_assets.mjs" "${SRC_DIR}/dashlets/world_map_down.js"; then
+    fail "Dashboard world map asset exists but is not referenced by the source bundle: ${asset}"
+  fi
 done
 
 check_cachebusted_bundle_refs() {

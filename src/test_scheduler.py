@@ -51,6 +51,8 @@ def install_scheduler_stubs():
     lqlib.calculate_hash = lambda: 0
     lqlib.calculate_shaping_runtime_hash = lambda: 0
     lqlib.calculate_topology_source_generation = lambda: "test-generation"
+    lqlib.calculate_shaping_inputs_generation = lambda _path: "shape-1"
+    lqlib.calculate_effective_network_generation = lambda _path: "effective-1"
     lqlib.topology_import_ingress_enabled = lambda: False
     lqlib.efficiency_core_ids = lambda: []
     lqlib.scheduler_alive = Mock()
@@ -505,11 +507,7 @@ class TestSchedulerLogging(unittest.TestCase):
                 "topology_runtime_readiness_detail",
                 return_value=(True, "", "generation-1"),
             ):
-                with patch.object(
-                    scheduler,
-                    "calculate_shaping_runtime_hash",
-                    side_effect=[5, 5],
-                ):
+                with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=5):
                     with patch.object(scheduler, "refreshShapers") as mock_refresh:
                         with patch.object(scheduler, "clear_scheduler_error") as mock_clear_error:
                             with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
@@ -530,28 +528,25 @@ class TestSchedulerLogging(unittest.TestCase):
             )
         )
 
-    def test_topology_runtime_refresh_tick_reports_missing_hash_after_success(self):
+    def test_topology_runtime_refresh_tick_records_hash_that_triggered_refresh(self):
         with patch.object(scheduler, "ensure_topology_runtime_process"):
             with patch.object(
                 scheduler,
                 "topology_runtime_readiness_detail",
                 return_value=(True, "", "generation-1"),
             ):
-                with patch.object(
-                    scheduler,
-                    "calculate_shaping_runtime_hash",
-                    side_effect=[5, 0],
-                ):
-                    with patch.object(scheduler, "refreshShapers"):
+                with patch.object(scheduler, "calculate_shaping_runtime_hash") as mock_hash:
+                    mock_hash.side_effect = [5]
+                    with patch.object(scheduler, "refreshShapers") as mock_refresh:
                         with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
-                            with patch.object(scheduler, "clear_scheduler_error") as mock_clear_error:
+                            with patch.object(scheduler, "clear_scheduler_error"):
                                 scheduler.shaping_runtime_hash = 1
                                 scheduler.topology_runtime_refresh_tick()
 
-        mock_clear_error.assert_not_called()
-        mock_scheduler_error.assert_called_once_with(
-            "Topology runtime refresh failed: Shaping runtime hash was not published after topology runtime refresh."
-        )
+        mock_refresh.assert_called_once()
+        mock_scheduler_error.assert_not_called()
+        self.assertEqual(scheduler.shaping_runtime_hash, 5)
+        self.assertEqual(mock_hash.call_count, 1)
 
     def test_topology_runtime_refresh_tick_skips_until_initial_shaping_succeeds(self):
         with patch.object(scheduler, "ensure_topology_runtime_process") as mock_ensure:
@@ -719,7 +714,7 @@ class TestSchedulerLogging(unittest.TestCase):
             return_value=(True, "", "generation-1"),
         ):
             with patch.object(scheduler, "refreshShapers") as mock_refresh:
-                with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=9):
+                with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=9) as mock_hash:
                     with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
                         with patch.object(scheduler, "clear_scheduler_error") as mock_clear_error:
                             with patch("builtins.print"):
@@ -727,6 +722,7 @@ class TestSchedulerLogging(unittest.TestCase):
 
         mock_refresh.assert_called_once()
         mock_clear_error.assert_called_once()
+        mock_hash.assert_called_once()
         self.assertEqual(scheduler.shaping_runtime_hash, 9)
         self.assertFalse(scheduler.startup_topology_runtime_pending)
         self.assertTrue(
@@ -777,7 +773,7 @@ class TestSchedulerLogging(unittest.TestCase):
                 with patch.object(
                     scheduler,
                     "calculate_shaping_runtime_hash",
-                    side_effect=[9, 9],
+                    return_value=9,
                 ):
                     with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
                         with patch.object(scheduler, "clear_scheduler_error") as mock_clear_error:
@@ -958,6 +954,29 @@ class TestSchedulerLogging(unittest.TestCase):
 
 
 class TestTopologyRuntimeReadiness(unittest.TestCase):
+    def _write_ready_runtime_status(self, tempdir):
+        shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+        effective_network = os.path.join(tempdir, "network.effective.json")
+        topology_state = os.path.join(tempdir, "state", "topology")
+        os.makedirs(topology_state, exist_ok=True)
+        with open(shaping_inputs, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        with open(effective_network, "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "source_generation": "generation-1",
+                    "shaping_generation": "shape-1",
+                    "effective_generation": "effective-1",
+                    "shaping_inputs_path": shaping_inputs,
+                    "effective_network_path": effective_network,
+                    "ready": True,
+                },
+                handle,
+            )
+        return shaping_inputs, effective_network
+
     def test_missing_status_is_not_ready(self):
         with tempfile.TemporaryDirectory() as tempdir:
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
@@ -1023,16 +1042,21 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
     def test_ready_true_matching_status_allows_current_generation(self):
         with tempfile.TemporaryDirectory() as tempdir:
             shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            effective_network = os.path.join(tempdir, "network.effective.json")
             topology_state = os.path.join(tempdir, "state", "topology")
             os.makedirs(topology_state, exist_ok=True)
             with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(effective_network, "w", encoding="utf-8") as handle:
                 handle.write("{}\n")
             with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "source_generation": "generation-1",
                         "shaping_generation": "shape-1",
+                        "effective_generation": "effective-1",
                         "shaping_inputs_path": shaping_inputs,
+                        "effective_network_path": effective_network,
                         "ready": True,
                         "error": None,
                     },
@@ -1053,14 +1077,18 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
     def test_ready_true_without_shaping_generation_is_not_ready(self):
         with tempfile.TemporaryDirectory() as tempdir:
             shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            effective_network = os.path.join(tempdir, "network.effective.json")
             topology_state = os.path.join(tempdir, "state", "topology")
             os.makedirs(topology_state, exist_ok=True)
             with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(effective_network, "w", encoding="utf-8") as handle:
                 handle.write("{}\n")
             with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "source_generation": "generation-1",
+                        "effective_network_path": effective_network,
                         "shaping_inputs_path": shaping_inputs,
                         "ready": True,
                     },
@@ -1104,6 +1132,195 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
         self.assertFalse(ready)
         self.assertEqual(generation, "generation-1")
         self.assertIn("shaping inputs are not available", detail)
+
+    def test_ready_true_with_stale_shaping_inputs_generation_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            effective_network = os.path.join(tempdir, "network.effective.json")
+            topology_state = os.path.join(tempdir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(effective_network, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-1",
+                        "shaping_generation": "shape-1",
+                        "effective_generation": "effective-1",
+                        "shaping_inputs_path": shaping_inputs,
+                        "effective_network_path": effective_network,
+                        "ready": True,
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    with patch.object(
+                        scheduler,
+                        "calculate_shaping_inputs_generation",
+                        return_value="shape-2",
+                    ):
+                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("do not match", detail)
+
+    def test_ready_true_with_stale_effective_generation_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            effective_network = os.path.join(tempdir, "network.effective.json")
+            topology_state = os.path.join(tempdir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(effective_network, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-1",
+                        "shaping_generation": "shape-1",
+                        "effective_generation": "effective-1",
+                        "shaping_inputs_path": shaping_inputs,
+                        "effective_network_path": effective_network,
+                        "ready": True,
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    with patch.object(
+                        scheduler,
+                        "calculate_effective_network_generation",
+                        return_value="effective-2",
+                    ):
+                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("effective network does not match", detail)
+
+    def test_ready_true_without_effective_network_path_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
+            topology_state = os.path.join(tempdir, "state", "topology")
+            os.makedirs(topology_state, exist_ok=True)
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with open(os.path.join(topology_state, "topology_runtime_status.json"), "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "source_generation": "generation-1",
+                        "shaping_generation": "shape-1",
+                        "shaping_inputs_path": shaping_inputs,
+                        "ready": True,
+                    },
+                    handle,
+                )
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("effective network path", detail)
+
+    def test_effective_generation_exception_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            self._write_ready_runtime_status(tempdir)
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    with patch.object(
+                        scheduler,
+                        "calculate_effective_network_generation",
+                        side_effect=OSError("bad effective network"),
+                    ):
+                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("effective network generation could not be verified", detail)
+        self.assertIn("bad effective network", detail)
+
+    def test_effective_generation_none_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            self._write_ready_runtime_status(tempdir)
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    with patch.object(
+                        scheduler,
+                        "calculate_effective_network_generation",
+                        return_value=None,
+                    ):
+                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("effective network generation could not be verified", detail)
+
+    def test_shaping_generation_exception_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            self._write_ready_runtime_status(tempdir)
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    with patch.object(
+                        scheduler,
+                        "calculate_shaping_inputs_generation",
+                        side_effect=OSError("bad shaping inputs"),
+                    ):
+                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("shaping inputs generation could not be verified", detail)
+        self.assertIn("bad shaping inputs", detail)
+
+    def test_shaping_generation_none_is_not_ready(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            self._write_ready_runtime_status(tempdir)
+            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
+                with patch.object(
+                    scheduler,
+                    "calculate_topology_source_generation",
+                    return_value="generation-1",
+                ):
+                    with patch.object(
+                        scheduler,
+                        "calculate_shaping_inputs_generation",
+                        return_value=None,
+                    ):
+                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+
+        self.assertFalse(ready)
+        self.assertEqual(generation, "generation-1")
+        self.assertIn("shaping inputs generation could not be verified", detail)
 
 
 class TestTopologyRuntimeGating(unittest.TestCase):

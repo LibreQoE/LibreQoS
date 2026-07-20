@@ -1,6 +1,7 @@
 use crate::{
-    DynamicCircuit, ShapedDevicesCatalog, load_shaped_devices_for_config,
-    resolve_parent_node_reference, runtime_inputs, with_network_json_write,
+    DynamicCircuit, ParentNodeLookup, ShapedDevicesCatalog, load_shaped_devices_for_config,
+    load_source_shaped_devices_for_config, resolve_parent_node_reference,
+    resolve_parent_node_reference_in_nodes, runtime_inputs, with_network_json_write,
 };
 use lqos_config::{
     CircuitAnchorsFile, Config, ConfigShapedDevices, NetworkJsonNode, ShapedDevice,
@@ -85,6 +86,17 @@ fn write_runtime_status(
     shaping_inputs_path: &std::path::Path,
     source_generation: &str,
 ) {
+    let effective_network_path = path
+        .parent()
+        .expect("runtime status path should have a parent")
+        .join("network.effective.json");
+    std::fs::write(&effective_network_path, "{}\n").expect("effective network should write");
+    let shaping_generation = lqos_config::compute_shaping_inputs_file_generation(shaping_inputs_path)
+        .expect("shaping generation should compute");
+    let effective_generation =
+        lqos_config::compute_effective_network_file_generation(&effective_network_path)
+            .expect("effective generation should compute");
+
     std::fs::write(
         path,
         serde_json::json!({
@@ -92,9 +104,10 @@ fn write_runtime_status(
             "ready": ready,
             "shaping_inputs_path": shaping_inputs_path,
             "effective_state_path": "",
-            "effective_network_path": "",
+            "effective_network_path": effective_network_path,
             "source_generation": source_generation,
-            "shaping_generation": "shape-1",
+            "shaping_generation": shaping_generation,
+            "effective_generation": effective_generation,
         })
         .to_string(),
     )
@@ -159,6 +172,27 @@ fn resolve_parent_node_reference_prefers_id_then_name_then_alias() {
     let by_alias = resolve_parent_node_reference("B-alias", None)
         .expect("Expected active attachment alias to resolve");
     assert_eq!(by_alias.name, "Site B");
+}
+
+#[test]
+fn borrowed_parent_node_resolver_uses_the_same_precedence() {
+    let nodes = vec![
+        make_node("Root", Some("root"), None),
+        make_node("Site A", Some("node-a"), Some("shared")),
+        make_node("shared", Some("node-b"), None),
+    ];
+
+    let by_id = resolve_parent_node_reference_in_nodes(&nodes, "shared", Some("node-a"))
+        .expect("node id should take precedence");
+    assert_eq!(by_id.name, "Site A");
+
+    let by_name = resolve_parent_node_reference_in_nodes(&nodes, "shared", None)
+        .expect("canonical name should take precedence over an alias");
+    assert_eq!(by_name.id.as_deref(), Some("node-b"));
+
+    let lookup = ParentNodeLookup::from_nodes(&nodes);
+    assert_eq!(lookup.resolve("shared", Some("node-a")), Some(by_id));
+    assert_eq!(lookup.resolve("shared", None), Some(by_name));
 }
 
 #[test]
@@ -367,7 +401,7 @@ fn runtime_inputs_leave_runtime_fallback_circuits_unparented() {
 }
 
 #[test]
-fn load_shaped_devices_uses_topology_import_when_runtime_inputs_are_empty() {
+fn source_loader_bypasses_ready_runtime_inputs() {
     let _guard = TEST_LOCK.lock();
 
     let lqos_directory = unique_temp_dir("lqos-network-devices-runtime-empty");
@@ -384,10 +418,24 @@ fn load_shaped_devices_uses_topology_import_when_runtime_inputs_are_empty() {
         "csv-circuit",
         "192.0.2.10/32",
     );
+    let runtime_inputs = TopologyShapingInputsFile {
+        circuits: vec![TopologyShapingCircuitInput {
+            circuit_id: "runtime-circuit".to_string(),
+            circuit_name: "Runtime Circuit".to_string(),
+            effective_parent_node_name: "Runtime Parent".to_string(),
+            effective_parent_node_id: "runtime-parent".to_string(),
+            devices: vec![TopologyShapingDeviceInput {
+                device_id: "runtime-device".to_string(),
+                ..TopologyShapingDeviceInput::default()
+            }],
+            ..TopologyShapingCircuitInput::default()
+        }],
+        shaping_generation: "shape-1".to_string(),
+        ..TopologyShapingInputsFile::default()
+    };
     std::fs::write(
         &runtime_path,
-        serde_json::to_string_pretty(&TopologyShapingInputsFile::default())
-            .expect("empty shaping inputs should encode"),
+        serde_json::to_string_pretty(&runtime_inputs).expect("runtime shaping inputs should encode"),
     )
     .expect("runtime shaping inputs should write");
     let mut import_devices = ConfigShapedDevices::default();
@@ -432,7 +480,12 @@ fn load_shaped_devices_uses_topology_import_when_runtime_inputs_are_empty() {
     let loaded = load_shaped_devices_for_config(&config)
         .expect("preferred shaped-device source should load");
     assert_eq!(loaded.shaped.devices.len(), 1);
-    assert_eq!(loaded.shaped.devices[0].circuit_id, "import-circuit");
+    assert_eq!(loaded.shaped.devices[0].circuit_id, "runtime-circuit");
+
+    let source =
+        load_source_shaped_devices_for_config(&config).expect("raw integration source should load");
+    assert_eq!(source.devices.len(), 1);
+    assert_eq!(source.devices[0].circuit_id, "import-circuit");
 }
 
 #[test]

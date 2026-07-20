@@ -1,44 +1,11 @@
 use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use lqos_bus::{BusReply, BusRequest, BusResponse, Circuit};
+use lqos_bus::{BusRequest, BusResponse, Circuit};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::mpsc::Sender;
-use tokio::time::timeout;
 
-const INTERNAL_BUS_TIMEOUT: Duration = Duration::from_secs(5);
-
-async fn request_internal_bus(
-    context: &'static str,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    request: BusRequest,
-) -> Option<BusReply> {
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-    match timeout(INTERNAL_BUS_TIMEOUT, bus_tx.send((tx, request))).await {
-        Ok(Ok(())) => {}
-        Ok(Err(err)) => {
-            tracing::warn!("{context}: failed to send request to bus: {err:?}");
-            return None;
-        }
-        Err(_) => {
-            tracing::warn!("{context}: timed out queueing request to bus");
-            return None;
-        }
-    }
-
-    match timeout(INTERNAL_BUS_TIMEOUT, rx).await {
-        Ok(Ok(replies)) => Some(replies),
-        Ok(Err(err)) => {
-            tracing::warn!("{context}: failed to receive response from bus: {err:?}");
-            None
-        }
-        Err(_) => {
-            tracing::warn!("{context}: timed out waiting for bus response");
-            None
-        }
-    }
-}
+use super::request_internal_bus;
 
 pub async fn network_tree(
     channels: Arc<PubSub>,
@@ -64,11 +31,11 @@ pub async fn network_tree(
     }
 }
 
-pub async fn all_circuits(
+async fn all_circuits_for_context(
+    context: &'static str,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
 ) -> Vec<Circuit> {
-    let Some(replies) =
-        request_internal_bus("AllCircuits", bus_tx, BusRequest::GetAllCircuits).await
+    let Some(replies) = request_internal_bus(context, bus_tx, BusRequest::GetAllCircuits).await
     else {
         return Vec::new();
     };
@@ -78,6 +45,12 @@ pub async fn all_circuits(
         }
     }
     Vec::new()
+}
+
+pub async fn all_circuits(
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+) -> Vec<Circuit> {
+    all_circuits_for_context("CircuitWatcherAllCircuits", bus_tx).await
 }
 
 pub async fn all_subscribers(
@@ -91,7 +64,7 @@ pub async fn all_subscribers(
         return;
     }
 
-    let devices = all_circuits(bus_tx).await;
+    let devices = all_circuits_for_context("NetworkTreeClients", bus_tx).await;
     let message = WsResponse::NetworkTreeClients { data: devices };
     channels
         .send(PublishedChannels::NetworkTreeClients, message)

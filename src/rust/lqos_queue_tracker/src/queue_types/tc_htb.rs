@@ -15,21 +15,21 @@ pub struct TcHtb {
     handle: TcHandle,
     parent: TcHandle,
     bytes: u64,
-    packets: u32,
-    drops: u32,
-    overlimits: u32,
-    requeues: u32,
-    backlog: u32,
-    qlen: u32,
+    packets: u64,
+    drops: u64,
+    overlimits: u64,
+    requeues: u64,
+    backlog: u64,
+    qlen: u64,
     options: TcHtbOptions,
 }
 
 #[derive(Default, Clone, Debug, Serialize)]
 struct TcHtbOptions {
     default: TcHandle,
-    r2q: u32,
-    direct_qlen: u32,
-    direct_packets_stat: u32,
+    r2q: u64,
+    direct_qlen: u64,
+    direct_packets_stat: u64,
 }
 
 impl TcHtb {
@@ -46,12 +46,12 @@ impl TcHtb {
                     parse_tc_handle!(result.parent, value);
                 }
                 "bytes" => result.bytes = value.as_u64().unwrap_or(0),
-                "packets" => result.packets = value.as_u64().unwrap_or(0) as u32,
-                "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
-                "overlimits" => result.overlimits = value.as_u64().unwrap_or(0) as u32,
-                "requeues" => result.requeues = value.as_u64().unwrap_or(0) as u32,
-                "backlog" => result.backlog = value.as_u64().unwrap_or(0) as u32,
-                "qlen" => result.qlen = value.as_u64().unwrap_or(0) as u32,
+                "packets" => result.packets = value.as_u64().unwrap_or(0),
+                "drops" => result.drops = value.as_u64().unwrap_or(0),
+                "overlimits" => result.overlimits = value.as_u64().unwrap_or(0),
+                "requeues" => result.requeues = value.as_u64().unwrap_or(0),
+                "backlog" => result.backlog = value.as_u64().unwrap_or(0),
+                "qlen" => result.qlen = value.as_u64().unwrap_or(0),
                 "options" => result.options = TcHtbOptions::from_json(value)?,
                 "kind" => {}
                 _ => {
@@ -70,14 +70,14 @@ impl TcHtbOptions {
                 let mut result = Self::default();
                 for (key, value) in map.iter() {
                     match key.as_str() {
-                        "r2q" => result.r2q = value.as_u64().unwrap_or(0) as u32,
+                        "r2q" => result.r2q = value.as_u64().unwrap_or(0),
                         "default" => {
                             parse_tc_handle!(result.default, value);
                         }
                         "direct_packets_stat" => {
-                            result.direct_packets_stat = value.as_u64().unwrap_or(0) as u32
+                            result.direct_packets_stat = value.as_u64().unwrap_or(0)
                         }
-                        "direct_qlen" => result.direct_qlen = value.as_u64().unwrap_or(0) as u32,
+                        "direct_qlen" => result.direct_qlen = value.as_u64().unwrap_or(0),
                         _ => {
                             info!("Unknown entry in tc-HTB json decoder: {key}");
                         }
@@ -87,5 +87,41 @@ impl TcHtbOptions {
             }
             _ => Err(QDiscError::HtbOpts),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn htb_parser_preserves_large_kernel_counters() {
+        let value = serde_json::json!({
+            "kind": "htb",
+            "handle": "2:",
+            "parent": "7fff:2",
+            "options": {
+                "direct_packets_stat": u64::from(u32::MAX) + 1,
+                "direct_qlen": u64::from(u32::MAX) + 2
+            },
+            "bytes": u64::from(u32::MAX) + 3,
+            "packets": u64::from(u32::MAX) + 4,
+            "drops": u64::from(u32::MAX) + 5,
+            "overlimits": u64::from(u32::MAX) + 6,
+            "requeues": u64::from(u32::MAX) + 7,
+            "backlog": u64::from(u32::MAX) + 8,
+            "qlen": u64::from(u32::MAX) + 9
+        });
+        let Value::Object(map) = value else {
+            panic!("test fixture should be a JSON object");
+        };
+
+        let parsed = TcHtb::from_json(&map).expect("htb fixture should parse");
+
+        assert_eq!(parsed.options.direct_packets_stat, u64::from(u32::MAX) + 1);
+        assert_eq!(parsed.options.direct_qlen, u64::from(u32::MAX) + 2);
+        assert_eq!(parsed.packets, u64::from(u32::MAX) + 4);
+        assert_eq!(parsed.drops, u64::from(u32::MAX) + 5);
+        assert_eq!(parsed.backlog, u64::from(u32::MAX) + 8);
     }
 }

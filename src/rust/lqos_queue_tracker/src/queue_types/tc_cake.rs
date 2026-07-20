@@ -28,21 +28,21 @@ pub struct TcCake {
     pub(crate) parent: TcHandle,
     pub(crate) options: TcCakeOptions,
     pub(crate) bytes: u64,
-    pub(crate) packets: u32,
-    pub(crate) overlimits: u32,
-    pub(crate) requeues: u32,
-    pub(crate) backlog: u32,
-    pub(crate) qlen: u32,
-    pub(crate) memory_used: u32,
-    pub(crate) memory_limit: u32,
-    pub(crate) capacity_estimate: u32,
-    pub(crate) min_network_size: u16,
-    pub(crate) max_network_size: u16,
-    pub(crate) min_adj_size: u16,
-    pub(crate) max_adj_size: u16,
-    pub(crate) avg_hdr_offset: u16,
+    pub(crate) packets: u64,
+    pub(crate) overlimits: u64,
+    pub(crate) requeues: u64,
+    pub(crate) backlog: u64,
+    pub(crate) qlen: u64,
+    pub(crate) memory_used: u64,
+    pub(crate) memory_limit: u64,
+    pub(crate) capacity_estimate: u64,
+    pub(crate) min_network_size: u64,
+    pub(crate) max_network_size: u64,
+    pub(crate) min_adj_size: u64,
+    pub(crate) max_adj_size: u64,
+    pub(crate) avg_hdr_offset: u64,
     pub(crate) tins: Vec<TcCakeTin>,
-    pub(crate) drops: u32,
+    pub(crate) drops: u64,
 }
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
@@ -65,24 +65,24 @@ pub(crate) struct TcCakeOptions {
 pub(crate) struct TcCakeTin {
     pub(crate) threshold_rate: u64,
     pub(crate) sent_bytes: u64,
-    pub(crate) backlog_bytes: u32,
-    pub(crate) target_us: u32,
-    pub(crate) interval_us: u32,
-    pub(crate) peak_delay_us: u32,
-    pub(crate) avg_delay_us: u32,
-    pub(crate) base_delay_us: u32,
-    pub(crate) sent_packets: u32,
-    pub(crate) way_indirect_hits: u16,
-    pub(crate) way_misses: u16,
-    pub(crate) way_collisions: u16,
-    pub(crate) drops: u32,
-    pub(crate) ecn_marks: u32,
-    pub(crate) ack_drops: u32,
-    pub(crate) sparse_flows: u16,
-    pub(crate) bulk_flows: u16,
-    pub(crate) unresponsive_flows: u16,
-    pub(crate) max_pkt_len: u16,
-    pub(crate) flow_quantum: u16,
+    pub(crate) backlog_bytes: u64,
+    pub(crate) target_us: u64,
+    pub(crate) interval_us: u64,
+    pub(crate) peak_delay_us: u64,
+    pub(crate) avg_delay_us: u64,
+    pub(crate) base_delay_us: u64,
+    pub(crate) sent_packets: u64,
+    pub(crate) way_indirect_hits: u64,
+    pub(crate) way_misses: u64,
+    pub(crate) way_collisions: u64,
+    pub(crate) drops: u64,
+    pub(crate) ecn_marks: u64,
+    pub(crate) ack_drops: u64,
+    pub(crate) sparse_flows: u64,
+    pub(crate) bulk_flows: u64,
+    pub(crate) unresponsive_flows: u64,
+    pub(crate) max_pkt_len: u64,
+    pub(crate) flow_quantum: u64,
 }
 
 impl TcCake {
@@ -99,22 +99,20 @@ impl TcCake {
                     parse_tc_handle!(result.parent, value);
                 }
                 "bytes" => result.bytes = value.as_u64().unwrap_or(0),
-                "packets" => result.packets = value.as_u64().unwrap_or(0) as u32,
-                "overlimits" => result.overlimits = value.as_u64().unwrap_or(0) as u32,
-                "requeues" => result.requeues = value.as_u64().unwrap_or(0) as u32,
-                "backlog" => result.backlog = value.as_u64().unwrap_or(0) as u32,
-                "qlen" => result.qlen = value.as_u64().unwrap_or(0) as u32,
-                "memory_used" => result.memory_used = value.as_u64().unwrap_or(0) as u32,
-                "memory_limit" => result.memory_limit = value.as_u64().unwrap_or(0) as u32,
-                "capacity_estimate" => {
-                    result.capacity_estimate = value.as_u64().unwrap_or(0) as u32
-                }
-                "min_network_size" => result.min_network_size = value.as_u64().unwrap_or(0) as u16,
-                "max_network_size" => result.max_network_size = value.as_u64().unwrap_or(0) as u16,
-                "min_adj_size" => result.min_adj_size = value.as_u64().unwrap_or(0) as u16,
-                "max_adj_size" => result.max_adj_size = value.as_u64().unwrap_or(0) as u16,
-                "avg_hdr_offset" => result.avg_hdr_offset = value.as_u64().unwrap_or(0) as u16,
-                "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
+                "packets" => result.packets = value.as_u64().unwrap_or(0),
+                "overlimits" => result.overlimits = value.as_u64().unwrap_or(0),
+                "requeues" => result.requeues = value.as_u64().unwrap_or(0),
+                "backlog" => result.backlog = value.as_u64().unwrap_or(0),
+                "qlen" => result.qlen = value.as_u64().unwrap_or(0),
+                "memory_used" => result.memory_used = value.as_u64().unwrap_or(0),
+                "memory_limit" => result.memory_limit = value.as_u64().unwrap_or(0),
+                "capacity_estimate" => result.capacity_estimate = value.as_u64().unwrap_or(0),
+                "min_network_size" => result.min_network_size = value.as_u64().unwrap_or(0),
+                "max_network_size" => result.max_network_size = value.as_u64().unwrap_or(0),
+                "min_adj_size" => result.min_adj_size = value.as_u64().unwrap_or(0),
+                "max_adj_size" => result.max_adj_size = value.as_u64().unwrap_or(0),
+                "avg_hdr_offset" => result.avg_hdr_offset = value.as_u64().unwrap_or(0),
+                "drops" => result.drops = value.as_u64().unwrap_or(0),
                 "options" => result.options = TcCakeOptions::from_json(value)?,
                 "tins" => {
                     if let Value::Array(array) = value {
@@ -183,36 +181,28 @@ impl TcCakeTin {
                     match key.as_str() {
                         "threshold_rate" => result.threshold_rate = value.as_u64().unwrap_or(0),
                         "sent_bytes" => result.sent_bytes = value.as_u64().unwrap_or(0),
-                        "backlog_bytes" => {
-                            result.backlog_bytes = value.as_u64().unwrap_or(0) as u32
-                        }
-                        "target_us" => result.target_us = value.as_u64().unwrap_or(0) as u32,
-                        "interval_us" => result.interval_us = value.as_u64().unwrap_or(0) as u32,
-                        "peak_delay_us" => {
-                            result.peak_delay_us = value.as_u64().unwrap_or(0) as u32
-                        }
-                        "avg_delay_us" => result.avg_delay_us = value.as_u64().unwrap_or(0) as u32,
-                        "base_delay_us" => {
-                            result.base_delay_us = value.as_u64().unwrap_or(0) as u32
-                        }
-                        "sent_packets" => result.sent_packets = value.as_u64().unwrap_or(0) as u32,
+                        "backlog_bytes" => result.backlog_bytes = value.as_u64().unwrap_or(0),
+                        "target_us" => result.target_us = value.as_u64().unwrap_or(0),
+                        "interval_us" => result.interval_us = value.as_u64().unwrap_or(0),
+                        "peak_delay_us" => result.peak_delay_us = value.as_u64().unwrap_or(0),
+                        "avg_delay_us" => result.avg_delay_us = value.as_u64().unwrap_or(0),
+                        "base_delay_us" => result.base_delay_us = value.as_u64().unwrap_or(0),
+                        "sent_packets" => result.sent_packets = value.as_u64().unwrap_or(0),
                         "way_indirect_hits" => {
-                            result.way_indirect_hits = value.as_u64().unwrap_or(0) as u16
+                            result.way_indirect_hits = value.as_u64().unwrap_or(0)
                         }
-                        "way_misses" => result.way_misses = value.as_u64().unwrap_or(0) as u16,
-                        "way_collisions" => {
-                            result.way_collisions = value.as_u64().unwrap_or(0) as u16
-                        }
-                        "drops" => result.drops = value.as_u64().unwrap_or(0) as u32,
-                        "ecn_mark" => result.ecn_marks = value.as_u64().unwrap_or(0) as u32,
-                        "ack_drops" => result.ack_drops = value.as_u64().unwrap_or(0) as u32,
-                        "sparse_flows" => result.sparse_flows = value.as_u64().unwrap_or(0) as u16,
-                        "bulk_flows" => result.bulk_flows = value.as_u64().unwrap_or(0) as u16,
+                        "way_misses" => result.way_misses = value.as_u64().unwrap_or(0),
+                        "way_collisions" => result.way_collisions = value.as_u64().unwrap_or(0),
+                        "drops" => result.drops = value.as_u64().unwrap_or(0),
+                        "ecn_mark" => result.ecn_marks = value.as_u64().unwrap_or(0),
+                        "ack_drops" => result.ack_drops = value.as_u64().unwrap_or(0),
+                        "sparse_flows" => result.sparse_flows = value.as_u64().unwrap_or(0),
+                        "bulk_flows" => result.bulk_flows = value.as_u64().unwrap_or(0),
                         "unresponsive_flows" => {
-                            result.unresponsive_flows = value.as_u64().unwrap_or(0) as u16
+                            result.unresponsive_flows = value.as_u64().unwrap_or(0)
                         }
-                        "max_pkt_len" => result.max_pkt_len = value.as_u64().unwrap_or(0) as u16,
-                        "flow_quantum" => result.flow_quantum = value.as_u64().unwrap_or(0) as u16,
+                        "max_pkt_len" => result.max_pkt_len = value.as_u64().unwrap_or(0),
+                        "flow_quantum" => result.flow_quantum = value.as_u64().unwrap_or(0),
                         _ => {
                             info!("Unknown entry in tc-cake-tin json decoder: {key}");
                         }
@@ -358,3 +348,51 @@ impl TcCakeTin {
 },
 
  */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cake_parser_preserves_large_kernel_counters() {
+        let value = serde_json::json!({
+            "kind": "cake",
+            "handle": "9cb1:",
+            "parent": "3:205",
+            "options": {},
+            "bytes": u64::from(u32::MAX) + 11,
+            "packets": u64::from(u32::MAX) + 12,
+            "drops": u64::from(u32::MAX) + 13,
+            "overlimits": u64::from(u32::MAX) + 14,
+            "requeues": u64::from(u32::MAX) + 15,
+            "backlog": u64::from(u32::MAX) + 16,
+            "qlen": u64::from(u32::MAX) + 17,
+            "memory_used": u64::from(u32::MAX) + 18,
+            "memory_limit": u64::from(u32::MAX) + 19,
+            "tins": [{
+                "sent_bytes": u64::from(u32::MAX) + 20,
+                "backlog_bytes": u64::from(u32::MAX) + 21,
+                "sent_packets": u64::from(u32::MAX) + 22,
+                "way_indirect_hits": u64::from(u16::MAX) + 23,
+                "drops": u64::from(u32::MAX) + 24,
+                "ecn_mark": u64::from(u32::MAX) + 25,
+                "ack_drops": u64::from(u32::MAX) + 26,
+                "sparse_flows": u64::from(u16::MAX) + 27
+            }]
+        });
+        let Value::Object(map) = value else {
+            panic!("test fixture should be a JSON object");
+        };
+
+        let parsed = TcCake::from_json(&map).expect("cake fixture should parse");
+
+        assert_eq!(parsed.packets, u64::from(u32::MAX) + 12);
+        assert_eq!(parsed.drops, u64::from(u32::MAX) + 13);
+        assert_eq!(parsed.backlog, u64::from(u32::MAX) + 16);
+        assert_eq!(parsed.memory_used, u64::from(u32::MAX) + 18);
+        assert_eq!(parsed.tins[0].sent_packets, u64::from(u32::MAX) + 22);
+        assert_eq!(parsed.tins[0].way_indirect_hits, u64::from(u16::MAX) + 23);
+        assert_eq!(parsed.tins[0].ecn_marks, u64::from(u32::MAX) + 25);
+        assert_eq!(parsed.tins[0].sparse_flows, u64::from(u16::MAX) + 27);
+    }
+}

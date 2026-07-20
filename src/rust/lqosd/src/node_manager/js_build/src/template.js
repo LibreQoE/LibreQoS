@@ -1,9 +1,10 @@
-import {clearDiv} from "./helpers/builders";
+import {clearDiv, safeRelativeHref} from "./helpers/builders";
 import {initRedact} from "./helpers/redact";
 import {initDayNightMode} from "./helpers/dark_mode";
 import {initColorBlind} from "./helpers/colorblind";
 import {listenOnceMatchingWithTimeout as listenWsOnceMatchingWithTimeout} from "./pubsub/listeners";
 import {get_ws_client} from "./pubsub/ws";
+import {clearOperationalNetworkModeStorage} from "./config/network_mode_storage.mjs";
 
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
@@ -752,6 +753,7 @@ function getDeviceCounts() {
 function initLogout() {
     $("#btnLogout").on('click', () => {
         //console.log("Logout");
+        clearOperationalNetworkModeStorage();
         const cookies = document.cookie.split(";");
 
         for (let i = 0; i < cookies.length; i++) {
@@ -794,11 +796,23 @@ function renderSearchResults(data) {
         let c = document.createElement("td");
 
         if (item.Circuit !== undefined) {
-            c.innerHTML = "<a class='nav-link redactable' href='/circuit.html?id=" + encodeURI(item.Circuit.id) + "'><i class='fa fa-user'></i> " + item.Circuit.name + "</a>";
+            c.appendChild(searchResultLink(
+                `/circuit.html?id=${encodeURIComponent(item.Circuit.id ?? "")}`,
+                ["fa", "fa-user"],
+                item.Circuit.name,
+            ));
         } else if (item.Device !== undefined) {
-            c.innerHTML = "<a class='nav-link redactable' href='/circuit.html?id=" + encodeURI(item.Device.circuit_id) + "'><i class='fa fa-computer'></i> " + item.Device.name + "</a>";
+            c.appendChild(searchResultLink(
+                `/circuit.html?id=${encodeURIComponent(item.Device.circuit_id ?? "")}`,
+                ["fa", "fa-computer"],
+                item.Device.name,
+            ));
         } else if (item.Site !== undefined) {
-            c.innerHTML = "<a class='nav-link redactable' href='/tree.html?parent=" + item.Site.idx + "'><i class='fa fa-building'></i> " + item.Site.name + "</a>";
+            c.appendChild(searchResultLink(
+                `/tree.html?parent=${encodeURIComponent(item.Site.idx ?? "")}`,
+                ["fa", "fa-building"],
+                item.Site.name,
+            ));
         } else {
             console.log(item);
             c.innerText = item;
@@ -812,6 +826,18 @@ function renderSearchResults(data) {
     wrap.classList.add("table-responsive", "lqos-table-wrap");
     wrap.appendChild(list);
     searchResults.appendChild(wrap);
+}
+
+function searchResultLink(href, iconClasses, label) {
+    const link = document.createElement("a");
+    link.classList.add("nav-link", "redactable");
+    link.href = safeRelativeHref(href);
+
+    const icon = document.createElement("i");
+    icon.classList.add(...iconClasses);
+    link.appendChild(icon);
+    link.appendChild(document.createTextNode(` ${label ?? ""}`));
+    return link;
 }
 
 function doSearch(search) {

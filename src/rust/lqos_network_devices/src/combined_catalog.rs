@@ -3,13 +3,12 @@ use fxhash::FxHashMap;
 use ip_network::IpNetwork;
 use ip_network_table::IpNetworkTable;
 use lqos_config::ShapedDevice;
-use lqos_utils::XdpIpAddress;
+use lqos_utils::{
+    XdpIpAddress, is_valid_ipv4_prefix, is_valid_ipv6_prefix, normalize_circuit_id_key,
+    unique_mapped_circuit_hashes,
+};
 use std::net::IpAddr;
 use std::sync::Arc;
-
-fn normalize_circuit_id_key(circuit_id: &str) -> String {
-    circuit_id.trim().to_ascii_lowercase()
-}
 
 /// Snapshot handle for shaped devices plus runtime dynamic circuits.
 ///
@@ -156,5 +155,103 @@ impl NetworkDevicesCatalog {
         let key = normalize_circuit_id_key(circuit_id);
         let idx = self.dyn_by_circuit_id.get(&key)?;
         self.dynamic.get(*idx).map(|circuit| &circuit.shaped)
+    }
+}
+
+pub(crate) fn mapped_circuit_count_for_devices<'a>(
+    devices: impl IntoIterator<Item = &'a ShapedDevice>,
+) -> usize {
+    unique_mapped_circuit_hashes(devices.into_iter().filter_map(|device| {
+        let has_valid_mapping = device
+            .ipv4
+            .iter()
+            .any(|(_, prefix)| is_valid_ipv4_prefix(*prefix))
+            || device
+                .ipv6
+                .iter()
+                .any(|(_, prefix)| is_valid_ipv6_prefix(*prefix));
+        has_valid_mapping.then_some(device.circuit_hash)
+    }))
+    .len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NetworkDevicesCatalog, mapped_circuit_count_for_devices};
+    use crate::{DynamicCircuit, ShapedDevicesCatalog};
+    use lqos_config::{ConfigShapedDevices, ShapedDevice};
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::sync::Arc;
+
+    fn device(circuit_hash: i64) -> ShapedDevice {
+        ShapedDevice {
+            circuit_hash,
+            ipv4: vec![(Ipv4Addr::new(192, 0, 2, 1), 32)],
+            ..ShapedDevice::default()
+        }
+    }
+
+    fn catalog(
+        static_devices: Vec<ShapedDevice>,
+        dynamic_devices: Vec<ShapedDevice>,
+    ) -> NetworkDevicesCatalog {
+        let shaped = ConfigShapedDevices {
+            devices: static_devices,
+            ..ConfigShapedDevices::default()
+        };
+        let dynamic = dynamic_devices
+            .into_iter()
+            .map(|shaped| DynamicCircuit {
+                shaped,
+                last_seen_unix: 0,
+            })
+            .collect();
+        NetworkDevicesCatalog::from_snapshots(
+            ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped)),
+            Arc::new(dynamic),
+        )
+    }
+
+    #[test]
+    fn mapped_circuit_count_deduplicates_static_and_dynamic_devices() {
+        let catalog = catalog(
+            vec![device(10), device(10)],
+            vec![device(10), device(20), device(20)],
+        );
+
+        assert_eq!(
+            mapped_circuit_count_for_devices(catalog.iter_all_devices()),
+            2
+        );
+    }
+
+    #[test]
+    fn mapped_circuit_count_ignores_unmapped_rows_and_counts_ipv6() {
+        let mut unmapped = device(20);
+        unmapped.ipv4.clear();
+        let mut ipv6 = device(30);
+        ipv6.ipv4.clear();
+        ipv6.ipv6 = vec![(Ipv6Addr::LOCALHOST, 128)];
+        let catalog = catalog(vec![device(10), unmapped], vec![ipv6]);
+
+        assert_eq!(
+            mapped_circuit_count_for_devices(catalog.iter_all_devices()),
+            2
+        );
+    }
+
+    #[test]
+    fn mapped_circuit_count_ignores_invalid_prefixes() {
+        let mut invalid_ipv4 = device(20);
+        invalid_ipv4.ipv4 = vec![(Ipv4Addr::new(192, 0, 2, 2), 64)];
+        let mut invalid_ipv6 = device(30);
+        invalid_ipv6.ipv4.clear();
+        invalid_ipv6.ipv6 = vec![(Ipv6Addr::LOCALHOST, 129)];
+        let catalog = catalog(vec![device(10), invalid_ipv4], vec![invalid_ipv6]);
+
+        assert_eq!(
+            mapped_circuit_count_for_devices(catalog.iter_all_devices()),
+            1
+        );
     }
 }

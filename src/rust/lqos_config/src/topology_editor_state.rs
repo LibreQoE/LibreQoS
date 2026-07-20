@@ -70,7 +70,7 @@ pub enum TopologyAttachmentRole {
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TopologyQueueVisibilityPolicy {
-    /// The node remains visible in the baseline queue topology.
+    /// The node remains visible unless automatic high-capacity branch rules hide it.
     #[default]
     QueueVisible,
     /// The node remains logical-only for queueing and its children are promoted one level.
@@ -166,6 +166,36 @@ pub struct TopologyAttachmentOption {
     /// Whether this attachment is currently effective in runtime topology.
     #[serde(default)]
     pub effective_selected: bool,
+}
+
+/// Builds the standard dynamic attachment option used when LibreQoS selects the attachment.
+pub fn topology_auto_attachment_option() -> TopologyAttachmentOption {
+    TopologyAttachmentOption {
+        attachment_id: TOPOLOGY_ATTACHMENT_AUTO_ID.to_string(),
+        attachment_name: "Auto".to_string(),
+        attachment_kind: "auto".to_string(),
+        attachment_role: TopologyAttachmentRole::Unknown,
+        pair_id: None,
+        peer_attachment_id: None,
+        peer_attachment_name: None,
+        capacity_mbps: None,
+        download_bandwidth_mbps: None,
+        upload_bandwidth_mbps: None,
+        transport_cap_mbps: None,
+        transport_cap_reason: None,
+        rate_source: TopologyAttachmentRateSource::Unknown,
+        can_override_rate: false,
+        rate_override_disabled_reason: None,
+        has_rate_override: false,
+        local_probe_ip: None,
+        remote_probe_ip: None,
+        probe_enabled: false,
+        probeable: false,
+        health_status: TopologyAttachmentHealthStatus::Disabled,
+        health_reason: None,
+        suppressed_until_unix: None,
+        effective_selected: false,
+    }
 }
 
 /// One valid parent target for a topology node, plus allowed attachments below that parent.
@@ -402,32 +432,7 @@ impl TopologyEditorStateFile {
                 .map(|candidate| TopologyAllowedParent {
                     parent_node_id: candidate.node_id.clone(),
                     parent_node_name: candidate.node_name.clone(),
-                    attachment_options: vec![TopologyAttachmentOption {
-                        attachment_id: TOPOLOGY_ATTACHMENT_AUTO_ID.to_string(),
-                        attachment_name: "Auto".to_string(),
-                        attachment_kind: "auto".to_string(),
-                        attachment_role: TopologyAttachmentRole::Unknown,
-                        pair_id: None,
-                        peer_attachment_id: None,
-                        peer_attachment_name: None,
-                        capacity_mbps: None,
-                        download_bandwidth_mbps: None,
-                        upload_bandwidth_mbps: None,
-                        transport_cap_mbps: None,
-                        transport_cap_reason: None,
-                        rate_source: TopologyAttachmentRateSource::Unknown,
-                        can_override_rate: false,
-                        rate_override_disabled_reason: None,
-                        has_rate_override: false,
-                        local_probe_ip: None,
-                        remote_probe_ip: None,
-                        probe_enabled: false,
-                        probeable: false,
-                        health_status: TopologyAttachmentHealthStatus::Disabled,
-                        health_reason: None,
-                        suppressed_until_unix: None,
-                        effective_selected: false,
-                    }],
+                    attachment_options: vec![topology_auto_attachment_option()],
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 })

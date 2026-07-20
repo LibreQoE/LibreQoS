@@ -110,7 +110,14 @@ enum MergeNetworkModeError {
 
 fn merge_network_mode(candidate: Config) -> Result<Config, MergeNetworkModeError> {
     let live = lqos_config::load_config().map_err(|_| MergeNetworkModeError::LoadLiveConfig)?;
-    let mut merged = (*live).clone();
+    merge_network_mode_with_live(&live, candidate)
+}
+
+fn merge_network_mode_with_live(
+    live: &Config,
+    candidate: Config,
+) -> Result<Config, MergeNetworkModeError> {
+    let mut merged = live.clone();
     merged.bridge = candidate.bridge;
     merged.single_interface = candidate.single_interface;
     merged
@@ -348,43 +355,8 @@ pub async fn retry_shaping(
 
 #[cfg(test)]
 mod tests {
-    use super::{MergeNetworkModeError, merge_network_mode};
+    use super::{MergeNetworkModeError, merge_network_mode_with_live};
     use lqos_config::{BridgeConfig, Config, SingleInterfaceConfig};
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
-    fn with_config_env<T>(test_fn: impl FnOnce() -> T) -> T {
-        let _guard = env_lock().lock().expect("network-mode env lock");
-        let old_lqos_config = std::env::var_os("LQOS_CONFIG");
-        let config_path = std::env::temp_dir().join(format!(
-            "lqosd-network-mode-test-{}.toml",
-            std::process::id()
-        ));
-        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml");
-        std::fs::write(&config_path, raw).expect("write config");
-        lqos_config::clear_cached_config();
-
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &config_path);
-        }
-        let result = test_fn();
-
-        match old_lqos_config {
-            Some(value) => unsafe {
-                std::env::set_var("LQOS_CONFIG", value);
-            },
-            None => unsafe {
-                std::env::remove_var("LQOS_CONFIG");
-            },
-        }
-        lqos_config::clear_cached_config();
-        let _ = std::fs::remove_file(config_path);
-        result
-    }
 
     #[test]
     fn merge_network_mode_rejects_invalid_bridge_mtu() {
@@ -396,8 +368,8 @@ mod tests {
             ..Config::default()
         };
 
-        let error =
-            with_config_env(|| merge_network_mode(candidate).expect_err("invalid MTU should fail"));
+        let error = merge_network_mode_with_live(&Config::default(), candidate)
+            .expect_err("invalid MTU should fail");
 
         assert_eq!(
             error,
@@ -418,8 +390,8 @@ mod tests {
             ..Config::default()
         };
 
-        let error =
-            with_config_env(|| merge_network_mode(candidate).expect_err("invalid MTU should fail"));
+        let error = merge_network_mode_with_live(&Config::default(), candidate)
+            .expect_err("invalid MTU should fail");
 
         assert_eq!(
             error,

@@ -110,8 +110,6 @@ pub struct WebUsers {
     #[serde(default = "default_auth_epoch")]
     auth_epoch: u64,
     #[serde(default)]
-    allow_unauthenticated_to_view: bool,
-    #[serde(default)]
     users: Vec<WebUser>,
     #[serde(skip)]
     base_path_override: Option<PathBuf>,
@@ -122,7 +120,6 @@ impl Default for WebUsers {
         Self {
             version: AUTH_FILE_VERSION,
             auth_epoch: INITIAL_AUTH_EPOCH,
-            allow_unauthenticated_to_view: false,
             users: Vec::new(),
             base_path_override: None,
         }
@@ -240,7 +237,11 @@ impl WebUsers {
         Ok(())
     }
 
-    fn migrate_if_needed(&mut self, loaded_from: &Path) -> Result<(), AuthenticationError> {
+    fn migrate_if_needed(
+        &mut self,
+        loaded_from: &Path,
+        removed_anonymous_setting_present: bool,
+    ) -> Result<(), AuthenticationError> {
         let current_path = Self::primary_path_for(&self.resolved_base_path()?);
         let loaded_from_legacy_path = loaded_from != current_path;
         let mut needs_rewrite = false;
@@ -256,6 +257,10 @@ impl WebUsers {
         }
 
         if loaded_from_legacy_path {
+            needs_rewrite = true;
+        }
+
+        if removed_anonymous_setting_present {
             needs_rewrite = true;
         }
 
@@ -279,12 +284,13 @@ impl WebUsers {
                 error!("Unable to read auth file {:?}: {e}", path);
                 AuthenticationError::UnableToRead
             })?;
+            let removed_anonymous_setting_present = auth_file_has_removed_anonymous_setting(&raw);
             let mut users: Self = toml_edit::de::from_str(&raw).map_err(|e| {
                 error!("Unable to deserialize auth file {:?}: {e}", path);
                 AuthenticationError::UnableToParse
             })?;
             users.base_path_override = Some(Self::default_base_path()?);
-            users.migrate_if_needed(&path)?;
+            users.migrate_if_needed(&path, removed_anonymous_setting_present)?;
             Ok(users)
         } else {
             let new_users = Self::default();
@@ -311,12 +317,13 @@ impl WebUsers {
                 error!("Unable to read auth file {:?}: {e}", path);
                 AuthenticationError::UnableToRead
             })?;
+            let removed_anonymous_setting_present = auth_file_has_removed_anonymous_setting(&raw);
             let mut users: Self = toml_edit::de::from_str(&raw).map_err(|e| {
                 error!("Unable to deserialize auth file {:?}: {e}", path);
                 AuthenticationError::UnableToParse
             })?;
             users.base_path_override = Some(base_path.to_path_buf());
-            users.migrate_if_needed(&path)?;
+            users.migrate_if_needed(&path, removed_anonymous_setting_present)?;
             Ok(users)
         } else {
             let new_users = Self {
@@ -483,21 +490,12 @@ impl WebUsers {
     pub fn get_users(&self) -> Vec<WebUser> {
         self.users.clone()
     }
+}
 
-    /// Sets the "allow unauthenticated users" field. If true,
-    /// unauthenticated users gain read-only access. This is useful
-    /// for demonstration purposes.
-    pub fn allow_anonymous(&mut self, allow: bool) -> Result<(), AuthenticationError> {
-        self.allow_unauthenticated_to_view = allow;
-        self.bump_auth_epoch();
-        self.save_to_disk()?;
-        Ok(())
-    }
-
-    /// Do we allow unauthenticated users to read site data?
-    pub fn do_we_allow_anonymous(&self) -> bool {
-        self.allow_unauthenticated_to_view
-    }
+fn auth_file_has_removed_anonymous_setting(raw: &str) -> bool {
+    raw.parse::<toml_edit::DocumentMut>()
+        .map(|document| document.contains_key("allow_unauthenticated_to_view"))
+        .unwrap_or(false)
 }
 
 /// Errors that can occur while managing web-UI authentication.
@@ -529,4 +527,43 @@ pub enum AuthenticationError {
     /// Username/password did not match.
     #[error("Invalid Login")]
     InvalidLogin,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn temp_auth_dir(test_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("libreqos-auth-{test_name}-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn load_removes_legacy_anonymous_access_setting() {
+        let dir = temp_auth_dir("anonymous-setting");
+        fs::create_dir_all(&dir).expect("create auth test directory");
+        let path = dir.join(CURRENT_AUTH_FILE_NAME);
+        fs::write(
+            &path,
+            r#"version = 2
+auth_epoch = 1
+allow_unauthenticated_to_view = true
+
+[[users]]
+username = "support"
+password_hash = "legacy"
+role = "ReadOnly"
+"#,
+        )
+        .expect("write auth file");
+
+        let users = WebUsers::load_or_create_in(&dir).expect("load auth file");
+        assert_eq!(users.auth_epoch(), 2);
+        assert_eq!(users.get_users().len(), 1);
+
+        let saved = fs::read_to_string(&path).expect("read migrated auth file");
+        assert!(!saved.contains("allow_unauthenticated_to_view"));
+
+        fs::remove_dir_all(&dir).expect("remove auth test directory");
+    }
 }

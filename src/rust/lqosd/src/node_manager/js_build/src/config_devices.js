@@ -10,6 +10,10 @@ import {
     updateShapedDevice,
     validNodeList,
 } from "./config/config_helper";
+import {
+    handleShapedDeviceActionClick,
+    shapedDeviceRowForId,
+} from "./config/shaped_device_identity.mjs";
 import { parseIpInput } from "./config/shaped_device_wire.mjs";
 
 let current_rows = [];
@@ -548,7 +552,7 @@ function collectModalDevice() {
 }
 
 function findCurrentRow(deviceId) {
-    return current_rows.find((row) => row.device_id === deviceId);
+    return shapedDeviceRowForId(current_rows, deviceId);
 }
 
 function openEditModal(deviceId) {
@@ -743,19 +747,11 @@ function start() {
     });
 
     $("#sdTableContainer").on("click", ".sd-edit", (event) => {
-        event.preventDefault();
-        const deviceId = $(event.currentTarget).data("device-id");
-        if (typeof deviceId === "string" && deviceId.length > 0) {
-            openEditModal(deviceId);
-        }
+        handleShapedDeviceActionClick(event, openEditModal);
     });
 
     $("#sdTableContainer").on("click", ".sd-delete", (event) => {
-        event.preventDefault();
-        const deviceId = $(event.currentTarget).data("device-id");
-        if (typeof deviceId === "string" && deviceId.length > 0) {
-            deleteDevice(deviceId);
-        }
+        handleShapedDeviceActionClick(event, deleteDevice);
     });
 
     $("#btnAddDevice").on("click", (event) => {

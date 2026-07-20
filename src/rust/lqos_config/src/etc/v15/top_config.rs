@@ -168,6 +168,10 @@ pub struct Config {
     /// Long-term stats configuration
     pub long_term_stats: super::long_term_stats::LongTermStats,
 
+    /// Local API authentication configuration.
+    #[serde(default)]
+    pub local_api: super::local_api::LocalApiConfig,
+
     /// IP Range definitions
     pub ip_ranges: super::ip_ranges::IpRanges,
 
@@ -449,6 +453,7 @@ impl Default for Config {
             single_interface: None,
             queues: super::queues::QueueConfig::default(),
             long_term_stats: super::long_term_stats::LongTermStats::default(),
+            local_api: super::local_api::LocalApiConfig::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
             dynamic_circuits: None,
             radius_accounting: None,
@@ -698,6 +703,15 @@ mod test {
         let config = Config::load_from_string(include_str!("example.toml"))
             .expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
+    }
+
+    #[test]
+    fn local_api_config_defaults_when_section_is_absent() {
+        let legacy = remove_sections(include_str!("example.toml"), &["local_api"]);
+        let config =
+            Config::load_from_string(&legacy).expect("Cannot read config without local_api");
+
+        assert_eq!(config.local_api, Default::default());
     }
 
     #[test]

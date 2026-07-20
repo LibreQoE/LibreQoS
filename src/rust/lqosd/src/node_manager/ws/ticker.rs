@@ -1,8 +1,12 @@
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use futures_util::FutureExt;
-use lqos_bus::BusRequest;
+use lqos_bus::{BusReply, BusRequest};
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use std::panic::AssertUnwindSafe;
 use tokio::join;
 use tokio::sync::mpsc::Sender;
@@ -35,14 +39,125 @@ mod treeguard;
 use crate::system_stats::SystemStats;
 pub use network_tree::all_circuits;
 
-const ONE_SECOND_TICKER_TIMEOUT: Duration = Duration::from_millis(950);
+const TICKER_TASK_TIMEOUT: Duration = Duration::from_millis(5_500);
+const INTERNAL_BUS_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const INTERNAL_BUS_REQUEST_COOLDOWN: Duration = Duration::from_secs(3);
+static INTERNAL_BUS_REQUEST_COOLDOWNS: Lazy<Mutex<HashMap<&'static str, Instant>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn internal_bus_request_is_cooling_down(context: &'static str) -> bool {
+    let now = Instant::now();
+    let mut cooldowns = INTERNAL_BUS_REQUEST_COOLDOWNS.lock();
+    match cooldowns.get(context).copied() {
+        Some(until) if until > now => {
+            debug!(
+                ticker = context,
+                remaining_ms = until.duration_since(now).as_millis(),
+                "Skipping ticker bus request during cooldown"
+            );
+            true
+        }
+        Some(_) => {
+            cooldowns.remove(context);
+            false
+        }
+        None => false,
+    }
+}
+
+fn start_internal_bus_request_cooldown(
+    context: &'static str,
+    request_kind: &'static str,
+    reason: &'static str,
+    cooldown_duration: Duration,
+) {
+    INTERNAL_BUS_REQUEST_COOLDOWNS
+        .lock()
+        .insert(context, Instant::now() + cooldown_duration);
+    warn!(
+        ticker = context,
+        request_kind,
+        reason,
+        cooldown_ms = cooldown_duration.as_millis(),
+        "Ticker bus request failed; cooling down"
+    );
+}
+
+pub(super) async fn request_internal_bus(
+    context: &'static str,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
+    request: BusRequest,
+) -> Option<BusReply> {
+    request_internal_bus_with_timeout(
+        context,
+        bus_tx,
+        request,
+        INTERNAL_BUS_REQUEST_TIMEOUT,
+        INTERNAL_BUS_REQUEST_COOLDOWN,
+    )
+    .await
+}
+
+async fn request_internal_bus_with_timeout(
+    context: &'static str,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
+    request: BusRequest,
+    timeout_duration: Duration,
+    cooldown_duration: Duration,
+) -> Option<BusReply> {
+    if internal_bus_request_is_cooling_down(context) {
+        return None;
+    }
+
+    let request_kind = request.kind();
+    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
+    match timeout(timeout_duration, bus_tx.send((tx, request))).await {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => {
+            start_internal_bus_request_cooldown(
+                context,
+                request_kind,
+                "send_failed",
+                cooldown_duration,
+            );
+            return None;
+        }
+        Err(_) => {
+            start_internal_bus_request_cooldown(
+                context,
+                request_kind,
+                "send_timeout",
+                cooldown_duration,
+            );
+            return None;
+        }
+    }
+
+    match timeout(timeout_duration, rx).await {
+        Ok(Ok(replies)) => Some(replies),
+        Ok(Err(_)) => {
+            start_internal_bus_request_cooldown(
+                context,
+                request_kind,
+                "reply_channel_closed",
+                cooldown_duration,
+            );
+            None
+        }
+        Err(_) => {
+            start_internal_bus_request_cooldown(
+                context,
+                request_kind,
+                "reply_timeout",
+                cooldown_duration,
+            );
+            None
+        }
+    }
+}
 
 async fn ticker_with_timeout<T>(name: &'static str, fut: impl std::future::Future<Output = T>) {
-    let result = timeout(
-        ONE_SECOND_TICKER_TIMEOUT,
-        AssertUnwindSafe(fut).catch_unwind(),
-    )
-    .await;
+    let result = timeout(TICKER_TASK_TIMEOUT, AssertUnwindSafe(fut).catch_unwind()).await;
     match result {
         Ok(Ok(_)) => {}
         Ok(Err(panic)) => warn!(
@@ -51,6 +166,227 @@ async fn ticker_with_timeout<T>(name: &'static str, fut: impl std::future::Futur
             "Ticker panicked"
         ),
         Err(_) => warn!(ticker = name, "Ticker timed out"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lqos_bus::BusResponse;
+
+    const TEST_SEND_FAILED_CONTEXT: &str = "test_send_failed_context";
+    const TEST_COOLDOWN_CONTEXT: &str = "test_cooldown_context";
+    const TEST_REPLY_CLOSED_CONTEXT: &str = "test_reply_closed_context";
+    const TEST_REPLY_TIMEOUT_CONTEXT: &str = "test_reply_timeout_context";
+    const TEST_SUCCESS_CONTEXT: &str = "test_success_context";
+    const TEST_EXPIRED_COOLDOWN_CONTEXT: &str = "test_expired_cooldown_context";
+
+    #[tokio::test]
+    async fn internal_bus_request_cools_down_when_send_fails() {
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_SEND_FAILED_CONTEXT);
+
+        let (bus_tx, bus_rx) =
+            tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>(1);
+        drop(bus_rx);
+
+        assert!(
+            request_internal_bus(TEST_SEND_FAILED_CONTEXT, bus_tx, BusRequest::Ping)
+                .await
+                .is_none()
+        );
+        assert!(
+            INTERNAL_BUS_REQUEST_COOLDOWNS
+                .lock()
+                .contains_key(TEST_SEND_FAILED_CONTEXT)
+        );
+
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_SEND_FAILED_CONTEXT);
+    }
+
+    #[tokio::test]
+    async fn internal_bus_request_skips_send_during_cooldown() {
+        INTERNAL_BUS_REQUEST_COOLDOWNS.lock().insert(
+            TEST_COOLDOWN_CONTEXT,
+            Instant::now() + INTERNAL_BUS_REQUEST_COOLDOWN,
+        );
+
+        let (bus_tx, mut bus_rx) =
+            tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>(1);
+
+        assert!(
+            request_internal_bus(TEST_COOLDOWN_CONTEXT, bus_tx, BusRequest::Ping)
+                .await
+                .is_none()
+        );
+        assert!(bus_rx.try_recv().is_err());
+
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_COOLDOWN_CONTEXT);
+    }
+
+    #[tokio::test]
+    async fn internal_bus_request_returns_replies() {
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_SUCCESS_CONTEXT);
+
+        let (bus_tx, mut bus_rx) =
+            tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>(1);
+        let responder = tokio::spawn(async move {
+            let Some((reply_tx, request)) = bus_rx.recv().await else {
+                panic!("test bus request missing");
+            };
+            assert_eq!(request.kind(), "Ping");
+            reply_tx
+                .send(BusReply {
+                    responses: vec![BusResponse::Ack],
+                })
+                .expect("test receiver is alive");
+        });
+
+        let response = request_internal_bus_with_timeout(
+            TEST_SUCCESS_CONTEXT,
+            bus_tx,
+            BusRequest::Ping,
+            Duration::from_millis(50),
+            Duration::from_millis(20),
+        )
+        .await
+        .expect("bus reply should arrive");
+
+        responder.await.unwrap();
+        assert_eq!(response.responses, vec![BusResponse::Ack]);
+        assert!(
+            !INTERNAL_BUS_REQUEST_COOLDOWNS
+                .lock()
+                .contains_key(TEST_SUCCESS_CONTEXT)
+        );
+    }
+
+    #[tokio::test]
+    async fn internal_bus_request_sends_after_cooldown_expires() {
+        INTERNAL_BUS_REQUEST_COOLDOWNS.lock().insert(
+            TEST_EXPIRED_COOLDOWN_CONTEXT,
+            Instant::now() - Duration::from_millis(1),
+        );
+
+        let (bus_tx, mut bus_rx) =
+            tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>(1);
+        let responder = tokio::spawn(async move {
+            let Some((reply_tx, request)) = bus_rx.recv().await else {
+                panic!("test bus request missing after cooldown expiry");
+            };
+            assert_eq!(request.kind(), "Ping");
+            reply_tx
+                .send(BusReply {
+                    responses: vec![BusResponse::Ack],
+                })
+                .expect("test receiver is alive");
+        });
+
+        let response = request_internal_bus_with_timeout(
+            TEST_EXPIRED_COOLDOWN_CONTEXT,
+            bus_tx,
+            BusRequest::Ping,
+            Duration::from_millis(50),
+            Duration::from_millis(20),
+        )
+        .await
+        .expect("expired cooldown should allow request");
+
+        responder.await.unwrap();
+        assert_eq!(response.responses, vec![BusResponse::Ack]);
+        assert!(
+            !INTERNAL_BUS_REQUEST_COOLDOWNS
+                .lock()
+                .contains_key(TEST_EXPIRED_COOLDOWN_CONTEXT)
+        );
+    }
+
+    #[tokio::test]
+    async fn internal_bus_request_cools_down_when_reply_channel_closes() {
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_REPLY_CLOSED_CONTEXT);
+
+        let (bus_tx, mut bus_rx) =
+            tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>(1);
+        let responder = tokio::spawn(async move {
+            let Some((reply_tx, request)) = bus_rx.recv().await else {
+                panic!("test bus request missing");
+            };
+            assert_eq!(request.kind(), "Ping");
+            drop(reply_tx);
+        });
+
+        assert!(
+            request_internal_bus_with_timeout(
+                TEST_REPLY_CLOSED_CONTEXT,
+                bus_tx,
+                BusRequest::Ping,
+                Duration::from_millis(5),
+                Duration::from_millis(20),
+            )
+            .await
+            .is_none()
+        );
+        responder.await.unwrap();
+        assert!(
+            INTERNAL_BUS_REQUEST_COOLDOWNS
+                .lock()
+                .contains_key(TEST_REPLY_CLOSED_CONTEXT)
+        );
+
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_REPLY_CLOSED_CONTEXT);
+    }
+
+    #[tokio::test]
+    async fn internal_bus_request_cools_down_when_reply_times_out() {
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_REPLY_TIMEOUT_CONTEXT);
+
+        let (bus_tx, mut bus_rx) =
+            tokio::sync::mpsc::channel::<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>(1);
+        let responder = tokio::spawn(async move {
+            let Some((reply_tx, request)) = bus_rx.recv().await else {
+                panic!("test bus request missing");
+            };
+            assert_eq!(request.kind(), "Ping");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let _ = reply_tx.send(BusReply {
+                responses: vec![BusResponse::Ack],
+            });
+        });
+
+        assert!(
+            request_internal_bus_with_timeout(
+                TEST_REPLY_TIMEOUT_CONTEXT,
+                bus_tx,
+                BusRequest::Ping,
+                Duration::from_millis(5),
+                Duration::from_millis(20),
+            )
+            .await
+            .is_none()
+        );
+        responder.await.unwrap();
+        assert!(
+            INTERNAL_BUS_REQUEST_COOLDOWNS
+                .lock()
+                .contains_key(TEST_REPLY_TIMEOUT_CONTEXT)
+        );
+
+        INTERNAL_BUS_REQUEST_COOLDOWNS
+            .lock()
+            .remove(TEST_REPLY_TIMEOUT_CONTEXT);
     }
 }
 

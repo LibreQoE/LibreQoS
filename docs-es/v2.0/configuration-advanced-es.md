@@ -232,6 +232,7 @@ Notas:
 - Durante el shaping, los nodos virtuales se eliminan y sus hijos se promueven al ancestro no virtual más cercano (revisa `queuingStructure.json` para el plan físico activo).
 - `ShapedDevices.csv` aún puede usar un nodo virtual como `Parent Node` para mostrar/agrupar; LibreQoS adjuntará esos circuitos para shaping al ancestro no virtual más cercano (si el nodo virtual está en el nivel superior y no tiene ancestro no virtual, se tratará como sin nodo padre para el shaping).
 - Evita colisiones de nombres después de la promoción (dos nodos con el mismo nombre terminando al mismo nivel).
+- Queue Auto también puede virtualizar ramas de alta capacidad de agregación, uplink o AP representadas como nodos `Site` o `AP` cuando superan `queue_auto_virtualize_threshold_mbps` y tienen ramas de cola hijas. Esto evita que una rama lógica grande se convierta en un cuello de botella de una sola cola de CPU.
 
 #### Consideraciones de CPU
 

@@ -2,6 +2,7 @@
 //! files.
 
 use crate::node_manager::auth::get_username;
+use crate::node_manager::security_headers::apply_node_manager_security_headers;
 use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
@@ -162,13 +163,15 @@ pub async fn apply_templates(
             cobrand_logo_status_html(config.as_ref());
 
         // "LTS script" - which is increasingly becoming a misnomer
+        let api_service_available = is_api_available();
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.mappedCircuitLimit = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.apiServiceAvailable = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.mappedCircuitLimit = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
             js_tf(capabilities.can_view_insight_ui),
             js_tf(capabilities.can_view_insight_ui),
             js_tf(capabilities.can_use_support_tickets),
             js_tf(capabilities.can_use_chatbot),
             js_tf(capabilities.can_use_api_link),
+            js_tf(api_service_available),
             js_tf(capabilities.control_service_reachable),
             serde_json::to_string(&capabilities.license_state_label)
                 .unwrap_or_else(|_| "\"Unknown\"".to_string()),
@@ -197,8 +200,8 @@ pub async fn apply_templates(
             .replace("%%COBRAND_LOGO%%", &cobrand_logo)
             .replace("%%COBRAND_LOGO_DESCRIBEDBY%%", cobrand_logo_describedby)
             .replace("%%COBRAND_LOGO_STATUS%%", cobrand_logo_status);
-        // Handle API_LINK placeholder (require service + valid Insight)
-        let api_link = if is_api_available() && capabilities.can_use_api_link {
+        // Handle API_LINK placeholder using service health and current access policy.
+        let api_link = if api_service_available && capabilities.can_use_api_link {
             API_LINK_ACTIVE
         } else {
             API_LINK_INACTIVE
@@ -254,6 +257,7 @@ pub async fn apply_templates(
         res_parts
             .headers
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        apply_node_manager_security_headers(&mut res_parts.headers);
         let res = Response::from_parts(res_parts, Body::from(byte_string));
         Ok(res)
     } else {

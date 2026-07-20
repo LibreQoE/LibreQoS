@@ -1,9 +1,11 @@
 use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use lqos_bus::{BusReply, BusRequest, BusResponse};
+use lqos_bus::{BusRequest, BusResponse};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
+
+use super::request_internal_bus;
 
 pub async fn flow_count(
     channels: Arc<PubSub>,
@@ -16,18 +18,9 @@ pub async fn flow_count(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::CountActiveFlows;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("FlowCount: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("FlowCount", bus_tx, request).await else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!("FlowCount: failed to receive throughput from bus: {:?}", e);
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CountActiveFlows(active) = reply {

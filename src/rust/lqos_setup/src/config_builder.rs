@@ -120,16 +120,12 @@ pub fn existing_config_uses_xdp() -> bool {
 #[cfg(test)]
 mod tests {
     use super::ConfigBuilder;
-    use once_cell::sync::Lazy;
-    use parking_lot::Mutex;
+    use crate::test_support::ConfigEnvGuard;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    static CONFIG_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
     #[test]
     fn invalid_existing_config_sets_blocking_load_error() {
-        let _guard = CONFIG_ENV_LOCK.lock();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock before epoch")
@@ -139,21 +135,12 @@ mod tests {
             std::process::id()
         ));
         fs::write(&path, "not valid toml = [\n").expect("write invalid config");
-        let old_lqos_config = std::env::var_os("LQOS_CONFIG");
-        unsafe {
-            std::env::set_var("LQOS_CONFIG", &path);
-        }
-        lqos_config::clear_cached_config();
+        let _env_guard = ConfigEnvGuard::set_lqos_config(&path);
 
         let builder = ConfigBuilder::new();
 
         assert!(builder.config_load_error.is_some());
 
-        match old_lqos_config {
-            Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
-            None => unsafe { std::env::remove_var("LQOS_CONFIG") },
-        }
-        lqos_config::clear_cached_config();
         fs::remove_file(path).expect("remove temp config");
     }
 }

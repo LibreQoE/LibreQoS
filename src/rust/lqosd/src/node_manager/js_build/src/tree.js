@@ -1,4 +1,4 @@
-import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
+import {clearDiv, clientTableHeader, formatLastSeen, simpleRow, simpleRowTrustedHtml, theading} from "./helpers/builders";
 import {
     formatCakeStat, formatCakeStatPercent,
     formatRetransmit, formatRetransmitFraction, retransmitFractionFromSample,
@@ -11,6 +11,16 @@ import {QooScoreGauge} from "./graphs/qoo_score_gauge";
 import {enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
+import {
+    buildNodeLimitSummary,
+    configuredMax,
+    effectiveMax,
+    immediateParentNodeFromTree,
+    ratePairsMatch,
+    ratesApproximatelyEqual,
+    renderEffectiveNowDisplay,
+    renderLimitedByDisplay,
+} from "./tree_limit_reason.mjs";
 
 var tree = null;
 var parent = 0;
@@ -49,7 +59,6 @@ const QOO_TOOLTIP_HTML = "<h5>Quality of Outcome (QoO)</h5>" +
     "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
     "https://datatracker.ietf.org/doc/draft-ietf-ippm-qoo/<br>" +
     "LibreQoS implements a latency and loss-based model to estimate quality of outcome.</p>";
-const THROUGHPUT_COMPARE_EPSILON_MBPS = 0.01;
 const NODE_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator override. Will be applied to generated network.json on the next scheduler run.";
 const TOPOLOGY_OVERRIDE_PENDING_TOOLTIP = "Stored as an operator topology override. The selected parent will be applied on the next scheduler run.";
 
@@ -216,14 +225,6 @@ function ethernetBadgeClass(tierLabel) {
     return "text-bg-info";
 }
 
-function configuredMax(node) {
-    return node.configured_max_throughput || node.max_throughput || [0, 0];
-}
-
-function effectiveMax(node) {
-    return node.effective_max_throughput || configuredMax(node);
-}
-
 function rootGaugeMaxAvailable() {
     return Array.isArray(rootGaugeConfigMax)
         && rootGaugeConfigMax.length === 2
@@ -239,11 +240,6 @@ function nodeSnapshotGaugeMax(node) {
         ];
     }
     return effectiveMax(node);
-}
-
-function ratesMatch(a, b) {
-    return Math.abs(toNumber(a?.[0], 0) - toNumber(b?.[0], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
-        && Math.abs(toNumber(a?.[1], 0) - toNumber(b?.[1], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
 }
 
 function formatLimitValue(mbps) {
@@ -264,10 +260,6 @@ function formatMbpsInputValue(mbps) {
     return numeric.toFixed(2).replace(/\.?0+$/, "");
 }
 
-function ratesApproximatelyEqual(left, right) {
-    return Math.abs(toNumber(left, 0) - toNumber(right, 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
-}
-
 function formatRatePair(downMbps, upMbps) {
     return `${formatLimitValue(downMbps)} / ${formatLimitValue(upMbps)}`;
 }
@@ -281,6 +273,10 @@ function isSyntheticRootNode(node) {
 
 function currentNode() {
     return tree && tree[parent] ? tree[parent][1] : null;
+}
+
+function immediateParentNode(node) {
+    return immediateParentNodeFromTree(tree, node);
 }
 
 function currentNodeQuery() {
@@ -321,7 +317,7 @@ function buildEffectiveLimitCellHtml(node) {
 function buildConfiguredLimitCellHtml(node) {
     const configured = configuredMax(node);
     const effective = effectiveMax(node);
-    const secondaryClass = ratesMatch(effective, configured)
+    const secondaryClass = ratePairsMatch(effective, configured)
         ? "lqos-limit-line lqos-limit-secondary is-match"
         : "lqos-limit-line lqos-limit-secondary";
     const configuredValue = `${formatLimitValue(configured[0])} / ${formatLimitValue(configured[1])}`;
@@ -333,7 +329,7 @@ function buildDirectionalLimitHtml(primaryMbps, configuredMbps, showConfigured) 
     if (!showConfigured) {
         return `<div class="lqos-limit-block"><div class="lqos-limit-line">${primary}</div></div>`;
     }
-    const match = Math.abs(toNumber(primaryMbps, 0) - toNumber(configuredMbps, 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS;
+    const match = ratesApproximatelyEqual(primaryMbps, configuredMbps);
     const secondaryClass = match
         ? "lqos-limit-line lqos-limit-secondary is-match"
         : "lqos-limit-line lqos-limit-secondary";
@@ -374,6 +370,9 @@ function buildStatusIcon(iconName, textClass, title) {
     icon.classList.add("fa", "fa-fw", iconName, textClass);
     icon.setAttribute("data-bs-toggle", "tooltip");
     icon.setAttribute("data-bs-placement", "top");
+    icon.setAttribute("data-bs-trigger", "hover focus");
+    icon.setAttribute("data-bs-container", "body");
+    icon.setAttribute("tabindex", "0");
     icon.setAttribute("title", title);
     return icon;
 }
@@ -625,6 +624,9 @@ function buildTreeRowStatusIcon(iconName, isActive, activeTitle, inactiveTitle) 
     }
     icon.setAttribute("data-bs-toggle", "tooltip");
     icon.setAttribute("data-bs-placement", "top");
+    icon.setAttribute("data-bs-trigger", "hover focus");
+    icon.setAttribute("data-bs-container", "body");
+    icon.setAttribute("tabindex", "0");
     icon.setAttribute("title", isActive ? activeTitle : inactiveTitle);
     return icon;
 }
@@ -764,7 +766,10 @@ function renderCompatibilityWarningsIndicator(messages) {
     icon.classList.add("lqos-tree-compat-indicator");
     icon.setAttribute("data-bs-toggle", "tooltip");
     icon.setAttribute("data-bs-placement", "top");
+    icon.setAttribute("data-bs-trigger", "hover focus");
+    icon.setAttribute("data-bs-container", "body");
     icon.setAttribute("data-bs-html", "true");
+    icon.setAttribute("tabindex", "0");
     icon.setAttribute("title", tooltipHtml);
     icon.setAttribute("aria-label", `Compatibility warnings: ${visibleMessages.length}`);
     icon.innerHTML = `<i class="fa fa-triangle-exclamation"></i><span class="lqos-tree-compat-count">${visibleMessages.length}</span>`;
@@ -864,6 +869,9 @@ function renderOverrideValue(node, overrideData) {
         pending.classList.add("lqos-tree-pending");
         pending.setAttribute("data-bs-toggle", "tooltip");
         pending.setAttribute("data-bs-placement", "top");
+        pending.setAttribute("data-bs-trigger", "hover focus");
+        pending.setAttribute("data-bs-container", "body");
+        pending.setAttribute("tabindex", "0");
         pending.setAttribute("title", NODE_OVERRIDE_PENDING_TOOLTIP);
 
         const symbol = document.createElement("span");
@@ -967,6 +975,9 @@ function renderTopologyOverrideValue(overrideData) {
         pending.classList.add("lqos-tree-pending");
         pending.setAttribute("data-bs-toggle", "tooltip");
         pending.setAttribute("data-bs-placement", "top");
+        pending.setAttribute("data-bs-trigger", "hover focus");
+        pending.setAttribute("data-bs-container", "body");
+        pending.setAttribute("tabindex", "0");
         pending.setAttribute("title", TOPOLOGY_OVERRIDE_PENDING_TOOLTIP);
 
         const symbol = document.createElement("span");
@@ -981,6 +992,23 @@ function renderTopologyOverrideValue(overrideData) {
     }
 
     target.appendChild(wrap);
+}
+
+function renderEffectiveNowValue(node) {
+    const effectiveTarget = document.getElementById("nodeSettingsEffectiveNow");
+    const limitedByTarget = document.getElementById("nodeSettingsLimitedBy");
+    if (!effectiveTarget && !limitedByTarget) {
+        return;
+    }
+    const effective = effectiveMax(node);
+    const summary = buildNodeLimitSummary({
+        node,
+        parentNode: immediateParentNode(node),
+        rateOverrideData: nodeRateOverrideState.data,
+        topologyOverrideData: nodeTopologyOverrideState.data,
+    });
+    renderEffectiveNowDisplay({target: effectiveTarget, effective, formatRatePair});
+    renderLimitedByDisplay({target: limitedByTarget, summary});
 }
 
 function renderNodeTopologySettings(node) {
@@ -1045,11 +1073,7 @@ function renderNodeSettings() {
         const configured = configuredMax(node);
         baseConfiguredTarget.textContent = formatRatePair(configured[0], configured[1]);
     }
-    const effectiveTarget = document.getElementById("nodeSettingsEffectiveNow");
-    if (effectiveTarget) {
-        const effective = effectiveMax(node);
-        effectiveTarget.textContent = formatRatePair(effective[0], effective[1]);
-    }
+    renderEffectiveNowValue(node);
     const activeAttachmentTarget = document.getElementById("nodeSettingsActiveAttachment");
     if (activeAttachmentTarget) {
         activeAttachmentTarget.textContent = node.active_attachment_name || "-";
@@ -1423,10 +1447,10 @@ function fillHeader(node) {
     const configuredUp = formatLimitValue(configured[1]);
     const effectiveDown = formatLimitValue(effective[0]);
     const effectiveUp = formatLimitValue(effective[1]);
-    const matchClassDown = Math.abs(toNumber(effective[0], 0) - toNumber(configured[0], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+    const matchClassDown = ratesApproximatelyEqual(effective[0], configured[0])
         ? "lqos-limit-secondary is-match"
         : "lqos-limit-secondary";
-    const matchClassUp = Math.abs(toNumber(effective[1], 0) - toNumber(configured[1], 0)) <= THROUGHPUT_COMPARE_EPSILON_MBPS
+    const matchClassUp = ratesApproximatelyEqual(effective[1], configured[1])
         ? "lqos-limit-secondary is-match"
         : "lqos-limit-secondary";
     $("#parentEffectiveD").text(effectiveDown);
@@ -1854,6 +1878,8 @@ function renderAttachedCircuitsRows(rows) {
                 badge.setAttribute("aria-label", `Review ${circuit.ethernet_cap_badge.tier_label} Ethernet-limited circuits`);
                 badge.setAttribute("data-bs-toggle", "tooltip");
                 badge.setAttribute("data-bs-placement", "top");
+                badge.setAttribute("data-bs-trigger", "hover focus");
+                badge.setAttribute("data-bs-container", "body");
                 badge.setAttribute("title", formatEthernetTooltip(circuit.ethernet_cap_badge));
                 badge.textContent = circuit.ethernet_cap_badge.tier_label;
                 planCell.appendChild(badge);
@@ -1870,22 +1896,22 @@ function renderAttachedCircuitsRows(rows) {
             tr.appendChild(ipCell);
 
             tr.appendChild(simpleRow(formatLastSeen(toNumber(circuit.last_seen_nanos, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
-            tr.appendChild(simpleRowHtml(formatThroughput(toNumber(circuit.bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
+            tr.appendChild(simpleRowTrustedHtml(formatThroughput(toNumber(circuit.bytes_per_second?.down, 0) * 8, toNumber(circuit.plan_mbps?.down, 0))));
+            tr.appendChild(simpleRowTrustedHtml(formatThroughput(toNumber(circuit.bytes_per_second?.up, 0) * 8, toNumber(circuit.plan_mbps?.up, 0))));
 
             if (toNumber(circuit.rtt_current_p50_nanos?.down, 0) > 0) {
-                tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.down, 0) / 1_000_000)));
+                tr.appendChild(simpleRowTrustedHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.down, 0) / 1_000_000)));
             } else {
                 tr.appendChild(simpleRow("-"));
             }
             if (toNumber(circuit.rtt_current_p50_nanos?.up, 0) > 0) {
-                tr.appendChild(simpleRowHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.up, 0) / 1_000_000)));
+                tr.appendChild(simpleRowTrustedHtml(formatRtt(toNumber(circuit.rtt_current_p50_nanos?.up, 0) / 1_000_000)));
             } else {
                 tr.appendChild(simpleRow("-"));
             }
 
-            tr.appendChild(simpleRowHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.down))));
-            tr.appendChild(simpleRowHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.up))));
+            tr.appendChild(simpleRowTrustedHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.down))));
+            tr.appendChild(simpleRowTrustedHtml(formatRetransmit(retransmitFractionFromSample(circuit.tcp_retransmit_sample?.up))));
 
             tbody.appendChild(tr);
     });

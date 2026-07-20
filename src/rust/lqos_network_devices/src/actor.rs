@@ -10,6 +10,7 @@ use crate::{
 use anyhow::{Context, Result, anyhow};
 use crossbeam_channel::{Receiver, RecvTimeoutError, SendTimeoutError, Sender, bounded};
 use ip_network_table::IpNetworkTable;
+use lqos_utils::normalize_circuit_id_key;
 use once_cell::sync::OnceCell;
 use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
@@ -258,10 +259,6 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
     }
 
     error!("lqos_network_devices actor stopped");
-}
-
-fn normalize_circuit_id_key(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
 }
 
 fn recompute_hashes(device: &mut lqos_config::ShapedDevice) {

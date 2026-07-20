@@ -4,8 +4,10 @@ use std::sync::Arc;
 use crate::node_manager::ws::messages::{TopAsnRow, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use lqos_bus::{BusReply, BusRequest, BusResponse, FlowbeeSummaryData};
+use lqos_bus::{BusRequest, BusResponse, FlowbeeSummaryData};
 use tokio::sync::mpsc::Sender;
+
+use super::request_internal_bus;
 
 #[derive(Default)]
 struct Agg {
@@ -35,17 +37,9 @@ pub async fn asn_top(
     }
 
     // Query all active flows from the bus
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-    if let Err(e) = bus_tx.send((tx, BusRequest::DumpActiveFlows)).await {
-        tracing::warn!("AsnTop: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("AsnTop", bus_tx, BusRequest::DumpActiveFlows).await
+    else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!("AsnTop: failed to receive reply from bus: {:?}", e);
-            return;
-        }
     };
 
     // Aggregate by ASN name

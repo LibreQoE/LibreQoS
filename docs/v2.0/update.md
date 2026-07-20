@@ -8,6 +8,8 @@ If you use the XDP bridge, traffic will briefly stop passing through the bridge 
 
 ```{important}
 Starting in v2.0, mapped-circuit ingest depends on valid entitled license/grant state. Without a valid Insight or Local license/grant state, LibreQoS reads only the first 1000 valid mapped circuits into active shaping state. This includes expired or otherwise invalid local grant/license state. See [Insight Licensing Behavior](insight.md#mapped-circuit-limits-and-license-state) and [Troubleshooting](troubleshooting.md).
+
+Starting in v2.2, the Node API uses the same mapped-circuit policy. Networks with 1,000 or fewer valid mapped circuits may use the API without an Insight subscription; larger networks require a valid API or Insight entitlement. API calls remain authenticated. Administrators can create up to 16 named local API keys in **License & Services**; keys are shown once, stored only as SHA-256 digests, and can be revoked. Existing license keys and the legacy local bearer token remain compatible, and key changes may take up to 30 seconds to take effect.
 ```
 
 Run:
@@ -39,7 +41,15 @@ sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 
-The hotfix installer bootstraps the LibreQoS APT repo at `https://repo.libreqos.com`, installs the patched Noble `systemd` package set, and pins those packages for future updates.
+The hotfix installer bootstraps the signed LibreQoS APT repo at `https://repo.libreqos.com`, installs the patched Noble `systemd` package set, and pins those packages for future updates.
+By default, it selects the current hotfix version from that repo.
+If LibreQoS support tells you that your installed package is older than v2.2, use this recovery command instead:
+
+```bash
+sudo HOTFIX_PACKAGE_VERSION=255.4-1ubuntu9999+libreqos1 /opt/libreqos/src/systemd_hotfix.sh install
+sudo dpkg --configure -a
+sudo reboot
+```
 
 After the reboot, resume the upgrade and restart services:
 
@@ -101,6 +111,8 @@ If the script reports that the hotfix should be offered, install it and reboot b
 sudo ./systemd_hotfix.sh install
 sudo reboot
 ```
+
+The installer selects the current hotfix version from the signed LibreQoS APT repo. LibreQoS support may provide a `HOTFIX_PACKAGE_VERSION` override for a specific incident.
 
 Run the following commands to reload the LibreQoS services.
 
