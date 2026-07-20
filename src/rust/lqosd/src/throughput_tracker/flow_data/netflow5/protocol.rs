@@ -5,10 +5,10 @@ use lqos_utils::unix_time::{time_since_boot, unix_now};
 use nix::sys::time::TimeValLike;
 use std::net::IpAddr;
 
-use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 use crate::throughput_tracker::flow_data::netflow_common::{
-    boot_nanos_to_netflow_millis, clamp_i64_to_u32, clamp_u64_to_u32,
+    boot_nanos_to_netflow_millis, saturating_u64_to_netflow_u32, uptime_millis_to_netflow_u32,
 };
+use crate::throughput_tracker::flow_data::FlowbeeLocalData;
 
 const NETFLOW5_MAX_RECORDS_PER_PACKET: usize = 30;
 pub(crate) const NETFLOW5_MAX_FLOWS_PER_PACKET: usize = NETFLOW5_MAX_RECORDS_PER_PACKET / 2;
@@ -30,16 +30,18 @@ pub(crate) struct Netflow5Header {
 impl Netflow5Header {
     /// Create a new Netflow 5 header
     pub(crate) fn new(flow_sequence: u32, num_records: u16) -> Self {
-        let uptime_ms: u32 = time_since_boot()
-            .map(|u| clamp_i64_to_u32("NetFlow5", "sys_uptime", u.num_milliseconds()))
-            .unwrap_or(0);
+        let uptime_ms = time_since_boot().map(|u| u.num_milliseconds()).unwrap_or(0);
         let unix_secs = unix_now().unwrap_or(0);
 
+        Self::from_times(flow_sequence, num_records, uptime_ms, unix_secs)
+    }
+
+    fn from_times(flow_sequence: u32, num_records: u16, uptime_ms: i64, unix_secs: u64) -> Self {
         Self {
             version: (5u16).to_be(),
             count: num_records.to_be(),
-            sys_uptime: uptime_ms.to_be(),
-            unix_secs: clamp_u64_to_u32("NetFlow5", "unix_secs", unix_secs).to_be(),
+            sys_uptime: uptime_millis_to_netflow_u32(uptime_ms).to_be(),
+            unix_secs: saturating_u64_to_netflow_u32(unix_secs).to_be(),
             unix_nsecs: 0,
             flow_sequence,
             engine_type: 0,
@@ -84,12 +86,12 @@ pub(crate) fn to_netflow_5(
     if let (IpAddr::V4(local), IpAddr::V4(remote)) = (local, remote) {
         let src_ip = u32::from_ne_bytes(local.octets());
         let dst_ip = u32::from_ne_bytes(remote.octets());
-        let d_pkts2 = clamp_u64_to_u32("NetFlow5", "down packets", data.packets_sent.down).to_be();
-        let d_octets2 = clamp_u64_to_u32("NetFlow5", "down octets", data.bytes_sent.down).to_be();
-        let d_pkts = clamp_u64_to_u32("NetFlow5", "up packets", data.packets_sent.up).to_be();
-        let d_octets = clamp_u64_to_u32("NetFlow5", "up octets", data.bytes_sent.up).to_be();
-        let first = boot_nanos_to_netflow_millis("NetFlow5", "first", data.start_time).to_be();
-        let last = boot_nanos_to_netflow_millis("NetFlow5", "last", data.last_seen).to_be();
+        let d_pkts2 = saturating_u64_to_netflow_u32(data.packets_sent.down).to_be();
+        let d_octets2 = saturating_u64_to_netflow_u32(data.bytes_sent.down).to_be();
+        let d_pkts = saturating_u64_to_netflow_u32(data.packets_sent.up).to_be();
+        let d_octets = saturating_u64_to_netflow_u32(data.bytes_sent.up).to_be();
+        let first = boot_nanos_to_netflow_millis(data.start_time).to_be();
+        let last = boot_nanos_to_netflow_millis(data.last_seen).to_be();
 
         let record = Netflow5Record {
             src_addr: src_ip,
@@ -146,9 +148,9 @@ pub(crate) fn to_netflow_5(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::throughput_tracker::flow_data::FlowbeeLocalData;
     use crate::throughput_tracker::flow_data::netflow_common::NANOS_PER_MILLI;
-    use lqos_utils::{XdpIpAddress, units::DownUpOrder};
+    use crate::throughput_tracker::flow_data::FlowbeeLocalData;
+    use lqos_utils::{units::DownUpOrder, XdpIpAddress};
     use std::net::IpAddr;
 
     fn test_key() -> FlowbeeKey {
@@ -182,6 +184,16 @@ mod tests {
     }
 
     #[test]
+    fn netflow5_header_wraps_large_uptime_and_clamps_large_unix_time() {
+        let header =
+            Netflow5Header::from_times(10, 2, i64::from(u32::MAX) + 1, u64::from(u32::MAX) + 1);
+
+        assert_eq!(u32::from_be(header.sys_uptime), 0);
+        assert_eq!(u32::from_be(header.unix_secs), u32::MAX);
+        assert_eq!(header.flow_sequence, 10);
+    }
+
+    #[test]
     fn netflow5_records_clamp_counters_and_use_milliseconds() {
         let key = test_key();
         let data = test_flow_data();
@@ -200,12 +212,18 @@ mod tests {
     }
 
     #[test]
-    fn netflow5_timestamp_conversion_clamps_after_milliseconds() {
-        let too_many_millis = (u64::from(u32::MAX) + 1) * NANOS_PER_MILLI;
+    fn netflow5_records_wrap_timestamps_after_u32_milliseconds() {
+        let key = test_key();
+        let mut data = test_flow_data();
+        data.start_time = (u64::from(u32::MAX) + 1) * NANOS_PER_MILLI;
+        data.last_seen = (u64::from(u32::MAX) + 2) * NANOS_PER_MILLI;
 
-        assert_eq!(
-            boot_nanos_to_netflow_millis("NetFlow5", "test timestamp", too_many_millis),
-            u32::MAX
-        );
+        let (forward, reverse) =
+            to_netflow_5(&key, &data).expect("IPv4 flow should convert to NetFlow5 records");
+
+        assert_eq!(u32::from_be(forward.first), 0);
+        assert_eq!(u32::from_be(forward.last), 1);
+        assert_eq!(u32::from_be(reverse.first), 0);
+        assert_eq!(u32::from_be(reverse.last), 1);
     }
 }
