@@ -17,6 +17,7 @@ lqos_overrides = { path = "../lqos_overrides" }
 lqos_probe = { path = "../lqos_probe" }
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
+csv.workspace = true
 
 # For memory debugging
 allocative.workspace = true

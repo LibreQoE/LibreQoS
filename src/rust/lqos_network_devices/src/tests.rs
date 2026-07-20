@@ -39,6 +39,7 @@ fn make_node(
         current_icmp_packets: DownUpOrder::zeroed(),
         current_tcp_retransmits: DownUpOrder::zeroed(),
         current_tcp_retransmit_packets: DownUpOrder::zeroed(),
+        current_rtt_flows: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),
         current_drops: DownUpOrder::zeroed(),
         rtt_buffer: RttBuffer::default(),

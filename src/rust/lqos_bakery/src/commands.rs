@@ -128,6 +128,23 @@ pub struct StormGuardRestoreAdjustment {
     pub planned_ceil: u64,
 }
 
+/// One HTB class rate change in an acknowledged StormGuard adjustment batch.
+#[derive(Debug, Clone, Allocative)]
+pub struct StormGuardClassAdjustment {
+    /// Network interface containing the class.
+    pub interface_name: String,
+    /// Fully qualified HTB class identifier.
+    pub class_id: TcHandle,
+    /// New class ceiling in Mbps.
+    pub new_rate: u64,
+    /// Class ceiling to restore if another command in the batch fails.
+    pub previous_rate: u64,
+    /// Original guaranteed class rate in Mbps.
+    pub planned_rate: u64,
+    /// Original class ceiling in Mbps.
+    pub planned_ceil: u64,
+}
+
 /// List of commands that the Bakery system can handle.
 #[derive(Debug, Clone, Allocative)]
 pub enum BakeryCommands {
@@ -266,25 +283,17 @@ pub enum BakeryCommands {
         #[allocative(skip)]
         reply: Option<ReplySender<Result<(), String>>>,
     },
-    /// Change a specific HTB class rate on-the-fly; optionally dry-run.
-    StormGuardAdjustment {
-        /// Bakery shaping-tree generation used to resolve this class handle.
+    /// Apply all HTB changes for one StormGuard decision and acknowledge the complete batch.
+    StormGuardAdjustmentBatch {
+        /// Bakery shaping-tree generation used to resolve every class handle.
         tree_generation: u64,
-        /// If true, log the tc command instead of executing it.
+        /// If true, log the tc commands instead of executing them.
         dry_run: bool,
-        /// Network interface name (e.g., `eth0`) containing the class.
-        interface_name: String,
-        /// Fully qualified class identifier (e.g., `1:2`).
-        class_id: String,
-        /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
-        new_rate: u64,
-        /// Original guaranteed class rate in Mbps.
-        planned_rate: u64,
-        /// Original class ceiling in Mbps.
-        planned_ceil: u64,
-        /// Optional synchronous completion reply.
+        /// Complete set of site and dependent-class changes for the decision.
+        adjustments: Vec<StormGuardClassAdjustment>,
+        /// Synchronous completion reply.
         #[allocative(skip)]
-        reply: Option<ReplySender<Result<(), String>>>,
+        reply: ReplySender<Result<(), String>>,
     },
     /// Restore planned HTB rates and clear retained StormGuard replay state after success.
     ResetStormGuardAdjustments {

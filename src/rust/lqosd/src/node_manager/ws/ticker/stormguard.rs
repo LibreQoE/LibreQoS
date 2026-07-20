@@ -17,8 +17,11 @@ pub async fn stormguard_ticker(
     let debug_alive = pubsub
         .is_channel_alive(PublishedChannels::StormguardDebug)
         .await;
+    let runtime_alive = pubsub
+        .is_channel_alive(PublishedChannels::StormguardRuntime)
+        .await;
 
-    if !status_alive && !debug_alive {
+    if !status_alive && !debug_alive && !runtime_alive {
         return;
     }
 
@@ -40,14 +43,34 @@ pub async fn stormguard_ticker(
     }
 
     if debug_alive
-        && let Some(replies) =
-            request_internal_bus("StormguardDebug", bus_tx, BusRequest::GetStormguardDebug).await
+        && let Some(replies) = request_internal_bus(
+            "StormguardDebug",
+            bus_tx.clone(),
+            BusRequest::GetStormguardDebug,
+        )
+        .await
     {
         for response in replies.responses {
             if let BusResponse::StormguardDebug(stats) = response {
                 let msg = WsResponse::StormguardDebug { data: stats };
 
                 pubsub.send(PublishedChannels::StormguardDebug, msg).await;
+            }
+        }
+    }
+
+    if runtime_alive
+        && let Some(replies) = request_internal_bus(
+            "StormguardRuntime",
+            bus_tx,
+            BusRequest::GetStormguardRuntimeStatus,
+        )
+        .await
+    {
+        for response in replies.responses {
+            if let BusResponse::StormguardRuntimeStatus(status) = response {
+                let msg = WsResponse::StormguardRuntime { data: status };
+                pubsub.send(PublishedChannels::StormguardRuntime, msg).await;
             }
         }
     }

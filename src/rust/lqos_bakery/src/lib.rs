@@ -60,7 +60,8 @@ pub use commands::{
     BakeryCommands, RuntimeNodeOperationAction as BakeryRuntimeNodeOperationAction,
     RuntimeNodeOperationFailureReason as BakeryRuntimeNodeOperationFailureReason,
     RuntimeNodeOperationSnapshot as BakeryRuntimeNodeOperationSnapshot,
-    RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus, StormGuardRestoreAdjustment,
+    RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus, StormGuardClassAdjustment,
+    StormGuardRestoreAdjustment,
 };
 use lqos_bus::{
     BusRequest, BusResponse, DEFAULT_MAPPED_CIRCUIT_LIMIT, InsightLicenseSummary,
@@ -252,16 +253,6 @@ struct StormguardOverrideKey {
 
 #[derive(Clone, Copy, Debug)]
 struct StormguardOverrideValue {
-    planned_rate: u64,
-    planned_ceil: u64,
-}
-
-struct StormguardAdjustmentRequest {
-    tree_generation: u64,
-    dry_run: bool,
-    interface_name: String,
-    class_id: String,
-    new_rate: u64,
     planned_rate: u64,
     planned_ceil: u64,
 }
@@ -3221,6 +3212,13 @@ pub fn bakery_live_tree_mutation_blocker() -> Option<String> {
     live_tree_mutation_blocker_for_config(&config)
 }
 
+/// Returns whether Bakery has completed root MQ setup for the active process.
+///
+/// This function is not pure: it reads Bakery's process-local runtime state.
+pub fn stormguard_bakery_ready() -> bool {
+    MQ_CREATED.load(Ordering::Relaxed)
+}
+
 /// Overrides Bakery's shaping-tree-active flag for tests and restores callers' access to the
 /// previous value.
 ///
@@ -5115,31 +5113,19 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut sites,
                 );
             }
-            BakeryCommands::StormGuardAdjustment {
+            BakeryCommands::StormGuardAdjustmentBatch {
                 tree_generation,
                 dry_run,
-                interface_name,
-                class_id,
-                new_rate,
-                planned_rate,
-                planned_ceil,
+                adjustments,
                 reply,
             } => {
-                let result = apply_stormguard_adjustment(
-                    StormguardAdjustmentRequest {
-                        tree_generation,
-                        dry_run,
-                        interface_name,
-                        class_id,
-                        new_rate,
-                        planned_rate,
-                        planned_ceil,
-                    },
+                let result = apply_stormguard_adjustment_batch(
+                    tree_generation,
+                    dry_run,
+                    &adjustments,
                     &mut stormguard_overrides,
                 );
-                if let Some(reply) = reply {
-                    let _ = reply.send(result);
-                }
+                let _ = reply.send(result);
             }
             BakeryCommands::ResetStormGuardAdjustments {
                 tree_generation,
@@ -5148,19 +5134,24 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 reply,
             } => {
                 let current_generation = stormguard_tree_generation();
-                let result = if tree_generation != current_generation {
-                    Err(format!(
-                        "StormGuard reset used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
-                    ))
-                } else if batch.is_some() {
-                    Err("Bakery queue rebuild batch is still open".to_string())
-                } else {
+                let has_work = !stormguard_overrides.is_empty()
+                    || (restore_untracked && !adjustments.is_empty());
+                let result = stormguard_reset_command_precondition(
+                    tree_generation,
+                    current_generation,
+                    batch.is_some(),
+                    has_work,
+                    restore_untracked,
+                    MQ_CREATED.load(Relaxed),
+                    FULL_RELOAD_IN_PROGRESS.load(Relaxed),
+                )
+                .and_then(|()| {
                     reset_stormguard_adjustments(
                         &adjustments,
                         restore_untracked,
                         &mut stormguard_overrides,
                     )
-                };
+                });
                 if let Some(reply) = reply {
                     let _ = reply.send(result);
                 }
@@ -11314,69 +11305,127 @@ fn record_stormguard_override(
     });
 }
 
-fn apply_stormguard_adjustment(
-    request: StormguardAdjustmentRequest,
+fn apply_stormguard_adjustment_batch(
+    tree_generation: u64,
+    dry_run: bool,
+    adjustments: &[StormGuardClassAdjustment],
     overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
 ) -> Result<(), String> {
     let current_generation = stormguard_tree_generation();
-    if request.tree_generation != current_generation {
+    if tree_generation != current_generation {
         return Err(format!(
-            "StormGuard class change used shaping-tree generation {}, but Bakery is at generation {current_generation}",
-            request.tree_generation
+            "StormGuard class batch used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
         ));
     }
-    if !MQ_CREATED.load(Relaxed) {
-        return Err("StormGuard class change received before MQ setup".to_string());
+    if adjustments.is_empty() {
+        return Err("StormGuard class batch must contain at least one adjustment".to_string());
     }
-    let config = lqos_config::load_config().map_err(|error| {
-        format!("failed to load configuration for StormGuard class change: {error}")
-    })?;
-    let tc_handle = TcHandle::from_string(&request.class_id)
-        .map_err(|error| format!("invalid StormGuard class ID {}: {error}", request.class_id))?;
-    if !request.dry_run && !stormguard_live_enabled(&config) {
-        return Err("StormGuard is disabled or in dry-run mode".to_string());
-    }
-    if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
-        return Err(format!(
-            "StormGuard live class change is blocked because {reason}"
-        ));
+    if !dry_run {
+        if !MQ_CREATED.load(Relaxed) {
+            return Err("StormGuard class batch received before MQ setup".to_string());
+        }
+        let config = lqos_config::load_config().map_err(|error| {
+            format!("failed to load configuration for StormGuard class batch: {error}")
+        })?;
+        if !stormguard_live_enabled(&config) {
+            return Err("StormGuard is disabled or in dry-run mode".to_string());
+        }
+        if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+            return Err(format!(
+                "StormGuard live class batch is blocked because {reason}"
+            ));
+        }
     }
 
-    let args = stormguard_htb_command(
-        &request.interface_name,
-        tc_handle,
-        request.new_rate.saturating_sub(1),
-        request.new_rate,
-    );
-    if request.dry_run {
-        info!("DRY RUN: /sbin/tc {}", args.join(" "));
+    let commands: Vec<Vec<String>> = adjustments
+        .iter()
+        .map(|adjustment| {
+            let (rate, ceil) = stormguard_effective_rate_pair(
+                adjustment.new_rate,
+                adjustment.planned_rate,
+                adjustment.planned_ceil,
+            );
+            stormguard_htb_command(&adjustment.interface_name, adjustment.class_id, rate, ceil)
+        })
+        .collect();
+    if dry_run {
+        for command in &commands {
+            info!("DRY RUN: /sbin/tc {}", command.join(" "));
+        }
         return Ok(());
     }
 
-    let output = std::process::Command::new("/sbin/tc")
-        .args(&args)
-        .output()
-        .map_err(|error| format!("failed to run StormGuard tc command: {error}"))?;
-    if !output.status.success() {
+    let result = execute_stormguard_batch_commands(adjustments, commands, execute_in_memory);
+    finish_stormguard_adjustment_batch(overrides, adjustments, result)
+}
+
+fn execute_stormguard_batch_commands<F>(
+    adjustments: &[StormGuardClassAdjustment],
+    commands: Vec<Vec<String>>,
+    mut executor: F,
+) -> Result<(), String>
+where
+    F: FnMut(&[Vec<String>], &str) -> ExecuteResult,
+{
+    let result = executor(&commands, "applying StormGuard class batch");
+    if !result.ok {
+        let apply_error = summarize_apply_result("applying StormGuard class batch", &result);
+        let rollback_commands: Vec<Vec<String>> = adjustments
+            .iter()
+            .map(|adjustment| {
+                let (rate, ceil) = stormguard_effective_rate_pair(
+                    adjustment.previous_rate,
+                    adjustment.planned_rate,
+                    adjustment.planned_ceil,
+                );
+                stormguard_htb_command(&adjustment.interface_name, adjustment.class_id, rate, ceil)
+            })
+            .collect();
+        let rollback = executor(
+            &rollback_commands,
+            "rolling back failed StormGuard class batch",
+        );
+        if rollback.ok {
+            return Err(format!("{apply_error}; previous class rates restored"));
+        }
         return Err(format!(
-            "StormGuard tc command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "{apply_error}; rollback also failed: {}",
+            summarize_apply_result("rolling back failed StormGuard class batch", &rollback)
         ));
     }
-    record_stormguard_override(
-        overrides,
-        StormguardOverrideKey {
-            interface: request.interface_name,
-            class: tc_handle,
-        },
-        request.planned_rate,
-        request.planned_ceil,
-    );
-    debug!(
-        "StormGuard tc command succeeded: {}",
-        String::from_utf8_lossy(&output.stdout)
-    );
     Ok(())
+}
+
+fn finish_stormguard_adjustment_batch(
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+    adjustments: &[StormGuardClassAdjustment],
+    result: Result<(), String>,
+) -> Result<(), String> {
+    result?;
+    for adjustment in adjustments {
+        record_stormguard_override(
+            overrides,
+            StormguardOverrideKey {
+                interface: adjustment.interface_name.clone(),
+                class: adjustment.class_id,
+            },
+            adjustment.planned_rate,
+            adjustment.planned_ceil,
+        );
+    }
+    Ok(())
+}
+
+fn stormguard_effective_rate_pair(
+    effective_limit: u64,
+    planned_rate: u64,
+    planned_ceil: u64,
+) -> (u64, u64) {
+    if effective_limit >= planned_ceil {
+        (planned_rate, planned_ceil)
+    } else {
+        (effective_limit.saturating_sub(1), effective_limit)
+    }
 }
 
 fn stormguard_htb_command(
@@ -11432,6 +11481,80 @@ fn stormguard_restorations(
     restorations.into_values().collect()
 }
 
+fn stormguard_restore_precondition(
+    restore_untracked: bool,
+    mq_ready: bool,
+    full_reload_in_progress: bool,
+) -> Result<(), String> {
+    if full_reload_in_progress {
+        return Err("a full Bakery reload is currently in progress".to_string());
+    }
+    if !restore_untracked && !mq_ready {
+        return Err("Bakery MQ setup has not completed".to_string());
+    }
+    Ok(())
+}
+
+fn stormguard_reset_command_precondition(
+    requested_generation: u64,
+    current_generation: u64,
+    rebuild_batch_open: bool,
+    has_work: bool,
+    restore_untracked: bool,
+    mq_ready: bool,
+    full_reload_in_progress: bool,
+) -> Result<(), String> {
+    if requested_generation != current_generation {
+        return Err(format!(
+            "StormGuard reset used shaping-tree generation {requested_generation}, but Bakery is at generation {current_generation}"
+        ));
+    }
+    if rebuild_batch_open {
+        return Err("Bakery queue rebuild batch is still open".to_string());
+    }
+    if has_work {
+        stormguard_restore_precondition(restore_untracked, mq_ready, full_reload_in_progress)?;
+    }
+    Ok(())
+}
+
+fn stormguard_restore_commands(
+    restorations: &[StormGuardRestoreAdjustment],
+    live_classes: &HashMap<String, HashSet<TcHandle>>,
+) -> Vec<Vec<String>> {
+    restorations
+        .iter()
+        .filter_map(|restoration| {
+            let present = live_classes
+                .get(&restoration.interface_name)
+                .is_some_and(|classes| classes.contains(&restoration.class_id));
+            if !present {
+                debug!(
+                    "StormGuard restore skipped absent class {} on {}.",
+                    restoration.class_id.as_tc_string(),
+                    restoration.interface_name
+                );
+                return None;
+            }
+            Some(stormguard_htb_command(
+                &restoration.interface_name,
+                restoration.class_id,
+                restoration.planned_rate,
+                restoration.planned_ceil,
+            ))
+        })
+        .collect()
+}
+
+fn finish_stormguard_restore(
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+    result: Result<(), String>,
+) -> Result<(), String> {
+    result?;
+    overrides.clear();
+    Ok(())
+}
+
 fn reset_stormguard_adjustments(
     adjustments: &[StormGuardRestoreAdjustment],
     restore_untracked: bool,
@@ -11442,20 +11565,24 @@ fn reset_stormguard_adjustments(
         debug!("Cleared inactive Bakery StormGuard replay state.");
         return Ok(());
     }
-    if !MQ_CREATED.load(Relaxed) {
-        return Err("Bakery MQ setup has not completed".to_string());
-    }
-    let config = lqos_config::load_config()
-        .map_err(|error| format!("failed to load configuration: {error}"))?;
-    if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
-        return Err(format!("live queue mutation is blocked because {reason}"));
+    let mq_ready = MQ_CREATED.load(Relaxed);
+    stormguard_restore_precondition(
+        restore_untracked,
+        mq_ready,
+        FULL_RELOAD_IN_PROGRESS.load(Relaxed),
+    )?;
+    if !restore_untracked {
+        let config = lqos_config::load_config()
+            .map_err(|error| format!("failed to load configuration: {error}"))?;
+        if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+            return Err(format!("live queue mutation is blocked because {reason}"));
+        }
     }
 
     let restorations = stormguard_restorations(adjustments, restore_untracked, overrides);
     invalidate_live_tc_snapshots();
     let mut live_classes: HashMap<String, HashSet<TcHandle>> = HashMap::new();
-    let mut commands = Vec::new();
-    for restoration in restorations {
+    for restoration in &restorations {
         if !live_classes.contains_key(&restoration.interface_name) {
             let snapshot = read_live_class_snapshot(&restoration.interface_name)?;
             live_classes.insert(
@@ -11463,35 +11590,23 @@ fn reset_stormguard_adjustments(
                 snapshot.into_keys().collect(),
             );
         }
-        if live_classes
-            .get(&restoration.interface_name)
-            .is_some_and(|classes| classes.contains(&restoration.class_id))
-        {
-            commands.push(stormguard_htb_command(
-                &restoration.interface_name,
-                restoration.class_id,
-                restoration.planned_rate,
-                restoration.planned_ceil,
-            ));
-        } else {
-            debug!(
-                "StormGuard restore skipped absent class {} on {}.",
-                restoration.class_id.as_tc_string(),
-                restoration.interface_name
-            );
-        }
     }
-    if !commands.is_empty() {
+    let commands = stormguard_restore_commands(&restorations, &live_classes);
+    let apply_result = if !commands.is_empty() {
         let result = execute_in_memory(&commands, "restoring StormGuard planned rates");
         if !result.ok {
-            return Err(summarize_apply_result(
+            Err(summarize_apply_result(
                 "restoring StormGuard planned rates",
                 &result,
-            ));
+            ))
+        } else {
+            Ok(())
         }
-    }
+    } else {
+        Ok(())
+    };
 
-    overrides.clear();
+    finish_stormguard_restore(overrides, apply_result)?;
     debug!("Restored planned StormGuard rates and cleared retained adjustments.");
     Ok(())
 }
@@ -11584,6 +11699,13 @@ mod tests {
     }
 
     #[test]
+    fn stormguard_effective_pair_restores_planned_guarantee_at_ceiling() {
+        assert_eq!(stormguard_effective_rate_pair(20, 5, 20), (5, 20));
+        assert_eq!(stormguard_effective_rate_pair(60, 5, 20), (5, 20));
+        assert_eq!(stormguard_effective_rate_pair(15, 5, 20), (14, 15));
+    }
+
+    #[test]
     fn stormguard_override_retains_original_rate_pair() -> anyhow::Result<()> {
         let key = StormguardOverrideKey {
             interface: "eth0".to_string(),
@@ -11601,23 +11723,145 @@ mod tests {
     }
 
     #[test]
-    fn stormguard_rejects_stale_tree_generation_before_live_mutation() {
+    fn stormguard_batch_rejects_stale_generation_and_empty_work() {
         let current_generation = stormguard_tree_generation();
-        let result = apply_stormguard_adjustment(
-            StormguardAdjustmentRequest {
-                tree_generation: current_generation.wrapping_add(1),
-                dry_run: false,
-                interface_name: "eth0".to_string(),
-                class_id: "1:2".to_string(),
-                new_rate: 5,
-                planned_rate: 10,
-                planned_ceil: 10,
-            },
+        let stale = apply_stormguard_adjustment_batch(
+            current_generation.wrapping_add(1),
+            true,
+            &[],
             &mut HashMap::new(),
         );
+        assert!(stale.expect_err("stale generation").contains("generation"));
 
-        let error = result.expect_err("stale generation must be rejected");
-        assert!(error.contains("generation"));
+        let empty =
+            apply_stormguard_adjustment_batch(current_generation, true, &[], &mut HashMap::new());
+        assert!(empty.expect_err("empty batch").contains("at least one"));
+    }
+
+    #[test]
+    fn stormguard_batch_records_ownership_only_after_acknowledged_success() -> anyhow::Result<()> {
+        let adjustment = StormGuardClassAdjustment {
+            interface_name: "eth0".to_string(),
+            class_id: TcHandle::from_string("1:2")?,
+            new_rate: 50,
+            previous_rate: 60,
+            planned_rate: 5,
+            planned_ceil: 100,
+        };
+        let mut overrides = HashMap::new();
+        let failure = finish_stormguard_adjustment_batch(
+            &mut overrides,
+            std::slice::from_ref(&adjustment),
+            Err("synthetic tc failure".to_string()),
+        );
+        assert!(failure.is_err());
+        assert!(overrides.is_empty());
+
+        finish_stormguard_adjustment_batch(
+            &mut overrides,
+            std::slice::from_ref(&adjustment),
+            Ok(()),
+        )
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(overrides.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_batch_failure_rolls_back_every_class_without_recording_ownership()
+    -> anyhow::Result<()> {
+        let adjustments = vec![
+            StormGuardClassAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: TcHandle::from_string("1:2")?,
+                new_rate: 50,
+                previous_rate: 60,
+                planned_rate: 5,
+                planned_ceil: 100,
+            },
+            StormGuardClassAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: TcHandle::from_string("1:3")?,
+                new_rate: 40,
+                previous_rate: 60,
+                planned_rate: 4,
+                planned_ceil: 80,
+            },
+        ];
+        let commands = adjustments
+            .iter()
+            .map(|adjustment| {
+                let (rate, ceil) = stormguard_effective_rate_pair(
+                    adjustment.new_rate,
+                    adjustment.planned_rate,
+                    adjustment.planned_ceil,
+                );
+                stormguard_htb_command(&adjustment.interface_name, adjustment.class_id, rate, ceil)
+            })
+            .collect();
+        let mut calls = Vec::new();
+        let mut outcomes = VecDeque::from([
+            ExecuteResult {
+                ok: false,
+                duration_ms: 1,
+                failure_summary: Some("synthetic apply failure".to_string()),
+            },
+            ExecuteResult {
+                ok: true,
+                duration_ms: 1,
+                failure_summary: None,
+            },
+        ]);
+        let apply_result =
+            execute_stormguard_batch_commands(&adjustments, commands, |commands, purpose| {
+                calls.push((purpose.to_string(), commands.to_vec()));
+                outcomes.pop_front().expect("executor outcome")
+            });
+        let mut overrides = HashMap::new();
+        let error = finish_stormguard_adjustment_batch(&mut overrides, &adjustments, apply_result)
+            .expect_err("apply failure must be reported");
+        assert!(error.contains("previous class rates restored"));
+        assert!(overrides.is_empty());
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].1.len(), adjustments.len());
+        assert_eq!(calls[1].1.len(), adjustments.len());
+        assert!(calls[0].1[0].contains(&"50mbit".to_string()));
+        assert!(calls[1].1[0].contains(&"60mbit".to_string()));
+
+        let commands = calls.remove(0).1;
+        let rollback_failure =
+            execute_stormguard_batch_commands(&adjustments, commands, |_commands, purpose| {
+                ExecuteResult {
+                    ok: false,
+                    duration_ms: 1,
+                    failure_summary: Some(format!("synthetic {purpose} failure")),
+                }
+            })
+            .expect_err("rollback failure must be reported");
+        assert!(rollback_failure.contains("rollback also failed"));
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_dry_run_batch_does_not_require_mq_setup() -> anyhow::Result<()> {
+        let _guard = test_state_lock().lock().expect("Bakery test state lock");
+        let previous_mq = MQ_CREATED.swap(false, Ordering::Relaxed);
+        let adjustment = StormGuardClassAdjustment {
+            interface_name: "eth0".to_string(),
+            class_id: TcHandle::from_string("1:2")?,
+            new_rate: 50,
+            previous_rate: 60,
+            planned_rate: 5,
+            planned_ceil: 100,
+        };
+        let result = apply_stormguard_adjustment_batch(
+            stormguard_tree_generation(),
+            true,
+            &[adjustment],
+            &mut HashMap::new(),
+        );
+        MQ_CREATED.store(previous_mq, Ordering::Relaxed);
+        result.map_err(anyhow::Error::msg)
     }
 
     #[test]
@@ -11733,6 +11977,90 @@ mod tests {
         let startup = stormguard_restorations(&supplied, true, &HashMap::new());
         assert_eq!(startup.len(), 2);
         assert!(stormguard_restorations(&supplied, false, &HashMap::new()).is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_early_restore_allows_persisted_classes_before_mq_only() {
+        assert!(stormguard_restore_precondition(true, false, false).is_ok());
+        assert_eq!(
+            stormguard_restore_precondition(false, false, false),
+            Err("Bakery MQ setup has not completed".to_string())
+        );
+        assert!(
+            stormguard_restore_precondition(true, true, true)
+                .expect_err("full reload must block restoration")
+                .contains("full Bakery reload")
+        );
+    }
+
+    #[test]
+    fn stormguard_reset_command_gate_covers_generation_rebuild_and_early_recovery() {
+        assert!(
+            stormguard_reset_command_precondition(7, 7, false, true, true, false, false).is_ok()
+        );
+        assert!(
+            stormguard_reset_command_precondition(6, 7, false, true, true, false, false)
+                .expect_err("stale generation")
+                .contains("generation")
+        );
+        assert!(
+            stormguard_reset_command_precondition(7, 7, true, true, true, false, false)
+                .expect_err("open rebuild")
+                .contains("batch is still open")
+        );
+        assert!(
+            stormguard_reset_command_precondition(7, 7, false, true, true, false, true)
+                .expect_err("full reload")
+                .contains("full Bakery reload")
+        );
+        assert!(
+            stormguard_reset_command_precondition(7, 7, false, true, false, false, false)
+                .expect_err("normal reset before MQ")
+                .contains("MQ setup")
+        );
+    }
+
+    #[test]
+    fn stormguard_restore_skips_absent_live_classes() -> anyhow::Result<()> {
+        let class = TcHandle::from_string("1:2")?;
+        let restorations = vec![StormGuardRestoreAdjustment {
+            interface_name: "eth0".to_string(),
+            class_id: class,
+            planned_rate: 10,
+            planned_ceil: 100,
+        }];
+        assert!(stormguard_restore_commands(&restorations, &HashMap::new()).is_empty());
+
+        let live_classes = HashMap::from([("eth0".to_string(), HashSet::from([class]))]);
+        assert_eq!(
+            stormguard_restore_commands(&restorations, &live_classes).len(),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_restore_retains_ownership_after_failure() -> anyhow::Result<()> {
+        let key = StormguardOverrideKey {
+            interface: "eth0".to_string(),
+            class: TcHandle::from_string("1:2")?,
+        };
+        let mut overrides = HashMap::from([(
+            key,
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        )]);
+        let result = finish_stormguard_restore(
+            &mut overrides,
+            Err("synthetic restoration failure".to_string()),
+        );
+        assert!(result.is_err());
+        assert_eq!(overrides.len(), 1);
+        finish_stormguard_restore(&mut overrides, Ok(())).map_err(anyhow::Error::msg)?;
+        assert!(overrides.is_empty());
         Ok(())
     }
 

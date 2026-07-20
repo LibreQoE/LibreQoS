@@ -45,6 +45,7 @@ pub enum PublishedChannels {
     TreeCapacity,
     StormguardStatus,
     StormguardDebug,
+    StormguardRuntime,
     BakeryStatus,
     BakeryActivity,
     TreeGuardStatus,

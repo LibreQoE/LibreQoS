@@ -55,6 +55,51 @@ pub(crate) struct FlowApplyContext<'a> {
     pub(crate) finished_flow_exports: &'a mut Vec<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
 }
 
+fn record_rtt_flow_contribution(
+    network: &mut NetworkJson,
+    throughput_entry: Option<&ThroughputEntry>,
+    key: &FlowbeeKey,
+    flow: &FlowbeeLocalData,
+    rtt: Option<&RttBuffer>,
+) {
+    let (Some(rtt), Some(entry)) = (rtt, throughput_entry) else {
+        return;
+    };
+    if entry
+        .circuit_hash
+        .is_some_and(crate::rtt_exclusions::is_excluded_hash)
+    {
+        return;
+    }
+    let Some(parents) = entry.network_json_parents.as_ref() else {
+        return;
+    };
+    let flow_counts = rtt_flow_contribution(key, flow, rtt);
+    if flow_counts.down > 0 || flow_counts.up > 0 {
+        network.add_rtt_flow_cycle(parents, flow_counts);
+    }
+}
+
+fn rtt_flow_contribution(
+    key: &FlowbeeKey,
+    flow: &FlowbeeLocalData,
+    rtt: &RttBuffer,
+) -> DownUpOrder<u32> {
+    if key.ip_protocol != 6 || flow.end_status != 0 {
+        return DownUpOrder::zeroed();
+    }
+    DownUpOrder::new(
+        u32::from(
+            flow.bytes_sent.down >= MIN_QOO_FLOW_BYTES
+                && rtt.sample_count(RttBucket::Current, FlowbeeEffectiveDirection::Download) > 0,
+        ),
+        u32::from(
+            flow.bytes_sent.up >= MIN_QOO_FLOW_BYTES
+                && rtt.sample_count(RttBucket::Current, FlowbeeEffectiveDirection::Upload) > 0,
+        ),
+    )
+}
+
 fn collect_finished_flow_exports(
     flow_data: &mut FxHashMap<FlowbeeKey, (FlowbeeLocalData, FlowAnalysis)>,
     expired_keys: &[FlowbeeKey],
@@ -1014,6 +1059,13 @@ impl ThroughputTracker {
                             this_flow.0.set_tos(data.tos);
                             this_flow.0.set_flags(data.flags);
 
+                            record_rtt_flow_contribution(
+                                net_json_calc,
+                                raw_entry,
+                                key,
+                                &this_flow.0,
+                                rtt_buffer.as_ref(),
+                            );
                             apply_flow_rtt_and_qoo(
                                 &mut this_flow.0,
                                 raw_entry,
@@ -1062,6 +1114,13 @@ impl ThroughputTracker {
                                 // Insert it into the map
                                 let flow_analysis = FlowAnalysis::new(key);
                                 let mut flow_summary = FlowbeeLocalData::from_flow(data, key);
+                                record_rtt_flow_contribution(
+                                    net_json_calc,
+                                    raw_entry,
+                                    key,
+                                    &flow_summary,
+                                    rtt_buffer.as_ref(),
+                                );
                                 apply_flow_rtt_and_qoo(
                                     &mut flow_summary,
                                     raw_entry,
@@ -1441,14 +1500,15 @@ fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasu
 mod tests {
     use super::{
         MIN_QOO_FLOW_BYTES, ThroughputEntry, ThroughputTracker, apply_flow_rtt_and_qoo,
-        collect_finished_flow_exports, collect_stale_flow_exports, update_flow_qoo,
+        collect_finished_flow_exports, collect_stale_flow_exports, rtt_flow_contribution,
+        update_flow_qoo,
     };
     use crate::test_support::{
         ActiveFlowSnapshotTestContext, active_flow_entry, runtime_config_test_lock,
     };
     use crate::throughput_tracker::flow_data::{
-        FlowAnalysis, FlowbeeLocalData, RttBuffer, RttData, active_flow_snapshot,
-        mutate_all_flows, refresh_active_flow_snapshot,
+        FlowAnalysis, FlowbeeEffectiveDirection, FlowbeeLocalData, RttBuffer, RttData,
+        active_flow_snapshot, mutate_all_flows, refresh_active_flow_snapshot,
     };
     use fxhash::FxHashMap;
     use lqos_bus::TcHandle;
@@ -1891,6 +1951,37 @@ mod tests {
         );
 
         assert!(rtt_circuit_tracker.is_empty());
+    }
+
+    #[test]
+    fn rtt_flow_counts_only_directions_that_contributed_samples() {
+        let mut key = FlowbeeKey::default();
+        key.ip_protocol = 6;
+        let mut raw = FlowbeeData::default();
+        raw.end_status = 0;
+        raw.bytes_sent = DownUpOrder::new(MIN_QOO_FLOW_BYTES + 1, MIN_QOO_FLOW_BYTES - 1);
+        let flow = FlowbeeLocalData::from_flow(&raw, &key);
+        let mut rtt = RttBuffer::new(
+            RttData::from_nanos(20_000_000),
+            FlowbeeEffectiveDirection::Download,
+            raw.last_seen,
+        );
+        rtt.push(
+            RttData::from_nanos(30_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            raw.last_seen,
+        );
+
+        assert_eq!(
+            rtt_flow_contribution(&key, &flow, &rtt),
+            DownUpOrder::new(1, 0)
+        );
+
+        key.ip_protocol = 17;
+        assert_eq!(
+            rtt_flow_contribution(&key, &flow, &rtt),
+            DownUpOrder::zeroed()
+        );
     }
 
     #[test]
