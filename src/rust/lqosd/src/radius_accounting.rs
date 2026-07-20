@@ -581,11 +581,13 @@ fn handle_accounting_event_with_command_sink(
     received_len: usize,
     response_len: usize,
 ) -> AccountingSessionUpdate {
+    let status = event.status_type;
     let update = sessions.apply_event_with_command_sink(event, now, command_sink);
     debug!(
         peer = %peer,
         received_len,
         response_len,
+        ?status,
         ?update,
         "accepted RADIUS accounting packet"
     );
