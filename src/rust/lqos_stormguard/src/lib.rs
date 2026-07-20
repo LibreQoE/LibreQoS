@@ -10,13 +10,14 @@
 #![warn(missing_docs)]
 
 use lqos_bakery::BakeryCommands;
-use lqos_bus::StormguardDebugEntry;
+use lqos_bus::{StormguardDebugEntry, StormguardRuntimeSettings, StormguardRuntimeStatus};
 use lqos_config::NetworkJsonTransport;
 use lqos_probe::ProbeClient;
 use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::sync::LazyLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
 mod active_ping;
@@ -34,6 +35,16 @@ enum StormguardRuntimeMode {
     Disabled,
     DryRun,
     Live,
+}
+
+impl StormguardRuntimeMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::DryRun => "dry_run",
+            Self::Live => "live",
+        }
+    }
 }
 
 fn runtime_mode(enabled: bool, dry_run: bool) -> StormguardRuntimeMode {
@@ -78,6 +89,87 @@ fn clear_published_state() {
     STORMGUARD_DEBUG.lock().clear();
 }
 
+fn unix_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
+}
+
+static STORMGUARD_RUNTIME_STATUS: LazyLock<Mutex<StormguardRuntimeStatus>> = LazyLock::new(|| {
+    Mutex::new(StormguardRuntimeStatus {
+        configured_enabled: false,
+        mode: "disabled".to_string(),
+        phase: "disabled".to_string(),
+        bakery_ready: false,
+        cleanup_pending: false,
+        strategy: None,
+        active_ping_target: None,
+        active_ping_weight: None,
+        settings: None,
+        message: None,
+        last_error: None,
+        updated_at_unix_ms: unix_time_ms(),
+    })
+});
+
+fn publish_runtime_status(
+    configured: Option<&config::StormguardConfig>,
+    mode: StormguardRuntimeMode,
+    phase: &str,
+    cleanup_pending: bool,
+    message: Option<String>,
+    last_error: Option<String>,
+) {
+    let (strategy, active_ping_target, active_ping_weight, settings) = configured
+        .map(|config| {
+            (
+                Some(match config.strategy {
+                    lqos_config::StormguardStrategy::LegacyScore => "legacy_score".to_string(),
+                    lqos_config::StormguardStrategy::DelayProbe => "delay_probe".to_string(),
+                    lqos_config::StormguardStrategy::DelayProbeActive => {
+                        "delay_probe_active".to_string()
+                    }
+                }),
+                Some(config.active_ping_target.clone()),
+                Some(config.active_ping_weight),
+                Some(StormguardRuntimeSettings {
+                    increase_fast_multiplier: config.increase_fast_multiplier,
+                    increase_multiplier: config.increase_multiplier,
+                    decrease_multiplier: config.decrease_multiplier,
+                    decrease_fast_multiplier: config.decrease_fast_multiplier,
+                    delay_threshold_ms: config.delay_threshold_ms,
+                    delay_threshold_ratio: config.delay_threshold_ratio,
+                    probe_interval_seconds: config.probe_interval_seconds,
+                    min_throughput_mbps_for_rtt: config.min_throughput_mbps_for_rtt,
+                }),
+            )
+        })
+        .unwrap_or((None, None, None, None));
+    *STORMGUARD_RUNTIME_STATUS.lock() = StormguardRuntimeStatus {
+        configured_enabled: mode != StormguardRuntimeMode::Disabled,
+        mode: mode.label().to_string(),
+        phase: phase.to_string(),
+        bakery_ready: lqos_bakery::stormguard_bakery_ready(),
+        cleanup_pending,
+        strategy,
+        active_ping_target,
+        active_ping_weight,
+        settings,
+        message,
+        last_error,
+        updated_at_unix_ms: unix_time_ms(),
+    };
+}
+
+/// Returns the latest StormGuard lifecycle and dependency-health snapshot.
+///
+/// This function is not pure: it reads process-local runtime state.
+pub fn runtime_status() -> StormguardRuntimeStatus {
+    STORMGUARD_RUNTIME_STATUS.lock().clone()
+}
+
 /// Globally accessible stormguard statistics
 pub static STORMGUARD_STATS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::new());
 
@@ -97,7 +189,9 @@ pub async fn start_stormguard(
 
     // Initialize in "waiting" state - we'll configure when queue structure is available
     let mut config: Option<config::StormguardConfig> = None;
-    let mut log_sender: Option<std::sync::mpsc::Sender<datalog::LogCommand>> = None;
+    let mut log_sender: Option<datalog::DatalogHandle> = None;
+    let mut logger_error: Option<String> = None;
+    let mut last_application_error: Option<String> = None;
     let mut site_state_tracker: Option<site_state::SiteStateTracker> = None;
     let mut active_ping = active_ping::ActivePingManager::new(probe_client);
     let mut inactive_reconciled = false;
@@ -114,6 +208,14 @@ pub async fn start_stormguard(
 
         let Some(requested_mode) = requested_runtime_mode() else {
             warn!("StormGuard could not read the current runtime mode; retaining existing state.");
+            publish_runtime_status(
+                config.as_ref(),
+                active_runtime_mode(config.as_ref()),
+                "degraded",
+                false,
+                None,
+                Some("StormGuard could not read the current runtime mode".to_string()),
+            );
             continue;
         };
         let active_mode = active_runtime_mode(config.as_ref());
@@ -133,6 +235,14 @@ pub async fn start_stormguard(
                 warn!(
                     "StormGuard could not load the queue structure for Bakery generation {current_tree_generation}; retrying: {error}"
                 );
+                publish_runtime_status(
+                    config.as_ref(),
+                    requested_mode,
+                    "degraded",
+                    false,
+                    Some("Refreshing the Bakery queue snapshot".to_string()),
+                    Some(error.to_string()),
+                );
                 continue;
             }
             if lqos_bakery::stormguard_tree_generation() != current_tree_generation {
@@ -147,6 +257,14 @@ pub async fn start_stormguard(
                         .await
             {
                 warn!("StormGuard rebuild reconciliation will retry: {error}");
+                publish_runtime_status(
+                    config.as_ref(),
+                    requested_mode,
+                    "cleanup_pending",
+                    true,
+                    Some("Reconciling a rebuilt shaping tree".to_string()),
+                    Some(error.to_string()),
+                );
                 continue;
             }
             inactive_reconciled = false;
@@ -164,6 +282,8 @@ pub async fn start_stormguard(
             config = None;
             site_state_tracker = None;
             log_sender = None;
+            logger_error = None;
+            last_application_error = None;
             live_reset_pending = false;
             clear_published_state();
         }
@@ -173,6 +293,14 @@ pub async fn start_stormguard(
         if live_reset_pending {
             let Some(tracker) = &mut site_state_tracker else {
                 warn!("StormGuard reset is pending without an active tracker; retrying.");
+                publish_runtime_status(
+                    config.as_ref(),
+                    requested_mode,
+                    "degraded",
+                    true,
+                    None,
+                    Some("StormGuard reset is pending without an active tracker".to_string()),
+                );
                 continue;
             };
             info!("StormGuard is restoring planned queue rates before reconfiguration.");
@@ -181,12 +309,22 @@ pub async fn start_stormguard(
                     config = None;
                     site_state_tracker = None;
                     log_sender = None;
+                    logger_error = None;
+                    last_application_error = None;
                     inactive_reconciled = true;
                     live_reset_pending = false;
                     clear_published_state();
                 }
                 Err(error) => {
                     warn!("StormGuard could not restore planned queue rates; retrying: {error}");
+                    publish_runtime_status(
+                        config.as_ref(),
+                        requested_mode,
+                        "cleanup_pending",
+                        true,
+                        Some("Restoring planned queue rates".to_string()),
+                        Some(error.to_string()),
+                    );
                     continue;
                 }
             }
@@ -194,12 +332,12 @@ pub async fn start_stormguard(
             config = None;
             site_state_tracker = None;
             log_sender = None;
+            logger_error = None;
+            last_application_error = None;
             clear_published_state();
         }
 
-        if requested_mode != StormguardRuntimeMode::Live
-            && !retained_circuit_fallbacks.is_empty()
-        {
+        if requested_mode != StormguardRuntimeMode::Live && !retained_circuit_fallbacks.is_empty() {
             if let Err(error) = site_state::clear_retained_circuit_fallbacks(
                 &retained_circuit_fallbacks,
                 current_tree_generation,
@@ -208,6 +346,14 @@ pub async fn start_stormguard(
             .await
             {
                 warn!("StormGuard retained circuit cleanup will retry: {error}");
+                publish_runtime_status(
+                    config.as_ref(),
+                    requested_mode,
+                    "cleanup_pending",
+                    true,
+                    Some("Clearing retained circuit fallbacks".to_string()),
+                    Some(error.to_string()),
+                );
                 continue;
             }
             retained_circuit_fallbacks.clear();
@@ -218,6 +364,14 @@ pub async fn start_stormguard(
                 Ok(()) => inactive_reconciled = true,
                 Err(error) => {
                     warn!("StormGuard inactive-state cleanup will retry: {error}");
+                    publish_runtime_status(
+                        config.as_ref(),
+                        requested_mode,
+                        "cleanup_pending",
+                        true,
+                        Some("Inactive-state cleanup will retry".to_string()),
+                        Some(error.to_string()),
+                    );
                     continue;
                 }
             }
@@ -229,8 +383,18 @@ pub async fn start_stormguard(
             config = None;
             site_state_tracker = None;
             log_sender = None;
+            logger_error = None;
+            last_application_error = None;
             clear_published_state();
             active_ping.reconfigure(None);
+            publish_runtime_status(
+                None,
+                requested_mode,
+                "disabled",
+                false,
+                Some("StormGuard is disabled and retained state is clean".to_string()),
+                None,
+            );
             continue;
         }
 
@@ -255,8 +419,27 @@ pub async fn start_stormguard(
                     } else {
                         info!("StormGuard configuration loaded successfully");
                         // Initialize or reinitialize everything
-                        if log_sender.is_none() {
-                            log_sender = datalog::start_datalog(&new_config).ok();
+                        let configured_log_path =
+                            new_config.log_filename.as_deref().map(std::path::Path::new);
+                        let active_log_path = log_sender.as_ref().map(|sender| sender.path());
+                        if active_log_path != configured_log_path {
+                            log_sender = None;
+                            logger_error = None;
+                        }
+                        if log_sender.is_none() && new_config.log_filename.is_some() {
+                            match datalog::start_datalog(&new_config) {
+                                Ok(sender) => {
+                                    log_sender = Some(sender);
+                                    logger_error = None;
+                                }
+                                Err(error) => {
+                                    let error = format!(
+                                        "StormGuard diagnostic logger could not start: {error}"
+                                    );
+                                    warn!("{error}");
+                                    logger_error = Some(error);
+                                }
+                            }
                         }
                         let mut tracker = site_state::SiteStateTracker::from_config(
                             &new_config,
@@ -267,6 +450,14 @@ pub async fn start_stormguard(
                             .await
                         {
                             warn!("StormGuard persisted adjustment replay will retry: {error}");
+                            publish_runtime_status(
+                                Some(&new_config),
+                                requested_mode,
+                                "degraded",
+                                false,
+                                Some("Replaying persisted StormGuard adjustments".to_string()),
+                                Some(error.to_string()),
+                            );
                             config = None;
                             site_state_tracker = None;
                             continue;
@@ -275,7 +466,22 @@ pub async fn start_stormguard(
                             &mut retained_circuit_fallbacks,
                         ));
                         site_state_tracker = Some(tracker);
+                        last_application_error = None;
                         config = Some(new_config);
+                        publish_runtime_status(
+                            config.as_ref(),
+                            requested_mode,
+                            if logger_error.is_some() {
+                                "degraded"
+                            } else if requested_mode == StormguardRuntimeMode::DryRun {
+                                "dry_run"
+                            } else {
+                                "live"
+                            },
+                            false,
+                            Some("StormGuard is evaluating watched sites".to_string()),
+                            logger_error.clone(),
+                        );
                     }
                 }
                 Err(e) => {
@@ -283,6 +489,14 @@ pub async fn start_stormguard(
                     config = None;
                     site_state_tracker = None;
                     clear_published_state();
+                    publish_runtime_status(
+                        None,
+                        requested_mode,
+                        "degraded",
+                        false,
+                        None,
+                        Some(e.to_string()),
+                    );
                 }
             }
         }
@@ -302,29 +516,78 @@ pub async fn start_stormguard(
 
             // Check for state changes
             tracker.check_state(cfg);
-            // Update debug snapshot for UI/diagnostics
-            let snapshot = tracker.debug_snapshot(cfg);
-            {
-                let mut lock = STORMGUARD_DEBUG.lock();
-                *lock = snapshot;
-            }
             let recommendations = tracker.recommendations(cfg);
-            if !recommendations.is_empty()
-                && let Some(sender) = &log_sender
-            {
+            let application_report = if recommendations.is_empty() {
+                site_state::ApplicationReport::default()
+            } else {
                 tracker
-                    .apply_recommendations(recommendations, cfg, sender.clone(), bakery.clone())
-                    .await;
+                    .apply_recommendations(recommendations, cfg, bakery.clone())
+                    .await
+            };
+            if let Some(error) = application_report.errors.last() {
+                last_application_error = Some(error.clone());
+            } else if application_report.acknowledged_success {
+                last_application_error = None;
             }
+
+            // Capture decisions and application outcomes after this tick's work.
+            let snapshot = tracker.debug_snapshot(cfg);
+            if let Some(sender) = log_sender.clone() {
+                let command = datalog::LogCommand::Snapshot {
+                    entries: snapshot.clone(),
+                    mode: if cfg.dry_run { "dry_run" } else { "live" }.to_string(),
+                    timestamp_unix_ms: unix_time_ms(),
+                };
+                match sender.try_send(command) {
+                    Ok(()) => logger_error = sender.last_error(),
+                    Err(crossbeam_channel::TrySendError::Full(_)) => {
+                        let error = "StormGuard diagnostic log queue is full".to_string();
+                        warn!("{error}");
+                        logger_error = Some(error);
+                    }
+                    Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
+                        let error = "StormGuard diagnostic logger stopped unexpectedly".to_string();
+                        warn!("{error}");
+                        logger_error = Some(error);
+                        log_sender = None;
+                    }
+                }
+            }
+            *STORMGUARD_DEBUG.lock() = snapshot;
+
+            let runtime_error = last_application_error
+                .clone()
+                .or_else(|| logger_error.clone());
+            publish_runtime_status(
+                Some(cfg),
+                requested_mode,
+                if runtime_error.is_some() {
+                    "degraded"
+                } else if cfg.dry_run {
+                    "dry_run"
+                } else {
+                    "live"
+                },
+                false,
+                Some("StormGuard is evaluating watched sites".to_string()),
+                runtime_error,
+            );
+        } else {
+            publish_runtime_status(
+                config.as_ref(),
+                requested_mode,
+                "initializing",
+                false,
+                Some("Waiting for watched sites and queue state".to_string()),
+                logger_error.clone(),
+            );
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        StormguardRuntimeMode, rebuild_occurred_since, requires_live_reset, runtime_mode,
-    };
+    use super::{StormguardRuntimeMode, rebuild_occurred_since, requires_live_reset, runtime_mode};
 
     #[test]
     fn runtime_mode_tracks_disabled_dry_run_and_live_states() {

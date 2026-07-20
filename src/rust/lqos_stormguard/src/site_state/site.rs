@@ -10,6 +10,24 @@ use allocative::Allocative;
 use std::time::Instant;
 use tracing::{debug, info};
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct DirectionDecision {
+    pub(crate) score: Option<f64>,
+    pub(crate) candidate_action: Option<RecommendationAction>,
+    pub(crate) target_mbps: Option<u64>,
+    pub(crate) reason: String,
+    pub(crate) blocker: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ActionAttempt {
+    pub(crate) action: RecommendationAction,
+    pub(crate) target_mbps: u64,
+    pub(crate) outcome: String,
+    pub(crate) unix_ms: u64,
+    pub(crate) error: Option<String>,
+}
+
 pub struct SiteState {
     pub config: WatchingSite,
     pub download_state: StormguardState,
@@ -25,6 +43,8 @@ pub struct SiteState {
     pub passive_rtt_ms: Option<f64>,
     /// Most recent active ping RTT sample, if available.
     pub active_ping_rtt_ms: Option<f64>,
+    /// TCP flows contributing passive RTT samples in the current download/upload cycle.
+    pub passive_rtt_flow_counts: (u32, u32),
     /// When set, represents a newly-arrived effective RTT sample (used for baseline learning).
     pub rtt_sample_for_baseline_ms: Option<f64>,
     pub rtt_baseline_ms: Option<f64>,
@@ -33,6 +53,10 @@ pub struct SiteState {
     pub(crate) passive_rtt_updated_this_tick: bool,
     pub(crate) last_action_download: Option<(RecommendationAction, Instant)>,
     pub(crate) last_action_upload: Option<(RecommendationAction, Instant)>,
+    pub(crate) download_decision: DirectionDecision,
+    pub(crate) upload_decision: DirectionDecision,
+    pub(crate) last_attempt_download: Option<ActionAttempt>,
+    pub(crate) last_attempt_upload: Option<ActionAttempt>,
 
     // Current Data Buffers
     pub throughput_down: RingBuffer,
@@ -68,21 +92,75 @@ struct RecommendationParams {
 
 impl RecommendationParams {
     fn summary_string(&self) -> String {
+        let retransmit_fraction = self.abs_retransmit.map_or_else(
+            || "unavailable".to_string(),
+            |value| format!("{value:.3}"),
+        );
         format!(
-            "{},{:?},{:?},{},{},{},{},abs_retx={:?}",
+            "{} legacy score inputs: configured saturation={}; current saturation={}; increase allowed={}; decrease allowed={}; retransmit trend={}; RTT trend={}; retransmit fraction={retransmit_fraction}",
             self.direction,
-            self.can_increase,
-            self.can_decrease,
             self.saturation_max,
             self.saturation_current,
+            self.can_increase,
+            self.can_decrease,
             self.retransmit_state,
             self.rtt_state,
-            self.abs_retransmit
         )
     }
 }
 
 impl SiteState {
+    pub(crate) fn decision(&self, direction: RecommendationDirection) -> &DirectionDecision {
+        match direction {
+            RecommendationDirection::Download => &self.download_decision,
+            RecommendationDirection::Upload => &self.upload_decision,
+        }
+    }
+
+    pub(crate) fn set_decision(
+        &mut self,
+        direction: RecommendationDirection,
+        decision: DirectionDecision,
+    ) {
+        match direction {
+            RecommendationDirection::Download => self.download_decision = decision,
+            RecommendationDirection::Upload => self.upload_decision = decision,
+        }
+    }
+
+    pub(crate) fn last_attempt(
+        &self,
+        direction: RecommendationDirection,
+    ) -> Option<&ActionAttempt> {
+        match direction {
+            RecommendationDirection::Download => self.last_attempt_download.as_ref(),
+            RecommendationDirection::Upload => self.last_attempt_upload.as_ref(),
+        }
+    }
+
+    pub(crate) fn record_attempt(
+        &mut self,
+        direction: RecommendationDirection,
+        attempt: ActionAttempt,
+    ) {
+        match direction {
+            RecommendationDirection::Download => self.last_attempt_download = Some(attempt),
+            RecommendationDirection::Upload => self.last_attempt_upload = Some(attempt),
+        }
+    }
+
+    fn state_blocker(&self, direction: RecommendationDirection) -> Option<String> {
+        let state = match direction {
+            RecommendationDirection::Download => &self.download_state,
+            RecommendationDirection::Upload => &self.upload_state,
+        };
+        match state {
+            StormguardState::Warmup => Some("warmup".to_string()),
+            StormguardState::Cooldown { .. } => Some("cooldown".to_string()),
+            StormguardState::Running => None,
+        }
+    }
+
     pub fn check_state(&mut self, config: &StormguardConfig) {
         self.update_rtt_baseline(config);
 
@@ -194,6 +272,7 @@ impl SiteState {
         self.current_rtt_ms = None;
         self.passive_rtt_ms = None;
         self.active_ping_rtt_ms = None;
+        self.passive_rtt_flow_counts = (0, 0);
         self.rtt_sample_for_baseline_ms = None;
         self.passive_rtt_updated_this_tick = false;
     }
@@ -221,10 +300,6 @@ impl SiteState {
         recommendations: &mut Vec<(Recommendation, String)>,
         params: &RecommendationParams,
     ) {
-        if !params.can_increase && !params.can_decrease {
-            return; // No recommendations possible
-        }
-
         let (rtt_weight, retransmit_weight, score_bias) = match params.saturation_current {
             SaturationLevel::High => (3.0, 1.0, 0.0),
             SaturationLevel::Medium => (2.0, 1.0, 0.0),
@@ -301,9 +376,23 @@ impl SiteState {
             score if score > 2.0 => Some(RecommendationAction::Decrease), // Narrower decrease band
             _ => None,
         };
-        //println!("Score: {score}, recommendation: {:?}", action);
+        let blocker = self.state_blocker(params.direction).or_else(|| {
+            (!params.can_increase && !params.can_decrease).then(|| "at_bounds".to_string())
+        });
+        self.set_decision(
+            params.direction,
+            DirectionDecision {
+                score: Some(score as f64),
+                candidate_action: action,
+                target_mbps: None,
+                reason: params.summary_string(),
+                blocker: blocker.clone(),
+            },
+        );
 
-        if let Some(action) = action {
+        if blocker.is_none()
+            && let Some(action) = action
+        {
             match action {
                 RecommendationAction::IncreaseFast | RecommendationAction::Increase => {
                     if params.can_increase {
@@ -336,6 +425,7 @@ impl SiteState {
     fn recommendations_legacy_score_direction(
         &mut self,
         recommendations: &mut Vec<(Recommendation, String)>,
+        config: &StormguardConfig,
         direction: RecommendationDirection,
     ) {
         let (queue_mbps, min_mbps, max_mbps, throughput_mbps, retransmits_ma, retransmits) =
@@ -377,6 +467,17 @@ impl SiteState {
         };
 
         self.recommendation_matrix(recommendations, &params);
+        let mut decision = self.decision(direction).clone();
+        decision.target_mbps = decision.candidate_action.and_then(|action| {
+            Self::candidate_target(queue_mbps, min_mbps, max_mbps, action, config)
+        });
+        if decision.candidate_action.is_some()
+            && decision.target_mbps.is_none()
+            && decision.blocker.is_none()
+        {
+            decision.blocker = Some("bounds".to_string());
+        }
+        self.set_decision(direction, decision);
     }
 
     fn recommendations_delay_probe_direction(
@@ -412,9 +513,6 @@ impl SiteState {
 
         let can_increase = queue_mbps < max_mbps;
         let can_decrease = queue_mbps > min_mbps;
-        if !can_increase && !can_decrease {
-            return;
-        }
 
         let mut delay_ms: Option<f64> = None;
         let mut delay_ratio: Option<f64> = None;
@@ -447,53 +545,93 @@ impl SiteState {
         let high_loss = retransmits_avg.is_some_and(|p| p >= 0.10);
         let moderate_loss = retransmits_avg.is_some_and(|p| p >= 0.05);
 
-        let action = if can_decrease && (severe_bloat || high_loss) {
-            Some(RecommendationAction::DecreaseFast)
+        let load_ratio = if queue_mbps > 0 {
+            throughput_mbps / queue_mbps as f64
+        } else {
+            0.0
+        };
+        let ticks_since_last_probe = match direction {
+            RecommendationDirection::Download => self.ticks_since_last_probe_download,
+            RecommendationDirection::Upload => self.ticks_since_last_probe_upload,
+        };
+        let (action, evaluation_reason) = if !can_increase && !can_decrease {
+            (None, "queue is fixed at its configured bound")
+        } else if can_decrease && (severe_bloat || high_loss) {
+            (
+                Some(RecommendationAction::DecreaseFast),
+                "severe delay or retransmit signal",
+            )
         } else if can_decrease && (bloat || moderate_loss) {
-            Some(RecommendationAction::Decrease)
+            (
+                Some(RecommendationAction::Decrease),
+                "delay or retransmit signal",
+            )
         } else if can_increase {
-            let Some(delay_ms) = delay_ms else {
-                return;
-            };
-            let Some(delay_ratio) = delay_ratio else {
-                return;
-            };
-            let good_delay = delay_ms <= good_threshold_ms && delay_ratio <= good_threshold_ratio;
-            let load_ratio = if queue_mbps > 0 {
-                throughput_mbps / queue_mbps as f64
-            } else {
-                0.0
-            };
-            let ticks_since_last_probe = match direction {
-                RecommendationDirection::Download => self.ticks_since_last_probe_download,
-                RecommendationDirection::Upload => self.ticks_since_last_probe_upload,
-            };
-            if good_delay && load_ratio >= 0.80 && ticks_since_last_probe >= probe_interval_ticks {
-                Some(RecommendationAction::Increase)
-            } else {
-                None
+            match (delay_ms, delay_ratio) {
+                (Some(delay_ms), Some(delay_ratio)) => {
+                    let good_delay =
+                        delay_ms <= good_threshold_ms && delay_ratio <= good_threshold_ratio;
+                    if good_delay
+                        && load_ratio >= 0.80
+                        && ticks_since_last_probe >= probe_interval_ticks
+                    {
+                        (
+                            Some(RecommendationAction::Increase),
+                            "probe increase conditions met",
+                        )
+                    } else {
+                        (None, "probe increase conditions not met")
+                    }
+                }
+                _ => (None, "no usable RTT and baseline pair"),
             }
         } else {
-            None
+            (
+                None,
+                "queue cannot increase and no decrease signal is present",
+            )
         };
 
-        let Some(action) = action else {
-            return;
+        let format_metric = |value: Option<f64>| {
+            value.map_or_else(|| "unavailable".to_string(), |value| format!("{value:.3}"))
         };
-
         let summary = format!(
-            "{direction},{action:?},queue={queue_mbps},tp={throughput_mbps:.3},retx={retransmits_avg:?},rtt={:?},baseline={:?},delay_ms={:?},delay_ratio={:?},bloat={bloat},severe={severe_bloat}",
-            self.current_rtt_ms, self.rtt_baseline_ms, delay_ms, delay_ratio,
+            "{evaluation_reason}; delay={} ms (decrease {threshold_ms:.1}, fast {fast_threshold_ms:.1}); delay ratio={} (decrease {threshold_ratio:.2}, fast {fast_threshold_ratio:.2}); retransmits={}; load ratio={load_ratio:.3}; probe requirements: delay <= {good_threshold_ms:.1} ms, ratio <= {good_threshold_ratio:.2}, load >= 0.800, age >= {probe_interval_ticks} ticks; current probe age={ticks_since_last_probe} ticks",
+            format_metric(delay_ms),
+            format_metric(delay_ratio),
+            format_metric(retransmits_avg),
         );
 
-        recommendations.push((
-            Recommendation {
-                site: self.config.name.to_owned(),
-                action,
-                direction,
+        let target_mbps = action.and_then(|action| {
+            Self::candidate_target(queue_mbps, min_mbps, max_mbps, action, config)
+        });
+        let blocker = self
+            .state_blocker(direction)
+            .or_else(|| (!can_increase && !can_decrease).then(|| "at_bounds".to_string()))
+            .or_else(|| (action.is_some() && target_mbps.is_none()).then(|| "bounds".to_string()));
+        self.set_decision(
+            direction,
+            DirectionDecision {
+                score: None,
+                candidate_action: action,
+                target_mbps,
+                reason: summary.clone(),
+                blocker: blocker.clone(),
             },
-            summary,
-        ));
+        );
+
+        if blocker.is_none()
+            && let Some(action) = action
+        {
+            recommendations.push((
+                Recommendation {
+                    site: self.config.name.to_owned(),
+                    action,
+                    direction,
+                },
+                summary,
+            ));
+        }
     }
 
     pub fn recommendations(
@@ -509,39 +647,54 @@ impl SiteState {
                 self.ticks_since_last_probe_upload =
                     self.ticks_since_last_probe_upload.saturating_add(1);
 
-                if !matches!(self.download_state, StormguardState::Cooldown { .. }) {
-                    self.recommendations_delay_probe_direction(
-                        recommendations,
-                        config,
-                        RecommendationDirection::Download,
-                    );
-                }
-                if !matches!(self.upload_state, StormguardState::Cooldown { .. }) {
-                    self.recommendations_delay_probe_direction(
-                        recommendations,
-                        config,
-                        RecommendationDirection::Upload,
-                    );
-                }
+                self.recommendations_delay_probe_direction(
+                    recommendations,
+                    config,
+                    RecommendationDirection::Download,
+                );
+                self.recommendations_delay_probe_direction(
+                    recommendations,
+                    config,
+                    RecommendationDirection::Upload,
+                );
             }
             lqos_config::StormguardStrategy::LegacyScore => {
+                self.recommendations_legacy_score_direction(
+                    recommendations,
+                    config,
+                    RecommendationDirection::Download,
+                );
                 if self.download_state == StormguardState::Running {
-                    self.recommendations_legacy_score_direction(
-                        recommendations,
-                        RecommendationDirection::Download,
-                    );
                     self.ticks_since_last_probe_download =
                         self.ticks_since_last_probe_download.saturating_add(1);
                 }
+                self.recommendations_legacy_score_direction(
+                    recommendations,
+                    config,
+                    RecommendationDirection::Upload,
+                );
                 if self.upload_state == StormguardState::Running {
-                    self.recommendations_legacy_score_direction(
-                        recommendations,
-                        RecommendationDirection::Upload,
-                    );
                     self.ticks_since_last_probe_upload =
                         self.ticks_since_last_probe_upload.saturating_add(1);
                 }
             }
         }
+    }
+
+    fn candidate_target(
+        queue_mbps: u64,
+        min_mbps: u64,
+        max_mbps: u64,
+        action: RecommendationAction,
+        config: &StormguardConfig,
+    ) -> Option<u64> {
+        let multiplier = match action {
+            RecommendationAction::IncreaseFast => config.increase_fast_multiplier,
+            RecommendationAction::Increase => config.increase_multiplier,
+            RecommendationAction::Decrease => config.decrease_multiplier,
+            RecommendationAction::DecreaseFast => config.decrease_fast_multiplier,
+        };
+        let target = u64::max(4, (queue_mbps as f64 * multiplier).round() as u64);
+        (target != queue_mbps && target >= min_mbps && target <= max_mbps).then_some(target)
     }
 }

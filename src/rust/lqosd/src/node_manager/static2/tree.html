@@ -11,6 +11,24 @@
             </div>
         </div>
     </div>
+    <div class="col-12">
+        <ul class="nav nav-tabs lqos-tree-tabs" id="treeDetailTabs" role="tablist" aria-label="Network tree detail views">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tree-overview-tab" data-bs-toggle="tab" data-bs-target="#treeOverviewPane" type="button" role="tab" aria-controls="treeOverviewPane" aria-selected="true">
+                    Overview
+                </button>
+            </li>
+            <li class="nav-item d-none" id="treeStormguardTabItem" role="presentation">
+                <button class="nav-link" id="tree-stormguard-tab" data-bs-toggle="tab" data-bs-target="#treeStormguardPane" type="button" role="tab" aria-controls="treeStormguardPane" aria-selected="false">
+                    <i class="fa fa-bolt" aria-hidden="true"></i> StormGuard
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="col-12">
+        <div class="tab-content" id="treeDetailTabContent">
+            <div class="tab-pane fade show active" id="treeOverviewPane" role="tabpanel" aria-labelledby="tree-overview-tab" tabindex="0">
+                <div class="row g-4 align-items-stretch">
     <div class="col-lg-4">
         <div class="lqos-tree-panel lqos-tree-state-panel">
             <div class="d-flex align-items-center justify-content-between gap-2">
@@ -141,6 +159,67 @@
                                 <i class="fa fa-diagram-project"></i> Open in Topology
                             </a>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="treeStormguardPane" role="tabpanel" aria-labelledby="tree-stormguard-tab" tabindex="0">
+                <div class="lqos-tree-panel lqos-stormguard-tree-panel">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                        <div>
+                            <h5 class="mb-1"><i class="fa fa-bolt" aria-hidden="true"></i> StormGuard Diagnostics</h5>
+                            <div id="treeStormguardContext" class="small text-body-secondary" aria-live="polite"></div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <span id="treeStormguardRuntimeBadge" class="badge text-bg-secondary">Initializing</span>
+                            <a class="btn btn-sm btn-outline-primary" href="/config_stormguard.html">
+                                <i class="fa fa-gear" aria-hidden="true"></i> Open StormGuard Configuration
+                            </a>
+                        </div>
+                    </div>
+                    <div id="treeStormguardRuntimeMessage" class="alert alert-secondary py-2" role="status"></div>
+                    <div id="treeStormguardManagedContent">
+                        <div class="row g-3 mb-3">
+                            <div class="col-xl-4 col-md-6">
+                                <div class="lqos-stormguard-summary-card">
+                                    <span>Current Limits</span>
+                                    <strong id="treeStormguardLimits">—</strong>
+                                </div>
+                            </div>
+                            <div class="col-xl-4 col-md-6">
+                                <div class="lqos-stormguard-summary-card">
+                                    <span>Configured Bounds</span>
+                                    <strong id="treeStormguardBounds">—</strong>
+                                </div>
+                            </div>
+                            <div class="col-xl-4 col-md-6">
+                                <div class="lqos-stormguard-summary-card">
+                                    <span>Mode and Strategy</span>
+                                    <strong id="treeStormguardMode">—</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <div class="btn-group btn-group-sm" role="group" aria-label="StormGuard graph direction">
+                                <input type="radio" class="btn-check" name="treeStormguardDirection" id="treeStormguardDownload" value="download" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary" for="treeStormguardDownload">Download</label>
+                                <input type="radio" class="btn-check" name="treeStormguardDirection" id="treeStormguardUpload" value="upload" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="treeStormguardUpload">Upload</label>
+                            </div>
+                            <div id="treeStormguardDecision" class="small text-body-secondary"></div>
+                        </div>
+                        <div id="treeStormguardGraph" class="lqos-stormguard-tree-graph" role="img" aria-label="Five minute StormGuard queue, RTT, cooldown, decision, and action history" aria-describedby="treeStormguardGraphSummary"></div>
+                        <p id="treeStormguardGraphSummary" class="small text-body-secondary mt-2 mb-0">No graph history is available yet.</p>
+                        <dl class="lqos-tree-detail-grid mt-3">
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Cooldown</dt><dd id="treeStormguardCooldown" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Decision Reason</dt><dd id="treeStormguardReason" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">RTT Input</dt><dd id="treeStormguardRttSource" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Last Attempt</dt><dd id="treeStormguardOutcome" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Strategy Settings</dt><dd id="treeStormguardSettings" class="lqos-tree-detail-body">—</dd></div>
+                        </dl>
                     </div>
                 </div>
             </div>

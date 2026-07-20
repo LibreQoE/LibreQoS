@@ -317,6 +317,39 @@ pub struct StormguardDebugDirection {
     pub can_increase: bool,
     /// Whether StormGuard can decrease this direction
     pub can_decrease: bool,
+    /// Numeric decision score used by the legacy strategy.
+    #[serde(default)]
+    pub decision_score: Option<f64>,
+    /// Action indicated by the latest evaluation before runtime blockers are applied.
+    #[serde(default)]
+    pub candidate_action: Option<String>,
+    /// Queue target indicated by the latest evaluation.
+    #[serde(default)]
+    pub candidate_target_mbps: Option<u64>,
+    /// Human-readable explanation of the latest evaluation.
+    #[serde(default)]
+    pub decision_reason: String,
+    /// Reason the candidate action could not be attempted.
+    #[serde(default)]
+    pub decision_blocker: Option<String>,
+    /// Most recent action that StormGuard attempted.
+    #[serde(default)]
+    pub last_attempt_action: Option<String>,
+    /// Target rate of the most recent attempt.
+    #[serde(default)]
+    pub last_attempt_target_mbps: Option<u64>,
+    /// Result of the most recent attempt (`applied`, `dry_run`, `skipped`, or `failed`).
+    #[serde(default)]
+    pub last_attempt_outcome: Option<String>,
+    /// Unix timestamp in milliseconds for the most recent attempt.
+    #[serde(default)]
+    pub last_attempt_unix_ms: Option<u64>,
+    /// Application error associated with the most recent attempt.
+    #[serde(default)]
+    pub last_attempt_error: Option<String>,
+    /// RTT input used for this evaluation (`passive`, `active`, `blended`, or `none`).
+    #[serde(default)]
+    pub rtt_source: String,
 }
 
 /// Debug snapshot of StormGuard evaluation for a site
@@ -328,6 +361,66 @@ pub struct StormguardDebugEntry {
     pub download: StormguardDebugDirection,
     /// Upload direction debug data
     pub upload: StormguardDebugDirection,
+    /// Configured target for active RTT probes.
+    #[serde(default)]
+    pub active_ping_target: String,
+    /// Configured active RTT weight in the blended RTT calculation.
+    #[serde(default)]
+    pub active_ping_weight: f32,
+    /// Current download/upload counts of TCP flows contributing RTT samples.
+    #[serde(default)]
+    pub passive_rtt_flow_counts: (u32, u32),
+}
+
+/// Read-only StormGuard strategy inputs exposed for operator diagnostics.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct StormguardRuntimeSettings {
+    /// Fast increase multiplier.
+    pub increase_fast_multiplier: f64,
+    /// Normal increase multiplier.
+    pub increase_multiplier: f64,
+    /// Normal decrease multiplier.
+    pub decrease_multiplier: f64,
+    /// Fast decrease multiplier.
+    pub decrease_fast_multiplier: f64,
+    /// Absolute delay threshold in milliseconds.
+    pub delay_threshold_ms: f32,
+    /// Delay-to-baseline ratio threshold.
+    pub delay_threshold_ratio: f32,
+    /// Delay probe interval in seconds.
+    pub probe_interval_seconds: f32,
+    /// Minimum throughput required to accept passive RTT input.
+    pub min_throughput_mbps_for_rtt: f32,
+}
+
+/// Current lifecycle and dependency health of the StormGuard runtime.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct StormguardRuntimeStatus {
+    /// Whether StormGuard is enabled in configuration.
+    pub configured_enabled: bool,
+    /// Requested runtime mode (`disabled`, `dry_run`, or `live`).
+    pub mode: String,
+    /// Current lifecycle phase.
+    pub phase: String,
+    /// Whether Bakery has completed MQ setup.
+    pub bakery_ready: bool,
+    /// Whether cleanup of retained StormGuard state is still pending.
+    pub cleanup_pending: bool,
+    /// Current strategy name, when configured.
+    pub strategy: Option<String>,
+    /// Configured active ping target, when available.
+    pub active_ping_target: Option<String>,
+    /// Configured active ping weight, when available.
+    pub active_ping_weight: Option<f32>,
+    /// Read-only decision inputs, when runtime configuration is available.
+    #[serde(default)]
+    pub settings: Option<StormguardRuntimeSettings>,
+    /// Concise runtime status detail.
+    pub message: Option<String>,
+    /// Most recent runtime error.
+    pub last_error: Option<String>,
+    /// Unix timestamp in milliseconds for this status snapshot.
+    pub updated_at_unix_ms: u64,
 }
 
 /// Device counts (shaped devices and unknown IPs)
@@ -719,6 +812,9 @@ pub enum BusResponse {
     /// Stormguard debug snapshot
     StormguardDebug(Vec<StormguardDebugEntry>),
 
+    /// StormGuard lifecycle and dependency health.
+    StormguardRuntimeStatus(StormguardRuntimeStatus),
+
     /// Bakery statistics
     BakeryActiveCircuits(usize),
 
@@ -803,4 +899,117 @@ pub enum BusResponse {
 
     /// Result from a bus-backed override mutation.
     OverrideMutationResult(OverrideMutationResult),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Serialize)]
+    struct LegacyStormguardDirection {
+        queue_mbps: u64,
+        min_mbps: u64,
+        max_mbps: u64,
+        throughput_mbps: f64,
+        throughput_ma_mbps: Option<f64>,
+        retrans: Option<f64>,
+        retrans_ma: Option<f64>,
+        rtt: Option<f64>,
+        rtt_ma: Option<f64>,
+        passive_rtt_ms: Option<f64>,
+        active_ping_rtt_ms: Option<f64>,
+        baseline_rtt_ms: Option<f64>,
+        delay_ms: Option<f64>,
+        strategy: String,
+        last_action: Option<String>,
+        last_action_age_secs: Option<f32>,
+        state: String,
+        cooldown_remaining_secs: Option<f32>,
+        saturation_current: String,
+        saturation_max: String,
+        can_increase: bool,
+        can_decrease: bool,
+    }
+
+    #[derive(Serialize)]
+    struct LegacyStormguardEntry {
+        site: String,
+        download: LegacyStormguardDirection,
+        upload: LegacyStormguardDirection,
+    }
+
+    fn legacy_direction() -> LegacyStormguardDirection {
+        LegacyStormguardDirection {
+            queue_mbps: 50,
+            min_mbps: 10,
+            max_mbps: 100,
+            throughput_mbps: 42.0,
+            throughput_ma_mbps: None,
+            retrans: None,
+            retrans_ma: None,
+            rtt: Some(20.0),
+            rtt_ma: None,
+            passive_rtt_ms: Some(20.0),
+            active_ping_rtt_ms: None,
+            baseline_rtt_ms: None,
+            delay_ms: None,
+            strategy: "legacy_score".to_string(),
+            last_action: None,
+            last_action_age_secs: None,
+            state: "Running".to_string(),
+            cooldown_remaining_secs: None,
+            saturation_current: "Low".to_string(),
+            saturation_max: "Low".to_string(),
+            can_increase: true,
+            can_decrease: true,
+        }
+    }
+
+    #[test]
+    fn legacy_stormguard_debug_payload_defaults_additive_fields() {
+        let encoded = serde_cbor::to_vec(&LegacyStormguardEntry {
+            site: "North".to_string(),
+            download: legacy_direction(),
+            upload: legacy_direction(),
+        })
+        .expect("encode legacy payload");
+        let decoded: StormguardDebugEntry =
+            serde_cbor::from_slice(&encoded).expect("decode additive payload");
+        assert_eq!(decoded.site, "North");
+        assert_eq!(decoded.passive_rtt_flow_counts, (0, 0));
+        assert_eq!(decoded.download.decision_score, None);
+        assert_eq!(decoded.download.decision_reason, "");
+        assert_eq!(decoded.download.last_attempt_outcome, None);
+    }
+
+    #[test]
+    fn stormguard_runtime_status_round_trips_optional_settings() {
+        let status = StormguardRuntimeStatus {
+            configured_enabled: true,
+            mode: "live".to_string(),
+            phase: "degraded".to_string(),
+            bakery_ready: true,
+            cleanup_pending: false,
+            strategy: Some("delay_probe".to_string()),
+            active_ping_target: Some("1.1.1.1".to_string()),
+            active_ping_weight: Some(0.7),
+            settings: Some(StormguardRuntimeSettings {
+                increase_fast_multiplier: 1.3,
+                increase_multiplier: 1.15,
+                decrease_multiplier: 0.95,
+                decrease_fast_multiplier: 0.88,
+                delay_threshold_ms: 40.0,
+                delay_threshold_ratio: 1.1,
+                probe_interval_seconds: 10.0,
+                min_throughput_mbps_for_rtt: 0.05,
+            }),
+            message: Some("evaluating".to_string()),
+            last_error: Some("synthetic error".to_string()),
+            updated_at_unix_ms: 42,
+        };
+        let encoded = serde_cbor::to_vec(&status).expect("encode runtime status");
+        let decoded: StormguardRuntimeStatus =
+            serde_cbor::from_slice(&encoded).expect("decode runtime status");
+        assert_eq!(decoded, status);
+    }
 }
