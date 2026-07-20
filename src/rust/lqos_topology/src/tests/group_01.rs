@@ -565,10 +565,6 @@
         assert!(ready.ready);
         assert_eq!(ready.error, None);
         assert!(!ready.shaping_generation.is_empty());
-        let effective_network_generation =
-            compute_effective_network_file_generation(&topology_effective_network_path(&config))
-                .expect("effective network generation should compute from published file");
-        assert_eq!(ready.effective_generation, effective_network_generation);
         assert_eq!(
             ready.effective_state_path,
             topology_effective_state_path(&config)
@@ -591,6 +587,70 @@
         assert!(topology_effective_network_path(&config).exists());
         assert!(topology_shaping_inputs_path(&config).exists());
         assert!(topology_runtime_status_path(&config).exists());
+    }
+
+    #[test]
+    fn publish_runtime_status_hashes_existing_equal_effective_network_file() {
+        let lqos_directory = unique_temp_dir("lqos-topology-runtime-status-existing-network");
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Tower 1\",\"tower-1\",\"tower-1\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+
+        let mut artifacts = sample_runtime_artifacts();
+        artifacts.effective_network = Some(json!({
+            "Tower 1": {
+                "id": "tower-1",
+                "name": "Tower 1",
+                "downloadBandwidthMbps": -0.0,
+                "uploadBandwidthMbps": 100.0,
+                "children": {}
+            }
+        }));
+        let effective_network_path = topology_effective_network_path(&config);
+        let existing_effective_network = r#"{
+  "Tower 1": {
+    "id": "tower-1",
+    "name": "Tower 1",
+    "downloadBandwidthMbps": 0.0,
+    "uploadBandwidthMbps": 100.0,
+    "children": {}
+  }
+}"#;
+        fs::create_dir_all(
+            effective_network_path
+                .parent()
+                .expect("effective network path should have a parent"),
+        )
+        .expect("effective network state directory should exist");
+        fs::write(
+            &effective_network_path,
+            existing_effective_network,
+        )
+        .expect("existing effective network should write");
+
+        publish_effective_topology_artifacts(&config, &artifacts, "generation-1")
+            .expect("ready status should publish");
+        let ready = TopologyRuntimeStatusFile::load(&config).expect("ready status should load");
+        assert!(ready.ready);
+        assert_eq!(
+            fs::read_to_string(&effective_network_path)
+                .expect("effective network should remain readable"),
+            existing_effective_network,
+        );
+        let effective_network_generation =
+            compute_effective_network_file_generation(&effective_network_path)
+                .expect("effective network generation should compute from published file");
+        assert_eq!(ready.effective_generation, effective_network_generation);
     }
 
 
