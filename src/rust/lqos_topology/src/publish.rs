@@ -35,11 +35,6 @@ pub fn publish_effective_topology_artifacts(
     let effective_state_value = serde_json::to_value(&artifacts.effective)?;
 
     let effective_network_path = topology_effective_network_path(config);
-    let effective_generation = artifacts
-        .effective_network
-        .as_ref()
-        .map(compute_effective_network_generation)
-        .transpose()?;
 
     let shaping_inputs_path = topology_shaping_inputs_path(config);
     let shaping_inputs = build_shaping_inputs(config, artifacts)?;
@@ -87,6 +82,21 @@ pub fn publish_effective_topology_artifacts(
             )
         })?;
     }
+
+    let effective_generation = if artifacts.effective_network.is_some() {
+        Some(
+            compute_effective_network_file_generation(&effective_network_path).with_context(
+                || {
+                    format!(
+                        "Unable to compute effective topology generation from {:?}",
+                        effective_network_path
+                    )
+                },
+            )?,
+        )
+    } else {
+        None
+    };
 
     match prepared_shaping_inputs {
         Some((shaping_inputs, shaping_inputs_value)) => {

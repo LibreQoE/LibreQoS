@@ -565,6 +565,10 @@
         assert!(ready.ready);
         assert_eq!(ready.error, None);
         assert!(!ready.shaping_generation.is_empty());
+        let effective_network_generation =
+            compute_effective_network_file_generation(&topology_effective_network_path(&config))
+                .expect("effective network generation should compute from published file");
+        assert_eq!(ready.effective_generation, effective_network_generation);
         assert_eq!(
             ready.effective_state_path,
             topology_effective_state_path(&config)
