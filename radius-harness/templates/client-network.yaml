@@ -1,0 +1,4 @@
+version: 2
+ethernets:
+  mgmt0: {match: {macaddress: '52:54:00:30:00:10'}, set-name: mgmt0, dhcp4: true}
+  pppoe0: {match: {macaddress: '02:00:00:00:00:42'}, set-name: pppoe0, dhcp4: false}

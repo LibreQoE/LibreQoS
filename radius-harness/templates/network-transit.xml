@@ -1,0 +1,5 @@
+<network>
+  <name>radius-transit</name>
+  <bridge name='vbr-rtransit'/>
+  <forward mode='none'/>
+</network>

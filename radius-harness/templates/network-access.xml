@@ -1,0 +1,5 @@
+<network>
+  <name>radius-access</name>
+  <bridge name='vbr-raccess'/>
+  <forward mode='none'/>
+</network>

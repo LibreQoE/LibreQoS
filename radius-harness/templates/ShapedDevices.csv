@@ -1,0 +1,2 @@
+Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+radius-known-circuit,Radius Known Circuit,radius-known-device,Known RADIUS Subscriber,PPPoE Access,lab-pppoe-access,lab-core,pppoe-known,,,6,3,60,20,RADIUS username speed fixture
