@@ -343,7 +343,7 @@ function renderTable() {
     html += "<th class='text-nowrap'>Device ID</th>";
     html += "<th>Device Name</th>";
     html += "<th>Parent Node</th>";
-    html += "<th class='text-nowrap'>MAC</th>";
+    html += "<th class='text-nowrap'>MAC or RADIUS Username</th>";
     html += "<th>IP Addresses</th>";
     html += "<th class='text-nowrap'>Min Mbps</th>";
     html += "<th class='text-nowrap'>Max Mbps</th>";

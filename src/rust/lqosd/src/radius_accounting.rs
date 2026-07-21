@@ -5682,7 +5682,6 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             parent_node_id: Some("parent-node-id".to_string()),
             anchor_node_id: Some("anchor-node-id".to_string()),
             mac: "aa-bb-cc-dd-ee-ff".to_string(),
-            radius_username: String::new(),
             ipv4: Vec::new(),
             ipv6: Vec::new(),
             download_min_mbps: 5.0,

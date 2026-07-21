@@ -24,7 +24,7 @@
                     <div class="col-12 col-lg-6">
                         <div class="input-group">
                             <span class="input-group-text"><i class="fa fa-search"></i></span>
-                            <input id="sdSearch" type="text" class="form-control" placeholder="Search device/circuit/parent/MAC/IP...">
+                            <input id="sdSearch" type="text" class="form-control" placeholder="Search device/circuit/parent/MAC or username/IP...">
                         </div>
                     </div>
                     <div class="col-12 col-md-4 col-lg-3">
@@ -91,8 +91,9 @@
                             <select class="form-select" id="sdModalParentNode"></select>
                         </div>
                         <div class="col-md-6">
-                            <label for="sdModalMac" class="form-label">MAC</label>
-                            <input type="text" class="form-control" id="sdModalMac">
+                            <label for="sdModalMac" class="form-label">MAC or RADIUS Username</label>
+                            <input type="text" class="form-control" id="sdModalMac" aria-describedby="sdModalMacHelp">
+                            <div id="sdModalMacHelp" class="form-text">Use a MAC address for Calling-Station-Id matching, or a username for User-Name matching.</div>
                         </div>
                         <div class="col-md-6">
                             <label for="sdModalIpv4" class="form-label">IPv4 (one per line)</label>

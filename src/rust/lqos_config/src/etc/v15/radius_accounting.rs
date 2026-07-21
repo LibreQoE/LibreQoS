@@ -277,7 +277,7 @@ pub struct RadiusDynamicCircuitApplicationConfig {
     /// Match `Calling-Station-Id` values to `ShapedDevices.csv` MAC fields.
     #[serde(default)]
     pub match_shaped_devices_by_mac: bool,
-    /// Match RADIUS `User-Name` values to `ShapedDevices.csv` `RADIUS Username` fields.
+    /// Match RADIUS `User-Name` values to `ShapedDevices.csv` MAC fields verbatim.
     #[serde(default)]
     pub match_shaped_devices_by_username: bool,
     /// Parent node used for default RADIUS identities when MAC matching does not supply metadata.

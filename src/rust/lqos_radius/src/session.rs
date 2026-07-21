@@ -14,7 +14,7 @@ pub use lqos_config::RateProfileValidationError as SessionRateProfileError;
 /// Identity and fallback settings for ShapedDevices-backed RADIUS resolution.
 #[derive(Clone, Debug)]
 pub struct ShapedDevicesMatchOptions {
-    /// Whether `User-Name` matches the optional ShapedDevices RADIUS username.
+    /// Whether `User-Name` matches the ShapedDevices MAC field verbatim.
     pub match_by_username: bool,
     /// Whether `Calling-Station-Id` matches the ShapedDevices MAC field.
     pub match_by_mac: bool,
@@ -2017,11 +2017,7 @@ fn stable_subscriber_circuit_id(
     event: &AccountingEvent,
 ) -> Option<String> {
     let nas = key.nas()?.circuit_id_component();
-    if let Some(username) = event
-        .user_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+    if let Some(username) = event.user_name.as_deref().filter(|value| !value.is_empty())
     {
         return Some(format!(
             "radius:{nas}:username:{}",

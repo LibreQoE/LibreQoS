@@ -2724,7 +2724,7 @@ fn calling_station_identity_is_stable_across_sessions_and_scoped_to_the_nas() {
 }
 
 #[test]
-fn username_identity_trims_radius_whitespace() {
+fn username_identity_preserves_radius_whitespace() {
     let key = nas_session_key("nas-trimmed-username", "trimmed-username-session");
     let canonical = AccountingEvent {
         user_name: Some("subscriber@example.net".to_string()),
@@ -2735,16 +2735,15 @@ fn username_identity_trims_radius_whitespace() {
         ..AccountingEvent::default()
     };
 
-    assert_eq!(
+    assert_ne!(
         stable_subscriber_circuit_id(&key, &canonical),
         stable_subscriber_circuit_id(&key, &padded)
     );
 }
 
 #[test]
-fn username_only_match_creates_the_shaped_devices_dynamic_circuit() {
-    let mut device = shaped_device("username-circuit", "username-device", "");
-    device.radius_username = "pppoe-known".to_string();
+fn username_in_mac_field_creates_the_shaped_devices_dynamic_circuit() {
+    let device = shaped_device("username-circuit", "username-device", "pppoe-known");
     let matcher = ShapedDevicesMacMatcher::from_devices(&[device]);
     let mut store = AccountingSessionStore::new();
     let mut sink = RecordingCommandSink::default();
@@ -2780,10 +2779,8 @@ fn username_only_match_creates_the_shaped_devices_dynamic_circuit() {
 
 #[test]
 fn duplicate_username_rows_remain_pending_with_an_identity_diagnostic() {
-    let mut first = shaped_device("first-circuit", "first-device", "");
-    first.radius_username = "duplicate-user".to_string();
-    let mut second = shaped_device("second-circuit", "second-device", "");
-    second.radius_username = "duplicate-user".to_string();
+    let first = shaped_device("first-circuit", "first-device", "duplicate-user");
+    let second = shaped_device("second-circuit", "second-device", "duplicate-user");
     let matcher = ShapedDevicesMacMatcher::from_devices(&[first, second]);
     let mut store = AccountingSessionStore::new();
     let mut sink = RecordingCommandSink::default();
@@ -3258,7 +3255,6 @@ fn shaped_device(circuit_id: &str, device_id: &str, mac: &str) -> ShapedDevice {
         parent_node_id: Some("parent-node-id".to_string()),
         anchor_node_id: Some("anchor-node-id".to_string()),
         mac: mac.to_string(),
-        radius_username: String::new(),
         ipv4: vec![(Ipv4Addr::new(198, 51, 100, 200), 32)],
         ipv6: vec![("2001:db8:ffff::1".parse().unwrap(), 128)],
         download_min_mbps: 5.0,
