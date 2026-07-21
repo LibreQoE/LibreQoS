@@ -18,13 +18,14 @@
         TopologyCanonicalRateInputSource, TopologyCanonicalStateFile, TopologyEditorNode,
         TopologyEditorStateFile, TopologyEffectiveAttachmentState, TopologyEffectiveNodeState,
         TopologyEffectiveStateFile, TopologyQueueVisibilityPolicy, TopologyRuntimeStatusFile,
-        TopologyShapingResolutionSource, compute_effective_network_file_generation,
+        TopologyShapingInputsFile, TopologyShapingResolutionSource,
+        compute_effective_network_file_generation,
         topology_auto_attachment_option as auto_attachment_option, topology_effective_network_path,
         topology_effective_state_path, topology_runtime_status_path, topology_shaping_inputs_path,
     };
     use lqos_overrides::{TopologyAttachmentMode, TopologyOverridesFile};
     use serde_json::{Value, json};
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeMap, HashMap, HashSet};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};

@@ -5,3 +5,4 @@ include!("group_02.rs");
 include!("group_03.rs");
 include!("group_04.rs");
 include!("group_05.rs");
+include!("group_06.rs");

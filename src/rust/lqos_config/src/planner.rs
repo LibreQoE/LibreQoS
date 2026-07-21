@@ -201,6 +201,103 @@ fn next_free_minor(start_minor: u32, reserved: &BTreeSet<u32>) -> u32 {
     candidate
 }
 
+fn valid_class_minor(class_minor: u16) -> Option<u32> {
+    let class_minor = u32::from(class_minor);
+    (3..u32::from(u16::MAX))
+        .contains(&class_minor)
+        .then_some(class_minor)
+}
+
+fn expected_class_majors(queue: u32, stick_offset: u16) -> Option<(u16, u16)> {
+    let class_major = u16::try_from(queue).ok()?;
+    (class_major > 0).then_some((class_major, class_major.saturating_add(stick_offset)))
+}
+
+fn reserve_reusable_site_minors(
+    sites: &[SiteIdentityInput],
+    previous_sites: &BTreeMap<String, PlannerSiteIdentityState>,
+    stick_offset: u16,
+    reserved: &mut PlannerMinorReservations,
+) -> BTreeMap<String, u32> {
+    let current_sites = sites
+        .iter()
+        .map(|site| (site.site_key.as_str(), site))
+        .collect::<BTreeMap<_, _>>();
+    let mut reusable = BTreeMap::new();
+
+    for (site_key, site) in current_sites {
+        let Some(stored) = previous_sites.get(site_key) else {
+            continue;
+        };
+        let Some(class_minor) = valid_class_minor(stored.class_minor) else {
+            continue;
+        };
+        let Some((class_major, up_class_major)) = expected_class_majors(site.queue, stick_offset)
+        else {
+            continue;
+        };
+        if stored.queue != site.queue
+            || stored.parent_path != site.parent_path
+            || stored.class_major != class_major
+            || stored.up_class_major != up_class_major
+        {
+            continue;
+        }
+
+        let occupied = reserved.entry(site.queue).or_default();
+        if occupied.insert(class_minor) {
+            reusable.insert(site_key.to_string(), class_minor);
+        }
+    }
+
+    reusable
+}
+
+fn reserve_reusable_circuit_minors(
+    circuit_groups: &[CircuitIdentityGroupInput],
+    previous_circuits: &BTreeMap<String, PlannerCircuitIdentityState>,
+    stick_offset: u16,
+    reserved: &mut PlannerMinorReservations,
+) -> BTreeMap<String, u32> {
+    let current_circuits = circuit_groups
+        .iter()
+        .flat_map(|group| {
+            group
+                .circuit_ids
+                .iter()
+                .map(move |circuit_id| (circuit_id.as_str(), group))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut reusable = BTreeMap::new();
+
+    for (circuit_id, group) in current_circuits {
+        let Some(stored) = previous_circuits.get(circuit_id) else {
+            continue;
+        };
+        let Some(class_minor) = valid_class_minor(stored.class_minor) else {
+            continue;
+        };
+        let Some((class_major, up_class_major)) = expected_class_majors(group.queue, stick_offset)
+        else {
+            continue;
+        };
+        if stored.queue != group.queue
+            || stored.parent_node != group.parent_node
+            || stored.class_major != class_major
+            || stored.up_class_major != up_class_major
+        {
+            continue;
+        }
+
+        let occupied = reserved.entry(group.queue).or_default();
+        if occupied.insert(class_minor) {
+            reusable.insert(circuit_id.to_string(), class_minor);
+        }
+    }
+
+    reusable
+}
+
 /// Builds reservation maps for identities that are not part of the current planning scope.
 pub fn build_class_identity_reservations(
     sites: &[SiteIdentityInput],
@@ -220,10 +317,12 @@ pub fn build_class_identity_reservations(
         if planned_site_keys.contains(site_key.as_str()) {
             continue;
         }
-        reserved_site_minors
-            .entry(stored.queue)
-            .or_default()
-            .insert(stored.class_minor as u32);
+        if let Some(class_minor) = valid_class_minor(stored.class_minor) {
+            reserved_site_minors
+                .entry(stored.queue)
+                .or_default()
+                .insert(class_minor);
+        }
     }
 
     let mut reserved_circuit_minors: PlannerMinorReservations = BTreeMap::new();
@@ -231,10 +330,12 @@ pub fn build_class_identity_reservations(
         if planned_circuit_ids.contains(circuit_id.as_str()) {
             continue;
         }
-        reserved_circuit_minors
-            .entry(stored.queue)
-            .or_default()
-            .insert(stored.class_minor as u32);
+        if let Some(class_minor) = valid_class_minor(stored.class_minor) {
+            reserved_circuit_minors
+                .entry(stored.queue)
+                .or_default()
+                .insert(class_minor);
+        }
     }
 
     (reserved_site_minors, reserved_circuit_minors)
@@ -334,7 +435,7 @@ pub fn plan_top_level_assignments(
     let rr_assignment = round_robin_assign(items, bins);
     let greedy_assignment = greedy_assign(items, bins);
 
-    let (mut assignment, planner_used) = match params.mode {
+    let (assignment, planner_used) = match params.mode {
         TopLevelPlannerMode::RoundRobin => (rr_assignment.clone(), false),
         TopLevelPlannerMode::Greedy => (greedy_assignment.clone(), false),
         TopLevelPlannerMode::StableGreedy => {
@@ -361,11 +462,11 @@ pub fn plan_top_level_assignments(
             });
 
             let mut moves_used = 0usize;
-            for id in weighted_ids {
-                let Some(current_bin) = assignment.get(&id).cloned() else {
+            for id in &weighted_ids {
+                let Some(current_bin) = assignment.get(id).cloned() else {
                     continue;
                 };
-                let Some(target_bin) = greedy_assignment.get(&id).cloned() else {
+                let Some(target_bin) = greedy_assignment.get(id).cloned() else {
                     continue;
                 };
                 if current_bin == target_bin {
@@ -374,35 +475,52 @@ pub fn plan_top_level_assignments(
                 if moves_used >= params.move_budget_per_run {
                     continue;
                 }
-                let last_changed = last_change_ts.get(&id).copied().unwrap_or(0.0);
+                let last_changed = last_change_ts.get(id).copied().unwrap_or(0.0);
                 if now_ts - last_changed < params.cooldown_seconds {
                     continue;
                 }
                 let current_load = loads.get(&current_bin).copied().unwrap_or(0.0);
                 let target_load = loads.get(&target_bin).copied().unwrap_or(0.0);
-                if current_load - target_load <= min_improvement {
+                let weight = item_weights.get(id).copied().unwrap_or(1.0);
+                let imbalance_before = current_load - target_load;
+                let imbalance_after = ((current_load - weight) - (target_load + weight)).abs();
+                if imbalance_before - imbalance_after <= min_improvement {
                     continue;
                 }
 
-                let weight = item_weights.get(&id).copied().unwrap_or(1.0);
                 if let Some(load) = loads.get_mut(&current_bin) {
                     *load -= weight;
                 }
                 if let Some(load) = loads.get_mut(&target_bin) {
                     *load += weight;
                 }
-                assignment.insert(id, target_bin);
+                assignment.insert(id.clone(), target_bin);
                 moves_used += 1;
+            }
+
+            let used_bins = assignment.values().collect::<BTreeSet<_>>();
+            if bins.len() > 1
+                && assignment.len() > 1
+                && used_bins.len() <= 1
+                && moves_used < params.move_budget_per_run
+            {
+                for id in weighted_ids {
+                    let Some(current_bin) = assignment.get(&id) else {
+                        continue;
+                    };
+                    let Some(target_bin) = greedy_assignment.get(&id) else {
+                        continue;
+                    };
+                    if current_bin != target_bin {
+                        assignment.insert(id, target_bin.clone());
+                        break;
+                    }
+                }
             }
 
             (assignment, true)
         }
     };
-
-    let used_bins: std::collections::BTreeSet<&String> = assignment.values().collect();
-    if bins.len() > 1 && assignment.len() > 1 && used_bins.len() <= 1 {
-        assignment = greedy_assignment.clone();
-    }
 
     let mut changed: Vec<String> = assignment
         .iter()
@@ -433,39 +551,49 @@ pub fn plan_class_identities_with_constraints(
     constraints: &ClassIdentityPlannerConstraints,
 ) -> ClassIdentityPlannerOutput {
     let mut reserved_site_minors = constraints.reserved_site_minors.clone();
+    for (queue, minors) in &constraints.reserved_circuit_minors {
+        reserved_site_minors
+            .entry(*queue)
+            .or_default()
+            .extend(minors.iter().copied());
+    }
+    let reusable_site_minors = reserve_reusable_site_minors(
+        sites,
+        previous_sites,
+        constraints.stick_offset,
+        &mut reserved_site_minors,
+    );
+    let reusable_circuit_minors = reserve_reusable_circuit_minors(
+        circuit_groups,
+        previous_circuits,
+        constraints.stick_offset,
+        &mut reserved_site_minors,
+    );
     let mut next_site_minor_by_queue: BTreeMap<u32, u32> = BTreeMap::new();
     let mut site_assignments = Vec::with_capacity(sites.len());
     let mut site_state = BTreeMap::new();
-    for (queue, reserved) in &reserved_site_minors {
-        let next_minor = next_site_minor_by_queue
-            .entry(*queue)
-            .or_insert(constraints.site_minor_start.max(3));
-        if let Some(last_reserved) = reserved.iter().next_back().copied() {
-            *next_minor = (*next_minor).max(last_reserved.saturating_add(1));
-        }
-    }
 
     for site in sites {
         let reserved = reserved_site_minors.entry(site.queue).or_default();
         let next_minor = next_site_minor_by_queue
             .entry(site.queue)
             .or_insert(constraints.site_minor_start.max(3));
-        let reuse_minor = previous_sites.get(&site.site_key).and_then(|stored| {
-            (stored.queue == site.queue
-                && stored.parent_path == site.parent_path
-                && !reserved.contains(&(stored.class_minor as u32)))
-            .then_some(stored.class_minor as u32)
-        });
+        let reuse_minor = reusable_site_minors.get(&site.site_key).copied();
 
-        let class_minor_u32 = reuse_minor.unwrap_or_else(|| next_free_minor(*next_minor, reserved));
+        let class_minor_u32 = if let Some(reused_minor) = reuse_minor {
+            reused_minor
+        } else {
+            let allocated_minor = next_free_minor(*next_minor, reserved);
+            *next_minor = allocated_minor.saturating_add(1);
+            if site.has_children {
+                *next_minor = (*next_minor).saturating_add(1);
+            }
+            allocated_minor
+        };
         let class_minor = u16::try_from(class_minor_u32).unwrap_or(u16::MAX);
         let class_major = u16::try_from(site.queue).unwrap_or(u16::MAX);
         let up_class_major = class_major.saturating_add(constraints.stick_offset);
         reserved.insert(class_minor_u32);
-        *next_minor = (*next_minor).max(class_minor_u32).saturating_add(1);
-        if site.has_children {
-            *next_minor = (*next_minor).saturating_add(1);
-        }
 
         let assigned = SiteIdentityAssignment {
             site_key: site.site_key.clone(),
@@ -489,12 +617,6 @@ pub fn plan_class_identities_with_constraints(
     }
 
     let mut reserved_circuit_minors = reserved_site_minors.clone();
-    for (queue, extras) in &constraints.reserved_circuit_minors {
-        reserved_circuit_minors
-            .entry(*queue)
-            .or_default()
-            .extend(extras.iter().copied());
-    }
     let mut next_circuit_minor_by_queue = BTreeMap::new();
     for (queue, reserved) in &reserved_circuit_minors {
         let start = next_site_minor_by_queue
@@ -515,19 +637,18 @@ pub fn plan_class_identities_with_constraints(
             .entry(group.queue)
             .or_insert_with(|| next_free_minor(constraints.circuit_minor_start.max(3), reserved));
         for circuit_id in &group.circuit_ids {
-            let reuse_minor = previous_circuits.get(circuit_id).and_then(|stored| {
-                (stored.queue == group.queue
-                    && stored.parent_node == group.parent_node
-                    && !reserved.contains(&(stored.class_minor as u32)))
-                .then_some(stored.class_minor as u32)
-            });
-            let class_minor_u32 =
-                reuse_minor.unwrap_or_else(|| next_free_minor(*next_minor, reserved));
+            let reuse_minor = reusable_circuit_minors.get(circuit_id).copied();
+            let class_minor_u32 = if let Some(reused_minor) = reuse_minor {
+                reused_minor
+            } else {
+                let allocated_minor = next_free_minor(*next_minor, reserved);
+                *next_minor = allocated_minor.saturating_add(1);
+                allocated_minor
+            };
             let class_minor = u16::try_from(class_minor_u32).unwrap_or(u16::MAX);
             let class_major = u16::try_from(group.queue).unwrap_or(u16::MAX);
             let up_class_major = class_major.saturating_add(constraints.stick_offset);
             reserved.insert(class_minor_u32);
-            *next_minor = (*next_minor).max(class_minor_u32).saturating_add(1);
 
             circuit_assignments.push(CircuitIdentityAssignment {
                 circuit_id: circuit_id.clone(),
@@ -563,7 +684,15 @@ pub fn plan_class_identities_with_constraints(
             .get(&queue)
             .copied()
             .unwrap_or(3);
-        last_used_minor_by_queue.insert(queue, site_next.max(circuit_next));
+        let highest_reserved_next = reserved_circuit_minors
+            .get(&queue)
+            .and_then(|reserved| reserved.iter().next_back().copied())
+            .unwrap_or(2)
+            .saturating_add(1);
+        last_used_minor_by_queue.insert(
+            queue,
+            site_next.max(circuit_next).max(highest_reserved_next),
+        );
     }
 
     ClassIdentityPlannerOutput {
@@ -724,6 +853,99 @@ mod tests {
         );
         assert_eq!(result.changed, vec!["light".to_string()]);
         assert!(result.planner_used);
+    }
+
+    #[test]
+    fn stable_greedy_does_not_make_balance_worse() {
+        let items = vec![
+            TopLevelPlannerItem {
+                id: "a".to_string(),
+                weight: 2.0,
+            },
+            TopLevelPlannerItem {
+                id: "b".to_string(),
+                weight: 2.0,
+            },
+            TopLevelPlannerItem {
+                id: "c".to_string(),
+                weight: 3.0,
+            },
+            TopLevelPlannerItem {
+                id: "d".to_string(),
+                weight: 5.0,
+            },
+            TopLevelPlannerItem {
+                id: "e".to_string(),
+                weight: 3.0,
+            },
+        ];
+        let prev_assign = BTreeMap::from([
+            ("a".to_string(), "CpueQueue1".to_string()),
+            ("b".to_string(), "CpueQueue0".to_string()),
+            ("c".to_string(), "CpueQueue1".to_string()),
+            ("d".to_string(), "CpueQueue0".to_string()),
+        ]);
+
+        let result = plan_top_level_assignments(
+            &items,
+            &bins(),
+            &prev_assign,
+            &BTreeMap::new(),
+            10_000.0,
+            &TopLevelPlannerParams {
+                mode: TopLevelPlannerMode::StableGreedy,
+                cooldown_seconds: 0.0,
+                move_budget_per_run: 1,
+                hysteresis_threshold: 0.03,
+            },
+        );
+
+        assert!(result.changed.is_empty());
+        for (circuit_id, previous_bin) in prev_assign {
+            assert_eq!(result.assignment[&circuit_id], previous_bin);
+        }
+    }
+
+    #[test]
+    fn stable_greedy_single_bin_recovery_respects_move_budget() {
+        let items = (0..6)
+            .map(|index| TopLevelPlannerItem {
+                id: format!("circuit-{index}"),
+                weight: 1.0,
+            })
+            .collect::<Vec<_>>();
+        let prev_assign = items
+            .iter()
+            .map(|item| (item.id.clone(), "CpueQueue0".to_string()))
+            .collect::<BTreeMap<_, _>>();
+        let last_change_ts = items
+            .iter()
+            .map(|item| (item.id.clone(), 999.0))
+            .collect::<BTreeMap<_, _>>();
+
+        let result = plan_top_level_assignments(
+            &items,
+            &bins(),
+            &prev_assign,
+            &last_change_ts,
+            1_000.0,
+            &TopLevelPlannerParams {
+                mode: TopLevelPlannerMode::StableGreedy,
+                cooldown_seconds: 3_600.0,
+                move_budget_per_run: 1,
+                hysteresis_threshold: 0.0,
+            },
+        );
+
+        assert_eq!(result.changed.len(), 1);
+        assert_eq!(
+            result
+                .assignment
+                .values()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -964,5 +1186,231 @@ mod tests {
 
         assert_eq!(result.sites.len(), 1);
         assert!(result.sites[0].class_minor >= 0x1000);
+    }
+
+    #[test]
+    fn class_identity_planner_protects_existing_circuits_from_sorted_insertions() {
+        let circuit_groups = vec![CircuitIdentityGroupInput {
+            parent_node: "flat-bucket".to_string(),
+            queue: 1,
+            circuit_ids: vec![
+                "a-new".to_string(),
+                "m-existing".to_string(),
+                "z-existing".to_string(),
+            ],
+        }];
+        let previous_circuits = BTreeMap::from([
+            (
+                "m-existing".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: 10,
+                    queue: 1,
+                    parent_node: "flat-bucket".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+            (
+                "z-existing".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: 11,
+                    queue: 1,
+                    parent_node: "flat-bucket".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+        ]);
+
+        let result = plan_class_identities(
+            &[],
+            &circuit_groups,
+            &BTreeMap::new(),
+            &previous_circuits,
+            0,
+            0,
+        );
+
+        assert_eq!(result.circuit_state["m-existing"].class_minor, 10);
+        assert_eq!(result.circuit_state["z-existing"].class_minor, 11);
+        assert_eq!(result.circuit_state["a-new"].class_minor, 3);
+
+        let repeated = plan_class_identities(
+            &[],
+            &circuit_groups,
+            &BTreeMap::new(),
+            &result.circuit_state,
+            0,
+            0,
+        );
+        assert_eq!(repeated.circuit_state, result.circuit_state);
+        assert_eq!(
+            repeated.last_used_minor_by_queue,
+            result.last_used_minor_by_queue
+        );
+    }
+
+    #[test]
+    fn class_identity_planner_reassigns_only_the_circuit_that_moved() {
+        let circuit_groups = vec![
+            CircuitIdentityGroupInput {
+                parent_node: "bucket-a".to_string(),
+                queue: 1,
+                circuit_ids: vec!["stable".to_string()],
+            },
+            CircuitIdentityGroupInput {
+                parent_node: "bucket-b".to_string(),
+                queue: 2,
+                circuit_ids: vec!["moved".to_string()],
+            },
+        ];
+        let previous_circuits = BTreeMap::from([
+            (
+                "stable".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: 20,
+                    queue: 1,
+                    parent_node: "bucket-a".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+            (
+                "moved".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: 21,
+                    queue: 1,
+                    parent_node: "bucket-a".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+        ]);
+
+        let result = plan_class_identities(
+            &[],
+            &circuit_groups,
+            &BTreeMap::new(),
+            &previous_circuits,
+            0,
+            0,
+        );
+
+        assert_eq!(result.circuit_state["stable"], previous_circuits["stable"]);
+        assert_ne!(result.circuit_state["moved"], previous_circuits["moved"]);
+        assert_eq!(result.circuit_state["moved"].queue, 2);
+        assert_eq!(result.circuit_state["moved"].parent_node, "bucket-b");
+    }
+
+    #[test]
+    fn class_identity_planner_rejects_duplicate_stale_and_invalid_saved_identities() {
+        let circuit_groups = vec![CircuitIdentityGroupInput {
+            parent_node: "flat-bucket".to_string(),
+            queue: 1,
+            circuit_ids: vec![
+                "duplicate-a".to_string(),
+                "duplicate-b".to_string(),
+                "stale-parent".to_string(),
+                "reserved-minor".to_string(),
+            ],
+        }];
+        let previous_circuits = BTreeMap::from([
+            (
+                "duplicate-a".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: 10,
+                    queue: 1,
+                    parent_node: "flat-bucket".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+            (
+                "duplicate-b".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: 10,
+                    queue: 1,
+                    parent_node: "flat-bucket".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+            (
+                "stale-parent".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: 11,
+                    queue: 1,
+                    parent_node: "old-bucket".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+            (
+                "reserved-minor".to_string(),
+                PlannerCircuitIdentityState {
+                    class_minor: u16::MAX,
+                    queue: 1,
+                    parent_node: "flat-bucket".to_string(),
+                    class_major: 1,
+                    up_class_major: 1,
+                },
+            ),
+        ]);
+
+        let result = plan_class_identities(
+            &[],
+            &circuit_groups,
+            &BTreeMap::new(),
+            &previous_circuits,
+            0,
+            0,
+        );
+        let assigned_minors = result
+            .circuits
+            .iter()
+            .map(|circuit| circuit.class_minor)
+            .collect::<std::collections::BTreeSet<_>>();
+
+        assert_eq!(result.circuits.len(), assigned_minors.len());
+        assert_eq!(result.circuit_state["duplicate-a"].class_minor, 10);
+        assert_ne!(result.circuit_state["duplicate-b"].class_minor, 10);
+        assert_ne!(result.circuit_state["stale-parent"].class_minor, 11);
+        assert_ne!(result.circuit_state["reserved-minor"].class_minor, u16::MAX);
+        assert!(
+            assigned_minors
+                .iter()
+                .all(|minor| (3..u16::MAX).contains(minor))
+        );
+    }
+
+    #[test]
+    fn class_identity_planner_fills_holes_below_high_saved_minors() {
+        let circuit_groups = vec![CircuitIdentityGroupInput {
+            parent_node: "flat-bucket".to_string(),
+            queue: 1,
+            circuit_ids: vec!["existing".to_string(), "new".to_string()],
+        }];
+        let previous_circuits = BTreeMap::from([(
+            "existing".to_string(),
+            PlannerCircuitIdentityState {
+                class_minor: u16::MAX - 1,
+                queue: 1,
+                parent_node: "flat-bucket".to_string(),
+                class_major: 1,
+                up_class_major: 1,
+            },
+        )]);
+
+        let result = plan_class_identities(
+            &[],
+            &circuit_groups,
+            &BTreeMap::new(),
+            &previous_circuits,
+            0,
+            0,
+        );
+
+        assert_eq!(result.circuit_state["existing"].class_minor, u16::MAX - 1);
+        assert_eq!(result.circuit_state["new"].class_minor, 3);
     }
 }
