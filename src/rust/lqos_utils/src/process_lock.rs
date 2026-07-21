@@ -172,6 +172,7 @@ struct LockMetadata {
     process: Option<String>,
     operation: Option<String>,
     created_unix: Option<u64>,
+    process_start_ticks: Option<u64>,
 }
 
 impl LockMetadata {
@@ -184,6 +185,7 @@ impl LockMetadata {
                 .duration_since(UNIX_EPOCH)
                 .ok()
                 .map(|duration| duration.as_secs()),
+            process_start_ticks: process_start_ticks_for_pid(unsafe { getpid() }),
         }
     }
 
@@ -196,6 +198,7 @@ impl LockMetadata {
                 process: None,
                 operation: None,
                 created_unix: None,
+                process_start_ticks: None,
             });
         }
 
@@ -203,6 +206,7 @@ impl LockMetadata {
         let mut process = None;
         let mut operation = None;
         let mut created_unix = None;
+        let mut process_start_ticks = None;
         for line in contents.lines() {
             let Some((key, value)) = line.split_once('=') else {
                 continue;
@@ -230,6 +234,14 @@ impl LockMetadata {
                         }
                     })?)
                 }
+                "process_start_ticks" => {
+                    process_start_ticks = Some(value.trim().parse::<u64>().map_err(|source| {
+                        ProcessLockError::InvalidMetadata {
+                            path: path.to_path_buf(),
+                            source,
+                        }
+                    })?)
+                }
                 _ => {}
             }
         }
@@ -245,6 +257,7 @@ impl LockMetadata {
             process,
             operation,
             created_unix,
+            process_start_ticks,
         })
     }
 
@@ -255,10 +268,14 @@ impl LockMetadata {
             .created_unix
             .map(|seconds| seconds.to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        format!(
+        let mut serialized = format!(
             "pid={}\nprocess={}\noperation={}\ncreated_unix={}\n",
             self.pid, process, operation, created_unix
-        )
+        );
+        if let Some(process_start_ticks) = self.process_start_ticks {
+            serialized.push_str(&format!("process_start_ticks={process_start_ticks}\n"));
+        }
+        serialized
     }
 
     fn describe_holder(&self) -> String {
@@ -271,6 +288,9 @@ impl LockMetadata {
         }
         if let Some(created_unix) = self.created_unix {
             parts.push(format!("created_unix={created_unix}"));
+        }
+        if let Some(process_start_ticks) = self.process_start_ticks {
+            parts.push(format!("process_start_ticks={process_start_ticks}"));
         }
         parts.join(", ")
     }
@@ -382,6 +402,15 @@ impl ProcessFileLock {
         let ret = unsafe { nix::libc::kill(metadata.pid, 0) };
         if ret != 0 {
             return Errno::last() != Errno::ESRCH;
+        }
+
+        if let Some(expected_start_ticks) = metadata.process_start_ticks {
+            let Some(actual_start_ticks) = process_start_ticks_for_pid(metadata.pid) else {
+                return true;
+            };
+            if actual_start_ticks != expected_start_ticks {
+                return false;
+            }
         }
 
         let Some(needle) = process_name_contains else {
@@ -543,6 +572,12 @@ fn process_comm_for_pid(pid: i32) -> Option<String> {
         .and_then(|name| non_empty_sanitized(name.trim()))
 }
 
+fn process_start_ticks_for_pid(pid: i32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, fields) = stat.rsplit_once(')')?;
+    fields.split_whitespace().nth(19)?.parse().ok()
+}
+
 fn process_argv0_from_cmdline_bytes(raw: &[u8]) -> Option<String> {
     raw.split(|byte| *byte == 0)
         .next()
@@ -582,7 +617,7 @@ fn sanitize_lock_field(value: &str) -> String {
 mod tests {
     use super::{
         LockMetadata, ProcessFileLock, ProcessLockConfig, ProcessLockError,
-        process_argv0_from_cmdline_bytes, process_name_matches,
+        process_argv0_from_cmdline_bytes, process_name_matches, process_start_ticks_for_pid,
     };
     use std::{
         fs::{create_dir_all, read_to_string, remove_dir_all, write},
@@ -678,6 +713,7 @@ mod tests {
             Some("load effective overrides")
         );
         assert_eq!(metadata.created_unix, Some(1_800_000_000));
+        assert_eq!(metadata.process_start_ticks, None);
     }
 
     #[test]
@@ -709,10 +745,37 @@ mod tests {
             assert!(contents.contains("process="));
             assert!(contents.contains("operation=load effective overrides"));
             assert!(contents.contains("created_unix="));
+            assert!(contents.contains("process_start_ticks="));
         }
 
         assert!(!path.exists());
         remove_dir_all(&dir).expect("failed to clean up temp test dir");
+    }
+
+    #[test]
+    fn start_ticks_distinguish_reused_pids() {
+        let mut metadata = LockMetadata::current("save operator overrides");
+        let current_start_ticks = process_start_ticks_for_pid(metadata.pid)
+            .expect("current process should expose Linux start ticks");
+        assert!(ProcessFileLock::is_lock_valid(&metadata, None));
+
+        metadata.process_start_ticks = Some(current_start_ticks.saturating_add(1));
+        assert!(!ProcessFileLock::is_lock_valid(&metadata, None));
+    }
+
+    #[test]
+    fn metadata_without_start_ticks_round_trips() {
+        let metadata = LockMetadata {
+            pid: 12345,
+            process: Some("lqos_overrides".to_string()),
+            operation: Some("save operator overrides".to_string()),
+            created_unix: Some(1_800_000_000),
+            process_start_ticks: None,
+        };
+        let parsed = LockMetadata::parse(&metadata.serialize(), std::path::Path::new("test.lock"))
+            .expect("metadata without start ticks should remain readable");
+
+        assert_eq!(parsed, metadata);
     }
 
     #[test]

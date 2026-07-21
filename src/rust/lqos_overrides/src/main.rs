@@ -249,6 +249,7 @@ impl AddArgs {
             parent_node_id: None,
             anchor_node_id: None,
             mac: self.mac,
+            radius_username: String::new(),
             ipv4,
             ipv6,
             download_min_mbps: self.download_min_mbps,
