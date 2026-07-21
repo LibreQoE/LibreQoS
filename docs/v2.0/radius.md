@@ -16,7 +16,7 @@ it can inspect traffic inside the PPPoE session: customer access flows through
 LibreQoS to the BNG, then to the Internet. The Accounting packets tell LibreQoS
 which active subscriber circuit owns the traffic it can already observe.
 
-```mermaid
+```{mermaid}
 flowchart LR
     CPE[Customer CPE] --> ACCESS[Access network]
     ACCESS --> LQOS[LibreQoS inline shaper]
@@ -29,7 +29,7 @@ LibreQoS does not terminate PPPoE and RADIUS accounting does not redirect
 customer traffic through LibreQoS. The BNG terminates PPPoE; LibreQoS uses the
 accounting identity to create and remove the corresponding shaping circuit.
 
-```mermaid
+```{mermaid}
 sequenceDiagram
     participant CPE as Subscriber CPE
     participant BNG as BNG / NAS
@@ -149,7 +149,7 @@ proxy to LibreQoS. LibreQoS needs Accounting packets, not Access-Request or
 Access-Accept packets. The proxy owns the shared-secret relationship on both
 legs and is the RADIUS client listed in `radius_accounting.clients`.
 
-```mermaid
+```{mermaid}
 flowchart LR
     CPE[Subscriber CPE] -->|PPPoE| BNG[MikroTik BNG]
     BNG -->|UDP 1812/1813| PROXY[RADIUS proxy]
