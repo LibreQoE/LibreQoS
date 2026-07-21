@@ -199,6 +199,9 @@ Notes:
 
 LibreQoS accepts an optional `[radius_accounting]` section for trusted NAS client settings. When enabled, `lqosd` starts a RADIUS accounting listener, verifies packets from configured clients, sends Accounting-Response packets for accepted requests, and keeps the decoded session state in memory. When both `radius_accounting.dynamic_circuit_application.enabled` and top-level `dynamic_circuits.enabled` are true, shapeable Start and Interim-Update sessions are submitted to the dynamic-circuit path.
 
+For deployment patterns, MikroTik PPPoE BNG setup, and lifecycle validation, see
+[RADIUS accounting and dynamic circuits](radius.md).
+
 Example:
 
 ```toml

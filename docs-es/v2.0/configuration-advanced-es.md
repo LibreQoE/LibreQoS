@@ -66,6 +66,9 @@ do_not_track_subnets = ["192.168.0.0/16"]
 
 LibreQoS acepta una sección opcional `[radius_accounting]` para definir clientes NAS de confianza. Cuando está habilitada, `lqosd` inicia un servicio de contabilidad RADIUS, verifica paquetes de los clientes configurados, envía paquetes Accounting-Response para solicitudes aceptadas y mantiene el estado de sesión decodificado en memoria. Cuando `radius_accounting.dynamic_circuit_application.enabled` y la opción global `dynamic_circuits.enabled` están habilitadas, las sesiones Start e Interim-Update aptas se envían a la ruta de circuitos dinámicos.
 
+Para patrones de despliegue, configuración de un BNG PPPoE MikroTik y validación
+del ciclo de vida, consulte [Contabilidad RADIUS y circuitos dinámicos](radius-es.md).
+
 Ejemplo:
 
 ```toml
