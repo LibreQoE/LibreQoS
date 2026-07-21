@@ -1853,9 +1853,9 @@ fn session_dynamic_metadata(
         &resolution.mapping,
     );
     let has_circuit_identity =
-        circuit_identity_available(key, resolution.matched_shaped_device.as_ref());
+        circuit_identity_available(key, resolution.matched_shaped_device.as_ref(), event);
     let has_device_identity =
-        device_identity_available(key, resolution.matched_shaped_device.as_ref());
+        device_identity_available(key, resolution.matched_shaped_device.as_ref(), event);
     let pending_reasons = pending_reasons(
         event,
         &resolution.mapping,
@@ -1956,23 +1956,25 @@ fn parent_from_mapping(mapping: &DynamicCircuitMapping) -> Option<DynamicCircuit
 fn circuit_identity_available(
     key: &AccountingSessionKey,
     matched_shaped_device: Option<&ShapedDevice>,
+    event: &AccountingEvent,
 ) -> bool {
     if let Some(device) = matched_shaped_device {
         return !device.circuit_id.trim().is_empty();
     }
 
-    key.dynamic_circuit_id().is_some()
+    stable_subscriber_circuit_id(key, event).is_some()
 }
 
 fn device_identity_available(
     key: &AccountingSessionKey,
     matched_shaped_device: Option<&ShapedDevice>,
+    event: &AccountingEvent,
 ) -> bool {
     if let Some(device) = matched_shaped_device {
         return !device.device_id.trim().is_empty();
     }
 
-    key.dynamic_circuit_id().is_some()
+    stable_subscriber_circuit_id(key, event).is_some()
 }
 
 fn default_resolved_shaped_device(
@@ -1980,7 +1982,7 @@ fn default_resolved_shaped_device(
     event: &AccountingEvent,
     parent: &DynamicCircuitParent,
 ) -> Option<ShapedDevice> {
-    let circuit_id = key.dynamic_circuit_id()?;
+    let circuit_id = stable_subscriber_circuit_id(key, event)?;
     let device_id = circuit_id.clone();
     Some(ShapedDevice {
         circuit_name: default_circuit_name(event, &circuit_id),
@@ -2000,6 +2002,40 @@ fn default_resolved_shaped_device(
         parent_hash: 0,
         ..ShapedDevice::default()
     })
+}
+
+/// Returns the stable customer circuit ID for an unmatched dynamic RADIUS session.
+///
+/// This deliberately does not use the RADIUS accounting session ID: a subscriber
+/// reconnects with a new session ID, but must retain the same circuit identity for
+/// Insight and exported historical data. The NAS identity scopes the subscriber
+/// identity so identical usernames on separate BNGs cannot collide. Username is
+/// preferred because it is the configured subscriber identity for PPPoE and
+/// DHCP-RADIUS; otherwise a normalized Calling-Station-Id is used.
+fn stable_subscriber_circuit_id(
+    key: &AccountingSessionKey,
+    event: &AccountingEvent,
+) -> Option<String> {
+    let nas = key.nas()?.circuit_id_component();
+    if let Some(username) = event
+        .user_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(format!(
+            "radius:{nas}:username:{}",
+            hex_component(username.as_bytes())
+        ));
+    }
+
+    let calling_station_id = non_empty_str(&event.calling_station_id)?;
+    let identity = crate::mac_match::normalize_radius_mac(calling_station_id)
+        .unwrap_or_else(|| calling_station_id.to_string());
+    Some(format!(
+        "radius:{nas}:calling-station:{}",
+        hex_component(identity.as_bytes())
+    ))
 }
 
 fn apply_parent_attachment(device: &mut ShapedDevice, parent: &DynamicCircuitParent) {

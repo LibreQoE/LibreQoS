@@ -745,6 +745,7 @@ fn pending_reasons_are_retained_for_unshapeable_sessions() {
     );
 
     let mut route_only = minimal_session_event(AcctStatusType::Start, "nas-route", "session-route");
+    route_only.user_name = Some("subscriber".to_string());
     route_only.framed_routes = vec!["198.51.100.0/24 192.0.2.1 1".to_string()];
     route_only.mikrotik_rate_limits = vec![rate_limit()];
     let route_key = nas_session_key("nas-route", "session-route");
@@ -769,6 +770,7 @@ fn pending_reasons_are_retained_for_unshapeable_sessions() {
         "nas-framed-ipv6-prefix",
         "session-framed-ipv6-prefix",
     );
+    framed_ipv6_prefix_only.user_name = Some("subscriber".to_string());
     framed_ipv6_prefix_only.framed_ipv6_prefixes = vec![Ipv6Prefix {
         address: "2001:db8:200::".parse().unwrap(),
         prefix_len: 56,
@@ -794,6 +796,7 @@ fn pending_reasons_are_retained_for_unshapeable_sessions() {
         "nas-invalid-ipv6",
         "session-invalid-ipv6",
     );
+    invalid_ipv6_only.user_name = Some("subscriber".to_string());
     invalid_ipv6_only.framed_ipv6_address = Some(Ipv6Addr::UNSPECIFIED);
     invalid_ipv6_only.framed_ipv6_prefixes = vec![Ipv6Prefix {
         address: "2001:db8:bad::".parse().unwrap(),
@@ -818,6 +821,7 @@ fn pending_reasons_are_retained_for_unshapeable_sessions() {
         "nas-default-route",
         "session-default-route",
     );
+    default_route_only.user_name = Some("subscriber".to_string());
     default_route_only.framed_routes = vec!["0.0.0.0/0 192.0.2.1 1".to_string()];
     default_route_only.mikrotik_rate_limits = vec![rate_limit()];
     let default_route_key = nas_session_key("nas-default-route", "session-default-route");
@@ -832,6 +836,7 @@ fn pending_reasons_are_retained_for_unshapeable_sessions() {
         "nas-default-netmask",
         "session-default-netmask",
     );
+    default_netmask.user_name = Some("subscriber".to_string());
     default_netmask.framed_ip_address = Some(Ipv4Addr::new(198, 51, 100, 44));
     default_netmask.framed_ip_netmask = Some(Ipv4Addr::UNSPECIFIED);
     default_netmask.mikrotik_rate_limits = vec![rate_limit()];
@@ -1117,6 +1122,7 @@ fn rate_resolution_prefers_packet_then_shaped_devices_then_fallback() {
         "nas-fallback-rate",
         "session-fallback-rate",
     );
+    no_rate_event.user_name = Some("subscriber".to_string());
     no_rate_event.framed_ip_address = Some(Ipv4Addr::new(198, 51, 100, 90));
     let key = nas_session_key("nas-fallback-rate", "session-fallback-rate");
 
@@ -1444,6 +1450,10 @@ fn session_id_without_nas_context_does_not_promote_unrelated_pending_session() {
         "nas-later",
         "shared-session-id",
     );
+    let later = AccountingEvent {
+        user_name: Some("different-subscriber".to_string()),
+        ..later
+    };
     let later_key = nas_session_key("nas-later", "shared-session-id");
     store.apply_event_with_mapping(later, ready_mapping());
 
@@ -1811,7 +1821,7 @@ fn fallback_identity_generation_builds_dynamic_shaped_device() {
     event.calling_station_id = Some("AA-BB-CC-DD-EE-FF".to_string());
     event.framed_ip_address = Some(Ipv4Addr::new(203, 0, 113, 44));
     let key = nas_session_key("nas-default-identity", "session-default-identity");
-    let circuit_id = "radius:nas-id:6e61732d64656661756c742d6964656e74697479:session:73657373696f6e2d64656661756c742d6964656e74697479";
+    let circuit_id = "radius:nas-id:6e61732d64656661756c742d6964656e74697479:username:73756273637269626572406578616d706c652e6e6574";
     let resolution = DynamicCircuitResolution {
         mapping: ready_mapping(),
         rate_sources: SessionRateSources {
@@ -1870,6 +1880,7 @@ fn fallback_identity_generation_uses_display_name_fallbacks_and_ipv6_prefixes() 
         "session-fallback-calling",
     );
     calling_event.calling_station_id = Some("AA-BB-CC-DD-EE-FF".to_string());
+    calling_event.user_name = None;
     calling_event.framed_ipv6_prefixes = vec![Ipv6Prefix {
         address: "2001:db8:300::".parse().unwrap(),
         prefix_len: 56,
@@ -1900,6 +1911,7 @@ fn fallback_identity_generation_uses_display_name_fallbacks_and_ipv6_prefixes() 
         "nas-fallback-acct",
         "session-fallback-acct",
     );
+    acct_event.user_name = None;
     acct_event.framed_ip_address = Some(Ipv4Addr::new(203, 0, 113, 46));
     let acct_key = nas_session_key("nas-fallback-acct", "session-fallback-acct");
     store.apply_event_with_dynamic_circuit_resolution(
@@ -1907,16 +1919,15 @@ fn fallback_identity_generation_uses_display_name_fallbacks_and_ipv6_prefixes() 
         fallback_resolution(fallback_rate),
     );
 
-    let acct_device = store
-        .session(&acct_key)
-        .unwrap()
-        .resolved_shaped_device
-        .as_ref()
-        .unwrap();
-    assert_eq!(acct_device.circuit_name, "session-fallback-acct");
-    assert_eq!(acct_device.device_name, "session-fallback-acct");
-    assert!(acct_device.mac.is_empty());
-    assert_eq!(acct_device.ipv4, vec![(Ipv4Addr::new(203, 0, 113, 46), 32)]);
+    let acct_session = store.session(&acct_key).unwrap();
+    assert_eq!(
+        acct_session.pending_reasons,
+        vec![
+            PendingSessionReason::MissingCircuitIdentity,
+            PendingSessionReason::MissingDeviceIdentity,
+        ]
+    );
+    assert!(acct_session.resolved_shaped_device.is_none());
 
     let empty_event = AccountingEvent::default();
     assert_eq!(
@@ -1943,6 +1954,7 @@ fn fallback_identity_generation_uses_nas_ip_key_variants() {
             status_type: Some(AcctStatusType::Start),
             acct_session_id: Some("s-ip4".to_string()),
             nas_ip_address: Some(Ipv4Addr::new(192, 0, 2, 9)),
+            user_name: Some("ipv4-subscriber".to_string()),
             framed_ip_address: Some(Ipv4Addr::new(203, 0, 113, 47)),
             ..AccountingEvent::default()
         },
@@ -1956,7 +1968,7 @@ fn fallback_identity_generation_uses_nas_ip_key_variants() {
         .unwrap();
     assert_eq!(
         ipv4_device.circuit_id,
-        "radius:nas-ipv4:c0000209:session:732d697034"
+        "radius:nas-ipv4:c0000209:username:697076342d73756273637269626572"
     );
     assert_eq!(ipv4_device.device_id, ipv4_device.circuit_id);
 
@@ -1970,6 +1982,7 @@ fn fallback_identity_generation_uses_nas_ip_key_variants() {
             status_type: Some(AcctStatusType::Start),
             acct_session_id: Some("s-ip6".to_string()),
             nas_ipv6_address: Some(ipv6_nas),
+            user_name: Some("ipv6-subscriber".to_string()),
             framed_ip_address: Some(Ipv4Addr::new(203, 0, 113, 48)),
             ..AccountingEvent::default()
         },
@@ -1983,7 +1996,7 @@ fn fallback_identity_generation_uses_nas_ip_key_variants() {
         .unwrap();
     assert_eq!(
         ipv6_device.circuit_id,
-        "radius:nas-ipv6:20010db8000000000000000000000009:session:732d697036"
+        "radius:nas-ipv6:20010db8000000000000000000000009:username:697076362d73756273637269626572"
     );
     assert_eq!(ipv6_device.device_id, ipv6_device.circuit_id);
 }
@@ -1992,12 +2005,13 @@ fn fallback_identity_generation_uses_nas_ip_key_variants() {
 fn dynamic_circuit_resolution_updates_when_pending_session_becomes_shapeable() {
     let mut store = AccountingSessionStore::new();
     let key = nas_session_key("nas-late-command", "session-late-command");
-    let circuit_id = key.dynamic_circuit_id().unwrap();
+    let circuit_id = subscriber_circuit_id("nas-late-command");
     let mut start_without_ip = minimal_session_event(
         AcctStatusType::Start,
         "nas-late-command",
         "session-late-command",
     );
+    start_without_ip.user_name = Some("subscriber".to_string());
     start_without_ip.mikrotik_rate_limits = vec![rate_limit()];
 
     store.apply_event_with_mapping(start_without_ip, ready_mapping());
@@ -2038,6 +2052,7 @@ fn command_sink_receives_deferred_upsert_and_removal_intents() {
     let key = nas_session_key("nas-command", "session-command");
     let mut start_without_ip =
         minimal_session_event(AcctStatusType::Start, "nas-command", "session-command");
+    start_without_ip.user_name = Some("subscriber".to_string());
     start_without_ip.mikrotik_rate_limits = vec![rate_limit()];
 
     store.apply_event_with_mapping_and_commands(start_without_ip, ready_mapping(), &mut sink);
@@ -2058,7 +2073,7 @@ fn command_sink_receives_deferred_upsert_and_removal_intents() {
     let DynamicCircuitIntent::CreateDynamicCircuit(create) = &sink.intents[0] else {
         panic!("expected create intent, got {:?}", sink.intents[0]);
     };
-    let circuit_id = key.dynamic_circuit_id().unwrap();
+    let circuit_id = subscriber_circuit_id("nas-command");
     assert_eq!(create.circuit_id, circuit_id);
     assert_eq!(create.session_key, key);
     assert_eq!(create.shaped_device.circuit_id, circuit_id);
@@ -2107,7 +2122,7 @@ fn command_sink_preserves_deferred_lifecycle_intent_boundary() {
     let mut store = AccountingSessionStore::new();
     let mut sink = RecordingCommandSink::default();
     let key = nas_session_key("nas-command-lifecycle", "session-command-lifecycle");
-    let circuit_id = key.dynamic_circuit_id().unwrap();
+    let circuit_id = subscriber_circuit_id("nas-command-lifecycle");
 
     store.apply_event_with_mapping_and_commands(
         complete_event(
@@ -2412,7 +2427,7 @@ fn command_sink_emits_expiry_rekey_and_stale_expiry_removals() {
     let mut expiry_store = AccountingSessionStore::new();
     let mut expiry_sink = RecordingCommandSink::default();
     let expiry_key = nas_session_key("nas-expiry-command", "session-expiry-command");
-    let expiry_circuit_id = expiry_key.dynamic_circuit_id().unwrap();
+    let expiry_circuit_id = subscriber_circuit_id("nas-expiry-command");
     expiry_store.apply_event_with_mapping_and_commands(
         complete_event(
             AcctStatusType::Start,
@@ -2442,7 +2457,7 @@ fn command_sink_emits_expiry_rekey_and_stale_expiry_removals() {
     let mut rekey_store = AccountingSessionStore::new();
     let mut rekey_sink = RecordingCommandSink::default();
     let rekey_key = nas_session_key("nas-rekey-command", "session-rekey-command");
-    let rekey_circuit_id = rekey_key.dynamic_circuit_id().unwrap();
+    let rekey_circuit_id = subscriber_circuit_id("nas-rekey-command");
     rekey_store.apply_event_with_mapping_and_commands(
         complete_event(
             AcctStatusType::Start,
@@ -2458,7 +2473,14 @@ fn command_sink_emits_expiry_rekey_and_stale_expiry_removals() {
         nas: NasIdentity::Ipv4(alternate_nas_ip),
         acct_session_id: "session-rekey-command".to_string(),
     };
-    let alternate_circuit_id = alternate_key.dynamic_circuit_id().unwrap();
+    let alternate_circuit_id = stable_subscriber_circuit_id(
+        &alternate_key,
+        &AccountingEvent {
+            user_name: Some("subscriber".to_string()),
+            ..AccountingEvent::default()
+        },
+    )
+    .unwrap();
     let mut alternate_start = complete_event(
         AcctStatusType::Start,
         "ignored-by-test",
@@ -2503,9 +2525,9 @@ fn command_sink_emits_expiry_rekey_and_stale_expiry_removals() {
     let mut reset_store = AccountingSessionStore::new();
     let mut reset_sink = RecordingCommandSink::default();
     let reset_key = nas_session_key("nas-reset-command", "session-reset-command");
-    let reset_circuit_id = reset_key.dynamic_circuit_id().unwrap();
+    let reset_circuit_id = subscriber_circuit_id("nas-reset-command");
     let unrelated_key = nas_session_key("nas-reset-other", "session-reset-other");
-    let unrelated_circuit_id = unrelated_key.dynamic_circuit_id().unwrap();
+    let unrelated_circuit_id = subscriber_circuit_id("nas-reset-other");
     reset_store.apply_event_with_mapping_and_commands(
         complete_event(
             AcctStatusType::Start,
@@ -2547,7 +2569,7 @@ fn command_sink_emits_expiry_rekey_and_stale_expiry_removals() {
             .session(&reset_key)
             .unwrap()
             .active_dynamic_circuit_ids,
-        vec![reset_circuit_id.clone()]
+        vec![reset_circuit_id.to_string()]
     );
     assert!(
         reset_store
@@ -2577,7 +2599,7 @@ fn command_sink_emits_expiry_rekey_and_stale_expiry_removals() {
 }
 
 #[test]
-fn command_sink_uses_fallback_identity_payload_when_parent_metadata_exists() {
+fn command_sink_uses_stable_fallback_identity_payload_when_parent_metadata_exists() {
     let mut store = AccountingSessionStore::new();
     let mut sink = RecordingCommandSink::default();
     let fallback_rate = SessionRateProfile::new(4.0, 2.0, 40.0, 12.0).unwrap();
@@ -2604,7 +2626,7 @@ fn command_sink_uses_fallback_identity_payload_when_parent_metadata_exists() {
     assert_eq!(create.session_key, key);
     assert_eq!(
         create.shaped_device.circuit_id,
-        key.dynamic_circuit_id().unwrap()
+        "radius:nas-id:6e61732d66616c6c6261636b2d636f6d6d616e64:username:73756273637269626572406578616d706c652e6e6574"
     );
     assert_eq!(create.shaped_device.circuit_name, "subscriber@example.net");
     assert_eq!(create.shaped_device.device_name, "AA-BB-CC-DD-EE-FF");
@@ -2613,6 +2635,110 @@ fn command_sink_uses_fallback_identity_payload_when_parent_metadata_exists() {
     assert_eq!(create.shaped_device.upload_min_mbps, 2.0);
     assert_eq!(create.shaped_device.download_max_mbps, 40.0);
     assert_eq!(create.shaped_device.upload_max_mbps, 12.0);
+    let first_circuit_id = create.circuit_id.clone();
+
+    let mut reconnect = minimal_session_event(
+        AcctStatusType::Start,
+        "nas-fallback-command",
+        "session-fallback-reconnect",
+    );
+    reconnect.user_name = Some("subscriber@example.net".to_string());
+    reconnect.calling_station_id = Some("AA:BB:CC:DD:EE:FF".to_string());
+    reconnect.framed_ip_address = Some(Ipv4Addr::new(203, 0, 113, 50));
+    store.apply_event_with_dynamic_circuit_resolution_and_commands(
+        reconnect,
+        fallback_resolution(fallback_rate),
+        &mut sink,
+    );
+
+    let DynamicCircuitIntent::CreateDynamicCircuit(reconnected) = &sink.intents[1] else {
+        panic!(
+            "expected reconnect fallback create intent, got {:?}",
+            sink.intents[1]
+        );
+    };
+    assert_eq!(reconnected.circuit_id, first_circuit_id);
+
+    let mut other_nas = minimal_session_event(
+        AcctStatusType::Start,
+        "nas-fallback-command-other",
+        "session-fallback-other-nas",
+    );
+    other_nas.user_name = Some("subscriber@example.net".to_string());
+    other_nas.framed_ip_address = Some(Ipv4Addr::new(203, 0, 113, 51));
+    store.apply_event_with_dynamic_circuit_resolution_and_commands(
+        other_nas,
+        fallback_resolution(fallback_rate),
+        &mut sink,
+    );
+
+    let DynamicCircuitIntent::CreateDynamicCircuit(other_nas) = &sink.intents[2] else {
+        panic!("expected other NAS fallback create intent");
+    };
+    assert_ne!(other_nas.circuit_id, first_circuit_id);
+}
+
+#[test]
+fn calling_station_identity_is_stable_across_sessions_and_scoped_to_the_nas() {
+    let fallback_rate = SessionRateProfile::new(4.0, 2.0, 40.0, 12.0).unwrap();
+    let mut store = AccountingSessionStore::new();
+    let mut sink = RecordingCommandSink::default();
+
+    for (nas, session, calling_station_id, address) in [
+        (
+            "nas-calling",
+            "calling-session-one",
+            "AA-BB-CC-DD-EE-FF",
+            51,
+        ),
+        ("nas-calling", "calling-session-two", "aabb.ccdd.eeff", 52),
+        (
+            "nas-calling-other",
+            "calling-session-three",
+            "AA:BB:CC:DD:EE:FF",
+            53,
+        ),
+    ] {
+        let mut event = minimal_session_event(AcctStatusType::Start, nas, session);
+        event.user_name = None;
+        event.calling_station_id = Some(calling_station_id.to_string());
+        event.framed_ip_address = Some(Ipv4Addr::new(203, 0, 113, address));
+        store.apply_event_with_dynamic_circuit_resolution_and_commands(
+            event,
+            fallback_resolution(fallback_rate),
+            &mut sink,
+        );
+    }
+
+    let DynamicCircuitIntent::CreateDynamicCircuit(first) = &sink.intents[0] else {
+        panic!("expected first Calling-Station-Id create intent");
+    };
+    let DynamicCircuitIntent::CreateDynamicCircuit(reconnected) = &sink.intents[1] else {
+        panic!("expected reconnect Calling-Station-Id create intent");
+    };
+    let DynamicCircuitIntent::CreateDynamicCircuit(other_nas) = &sink.intents[2] else {
+        panic!("expected other NAS Calling-Station-Id create intent");
+    };
+    assert_eq!(first.circuit_id, reconnected.circuit_id);
+    assert_ne!(first.circuit_id, other_nas.circuit_id);
+}
+
+#[test]
+fn username_identity_trims_radius_whitespace() {
+    let key = nas_session_key("nas-trimmed-username", "trimmed-username-session");
+    let canonical = AccountingEvent {
+        user_name: Some("subscriber@example.net".to_string()),
+        ..AccountingEvent::default()
+    };
+    let padded = AccountingEvent {
+        user_name: Some(" subscriber@example.net ".to_string()),
+        ..AccountingEvent::default()
+    };
+
+    assert_eq!(
+        stable_subscriber_circuit_id(&key, &canonical),
+        stable_subscriber_circuit_id(&key, &padded)
+    );
 }
 
 #[test]
@@ -2966,6 +3092,15 @@ fn minimal_session_event(
         nas_identifier: Some(nas_identifier.to_string()),
         ..AccountingEvent::default()
     }
+}
+
+fn subscriber_circuit_id(nas_identifier: &str) -> String {
+    let key = nas_session_key(nas_identifier, "subscriber-id-fixture");
+    let event = AccountingEvent {
+        user_name: Some("subscriber".to_string()),
+        ..AccountingEvent::default()
+    };
+    stable_subscriber_circuit_id(&key, &event).expect("keyed subscriber should have a circuit ID")
 }
 
 fn reset_event(status_type: AcctStatusType, nas_identifier: &str) -> AccountingEvent {
