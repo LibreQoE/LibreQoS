@@ -178,7 +178,7 @@ struct LockMetadata {
 impl LockMetadata {
     fn current(operation: &str) -> Self {
         Self {
-            pid: unsafe { getpid() },
+            pid: std::process::id() as i32,
             process: current_process_name(),
             operation: Some(sanitize_lock_field(operation)),
             created_unix: SystemTime::now()
@@ -411,6 +411,17 @@ impl ProcessFileLock {
             if actual_start_ticks != expected_start_ticks {
                 return false;
             }
+        } else if let Some(recorded_process) = metadata
+            .process
+            .as_deref()
+            .filter(|process| *process != "unknown")
+        {
+            let Some(current_process) = process_comm_for_pid(metadata.pid) else {
+                return true;
+            };
+            if current_process != recorded_process {
+                return false;
+            }
         }
 
         let Some(needle) = process_name_contains else {
@@ -617,7 +628,8 @@ fn sanitize_lock_field(value: &str) -> String {
 mod tests {
     use super::{
         LockMetadata, ProcessFileLock, ProcessLockConfig, ProcessLockError,
-        process_argv0_from_cmdline_bytes, process_name_matches, process_start_ticks_for_pid,
+        process_argv0_from_cmdline_bytes, process_comm_for_pid, process_name_matches,
+        process_start_ticks_for_pid,
     };
     use std::{
         fs::{create_dir_all, read_to_string, remove_dir_all, write},
@@ -764,6 +776,19 @@ mod tests {
     }
 
     #[test]
+    fn legacy_metadata_rejects_a_reused_pid_with_a_different_process_name() {
+        let metadata = LockMetadata {
+            pid: std::process::id() as i32,
+            process: Some("previous-lock-holder".to_string()),
+            operation: Some("save operator overrides".to_string()),
+            created_unix: Some(1_800_000_000),
+            process_start_ticks: None,
+        };
+
+        assert!(!ProcessFileLock::is_lock_valid(&metadata, None));
+    }
+
+    #[test]
     fn metadata_without_start_ticks_round_trips() {
         let metadata = LockMetadata {
             pid: 12345,
@@ -819,11 +844,13 @@ mod tests {
         let dir = unique_test_dir();
         create_dir_all(&dir).expect("failed to create temp test dir");
         let path = dir.join("test.lock");
+        let process = process_comm_for_pid(std::process::id() as i32)
+            .expect("current process should expose its command name");
         write(
             &path,
             format!(
-                "pid={}\nprocess=test-holder\noperation=save overrides\ncreated_unix=1800000000\n",
-                std::process::id()
+                "pid={}\nprocess={process}\noperation=save overrides\ncreated_unix=1800000000\n",
+                std::process::id(),
             ),
         )
         .expect("failed to write temp lock");
@@ -836,7 +863,7 @@ mod tests {
 
         assert_eq!(code, "TEST_LOCKED");
         assert!(message.contains("pid="));
-        assert!(message.contains("process=test-holder"));
+        assert!(message.contains(&format!("process={process}")));
         assert!(message.contains("operation=save overrides"));
         assert!(message.contains("created_unix=1800000000"));
 
