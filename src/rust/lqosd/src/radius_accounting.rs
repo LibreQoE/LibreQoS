@@ -2805,7 +2805,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             .expect("ambiguous MAC match should retain the RADIUS session");
         assert_eq!(
             session.pending_reasons,
-            vec![PendingSessionReason::AmbiguousMacMatch]
+            vec![PendingSessionReason::AmbiguousIdentityMatch]
         );
         assert!(session.resolved_shaped_device.is_none());
 
@@ -3066,9 +3066,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         );
         let mut sink = RecordingDynamicCircuitSink::default();
         let key = session_key();
-        let Some(circuit_id) = key.dynamic_circuit_id() else {
-            anyhow::bail!("test session key should have a dynamic circuit id");
-        };
+        let circuit_id = expected_circuit_id("nas-adapter");
 
         handle_accounting_event_with_command_sink(
             complete_event(AcctStatusType::Start),
@@ -3137,10 +3135,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         );
         let (bus_tx, mut bus_rx) = mpsc::channel(4);
         let mut sink = ApplyingDynamicCircuitSink::new(bus_tx);
-        let key = session_key();
-        let circuit_id = key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-adapter");
 
         handle_accounting_event_with_command_sink(
             complete_event(AcctStatusType::Start),
@@ -3199,9 +3194,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         let (bus_tx, mut bus_rx) = mpsc::channel(4);
         let mut sink = ApplyingDynamicCircuitSink::new(bus_tx);
         let key = session_key();
-        let circuit_id = key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-adapter");
 
         handle_accounting_event_with_command_sink(
             complete_event(AcctStatusType::Start),
@@ -3293,10 +3286,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         );
         let (bus_tx, mut bus_rx) = mpsc::channel(4);
         let mut sink = ApplyingDynamicCircuitSink::new(bus_tx);
-        let key = session_key();
-        let circuit_id = key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-adapter");
         let started_at = Instant::now();
 
         handle_accounting_event_with_command_sink(
@@ -3343,9 +3333,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             Some(fallback_parent.clone()),
             None,
         );
-        let stop_circuit_id = session_key()
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let stop_circuit_id = expected_circuit_id("nas-adapter");
         let started_at = Instant::now();
         handle_accounting_event_with_command_sink(
             complete_event(AcctStatusType::Start),
@@ -3387,10 +3375,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             Some(fallback_parent.clone()),
             None,
         );
-        let expiry_key = session_key_for("nas-expiry", "session-expiry");
-        let expiry_circuit_id = expiry_key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let expiry_circuit_id = expected_circuit_id("nas-expiry");
         expiry_sessions.apply_event_with_command_sink(
             complete_event_for(AcctStatusType::Start, "nas-expiry", "session-expiry"),
             started_at,
@@ -3420,10 +3405,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             Some(fallback_parent),
             None,
         );
-        let reset_key = session_key_for("nas-reset", "session-reset");
-        let reset_circuit_id = reset_key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let reset_circuit_id = expected_circuit_id("nas-reset");
         reset_sessions.apply_event_with_command_sink(
             complete_event_for(AcctStatusType::Start, "nas-reset", "session-reset"),
             started_at,
@@ -3473,10 +3455,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             sessions,
             Some(sink),
         ));
-        let session_key = session_key_for("nas-deadline", "session-deadline");
-        let circuit_id = session_key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-deadline");
 
         send_test_accounting_event(
             &event_tx,
@@ -3539,10 +3518,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             sessions,
             Some(sink),
         ));
-        let session_key = session_key_for("nas-timer", "session-timer");
-        let circuit_id = session_key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-timer");
 
         send_test_accounting_event(
             &event_tx,
@@ -3579,10 +3555,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         let started_at = Instant::now();
         let reset_at = started_at + Duration::from_secs(1);
         let refreshed_at = started_at + Duration::from_secs(2);
-        let key = session_key_for("nas-refresh", "session-refresh");
-        let circuit_id = key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-refresh");
 
         sessions.apply_event_with_command_sink(
             complete_event_for(AcctStatusType::Start, "nas-refresh", "session-refresh"),
@@ -4290,9 +4263,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         let application_state = Arc::new(Mutex::new(DynamicCircuitApplicationState::default()));
         let original_session = session_key_for("nas-original", "session-rekeyed");
         let current_session = session_key_for("nas-current", "session-rekeyed");
-        let circuit_id = original_session
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-original");
         let upsert = DynamicCircuitIntent::CreateDynamicCircuit(DynamicCircuitUpsert {
             circuit_id: circuit_id.clone(),
             session_key: original_session.clone(),
@@ -4622,9 +4593,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         let (bus_tx, mut bus_rx) = mpsc::channel(4);
         let mut sink = ApplyingDynamicCircuitSink::new(bus_tx);
         let key = session_key();
-        let circuit_id = key
-            .dynamic_circuit_id()
-            .expect("test session key should have a dynamic circuit id");
+        let circuit_id = expected_circuit_id("nas-adapter");
         let started_at = Instant::now();
 
         handle_accounting_event_with_command_sink(
@@ -4669,9 +4638,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
         let mut sink = RecordingDynamicCircuitSink::default();
         let started_at = Instant::now();
         let key = session_key();
-        let Some(circuit_id) = key.dynamic_circuit_id() else {
-            anyhow::bail!("test session key should have a dynamic circuit id");
-        };
+        let circuit_id = expected_circuit_id("nas-adapter");
 
         sessions.apply_event_with_command_sink(
             complete_event(AcctStatusType::Start),
@@ -5621,6 +5588,17 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
 
     fn session_key() -> AccountingSessionKey {
         session_key_for("nas-adapter", "session-adapter")
+    }
+
+    fn expected_circuit_id(nas: &str) -> String {
+        fn hex(value: &str) -> String {
+            value.bytes().map(|byte| format!("{byte:02x}")).collect()
+        }
+        format!(
+            "radius:nas-id:{}:username:{}",
+            hex(nas),
+            hex("subscriber-adapter")
+        )
     }
 
     fn session_key_for(nas: &str, session_id: &str) -> AccountingSessionKey {
