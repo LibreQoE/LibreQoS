@@ -19,7 +19,7 @@ pub use request::{
 #[allow(unused_imports)]
 pub use response::{
     AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, OverrideMutationResult,
-    SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry,
+    SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry, StormguardRuntimeStatus,
     TreeGuardRuntimeNodeBranchSnapshot, TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue,
 };
 pub use session::BusSession;

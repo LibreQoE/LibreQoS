@@ -41,7 +41,7 @@ minimum_upload_percentage = 0.5
 
 Si está probando, comience con `dry_run = true`.
 
-Al deshabilitar StormGuard, o al volver a `dry_run = true` después de usarlo en modo activo, las colas administradas recuperan sus tasas garantizadas y límites máximos configurados, y se eliminan los ajustes adaptativos persistidos por StormGuard. Los ajustes administrados por el operador no se modifican.
+Al deshabilitar StormGuard, o al volver a `dry_run = true` después de usarlo en modo activo, las colas administradas recuperan sus tasas garantizadas y límites máximos configurados, y se eliminan los ajustes adaptativos persistidos por StormGuard. Los ajustes administrados por el operador no se modifican. Durante el arranque, esta limpieza puede ejecutarse antes de que Bakery termine la inicialización normal de colas, pero solo para clases activas que coincidan con el registro persistido de propiedad de StormGuard y con la generación actual del árbol. La limpieza espera durante una recarga completa y conserva el registro de propiedad hasta que Bakery confirma la restauración.
 
 ## UI y depuración
 
@@ -55,6 +55,28 @@ Al deshabilitar StormGuard, o al volver a `dry_run = true` después de usarlo en
   - límites efectivos actuales
   - métricas de evaluación
   - contexto de reglas/decisiones
+- La página **Árbol de red** muestra una pestaña contextual **StormGuard** mientras StormGuard esté habilitado o quede un estado de limpieza/degradación. Al seleccionar un nodo observado se muestran sus límites actuales de descarga/subida, rangos, estrategia, cooldown, motivo de decisión, último resultado y un gráfico local del navegador de cinco minutos. La pestaña indica si el nodo seleccionado no está administrado y enlaza con la configuración de StormGuard para realizar cambios.
+
+El estado de ejecución usa una de estas fases:
+
+- `disabled`: StormGuard está deshabilitado y no queda limpieza pendiente.
+- `initializing`: la configuración, la topología o las dependencias de Bakery aún no están listas.
+- `dry_run`: se evalúan decisiones sin modificar colas activas.
+- `live`: se permiten ajustes activos confirmados.
+- `cleanup_pending`: todavía debe restaurarse estado de colas propiedad de StormGuard.
+- `degraded`: un error impide la evaluación o limpieza normal; revise el último error mostrado y el registro del servicio.
+
+## Registro de diagnóstico
+
+Cuando se configura `log_file`, StormGuard añade cada segundo una fila delimitada por punto y coma por sitio observado y dirección. El primer campo contiene la versión del esquema. La cabecera de la versión 1 es:
+
+```text
+schema_version;timestamp_unix_ms;site;direction;mode;strategy;queue_mbps;min_mbps;max_mbps;throughput_mbps;throughput_ma_mbps;retransmit_fraction;retransmit_ma;passive_rtt_ms;active_ping_rtt_ms;active_ping_target;active_ping_weight;effective_rtt_ms;rtt_ma_ms;baseline_rtt_ms;delay_ms;passive_rtt_flow_count;decision_score;candidate_action;candidate_target_mbps;decision_reason;decision_blocker;state;cooldown_remaining_secs;last_attempt_action;last_attempt_target_mbps;last_attempt_outcome;last_attempt_unix_ms;last_attempt_error;rtt_source
+```
+
+Los valores no disponibles se escriben como campos vacíos. El archivo se conserva y se amplía entre reinicios del daemon; la cabecera solo se escribe para un archivo nuevo o vacío. Al alcanzar 64 MiB, StormGuard rota el archivo a `<log_file>.1` y reemplaza la copia `.1` anterior, por lo que se conserva como máximo una copia.
+
+Los resultados de aplicación distinguen `applied`, `dry_run`, `skipped` y `failed`. Un ajuste fallido no cambia el límite actual de StormGuard ni inicia el cooldown, de modo que puede volver a intentarse.
 
 ## Patrón de despliegue seguro
 

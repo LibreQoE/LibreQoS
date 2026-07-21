@@ -40,6 +40,9 @@ pub struct NetworkJsonTransport {
     /// TCP packets paired with current retransmit counts.
     #[serde(default)]
     pub current_tcp_retransmit_packets: (u64, u64),
+    /// TCP flows that contributed fresh RTT data in the current cycle.
+    #[serde(default)]
+    pub current_rtt_flows: (u32, u32),
     /// Cake marks
     pub current_marks: (u64, u64),
     /// Cake drops

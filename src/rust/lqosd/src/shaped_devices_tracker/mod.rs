@@ -610,6 +610,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                 let mut other_packets = (0, 0);
                 let mut other_tcp_packets = (0, 0);
                 let mut other_tcp_retransmit_packets = (0, 0);
+                let mut other_rtt_flows = (0, 0);
                 let mut other_udp_packets = (0, 0);
                 let mut other_icmp_packets = (0, 0);
                 let mut other_xmit = (0, 0);
@@ -624,6 +625,8 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     other_tcp_packets.1 += n.1.current_tcp_packets.1;
                     other_tcp_retransmit_packets.0 += n.1.current_tcp_retransmit_packets.0;
                     other_tcp_retransmit_packets.1 += n.1.current_tcp_retransmit_packets.1;
+                    other_rtt_flows.0 += n.1.current_rtt_flows.0;
+                    other_rtt_flows.1 += n.1.current_rtt_flows.1;
                     other_udp_packets.0 += n.1.current_udp_packets.0;
                     other_udp_packets.1 += n.1.current_udp_packets.1;
                     other_icmp_packets.0 += n.1.current_icmp_packets.0;
@@ -650,6 +653,7 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                         current_packets: other_packets,
                         current_tcp_packets: other_tcp_packets,
                         current_tcp_retransmit_packets: other_tcp_retransmit_packets,
+                        current_rtt_flows: other_rtt_flows,
                         current_udp_packets: other_udp_packets,
                         current_icmp_packets: other_icmp_packets,
                         current_retransmits: other_xmit,

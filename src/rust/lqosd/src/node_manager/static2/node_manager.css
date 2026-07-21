@@ -2915,3 +2915,47 @@ html[data-bs-theme="dark"] .btn-lqos-memorial.show {
     background: linear-gradient(135deg, #7a8fb3 0%, #5d7290 100%);
     border-color: #8ea3c4;
 }
+
+.lqos-tree-tabs {
+    margin-bottom: -1px;
+}
+
+.lqos-stormguard-tree-panel {
+    min-height: 34rem;
+}
+
+.lqos-stormguard-summary-card {
+    height: 100%;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.6rem;
+    background: color-mix(in srgb, var(--bs-body-bg) 92%, var(--bs-primary) 8%);
+}
+
+.lqos-stormguard-summary-card span,
+.lqos-stormguard-summary-card strong {
+    display: block;
+}
+
+.lqos-stormguard-summary-card span {
+    margin-bottom: 0.3rem;
+    color: var(--bs-secondary-color);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.lqos-stormguard-tree-graph {
+    width: 100%;
+    min-height: 34rem;
+}
+
+@media (max-width: 767.98px) {
+    .lqos-stormguard-tree-graph {
+        min-height: 28rem;
+    }
+
+    .lqos-stormguard-tree-panel {
+        padding: 0.85rem;
+    }
+}

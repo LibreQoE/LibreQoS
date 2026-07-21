@@ -2452,6 +2452,7 @@ dependencies = [
  "allocative",
  "anyhow",
  "crossbeam-channel",
+ "csv",
  "lqos_bakery",
  "lqos_bus",
  "lqos_config",
