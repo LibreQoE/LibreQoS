@@ -74,6 +74,68 @@ fn runtime_flat_bucket_id(index: usize) -> String {
     format!("libreqos:generated:flat:bucket:{index}")
 }
 
+fn current_flat_bucket_names(config: &Config) -> Option<BTreeSet<String>> {
+    let Value::Object(current_network) = read_json_value(&topology_effective_network_path(config))?
+    else {
+        return None;
+    };
+    if current_network.is_empty() {
+        return None;
+    }
+
+    let mut bucket_names = BTreeSet::new();
+    for index in 0..current_network.len() {
+        let bucket_name = runtime_flat_bucket_name(index);
+        let expected_id = runtime_flat_bucket_id(index);
+        let node = current_network.get(&bucket_name)?.as_object()?;
+        if node.get("id").and_then(Value::as_str) != Some(expected_id.as_str()) {
+            return None;
+        }
+        if !node
+            .get("children")
+            .and_then(Value::as_object)
+            .is_some_and(|children| children.is_empty())
+        {
+            return None;
+        }
+        bucket_names.insert(bucket_name);
+    }
+    (bucket_names.len() == current_network.len()).then_some(bucket_names)
+}
+
+fn previous_flat_bucket_assignments(
+    config: &Config,
+    bucket_names: &[String],
+) -> BTreeMap<String, String> {
+    let expected_bucket_names = bucket_names.iter().cloned().collect::<BTreeSet<_>>();
+    if current_flat_bucket_names(config).as_ref() != Some(&expected_bucket_names) {
+        return BTreeMap::new();
+    }
+
+    let bucket_ids_by_name = bucket_names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (name.as_str(), runtime_flat_bucket_id(index)))
+        .collect::<HashMap<_, _>>();
+    let Ok(previous_inputs) = TopologyShapingInputsFile::load(config) else {
+        return BTreeMap::new();
+    };
+
+    previous_inputs
+        .circuits
+        .into_iter()
+        .filter_map(|circuit| {
+            if circuit.resolution_source != TopologyShapingResolutionSource::FlatBucket {
+                return None;
+            }
+            let expected_bucket_id =
+                bucket_ids_by_name.get(circuit.effective_parent_node_name.as_str())?;
+            (circuit.effective_parent_node_id == *expected_bucket_id)
+                .then_some((circuit.circuit_id, circuit.effective_parent_node_name))
+        })
+        .collect()
+}
+
 fn runtime_flat_bucket_network(config: &Config) -> Value {
     let mut root = Map::new();
     for index in 0..runtime_flat_bucket_count(config) {
@@ -141,24 +203,29 @@ fn build_flat_bucket_assignments(
         .into_iter()
         .map(|(id, weight)| TopLevelPlannerItem { id, weight })
         .collect::<Vec<_>>();
+    let previous_assignments = if config.queues.use_binpacking {
+        previous_flat_bucket_assignments(config, &bucket_names)
+    } else {
+        BTreeMap::new()
+    };
     let planner_mode = if config.queues.use_binpacking {
-        TopLevelPlannerMode::Greedy
+        TopLevelPlannerMode::StableGreedy
     } else {
         TopLevelPlannerMode::RoundRobin
     };
     let planner = plan_top_level_assignments(
         &items,
         &bucket_names,
-        &BTreeMap::new(),
+        &previous_assignments,
         &BTreeMap::new(),
         lqos_utils::unix_time::unix_now()
             .map(|timestamp| timestamp as f64)
             .unwrap_or(0.0),
         &TopLevelPlannerParams {
             mode: planner_mode,
-            hysteresis_threshold: 0.0,
+            hysteresis_threshold: 0.03,
             cooldown_seconds: 0.0,
-            move_budget_per_run: usize::MAX,
+            move_budget_per_run: 1,
         },
     );
 

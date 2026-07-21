@@ -99,6 +99,8 @@ compile_mode = "full"
 
 Use `compile_mode = "flat"` only when hierarchy is not part of the shaping plan. In flat mode, LibreQoS assigns circuits to generated CPU bucket queues such as `Generated_PN_1`; the original `Parent Node` remains a logical reference, but the effective shaping parent in `shaping_inputs.json` will be a generated bucket with `resolution_source: "flat_bucket"`.
 
+With CPU binpacking enabled, flat mode preserves valid prior bucket assignments and limits each refresh to at most one existing-circuit rebalance. This reduces shaping interruption when circuits are added or removed. A change to the available queue count can invalidate prior buckets and require broader reassignment.
+
 #### Static queue visibility policy
 
 Current builds separate logical topology from queue-visible topology.

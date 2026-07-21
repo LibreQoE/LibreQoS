@@ -135,6 +135,8 @@ Para redes sin nodos padre (sin puntos de acceso o sitios estrictamente definido
 echo "{}" > network.json
 ```
 
+Con el binpacking de CPU habilitado, el modo plano conserva las asignaciones anteriores que siguen siendo válidas y limita cada actualización a un solo cambio de circuito existente. Esto reduce las interrupciones del shaping al agregar o eliminar circuitos. Un cambio en la cantidad de colas disponibles puede invalidar los buckets anteriores y requerir una reasignación más amplia.
+
 #### Nodos virtuales (solo lógicos)
 
 LibreQoS soporta **nodos virtuales** en `network.json` para agrupar y para monitoreo/agregación en la WebUI/Insight. Los nodos virtuales **no** se incluyen en el árbol físico de shaping HTB (no crean clases HTB y no aplican límites de ancho de banda).

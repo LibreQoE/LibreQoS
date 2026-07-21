@@ -736,6 +736,133 @@ def planner_circuit_identity_key(circuit):
     return circuit_id
 
 
+def flat_binpacking_enabled(network, binpacking_enabled):
+    if not binpacking_enabled:
+        return False
+    if loaded_network_is_flat(network):
+        return True
+    if not isinstance(network, dict) or not network:
+        return False
+    expected_bucket_names = {
+        "Generated_PN_" + str(index + 1) for index in range(len(network))
+    }
+    if set(network) != expected_bucket_names:
+        return False
+    for index in range(len(network)):
+        bucket_name = "Generated_PN_" + str(index + 1)
+        bucket = network.get(bucket_name)
+        expected_bucket_id = "libreqos:generated:flat:bucket:" + str(index)
+        if (
+            not isinstance(bucket, dict)
+            or bucket.get("id") != expected_bucket_id
+            or bucket.get("children", {}) != {}
+        ):
+            return False
+    return True
+
+
+def planner_top_level_item_key(circuit, flat_network):
+    if flat_network:
+        return "flat_circuit:" + planner_circuit_identity_key(circuit)
+    if 'idForCircuitsWithoutParentNodes' not in circuit:
+        raise ValueError("Missing transient planner ID for unparented circuit")
+    return str(circuit['idForCircuitsWithoutParentNodes'])
+
+
+def reusable_identity_state(state, reuse_saved_identities):
+    if not reuse_saved_identities or not isinstance(state, dict):
+        return {}, {}
+    sites = state.get('sites', {})
+    circuits = state.get('circuits', {})
+    return (
+        sites if isinstance(sites, dict) else {},
+        circuits if isinstance(circuits, dict) else {},
+    )
+
+
+def generated_parent_node_from_queue_key(queue_key, queues_available):
+    if not isinstance(queue_key, str) or queues_available <= 0:
+        return None
+    queue_index = _parse_int_token(queue_key.removeprefix("CpueQueue"))
+    if not queue_key.startswith("CpueQueue") or queue_index is None:
+        return None
+    if queue_index < 0 or queue_index >= queues_available:
+        return None
+    return "Generated_PN_" + str(queue_index + 1)
+
+
+def plan_flat_generated_parent_assignments(
+    items,
+    generated_parent_nodes,
+    previous_assignments,
+    last_change_ts,
+    now_ts,
+    move_budget_per_run,
+):
+    queues_available = len(generated_parent_nodes)
+    item_ids = {str(item["id"]) for item in items}
+    rust_previous_assignments = {
+        item_id: generated_parent_node_queue_key(parent_name, queues_available)
+        for item_id, parent_name in previous_assignments.items()
+    }
+    rust_previous_assignments = {
+        item_id: queue_key
+        for item_id, queue_key in rust_previous_assignments.items()
+        if queue_key is not None
+    }
+    try:
+        plan_result = plan_top_level_cpu_bins(
+            items,
+            queues_available,
+            prev_assign=rust_previous_assignments,
+            last_change_ts=last_change_ts,
+            now_ts=now_ts,
+            mode="stable_greedy",
+            move_budget_per_run=move_budget_per_run,
+            cooldown_seconds=3600.0,
+            hysteresis_threshold=0.03,
+        )
+        changed = list(plan_result.get("changed", []) or [])
+        assignments = {
+            item_id: parent_name
+            for item_id, queue_key in (plan_result.get("assignment", {}) or {}).items()
+            if (
+                parent_name := generated_parent_node_from_queue_key(
+                    queue_key,
+                    queues_available,
+                )
+            ) is not None
+        }
+        if set(assignments) != item_ids:
+            raise ValueError("Shared Rust flat planner returned incomplete assignments")
+        return assignments, changed
+    except Exception as e:
+        warnings.warn(
+            f"Shared Rust flat planner failed ({e}); preserving prior assignments.",
+            stacklevel=2,
+        )
+
+    assignments = dict(previous_assignments)
+    weights_by_item = {str(item["id"]): float(item["weight"]) for item in items}
+    bin_loads = {parent_name: 0.0 for parent_name in generated_parent_nodes}
+    for item_id, parent_name in assignments.items():
+        bin_loads[parent_name] += weights_by_item.get(item_id, 1.0)
+    unassigned = [
+        (item_id, weight)
+        for item_id, weight in weights_by_item.items()
+        if item_id not in assignments
+    ]
+    unassigned.sort(key=lambda item: (-item[1], item[0]))
+    for item_id, weight in unassigned:
+        target_parent = min(
+            bin_loads.items(),
+            key=lambda entry: (entry[1], entry[0]),
+        )[0]
+        assignments[item_id] = target_parent
+        bin_loads[target_parent] += weight
+    return assignments, []
+
+
 def calculateR2q(maxRateInMbps):
     # So we've learned that r2q defaults to 10, and is used to calculate quantum. Quantum is rateInBytes/r2q by
     # default. This default gives errors at high rates, and tc clamps the quantum to 200000. Setting a high quantum
@@ -1404,6 +1531,7 @@ def refreshShapers():
         # Flat networks ({}) don't require ParentNode entries. Treat every circuit as
         # unparented so they can be distributed across generated parent nodes / CPUs.
         flat_network = loaded_network_is_flat(network)
+        binpacking_enabled = use_bin_packing_to_balance_cpu()
 
         # Virtual Nodes (logical-only): build a physical shaping topology that skips them,
         # while leaving ShapedDevices.csv (and monitoring) unchanged.
@@ -1425,6 +1553,11 @@ def refreshShapers():
             else:
                 # Avoid bloating queuingStructure.json when there are no virtual nodes.
                 logical_to_physical_node = {}
+
+        reuse_flat_binpacking_identities = flat_binpacking_enabled(
+            network,
+            binpacking_enabled,
+        )
 
         # Re-map circuits that are directly parented to a virtual node to the nearest real ancestor (milestone c).
         if not flat_network and len(virtual_nodes) > 0 and isinstance(logical_to_physical_node, dict):
@@ -1531,7 +1664,7 @@ def refreshShapers():
         # Planner/device weights (fetched only when planner/binpacking is enabled).
         # When disabled, we keep this empty and fall back to rate-based weights later.
         weight_by_circuit_id = {}
-        if use_bin_packing_to_balance_cpu():
+        if binpacking_enabled:
             print("Using internal planner to sort circuits by CPU core")
             # Build item list with weights for circuits lacking a ParentNode
             items = []
@@ -1549,9 +1682,10 @@ def refreshShapers():
                     pass
             for circuit in subscriberCircuits:
                 if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
-                    item_id = circuit['idForCircuitsWithoutParentNodes']
+                    transient_item_id = circuit['idForCircuitsWithoutParentNodes']
+                    item_id = planner_top_level_item_key(circuit, flat_network)
                     # Prefer provided weights; default to 1.0
-                    w = dictForCircuitsWithoutParentNodes.get(item_id, 1.0)
+                    w = dictForCircuitsWithoutParentNodes.get(transient_item_id, 1.0)
                     # If a specific circuit weight exists, prefer it
                     if 'circuitID' in circuit and str(circuit['circuitID']) in weight_by_circuit_id:
                         w = weight_by_circuit_id[str(circuit['circuitID'])]
@@ -1570,14 +1704,18 @@ def refreshShapers():
             capacities = {pn: 1.0 for pn in generatedPNs}
 
             # Load planner state
-            try:
-                import bin_planner
-            except ImportError:
-                bin_planner = None
+            bin_planner = None
+            if not flat_network:
+                try:
+                    import bin_planner
+                except ImportError:
+                    pass
             # Store planner state directly in lqos_directory (no hidden subdirs)
             state_path = get_planner_state_path()
             state = {}
-            if bin_planner is not None:
+            if flat_network:
+                state = load_planner_state(state_path, None)
+            elif bin_planner is not None:
                 state = load_planner_state(state_path, bin_planner)
             now_ts = time.time()
             prev_assign = {}
@@ -1598,14 +1736,27 @@ def refreshShapers():
                 "alpha": 0.1,
                 "hysteresis_threshold": 0.03,
                 "cooldown_seconds": 3600,
-                "move_budget_per_run": max(1, min(32, int(0.01 * max(1, len(items))))),
+                "move_budget_per_run": (
+                    1
+                    if flat_network
+                    else max(1, min(32, int(0.01 * max(1, len(items)))))
+                ),
                 "salt": state.get("salt", "default_salt") if isinstance(state, dict) else "default_salt",
                 "last_change_ts_by_item": last_change_ts,
             }
             if observe_mode:
                 params["move_budget_per_run"] = 0
 
-            if bin_planner is not None:
+            if flat_network:
+                assignments, changed = plan_flat_generated_parent_assignments(
+                    items,
+                    generatedPNs,
+                    prev_assign,
+                    last_change_ts,
+                    now_ts,
+                    params["move_budget_per_run"],
+                )
+            elif bin_planner is not None:
                 assignments, changed = bin_planner.plan_assignments(
                     items, bins_list, capacities, prev_assign, now_ts, params
                 )
@@ -1624,21 +1775,24 @@ def refreshShapers():
             # Apply assignments to circuits
             for circuit in subscriberCircuits:
                 if circuit.get('ParentNode') == 'none' and 'idForCircuitsWithoutParentNodes' in circuit:
-                    item_id = circuit['idForCircuitsWithoutParentNodes']
-                    item_key = str(item_id)
+                    item_key = planner_top_level_item_key(circuit, flat_network)
                     if item_key in assignments:
                         circuit['ParentNode'] = assignments[item_key]
                         circuit['ParentNodeID'] = ''
                         circuit['effectiveParentNodeID'] = ''
 
             # Update and save state
-            if bin_planner is not None and isinstance(state, dict):
+            if (flat_network or bin_planner is not None) and isinstance(state, dict):
                 if state.get("salt") is None:
                     state["salt"] = "default_salt"
                 if "assignments" not in state or not isinstance(state["assignments"], dict):
                     state["assignments"] = {}
                 if "last_change_ts" not in state or not isinstance(state["last_change_ts"], dict):
                     state["last_change_ts"] = {}
+                if flat_network:
+                    for stale_item_id in set(state["assignments"]) - item_ids:
+                        state["assignments"].pop(stale_item_id, None)
+                        state["last_change_ts"].pop(stale_item_id, None)
                 for iid, b in assignments.items():
                     # record last change time if changed
                     if iid in changed:
@@ -1646,7 +1800,11 @@ def refreshShapers():
                     state["assignments"][iid] = b
                 try:
                     print(f"Saving planner state to {state_path} (generated PNs)")
-                    save_planner_state(state, state_path, bin_planner)
+                    save_planner_state(
+                        state,
+                        state_path,
+                        None if flat_network else bin_planner,
+                    )
                 except Exception as e:
                     warnings.warn(f"Failed to save planner state at {state_path}: {e}", stacklevel=2)
 
@@ -1875,7 +2033,7 @@ def refreshShapers():
             return keys
 
         # If we're in binpacking mode, we need to sort the network structure a bit
-        if use_bin_packing_to_balance_cpu() and not flat_network:
+        if binpacking_enabled and not flat_network:
             # Binpacking is an Insight feature; if Insight is not enabled/licensed, fall back to
             # deterministic round-robin placement so "virtual node promotion" can still spread
             # the physical tree across CPUs.
@@ -2114,11 +2272,16 @@ def refreshShapers():
 
         collect_identity_planner_inputs(network, 0, 1)
 
+        previous_site_state, previous_circuit_state = reusable_identity_state(
+            state,
+            reuse_flat_binpacking_identities,
+        )
+
         identity_plan = plan_class_identities(
             planner_site_inputs,
             planner_circuit_groups,
-            site_state={},
-            circuit_state={},
+            site_state=previous_site_state,
+            circuit_state=previous_circuit_state,
             stick_offset=stickOffset,
             circuit_padding=CIRCUIT_PADDING,
         )

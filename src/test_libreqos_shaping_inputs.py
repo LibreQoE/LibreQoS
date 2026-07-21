@@ -98,6 +98,114 @@ def tearDownModule():
 
 
 class TestLibreQoSShapingInputs(unittest.TestCase):
+    def test_flat_planner_item_key_uses_stable_circuit_id(self):
+        circuit = {
+            "circuitID": "circuit-stable",
+            "idForCircuitsWithoutParentNodes": 17,
+        }
+
+        self.assertEqual(
+            LibreQoS.planner_top_level_item_key(circuit, flat_network=True),
+            "flat_circuit:circuit-stable",
+        )
+        self.assertEqual(
+            LibreQoS.planner_top_level_item_key(circuit, flat_network=False),
+            "17",
+        )
+        self.assertEqual(
+            LibreQoS.planner_top_level_item_key(
+                {"circuitID": "0", "idForCircuitsWithoutParentNodes": 17},
+                flat_network=True,
+            ),
+            "flat_circuit:0",
+        )
+
+    def test_flat_binpacking_detection_covers_legacy_and_runtime_topologies(self):
+        runtime_flat_network = {
+            "Generated_PN_1": {
+                "id": "libreqos:generated:flat:bucket:0",
+                "children": {},
+            },
+            "Generated_PN_2": {
+                "id": "libreqos:generated:flat:bucket:1",
+                "children": {},
+            },
+        }
+
+        self.assertTrue(LibreQoS.flat_binpacking_enabled({}, True))
+        self.assertTrue(
+            LibreQoS.flat_binpacking_enabled(runtime_flat_network, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled({"Tower": {}}, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled({"Generated_PN_bad": {}}, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled({"Generated_PN_1": {}}, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled(
+                {"Generated_PN_1": {}, "Generated_PN_3": {}},
+                True,
+            )
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled(runtime_flat_network, False)
+        )
+        malformed_runtime_network = dict(runtime_flat_network)
+        malformed_runtime_network["Generated_PN_1"] = {
+            "id": "libreqos:generated:flat:bucket:0",
+            "children": {"real-child": {}},
+        }
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled(malformed_runtime_network, True)
+        )
+
+    def test_flat_planner_failure_preserves_existing_assignments(self):
+        items = [
+            {"id": "flat_circuit:existing", "weight": 10.0},
+            {"id": "flat_circuit:new", "weight": 5.0},
+        ]
+        previous_assignments = {
+            "flat_circuit:existing": "Generated_PN_2",
+        }
+
+        with patch.object(
+            LibreQoS,
+            "plan_top_level_cpu_bins",
+            side_effect=RuntimeError("planner unavailable"),
+        ):
+            with self.assertWarnsRegex(UserWarning, "preserving prior assignments"):
+                assignments, changed = LibreQoS.plan_flat_generated_parent_assignments(
+                    items,
+                    ["Generated_PN_1", "Generated_PN_2"],
+                    previous_assignments,
+                    {},
+                    1000.0,
+                    1,
+                )
+
+        self.assertEqual(assignments["flat_circuit:existing"], "Generated_PN_2")
+        self.assertEqual(assignments["flat_circuit:new"], "Generated_PN_1")
+        self.assertEqual(changed, [])
+
+    def test_saved_identity_state_is_reused_only_for_flat_binpacking(self):
+        state = {
+            "sites": {"Generated_PN_1": {"class_minor": 3}},
+            "circuits": {"circuit-1": {"class_minor": 4}},
+        }
+
+        self.assertEqual(
+            LibreQoS.reusable_identity_state(state, True),
+            (state["sites"], state["circuits"]),
+        )
+        self.assertEqual(
+            LibreQoS.reusable_identity_state(state, False),
+            ({}, {}),
+        )
+
     def test_runtime_resolved_circuit_attachment_candidates_ignore_logical_parent(self):
         candidates = LibreQoS._circuit_attachment_name_candidates(
             {
