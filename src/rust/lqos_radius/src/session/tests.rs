@@ -1780,6 +1780,26 @@ fn missing_or_ambiguous_mac_match_stays_pending_without_resolved_shaped_device()
 }
 
 #[test]
+fn unmatched_identity_uses_the_configured_default_parent_and_rate_profile() {
+    let fallback_rate = SessionRateProfile::new(4.0, 2.0, 40.0, 12.0).unwrap();
+    let resolution = DynamicCircuitResolution::from_shaped_devices_match_with_fallback_parent(
+        ShapedDevicesMacMatch::NoMatch,
+        Some(fallback_rate),
+        Some(parent_attachment()),
+    );
+
+    assert_eq!(
+        resolution.mapping,
+        DynamicCircuitMapping::ReadyWithParent(parent_attachment())
+    );
+    assert_eq!(
+        resolution.rate_sources.fallback_profile,
+        Some(fallback_rate)
+    );
+    assert!(resolution.matched_shaped_device.is_none());
+}
+
+#[test]
 fn fallback_identity_generation_builds_dynamic_shaped_device() {
     let fallback_rate = SessionRateProfile::new(4.0, 2.0, 40.0, 12.0).unwrap();
     let mut event = minimal_session_event(
@@ -2596,6 +2616,87 @@ fn command_sink_uses_fallback_identity_payload_when_parent_metadata_exists() {
 }
 
 #[test]
+fn username_only_match_creates_the_shaped_devices_dynamic_circuit() {
+    let mut device = shaped_device("username-circuit", "username-device", "");
+    device.radius_username = "pppoe-known".to_string();
+    let matcher = ShapedDevicesMacMatcher::from_devices(&[device]);
+    let mut store = AccountingSessionStore::new();
+    let mut sink = RecordingCommandSink::default();
+    let mut event = complete_event(
+        AcctStatusType::Start,
+        "nas-username",
+        "session-username",
+        Ipv4Addr::new(198, 51, 100, 91),
+    );
+    event.user_name = Some("pppoe-known".to_string());
+    event.calling_station_id = None;
+    event.mikrotik_rate_limits.clear();
+
+    store.apply_event_with_shaped_devices_matcher_and_commands(
+        event,
+        &matcher,
+        ShapedDevicesMatchOptions {
+            match_by_username: true,
+            match_by_mac: false,
+            fallback_profile: None,
+            fallback_parent: None,
+        },
+        &mut sink,
+    );
+
+    assert_eq!(sink.intents.len(), 1);
+    let DynamicCircuitIntent::CreateDynamicCircuit(create) = &sink.intents[0] else {
+        panic!("username-only match should create a dynamic circuit");
+    };
+    assert_eq!(create.circuit_id, "username-circuit");
+    assert_eq!(create.shaped_device.device_id, "username-device");
+}
+
+#[test]
+fn duplicate_username_rows_remain_pending_with_an_identity_diagnostic() {
+    let mut first = shaped_device("first-circuit", "first-device", "");
+    first.radius_username = "duplicate-user".to_string();
+    let mut second = shaped_device("second-circuit", "second-device", "");
+    second.radius_username = "duplicate-user".to_string();
+    let matcher = ShapedDevicesMacMatcher::from_devices(&[first, second]);
+    let mut store = AccountingSessionStore::new();
+    let mut sink = RecordingCommandSink::default();
+    let mut event = complete_event(
+        AcctStatusType::Start,
+        "nas-duplicate-username",
+        "session-duplicate-username",
+        Ipv4Addr::new(198, 51, 100, 92),
+    );
+    event.user_name = Some("duplicate-user".to_string());
+    event.calling_station_id = None;
+    event.mikrotik_rate_limits.clear();
+
+    store.apply_event_with_shaped_devices_matcher_and_commands(
+        event,
+        &matcher,
+        ShapedDevicesMatchOptions {
+            match_by_username: true,
+            match_by_mac: false,
+            fallback_profile: Some(SessionRateProfile::new(4.0, 2.0, 40.0, 12.0).unwrap()),
+            fallback_parent: Some(parent_attachment()),
+        },
+        &mut sink,
+    );
+
+    assert!(sink.intents.is_empty());
+    let session = store
+        .session(&nas_session_key(
+            "nas-duplicate-username",
+            "session-duplicate-username",
+        ))
+        .expect("duplicate username session should be retained for diagnostics");
+    assert_eq!(
+        session.pending_reasons,
+        vec![PendingSessionReason::AmbiguousIdentityMatch]
+    );
+}
+
+#[test]
 fn session_lookup_indexes_track_promotion_stop_reset_and_expiry() {
     let mut store = AccountingSessionStore::new();
     let mut pending = AccountingEvent {
@@ -3022,6 +3123,7 @@ fn shaped_device(circuit_id: &str, device_id: &str, mac: &str) -> ShapedDevice {
         parent_node_id: Some("parent-node-id".to_string()),
         anchor_node_id: Some("anchor-node-id".to_string()),
         mac: mac.to_string(),
+        radius_username: String::new(),
         ipv4: vec![(Ipv4Addr::new(198, 51, 100, 200), 32)],
         ipv6: vec![("2001:db8:ffff::1".parse().unwrap(), 128)],
         download_min_mbps: 5.0,

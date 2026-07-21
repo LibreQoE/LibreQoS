@@ -1,36 +1,48 @@
-//! MAC-address matching against `ShapedDevices.csv` rows.
+//! RADIUS identity matching against `ShapedDevices.csv` rows.
 
 use crate::AccountingEvent;
 use lqos_config::ShapedDevice;
 use std::collections::HashMap;
 
-/// Matches RADIUS `Calling-Station-Id` values to `ShapedDevices.csv` MAC fields.
+/// Matches RADIUS usernames and `Calling-Station-Id` values to shaped-device rows.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ShapedDevicesMacMatcher {
     matches_by_mac: HashMap<String, ShapedDevicesMacEntry>,
+    matches_by_username: HashMap<String, ShapedDevicesMacEntry>,
 }
 
 impl ShapedDevicesMacMatcher {
-    /// Builds a MAC matcher from shaped-device rows.
+    /// Builds a RADIUS identity matcher from shaped-device rows.
     ///
-    /// Rows with empty or invalid MAC values are ignored. More than one row with
-    /// the same normalized MAC is retained as an ambiguous match.
+    /// Empty or invalid MAC values are ignored for MAC matching. Empty usernames
+    /// are ignored for username matching. Duplicate identity values are retained
+    /// as ambiguous matches.
     ///
     /// Side effects: none. The supplied rows are inspected and cloned in memory.
     #[must_use]
     pub fn from_devices(devices: &[ShapedDevice]) -> Self {
         let mut matches_by_mac = HashMap::new();
+        let mut matches_by_username = HashMap::new();
         for device in devices {
-            let Some(normalized_mac) = normalize_radius_mac(&device.mac) else {
-                continue;
-            };
-            matches_by_mac
-                .entry(normalized_mac)
-                .and_modify(|entry| *entry = ShapedDevicesMacEntry::Ambiguous)
-                .or_insert_with(|| ShapedDevicesMacEntry::Unique(Box::new(device.clone())));
+            if let Some(normalized_mac) = normalize_radius_mac(&device.mac) {
+                matches_by_mac
+                    .entry(normalized_mac)
+                    .and_modify(|entry| *entry = ShapedDevicesMacEntry::Ambiguous)
+                    .or_insert_with(|| ShapedDevicesMacEntry::Unique(Box::new(device.clone())));
+            }
+            let username = device.radius_username.trim();
+            if !username.is_empty() {
+                matches_by_username
+                    .entry(username.to_string())
+                    .and_modify(|entry| *entry = ShapedDevicesMacEntry::Ambiguous)
+                    .or_insert_with(|| ShapedDevicesMacEntry::Unique(Box::new(device.clone())));
+            }
         }
 
-        Self { matches_by_mac }
+        Self {
+            matches_by_mac,
+            matches_by_username,
+        }
     }
 
     /// Matches one accounting event by `Calling-Station-Id`.
@@ -38,6 +50,33 @@ impl ShapedDevicesMacMatcher {
     /// Side effects: none. The event and in-memory matcher are inspected only.
     #[must_use]
     pub fn match_event(&self, event: &AccountingEvent) -> ShapedDevicesMacMatch {
+        self.match_event_with_identities(event, false, true)
+    }
+
+    /// Matches one accounting event by configured RADIUS username and MAC identities.
+    ///
+    /// A unique username match takes precedence; MAC matching is attempted only when no
+    /// username row matches. Side effects: none.
+    #[must_use]
+    pub fn match_event_with_identities(
+        &self,
+        event: &AccountingEvent,
+        match_by_username: bool,
+        match_by_mac: bool,
+    ) -> ShapedDevicesMacMatch {
+        if match_by_username
+            && let Some(username) = event
+                .user_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            && let Some(result) = Self::match_entry(&self.matches_by_username, username)
+        {
+            return result;
+        }
+        if !match_by_mac {
+            return ShapedDevicesMacMatch::NoMatch;
+        }
         let Some(calling_station_id) = event.calling_station_id.as_deref() else {
             return ShapedDevicesMacMatch::NoMatch;
         };
@@ -45,12 +84,20 @@ impl ShapedDevicesMacMatcher {
             return ShapedDevicesMacMatch::NoMatch;
         };
 
-        match self.matches_by_mac.get(&normalized_mac) {
+        Self::match_entry(&self.matches_by_mac, &normalized_mac)
+            .unwrap_or(ShapedDevicesMacMatch::NoMatch)
+    }
+
+    fn match_entry(
+        entries: &HashMap<String, ShapedDevicesMacEntry>,
+        key: &str,
+    ) -> Option<ShapedDevicesMacMatch> {
+        match entries.get(key) {
             Some(ShapedDevicesMacEntry::Unique(device)) => {
-                ShapedDevicesMacMatch::Unique(device.clone())
+                Some(ShapedDevicesMacMatch::Unique(device.clone()))
             }
-            Some(ShapedDevicesMacEntry::Ambiguous) => ShapedDevicesMacMatch::Ambiguous,
-            None => ShapedDevicesMacMatch::NoMatch,
+            Some(ShapedDevicesMacEntry::Ambiguous) => Some(ShapedDevicesMacMatch::Ambiguous),
+            None => None,
         }
     }
 }
@@ -61,14 +108,14 @@ enum ShapedDevicesMacEntry {
     Ambiguous,
 }
 
-/// Result of matching one RADIUS `Calling-Station-Id` to shaped-device MAC rows.
+/// Result of matching one RADIUS identity to shaped-device rows.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ShapedDevicesMacMatch {
-    /// Exactly one shaped-device row matched the normalized MAC address.
+    /// Exactly one shaped-device row matched the configured identity.
     Unique(Box<ShapedDevice>),
-    /// No shaped-device row matched the normalized MAC address.
+    /// No shaped-device row matched the configured identity.
     NoMatch,
-    /// More than one shaped-device row matched the normalized MAC address.
+    /// More than one shaped-device row matched the configured identity.
     Ambiguous,
 }
 
@@ -190,6 +237,27 @@ mod tests {
             matcher.match_event(&event),
             ShapedDevicesMacMatch::Ambiguous
         );
+    }
+
+    #[test]
+    fn username_match_precedes_mac_and_accepts_a_row_without_a_mac() {
+        let mut username_device = shaped_device("username-circuit", "");
+        username_device.radius_username = "pppoe-known".to_string();
+        let mut mac_device = shaped_device("mac-circuit", "aa:bb:cc:dd:ee:ff");
+        mac_device.radius_username = "another-user".to_string();
+        let matcher = ShapedDevicesMacMatcher::from_devices(&[username_device, mac_device]);
+        let event = AccountingEvent {
+            user_name: Some(" pppoe-known ".to_string()),
+            calling_station_id: Some("aa:bb:cc:dd:ee:ff".to_string()),
+            ..AccountingEvent::default()
+        };
+
+        let ShapedDevicesMacMatch::Unique(device) =
+            matcher.match_event_with_identities(&event, true, true)
+        else {
+            panic!("username should match uniquely before Calling-Station-Id");
+        };
+        assert_eq!(device.circuit_id, "username-circuit");
     }
 
     fn shaped_device(circuit_id: &str, mac: &str) -> ShapedDevice {

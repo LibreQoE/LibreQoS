@@ -277,6 +277,9 @@ pub struct RadiusDynamicCircuitApplicationConfig {
     /// Match `Calling-Station-Id` values to `ShapedDevices.csv` MAC fields.
     #[serde(default)]
     pub match_shaped_devices_by_mac: bool,
+    /// Match RADIUS `User-Name` values to `ShapedDevices.csv` `RADIUS Username` fields.
+    #[serde(default)]
+    pub match_shaped_devices_by_username: bool,
     /// Parent node used for default RADIUS identities when MAC matching does not supply metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback_parent_node: Option<String>,
@@ -806,6 +809,35 @@ mod tests {
             radius
                 .dynamic_circuit_application
                 .match_shaped_devices_by_mac
+        );
+    }
+
+    #[test]
+    fn username_match_dynamic_application_setting_round_trips() {
+        let mut radius = valid_enabled_config();
+        radius.dynamic_circuit_application.enabled = true;
+        radius
+            .dynamic_circuit_application
+            .match_shaped_devices_by_username = true;
+        let config = Config {
+            radius_accounting: Some(radius),
+            ..Config::default()
+        };
+
+        config
+            .validate()
+            .expect("valid RADIUS username matching settings should pass");
+        let raw = toml::to_string_pretty(&config).expect("config should serialize");
+        assert!(raw.contains("match_shaped_devices_by_username = true"));
+
+        let parsed = Config::load_from_string(&raw).expect("config should deserialize");
+        let radius = parsed
+            .radius_accounting
+            .expect("radius accounting section should round trip");
+        assert!(
+            radius
+                .dynamic_circuit_application
+                .match_shaped_devices_by_username
         );
     }
 

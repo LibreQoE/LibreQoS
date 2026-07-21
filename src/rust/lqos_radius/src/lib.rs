@@ -44,5 +44,5 @@ pub use session::{
     DynamicCircuitResolution, NasIdentity, NasResetStatus, PendingSessionFingerprint,
     PendingSessionReason, RadiusActivationCounters, RadiusActivationDiagnostic,
     RadiusActivationDiagnosticState, RadiusPacketCounters, ResolvedSessionRate, SessionRateProfile,
-    SessionRateProfileError, SessionRateSource, SessionRateSources,
+    SessionRateProfileError, SessionRateSource, SessionRateSources, ShapedDevicesMatchOptions,
 };

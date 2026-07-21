@@ -11,8 +11,8 @@ use lqos_radius::{
     DynamicCircuitIntent, DynamicCircuitMapping, DynamicCircuitParent, DynamicCircuitRemoval,
     DynamicCircuitResolution, DynamicCircuitUpsert, ListenerConfig, RadiusActivationDiagnostic,
     RadiusListener, RadiusPacketCounters, SessionRateProfile, SessionRateProfileError,
-    SessionRateSources, ShapedDevicesMacMatcher, TrustedClientSource, TrustedRadiusClient,
-    start_listener,
+    SessionRateSources, ShapedDevicesMacMatcher, ShapedDevicesMatchOptions, TrustedClientSource,
+    TrustedRadiusClient, start_listener,
 };
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -105,10 +105,14 @@ async fn runtime_config_from_config(
     } else {
         None
     };
+    let match_shaped_devices_by_username = config
+        .dynamic_circuit_application
+        .match_shaped_devices_by_username;
+    let match_shaped_devices_by_mac = config
+        .dynamic_circuit_application
+        .match_shaped_devices_by_mac;
     let mac_matcher = if apply_dynamic_circuits
-        && config
-            .dynamic_circuit_application
-            .match_shaped_devices_by_mac
+        && (match_shaped_devices_by_username || match_shaped_devices_by_mac)
     {
         Some(load_mac_matcher(config_snapshot)?)
     } else {
@@ -130,6 +134,8 @@ async fn runtime_config_from_config(
         fallback_rate_profile,
         fallback_parent,
         mac_matcher,
+        match_shaped_devices_by_username,
+        match_shaped_devices_by_mac,
         apply_dynamic_circuits,
     }))
 }
@@ -236,12 +242,14 @@ async fn run_radius_accounting_listener(
     runtime_config: RadiusAccountingRuntimeConfig,
     dynamic_circuit_bus_tx: DynamicCircuitBusSender,
 ) {
-    let mut sessions = RadiusAccountingSessions::new_with_fallback_and_mac_matcher(
+    let mut sessions = RadiusAccountingSessions::new_with_fallback_and_identity_matcher(
         runtime_config.default_ttl,
         runtime_config.stale_grace,
         runtime_config.fallback_rate_profile,
         runtime_config.fallback_parent,
         runtime_config.mac_matcher,
+        runtime_config.match_shaped_devices_by_username,
+        runtime_config.match_shaped_devices_by_mac,
     );
     let mut applying_sink = dynamic_circuit_application_sink(
         runtime_config.apply_dynamic_circuits,
@@ -611,6 +619,8 @@ struct RadiusAccountingSessions {
     fallback_rate_profile: Option<SessionRateProfile>,
     fallback_parent: Option<DynamicCircuitParent>,
     mac_matcher: Option<ShapedDevicesMacMatcher>,
+    match_shaped_devices_by_username: bool,
+    match_shaped_devices_by_mac: bool,
 }
 
 impl RadiusAccountingSessions {
@@ -619,12 +629,33 @@ impl RadiusAccountingSessions {
         Self::new_with_fallback_and_mac_matcher(default_ttl, stale_grace, None, None, None)
     }
 
+    #[cfg(test)]
     fn new_with_fallback_and_mac_matcher(
         default_ttl: Duration,
         stale_grace: Duration,
         fallback_rate_profile: Option<SessionRateProfile>,
         fallback_parent: Option<DynamicCircuitParent>,
         mac_matcher: Option<ShapedDevicesMacMatcher>,
+    ) -> Self {
+        Self::new_with_fallback_and_identity_matcher(
+            default_ttl,
+            stale_grace,
+            fallback_rate_profile,
+            fallback_parent,
+            mac_matcher,
+            false,
+            true,
+        )
+    }
+
+    fn new_with_fallback_and_identity_matcher(
+        default_ttl: Duration,
+        stale_grace: Duration,
+        fallback_rate_profile: Option<SessionRateProfile>,
+        fallback_parent: Option<DynamicCircuitParent>,
+        mac_matcher: Option<ShapedDevicesMacMatcher>,
+        match_shaped_devices_by_username: bool,
+        match_shaped_devices_by_mac: bool,
     ) -> Self {
         Self {
             store: AccountingSessionStore::new(),
@@ -639,6 +670,8 @@ impl RadiusAccountingSessions {
             fallback_rate_profile,
             fallback_parent,
             mac_matcher,
+            match_shaped_devices_by_username,
+            match_shaped_devices_by_mac,
         }
     }
 
@@ -656,10 +689,15 @@ impl RadiusAccountingSessions {
     ) -> AccountingSessionUpdate {
         let update = if let Some(mac_matcher) = &self.mac_matcher {
             self.store
-                .apply_event_with_shaped_devices_mac_matcher_and_commands(
+                .apply_event_with_shaped_devices_matcher_and_commands(
                     event,
                     mac_matcher,
-                    self.fallback_rate_profile,
+                    ShapedDevicesMatchOptions {
+                        match_by_username: self.match_shaped_devices_by_username,
+                        match_by_mac: self.match_shaped_devices_by_mac,
+                        fallback_profile: self.fallback_rate_profile,
+                        fallback_parent: self.fallback_parent.clone(),
+                    },
                     command_sink,
                 )
         } else {
@@ -2086,6 +2124,8 @@ struct RadiusAccountingRuntimeConfig {
     fallback_rate_profile: Option<SessionRateProfile>,
     fallback_parent: Option<DynamicCircuitParent>,
     mac_matcher: Option<ShapedDevicesMacMatcher>,
+    match_shaped_devices_by_username: bool,
+    match_shaped_devices_by_mac: bool,
     apply_dynamic_circuits: bool,
 }
 
@@ -5642,6 +5682,7 @@ circuit-b,Runtime Circuit B,device-b,Runtime Device B,Parent,ParentId,AnchorId,A
             parent_node_id: Some("parent-node-id".to_string()),
             anchor_node_id: Some("anchor-node-id".to_string()),
             mac: "aa-bb-cc-dd-ee-ff".to_string(),
+            radius_username: String::new(),
             ipv4: Vec::new(),
             ipv6: Vec::new(),
             download_min_mbps: 5.0,

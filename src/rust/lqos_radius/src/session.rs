@@ -11,6 +11,19 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 pub use lqos_config::RateProfileValidationError as SessionRateProfileError;
 
+/// Identity and fallback settings for ShapedDevices-backed RADIUS resolution.
+#[derive(Clone, Debug)]
+pub struct ShapedDevicesMatchOptions {
+    /// Whether `User-Name` matches the optional ShapedDevices RADIUS username.
+    pub match_by_username: bool,
+    /// Whether `Calling-Station-Id` matches the ShapedDevices MAC field.
+    pub match_by_mac: bool,
+    /// Rate profile for an unmatched identity when packet rates are absent.
+    pub fallback_profile: Option<SessionRateProfile>,
+    /// Parent attachment for an unmatched identity.
+    pub fallback_parent: Option<DynamicCircuitParent>,
+}
+
 /// In-memory session store for accepted RADIUS accounting events.
 #[derive(Debug, Default)]
 pub struct AccountingSessionStore {
@@ -160,6 +173,32 @@ impl AccountingSessionStore {
         })
     }
 
+    /// Applies one accounting event using configured ShapedDevices username and MAC matching.
+    ///
+    /// A unique username match is preferred over a MAC match. When neither identity matches,
+    /// `fallback_parent` permits a default dynamic circuit to be created from the configured
+    /// fallback speed profile.
+    ///
+    /// Side effects: mutates only this in-memory store.
+    pub fn apply_event_with_shaped_devices_matcher(
+        &mut self,
+        event: AccountingEvent,
+        matcher: &crate::ShapedDevicesMacMatcher,
+        options: ShapedDevicesMatchOptions,
+    ) -> AccountingSessionUpdate {
+        self.apply_event_with_resolution_resolver(event, |latest_event| {
+            DynamicCircuitResolution::from_shaped_devices_identity_match(
+                matcher.match_event_with_identities(
+                    latest_event,
+                    options.match_by_username,
+                    options.match_by_mac,
+                ),
+                options.fallback_profile,
+                options.fallback_parent,
+            )
+        })
+    }
+
     /// Applies one accounting event and emits dynamic-circuit intents for shapeable sessions.
     ///
     /// Side effects: mutates only this in-memory store and invokes `sink` for
@@ -212,6 +251,21 @@ impl AccountingSessionStore {
     ) -> AccountingSessionUpdate {
         let update =
             self.apply_event_with_shaped_devices_mac_matcher(event, matcher, fallback_profile);
+        self.emit_dynamic_circuit_intents(&update, sink);
+        update
+    }
+
+    /// Applies one accounting event using configured ShapedDevices identity matching and emits intents.
+    ///
+    /// Side effects: mutates this store and invokes `sink` for emitted dynamic-circuit intents.
+    pub fn apply_event_with_shaped_devices_matcher_and_commands(
+        &mut self,
+        event: AccountingEvent,
+        matcher: &crate::ShapedDevicesMacMatcher,
+        options: ShapedDevicesMatchOptions,
+        sink: &mut impl DynamicCircuitCommandSink,
+    ) -> AccountingSessionUpdate {
+        let update = self.apply_event_with_shaped_devices_matcher(event, matcher, options);
         self.emit_dynamic_circuit_intents(&update, sink);
         update
     }
@@ -1146,6 +1200,10 @@ pub enum DynamicCircuitMapping {
     NoMacMatch,
     /// MAC matching is enabled, and more than one shaped-device row matches the event.
     AmbiguousMacMatch,
+    /// Configured ShapedDevices identity matching found no matching row.
+    NoIdentityMatch,
+    /// Configured ShapedDevices identity matching found duplicate rows.
+    AmbiguousIdentityMatch,
 }
 
 /// Dynamic-circuit metadata resolved for one accounting event.
@@ -1175,6 +1233,18 @@ impl DynamicCircuitResolution {
         mac_match: ShapedDevicesMacMatch,
         fallback_profile: Option<SessionRateProfile>,
     ) -> Self {
+        Self::from_shaped_devices_match_with_fallback_parent(mac_match, fallback_profile, None)
+    }
+
+    /// Builds a resolution from a ShapedDevices identity match with an optional fallback parent.
+    ///
+    /// Side effects: none.
+    #[must_use]
+    pub fn from_shaped_devices_match_with_fallback_parent(
+        mac_match: ShapedDevicesMacMatch,
+        fallback_profile: Option<SessionRateProfile>,
+        fallback_parent: Option<DynamicCircuitParent>,
+    ) -> Self {
         match mac_match {
             ShapedDevicesMacMatch::Unique(device) => {
                 let shaped_device_profile = session_rate_profile_from_shaped_device(&device);
@@ -1188,7 +1258,9 @@ impl DynamicCircuitResolution {
                 }
             }
             ShapedDevicesMacMatch::NoMatch => Self {
-                mapping: DynamicCircuitMapping::NoMacMatch,
+                mapping: fallback_parent
+                    .map(DynamicCircuitMapping::ReadyWithParent)
+                    .unwrap_or(DynamicCircuitMapping::NoMacMatch),
                 rate_sources: SessionRateSources {
                     shaped_device_profile: None,
                     fallback_profile,
@@ -1204,6 +1276,30 @@ impl DynamicCircuitResolution {
                 matched_shaped_device: None,
             },
         }
+    }
+
+    /// Builds a resolution from username and/or MAC identity matching.
+    ///
+    /// Side effects: none.
+    #[must_use]
+    pub fn from_shaped_devices_identity_match(
+        identity_match: ShapedDevicesMacMatch,
+        fallback_profile: Option<SessionRateProfile>,
+        fallback_parent: Option<DynamicCircuitParent>,
+    ) -> Self {
+        let mut resolution = Self::from_shaped_devices_match_with_fallback_parent(
+            identity_match,
+            fallback_profile,
+            fallback_parent,
+        );
+        resolution.mapping = match resolution.mapping {
+            DynamicCircuitMapping::NoMacMatch => DynamicCircuitMapping::NoIdentityMatch,
+            DynamicCircuitMapping::AmbiguousMacMatch => {
+                DynamicCircuitMapping::AmbiguousIdentityMatch
+            }
+            mapping => mapping,
+        };
+        resolution
     }
 }
 
@@ -1331,6 +1427,10 @@ pub enum PendingSessionReason {
     NoMacMatch,
     /// MAC matching is enabled, and more than one shaped-device MAC matched the event.
     AmbiguousMacMatch,
+    /// Configured ShapedDevices identity matching found no matching row.
+    NoIdentityMatch,
+    /// Configured ShapedDevices identity matching found duplicate rows.
+    AmbiguousIdentityMatch,
 }
 
 /// Result of applying one accounting event to the session store.
@@ -1984,6 +2084,12 @@ fn pending_reasons(
         DynamicCircuitMapping::NoMacMatch => reasons.push(PendingSessionReason::NoMacMatch),
         DynamicCircuitMapping::AmbiguousMacMatch => {
             reasons.push(PendingSessionReason::AmbiguousMacMatch);
+        }
+        DynamicCircuitMapping::NoIdentityMatch => {
+            reasons.push(PendingSessionReason::NoIdentityMatch);
+        }
+        DynamicCircuitMapping::AmbiguousIdentityMatch => {
+            reasons.push(PendingSessionReason::AmbiguousIdentityMatch);
         }
     }
 

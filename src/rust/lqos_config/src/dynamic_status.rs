@@ -224,6 +224,7 @@ impl DynamicCircuitRecord {
             device_name,
             parent_node,
             mac: self.mac.clone().unwrap_or_default(),
+            radius_username: String::new(),
             ipv4,
             ipv6,
             download_min_mbps: self.download_min_mbps,
