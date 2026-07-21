@@ -360,11 +360,13 @@ mod tests {
 
     #[test]
     fn merge_network_mode_rejects_invalid_bridge_mtu() {
-        let mut candidate = Config::default();
-        candidate.bridge = Some(BridgeConfig {
-            mtu: Some(9217),
-            ..BridgeConfig::default()
-        });
+        let candidate = Config {
+            bridge: Some(BridgeConfig {
+                mtu: Some(9217),
+                ..BridgeConfig::default()
+            }),
+            ..Config::default()
+        };
 
         let error = merge_network_mode_with_live(&Config::default(), candidate)
             .expect_err("invalid MTU should fail");
@@ -379,12 +381,14 @@ mod tests {
 
     #[test]
     fn merge_network_mode_rejects_invalid_single_interface_mtu() {
-        let mut candidate = Config::default();
-        candidate.bridge = None;
-        candidate.single_interface = Some(SingleInterfaceConfig {
-            mtu: Some(575),
-            ..SingleInterfaceConfig::default()
-        });
+        let candidate = Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig {
+                mtu: Some(575),
+                ..SingleInterfaceConfig::default()
+            }),
+            ..Config::default()
+        };
 
         let error = merge_network_mode_with_live(&Config::default(), candidate)
             .expect_err("invalid MTU should fail");

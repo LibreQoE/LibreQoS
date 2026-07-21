@@ -66,6 +66,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_iprange.html",
         "config_flows.html",
         "config_dynamic_circuits.html",
+        "config_radius_accounting.html",
         "config_integration.html",
         "config_splynx.html",
         "config_netzur.html",

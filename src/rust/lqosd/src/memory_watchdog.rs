@@ -291,7 +291,7 @@ mod tests {
         );
 
         assert_eq!(
-            read_required_kb(&parsed, "MemTotal").unwrap(),
+            read_required_kb(&parsed, "MemTotal").expect("MemTotal should parse"),
             15_458_992 * 1024
         );
         assert_eq!(read_optional_raw(&parsed, "Threads"), 44);

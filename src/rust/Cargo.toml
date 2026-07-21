@@ -39,6 +39,7 @@ members = [
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
     "lqos_probe", # Shared active probe provider and result types.
+    "lqos_radius", # Rootless RADIUS accounting packet parsing and diagnostic UDP listener.
     "lqos_stormguard", # An implementation of CAKE AutoRotate using dynamic bus information. EXPERIMENTAL.
     "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
     "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
@@ -68,6 +69,8 @@ ip_network_table = "0"
 ip_network = "0"
 sha2 = "0.10"
 hmac = "0.12"
+md-5 = "0.10"
+subtle = "2.6"
 base64 = "0.22"
 argon2 = "0.5"
 rand_core = { version = "0.6", features = ["getrandom"] }

@@ -2,7 +2,7 @@ mod serializable;
 mod shaped_device;
 
 use csv::{QuoteStyle, ReaderBuilder, WriterBuilder};
-use lqos_utils::{XdpIpAddress, hash_to_i64};
+use lqos_utils::XdpIpAddress;
 use serializable::SerializableShapedDevice;
 pub use shaped_device::ShapedDevice;
 use std::net::IpAddr;
@@ -33,9 +33,7 @@ impl Default for ConfigShapedDevices {
 impl ConfigShapedDevices {
     fn refresh_derived_fields(devices: &mut [ShapedDevice]) {
         for device in devices {
-            device.circuit_hash = hash_to_i64(&device.circuit_id);
-            device.device_hash = hash_to_i64(&device.device_id);
-            device.parent_hash = hash_to_i64(&device.parent_node);
+            device.refresh_hashes();
         }
     }
 
@@ -340,6 +338,7 @@ pub enum ShapedDevicesError {
 
 #[cfg(test)]
 mod test {
+    use lqos_utils::hash_to_i64;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use super::*;

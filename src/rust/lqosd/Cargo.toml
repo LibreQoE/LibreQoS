@@ -22,6 +22,7 @@ lqos_topology_compile = { path = "../lqos_topology_compile" }
 lqos_heimdall = { path = "../lqos_heimdall" }
 lqos_stormguard = { path = "../lqos_stormguard" }
 lqos_probe = { path = "../lqos_probe" }
+lqos_radius = { path = "../lqos_radius" }
 lqos_netplan_helper = { path = "../lqos_netplan_helper" }
 lqos_setup = { path = "../lqos_setup" }
 tokio = { version = "1", features = [ "full" ] }
@@ -81,4 +82,5 @@ allocative_derive.workspace = true
 futures-util = "0.3.31"
 
 [dev-dependencies]
+tokio = { version = "1", features = [ "full", "test-util" ] }
 toml = { workspace = true }

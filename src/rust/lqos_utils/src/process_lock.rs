@@ -172,18 +172,20 @@ struct LockMetadata {
     process: Option<String>,
     operation: Option<String>,
     created_unix: Option<u64>,
+    process_start_ticks: Option<u64>,
 }
 
 impl LockMetadata {
     fn current(operation: &str) -> Self {
         Self {
-            pid: unsafe { getpid() },
+            pid: std::process::id() as i32,
             process: current_process_name(),
             operation: Some(sanitize_lock_field(operation)),
             created_unix: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .ok()
                 .map(|duration| duration.as_secs()),
+            process_start_ticks: process_start_ticks_for_pid(unsafe { getpid() }),
         }
     }
 
@@ -196,6 +198,7 @@ impl LockMetadata {
                 process: None,
                 operation: None,
                 created_unix: None,
+                process_start_ticks: None,
             });
         }
 
@@ -203,6 +206,7 @@ impl LockMetadata {
         let mut process = None;
         let mut operation = None;
         let mut created_unix = None;
+        let mut process_start_ticks = None;
         for line in contents.lines() {
             let Some((key, value)) = line.split_once('=') else {
                 continue;
@@ -230,6 +234,14 @@ impl LockMetadata {
                         }
                     })?)
                 }
+                "process_start_ticks" => {
+                    process_start_ticks = Some(value.trim().parse::<u64>().map_err(|source| {
+                        ProcessLockError::InvalidMetadata {
+                            path: path.to_path_buf(),
+                            source,
+                        }
+                    })?)
+                }
                 _ => {}
             }
         }
@@ -245,6 +257,7 @@ impl LockMetadata {
             process,
             operation,
             created_unix,
+            process_start_ticks,
         })
     }
 
@@ -255,10 +268,14 @@ impl LockMetadata {
             .created_unix
             .map(|seconds| seconds.to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        format!(
+        let mut serialized = format!(
             "pid={}\nprocess={}\noperation={}\ncreated_unix={}\n",
             self.pid, process, operation, created_unix
-        )
+        );
+        if let Some(process_start_ticks) = self.process_start_ticks {
+            serialized.push_str(&format!("process_start_ticks={process_start_ticks}\n"));
+        }
+        serialized
     }
 
     fn describe_holder(&self) -> String {
@@ -271,6 +288,9 @@ impl LockMetadata {
         }
         if let Some(created_unix) = self.created_unix {
             parts.push(format!("created_unix={created_unix}"));
+        }
+        if let Some(process_start_ticks) = self.process_start_ticks {
+            parts.push(format!("process_start_ticks={process_start_ticks}"));
         }
         parts.join(", ")
     }
@@ -382,6 +402,26 @@ impl ProcessFileLock {
         let ret = unsafe { nix::libc::kill(metadata.pid, 0) };
         if ret != 0 {
             return Errno::last() != Errno::ESRCH;
+        }
+
+        if let Some(expected_start_ticks) = metadata.process_start_ticks {
+            let Some(actual_start_ticks) = process_start_ticks_for_pid(metadata.pid) else {
+                return true;
+            };
+            if actual_start_ticks != expected_start_ticks {
+                return false;
+            }
+        } else if let Some(recorded_process) = metadata
+            .process
+            .as_deref()
+            .filter(|process| *process != "unknown")
+        {
+            let Some(current_process) = process_comm_for_pid(metadata.pid) else {
+                return true;
+            };
+            if current_process != recorded_process {
+                return false;
+            }
         }
 
         let Some(needle) = process_name_contains else {
@@ -543,6 +583,12 @@ fn process_comm_for_pid(pid: i32) -> Option<String> {
         .and_then(|name| non_empty_sanitized(name.trim()))
 }
 
+fn process_start_ticks_for_pid(pid: i32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, fields) = stat.rsplit_once(')')?;
+    fields.split_whitespace().nth(19)?.parse().ok()
+}
+
 fn process_argv0_from_cmdline_bytes(raw: &[u8]) -> Option<String> {
     raw.split(|byte| *byte == 0)
         .next()
@@ -582,7 +628,8 @@ fn sanitize_lock_field(value: &str) -> String {
 mod tests {
     use super::{
         LockMetadata, ProcessFileLock, ProcessLockConfig, ProcessLockError,
-        process_argv0_from_cmdline_bytes, process_name_matches,
+        process_argv0_from_cmdline_bytes, process_comm_for_pid, process_name_matches,
+        process_start_ticks_for_pid,
     };
     use std::{
         fs::{create_dir_all, read_to_string, remove_dir_all, write},
@@ -678,6 +725,7 @@ mod tests {
             Some("load effective overrides")
         );
         assert_eq!(metadata.created_unix, Some(1_800_000_000));
+        assert_eq!(metadata.process_start_ticks, None);
     }
 
     #[test]
@@ -709,10 +757,50 @@ mod tests {
             assert!(contents.contains("process="));
             assert!(contents.contains("operation=load effective overrides"));
             assert!(contents.contains("created_unix="));
+            assert!(contents.contains("process_start_ticks="));
         }
 
         assert!(!path.exists());
         remove_dir_all(&dir).expect("failed to clean up temp test dir");
+    }
+
+    #[test]
+    fn start_ticks_distinguish_reused_pids() {
+        let mut metadata = LockMetadata::current("save operator overrides");
+        let current_start_ticks = process_start_ticks_for_pid(metadata.pid)
+            .expect("current process should expose Linux start ticks");
+        assert!(ProcessFileLock::is_lock_valid(&metadata, None));
+
+        metadata.process_start_ticks = Some(current_start_ticks.saturating_add(1));
+        assert!(!ProcessFileLock::is_lock_valid(&metadata, None));
+    }
+
+    #[test]
+    fn legacy_metadata_rejects_a_reused_pid_with_a_different_process_name() {
+        let metadata = LockMetadata {
+            pid: std::process::id() as i32,
+            process: Some("previous-lock-holder".to_string()),
+            operation: Some("save operator overrides".to_string()),
+            created_unix: Some(1_800_000_000),
+            process_start_ticks: None,
+        };
+
+        assert!(!ProcessFileLock::is_lock_valid(&metadata, None));
+    }
+
+    #[test]
+    fn metadata_without_start_ticks_round_trips() {
+        let metadata = LockMetadata {
+            pid: 12345,
+            process: Some("lqos_overrides".to_string()),
+            operation: Some("save operator overrides".to_string()),
+            created_unix: Some(1_800_000_000),
+            process_start_ticks: None,
+        };
+        let parsed = LockMetadata::parse(&metadata.serialize(), std::path::Path::new("test.lock"))
+            .expect("metadata without start ticks should remain readable");
+
+        assert_eq!(parsed, metadata);
     }
 
     #[test]
@@ -756,11 +844,13 @@ mod tests {
         let dir = unique_test_dir();
         create_dir_all(&dir).expect("failed to create temp test dir");
         let path = dir.join("test.lock");
+        let process = process_comm_for_pid(std::process::id() as i32)
+            .expect("current process should expose its command name");
         write(
             &path,
             format!(
-                "pid={}\nprocess=test-holder\noperation=save overrides\ncreated_unix=1800000000\n",
-                std::process::id()
+                "pid={}\nprocess={process}\noperation=save overrides\ncreated_unix=1800000000\n",
+                std::process::id(),
             ),
         )
         .expect("failed to write temp lock");
@@ -773,7 +863,7 @@ mod tests {
 
         assert_eq!(code, "TEST_LOCKED");
         assert!(message.contains("pid="));
-        assert!(message.contains("process=test-holder"));
+        assert!(message.contains(&format!("process={process}")));
         assert!(message.contains("operation=save overrides"));
         assert!(message.contains("created_unix=1800000000"));
 

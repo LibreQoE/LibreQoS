@@ -1,0 +1,12 @@
+#cloud-config
+users:
+  - name: lab
+    groups: [adm, sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - __LAB_SSH_KEY__
+package_update: true
+packages: [libelf1, nftables, ppp, pppoe, python3-chardet, python3-deepdiff, python3-psutil, freeradius, freeradius-utils]
+runcmd:
+  - systemctl disable --now freeradius || true

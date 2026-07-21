@@ -40,8 +40,7 @@ pub struct ShapedDevice {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anchor_node_id: Option<String>,
 
-    /// The device's MAC address. This isn't actually used, it exists for
-    /// convenient mapping/seraching.
+    /// The device's MAC address or RADIUS username, used by imports and RADIUS identity matching.
     pub mac: String,
 
     /// A list of all IPv4 addresses and CIDR subnets associated with the
@@ -91,6 +90,15 @@ pub struct ShapedDevice {
 }
 
 impl ShapedDevice {
+    /// Refreshes derived hash fields from the current circuit, device, and parent identifiers.
+    ///
+    /// Side effects: mutates only `circuit_hash`, `device_hash`, and `parent_hash` on this value.
+    pub fn refresh_hashes(&mut self) {
+        self.circuit_hash = hash_to_i64(&self.circuit_id);
+        self.device_hash = hash_to_i64(&self.device_id);
+        self.parent_hash = hash_to_i64(&self.parent_node);
+    }
+
     fn normalize_header(value: &str) -> String {
         value
             .chars()
@@ -148,6 +156,9 @@ impl ShapedDevice {
                 }
                 "mac" => {
                     layout.insert("mac", idx);
+                }
+                "radiususername" | "radius_username" | "username" => {
+                    layout.insert("legacy_radius_username", idx);
                 }
                 "ipv4" => {
                     layout.insert("ipv4", idx);
@@ -252,7 +263,14 @@ impl ShapedDevice {
                 "" => None,
                 value => Some(value.to_string()),
             },
-            mac: Self::field(record, &layout, "mac").to_string(),
+            mac: {
+                let mac = Self::field(record, &layout, "mac");
+                if mac.trim().is_empty() {
+                    Self::field(record, &layout, "legacy_radius_username").to_string()
+                } else {
+                    mac.to_string()
+                }
+            },
             ipv4: ShapedDevice::parse_ipv4(Self::field(record, &layout, "ipv4")),
             ipv6: ShapedDevice::parse_ipv6(Self::field(record, &layout, "ipv6")),
             download_min_mbps: {
@@ -321,10 +339,11 @@ impl ShapedDevice {
             },
             comment: Self::field(record, &layout, "comment").to_string(),
             sqm_override: None,
-            circuit_hash: hash_to_i64(Self::field(record, &layout, "circuit_id")),
-            device_hash: hash_to_i64(Self::field(record, &layout, "device_id")),
-            parent_hash: hash_to_i64(Self::field(record, &layout, "parent_node")),
+            circuit_hash: 0,
+            device_hash: 0,
+            parent_hash: 0,
         };
+        device.refresh_hashes();
 
         // Optional 14th field: per-circuit SQM override token
         if let Some(raw) = layout.get("sqm").and_then(|idx| record.get(*idx)) {
@@ -576,6 +595,128 @@ mod tests {
         );
         assert_eq!(device.mac, "00:00:00:00:00:03");
         assert_eq!(device.ipv4.len(), 1);
+    }
+
+    #[test]
+    fn test_header_aware_username_in_mac_parsing() {
+        let headers = StringRecord::from(vec![
+            "Circuit ID",
+            "Circuit Name",
+            "Device ID",
+            "Device Name",
+            "Parent Node",
+            "Parent Node ID",
+            "Anchor Node ID",
+            "MAC",
+            "IPv4",
+            "IPv6",
+            "Download Min Mbps",
+            "Upload Min Mbps",
+            "Download Max Mbps",
+            "Upload Max Mbps",
+            "Comment",
+        ]);
+        let record = StringRecord::from(vec![
+            "radius-circuit",
+            "RADIUS circuit",
+            "radius-device",
+            "RADIUS device",
+            "Tower-A",
+            "",
+            "",
+            "pppoe-known",
+            "192.0.2.10",
+            "",
+            "10",
+            "10",
+            "100",
+            "100",
+            "RADIUS username fixture",
+        ]);
+
+        let device = ShapedDevice::from_csv(&record, Some(&headers))
+            .expect("a RADIUS username should be accepted in the MAC field");
+        assert_eq!(device.mac, "pppoe-known");
+    }
+
+    #[test]
+    fn test_legacy_radius_username_populates_an_empty_mac_field() {
+        let headers = StringRecord::from(vec![
+            "Circuit ID",
+            "Circuit Name",
+            "Device ID",
+            "Device Name",
+            "Parent Node",
+            "MAC",
+            "IPv4",
+            "IPv6",
+            "Download Min Mbps",
+            "Upload Min Mbps",
+            "Download Max Mbps",
+            "Upload Max Mbps",
+            "Comment",
+            "RADIUS Username",
+        ]);
+        let record = StringRecord::from(vec![
+            "radius-circuit",
+            "RADIUS circuit",
+            "radius-device",
+            "RADIUS device",
+            "Tower-A",
+            "",
+            "192.0.2.10",
+            "",
+            "10",
+            "10",
+            "100",
+            "100",
+            "legacy RADIUS username fixture",
+            "pppoe-known",
+        ]);
+
+        let device = ShapedDevice::from_csv(&record, Some(&headers))
+            .expect("a legacy RADIUS Username should populate an empty MAC field");
+        assert_eq!(device.mac, "pppoe-known");
+    }
+
+    #[test]
+    fn test_mac_field_takes_precedence_over_legacy_radius_username() {
+        let headers = StringRecord::from(vec![
+            "Circuit ID",
+            "Circuit Name",
+            "Device ID",
+            "Device Name",
+            "Parent Node",
+            "MAC",
+            "IPv4",
+            "IPv6",
+            "Download Min Mbps",
+            "Upload Min Mbps",
+            "Download Max Mbps",
+            "Upload Max Mbps",
+            "Comment",
+            "RADIUS Username",
+        ]);
+        let record = StringRecord::from(vec![
+            "radius-circuit",
+            "RADIUS circuit",
+            "radius-device",
+            "RADIUS device",
+            "Tower-A",
+            "aa:bb:cc:dd:ee:ff",
+            "192.0.2.10",
+            "",
+            "10",
+            "10",
+            "100",
+            "100",
+            "legacy RADIUS username fixture",
+            "pppoe-known",
+        ]);
+
+        let device = ShapedDevice::from_csv(&record, Some(&headers))
+            .expect("the MAC field should take precedence over a legacy RADIUS Username");
+        assert_eq!(device.mac, "aa:bb:cc:dd:ee:ff");
     }
 
     #[test]

@@ -1,0 +1,5 @@
+version: 2
+ethernets:
+  mgmt0: {match: {macaddress: '52:54:00:10:00:10'}, set-name: mgmt0, dhcp4: true}
+  control0: {match: {macaddress: '52:54:00:10:00:11'}, set-name: control0, addresses: [198.18.10.10/24]}
+  transit0: {match: {macaddress: '52:54:00:10:00:12'}, set-name: transit0, addresses: [198.18.30.10/24]}

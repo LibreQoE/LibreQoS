@@ -673,9 +673,10 @@ fn build_shaping_inputs(
             }
             let conflicts = duplicate_circuit_shape_conflicts(circuit, device);
             if !conflicts.is_empty() {
-                errors.push(format!(
-                    "Circuit '{}' had conflicting circuit-level fields across ShapedDevices.csv rows while building shaping_inputs.json: {}.",
+                warnings.push(format!(
+                    "Circuit '{}' had conflicting circuit-level fields across ShapedDevices.csv rows; using the first row's values and ignoring the duplicate row's circuit-level values for device '{}': {}.",
                     device.circuit_id,
+                    device.device_id,
                     conflicts.join(", ")
                 ));
             }

@@ -42,12 +42,14 @@ pub use cpu_topology::{
 };
 pub use etc::{
     BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode,
-    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, QueueMode, RttThresholds,
-    SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy, TopologyConfig,
-    TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
+    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, QueueMode, RadiusAccountingClient,
+    RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
+    RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
+    RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
+    TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
     TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge,
     enable_long_term_stats, load_config, normalize_external_hostname,
-    treeguard_cpu_mode_migration_notice, update_config,
+    treeguard_cpu_mode_migration_notice, update_config, validate_rate_profile_mbps,
 };
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,

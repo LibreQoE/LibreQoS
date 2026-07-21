@@ -228,7 +228,7 @@
 
 
     #[test]
-    fn shaping_inputs_reject_duplicate_circuit_shape_conflicts() {
+    fn shaping_inputs_warn_and_keep_first_duplicate_circuit_shape() {
         let lqos_directory = unique_temp_dir("lqos-topology-duplicate-circuit-shape");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
@@ -269,17 +269,28 @@
             })),
         };
 
-        let err = build_shaping_inputs(&config, &artifacts)
-            .expect_err("duplicate circuit conflicts should fail shaping inputs");
-        let message = err.to_string();
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("duplicate circuit conflicts should keep the first row")
+            .expect("ShapedDevices.csv should produce shaping inputs");
+        let message = shaping_inputs.warnings.join("\n");
 
         assert!(message.contains("conflicting circuit-level fields"));
+        assert!(message.contains("ignoring the duplicate row's circuit-level values"));
         assert!(message.contains("Download Min Mbps"));
         assert!(message.contains("Upload Min Mbps"));
         assert!(message.contains("Download Max Mbps"));
         assert!(message.contains("Upload Max Mbps"));
         assert!(message.contains("Comment"));
         assert!(message.contains("sqm"));
+        assert_eq!(shaping_inputs.circuits.len(), 1);
+        let circuit = &shaping_inputs.circuits[0];
+        assert_eq!(circuit.download_min_mbps, 10.0);
+        assert_eq!(circuit.upload_min_mbps, 10.0);
+        assert_eq!(circuit.download_max_mbps, 100.0);
+        assert_eq!(circuit.upload_max_mbps, 100.0);
+        assert_eq!(circuit.comment, "first");
+        assert_eq!(circuit.sqm_override.as_deref(), Some("cake"));
+        assert_eq!(circuit.devices.len(), 2);
     }
 
 

@@ -1,0 +1,16 @@
+{
+  "Lab Core": {
+    "id": "lab-core",
+    "downloadBandwidthMbps": 100,
+    "uploadBandwidthMbps": 100,
+    "type": "site",
+    "children": {
+      "PPPoE Access": {
+        "id": "lab-pppoe-access",
+        "downloadBandwidthMbps": 100,
+        "uploadBandwidthMbps": 100,
+        "type": "ap"
+      }
+    }
+  }
+}

@@ -1153,6 +1153,7 @@ mod tests {
                 current_icmp_packets: DownUpOrder::default(),
                 current_tcp_retransmits: DownUpOrder::default(),
                 current_tcp_retransmit_packets: DownUpOrder::default(),
+                current_rtt_flows: DownUpOrder::default(),
                 current_marks: DownUpOrder::default(),
                 current_drops: DownUpOrder::default(),
                 rtt_buffer: RttBuffer::default(),
