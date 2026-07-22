@@ -4,10 +4,8 @@ use anyhow::Result;
 use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, ConfigShapedDevices, ShapedDevice,
     TopologyCanonicalIngressKind, TopologyCanonicalNode, TopologyCanonicalStateFile,
-    TopologyAllowedParent, TopologyEditorNode, TopologyEditorStateFile,
-    TopologyParentCandidatesFile,
-    TopologyQueueVisibilityPolicy,
-    topology_auto_attachment_option, topology_ingress_identity_from_tokens,
+    TopologyEditorNode, TopologyEditorStateFile, TopologyParentCandidatesFile,
+    TopologyQueueVisibilityPolicy, topology_ingress_identity_from_tokens,
 };
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -394,15 +392,13 @@ fn sanitized_topology_index(imported: &ImportedTopologyBundle) -> SanitizedTopol
     if let Some(native) = imported.native_editor.as_ref() {
         for node in &native.nodes {
             node_names_by_id.insert(node.node_id.clone(), node.node_name.clone());
-            queue_policy_by_node_id
-                .insert(node.node_id.clone(), node.queue_visibility_policy);
+            queue_policy_by_node_id.insert(node.node_id.clone(), node.queue_visibility_policy);
         }
     }
     if let Some(native) = imported.native_canonical.as_ref() {
         for node in &native.nodes {
             node_names_by_id.insert(node.node_id.clone(), node.node_name.clone());
-            queue_policy_by_node_id
-                .insert(node.node_id.clone(), node.queue_visibility_policy);
+            queue_policy_by_node_id.insert(node.node_id.clone(), node.queue_visibility_policy);
         }
     }
 
@@ -414,38 +410,11 @@ fn sanitized_topology_index(imported: &ImportedTopologyBundle) -> SanitizedTopol
     }
 }
 
-fn is_queue_auto_uisp_device_parent(
-    topology_index: &SanitizedTopologyIndex,
-    parent_id: &str,
-) -> bool {
-    parent_id.starts_with("uisp:device:")
-        && topology_index
-            .queue_policy_by_node_id
-            .get(parent_id)
-            .is_some_and(|policy| policy == &TopologyQueueVisibilityPolicy::QueueAuto)
-}
-
-fn preserved_exported_queue_auto_device_parent(
-    topology_index: &SanitizedTopologyIndex,
-    node: &TopologyEditorNode,
-) -> Option<String> {
-    let parent_id = topology_index
-        .exported_parent_by_node_id
-        .get(&node.node_id)
-        .and_then(|parent| parent.as_deref())?;
-    if is_queue_auto_uisp_device_parent(topology_index, parent_id)
-        && topology_index.node_names_by_id.contains_key(parent_id)
-        && node.current_attachment_id.as_deref() == Some(parent_id)
-    {
-        Some(parent_id.to_string())
-    } else {
-        None
-    }
-}
-
 fn sanitize_editor_nodes(
     nodes: Vec<TopologyEditorNode>,
     topology_index: &SanitizedTopologyIndex,
+    trusted_native_current_parents: &HashMap<String, String>,
+    suppress_exported_device_attachment_parent: bool,
 ) -> Vec<TopologyEditorNode> {
     nodes
         .into_iter()
@@ -462,32 +431,16 @@ fn sanitize_editor_nodes(
                     .node_names_by_id
                     .contains_key(parent.parent_node_id.as_str())
             });
-            let preserved_device_parent =
-                preserved_exported_queue_auto_device_parent(topology_index, &node);
-            if let Some(parent_id) = preserved_device_parent.as_ref()
-                && !node
-                    .allowed_parents
-                    .iter()
-                    .any(|parent| parent.parent_node_id == *parent_id)
-            {
-                node.allowed_parents.push(TopologyAllowedParent {
-                    parent_node_id: parent_id.clone(),
-                    parent_node_name: topology_index
-                        .node_names_by_id
-                        .get(parent_id)
-                        .cloned()
-                        .unwrap_or_else(|| parent_id.clone()),
-                    attachment_options: vec![topology_auto_attachment_option()],
-                    all_attachments_suppressed: false,
-                    has_probe_unavailable_attachments: false,
-                });
-            }
             let legal_current_parent =
                 node.current_parent_node_id
                     .as_deref()
                     .and_then(|parent_id| {
                         if (node.allowed_parents.is_empty()
                             && topology_index.node_names_by_id.contains_key(parent_id))
+                            || (trusted_native_current_parents
+                                .get(&node.node_id)
+                                .is_some_and(|trusted_parent_id| trusted_parent_id == parent_id)
+                                && topology_index.node_names_by_id.contains_key(parent_id))
                             || node
                                 .allowed_parents
                                 .iter()
@@ -503,8 +456,11 @@ fn sanitize_editor_nodes(
                 .get(&node.node_id)
                 .and_then(|parent| parent.as_deref())
                 .and_then(|parent_id| {
-                    if preserved_device_parent.as_deref() == Some(parent_id) {
-                        return Some(parent_id.to_string());
+                    if suppress_exported_device_attachment_parent
+                        && parent_id.starts_with("uisp:device:")
+                        && node.current_attachment_id.as_deref() == Some(parent_id)
+                    {
+                        return None;
                     }
                     if (node.allowed_parents.is_empty()
                         && topology_index.node_names_by_id.contains_key(parent_id))
@@ -518,11 +474,7 @@ fn sanitize_editor_nodes(
                         None
                     }
                 });
-            let selected_parent = if preserved_device_parent.is_some() {
-                exported_parent.or(legal_current_parent)
-            } else {
-                legal_current_parent.or(exported_parent)
-            };
+            let selected_parent = legal_current_parent.or(exported_parent);
             node.current_parent_node_name = selected_parent.as_deref().and_then(|parent_id| {
                 node.allowed_parents
                     .iter()
@@ -557,6 +509,28 @@ fn sanitized_editor_state(
     generated_unix: Option<u64>,
     imported: &ImportedTopologyBundle,
 ) -> TopologyEditorStateFile {
+    let has_native_topology = imported
+        .native_editor
+        .as_ref()
+        .is_some_and(|editor| !editor.nodes.is_empty())
+        || imported
+            .native_canonical
+            .as_ref()
+            .is_some_and(|canonical| !canonical.nodes.is_empty());
+    let mut trusted_native_current_parents = HashMap::new();
+    if let Some(editor) = imported.native_editor.as_ref() {
+        for node in &editor.nodes {
+            if let Some(parent_id) = node.current_parent_node_id.as_ref() {
+                trusted_native_current_parents.insert(node.node_id.clone(), parent_id.clone());
+            }
+        }
+    } else if let Some(canonical) = imported.native_canonical.as_ref() {
+        for node in &canonical.nodes {
+            if let Some(parent_id) = node.current_parent_node_id.as_ref() {
+                trusted_native_current_parents.insert(node.node_id.clone(), parent_id.clone());
+            }
+        }
+    }
     let editor = imported.native_editor.clone().unwrap_or_else(|| {
         imported
             .native_canonical
@@ -574,7 +548,12 @@ fn sanitized_editor_state(
     TopologyEditorStateFile {
         source: source.to_string(),
         generated_unix,
-        nodes: sanitize_editor_nodes(editor.nodes, &topology_index),
+        nodes: sanitize_editor_nodes(
+            editor.nodes,
+            &topology_index,
+            &trusted_native_current_parents,
+            has_native_topology,
+        ),
         ..editor
     }
 }
@@ -1328,7 +1307,7 @@ mod tests {
     }
 
     #[test]
-    fn full_mode_preserves_queue_auto_device_parent_from_native_canonical() {
+    fn full_mode_preserves_native_parent_when_attachment_matches_exported_device_parent() {
         let editor = queue_auto_device_parent_editor(
             TopologyQueueVisibilityPolicy::QueueAuto,
             "uisp:device:root-switch",
@@ -1343,7 +1322,7 @@ mod tests {
         let imported = queue_auto_device_parent_bundle(None, Some(canonical));
 
         let compiled = compile_topology(imported, TopologyCompileMode::Full)
-            .expect("full compilation should preserve canonical queue-auto device parents");
+            .expect("full compilation should preserve canonical logical parents");
         let child_switch = compiled
             .editor
             .nodes
@@ -1363,7 +1342,11 @@ mod tests {
         );
         assert_eq!(
             child_switch.current_parent_node_id.as_deref(),
-            Some("uisp:device:root-switch")
+            Some("uisp:site:site-root")
+        );
+        assert_eq!(
+            child_switch.current_parent_node_name.as_deref(),
+            Some("Root Site")
         );
         assert_eq!(
             child_switch.current_attachment_id.as_deref(),
@@ -1379,12 +1362,12 @@ mod tests {
                 .iter()
                 .filter(|parent| parent.parent_node_id == "uisp:device:root-switch")
                 .count(),
-            1
+            0
         );
     }
 
     #[test]
-    fn full_mode_prefers_native_canonical_queue_policy_over_editor_policy() {
+    fn full_mode_preserves_native_canonical_queue_policy_without_reparenting() {
         let editor = queue_auto_device_parent_editor(
             TopologyQueueVisibilityPolicy::QueueVisible,
             "uisp:device:root-switch",
@@ -1425,10 +1408,22 @@ mod tests {
         );
         assert_eq!(
             child_switch.current_parent_node_id.as_deref(),
+            Some("uisp:site:site-root")
+        );
+        assert_eq!(
+            child_switch.current_parent_node_name.as_deref(),
+            Some("Root Site")
+        );
+        assert_eq!(
+            child_switch.current_attachment_id.as_deref(),
             Some("uisp:device:root-switch")
         );
+        assert_eq!(
+            child_switch.current_attachment_name.as_deref(),
+            Some("Root Switch")
+        );
         assert!(
-            child_switch
+            !child_switch
                 .allowed_parents
                 .iter()
                 .any(|parent| parent.parent_node_id == "uisp:device:root-switch")
@@ -1436,13 +1431,59 @@ mod tests {
     }
 
     #[test]
-    fn full_mode_does_not_prefer_exported_device_parent_for_different_attachment() {
-        let editor = queue_auto_device_parent_editor(
+    fn full_mode_does_not_infer_matching_device_attachment_parent() {
+        let mut editor = queue_auto_device_parent_editor(
             TopologyQueueVisibilityPolicy::QueueAuto,
-            "uisp:site:site-root",
-            "Root Site",
-            vec![allowed_parent("uisp:site:site-root", "Root Site")],
+            "uisp:device:root-switch",
+            "Root Switch",
+            Vec::new(),
         );
+        let child_switch = editor
+            .nodes
+            .iter_mut()
+            .find(|node| node.node_id == "uisp:device:child-switch")
+            .expect("editor fixture should include the child switch");
+        child_switch.current_parent_node_id = None;
+        child_switch.current_parent_node_name = None;
+        let imported = queue_auto_device_parent_bundle(Some(editor), None);
+
+        let compiled = compile_topology(imported, TopologyCompileMode::Full)
+            .expect("full compilation should not infer native parents from compatibility output");
+        let child_switch = compiled
+            .editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:child-switch")
+            .expect("child switch should remain in editor state");
+
+        assert!(child_switch.current_parent_node_id.is_none());
+        assert!(child_switch.current_parent_node_name.is_none());
+        assert_eq!(
+            child_switch.current_attachment_id.as_deref(),
+            Some("uisp:device:root-switch")
+        );
+        assert_eq!(
+            child_switch.current_attachment_name.as_deref(),
+            Some("Root Switch")
+        );
+        assert!(child_switch.allowed_parents.is_empty());
+    }
+
+    #[test]
+    fn full_mode_can_use_exported_device_parent_for_different_attachment() {
+        let mut editor = queue_auto_device_parent_editor(
+            TopologyQueueVisibilityPolicy::QueueAuto,
+            "uisp:device:child-switch",
+            "Child Switch",
+            vec![allowed_parent("uisp:device:root-switch", "Root Switch")],
+        );
+        let child_switch = editor
+            .nodes
+            .iter_mut()
+            .find(|node| node.node_id == "uisp:device:child-switch")
+            .expect("editor fixture should include the child switch");
+        child_switch.current_parent_node_id = None;
+        child_switch.current_parent_node_name = None;
         let canonical = TopologyCanonicalStateFile::from_editor_and_network(
             &editor,
             &queue_auto_device_parent_network_json(),
@@ -1461,10 +1502,18 @@ mod tests {
 
         assert_eq!(
             child_switch.current_parent_node_id.as_deref(),
-            Some("uisp:site:site-root")
+            Some("uisp:device:root-switch")
+        );
+        assert_eq!(
+            child_switch.current_parent_node_name.as_deref(),
+            Some("Root Switch")
+        );
+        assert_eq!(
+            child_switch.current_attachment_id.as_deref(),
+            Some("uisp:device:child-switch")
         );
         assert!(
-            !child_switch
+            child_switch
                 .allowed_parents
                 .iter()
                 .any(|parent| parent.parent_node_id == "uisp:device:root-switch")
@@ -1472,20 +1521,24 @@ mod tests {
     }
 
     #[test]
-    fn full_mode_uses_editor_queue_auto_device_parent_without_duplicate_allowed_parent() {
-        let editor = queue_auto_device_parent_editor(
+    fn full_mode_preserves_explicit_native_device_parent_missing_from_allowed_parents() {
+        let mut editor = queue_auto_device_parent_editor(
             TopologyQueueVisibilityPolicy::QueueAuto,
             "uisp:device:root-switch",
             "Root Switch",
-            vec![
-                allowed_parent("uisp:site:site-root", "Root Site"),
-                allowed_parent("uisp:device:root-switch", "Root Switch"),
-            ],
+            vec![allowed_parent("uisp:site:site-root", "Root Site")],
         );
+        let child_switch = editor
+            .nodes
+            .iter_mut()
+            .find(|node| node.node_id == "uisp:device:child-switch")
+            .expect("editor fixture should include the child switch");
+        child_switch.current_parent_node_id = Some("uisp:device:root-switch".to_string());
+        child_switch.current_parent_node_name = Some("Root Switch".to_string());
         let imported = queue_auto_device_parent_bundle(Some(editor), None);
 
         let compiled = compile_topology(imported, TopologyCompileMode::Full)
-            .expect("full compilation should use editor-only queue-auto device parent");
+            .expect("full compilation should preserve explicit native device parent");
         let child_switch = compiled
             .editor
             .nodes
@@ -1496,6 +1549,71 @@ mod tests {
         assert_eq!(
             child_switch.current_parent_node_id.as_deref(),
             Some("uisp:device:root-switch")
+        );
+        assert_eq!(
+            child_switch.current_parent_node_name.as_deref(),
+            Some("Root Switch")
+        );
+        assert_eq!(
+            child_switch.current_attachment_id.as_deref(),
+            Some("uisp:device:root-switch")
+        );
+        assert_eq!(
+            child_switch.current_attachment_name.as_deref(),
+            Some("Root Switch")
+        );
+        assert!(
+            !child_switch
+                .allowed_parents
+                .iter()
+                .any(|parent| parent.parent_node_id == "uisp:device:root-switch")
+        );
+    }
+
+    #[test]
+    fn full_mode_preserves_explicit_native_device_parent_without_duplicate_allowed_parent() {
+        let mut editor = queue_auto_device_parent_editor(
+            TopologyQueueVisibilityPolicy::QueueAuto,
+            "uisp:device:root-switch",
+            "Root Switch",
+            vec![
+                allowed_parent("uisp:site:site-root", "Root Site"),
+                allowed_parent("uisp:device:root-switch", "Root Switch"),
+            ],
+        );
+        let child_switch = editor
+            .nodes
+            .iter_mut()
+            .find(|node| node.node_id == "uisp:device:child-switch")
+            .expect("editor fixture should include the child switch");
+        child_switch.current_parent_node_id = Some("uisp:device:root-switch".to_string());
+        child_switch.current_parent_node_name = Some("Root Switch".to_string());
+        let imported = queue_auto_device_parent_bundle(Some(editor), None);
+
+        let compiled = compile_topology(imported, TopologyCompileMode::Full)
+            .expect("full compilation should preserve explicit native queue-auto device parent");
+        let child_switch = compiled
+            .editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:child-switch")
+            .expect("child switch should remain in editor state");
+
+        assert_eq!(
+            child_switch.current_parent_node_id.as_deref(),
+            Some("uisp:device:root-switch")
+        );
+        assert_eq!(
+            child_switch.current_parent_node_name.as_deref(),
+            Some("Root Switch")
+        );
+        assert_eq!(
+            child_switch.current_attachment_id.as_deref(),
+            Some("uisp:device:root-switch")
+        );
+        assert_eq!(
+            child_switch.current_attachment_name.as_deref(),
+            Some("Root Switch")
         );
         assert_eq!(
             child_switch

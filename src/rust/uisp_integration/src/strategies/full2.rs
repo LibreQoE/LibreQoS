@@ -2331,17 +2331,30 @@ mod topology_override_tests {
         }
     }
 
+    fn find_network_node_with_parent<'a>(
+        value: &'a Value,
+        target_id: &str,
+        parent_id: Option<&str>,
+    ) -> Option<(&'a Map<String, Value>, Option<String>)> {
+        let map = value.as_object()?;
+        if map.get("id").and_then(Value::as_str) == Some(target_id) {
+            return Some((map, parent_id.map(ToOwned::to_owned)));
+        }
+
+        let node_id = map.get("id").and_then(Value::as_str);
+        map.values()
+            .find_map(|child| find_network_node_with_parent(child, target_id, node_id))
+    }
+
     fn find_network_node_by_id<'a>(
         value: &'a Value,
         target_id: &str,
     ) -> Option<&'a Map<String, Value>> {
-        let map = value.as_object()?;
-        if map.get("id").and_then(Value::as_str) == Some(target_id) {
-            return Some(map);
-        }
+        find_network_node_with_parent(value, target_id, None).map(|(node, _parent_id)| node)
+    }
 
-        map.values()
-            .find_map(|child| find_network_node_by_id(child, target_id))
+    fn find_network_parent_id(value: &Value, target_id: &str) -> Option<Option<String>> {
+        find_network_node_with_parent(value, target_id, None).map(|(_node, parent_id)| parent_id)
     }
 
     #[tokio::test]
@@ -2414,7 +2427,7 @@ mod topology_override_tests {
             TopologyQueueVisibilityPolicy::QueueAuto
         );
 
-        let compiled = lqos_topology_compile::compile_topology(
+        let mut compiled = lqos_topology_compile::compile_topology(
             bundle,
             lqos_topology_compile::TopologyCompileMode::Full,
         )
@@ -2431,10 +2444,22 @@ mod topology_override_tests {
         );
         assert_eq!(
             compiled_child_switch.current_parent_node_id.as_deref(),
+            Some("uisp:site:site-root")
+        );
+        assert_eq!(
+            compiled_child_switch.current_parent_node_name.as_deref(),
+            Some("Root Site")
+        );
+        assert_eq!(
+            compiled_child_switch.current_attachment_id.as_deref(),
             Some("uisp:device:device-root-switch")
         );
+        assert_eq!(
+            compiled_child_switch.current_attachment_name.as_deref(),
+            Some("Root Switch")
+        );
         assert!(
-            compiled_child_switch
+            !compiled_child_switch
                 .allowed_parents
                 .iter()
                 .any(|parent| parent.parent_node_id == "uisp:device:device-root-switch")
@@ -2451,14 +2476,38 @@ mod topology_override_tests {
         );
         assert_eq!(
             compiled_child_site.current_parent_node_id.as_deref(),
+            Some("uisp:site:site-root")
+        );
+        assert_eq!(
+            compiled_child_site.current_parent_node_name.as_deref(),
+            Some("Root Site")
+        );
+        assert_eq!(
+            compiled_child_site.current_attachment_id.as_deref(),
             Some("uisp:device:device-child-switch")
         );
+        assert_eq!(
+            compiled_child_site.current_attachment_name.as_deref(),
+            Some("Child Switch")
+        );
         assert!(
-            compiled_child_site
+            !compiled_child_site
                 .allowed_parents
                 .iter()
                 .any(|parent| parent.parent_node_id == "uisp:device:device-child-switch")
         );
+
+        for node in &mut compiled.canonical.nodes {
+            match node.node_id.as_str() {
+                "uisp:device:device-child-switch" => {
+                    node.current_attachment_name = Some("stale root switch label".to_string());
+                }
+                "uisp:site:site-child" => {
+                    node.current_attachment_name = Some("stale child switch label".to_string());
+                }
+                _ => {}
+            }
+        }
 
         let artifacts = lqos_topology::build_effective_topology_artifacts_from_canonical(
             &config_for_topology,
@@ -2471,13 +2520,60 @@ mod topology_override_tests {
             .effective_network
             .as_ref()
             .expect("effective topology should include a network tree");
-        let effective_root_switch =
-            find_network_node_by_id(effective_network, "uisp:device:device-root-switch")
-                .expect("root switch should remain visible in the effective tree");
-
+        assert!(
+            find_network_node_by_id(effective_network, "uisp:device:device-root-switch").is_none()
+        );
+        let effective_child_switch = artifacts
+            .effective
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-child-switch")
+            .expect("effective state should retain child switch attachment metadata");
         assert_eq!(
-            effective_root_switch.get("virtual").and_then(Value::as_bool),
-            Some(true)
+            effective_child_switch.logical_parent_node_id,
+            "uisp:site:site-root"
+        );
+        assert_eq!(
+            effective_child_switch.effective_attachment_id.as_deref(),
+            Some("uisp:device:device-root-switch")
+        );
+        let ui_child_switch = artifacts
+            .ui_state
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-child-switch")
+            .expect("UI state should retain child switch attachment metadata");
+        assert_eq!(
+            ui_child_switch.effective_attachment_name.as_deref(),
+            Some("Root Switch")
+        );
+        let effective_child_site = artifacts
+            .effective
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("effective state should retain child site attachment metadata");
+        assert_eq!(
+            effective_child_site.logical_parent_node_id,
+            "uisp:site:site-root"
+        );
+        assert_eq!(
+            effective_child_site.effective_attachment_id.as_deref(),
+            Some("uisp:device:device-child-switch")
+        );
+        let ui_child_site = artifacts
+            .ui_state
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("UI state should retain child site attachment metadata");
+        assert_eq!(
+            ui_child_site.effective_attachment_name.as_deref(),
+            Some("Child Switch")
+        );
+        assert_eq!(
+            find_network_parent_id(effective_network, "uisp:site:site-child"),
+            Some(None)
         );
 
         let _ = std::fs::remove_dir_all(temp_dir);
