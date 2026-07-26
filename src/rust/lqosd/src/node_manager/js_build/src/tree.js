@@ -336,7 +336,6 @@ function ensureTreeStormguardGraph() {
 }
 
 function renderTreeStormguard() {
-    const pane = document.getElementById("treeStormguardPane");
     const visible = shouldShowStormguardTab(stormguardRuntime);
     setTreeDetailTabsVisibility(document, window.bootstrap, visible);
     if (!visible) {

@@ -73,6 +73,16 @@ test("hiding StormGuard tabs does not steal focus from visible content", () => {
     assert.equal(elements.treeOverviewPane.focusCount, 0);
 });
 
+test("hiding StormGuard tabs moves StormGuard pane focus to the overview pane", () => {
+    const focusedContent = {parent: null};
+    const {document, elements} = treeDocument(focusedContent);
+    focusedContent.parent = elements.treeStormguardPane;
+
+    setTreeDetailTabsVisibility(document, null, false);
+
+    assert.equal(elements.treeOverviewPane.focusCount, 1);
+});
+
 test("showing StormGuard reveals the full tab strip", () => {
     const {document, elements} = treeDocument({parent: null});
     elements.treeDetailTabsContainer.classList.add("d-none");
