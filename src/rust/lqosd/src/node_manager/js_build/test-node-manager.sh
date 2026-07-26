@@ -15,6 +15,7 @@ node --test \
   "${SCRIPT_DIR}/src/circuit_packet_capture_dom.test.mjs" \
   "${SCRIPT_DIR}/src/tree_limit_reason.test.mjs" \
   "${SCRIPT_DIR}/src/tree_stormguard.test.mjs" \
+  "${SCRIPT_DIR}/src/tree_detail_tabs.test.mjs" \
   "${SCRIPT_DIR}/src/config/shaped_device_identity.test.mjs" \
   "${SCRIPT_DIR}/src/config/shaped_device_wire.test.mjs" \
   "${SCRIPT_DIR}/src/config_radius_accounting_contract.test.mjs" \

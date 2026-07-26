@@ -19,12 +19,12 @@ use crate::strategies::legacy_routes_override::RouteOverride;
 use crate::uisp_types::{UispAttachmentRateSource, UispDevice};
 use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, CircuitEthernetMetadata, Config, ConfigShapedDevices,
-    EthernetPortLimitPolicy, RequestedCircuitRates, ShapedDevice as ConfigShapedDevice,
-    TOPOLOGY_ATTACHMENT_AUTO_ID, TopologyAllowedParent, TopologyAttachmentOption,
-    TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
-    TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
-    TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
-    TopologyQueueVisibilityPolicy, topology_auto_attachment_option,
+    EthernetCapTargetKind, EthernetPortLimitPolicy, RequestedCircuitRates,
+    ShapedDevice as ConfigShapedDevice, TOPOLOGY_ATTACHMENT_AUTO_ID, TopologyAllowedParent,
+    TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
+    TopologyCanonicalIngressKind, TopologyCanonicalStateFile, TopologyEditorNode,
+    TopologyEditorStateFile, TopologyParentCandidate, TopologyParentCandidatesFile,
+    TopologyParentCandidatesNode, TopologyQueueVisibilityPolicy, topology_auto_attachment_option,
 };
 #[cfg(test)]
 use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
@@ -42,6 +42,41 @@ use tracing::{debug, info, warn};
 type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Directed>;
 const GENERATED_INTERNET_ROOT_NAME: &str = "INSERTED_INTERNET";
 const GENERATED_INTERNET_ROOT_ID: &str = "ROOT-001";
+
+/// Builds advisory metadata for a topology node whose infrastructure transport cap reduced it.
+fn topology_node_ethernet_advisory(device: &UispDevice) -> Option<CircuitEthernetMetadata> {
+    let applied_ethernet_cap = device.transport_cap_mbps?;
+    let auto_capped = device.download < device.raw_download || device.upload < device.raw_upload;
+    if !auto_capped {
+        return None;
+    }
+
+    let target_id = format!("uisp:device:{}", device.id);
+    Some(CircuitEthernetMetadata {
+        device_ids: vec![device.id.clone()],
+        source: "uisp/infrastructure_transport".to_string(),
+        negotiated_ethernet_mbps: device
+            .transport_cap_line_rate_mbps
+            .or(device.negotiated_ethernet_mbps)
+            .unwrap_or(applied_ethernet_cap),
+        requested_download_mbps: device.raw_download as f32,
+        requested_upload_mbps: device.raw_upload as f32,
+        applied_download_mbps: device.download as f32,
+        applied_upload_mbps: device.upload as f32,
+        auto_capped,
+        limiting_device_id: Some(device.id.clone()),
+        limiting_device_name: Some(device.name.clone()),
+        limiting_interface_name: device
+            .transport_cap_interface
+            .clone()
+            .or_else(|| device.negotiated_ethernet_interface.clone()),
+        ..CircuitEthernetMetadata::for_target(
+            EthernetCapTargetKind::Node,
+            target_id,
+            device.name.clone(),
+        )
+    })
+}
 
 #[derive(Clone, Debug)]
 struct LegacyShapedDevice {
@@ -771,6 +806,11 @@ async fn build_imported_full2_bundle_from_data(
         ingress_identity: None,
         nodes: topology_editor_nodes,
     };
+    let exported_uisp_device_ids: HashSet<&str> = topology_editor_state
+        .nodes
+        .iter()
+        .filter_map(|node| node.node_id.strip_prefix("uisp:device:"))
+        .collect();
     let canonical_state = TopologyCanonicalStateFile::from_editor_and_network(
         &topology_editor_state,
         &Value::Object(network_json.clone()),
@@ -925,6 +965,14 @@ async fn build_imported_full2_bundle_from_data(
         export_elapsed_ms,
         total_elapsed_ms = build_started.elapsed().as_millis(),
         "Completed UISP full2 import bundle"
+    );
+
+    ethernet_advisories.extend(
+        uisp_data
+            .devices
+            .iter()
+            .filter(|device| exported_uisp_device_ids.contains(device.id.as_str()))
+            .filter_map(topology_node_ethernet_advisory),
     );
 
     Ok(ImportedTopologyBundle {
@@ -2325,6 +2373,8 @@ mod topology_override_tests {
             probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: None,
             negotiated_ethernet_interface: None,
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: UispAttachmentRateSource::Static,
@@ -3142,6 +3192,8 @@ mod topology_override_tests {
             probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: None,
             negotiated_ethernet_interface: None,
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: UispAttachmentRateSource::Static,
@@ -3472,10 +3524,36 @@ mod tests {
             probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: None,
             negotiated_ethernet_interface: None,
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: UispAttachmentRateSource::Static,
         }
+    }
+
+    #[test]
+    fn topology_node_ethernet_advisory_preserves_the_port_cap_details() {
+        let mut device = test_uisp_device("ap-1", "AP One");
+        device.raw_download = 500;
+        device.raw_upload = 200;
+        device.download = 94;
+        device.upload = 94;
+        device.negotiated_ethernet_mbps = Some(100);
+        device.negotiated_ethernet_interface = Some("eth0".to_string());
+        device.transport_cap_line_rate_mbps = Some(100);
+        device.transport_cap_interface = Some("eth0".to_string());
+        device.transport_cap_mbps = Some(94);
+
+        let advisory = topology_node_ethernet_advisory(&device)
+            .expect("reduced infrastructure node should produce an Ethernet advisory");
+
+        assert_eq!(advisory.target_kind, EthernetCapTargetKind::Node);
+        assert_eq!(advisory.target_id, "uisp:device:ap-1");
+        assert_eq!(advisory.negotiated_ethernet_mbps, 100);
+        assert_eq!(advisory.requested_download_mbps, 500.0);
+        assert_eq!(advisory.applied_upload_mbps, 94.0);
+        assert_eq!(advisory.limiting_interface_name.as_deref(), Some("eth0"));
     }
 
     fn add_site(graph: &mut GraphType, name: &str, id: &str) -> NodeIndex {

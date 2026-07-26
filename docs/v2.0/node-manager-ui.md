@@ -156,9 +156,10 @@ Practical meaning:
 - `Flow Sankey` emphasizes the hottest recent flows rather than every older retained flow.
 
 ### Ethernet Caps
-- The Ethernet review page is a lightweight operator table of circuits automatically down-rated because detected Ethernet speed was below the requested plan.
+- The Ethernet review page is a lightweight operator table of circuits and topology nodes automatically down-rated because detected Ethernet speed was below the requested rate.
 - It is intentionally not in the main navigation; operators reach it by clicking Ethernet warning badges on the Circuit page or Tree attached-circuits table.
-- The page supports search, tier filtering (`10M`, `100M`, `1G+`), and paging across auto-capped circuits.
+- Circuit rows open the Circuit page, while topology-node rows open the matching Tree node.
+- The page supports search, tier filtering (`10M`, `100M`, `1G+`), and paging across auto-capped targets.
 
 ### CPU Tree / CPU Weights
 - Shows queue/circuit distribution by CPU core.

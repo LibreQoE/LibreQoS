@@ -127,6 +127,8 @@ mod tests {
             probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: speed,
             negotiated_ethernet_interface: iface.map(str::to_string),
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,

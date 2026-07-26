@@ -35,6 +35,7 @@ import {
     stormguardNodeContext,
     summarizeStormguardHistory,
 } from "./tree_stormguard.mjs";
+import {setTreeDetailTabsVisibility} from "./tree_detail_tabs.mjs";
 
 var tree = null;
 var parent = 0;
@@ -335,19 +336,9 @@ function ensureTreeStormguardGraph() {
 }
 
 function renderTreeStormguard() {
-    const tabItem = document.getElementById("treeStormguardTabItem");
-    const pane = document.getElementById("treeStormguardPane");
     const visible = shouldShowStormguardTab(stormguardRuntime);
-    const focusWillBeHidden = !visible
-        && (tabItem?.contains(document.activeElement) || pane?.contains(document.activeElement));
-    tabItem?.classList.toggle("d-none", !visible);
+    setTreeDetailTabsVisibility(document, window.bootstrap, visible);
     if (!visible) {
-        const stormguardTab = document.getElementById("tree-stormguard-tab");
-        const overviewTab = document.getElementById("tree-overview-tab");
-        if (stormguardTab?.classList.contains("active")) {
-            window.bootstrap?.Tab.getOrCreateInstance(overviewTab)?.show();
-        }
-        if (focusWillBeHidden) overviewTab?.focus();
         return;
     }
 
