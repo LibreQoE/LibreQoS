@@ -34,6 +34,10 @@ pub struct UispDevice {
     pub probe_ipv6: HashSet<String>,
     pub negotiated_ethernet_mbps: Option<u64>,
     pub negotiated_ethernet_interface: Option<String>,
+    /// Physical line rate selected when applying an infrastructure transport cap.
+    pub transport_cap_line_rate_mbps: Option<u64>,
+    /// Interface selected when applying an observed infrastructure transport cap.
+    pub transport_cap_interface: Option<String>,
     pub transport_cap_mbps: Option<u64>,
     pub transport_cap_reason: Option<String>,
     pub attachment_rate_source: UispAttachmentRateSource,
@@ -594,6 +598,8 @@ impl UispDevice {
         }
         let raw_download = download;
         let raw_upload = upload;
+        let mut transport_cap_line_rate_mbps = None;
+        let mut transport_cap_interface = None;
         let mut transport_cap_mbps = None;
         let mut transport_cap_reason = None;
 
@@ -714,19 +720,24 @@ impl UispDevice {
             .infrastructure_transport_caps_enabled
         {
             let policy = EthernetPortLimitPolicy::from(&config.integration_common);
-            let observed_transport = Self::infrastructure_transport_observation(device);
+            let (observed_line_rate, observed_interface, observed_reason) =
+                Self::infrastructure_transport_observation(device);
             let model_transport = Self::model_transport_port_ceiling(device);
-            let selected_transport = observed_transport
-                .0
-                .zip(observed_transport.2)
-                .or(model_transport);
+            let selected_transport = observed_line_rate
+                .zip(observed_reason)
+                .map(|(line_rate_mbps, reason)| (line_rate_mbps, observed_interface, reason))
+                .or_else(|| {
+                    model_transport.map(|(line_rate_mbps, reason)| (line_rate_mbps, None, reason))
+                });
 
-            if let Some((line_rate_mbps, reason)) = selected_transport
+            if let Some((line_rate_mbps, interface, reason)) = selected_transport
                 && let Some(usable_cap_mbps) = usable_ethernet_cap_mbps(policy, line_rate_mbps)
                 && (download > usable_cap_mbps || upload > usable_cap_mbps)
             {
                 download = download.min(usable_cap_mbps);
                 upload = upload.min(usable_cap_mbps);
+                transport_cap_line_rate_mbps = Some(line_rate_mbps);
+                transport_cap_interface = interface;
                 transport_cap_mbps = Some(usable_cap_mbps);
                 transport_cap_reason = Some(reason);
             }
@@ -752,6 +763,8 @@ impl UispDevice {
             probe_ipv6,
             negotiated_ethernet_mbps,
             negotiated_ethernet_interface,
+            transport_cap_line_rate_mbps,
+            transport_cap_interface,
             transport_cap_mbps,
             transport_cap_reason,
             attachment_rate_source,
@@ -1117,6 +1130,8 @@ mod tests {
         assert_eq!(trimmed.raw_upload, 2000);
         assert_eq!(trimmed.download, 940);
         assert_eq!(trimmed.upload, 940);
+        assert_eq!(trimmed.transport_cap_line_rate_mbps, Some(1000));
+        assert_eq!(trimmed.transport_cap_interface, None);
         assert_eq!(trimmed.transport_cap_mbps, Some(940));
         assert!(
             trimmed
@@ -1156,6 +1171,8 @@ mod tests {
         assert_eq!(trimmed.raw_upload, 2700);
         assert_eq!(trimmed.download, 2350);
         assert_eq!(trimmed.upload, 2350);
+        assert_eq!(trimmed.transport_cap_line_rate_mbps, Some(2500));
+        assert_eq!(trimmed.transport_cap_interface.as_deref(), Some("eth0"));
         assert_eq!(trimmed.transport_cap_mbps, Some(2350));
         assert!(
             trimmed
@@ -1289,6 +1306,8 @@ mod tests {
             probe_ipv6: HashSet::new(),
             negotiated_ethernet_mbps: None,
             negotiated_ethernet_interface: None,
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: super::UispAttachmentRateSource::Static,

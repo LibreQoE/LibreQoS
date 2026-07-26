@@ -53,18 +53,37 @@ function buildTierBadge(row) {
     return badge;
 }
 
+function targetKindLabel(row) {
+    return row?.target_kind === "Node" ? "Node" : "Circuit";
+}
+
+function targetHref(row) {
+    if (row?.target_kind === "Node") {
+        return `/tree.html?nodeId=${encodeURIComponent(row.target_id)}`;
+    }
+    return `/circuit.html?id=${encodeURIComponent(row.target_id)}`;
+}
+
+function setRequestError(message = "") {
+    const error = document.getElementById("ethernetCapsError");
+    if (!error) return;
+    error.hidden = !message;
+    error.textContent = message;
+}
+
 function tableRow(row) {
     const tr = document.createElement("tr");
     tr.classList.add("small");
 
     const circuitCell = document.createElement("td");
     const link = document.createElement("a");
-    link.href = `/circuit.html?id=${encodeURIComponent(row.circuit_id)}`;
+    link.href = targetHref(row);
     link.classList.add("redactable");
-    link.textContent = row.circuit_name || row.circuit_id;
+    link.textContent = row.target_name || row.target_id;
     circuitCell.appendChild(link);
     tr.appendChild(circuitCell);
 
+    tr.appendChild(simpleRow(targetKindLabel(row)));
     tr.appendChild(simpleRow(row.parent_node || "-", true));
 
     const ethernetCell = document.createElement("td");
@@ -87,7 +106,7 @@ function renderTable(rows) {
     if (!Array.isArray(rows) || rows.length === 0) {
         const empty = document.createElement("div");
         empty.className = "text-muted small";
-        empty.textContent = "No Ethernet-limited circuits matched this filter.";
+        empty.textContent = "No Ethernet-limited circuits or nodes matched this filter.";
         target.appendChild(empty);
         return;
     }
@@ -98,7 +117,8 @@ function renderTable(rows) {
     table.classList.add("lqos-table", "lqos-table-tight");
 
     const thead = document.createElement("thead");
-    thead.appendChild(theading("Circuit"));
+    thead.appendChild(theading("Target"));
+    thead.appendChild(theading("Type"));
     thead.appendChild(theading("Parent"));
     thead.appendChild(theading("Ethernet"));
     thead.appendChild(theading("Requested"));
@@ -114,7 +134,7 @@ function renderTable(rows) {
     target.appendChild(wrap);
 }
 
-function updateSummary(query, rows) {
+function updateSummary(query, rows, requestFailed = false) {
     const summary = document.getElementById("ethernetCapsSummary");
     const pager = document.getElementById("ethernetCapsPager");
     const prev = document.getElementById("ethernetCapsPrev");
@@ -126,9 +146,17 @@ function updateSummary(query, rows) {
     const start = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
     const end = totalRows === 0 ? 0 : start + Math.max(0, rows.length - 1);
 
+    if (requestFailed) {
+        summary.textContent = "Ethernet cap data unavailable";
+        pager.textContent = "Retry the page after the connection is restored.";
+        prev.disabled = true;
+        next.disabled = true;
+        return;
+    }
+
     summary.textContent = totalRows === 0
         ? "No active Ethernet caps"
-        : `${totalRows} Ethernet-limited circuits`;
+        : `${totalRows} Ethernet-limited targets`;
     pager.textContent = totalRows === 0
         ? "Page 1 / 1"
         : `Showing ${start}–${end} of ${totalRows} • Page ${currentPage} / ${totalPages}`;
@@ -153,12 +181,14 @@ async function requestPage() {
         });
         const data = msg?.data || { rows: [], total_rows: 0, query };
         totalRows = Number.isFinite(Number(data.total_rows)) ? Number(data.total_rows) : 0;
+        setRequestError();
         renderTable(data.rows || []);
         updateSummary(data.query, data.rows || []);
     } catch (_error) {
         totalRows = 0;
+        setRequestError("Ethernet cap data could not be loaded. Check the node-manager connection and retry.");
         renderTable([]);
-        updateSummary({ page: 0 }, []);
+        updateSummary({ page: 0 }, [], true);
     }
 }
 

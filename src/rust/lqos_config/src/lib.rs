@@ -35,7 +35,7 @@ pub use circuit_anchors::{
 };
 pub use circuit_ethernet_metadata::{
     CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
-    circuit_ethernet_metadata_path,
+    EthernetCapTargetKind, circuit_ethernet_metadata_path,
 };
 pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,

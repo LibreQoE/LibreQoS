@@ -105,9 +105,10 @@ Esta página documenta las vistas clave de la WebUI (Node Manager) y su comporta
 - `Flow Sankey` enfatiza los flujos recientes más activos en lugar de todos los flujos retenidos más antiguos.
 
 ### Ethernet Caps
-- La página de revisión Ethernet es una tabla ligera para operadores con los circuitos reducidos automáticamente porque la velocidad Ethernet detectada quedó por debajo del plan solicitado.
+- La página de revisión Ethernet es una tabla ligera para operadores con los circuitos y nodos de topología reducidos automáticamente porque la velocidad Ethernet detectada quedó por debajo de la velocidad solicitada.
 - Intencionalmente no aparece en la navegación principal; los operadores llegan a ella haciendo clic en las insignias de advertencia Ethernet de la página de circuito o de la tabla de circuitos adjuntos del árbol.
-- La página soporta búsqueda, filtro por tier (`10M`, `100M`, `1G+`) y paginación sobre los circuitos auto-capped.
+- Las filas de circuito abren la página Circuit, y las filas de nodo de topología abren el nodo correspondiente en el árbol.
+- La página soporta búsqueda, filtro por tier (`10M`, `100M`, `1G+`) y paginación sobre los objetivos con reducción automática.
 
 ### Árbol/ponderación de CPU
 - Muestra distribución de colas/circuitos por núcleo de CPU.

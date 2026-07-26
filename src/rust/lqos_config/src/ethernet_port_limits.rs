@@ -162,8 +162,6 @@ pub fn apply_ethernet_rate_cap<'a>(
         download_max: applied_download_max,
         upload_max: applied_upload_max,
         advisory: Some(CircuitEthernetMetadata {
-            circuit_id: circuit_id.to_string(),
-            circuit_name: circuit_name.to_string(),
             device_ids: unique_device_ids(&observations),
             source: limiting_observation.source.clone(),
             negotiated_ethernet_mbps: limiting_observation.negotiated_ethernet_mbps,
@@ -175,6 +173,11 @@ pub fn apply_ethernet_rate_cap<'a>(
             limiting_device_id: limiting_observation.device_id.clone(),
             limiting_device_name: limiting_observation.device_name.clone(),
             limiting_interface_name: limiting_observation.interface_name.clone(),
+            ..CircuitEthernetMetadata::for_target(
+                Default::default(),
+                circuit_id.to_string(),
+                circuit_name.to_string(),
+            )
         }),
     }
 }
