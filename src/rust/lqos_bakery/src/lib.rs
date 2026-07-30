@@ -1693,6 +1693,8 @@ pub struct BakeryPreflightSnapshot {
     pub memory_guard_min_available_bytes: u64,
     /// Whether the memory preflight passed.
     pub memory_ok: bool,
+    /// Whether the memory-only failure is an allowed lazy-queue warning.
+    pub memory_warning_only: bool,
     /// Per-interface planned qdisc counts.
     pub interfaces: Vec<BakeryCapacityInterfaceSnapshot>,
 }
@@ -2459,18 +2461,27 @@ fn refresh_live_capacity_snapshot(config: &Config, force: bool) {
 /// This function is not pure: it updates retained in-memory Bakery telemetry state.
 pub fn record_qdisc_preflight_snapshot(snapshot: BakeryPreflightSnapshot) {
     let ok = snapshot.ok;
+    let memory_warning_only = snapshot.memory_warning_only;
     let summary = snapshot.message.clone();
     {
         let mut state = telemetry_state().write();
         state.preflight = Some(snapshot);
     }
     push_bakery_event(
-        if ok {
+        if memory_warning_only {
+            "preflight_warning"
+        } else if ok {
             "preflight_ok"
         } else {
             "preflight_blocked"
         },
-        if ok { "info" } else { "warning" },
+        if memory_warning_only {
+            "warning"
+        } else if ok {
+            "info"
+        } else {
+            "warning"
+        },
         summary,
     );
 }
@@ -2571,15 +2582,17 @@ pub struct QdiscBudgetEstimate {
     pub memory_guard_min_available_bytes: u64,
     /// Whether the memory preflight passed.
     pub memory_ok: bool,
+    /// Whether lazy queue mode makes a memory-only preflight failure non-blocking.
+    pub memory_warning_only: bool,
 }
 
 impl QdiscBudgetEstimate {
-    /// Returns `true` when all planned per-interface counts fit within the safe budget.
+    /// Returns `true` when the qdisc count fits and memory preflight passes or is a lazy-queue warning.
     pub fn ok(&self) -> bool {
         self.interfaces
             .values()
             .all(|count| *count <= self.safe_budget)
-            && self.memory_ok
+            && (self.memory_ok || self.memory_warning_only)
     }
 }
 
@@ -2723,6 +2736,14 @@ pub fn estimate_full_reload_auto_qdisc_budget(
             .saturating_sub(memory_guard_min_available_bytes)
             >= estimated_total_memory_bytes
     });
+    let qdisc_counts_fit = interfaces
+        .values()
+        .all(|count| *count <= SAFE_QDISC_BUDGET_PER_INTERFACE);
+    let memory_warning_only = lazy_queue_memory_preflight_is_warning(
+        config.queues.lazy_queues.as_ref(),
+        qdisc_counts_fit,
+        memory_ok,
+    );
 
     QdiscBudgetEstimate {
         interfaces,
@@ -2733,7 +2754,21 @@ pub fn estimate_full_reload_auto_qdisc_budget(
         memory_snapshot,
         memory_guard_min_available_bytes,
         memory_ok,
+        memory_warning_only,
     }
+}
+
+fn lazy_queue_memory_preflight_is_warning(
+    lazy_queue_mode: Option<&LazyQueueMode>,
+    qdisc_counts_fit: bool,
+    memory_ok: bool,
+) -> bool {
+    qdisc_counts_fit
+        && !memory_ok
+        && matches!(
+            lazy_queue_mode,
+            Some(LazyQueueMode::Htb | LazyQueueMode::Full)
+        )
 }
 
 fn desired_shaping_tree_active(config: &Arc<Config>) -> bool {
@@ -14354,6 +14389,25 @@ mod tests {
             bakery_memory_guard_min_available_bytes(64 * 1024 * 1024 * 1024),
             8 * 1024 * 1024 * 1024
         );
+    }
+
+    #[test]
+    fn memory_warning_only_allows_preflight_to_continue() {
+        let mut estimate = QdiscBudgetEstimate {
+            interfaces: BTreeMap::from([("eth0".to_string(), 1)]),
+            interface_details: BTreeMap::new(),
+            safe_budget: SAFE_QDISC_BUDGET_PER_INTERFACE,
+            hard_limit: HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE,
+            estimated_total_memory_bytes: 1,
+            memory_snapshot: None,
+            memory_guard_min_available_bytes: BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES,
+            memory_ok: false,
+            memory_warning_only: true,
+        };
+
+        assert!(estimate.ok());
+        estimate.memory_warning_only = false;
+        assert!(!estimate.ok());
     }
 
     #[test]
