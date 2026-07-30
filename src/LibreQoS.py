@@ -2860,6 +2860,10 @@ def refreshShapers():
                     },
                     "TC_QDISC_CAPACITY",
                 )
+            elif qdiscBudgetEstimate.get("memory_warning_only"):
+                preflightSummary = qdiscBudgetEstimate.get("summary") or ""
+                logging.warning(preflightSummary)
+                print("WARNING: " + preflightSummary)
 
         # Save queuingStructure
         queuingStructure = {}

@@ -907,6 +907,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                         memory_available_bytes: *memory_available_bytes,
                         memory_guard_min_available_bytes: *memory_guard_min_available_bytes,
                         memory_ok: *memory_ok,
+                        memory_warning_only: *ok && !*memory_ok,
                         interfaces: interfaces
                             .iter()
                             .map(|entry| lqos_bakery::BakeryCapacityInterfaceSnapshot {

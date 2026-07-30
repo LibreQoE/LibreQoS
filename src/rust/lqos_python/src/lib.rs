@@ -3646,11 +3646,15 @@ impl Bakery {
             .interfaces
             .values()
             .all(|count| *count <= estimate.safe_budget);
-        let preflight_status = match (qdisc_counts_fit, estimate.memory_ok) {
-            (true, true) => "fits preflight",
-            (false, true) => "exceeds qdisc-count preflight",
-            (true, false) => "passed qdisc-count preflight but failed memory preflight",
-            (false, false) => "exceeds qdisc-count preflight and failed memory preflight",
+        let preflight_status = if estimate.memory_warning_only {
+            "passed qdisc-count preflight; memory preflight is a non-blocking lazy-queue warning"
+        } else {
+            match (qdisc_counts_fit, estimate.memory_ok) {
+                (true, true) => "fits preflight",
+                (false, true) => "exceeds qdisc-count preflight",
+                (true, false) => "passed qdisc-count preflight but failed memory preflight",
+                (false, false) => "exceeds qdisc-count preflight and failed memory preflight",
+            }
         };
         let memory_summary = if let Some(snapshot) = estimate.memory_snapshot.as_ref() {
             let required_available_bytes = estimate
@@ -3738,6 +3742,7 @@ impl Bakery {
             estimate.estimated_total_memory_bytes,
         )?;
         result.set_item("memory_ok", estimate.memory_ok)?;
+        result.set_item("memory_warning_only", estimate.memory_warning_only)?;
         result.set_item(
             "memory_guard_min_available_bytes",
             estimate.memory_guard_min_available_bytes,

@@ -261,7 +261,7 @@ High-level flow:
 
 Key controls:
 
-1. `lazy_queues`: defer creating parts of the hierarchy until active use.
+1. `lazy_queues`: defer creating parts of the hierarchy until active use. When enabled, a memory-only queue preflight result is reported as a warning so the refresh can continue; ensure the host still has adequate RAM.
 2. `lazy_expire_seconds`: remove inactive queue state after timeout.
 
 Practical effect:
