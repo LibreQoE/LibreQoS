@@ -788,11 +788,10 @@ impl BakeryCommands {
         let do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
-            // Initial tree build: always create HTB + SQM classes for circuits,
-            // regardless of lazy queue mode. Laziness applies to live updates
-            // (ExecutionMode::LiveUpdate) and pruning, not the first full build.
+            // HTB-lazy keeps the hierarchy for every circuit but defers leaf qdiscs
+            // until activity promotes the circuit through the live-update path.
             do_htb = true;
-            do_sqm = true;
+            do_sqm = !matches!(config.queues.lazy_queues, Some(LazyQueueMode::Htb));
         } else {
             // We're in live update mode
             match config.queues.lazy_queues.as_ref() {
@@ -1350,10 +1349,8 @@ mod tests {
         MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
-    #[test]
-    fn add_circuit_qdisc_replace_commands_use_explicit_handles_when_enriched() {
-        let config = Arc::new(Config::default());
-        let builder_commands = BakeryCommands::AddCircuit {
+    fn test_circuit_command() -> BakeryCommands {
+        BakeryCommands::AddCircuit {
             circuit_hash: 42,
             circuit_name: None,
             site_name: None,
@@ -1371,34 +1368,70 @@ mod tests {
             ip_addresses: "192.0.2.42/32".to_string(),
             sqm_override: None,
         }
-        .to_commands(&config, ExecutionMode::Builder)
-        .expect("builder add_circuit should emit commands");
+    }
+
+    #[test]
+    fn add_circuit_qdisc_replace_commands_use_explicit_handles_when_enriched() {
+        let config = Arc::new(Config::default());
+        let circuit = test_circuit_command();
+        let builder_commands = circuit
+            .to_commands(&config, ExecutionMode::Builder)
+            .expect("builder add_circuit should emit commands");
         assert_qdisc_add_replace_commands_use_explicit_handles(&builder_commands);
 
         let mut live_cfg = Config::default();
         live_cfg.queues.lazy_queues = Some(LazyQueueMode::Full);
         let live_config = Arc::new(live_cfg);
-        let live_commands = BakeryCommands::AddCircuit {
-            circuit_hash: 42,
-            circuit_name: None,
-            site_name: None,
-            parent_class_id: crate::TcHandle::from_u32(0x10020),
-            up_parent_class_id: crate::TcHandle::from_u32(0x20020),
-            class_minor: 0x21,
-            download_bandwidth_min: 10.0,
-            upload_bandwidth_min: 10.0,
-            download_bandwidth_max: 100.0,
-            upload_bandwidth_max: 100.0,
-            class_major: 0x1,
-            up_class_major: 0x2,
-            down_qdisc_handle: Some(0x9000),
-            up_qdisc_handle: Some(0x9001),
-            ip_addresses: "192.0.2.42/32".to_string(),
-            sqm_override: None,
-        }
-        .to_commands(&live_config, ExecutionMode::LiveUpdate)
-        .expect("live add_circuit should emit commands");
+        let live_commands = circuit
+            .to_commands(&live_config, ExecutionMode::LiveUpdate)
+            .expect("live add_circuit should emit commands");
         assert_qdisc_add_replace_commands_use_explicit_handles(&live_commands);
+    }
+
+    #[test]
+    fn htb_lazy_builder_defers_leaf_qdiscs_until_activation() {
+        let mut htb_cfg = Config::default();
+        htb_cfg.queues.lazy_queues = Some(LazyQueueMode::Htb);
+        let htb_config = Arc::new(htb_cfg);
+        let circuit = test_circuit_command();
+        let htb_builder_commands = circuit
+            .to_commands(&htb_config, ExecutionMode::Builder)
+            .expect("HTB-lazy builder should emit HTB commands");
+        assert_eq!(
+            htb_builder_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "class"))
+                .count(),
+            2,
+            "HTB-lazy builder should retain both direction classes"
+        );
+        assert_eq!(
+            htb_builder_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "qdisc"))
+                .count(),
+            0,
+            "HTB-lazy builder should defer leaf qdiscs"
+        );
+        let htb_live_commands = circuit
+            .to_commands(&htb_config, ExecutionMode::LiveUpdate)
+            .expect("HTB-lazy activation should emit leaf qdiscs");
+        assert_eq!(
+            htb_live_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "class"))
+                .count(),
+            0,
+            "HTB-lazy activation should reuse the retained HTB classes"
+        );
+        assert_eq!(
+            htb_live_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "qdisc"))
+                .count(),
+            2,
+            "HTB-lazy activation should create both direction leaf qdiscs"
+        );
     }
 
     #[test]
