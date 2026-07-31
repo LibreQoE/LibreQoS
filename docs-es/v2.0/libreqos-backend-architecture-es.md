@@ -228,7 +228,7 @@ Flujo general:
 
 Controles clave:
 
-1. `lazy_queues`: diferir creación de partes de la jerarquía hasta uso real.
+1. `lazy_queues`: diferir la creación de partes de la jerarquía hasta el uso real. Cuando está activado, una comprobación previa que solo indica falta de memoria se informa como advertencia para que la actualización pueda continuar; asegúrese de que el host tenga RAM suficiente.
 2. `lazy_expire_seconds`: remover estado de cola inactivo tras timeout.
 
 Efecto práctico:

@@ -99,6 +99,9 @@ function classifyEvent(entry) {
     } else if (event === "preflight_ok") {
         outcome = "Passed";
         outcomeClass = "bg-success-subtle text-success border border-success-subtle";
+    } else if (event === "preflight_warning") {
+        outcome = "Memory Warning";
+        outcomeClass = "bg-warning-subtle text-warning border border-warning-subtle";
     } else if (event === "preflight_blocked") {
         outcome = "Blocked";
         outcomeClass = "bg-warning-subtle text-warning border border-warning-subtle";
