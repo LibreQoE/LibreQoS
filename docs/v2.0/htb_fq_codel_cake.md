@@ -298,7 +298,11 @@ Best use case is asymmetric links where upstream ACK load limits downstream good
 
 `autorate-ingress` can estimate capacity from arriving traffic and is primarily useful on highly variable links (for example some cellular paths). It cannot estimate bottlenecks downstream of where CAKE is attached.
 
-### 5.11 CAKE observability (`tc -s qdisc show`)
+### 5.11 DOCSIS modem headroom
+
+When shaping downstream traffic behind a DOCSIS modem, set the shaper below the modem's actual provisioned downstream rate—usually 85–95% after confirming the real rate with traffic tests. Otherwise, traffic can queue in the modem's downstream buffer (notably on modems with large buffers such as some Puma 6 devices), where LibreQoS and CAKE/fq_codel cannot manage it; latency then rises even though the LibreQoS shaper appears correctly configured. This is the same downstream bottleneck that `autorate-ingress` cannot observe. Keep the queue under CAKE or fq_codel by leaving enough headroom, and adjust the percentage for the modem and service tier rather than treating one value as universal.
+
+### 5.12 CAKE observability (`tc -s qdisc show`)
 
 Useful fields commonly present:
 
