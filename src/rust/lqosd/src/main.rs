@@ -119,6 +119,22 @@ pub fn set_console_logging() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn initialize_license_storage_and_release(
+    initialize_storage: impl FnOnce() -> Result<()>,
+    license_cache_ready_tx: crossbeam_channel::Sender<()>,
+) {
+    info!("Starting local Insight license-cache initialization");
+    match initialize_storage() {
+        Ok(()) => info!("Completed local Insight license-cache initialization successfully"),
+        Err(err) => {
+            warn!("Completed local Insight license-cache initialization with error: {err:?}")
+        }
+    }
+    if let Err(err) = license_cache_ready_tx.send(()) {
+        warn!("Unable to release the Bakery startup gate: {err}");
+    }
+}
+
 fn normalize_mapping_request(
     tc_handle: lqos_bus::TcHandle,
     cpu: u32,
@@ -206,15 +222,11 @@ fn main() -> Result<()> {
 
     ensure_rustls_crypto_provider()?;
 
-    if let Err(e) = lts2_sys::license_grant::init_license_storage(&config) {
-        warn!("Failed to initialize Insight license storage: {e:?}");
-    }
+    let (license_cache_ready_tx, license_cache_ready_rx) = crossbeam_channel::bounded(1);
 
-    // Apply Tunings
-    tuning::tune_lqosd_from_config_file()?;
-
-    // Start the Bakery for TC command execution
-    let bakery_sender = match lqos_bakery::start_bakery() {
+    // Start the Bakery before checking the local license cache so its command
+    // queue is available, but keep its worker behind the readiness token.
+    let bakery_sender = match lqos_bakery::start_bakery(license_cache_ready_rx) {
         Ok(sender) => Some(sender),
         Err(err) => {
             record_shaping_failure(
@@ -225,6 +237,14 @@ fn main() -> Result<()> {
             None
         }
     };
+
+    initialize_license_storage_and_release(
+        || lts2_sys::license_grant::init_license_storage(&config),
+        license_cache_ready_tx,
+    );
+
+    // Apply Tunings
+    tuning::tune_lqosd_from_config_file()?;
 
     // Spawn tracking sub-systems
     let Ok(control_channel) = lts2_sys::control_channel::init_control_channel() else {
@@ -1463,6 +1483,27 @@ fn search_result_to_bus(entry: node_manager::SearchResult) -> lqos_bus::SearchRe
 mod tests {
     use super::*;
     use lqos_bus::{UrgentSeverity, UrgentSource};
+
+    #[test]
+    fn license_cache_error_releases_bakery_startup_gate() {
+        let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
+
+        initialize_license_storage_and_release(
+            || Err(anyhow::anyhow!("synthetic license-cache failure")),
+            ready_tx,
+        );
+
+        assert!(matches!(ready_rx.try_recv(), Ok(())));
+    }
+
+    #[test]
+    fn license_cache_success_releases_bakery_startup_gate() {
+        let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
+
+        initialize_license_storage_and_release(|| Ok(()), ready_tx);
+
+        assert!(matches!(ready_rx.try_recv(), Ok(())));
+    }
 
     #[test]
     fn bus_clear_urgent_issue_by_identity_reaches_urgent_store() {
