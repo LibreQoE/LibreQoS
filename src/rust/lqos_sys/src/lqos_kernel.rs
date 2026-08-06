@@ -469,6 +469,15 @@ pub fn attach_xdp_and_tc_to_interface(
     let skeleton = unsafe {
         let skeleton = open_kernel()?;
         (*(*skeleton).rodata).NUM_CPUS = libbpf_num_possible_cpus();
+        // Kernel rejects CPUMAP maps larger than its compile time NR_CPUS (-E2BIG)
+        // Clamp cpu_map to host possible CPU count capped at MAX_CPUS (common/maximums.h)
+        // Resizing the pinned map will require either remove_pinned_maps.sh or reboot
+        let cpu_map_entries = crate::num_possible_cpus()?.min(1024);
+        let error = bpf::bpf_map__set_max_entries((*skeleton).maps.cpu_map, cpu_map_entries);
+        if error != 0 {
+            error!("Unable to resize cpu_map to {cpu_map_entries} entries ({error})");
+            return Err(Error::msg("Unable to resize cpu_map"));
+        }
         (*(*skeleton).data).direction = match direction {
             InterfaceDirection::Internet => 1,
             InterfaceDirection::IspNetwork => 2,
