@@ -4073,8 +4073,10 @@ fn log_mapped_limit_decision(
     );
 }
 
-/// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
-pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
+/// Starts the Bakery system after receiving the one-shot startup readiness token.
+pub fn start_bakery(
+    startup_ready: Receiver<()>,
+) -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
     let (tx, rx) = crossbeam_channel::bounded(CHANNEL_CAPACITY);
     let inner_sender = tx.clone();
     if BAKERY_SENDER.set(tx.clone()).is_err() {
@@ -4083,10 +4085,25 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
     std::thread::Builder::new()
         .name("lqos_bakery".to_string())
         .spawn(move || {
+            if !wait_for_startup_ready(startup_ready) {
+                return;
+            }
             bakery_main(rx, inner_sender);
         })
         .map_err(|e| anyhow::anyhow!("Failed to start Bakery thread: {}", e))?;
     Ok(tx)
+}
+
+fn wait_for_startup_ready(startup_ready: Receiver<()>) -> bool {
+    match startup_ready.recv() {
+        Ok(()) => true,
+        Err(error) => {
+            error!(
+                "Bakery startup readiness channel closed before release: {error}; stopping worker"
+            );
+            false
+        }
+    }
 }
 
 fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
@@ -11701,6 +11718,62 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     static TC_BYPASS_SETTER_CALLS: Mutex<Vec<bool>> = Mutex::new(Vec::new());
+
+    #[test]
+    fn startup_gate_blocks_worker_and_preserves_queued_command() {
+        let (startup_tx, startup_rx) = crossbeam_channel::bounded(1);
+        let (command_tx, command_rx) = crossbeam_channel::bounded(1);
+        let (processed_tx, processed_rx) = crossbeam_channel::bounded(1);
+        let (worker_started_tx, worker_started_rx) = crossbeam_channel::bounded(1);
+
+        let worker = std::thread::spawn(move || {
+            worker_started_tx
+                .send(())
+                .expect("worker-started receiver should remain connected");
+            assert!(wait_for_startup_ready(startup_rx));
+            let command = command_rx
+                .recv()
+                .expect("queued Bakery command should remain available");
+            processed_tx
+                .send(command)
+                .expect("processed Bakery command receiver should remain connected");
+        });
+
+        command_tx
+            .send(BakeryCommands::Tick)
+            .expect("queue the Bakery command before startup release");
+        worker_started_rx
+            .recv()
+            .expect("Bakery worker should reach the startup gate");
+        assert!(processed_rx.try_recv().is_err());
+
+        startup_tx
+            .send(())
+            .expect("release the Bakery startup gate");
+        assert!(matches!(
+            processed_rx.recv_timeout(Duration::from_secs(1)),
+            Ok(BakeryCommands::Tick)
+        ));
+        worker.join().expect("Bakery worker test should finish");
+    }
+
+    #[test]
+    fn startup_gate_stops_worker_when_readiness_channel_closes() {
+        let (startup_tx, startup_rx) = crossbeam_channel::bounded(1);
+        drop(startup_tx);
+        let (progress_tx, progress_rx) = crossbeam_channel::bounded(1);
+
+        let worker = std::thread::spawn(move || {
+            if wait_for_startup_ready(startup_rx) {
+                progress_tx
+                    .send(())
+                    .expect("progress receiver should remain connected");
+            }
+        });
+
+        worker.join().expect("closed-gate worker test should finish");
+        assert!(progress_rx.try_recv().is_err());
+    }
 
     #[test]
     fn stormguard_live_requires_enabled_non_dry_run_config() {
