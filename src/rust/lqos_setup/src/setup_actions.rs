@@ -1,6 +1,9 @@
 //! Shared setup commit/apply helpers used by both Cursive and the setup WebUI.
 
-use crate::config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_load_error};
+use crate::{
+    config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_load_error},
+    interfaces,
+};
 use anyhow::{Context, Result, bail};
 use lqos_netplan_helper::protocol::{ApplyMode, ApplyRequest};
 use lqos_netplan_helper::transaction::{
@@ -43,10 +46,6 @@ pub(crate) enum CommitOutcome {
 pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> lqos_config::Config {
     let mut config = existing.unwrap_or_default();
     let existing_bridge_mtu = config.bridge.as_ref().and_then(|bridge| bridge.mtu);
-    let existing_compatibility_shim = config
-        .bridge
-        .as_ref()
-        .is_some_and(|bridge| bridge.compatibility_shim_enabled());
     let existing_single_interface_mtu = config
         .single_interface
         .as_ref()
@@ -58,24 +57,16 @@ pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> l
     config.queues.generated_pn_download_mbps = new_config.mbps_to_internet;
     config.queues.generated_pn_upload_mbps = new_config.mbps_to_network;
     match new_config.bridge_mode {
-        BridgeMode::Linux => {
+        mode @ (BridgeMode::Linux | BridgeMode::XDP | BridgeMode::CompatibilityShim) => {
+            let use_xdp_bridge = !matches!(mode, BridgeMode::Linux);
+            let compatibility_shim = matches!(mode, BridgeMode::CompatibilityShim);
             config.single_interface = None;
             config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: false,
+                use_xdp_bridge,
                 to_internet: new_config.to_internet.clone(),
                 to_network: new_config.to_network.clone(),
                 mtu: existing_bridge_mtu,
-                compatibility_shim: false,
-            });
-        }
-        BridgeMode::XDP => {
-            config.single_interface = None;
-            config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: true,
-                to_internet: new_config.to_internet.clone(),
-                to_network: new_config.to_network.clone(),
-                mtu: existing_bridge_mtu,
-                compatibility_shim: existing_compatibility_shim,
+                compatibility_shim,
             });
         }
         BridgeMode::Single => {
@@ -130,10 +121,20 @@ pub(crate) fn prepare_commit() -> Result<CommitOutcome> {
         bail!("Setup requires at least one admin user before configuration can be committed.");
     }
 
+    let (mode, to_internet, to_network) = {
+        let config = CURRENT_CONFIG.lock();
+        (
+            config.bridge_mode,
+            config.to_internet.clone(),
+            config.to_network.clone(),
+        )
+    };
+    interfaces::validate_mode_interfaces(mode, &to_internet, &to_network)?;
+
     let mut event_log = Vec::new();
     let existing_config = load_existing_or_default(&mut event_log)?;
     let config = build_candidate_config(Some(existing_config));
-    let using_helper = !matches!(CURRENT_CONFIG.lock().bridge_mode, BridgeMode::XDP);
+    let using_helper = mode.uses_netplan_helper();
 
     if !using_helper {
         lqos_config::update_config(&config)?;
@@ -261,7 +262,7 @@ fn load_existing_or_default(event_log: &mut Vec<String>) -> Result<lqos_config::
 mod tests {
     use super::{build_candidate_config, load_existing_or_default};
     use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
-    use crate::test_support::ConfigEnvGuard;
+    use crate::test_support::{ConfigEnvGuard, lock_current_config};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -287,6 +288,7 @@ mod tests {
 
     #[test]
     fn build_candidate_config_preserves_existing_mtu_for_same_mode() {
+        let _test_guard = lock_current_config();
         let previous_builder = {
             let mut builder = CURRENT_CONFIG.lock();
             let previous = builder.clone();
@@ -313,31 +315,33 @@ mod tests {
     }
 
     #[test]
-    fn build_candidate_config_keeps_compatibility_shim_only_in_xdp_mode() {
+    fn build_candidate_config_sets_compatibility_shim_only_in_shim_mode() {
+        let _test_guard = lock_current_config();
         let previous_builder = {
             let mut builder = CURRENT_CONFIG.lock();
             let previous = builder.clone();
-            builder.bridge_mode = BridgeMode::XDP;
+            builder.bridge_mode = BridgeMode::CompatibilityShim;
             builder.to_internet = "bond0".to_string();
             builder.to_network = "bond1".to_string();
             previous
         };
 
-        let existing = lqos_config::Config {
-            bridge: Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: true,
-                compatibility_shim: true,
-                ..lqos_config::BridgeConfig::default()
-            }),
-            ..lqos_config::Config::default()
-        };
-        let candidate = build_candidate_config(Some(existing));
+        let candidate = build_candidate_config(None);
 
         assert!(
             candidate
                 .bridge
                 .as_ref()
                 .is_some_and(lqos_config::BridgeConfig::compatibility_shim_enabled)
+        );
+
+        CURRENT_CONFIG.lock().bridge_mode = BridgeMode::XDP;
+        let candidate = build_candidate_config(Some(candidate));
+        assert!(
+            candidate
+                .bridge
+                .as_ref()
+                .is_some_and(|bridge| bridge.use_xdp_bridge && !bridge.compatibility_shim_enabled())
         );
 
         CURRENT_CONFIG.lock().bridge_mode = BridgeMode::Linux;

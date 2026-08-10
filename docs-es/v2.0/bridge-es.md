@@ -2,21 +2,22 @@
 
 ## Elegir el Tipo de Puente
 
-Hay dos opciones para que el puente pase datos entre las dos interfaces:
+LibreQoS admite estas rutas entre las dos interfaces de regulación:
 
 - Opción A: Puente Regular de Linux (Recomendado)
 - Opción B: Puente Bifrost Acelerado con XDP
+- Opción C: Capa de compatibilidad para interfaces con bonding y controladores que no pueden alojar XDP
 
 El puente regular de Linux es recomendado para la mayoría de las instalaciones. El puente de Linux continúa transfiriendo datos incluso si el servicio lqosd entra en un estado fallido, lo que lo hace una opción generalmente más segura para escenarios donde no hay una ruta de respaldo disponible. Funciona mejor con tarjetas de red Nvidia/Mellanox como las de la serie ConnectX-5 (que ofrecen un rendimiento superior en puentes) y configuraciones de máquinas virtuales con NICs virtualizadas. El puente Bifrost con XDP está recomendado para tarjetas de red Intel de 40G–100G que soportan XDP.
 
-A continuación, se encuentran las instrucciones para configurar Netplan, ya sea usando el puente de Linux o el puente Bifrost con XDP:
+Los siguientes ejemplos de Netplan abarcan el puente normal de Linux y la ruta directa de Bifrost con XDP. La capa de compatibilidad se describe por separado más adelante.
 
 ```{note}
 La página Network Mode en la interfaz web de LibreQoS ahora inspecciona los archivos actuales de Netplan, ofrece en menús desplegables las interfaces elegibles que no forman parte de la ruta de gestión, prepara cambios administrados para `libreqos.yaml` en los modos puente de Linux y de interfaz única, los aplica con una ventana temporizada de reversión manejada por LibreQoS y le permite confirmar o revertir el cambio pendiente. También puede restaurar desde esa página la copia de seguridad administrada anterior. El modo puente XDP sigue siendo un flujo manual de Netplan.
 ```
 
 ```{note}
-La configuración inicial actual solo ofrece Puente Linux e Interfaz Única para instalaciones nuevas. Si LibreQoS detecta un despliegue XDP existente, la configuración preserva ese modo XDP heredado y le avisa antes de migrar fuera de él.
+La configuración inicial ofrece Puente Linux, Capa de compatibilidad de interfaces e Interfaz Única. Use la capa solo para interfaces con bonding o controladores que no puedan alojar XDP de LibreQoS directamente. Si LibreQoS detecta un despliegue existente con XDP directo, también conserva ese modo heredado y le avisa antes de migrar fuera de él.
 ```
 
 ```{note}
@@ -106,7 +107,7 @@ Use la capa de compatibilidad solo cuando LibreQoS no pueda adjuntar XDP directa
 
 La capa conecta cada interfaz física a una interfaz veth multiqueue mediante un pequeño puente de Linux. LibreQoS adjunta a las interfaces veth su ruta existente de XDP y colas. Esto consume más CPU, pero mantiene activas en las interfaces físicas las descargas de sumas de comprobación, segmentación y VLAN. LibreQoS sigue aplicando los valores configurados de moderación de interrupciones cuando el controlador físico los acepta.
 
-Actívela en la página `Bridge & Interface Mode`, o configure:
+Seleccione `Interface Compatibility Shim` durante la configuración inicial, actívela en la página `Bridge & Interface Mode`, o configure:
 
 ```toml
 [bridge]

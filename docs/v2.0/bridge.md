@@ -2,21 +2,22 @@
 
 ## Choose Bridge Type
 
-There are two options for the bridge to pass data through your two interfaces:
+LibreQoS supports these paths between the two shaping interfaces:
 
 - Option A: Regular Linux Bridge (Recommended)
 - Option B: Bifrost XDP-Accelerated Bridge
+- Option C: Interface Compatibility Shim for bonds and drivers that cannot host XDP
 
 The regular Linux bridge is recommended for most installations. The Linux Bridge continues to move data even if the lqosd service is in a failed state, making this a generally safer option in scenarios where a backup route is not in place. It works best with Nvidia/Mellanox NICs such as the ConnectX-5 series (which have superior bridge performance), and VM setups using virtualized NICs. The Bifrost XDP Bridge is recommended for 40G-100G Intel NICs with XDP support.
 
-Below are the instructions to configure Netplan, whether using the Linux Bridge or Bifrost XDP bridge:
+The Netplan examples below cover the regular Linux bridge and direct Bifrost XDP paths. The compatibility shim is described separately afterward.
 
 ```{note}
 The Network Mode page in the LibreQoS web UI now inspects the current Netplan files, offers eligible non-management interfaces in dropdowns, stages managed `libreqos.yaml` changes for Linux bridge and single-interface modes, applies them with a timed LibreQoS rollback window, and lets you confirm or revert the pending change. You can also restore the previous managed backup from that page. XDP bridge mode remains a manual Netplan workflow.
 ```
 
 ```{note}
-Current first-run setup only offers Linux Bridge and Single Interface for new installs. If LibreQoS detects an existing XDP deployment, setup preserves that legacy XDP mode and warns before you migrate away from it.
+First-run setup offers Linux Bridge, Interface Compatibility Shim, and Single Interface. Use the shim only for bonds or drivers that cannot host LibreQoS XDP directly. If LibreQoS detects an existing direct-XDP deployment, setup also preserves that legacy mode and warns before you migrate away from it.
 ```
 
 ```{note}
@@ -106,7 +107,7 @@ Use the interface compatibility shim only when LibreQoS cannot attach XDP direct
 
 The shim connects each physical interface to a multiqueue veth through a small Linux bridge. LibreQoS attaches its existing XDP and queueing path to the veth interfaces. This adds CPU overhead, but leaves checksum, segmentation, and VLAN offloads enabled on the physical interfaces. LibreQoS still applies the configured interrupt-coalescing values where the physical driver accepts them.
 
-Enable it on the `Bridge & Interface Mode` page, or set:
+Choose `Interface Compatibility Shim` during first-run setup, enable it on the `Bridge & Interface Mode` page, or set:
 
 ```toml
 [bridge]
