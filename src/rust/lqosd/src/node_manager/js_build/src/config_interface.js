@@ -1,5 +1,11 @@
-import {loadConfig, renderConfigMenu} from "./config/config_helper";
+import {loadConfig, renderConfigMenu, saveConfig} from "./config/config_helper";
 import {hydrateDraftMtu, MTU_MAX, MTU_MIN, parseOptionalMtu} from "./config/network_mode_mtu.mjs";
+import {
+    bridgeEligibilityField,
+    normalizedBridgeFlags,
+    saveManualXdpConfiguration,
+    usesManualXdpWorkflow,
+} from "./config/network_mode_shim.mjs";
 import {
     clearNetworkModeState,
     DRAFT_KEY,
@@ -151,6 +157,20 @@ function updateBridgeMtuState() {
     }
 }
 
+function compatibilityShimEnabled() {
+    return document.getElementById("compatibilityShim")?.checked ?? false;
+}
+
+function updateCompatibilityShimState() {
+    const useXdpBridge = document.getElementById("useXdpBridge");
+    if (!useXdpBridge) return;
+    const shimEnabled = compatibilityShimEnabled();
+    if (shimEnabled) {
+        useXdpBridge.checked = true;
+    }
+    useXdpBridge.disabled = shimEnabled || Boolean(currentInspection?.editing_locked);
+}
+
 function updateSingleInterfaceMtuState() {
     const singleInterfaceMtu = document.getElementById("singleInterfaceMtu");
     const singleInterfaceMtuHelp = document.getElementById("singleInterfaceMtuHelp");
@@ -165,6 +185,16 @@ function updateSingleInterfaceMtuState() {
 function updateMtuState() {
     updateBridgeMtuState();
     updateSingleInterfaceMtuState();
+}
+
+function updateApplyButtonState() {
+    const applyButton = document.getElementById("applyButton");
+    if (!applyButton) return;
+    const manualXdpSave = usesManualXdpWorkflow(buildCandidateConfig());
+    applyButton.disabled = manualXdpSave
+        ? Boolean(currentInspection?.editing_locked)
+        : !currentInspection?.can_apply;
+    applyButton.textContent = manualXdpSave ? "Save XDP Configuration" : "Apply Network Changes";
 }
 
 function validateConfig() {
@@ -217,8 +247,12 @@ function buildCandidateConfig() {
     next.single_interface = null;
 
     if (document.getElementById("bridgeMode").checked) {
+        const bridgeFlags = normalizedBridgeFlags(
+            document.getElementById("useXdpBridge").checked,
+            compatibilityShimEnabled(),
+        );
         next.bridge = {
-            use_xdp_bridge: document.getElementById("useXdpBridge").checked,
+            ...bridgeFlags,
             to_internet: document.getElementById("toInternet").value.trim(),
             to_network: document.getElementById("toNetwork").value.trim(),
             mtu: currentBridgeMtuValue(),
@@ -239,9 +273,9 @@ function interfaceCandidates() {
     return Array.isArray(currentInspection?.interface_candidates) ? currentInspection.interface_candidates : [];
 }
 
-function optionLabel(candidate, selectedValue) {
+function optionLabel(candidate, selectedValue, eligibilityField) {
     if (!candidate) return selectedValue;
-    if (candidate.bridge_eligible || candidate.single_interface_eligible) {
+    if (candidate[eligibilityField]) {
         return candidate.name;
     }
     if (candidate.current_selection || candidate.name === selectedValue) {
@@ -252,7 +286,7 @@ function optionLabel(candidate, selectedValue) {
 
 function buildSelectOptions(selectElement, modeKey, selectedValue, excludedValue = null) {
     if (!selectElement) return;
-    const eligibilityField = modeKey === "single" ? "single_interface_eligible" : "bridge_eligible";
+    const eligibilityField = bridgeEligibilityField(modeKey, compatibilityShimEnabled());
     const candidates = interfaceCandidates();
     const options = [`<option value="">Select an eligible interface</option>`];
     const seen = new Set();
@@ -263,7 +297,7 @@ function buildSelectOptions(selectElement, modeKey, selectedValue, excludedValue
         if (!eligible && !selected) return;
         if (excludedValue && candidate.name === excludedValue && !selected) return;
         options.push(
-            `<option value="${escapeHtml(candidate.name)}">${escapeHtml(optionLabel(candidate, selectedValue))}</option>`
+            `<option value="${escapeHtml(candidate.name)}">${escapeHtml(optionLabel(candidate, selectedValue, eligibilityField))}</option>`
         );
         seen.add(candidate.name);
     });
@@ -282,7 +316,7 @@ function renderInterfaceHelp(helpElementId, modeKey, selectedValues = {}) {
     const element = document.getElementById(helpElementId);
     if (!element) return;
 
-    const eligibilityField = modeKey === "single" ? "single_interface_eligible" : "bridge_eligible";
+    const eligibilityField = bridgeEligibilityField(modeKey, compatibilityShimEnabled());
     const selectedSet = new Set(
         Object.values(selectedValues)
             .map((value) => String(value || "").trim())
@@ -348,10 +382,10 @@ function renderInterfaceSelectors(config = null) {
 }
 
 function populateFormFromConfig(config) {
-    renderInterfaceSelectors(config);
     if (config?.bridge) {
         document.getElementById("bridgeMode").checked = true;
         document.getElementById("useXdpBridge").checked = config.bridge.use_xdp_bridge ?? true;
+        document.getElementById("compatibilityShim").checked = config.bridge.compatibility_shim ?? false;
         document.getElementById("toInternet").value = config.bridge.to_internet ?? "";
         document.getElementById("toNetwork").value = config.bridge.to_network ?? "";
         document.getElementById("bridgeMtu").value = config.bridge.mtu ?? "";
@@ -363,9 +397,12 @@ function populateFormFromConfig(config) {
         document.getElementById("singleInterfaceMtu").value = config.single_interface.mtu ?? "";
     }
 
+    updateCompatibilityShimState();
+    renderInterfaceSelectors(config);
     const event = new Event("change");
     document.querySelector('input[name="networkMode"]:checked')?.dispatchEvent(event);
     updateMtuState();
+    updateApplyButtonState();
 }
 
 function loadDraft() {
@@ -686,6 +723,7 @@ function renderInspection(inspection) {
         "bridgeMode",
         "singleInterfaceMode",
         "useXdpBridge",
+        "compatibilityShim",
         "toInternet",
         "toNetwork",
         "bridgeMtu",
@@ -700,10 +738,11 @@ function renderInspection(inspection) {
             element.disabled = Boolean(inspection?.editing_locked);
         }
     });
-    applyButton.disabled = !inspection?.can_apply;
     adoptButton.disabled = !inspection?.can_adopt;
     takeoverButton.disabled = !inspection?.can_take_over;
+    updateCompatibilityShimState();
     updateMtuState();
+    updateApplyButtonState();
 }
 
 function renderHelperStatus(status) {
@@ -810,6 +849,39 @@ function confirmDangerousChange(actionLabel, candidate) {
 function applyNetworkChanges(mode = "Apply") {
     if (!validateConfig()) return;
     const candidate = buildCandidateConfig();
+    if (usesManualXdpWorkflow(candidate)) {
+        if (mode !== "Apply") return;
+        const confirmed = window.confirm(
+            "Save this XDP configuration to lqos.conf? LibreQoS will not change Netplan. Restart lqosd to rebuild the shaping path with these settings."
+        );
+        if (!confirmed) return;
+        const button = document.getElementById("applyButton");
+        if (button) {
+            button.disabled = true;
+            button.textContent = "Saving...";
+        }
+        saveManualXdpConfiguration({
+            candidate,
+            configState: window,
+            persistConfig: saveConfig,
+            clearDraft: () => clearNetworkModeState(DRAFT_KEY),
+            notifySaved: () => {
+                alert("XDP configuration saved. Netplan was not changed. Restart lqosd to apply the interface configuration.");
+            },
+            refresh: () => {
+                updateApplyButtonState();
+                return inspectCandidate();
+            },
+        }).then(({ refreshError }) => {
+            if (refreshError) {
+                alert("XDP configuration was saved, but the current network status could not be refreshed.");
+            }
+        }).catch((err) => {
+            updateApplyButtonState();
+            alert(err?.message || "Unable to save XDP configuration");
+        });
+        return;
+    }
     const actionLabel = mode === "Adopt" ? "Adopt into libreqos.yaml" : mode === "TakeOver" ? "Take Over libreqos.yaml" : "Apply Network Changes";
     if (!confirmDangerousChange(actionLabel, candidate)) {
         return;
@@ -934,9 +1006,19 @@ function wireActions() {
     ].forEach((id) => {
         document.getElementById(id).addEventListener("change", () => {
             renderInterfaceSelectors();
+            updateApplyButtonState();
         });
     });
-    document.getElementById("useXdpBridge").addEventListener("change", updateMtuState);
+    document.getElementById("useXdpBridge").addEventListener("change", () => {
+        updateMtuState();
+        updateApplyButtonState();
+    });
+    document.getElementById("compatibilityShim").addEventListener("change", () => {
+        updateCompatibilityShimState();
+        updateMtuState();
+        renderInterfaceSelectors();
+        updateApplyButtonState();
+    });
     [
         "bridgeMtu",
         "singleInterfaceMtu",
@@ -953,9 +1035,13 @@ function wireActions() {
     });
     document.getElementById("saveButton").addEventListener("click", () => {
         if (!validateConfig()) return;
-        saveDraft();
+        const draft = saveDraft();
         inspectCandidate();
-        alert("Network mode draft saved for this browser tab. Use Apply Network Changes to commit both lqos.conf and netplan together.");
+        if (usesManualXdpWorkflow(draft)) {
+            alert("XDP draft saved for this browser tab. Use Save XDP Configuration to update lqos.conf; Netplan remains unchanged.");
+        } else {
+            alert("Network mode draft saved for this browser tab. Use Apply Network Changes to commit both lqos.conf and netplan together.");
+        }
     });
     document.getElementById("inspectButton").addEventListener("click", inspectCandidate);
     document.getElementById("applyButton").addEventListener("click", () => applyNetworkChanges("Apply"));

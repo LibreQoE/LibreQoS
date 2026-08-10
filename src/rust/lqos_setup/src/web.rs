@@ -1,7 +1,7 @@
 //! Minimal setup-only web server for first-run LibreQoS configuration.
 
 use crate::{
-    config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_xdp},
+    config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_direct_xdp},
     interfaces, service_handoff,
     setup_actions::{self, CommitOutcome},
 };
@@ -256,14 +256,15 @@ fn render_setup_page(
     let snapshot = bootstrap::status_snapshot()?;
     let token = token.ok_or_else(|| anyhow::anyhow!("Setup requires a valid tokenized URL."))?;
     ensure_valid_setup_token(token)?;
-    let interface_options = interfaces::get_interface_options().unwrap_or_default();
+    let interface_options = interfaces::get_interface_options();
     let config = CURRENT_CONFIG.lock().clone();
     let mode_label = match config.bridge_mode {
         BridgeMode::Single => "single",
         BridgeMode::XDP => "xdp",
+        BridgeMode::CompatibilityShim => "shim",
         BridgeMode::Linux => "linux",
     };
-    let persisted_xdp = existing_config_uses_xdp();
+    let persisted_xdp = existing_config_uses_direct_xdp();
 
     let mut html = page_shell("LibreQoS Setup");
     html.push_str("<main class=\"setup-shell\">");
@@ -304,7 +305,7 @@ fn render_setup_page(
         if config.bridge_mode == BridgeMode::XDP {
             html.push_str("<p class=\"notice\">This system already uses legacy XDP bridge mode. LibreQoS no longer recommends XDP for new installs, but this page will preserve it if you leave the mode unchanged.</p>");
         } else {
-            html.push_str("<p class=\"notice\">This system previously used legacy XDP bridge mode. Saving with Linux Bridge or Single Interface will migrate the node away from XDP.</p>");
+            html.push_str("<p class=\"notice\">This system previously used legacy XDP bridge mode. Saving with Linux Bridge, Compatibility Shim, or Single Interface will migrate the node away from direct XDP.</p>");
         }
         html.push_str("<p class=\"muted\">Use Linux Bridge for long-term maintenance unless you intentionally need to keep the existing XDP deployment.</p></section>");
     }
@@ -366,44 +367,35 @@ fn render_setup_page(
             ));
         }
         html.push_str(&format!(
+            "<option value=\"shim\"{}>Interface Compatibility Shim</option>",
+            selected(mode_label == "shim")
+        ));
+        html.push_str(&format!(
             "<option value=\"single\"{}>Single Interface</option>",
             selected(mode_label == "single")
         ));
         html.push_str("</select></label>");
         html.push_str("<div class=\"mode-section\" data-mode-section=\"bridge\">");
-        html.push_str("<p class=\"muted\">Linux Bridge is recommended for most installs. Select the WAN-facing and subscriber-facing interfaces below. Existing XDP installs use the same interface pair if you choose to preserve XDP.</p>");
-        html.push_str("<label>To Internet<select name=\"to_internet\">");
+        html.push_str("<p class=\"muted\">Linux Bridge is recommended for most installs. Choose the compatibility shim only for bonded interfaces or drivers that cannot host LibreQoS XDP directly.</p>");
+        html.push_str("<label>To Internet<select name=\"to_internet\" aria-describedby=\"interfaceValidationMessage\">");
+        html.push_str("<option value=\"\">Select an eligible interface</option>");
         for iface in &interface_options {
-            html.push_str(&format!(
-                "<option value=\"{}\"{}>{}</option>",
-                escape_html(&iface.name),
-                selected(config.to_internet == iface.name),
-                escape_html(&iface.label)
-            ));
+            html.push_str(&interface_option_html(iface, &config.to_internet));
         }
         html.push_str("</select></label>");
-        html.push_str("<label>To Network<select name=\"to_network\">");
+        html.push_str("<label>To Network<select name=\"to_network\" aria-describedby=\"interfaceValidationMessage\">");
+        html.push_str("<option value=\"\">Select an eligible interface</option>");
         for iface in &interface_options {
-            html.push_str(&format!(
-                "<option value=\"{}\"{}>{}</option>",
-                escape_html(&iface.name),
-                selected(config.to_network == iface.name),
-                escape_html(&iface.label)
-            ));
+            html.push_str(&interface_option_html(iface, &config.to_network));
         }
         html.push_str("</select></label>");
-        html.push_str("<p id=\"interfaceValidationMessage\" class=\"validation-message\" hidden>Internet and network interfaces must be different.</p>");
         html.push_str("</div>");
         html.push_str("<div class=\"mode-section\" data-mode-section=\"single\">");
         html.push_str("<p class=\"muted\">Use this when a single interface carries both internet and subscriber traffic with optional VLAN tags.</p>");
-        html.push_str("<label>Interface<select name=\"single_interface\">");
+        html.push_str("<label>Interface<select name=\"single_interface\" aria-describedby=\"interfaceValidationMessage\">");
+        html.push_str("<option value=\"\">Select an eligible interface</option>");
         for iface in &interface_options {
-            html.push_str(&format!(
-                "<option value=\"{}\"{}>{}</option>",
-                escape_html(&iface.name),
-                selected(config.to_internet == iface.name),
-                escape_html(&iface.label)
-            ));
+            html.push_str(&interface_option_html(iface, &config.to_internet));
         }
         html.push_str("</select></label>");
         html.push_str(&format!(
@@ -415,6 +407,7 @@ fn render_setup_page(
             config.network_vlan
         ));
         html.push_str("</div>");
+        html.push_str("<p id=\"interfaceValidationMessage\" class=\"validation-message\" aria-live=\"polite\" hidden></p>");
         html.push_str(&format!(
             "<label>Allowed Subnets<textarea name=\"allow_subnets\" rows=\"6\">{}</textarea></label>",
             escape_html(&config.allow_subnets.join("\n"))
@@ -443,6 +436,14 @@ fn render_setup_page(
 }
 
 fn apply_form_to_current_config(form: &SaveForm) -> Result<()> {
+    let interface_options = interfaces::get_interface_options();
+    apply_form_to_current_config_with_options(form, &interface_options)
+}
+
+fn apply_form_to_current_config_with_options(
+    form: &SaveForm,
+    interface_options: &[interfaces::InterfaceOption],
+) -> Result<()> {
     let downlink = form
         .downlink_mbps
         .trim()
@@ -460,48 +461,51 @@ fn apply_form_to_current_config(form: &SaveForm) -> Result<()> {
         .filter(|line| !line.is_empty())
         .map(ToOwned::to_owned)
         .collect::<Vec<_>>();
-    let mut config = CURRENT_CONFIG.lock();
-    config.node_name = form.node_name.trim().to_string();
-    config.mbps_to_internet = downlink;
-    config.mbps_to_network = uplink;
-    config.allow_subnets = allow_subnets;
-    let allow_legacy_xdp = config.bridge_mode == BridgeMode::XDP || existing_config_uses_xdp();
-    match resolve_requested_bridge_mode(&form.bridge_mode, allow_legacy_xdp)? {
-        "single" => {
-            config.bridge_mode = BridgeMode::Single;
+    let allow_legacy_xdp =
+        CURRENT_CONFIG.lock().bridge_mode == BridgeMode::XDP || existing_config_uses_direct_xdp();
+    let requested_mode = resolve_requested_bridge_mode(&form.bridge_mode, allow_legacy_xdp)?;
+    let (to_internet, to_network, internet_vlan, network_vlan) = match requested_mode {
+        BridgeMode::Single => {
             let interface = form
                 .single_interface
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| anyhow::anyhow!("A shaping interface is required."))?;
-            config.to_internet = interface.to_string();
-            config.to_network.clear();
-            config.internet_vlan = parse_vlan(form.internet_vlan.as_deref())?;
-            config.network_vlan = parse_vlan(form.network_vlan.as_deref())?;
+            (
+                interface.to_string(),
+                String::new(),
+                parse_vlan(form.internet_vlan.as_deref())?,
+                parse_vlan(form.network_vlan.as_deref())?,
+            )
         }
-        "linux" | "xdp" => {
+        BridgeMode::Linux | BridgeMode::XDP | BridgeMode::CompatibilityShim => {
+            let to_internet = form.to_internet.trim();
             let to_network = form
                 .to_network
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| anyhow::anyhow!("A network-facing interface is required."))?;
-            if form.to_internet.trim() == to_network {
-                bail!("Internet and network interfaces must be different.");
-            }
-            config.bridge_mode = if form.bridge_mode == "xdp" {
-                BridgeMode::XDP
-            } else {
-                BridgeMode::Linux
-            };
-            config.to_internet = form.to_internet.trim().to_string();
-            config.to_network = to_network.to_string();
-            config.internet_vlan = 0;
-            config.network_vlan = 0;
+            (to_internet.to_string(), to_network.to_string(), 0, 0)
         }
-        _ => bail!("Unsupported bridge mode."),
-    }
+    };
+    interfaces::validate_mode_interfaces_with_options(
+        interface_options,
+        requested_mode,
+        &to_internet,
+        &to_network,
+    )?;
+    let mut config = CURRENT_CONFIG.lock();
+    config.node_name = form.node_name.trim().to_string();
+    config.mbps_to_internet = downlink;
+    config.mbps_to_network = uplink;
+    config.allow_subnets = allow_subnets;
+    config.bridge_mode = requested_mode;
+    config.to_internet = to_internet;
+    config.to_network = to_network;
+    config.internet_vlan = internet_vlan;
+    config.network_vlan = network_vlan;
     Ok(())
 }
 
@@ -532,10 +536,15 @@ fn ssl_request_value(
         .then(|| external_hostname.unwrap_or("").trim().to_string())
 }
 
-fn resolve_requested_bridge_mode(requested_mode: &str, allow_legacy_xdp: bool) -> Result<&str> {
+fn resolve_requested_bridge_mode(
+    requested_mode: &str,
+    allow_legacy_xdp: bool,
+) -> Result<BridgeMode> {
     match requested_mode {
-        "single" | "linux" => Ok(requested_mode),
-        "xdp" if allow_legacy_xdp => Ok("xdp"),
+        "single" => Ok(BridgeMode::Single),
+        "linux" => Ok(BridgeMode::Linux),
+        "shim" => Ok(BridgeMode::CompatibilityShim),
+        "xdp" if allow_legacy_xdp => Ok(BridgeMode::XDP),
         _ => bail!("Unsupported bridge mode."),
     }
 }
@@ -767,17 +776,20 @@ fn base_css() -> &'static str {
 
 fn base_js() -> &'static str {
     "function bridgeSectionForMode(mode){return mode==='single'?'single':'bridge';}\
-    function syncModeSections(){const mode=document.querySelector('select[name=\"bridge_mode\"]')?.value||'linux';const visibleSection=bridgeSectionForMode(mode);document.querySelectorAll('.mode-section').forEach((section)=>{section.hidden=section.dataset.modeSection!==visibleSection;});updateCoreSetupValidation();}\
+    function eligibilityAttributeForMode(mode){if(mode==='single')return 'data-single-eligible';if(mode==='shim')return 'data-shim-eligible';return 'data-bridge-eligible';}\
+    function updateInterfaceEligibility(){const mode=currentBridgeMode();const attribute=eligibilityAttributeForMode(mode);document.querySelectorAll('[data-interface-option]').forEach((option)=>{option.disabled=option.getAttribute(attribute)!=='true';});document.querySelectorAll('select[name=\"to_internet\"],select[name=\"to_network\"],select[name=\"single_interface\"]').forEach((select)=>{if(select.selectedOptions[0]?.disabled){select.value='';}});}\
+    function syncModeSections(){const modeSelect=document.querySelector('select[name=\"bridge_mode\"]');const mode=modeSelect?.value||'linux';const visibleSection=bridgeSectionForMode(mode);document.querySelectorAll('.mode-section').forEach((section)=>{section.hidden=section.dataset.modeSection!==visibleSection;});if(document.activeElement?.closest('.mode-section[hidden]')){modeSelect?.focus();}updateInterfaceEligibility();updateCoreSetupValidation();}\
     function showBusy(message){const overlay=document.getElementById('busyOverlay');const target=document.getElementById('busyMessage');if(target&&message){target.textContent=message;}if(overlay){overlay.hidden=false;}}\
     function hideBusy(){const overlay=document.getElementById('busyOverlay');if(overlay){overlay.hidden=true;}}\
     function setSubmitDisabled(form,disabled){const button=form?.querySelector('button[type=\"submit\"]');if(button){button.disabled=!!disabled;}}\
     function submitWithProgress(form,message){setSubmitDisabled(form,true);showBusy(message);return true;}\
     function currentBridgeMode(){return document.querySelector('select[name=\"bridge_mode\"]')?.value||'linux';}\
-    function linuxInterfacesAreDistinct(){const toInternet=document.querySelector('select[name=\"to_internet\"]')?.value||'';const toNetwork=document.querySelector('select[name=\"to_network\"]')?.value||'';return !toInternet||!toNetwork||toInternet!==toNetwork;}\
-    function updateCoreSetupValidation(){const form=document.getElementById('coreSetupForm');if(!form){return true;}const message=document.getElementById('interfaceValidationMessage');const invalid=currentBridgeMode()!=='single'&&!linuxInterfacesAreDistinct();if(message){message.hidden=!invalid;}setSubmitDisabled(form,invalid);return !invalid;}\
-    function validateAndSubmitSetup(form){if(!updateCoreSetupValidation()){hideBusy();setSubmitDisabled(form,false);return false;}return submitWithProgress(form,'Saving setup and applying managed network changes...');}\
+    function selectedInterfaceIsEligible(select){return Boolean(select?.value&&select.selectedOptions[0]&&!select.selectedOptions[0].disabled);}\
+    function selectedInterfacesAreValid(){if(currentBridgeMode()==='single'){return selectedInterfaceIsEligible(document.querySelector('select[name=\"single_interface\"]'));}const toInternet=document.querySelector('select[name=\"to_internet\"]');const toNetwork=document.querySelector('select[name=\"to_network\"]');return selectedInterfaceIsEligible(toInternet)&&selectedInterfaceIsEligible(toNetwork)&&toInternet.value!==toNetwork.value;}\
+    function updateCoreSetupValidation(){const form=document.getElementById('coreSetupForm');if(!form){return true;}const message=document.getElementById('interfaceValidationMessage');const invalid=!selectedInterfacesAreValid();if(message){message.textContent=currentBridgeMode()==='single'?'Select an eligible shaping interface.':'Select two different eligible interfaces.';message.hidden=!invalid;}setSubmitDisabled(form,invalid);return !invalid;}\
+    function validateAndSubmitSetup(form){if(!updateCoreSetupValidation()){hideBusy();setSubmitDisabled(form,false);return false;}return submitWithProgress(form,'Saving setup...');}\
     function resetBusyState(){hideBusy();document.querySelectorAll('form').forEach((form)=>setSubmitDisabled(form,false));updateCoreSetupValidation();}\
-    function setupPage(){const mode=document.querySelector('select[name=\"bridge_mode\"]');if(mode){mode.addEventListener('change',syncModeSections);}const toInternet=document.querySelector('select[name=\"to_internet\"]');if(toInternet){toInternet.addEventListener('change',updateCoreSetupValidation);}const toNetwork=document.querySelector('select[name=\"to_network\"]');if(toNetwork){toNetwork.addEventListener('change',updateCoreSetupValidation);}window.addEventListener('pageshow',resetBusyState);syncModeSections();resetBusyState();}"
+    function setupPage(){const mode=document.querySelector('select[name=\"bridge_mode\"]');if(mode){mode.addEventListener('change',syncModeSections);}document.querySelectorAll('select[name=\"to_internet\"],select[name=\"to_network\"],select[name=\"single_interface\"]').forEach((select)=>select.addEventListener('change',updateCoreSetupValidation));window.addEventListener('pageshow',resetBusyState);syncModeSections();resetBusyState();}"
 }
 
 fn escape_html(input: &str) -> String {
@@ -805,20 +817,144 @@ fn selected(value: bool) -> &'static str {
     if value { " selected" } else { "" }
 }
 
+fn interface_option_html(iface: &interfaces::InterfaceOption, selected_value: &str) -> String {
+    format!(
+        "<option value=\"{}\" data-interface-option data-bridge-eligible=\"{}\" data-shim-eligible=\"{}\" data-single-eligible=\"{}\"{}>{}</option>",
+        escape_html(&iface.name),
+        iface.bridge_eligible,
+        iface.compatibility_shim_eligible,
+        iface.single_interface_eligible,
+        selected(selected_value == iface.name),
+        escape_html(&iface.label)
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{render_pending_page, resolve_requested_bridge_mode, runtime_access_url};
+    use super::{
+        SaveForm, apply_form_to_current_config_with_options, interface_option_html,
+        render_pending_page, resolve_requested_bridge_mode, runtime_access_url,
+    };
+    use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
+    use crate::interfaces::InterfaceOption;
+    use crate::test_support::lock_current_config;
     use lqos_config::{Config, SslConfig};
+
+    fn shim_save_form() -> SaveForm {
+        SaveForm {
+            token: "test-token".to_string(),
+            node_name: "Shim Node".to_string(),
+            downlink_mbps: "10000".to_string(),
+            uplink_mbps: "5000".to_string(),
+            bridge_mode: "shim".to_string(),
+            to_internet: "bond0".to_string(),
+            to_network: Some("bond1".to_string()),
+            single_interface: None,
+            internet_vlan: None,
+            network_vlan: None,
+            allow_subnets: "10.0.0.0/8".to_string(),
+            enable_ssl: None,
+            external_hostname: None,
+        }
+    }
+
+    fn shim_interface_option(name: &str, eligible: bool) -> InterfaceOption {
+        InterfaceOption {
+            name: name.to_string(),
+            label: name.to_string(),
+            bridge_eligible: false,
+            compatibility_shim_eligible: eligible,
+            single_interface_eligible: false,
+        }
+    }
 
     #[test]
     fn xdp_mode_is_preserved_for_existing_xdp_config() {
-        assert_eq!(resolve_requested_bridge_mode("xdp", true).unwrap(), "xdp");
+        assert_eq!(
+            resolve_requested_bridge_mode("xdp", true).unwrap(),
+            BridgeMode::XDP
+        );
     }
 
     #[test]
     fn xdp_mode_is_not_available_for_new_installs() {
         let error = resolve_requested_bridge_mode("xdp", false).unwrap_err();
         assert!(error.to_string().contains("Unsupported bridge mode"));
+    }
+
+    #[test]
+    fn compatibility_shim_is_available_for_new_installs() {
+        assert_eq!(
+            resolve_requested_bridge_mode("shim", false).unwrap(),
+            BridgeMode::CompatibilityShim
+        );
+    }
+
+    #[test]
+    fn compatibility_shim_form_updates_first_run_config() {
+        let _test_guard = lock_current_config();
+        let previous_builder = CURRENT_CONFIG.lock().clone();
+        let form = shim_save_form();
+        let options = ["bond0", "bond1"].map(|name| shim_interface_option(name, true));
+
+        apply_form_to_current_config_with_options(&form, &options).expect("apply shim form");
+        let candidate = crate::setup_actions::build_candidate_config(None);
+
+        assert_eq!(
+            CURRENT_CONFIG.lock().bridge_mode,
+            BridgeMode::CompatibilityShim
+        );
+        assert!(candidate.bridge.as_ref().is_some_and(|bridge| {
+            bridge.use_xdp_bridge
+                && bridge.compatibility_shim_enabled()
+                && bridge.to_internet == "bond0"
+                && bridge.to_network == "bond1"
+        }));
+
+        *CURRENT_CONFIG.lock() = previous_builder;
+    }
+
+    #[test]
+    fn compatibility_shim_form_rejects_ineligible_interface_without_mutating_config() {
+        let _test_guard = lock_current_config();
+        let previous_builder = CURRENT_CONFIG.lock().clone();
+        let form = shim_save_form();
+        let options = [
+            shim_interface_option("bond0", true),
+            shim_interface_option("bond1", false),
+        ];
+
+        let error = apply_form_to_current_config_with_options(&form, &options)
+            .expect_err("reject ineligible shim interface");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Network-facing interface bond1 is not eligible")
+        );
+        let current = CURRENT_CONFIG.lock().clone();
+        *CURRENT_CONFIG.lock() = previous_builder.clone();
+        assert_eq!(current.bridge_mode, previous_builder.bridge_mode);
+        assert_eq!(current.to_internet, previous_builder.to_internet);
+        assert_eq!(current.to_network, previous_builder.to_network);
+    }
+
+    #[test]
+    fn rendered_interface_option_carries_mode_eligibility() {
+        let option = InterfaceOption {
+            name: "bond0".to_string(),
+            label: "bond0 - virtual".to_string(),
+            bridge_eligible: false,
+            compatibility_shim_eligible: true,
+            single_interface_eligible: false,
+        };
+
+        let html = interface_option_html(&option, "bond0");
+
+        assert!(html.contains("data-bridge-eligible=\"false\""));
+        assert!(html.contains("data-shim-eligible=\"true\""));
+        assert!(html.contains("data-single-eligible=\"false\""));
+        assert!(html.contains(" selected>bond0 - virtual</option>"));
     }
 
     #[test]

@@ -4,6 +4,24 @@ use lqos_bus::{BusRequest, BusResponse};
 use lqos_config::{Config, Tunables};
 use lqos_queue_tracker::set_queue_refresh_interval;
 
+#[derive(Debug, PartialEq, Eq)]
+struct InterfaceTuningPlan {
+    full: [String; 2],
+    coalescing_only: Option<[String; 2]>,
+}
+
+fn interface_tuning_plan(config: &Config) -> InterfaceTuningPlan {
+    let coalescing_only = config
+        .bridge
+        .as_ref()
+        .filter(|bridge| bridge.compatibility_shim_enabled())
+        .map(|bridge| [bridge.to_internet.clone(), bridge.to_network.clone()]);
+    InterfaceTuningPlan {
+        full: [config.internet_interface(), config.isp_interface()],
+        coalescing_only,
+    }
+}
+
 fn apply_non_interface_tuning(tuning: &Tunables) {
     offloads::bpf_sysctls();
     if tuning.set_cpu_governor_performance {
@@ -16,8 +34,17 @@ fn apply_non_interface_tuning(tuning: &Tunables) {
 }
 
 fn apply_interface_tuning(config: &Config, tuning: &Tunables) {
-    offloads::ethtool_tweaks(&config.internet_interface(), tuning);
-    offloads::ethtool_tweaks(&config.isp_interface(), tuning);
+    let plan = interface_tuning_plan(config);
+    for interface in &plan.full {
+        offloads::ethtool_tweaks(interface, tuning);
+    }
+    if let Some(physical_interfaces) = plan.coalescing_only {
+        // Keep checksum, segmentation, and VLAN offloads enabled on the
+        // physical path, but retain the configured interrupt-coalescing tune.
+        for interface in &physical_interfaces {
+            offloads::ethtool_coalescing_tweaks(interface, tuning);
+        }
+    }
 }
 
 pub fn tune_lqosd_from_config_file() -> Result<()> {
@@ -39,5 +66,38 @@ pub fn tune_lqosd_from_bus(request: &BusRequest) -> BusResponse {
             lqos_bus::BusResponse::Ack
         }
         _ => BusResponse::Fail("That wasn't a tuning request".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::interface_tuning_plan;
+    use lqos_config::{BridgeConfig, Config, SHIM_INTERNET_LQOS, SHIM_NETWORK_LQOS};
+
+    fn bridge_config(compatibility_shim: bool) -> Config {
+        Config {
+            bridge: Some(BridgeConfig {
+                use_xdp_bridge: true,
+                to_internet: "bond0".to_string(),
+                to_network: "enp2s0".to_string(),
+                compatibility_shim,
+                ..BridgeConfig::default()
+            }),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn compatibility_shim_keeps_full_offload_tuning_on_veths() {
+        let direct = interface_tuning_plan(&bridge_config(false));
+        assert_eq!(direct.full, ["bond0", "enp2s0"]);
+        assert_eq!(direct.coalescing_only, None);
+
+        let shim = interface_tuning_plan(&bridge_config(true));
+        assert_eq!(shim.full, [SHIM_INTERNET_LQOS, SHIM_NETWORK_LQOS]);
+        assert_eq!(
+            shim.coalescing_only,
+            Some(["bond0".to_string(), "enp2s0".to_string()])
+        );
     }
 }

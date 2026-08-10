@@ -6,6 +6,7 @@
 mod blackboard;
 mod dynamic_circuits;
 mod file_lock;
+mod interface_shim;
 mod ip_mapping;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
@@ -243,13 +244,23 @@ fn main() -> Result<()> {
         license_cache_ready_tx,
     );
 
+    // The compatibility shim must exist before interface tuning and preflight.
+    let mut compatibility_shim = Some(interface_shim::prepare(&config)?);
+    info!(
+        active = compatibility_shim
+            .as_ref()
+            .is_some_and(interface_shim::CompatibilityShimGuard::is_active),
+        "Interface compatibility shim state prepared"
+    );
+
     // Apply Tunings
     tuning::tune_lqosd_from_config_file()?;
 
     // Spawn tracking sub-systems
     let Ok(control_channel) = lts2_sys::control_channel::init_control_channel() else {
-        error!("Failed to initialize Insight control channel, exiting.");
-        std::process::exit(1);
+        return Err(anyhow::anyhow!(
+            "Failed to initialize the Insight control channel"
+        ));
     };
     let control_tx_for_lts = control_channel.tx.clone();
     let control_tx_for_web = control_channel.tx.clone();
@@ -370,6 +381,15 @@ fn main() -> Result<()> {
             }
         },
     };
+
+    if kernels.is_none()
+        && compatibility_shim
+            .as_ref()
+            .is_some_and(interface_shim::CompatibilityShimGuard::is_active)
+    {
+        warn!("Removing the compatibility shim because shaping did not start");
+        std::mem::drop(compatibility_shim.take());
+    }
 
     let control_tx_for_webserver = control_tx_for_web.clone();
     let system_usage_tx_for_web = system_usage_tx.clone();
@@ -492,6 +512,7 @@ fn main() -> Result<()> {
                         std::mem::drop(kernels);
                         // Give kernel/driver a moment to finalize detach
                         thread::sleep(Duration::from_millis(50));
+                        std::mem::drop(compatibility_shim);
                         UnixSocketServer::signal_cleanup();
                         std::mem::drop(file_lock);
                         std::process::exit(0);

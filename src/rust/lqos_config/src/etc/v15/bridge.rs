@@ -20,6 +20,15 @@ pub struct BridgeConfig {
     /// Optional MTU for LibreQoS-managed Linux bridge interfaces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtu: Option<u32>,
+
+    /// Route traffic through LibreQoS-managed veth devices when the selected
+    /// physical interfaces cannot host the XDP programs directly.
+    #[serde(default, skip_serializing_if = "bool_is_false")]
+    pub compatibility_shim: bool,
+}
+
+fn bool_is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Default for BridgeConfig {
@@ -29,7 +38,23 @@ impl Default for BridgeConfig {
             to_internet: "eth0".to_string(),
             to_network: "eth1".to_string(),
             mtu: None,
+            compatibility_shim: false,
         }
+    }
+}
+
+impl BridgeConfig {
+    /// Returns whether the veth interface compatibility shim is enabled.
+    pub fn compatibility_shim_enabled(&self) -> bool {
+        self.compatibility_shim
+    }
+
+    /// Checks invariants required by the veth interface compatibility shim.
+    pub fn validate_compatibility_shim(&self) -> Result<(), &'static str> {
+        if self.compatibility_shim_enabled() && !self.use_xdp_bridge {
+            return Err("bridge.compatibility_shim requires bridge.use_xdp_bridge = true");
+        }
+        Ok(())
     }
 }
 
