@@ -99,3 +99,23 @@ sudo netplan apply
 ```
 
 To use the XDP bridge, please be sure to set `use_xdp_bridge` to `true` in lqos.conf in the [Configuration](configuration.md) section.
+
+## Interface Compatibility Shim
+
+Use the interface compatibility shim only when LibreQoS cannot attach XDP directly to the selected interfaces. Common examples are bonded interfaces and NIC drivers without the XDP support LibreQoS requires. Direct XDP or the regular Linux bridge remains preferable when either works.
+
+The shim connects each physical interface to a multiqueue veth through a small Linux bridge. LibreQoS attaches its existing XDP and queueing path to the veth interfaces. This adds CPU overhead, but leaves checksum, segmentation, and VLAN offloads enabled on the physical interfaces. LibreQoS still applies the configured interrupt-coalescing values where the physical driver accepts them.
+
+Enable it on the `Bridge & Interface Mode` page, or set:
+
+```toml
+[bridge]
+use_xdp_bridge = true
+compatibility_shim = true
+to_internet = "bond0"
+to_network = "bond1"
+```
+
+Restart `lqosd` after changing this setting. LibreQoS chooses the veth queue count from the active shaping CPU count and any configured queue override. It uses the smaller physical-interface MTU for the shim path.
+
+The compatibility shim does not add a link-speed cap, HTB limiter, or `fq_codel` to the physical interfaces. Configure subscriber shaping through the normal LibreQoS queue settings.

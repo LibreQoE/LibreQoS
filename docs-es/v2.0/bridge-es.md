@@ -99,3 +99,23 @@ sudo netplan apply
 ```
 
 Para usar el puente XDP, asegurese de establecer `use_xdp_bridge` como `true` en el archivo lqos.conf dentro de la sección [Configuración](configuration-es.md).
+
+## Capa de compatibilidad de interfaces
+
+Use la capa de compatibilidad solo cuando LibreQoS no pueda adjuntar XDP directamente a las interfaces seleccionadas. Los casos más comunes son las interfaces enlazadas mediante bonding y los controladores de NIC que no ofrecen la compatibilidad con XDP que LibreQoS necesita. Si funciona XDP directo o el puente normal de Linux, esa opción sigue siendo preferible.
+
+La capa conecta cada interfaz física a una interfaz veth multiqueue mediante un pequeño puente de Linux. LibreQoS adjunta a las interfaces veth su ruta existente de XDP y colas. Esto consume más CPU, pero mantiene activas en las interfaces físicas las descargas de sumas de comprobación, segmentación y VLAN. LibreQoS sigue aplicando los valores configurados de moderación de interrupciones cuando el controlador físico los acepta.
+
+Actívela en la página `Bridge & Interface Mode`, o configure:
+
+```toml
+[bridge]
+use_xdp_bridge = true
+compatibility_shim = true
+to_internet = "bond0"
+to_network = "bond1"
+```
+
+Reinicie `lqosd` después de cambiar esta opción. LibreQoS elige la cantidad de colas veth según las CPU activas para shaping y cualquier override de colas configurado. Para la ruta de la capa usa el menor MTU de las dos interfaces físicas.
+
+La capa de compatibilidad no añade a las interfaces físicas un límite de velocidad, un limitador HTB ni `fq_codel`. Configure el shaping de suscriptores mediante los ajustes normales de colas de LibreQoS.

@@ -195,6 +195,7 @@ fn migrate_bridge(
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
             mtu: None,
+            compatibility_shim: false,
         });
     }
     Ok(())

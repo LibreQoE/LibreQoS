@@ -43,6 +43,10 @@ pub(crate) enum CommitOutcome {
 pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> lqos_config::Config {
     let mut config = existing.unwrap_or_default();
     let existing_bridge_mtu = config.bridge.as_ref().and_then(|bridge| bridge.mtu);
+    let existing_compatibility_shim = config
+        .bridge
+        .as_ref()
+        .is_some_and(|bridge| bridge.compatibility_shim_enabled());
     let existing_single_interface_mtu = config
         .single_interface
         .as_ref()
@@ -61,6 +65,7 @@ pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> l
                 to_internet: new_config.to_internet.clone(),
                 to_network: new_config.to_network.clone(),
                 mtu: existing_bridge_mtu,
+                compatibility_shim: false,
             });
         }
         BridgeMode::XDP => {
@@ -70,6 +75,7 @@ pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> l
                 to_internet: new_config.to_internet.clone(),
                 to_network: new_config.to_network.clone(),
                 mtu: existing_bridge_mtu,
+                compatibility_shim: existing_compatibility_shim,
             });
         }
         BridgeMode::Single => {
@@ -302,6 +308,51 @@ mod tests {
             candidate.bridge.as_ref().and_then(|bridge| bridge.mtu),
             Some(9000)
         );
+
+        *CURRENT_CONFIG.lock() = previous_builder;
+    }
+
+    #[test]
+    fn build_candidate_config_keeps_compatibility_shim_only_in_xdp_mode() {
+        let previous_builder = {
+            let mut builder = CURRENT_CONFIG.lock();
+            let previous = builder.clone();
+            builder.bridge_mode = BridgeMode::XDP;
+            builder.to_internet = "bond0".to_string();
+            builder.to_network = "bond1".to_string();
+            previous
+        };
+
+        let existing = lqos_config::Config {
+            bridge: Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: true,
+                compatibility_shim: true,
+                ..lqos_config::BridgeConfig::default()
+            }),
+            ..lqos_config::Config::default()
+        };
+        let candidate = build_candidate_config(Some(existing));
+
+        assert!(
+            candidate
+                .bridge
+                .as_ref()
+                .is_some_and(lqos_config::BridgeConfig::compatibility_shim_enabled)
+        );
+
+        CURRENT_CONFIG.lock().bridge_mode = BridgeMode::Linux;
+        let candidate = build_candidate_config(Some(candidate));
+        assert!(
+            candidate
+                .bridge
+                .as_ref()
+                .is_some_and(|bridge| !bridge.compatibility_shim_enabled())
+        );
+
+        CURRENT_CONFIG.lock().bridge_mode = BridgeMode::Single;
+        let candidate = build_candidate_config(Some(candidate));
+        assert!(candidate.bridge.is_none());
+        assert!(candidate.single_interface.is_some());
 
         *CURRENT_CONFIG.lock() = previous_builder;
     }

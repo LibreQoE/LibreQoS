@@ -39,6 +39,8 @@ In the ```[bridge]``` section, change `to_internet` and `to_network` to match yo
 
 In the `[bridge]` section of the lqos.conf file, you can enable or disable the XDP Bridge with the setting `use_xdp_bridge`. The default value is `false` - because the default setup assumes a [Linux Bridge](prereq.md). If you chose to use the XDP Bridge during that pre-requisites setup, please set `use_xdp_bridge = true` instead.
 
+If a bonded interface or NIC driver cannot host LibreQoS XDP directly, set `compatibility_shim = true` in the same `[bridge]` section. The shim requires `use_xdp_bridge = true`. It supplies multiqueue veth interfaces to LibreQoS without adding rate limits or qdiscs to the physical interfaces. See [Interface Compatibility Shim](bridge.md#interface-compatibility-shim).
+
 - Set downlink_bandwidth_mbps and uplink_bandwidth_mbps to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for generated_pn_download_mbps and generated_pn_upload_mbps.
 - to_internet would be the interface facing your edge router and the broader internet
 - to_network would be the interface facing your core router (or bridged internal network if your network is bridged)

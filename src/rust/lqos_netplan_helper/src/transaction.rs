@@ -1061,6 +1061,7 @@ esac
                 to_internet,
                 to_network,
                 mtu: None,
+                compatibility_shim: false,
             }),
             single_interface: None,
             ..Config::default()

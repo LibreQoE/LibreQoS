@@ -58,6 +58,9 @@ pub struct InterfaceCandidate {
     #[serde(default)]
     pub details: Vec<String>,
     pub bridge_eligible: bool,
+    /// Whether the interface can be used behind the veth compatibility shim.
+    #[serde(default)]
+    pub compatibility_shim_eligible: bool,
     pub single_interface_eligible: bool,
     #[serde(default)]
     pub current_selection: bool,
@@ -496,27 +499,31 @@ fn collect_interface_restrictions(
     }
 }
 
+fn is_plain_bond_interface(iface: &str) -> bool {
+    iface.starts_with("bond") && !iface.contains('.') && !iface.contains(':')
+}
+
 fn interface_name_role_reason(iface: &str) -> Option<&'static str> {
     if iface == "lo" {
         Some("Loopback interface.")
     } else if iface.contains('.') || iface.contains(':') {
         Some("VLAN or alias interface.")
-    } else if [
-        "br",
-        "bond",
-        "docker",
-        "veth",
-        "virbr",
-        "ifb",
-        "wg",
-        "tun",
-        "tap",
-        "tailscale",
-        "zt",
-        "vmnet",
-    ]
-    .iter()
-    .any(|prefix| iface.starts_with(prefix))
+    } else if is_plain_bond_interface(iface)
+        || [
+            "br",
+            "docker",
+            "veth",
+            "virbr",
+            "ifb",
+            "wg",
+            "tun",
+            "tap",
+            "tailscale",
+            "zt",
+            "vmnet",
+        ]
+        .iter()
+        .any(|prefix| iface.starts_with(prefix))
     {
         Some("Virtual, bridge, or tunnel interface.")
     } else {
@@ -537,26 +544,34 @@ fn build_interface_candidates(
         .map(|iface| {
             let mut details = Vec::new();
 
-            if let Some(reason) = interface_name_role_reason(iface) {
+            let role_reason = interface_name_role_reason(iface);
+            if let Some(reason) = role_reason {
                 details.push(reason.to_string());
             }
-            if default_interface_name.is_some_and(|default_iface| default_iface == iface) {
+            let is_management_interface =
+                default_interface_name.is_some_and(|default_iface| default_iface == iface);
+            if is_management_interface {
                 details.push("Current management/default-route interface.".to_string());
             }
             if !queue_caps.get(iface).copied().unwrap_or(false) {
                 details.push("Does not appear to have multi-queue RX/TX support.".to_string());
             }
-            if let Some(extra) = interface_restrictions.get(iface) {
+            let restrictions = interface_restrictions.get(iface);
+            if let Some(extra) = restrictions {
                 details.extend(extra.iter().cloned());
             }
             details.sort();
             details.dedup();
 
             let eligible = details.is_empty();
+            let compatibility_shim_eligible = !is_management_interface
+                && restrictions.is_none_or(BTreeSet::is_empty)
+                && (role_reason.is_none() || is_plain_bond_interface(iface));
             InterfaceCandidate {
                 name: iface.clone(),
                 details,
                 bridge_eligible: eligible,
+                compatibility_shim_eligible,
                 single_interface_eligible: eligible,
                 current_selection: selected_set.contains(iface),
             }
@@ -862,6 +877,10 @@ pub fn inspect_network_mode_with_paths(
     queue_caps: &BTreeMap<String, bool>,
 ) -> NetworkModeInspection {
     let mode = requested_mode(config);
+    let compatibility_shim_enabled = config
+        .bridge
+        .as_ref()
+        .is_some_and(|bridge| bridge.compatibility_shim_enabled());
     let selected = selected_interfaces(&mode);
     let (preview, preview_note) = managed_preview_yaml(&mode);
     let mut warnings = Vec::new();
@@ -887,9 +906,13 @@ pub fn inspect_network_mode_with_paths(
     for iface in &selected {
         if !system_ifaces.contains(iface) {
             missing.push(iface.clone());
-        } else if !queue_caps.get(iface).copied().unwrap_or(false) {
+        } else if !queue_caps.get(iface).copied().unwrap_or(false) && !compatibility_shim_enabled {
             warnings.push(format!(
                 "Interface {iface} does not appear to have multi-queue RX/TX support."
+            ));
+        } else if !queue_caps.get(iface).copied().unwrap_or(false) {
+            warnings.push(format!(
+                "Interface {iface} does not expose multi-queue RX/TX support; the compatibility shim will provide multiqueue veth interfaces to LibreQoS."
             ));
         }
     }
@@ -1128,7 +1151,9 @@ pub fn inspect_network_mode(config: &Config) -> NetworkModeInspection {
 
 #[cfg(test)]
 mod tests {
-    use super::{adoption_rewrite_for_path, inspect_network_mode_with_paths};
+    use super::{
+        adoption_rewrite_for_path, build_interface_candidates, inspect_network_mode_with_paths,
+    };
     use std::collections::{BTreeMap, BTreeSet};
 
     fn linux_bridge_config() -> lqos_config::Config {
@@ -1138,6 +1163,7 @@ mod tests {
                 to_internet: "ens19".to_string(),
                 to_network: "ens20".to_string(),
                 mtu: None,
+                compatibility_shim: false,
             }),
             single_interface: None,
             ..lqos_config::Config::default()
@@ -1264,6 +1290,89 @@ mod tests {
                 .is_some_and(|note| note.contains("manual workflow"))
         );
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compatibility_shim_allows_bonds_without_multiqueue_support() {
+        let mut config = linux_bridge_config();
+        let bridge = config.bridge.as_mut().expect("bridge");
+        bridge.use_xdp_bridge = true;
+        bridge.compatibility_shim = true;
+        bridge.to_internet = "bond0".to_string();
+        bridge.to_network = "bond1".to_string();
+        let root = test_env("compatibility-shim-bonds");
+
+        let inspection = inspect_network_mode_with_paths(
+            &config,
+            &root.join("netplan"),
+            &root.join("pending"),
+            &BTreeSet::from(["bond0".to_string(), "bond1".to_string()]),
+            &BTreeMap::from([("bond0".to_string(), false), ("bond1".to_string(), false)]),
+        );
+
+        assert_eq!(inspection.interface_candidates.len(), 2);
+        assert!(
+            inspection
+                .interface_candidates
+                .iter()
+                .all(|candidate| candidate.compatibility_shim_eligible)
+        );
+        assert!(
+            inspection
+                .interface_candidates
+                .iter()
+                .all(|candidate| !candidate.bridge_eligible)
+        );
+        assert!(
+            inspection
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("compatibility shim will provide multiqueue"))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compatibility_shim_still_rejects_management_interface() {
+        let candidates = build_interface_candidates(
+            &BTreeSet::from(["bond0".to_string(), "bond1".to_string()]),
+            &BTreeMap::from([("bond0".to_string(), false), ("bond1".to_string(), false)]),
+            &[],
+            Some("bond0"),
+            &BTreeMap::new(),
+        );
+
+        let management = candidates
+            .iter()
+            .find(|candidate| candidate.name == "bond0")
+            .expect("bond0 candidate");
+        assert!(!management.compatibility_shim_eligible);
+        assert!(
+            management
+                .details
+                .iter()
+                .any(|detail| detail.contains("management/default-route"))
+        );
+    }
+
+    #[test]
+    fn compatibility_shim_rejects_bond_vlan_and_alias_interfaces() {
+        let candidates = build_interface_candidates(
+            &BTreeSet::from(["bond0.100".to_string(), "bond0:1".to_string()]),
+            &BTreeMap::from([
+                ("bond0.100".to_string(), false),
+                ("bond0:1".to_string(), false),
+            ]),
+            &[],
+            None,
+            &BTreeMap::new(),
+        );
+
+        assert!(
+            candidates
+                .iter()
+                .all(|candidate| !candidate.compatibility_shim_eligible)
+        );
     }
 
     #[test]
