@@ -78,25 +78,6 @@ pub fn ethtool_tweaks(interface: &str, tuning: &Tunables) {
         disable_individual_offload(interface, feature);
     }
 
-    ethtool_coalescing_tweaks(interface, tuning);
-
-    if tuning.disable_rxvlan {
-        let _ = Command::new("/sbin/ethtool")
-            .args(["-K", interface, "rxvlan", "off"])
-            .output();
-    }
-
-    if tuning.disable_txvlan {
-        let _ = Command::new("/sbin/ethtool")
-            .args(["-K", interface, "txvlan", "off"])
-            .output();
-    }
-}
-
-/// Applies interrupt-coalescing settings without changing interface offloads.
-///
-/// This function invokes `ethtool` and changes host interface state.
-pub(super) fn ethtool_coalescing_tweaks(interface: &str, tuning: &Tunables) {
     let _ = Command::new("/sbin/ethtool")
         .args([
             "-C",
@@ -114,4 +95,16 @@ pub(super) fn ethtool_coalescing_tweaks(interface: &str, tuning: &Tunables) {
             &format!("\"{}\"", tuning.tx_usecs),
         ])
         .output();
+
+    if tuning.disable_rxvlan {
+        let _ = Command::new("/sbin/ethtool")
+            .args(["-K", interface, "rxvlan", "off"])
+            .output();
+    }
+
+    if tuning.disable_txvlan {
+        let _ = Command::new("/sbin/ethtool")
+            .args(["-K", interface, "txvlan", "off"])
+            .output();
+    }
 }

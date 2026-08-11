@@ -301,9 +301,6 @@ impl Config {
         }
         if let Some(bridge) = &self.bridge {
             validate_interface_mtu("bridge.mtu", bridge.mtu)?;
-            bridge
-                .validate_compatibility_shim()
-                .map_err(str::to_string)?;
         }
         if let Some(single_interface) = &self.single_interface {
             validate_interface_mtu("single_interface.mtu", single_interface.mtu)?;
@@ -628,11 +625,7 @@ impl Config {
     /// Calculate the unterface facing the Internet
     pub fn internet_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
-            if bridge.compatibility_shim_enabled() {
-                crate::SHIM_INTERNET_LQOS.to_string()
-            } else {
-                bridge.to_internet.clone()
-            }
+            bridge.to_internet.clone()
         } else if let Some(single_interface) = &self.single_interface {
             single_interface.interface.clone()
         } else {
@@ -643,11 +636,7 @@ impl Config {
     /// Calculate the interface facing the ISP
     pub fn isp_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
-            if bridge.compatibility_shim_enabled() {
-                crate::SHIM_NETWORK_LQOS.to_string()
-            } else {
-                bridge.to_network.clone()
-            }
+            bridge.to_network.clone()
         } else if let Some(single_interface) = &self.single_interface {
             single_interface.interface.clone()
         } else {
@@ -714,36 +703,6 @@ mod test {
         let config = Config::load_from_string(include_str!("example.toml"))
             .expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
-    }
-
-    #[test]
-    fn compatibility_shim_uses_managed_veth_interfaces() {
-        let raw = include_str!("example.toml").replace(
-            "use_xdp_bridge = true",
-            "use_xdp_bridge = true\ncompatibility_shim = true",
-        );
-        let config = Config::load_from_string(&raw).expect("compatibility shim should load");
-
-        assert_eq!(config.internet_interface(), crate::SHIM_INTERNET_LQOS);
-        assert_eq!(config.isp_interface(), crate::SHIM_NETWORK_LQOS);
-        assert!(
-            config
-                .bridge
-                .as_ref()
-                .is_some_and(BridgeConfig::compatibility_shim_enabled)
-        );
-    }
-
-    #[test]
-    fn compatibility_shim_requires_xdp_bridge() {
-        let raw = include_str!("example.toml").replace(
-            "use_xdp_bridge = true",
-            "use_xdp_bridge = false\ncompatibility_shim = true",
-        );
-        let error = Config::load_from_string(&raw)
-            .expect_err("compatibility shim without XDP bridge should fail");
-
-        assert!(error.contains("compatibility_shim requires bridge.use_xdp_bridge = true"));
     }
 
     #[test]

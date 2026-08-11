@@ -11987,7 +11987,6 @@ mod tests {
                 to_internet: "internet0".to_string(),
                 to_network: "isp0".to_string(),
                 mtu: None,
-                compatibility_shim: false,
             }),
             ..Config::default()
         });
@@ -12266,7 +12265,6 @@ mod tests {
                     to_internet: "lo".to_string(),
                     to_network: "lo".to_string(),
                     mtu: None,
-                    compatibility_shim: false,
                 }),
                 ..lqos_config::Config::default()
             };
@@ -14122,7 +14120,6 @@ mod tests {
                 to_internet: "__bakery-missing-wan__".to_string(),
                 to_network: "__bakery-missing-lan__".to_string(),
                 mtu: None,
-                compatibility_shim: false,
             }),
             ..Config::default()
         };

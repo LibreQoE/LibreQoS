@@ -616,21 +616,19 @@ pub fn attach_xdp_and_tc_to_interface(
         if let Some(bridge) = &etc.bridge
             && bridge.use_xdp_bridge
         {
-            let internet_interface = etc.internet_interface();
-            let network_interface = etc.isp_interface();
             // Enable "promiscuous" mode on interfaces
-            debug!("Enabling promiscuous mode on {}", &internet_interface);
+            debug!("Enabling promiscuous mode on {}", &bridge.to_internet);
             std::process::Command::new("/bin/ip")
-                .args(["link", "set", &internet_interface, "promisc", "on"])
+                .args(["link", "set", &bridge.to_internet, "promisc", "on"])
                 .output()?;
-            debug!("Enabling promiscuous mode on {}", &network_interface);
+            debug!("Enabling promiscuous mode on {}", &bridge.to_network);
             std::process::Command::new("/bin/ip")
-                .args(["link", "set", &network_interface, "promisc", "on"])
+                .args(["link", "set", &bridge.to_network, "promisc", "on"])
                 .output()?;
 
             // Build the interface and vlan map entries
             crate::bifrost_maps::clear_bifrost()?;
-            crate::bifrost_maps::map_multi_interface_mode(&internet_interface, &network_interface)?;
+            crate::bifrost_maps::map_multi_interface_mode(&bridge.to_internet, &bridge.to_network)?;
 
             // Actually attach the TC ingress program
             let error = unsafe { bpf::tc_attach_ingress(interface_index as i32, false, skeleton) };

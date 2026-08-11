@@ -9,98 +9,73 @@ use cursive::{
 use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct InterfaceOption {
-    pub(crate) name: String,
-    pub(crate) label: String,
-    pub(crate) bridge_eligible: bool,
-    pub(crate) compatibility_shim_eligible: bool,
-    pub(crate) single_interface_eligible: bool,
+pub struct InterfaceOption {
+    pub name: String,
+    pub label: String,
 }
 
-impl InterfaceOption {
-    pub(crate) fn is_eligible_for(&self, mode: BridgeMode) -> bool {
-        match mode {
-            BridgeMode::Linux | BridgeMode::XDP => self.bridge_eligible,
-            BridgeMode::CompatibilityShim => self.compatibility_shim_eligible,
-            BridgeMode::Single => self.single_interface_eligible,
+pub fn get_interfaces() -> anyhow::Result<Vec<String>> {
+    Ok(get_interface_options()?
+        .into_iter()
+        .map(|iface| iface.name)
+        .collect())
+}
+
+pub fn get_interface_options() -> anyhow::Result<Vec<InterfaceOption>> {
+    let mut interfaces = nix::ifaddrs::getifaddrs()?
+        .filter(|iface| interface_supports_lqos(&iface.interface_name).is_ok())
+        .map(|iface| iface.interface_name)
+        .collect::<Vec<_>>();
+    interfaces.sort();
+    interfaces.dedup();
+    Ok(interfaces
+        .into_iter()
+        .map(|name| InterfaceOption {
+            label: interface_label(&name),
+            name,
+        })
+        .collect())
+}
+
+pub(crate) fn interface_supports_lqos(interface: &str) -> anyhow::Result<()> {
+    let path = format!("/sys/class/net/{interface}/queues/");
+    let sys_path = Path::new(&path);
+    if !sys_path.exists() {
+        return Err(anyhow::anyhow!(
+            "/sys/class/net/{interface}/queues/ does not exist. Does this card only support one queue (not supported)?"
+        ));
+    }
+
+    let mut counts = (0, 0);
+    let paths = std::fs::read_dir(sys_path)?;
+    for path in paths {
+        if let Ok(path) = &path
+            && path.path().is_dir()
+            && let Some(filename) = path.path().file_name()
+            && let Some(filename) = filename.to_str()
+        {
+            if filename.starts_with("rx-") {
+                counts.0 += 1;
+            } else if filename.starts_with("tx-") {
+                counts.1 += 1;
+            }
         }
     }
-}
 
-pub(crate) fn get_interface_options() -> Vec<InterfaceOption> {
-    let inspection = lqos_netplan_helper::inspect_network_mode(&lqos_config::Config::default());
-    inspection
-        .interface_candidates
-        .into_iter()
-        .filter(|candidate| {
-            candidate.bridge_eligible
-                || candidate.compatibility_shim_eligible
-                || candidate.single_interface_eligible
-        })
-        .map(|candidate| InterfaceOption {
-            label: interface_label(&candidate.name),
-            name: candidate.name,
-            bridge_eligible: candidate.bridge_eligible,
-            compatibility_shim_eligible: candidate.compatibility_shim_eligible,
-            single_interface_eligible: candidate.single_interface_eligible,
-        })
-        .collect()
-}
+    if counts.0 == 0 || counts.1 == 0 {
+        return Err(anyhow::anyhow!(
+            "Interface {} does not have both RX and TX queues.",
+            interface
+        ));
+    }
+    if counts.0 == 1 || counts.1 == 1 {
+        return Err(anyhow::anyhow!(
+            "Interface {} only has one RX or TX queue. This is not supported.",
+            interface
+        ));
+    }
 
-fn eligible_interface_options(mode: BridgeMode) -> Vec<InterfaceOption> {
-    get_interface_options()
-        .into_iter()
-        .filter(|interface| interface.is_eligible_for(mode))
-        .collect()
-}
-
-pub(crate) fn validate_mode_interfaces(
-    mode: BridgeMode,
-    to_internet: &str,
-    to_network: &str,
-) -> anyhow::Result<()> {
-    validate_mode_interfaces_with_options(&get_interface_options(), mode, to_internet, to_network)
-}
-
-pub(crate) fn validate_mode_interfaces_with_options(
-    options: &[InterfaceOption],
-    mode: BridgeMode,
-    to_internet: &str,
-    to_network: &str,
-) -> anyhow::Result<()> {
-    if mode == BridgeMode::Single {
-        if to_internet.is_empty() {
-            anyhow::bail!("A shaping interface is required.");
-        }
-        return validate_interface_selection(options, to_internet, mode, "Shaping");
-    }
-    if to_internet.is_empty() {
-        anyhow::bail!("An internet-facing interface is required.");
-    }
-    if to_network.is_empty() {
-        anyhow::bail!("A network-facing interface is required.");
-    }
-    if to_internet == to_network {
-        anyhow::bail!("Internet and network interfaces must be different.");
-    }
-    validate_interface_selection(options, to_internet, mode, "Internet-facing")?;
-    validate_interface_selection(options, to_network, mode, "Network-facing")
-}
-
-fn validate_interface_selection(
-    options: &[InterfaceOption],
-    interface: &str,
-    mode: BridgeMode,
-    role: &str,
-) -> anyhow::Result<()> {
-    if options
-        .iter()
-        .any(|option| option.name == interface && option.is_eligible_for(mode))
-    {
-        Ok(())
-    } else {
-        anyhow::bail!("{role} interface {interface} is not eligible for the selected mode.")
-    }
+    Ok(())
 }
 
 fn interface_label(interface: &str) -> String {
@@ -211,8 +186,8 @@ fn build_interface_list(
 fn build_layout() -> LinearLayout {
     let bridge_mode = CURRENT_CONFIG.lock().bridge_mode;
     match bridge_mode {
-        BridgeMode::Linux | BridgeMode::XDP | BridgeMode::CompatibilityShim => {
-            let interfaces = eligible_interface_options(bridge_mode);
+        BridgeMode::Linux | BridgeMode::XDP => {
+            let interfaces = get_interface_options().expect("Failed to get interfaces");
 
             // If the configuration has empty interface fields, set them to the first available interface
             {
@@ -266,7 +241,7 @@ fn build_layout() -> LinearLayout {
                 .child(network_layout)
         }
         BridgeMode::Single => {
-            let interfaces = eligible_interface_options(bridge_mode);
+            let interfaces = get_interface_options().expect("Failed to get interfaces");
 
             // If the configuration has empty interface field, set it to the first available interface
             {
@@ -343,6 +318,7 @@ fn build_layout() -> LinearLayout {
 }
 
 pub fn interface_menu(s: &mut Cursive) {
+    get_interfaces().expect("Failed to get interfaces");
     s.add_layer(
         Dialog::around(build_layout())
             .title("Select Interfaces")
@@ -352,51 +328,4 @@ pub fn interface_menu(s: &mut Cursive) {
             })
             .full_screen(),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{InterfaceOption, validate_mode_interfaces_with_options};
-    use crate::config_builder::BridgeMode;
-
-    #[test]
-    fn compatibility_shim_uses_its_relaxed_interface_eligibility() {
-        let bond = InterfaceOption {
-            name: "bond0".to_string(),
-            label: "bond0".to_string(),
-            bridge_eligible: false,
-            compatibility_shim_eligible: true,
-            single_interface_eligible: false,
-        };
-
-        assert!(bond.is_eligible_for(BridgeMode::CompatibilityShim));
-        assert!(!bond.is_eligible_for(BridgeMode::Linux));
-        assert!(!bond.is_eligible_for(BridgeMode::XDP));
-        assert!(!bond.is_eligible_for(BridgeMode::Single));
-    }
-
-    #[test]
-    fn compatibility_shim_rejects_stale_ineligible_selection() {
-        let options = [InterfaceOption {
-            name: "bond0".to_string(),
-            label: "bond0".to_string(),
-            bridge_eligible: false,
-            compatibility_shim_eligible: true,
-            single_interface_eligible: false,
-        }];
-
-        let error = validate_mode_interfaces_with_options(
-            &options,
-            BridgeMode::CompatibilityShim,
-            "bond0",
-            "stale0",
-        )
-        .expect_err("reject stale interface");
-
-        assert!(
-            error
-                .to_string()
-                .contains("Network-facing interface stale0")
-        );
-    }
 }

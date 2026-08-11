@@ -55,7 +55,7 @@
             <section class="lqos-config-panel">
                 <div class="lqos-config-section">
                     <h6 class="lqos-config-section-title">Bridge Mode Configuration</h6>
-                    <div class="lqos-config-section-subtitle">Choose the two shaping interfaces. Linux bridge mode can manage Netplan; XDP and its interface compatibility shim leave Netplan alone.</div>
+                    <div class="lqos-config-section-subtitle">Choose the two shaping interfaces. Linux bridge mode can manage Netplan; XDP mode leaves Netplan alone.</div>
 
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="useXdpBridge" aria-describedby="useXdpBridgeHelp">
@@ -63,18 +63,12 @@
                         <div id="useXdpBridgeHelp" class="form-text">XDP does not write Netplan or apply Bridge MTU.</div>
                     </div>
 
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="compatibilityShim" aria-describedby="compatibilityShimHelp">
-                        <label class="form-check-label" for="compatibilityShim">Interface Compatibility Shim (veth)</label>
-                        <div id="compatibilityShimHelp" class="form-text">Use this only for bonded interfaces or NIC drivers that cannot host LibreQoS XDP directly. LibreQoS inserts two multiqueue veth pairs and two small Linux bridges, which adds CPU overhead.</div>
-                    </div>
-
                     <div class="mb-3">
                         <label for="toInternet" class="form-label">Internet-Facing Interface</label>
                         <select class="form-select" id="toInternet">
                             <option value="">Select an eligible interface</option>
                         </select>
-                        <div class="form-text">Eligible non-management interface for the selected direct or compatibility-shim path.</div>
+                        <div class="form-text">Eligible non-management interfaces with LibreQoS-friendly queue support.</div>
                     </div>
 
                     <div class="mb-2">

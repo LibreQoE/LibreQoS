@@ -37,8 +37,6 @@ En la sección ```[bridge]```, cambie `to_internet` y `to_network` para que coin
 
 En la sección `[bridge]` del archivo lqos.conf, puede habilitar o deshabilitar el puente XDP con la opción `use_xdp_bridge`. El valor predeterminado es `false` - ya que la configuración por defecto asume un [Puente Linux](prereq-es.md). Si eligió usar el puente XDP durante la configuración de requisitos previos, establezca `use_xdp_bridge = true`.
 
-Si una interfaz enlazada mediante bonding o el controlador de una NIC no permite adjuntar XDP de LibreQoS directamente, establezca `compatibility_shim = true` en la misma sección `[bridge]`. La capa requiere `use_xdp_bridge = true`. Proporciona interfaces veth multiqueue a LibreQoS sin añadir límites de velocidad ni qdiscs a las interfaces físicas. Consulte [Capa de compatibilidad de interfaces](bridge-es.md#capa-de-compatibilidad-de-interfaces).
-
 - Configure downlink_bandwidth_mbps y uplink_bandwidth_mbps para que coincidan con el ancho de banda en Mbps de la conexión WAN/Upstream de su red. Lo mismo puede hacerse para generated_pn_download_mbps y generated_pn_upload_mbps.
 - to_internet es la interfaz que apunta hacia su router de borde (edge router) y el internet.
 - to_network es la interfaz que apunta hacia su router interno (core router) (o la red interna puenteada, si su red está configurada de esa manera).
