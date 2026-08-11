@@ -2,11 +2,6 @@ use once_cell::sync::Lazy;
 use parking_lot::{Mutex, MutexGuard};
 
 static CONFIG_ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-static CURRENT_CONFIG_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
-
-pub(crate) fn lock_current_config() -> MutexGuard<'static, ()> {
-    CURRENT_CONFIG_TEST_LOCK.lock()
-}
 
 pub(crate) struct ConfigEnvGuard {
     _lock: MutexGuard<'static, ()>,

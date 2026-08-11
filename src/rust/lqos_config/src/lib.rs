@@ -157,21 +157,3 @@ pub fn topology_import_has_shaped_devices(config: &Config) -> bool {
 
 /// Used as a constant in determining buffer preallocation
 pub const SUPPORTED_CUSTOMERS: usize = 100_000;
-
-/// lqosd-facing veth on the Internet side of the interface compatibility shim.
-pub const SHIM_INTERNET_LQOS: &str = "v_inet_lq";
-
-/// Bridge-facing peer of [`SHIM_INTERNET_LQOS`].
-pub const SHIM_INTERNET_PEER: &str = "v_inet_phy";
-
-/// lqosd-facing veth on the subscriber-network side of the compatibility shim.
-pub const SHIM_NETWORK_LQOS: &str = "v_isp_lq";
-
-/// Bridge-facing peer of [`SHIM_NETWORK_LQOS`].
-pub const SHIM_NETWORK_PEER: &str = "v_isp_phy";
-
-/// Two-port Linux bridge joining the Internet interface to its veth peer.
-pub const SHIM_INTERNET_BRIDGE: &str = "br_lq_inet";
-
-/// Two-port Linux bridge joining the subscriber-network interface to its veth peer.
-pub const SHIM_NETWORK_BRIDGE: &str = "br_lq_isp";

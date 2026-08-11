@@ -10,7 +10,7 @@ The LibreQoS setup tool guides users through the essential configuration steps r
 
 The tool assists in configuring the following components:
 
-- **Bridge Mode**: Select Linux Bridge, Interface Compatibility Shim, or Single Interface. Existing direct-XDP installs can preserve their legacy mode.
+- **Bridge Mode**: Select between Linux, XDP, or Single bridge modes to match your deployment scenario.
 - **Network Interfaces**: Choose and configure the network interfaces that LibreQoS will manage.
 - **Bandwidth Settings**: Set bandwidth limits and parameters for your network environment.
 - **IP Ranges**: Define the IP address ranges that LibreQoS should monitor and shape.

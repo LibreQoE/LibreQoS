@@ -12,14 +12,7 @@ pub static CURRENT_CONFIG: Lazy<Mutex<ConfigBuilder>> =
 pub enum BridgeMode {
     Linux,
     XDP,
-    CompatibilityShim,
     Single,
-}
-
-impl BridgeMode {
-    pub(crate) const fn uses_netplan_helper(self) -> bool {
-        matches!(self, Self::Linux | Self::Single)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -45,11 +38,7 @@ impl ConfigBuilder {
             let mut internet_vlan = 0;
             let mut network_vlan = 0;
             let mode = if let Some(bridge) = &cfg.bridge {
-                if bridge.compatibility_shim_enabled() {
-                    to_internet = bridge.to_internet.clone();
-                    to_network = bridge.to_network.clone();
-                    BridgeMode::CompatibilityShim
-                } else if bridge.use_xdp_bridge {
+                if bridge.use_xdp_bridge {
                     to_internet = bridge.to_internet.clone();
                     to_network = bridge.to_network.clone();
                     BridgeMode::XDP
@@ -121,21 +110,16 @@ pub fn existing_config_load_error() -> Option<String> {
     existing_config_load_error_for_path(&current_config_path())
 }
 
-pub fn existing_config_uses_direct_xdp() -> bool {
+pub fn existing_config_uses_xdp() -> bool {
     lqos_config::load_config()
         .ok()
-        .and_then(|config| {
-            config
-                .bridge
-                .as_ref()
-                .map(|bridge| bridge.use_xdp_bridge && !bridge.compatibility_shim_enabled())
-        })
+        .and_then(|config| config.bridge.as_ref().map(|bridge| bridge.use_xdp_bridge))
         .unwrap_or(false)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BridgeMode, ConfigBuilder, existing_config_uses_direct_xdp};
+    use super::ConfigBuilder;
     use crate::test_support::ConfigEnvGuard;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -158,62 +142,5 @@ mod tests {
         assert!(builder.config_load_error.is_some());
 
         fs::remove_file(path).expect("remove temp config");
-    }
-
-    #[test]
-    fn compatibility_shim_config_loads_as_its_own_setup_mode() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock before epoch")
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "libreqos-setup-shim-config-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).expect("create shim config directory");
-        let path = root.join("lqos.conf");
-        let _env_guard = ConfigEnvGuard::set_lqos_config(&path);
-        let mut config = lqos_config::Config {
-            lqos_directory: root.display().to_string(),
-            state_directory: Some(root.join("state").display().to_string()),
-            bridge: Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: true,
-                compatibility_shim: true,
-                to_internet: "bond0".to_string(),
-                to_network: "bond1".to_string(),
-                ..lqos_config::BridgeConfig::default()
-            }),
-            ..lqos_config::Config::default()
-        };
-        let serialized = toml::to_string_pretty(&config).expect("serialize shim config");
-        fs::write(&path, serialized).expect("write shim config");
-        lqos_config::clear_cached_config();
-
-        let builder = ConfigBuilder::new();
-
-        assert_eq!(builder.bridge_mode, BridgeMode::CompatibilityShim);
-        assert_eq!(builder.to_internet, "bond0");
-        assert_eq!(builder.to_network, "bond1");
-        assert!(!existing_config_uses_direct_xdp());
-
-        config
-            .bridge
-            .as_mut()
-            .expect("bridge config")
-            .compatibility_shim = false;
-        let serialized = toml::to_string_pretty(&config).expect("serialize direct XDP config");
-        fs::write(&path, serialized).expect("write direct XDP config");
-        lqos_config::clear_cached_config();
-        assert!(existing_config_uses_direct_xdp());
-
-        fs::remove_dir_all(root).expect("remove temp config directory");
-    }
-
-    #[test]
-    fn compatibility_shim_updates_config_without_managing_netplan() {
-        assert!(!BridgeMode::CompatibilityShim.uses_netplan_helper());
-        assert!(!BridgeMode::XDP.uses_netplan_helper());
-        assert!(BridgeMode::Linux.uses_netplan_helper());
-        assert!(BridgeMode::Single.uses_netplan_helper());
     }
 }

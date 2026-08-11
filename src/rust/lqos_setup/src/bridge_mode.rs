@@ -4,11 +4,11 @@ use cursive::{
     views::{Dialog, LinearLayout, RadioGroup, TextView},
 };
 
-use crate::config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_direct_xdp};
+use crate::config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_xdp};
 
 pub fn bridge_mode(s: &mut Cursive) {
     let current_mode = CURRENT_CONFIG.lock().bridge_mode;
-    let show_legacy_xdp = existing_config_uses_direct_xdp() || current_mode == BridgeMode::XDP;
+    let show_legacy_xdp = existing_config_uses_xdp() || current_mode == BridgeMode::XDP;
 
     // create the group and buttons
     let mut group = RadioGroup::new().on_change(|_s, mode| {
@@ -26,10 +26,6 @@ pub fn bridge_mode(s: &mut Cursive) {
             "Legacy XDP Bridge (existing installs only - keep only if you already run it)",
         )
     });
-    let mut shim_btn = group.button(
-        BridgeMode::CompatibilityShim,
-        "Interface Compatibility Shim (2 interfaces) - for bonds and drivers that cannot host XDP",
-    );
     let mut single_btn = group.button(BridgeMode::Single, "Single Interface (1 interface)");
 
     // mark the one we want as selected
@@ -41,9 +37,6 @@ pub fn bridge_mode(s: &mut Cursive) {
             if let Some(button) = xdp_btn.as_mut() {
                 button.select();
             }
-        }
-        BridgeMode::CompatibilityShim => {
-            shim_btn.select();
         }
         _ => {
             linux_btn.select();
@@ -60,7 +53,6 @@ pub fn bridge_mode(s: &mut Cursive) {
         ));
         layout.add_child(button);
     }
-    layout.add_child(shim_btn);
     layout.add_child(single_btn);
 
     s.add_layer(
