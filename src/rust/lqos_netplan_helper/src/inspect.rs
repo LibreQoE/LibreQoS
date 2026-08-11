@@ -58,6 +58,8 @@ pub struct InterfaceCandidate {
     #[serde(default)]
     pub details: Vec<String>,
     pub bridge_eligible: bool,
+    #[serde(default)]
+    pub xdp_bridge_eligible: bool,
     pub single_interface_eligible: bool,
     #[serde(default)]
     pub current_selection: bool,
@@ -163,6 +165,28 @@ struct NetplanBridge {
 struct NetplanRelationship {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     interfaces: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    parameters: BTreeMap<String, serde_yaml::Value>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_netplan_bool",
+        skip_serializing_if = "Option::is_none"
+    )]
+    dhcp4: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_netplan_bool",
+        skip_serializing_if = "Option::is_none"
+    )]
+    dhcp6: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    addresses: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gateway4: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gateway6: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    routes: Vec<serde_yaml::Value>,
     #[serde(flatten)]
     extra: BTreeMap<String, serde_yaml::Value>,
 }
@@ -235,6 +259,31 @@ impl NetplanBridge {
             || !self.routes.is_empty()
             || self.dhcp4 == Some(true)
             || self.dhcp6 == Some(true)
+    }
+}
+
+impl NetplanRelationship {
+    fn has_l3_config(&self) -> bool {
+        !self.addresses.is_empty()
+            || self.gateway4.is_some()
+            || self.gateway6.is_some()
+            || !self.routes.is_empty()
+            || self.dhcp4 == Some(true)
+            || self.dhcp6 == Some(true)
+    }
+
+    fn parameter_text(&self, key: &str) -> Option<String> {
+        let value = self.parameters.get(key)?;
+        value
+            .as_str()
+            .map(ToOwned::to_owned)
+            .or_else(|| value.as_i64().map(|value| value.to_string()))
+    }
+
+    fn native_xdp_issue(&self) -> Option<String> {
+        let mode = self.parameter_text("mode");
+        let transmit_hash_policy = self.parameter_text("transmit-hash-policy");
+        lqos_config::native_xdp_bond_issue(mode.as_deref(), transmit_hash_policy.as_deref())
     }
 }
 
@@ -393,7 +442,7 @@ fn managed_preview_yaml(mode: &RequestedMode) -> (Option<String>, Option<String>
         RequestedMode::XdpBridge { .. } => (
             None,
             Some(
-                "XDP bridge mode remains a manual workflow. LibreQoS does not generate netplan for this mode."
+                "XDP bridge mode saves lqos.conf only. LibreQoS does not generate or apply netplan for this mode."
                     .to_string(),
             ),
         ),
@@ -470,6 +519,7 @@ fn add_interface_reason(
 fn collect_interface_restrictions(
     doc: &NetplanDocument,
     restrictions: &mut BTreeMap<String, BTreeSet<String>>,
+    bond_names: &mut BTreeSet<String>,
 ) {
     for (iface, cfg) in &doc.network.ethernets {
         if cfg.has_l3_config() {
@@ -492,6 +542,27 @@ fn collect_interface_restrictions(
                     ),
                 );
             }
+        }
+    }
+
+    for (bond_name, bond) in &doc.network.bonds {
+        bond_names.insert(bond_name.clone());
+        if bond.has_l3_config() {
+            add_interface_reason(
+                restrictions,
+                bond_name,
+                "Carries DHCP, static addressing, or routes in current netplan.",
+            );
+        }
+        if let Some(issue) = bond.native_xdp_issue() {
+            add_interface_reason(restrictions, bond_name, issue);
+        }
+        for member in &bond.interfaces {
+            add_interface_reason(
+                restrictions,
+                member,
+                format!("Member of bond {bond_name}; select the bond master for XDP instead."),
+            );
         }
     }
 }
@@ -530,6 +601,7 @@ fn build_interface_candidates(
     selected: &[String],
     default_interface_name: Option<&str>,
     interface_restrictions: &BTreeMap<String, BTreeSet<String>>,
+    bond_names: &BTreeSet<String>,
 ) -> Vec<InterfaceCandidate> {
     let selected_set = selected.iter().cloned().collect::<BTreeSet<_>>();
     let mut candidates = system_ifaces
@@ -537,7 +609,8 @@ fn build_interface_candidates(
         .map(|iface| {
             let mut details = Vec::new();
 
-            if let Some(reason) = interface_name_role_reason(iface) {
+            let is_bond = bond_names.contains(iface);
+            if !is_bond && let Some(reason) = interface_name_role_reason(iface) {
                 details.push(reason.to_string());
             }
             if default_interface_name.is_some_and(|default_iface| default_iface == iface) {
@@ -553,11 +626,18 @@ fn build_interface_candidates(
             details.dedup();
 
             let eligible = details.is_empty();
+            if is_bond && eligible {
+                details.push(
+                    "Bond master; Netplan settings allow native XDP. Member drivers must also support native XDP."
+                        .to_string(),
+                );
+            }
             InterfaceCandidate {
                 name: iface.clone(),
                 details,
-                bridge_eligible: eligible,
-                single_interface_eligible: eligible,
+                bridge_eligible: eligible && !is_bond,
+                xdp_bridge_eligible: eligible,
+                single_interface_eligible: eligible && !is_bond,
                 current_selection: selected_set.contains(iface),
             }
         })
@@ -802,9 +882,37 @@ fn assess_file(path: &Path, doc: &NetplanDocument, mode: &RequestedMode) -> File
 
     for (bond_name, bond) in &doc.network.bonds {
         for iface in selected_interfaces(mode) {
-            if bond.interfaces.iter().any(|member| member == &iface) {
+            if iface == *bond_name {
                 relevant.insert(iface.clone());
-                details.push(format!("{iface} is already part of bond {bond_name}."));
+                details.push(format!(
+                    "{iface} is a bond containing interfaces: {}.",
+                    bond.interfaces.join(", ")
+                ));
+                if matches!(mode, RequestedMode::XdpBridge { .. }) {
+                    if bond.has_l3_config() {
+                        details.push(format!(
+                            "Bond master {iface} carries DHCP, static addressing, or routes; shaping bond masters must not carry host networking."
+                        ));
+                        has_conflict = true;
+                        is_complex = true;
+                    }
+                    if let Some(issue) = bond.native_xdp_issue() {
+                        details.push(issue);
+                        has_conflict = true;
+                        is_complex = true;
+                    }
+                } else {
+                    details.push(format!(
+                        "Bond master {iface} is only supported as a LibreQoS interface in XDP bridge mode."
+                    ));
+                    has_conflict = true;
+                    is_complex = true;
+                }
+            } else if bond.interfaces.iter().any(|member| member == &iface) {
+                relevant.insert(iface.clone());
+                details.push(format!(
+                    "{iface} is a member of bond {bond_name}; select the bond master instead."
+                ));
                 has_conflict = true;
                 is_complex = true;
             }
@@ -876,6 +984,7 @@ pub fn inspect_network_mode_with_paths(
     let has_pending_try = pending_try_exists(pending_dir);
     let default_interface_name = get_default_interface().ok().map(|iface| iface.name);
     let mut interface_restrictions = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut bond_names = BTreeSet::new();
 
     if selected.is_empty() {
         warnings.push(
@@ -910,7 +1019,7 @@ pub fn inspect_network_mode_with_paths(
 
         match parse_netplan_file(&path) {
             Ok(doc) => {
-                collect_interface_restrictions(&doc, &mut interface_restrictions);
+                collect_interface_restrictions(&doc, &mut interface_restrictions, &mut bond_names);
                 let assessment = assess_file(&path, &doc, &mode);
                 if assessment.has_conflict {
                     conflicts.extend(assessment.detected.details.clone());
@@ -951,6 +1060,21 @@ pub fn inspect_network_mode_with_paths(
 
     dangerous_changes.sort();
     dangerous_changes.dedup();
+
+    let interface_candidates = build_interface_candidates(
+        system_ifaces,
+        queue_caps,
+        &selected,
+        default_interface_name.as_deref(),
+        &interface_restrictions,
+        &bond_names,
+    );
+    let xdp_selection_eligible = matches!(mode, RequestedMode::XdpBridge { .. })
+        && selected.iter().all(|selected_interface| {
+            interface_candidates.iter().any(|candidate| {
+                candidate.name == *selected_interface && candidate.xdp_bridge_eligible
+            })
+        });
 
     let can_take_over = takeover_candidate && !has_pending_try;
     let can_adopt = external_sources.len() == 1 && !has_complex && !has_pending_try;
@@ -1008,6 +1132,20 @@ pub fn inspect_network_mode_with_paths(
             ),
             false,
         )
+    } else if matches!(mode, RequestedMode::XdpBridge { .. }) && xdp_selection_eligible {
+        (
+            "Ready",
+            "The selected XDP interfaces are eligible. Saving will update lqos.conf and leave netplan unchanged."
+                .to_string(),
+            false,
+        )
+    } else if matches!(mode, RequestedMode::XdpBridge { .. }) {
+        (
+            "ComplexUnsupported",
+            "One or more selected XDP interfaces are unavailable. Review the interface details before saving."
+                .to_string(),
+            true,
+        )
     } else if has_managed {
         (
             "ManagedByLibreQoS",
@@ -1047,27 +1185,30 @@ pub fn inspect_network_mode_with_paths(
             false,
         )
     } else {
-        (
-            "Ready",
-            "No blocking netplan conflicts were detected for the selected mode. Review the managed preview before applying changes.".to_string(),
-            false,
-        )
+        let summary = if matches!(mode, RequestedMode::XdpBridge { .. }) {
+            "No blocking netplan conflicts were detected for the selected XDP interfaces. Saving will update lqos.conf and leave netplan unchanged."
+        } else {
+            "No blocking netplan conflicts were detected for the selected mode. Review the managed preview before applying changes."
+        };
+        ("Ready", summary.to_string(), false)
     };
 
     if matches!(mode, RequestedMode::XdpBridge { .. }) {
         warnings.push(
-            "XDP bridge mode remains manual. LibreQoS only provides inspection for this mode in the current helper slice."
+            "Configure XDP interfaces and bonds in netplan before saving this mode. LibreQoS will leave netplan unchanged."
                 .to_string(),
         );
     }
 
-    let can_apply = !editing_locked
-        && !matches!(
-            mode,
-            RequestedMode::XdpBridge { .. } | RequestedMode::Unknown
-        )
-        && !has_pending_try
-        && preview.is_some();
+    let can_apply = if matches!(mode, RequestedMode::XdpBridge { .. }) {
+        !has_pending_try && xdp_selection_eligible
+    } else {
+        !editing_locked
+            && !matches!(mode, RequestedMode::Unknown)
+            && !has_pending_try
+            && matches!(inspector_state, "Ready" | "ManagedByLibreQoS")
+            && preview.is_some()
+    };
     let strong_confirmation_text = if dangerous_changes.is_empty() {
         None
     } else {
@@ -1076,14 +1217,6 @@ pub fn inspect_network_mode_with_paths(
                 .to_string(),
         )
     };
-    let interface_candidates = build_interface_candidates(
-        system_ifaces,
-        queue_caps,
-        &selected,
-        default_interface_name.as_deref(),
-        &interface_restrictions,
-    );
-
     NetworkModeInspection {
         mode_label: mode_label(&mode),
         selected_interfaces: selected,
@@ -1155,6 +1288,25 @@ mod tests {
             }),
             ..lqos_config::Config::default()
         }
+    }
+
+    fn xdp_bond_config() -> lqos_config::Config {
+        lqos_config::Config {
+            bridge: Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: true,
+                to_internet: "bond-wan".to_string(),
+                to_network: "bond-lan".to_string(),
+                mtu: None,
+            }),
+            single_interface: None,
+            ..lqos_config::Config::default()
+        }
+    }
+
+    fn xdp_physical_config() -> lqos_config::Config {
+        let mut config = linux_bridge_config();
+        config.bridge.as_mut().expect("bridge").use_xdp_bridge = true;
+        config
     }
 
     fn test_env(name: &str) -> std::path::PathBuf {
@@ -1241,7 +1393,7 @@ mod tests {
     }
 
     #[test]
-    fn xdp_bridge_mode_keeps_managed_preview_disabled() {
+    fn xdp_bridge_mode_allows_config_only_apply() {
         let mut config = linux_bridge_config();
         let bridge = config.bridge.as_mut().expect("bridge");
         bridge.use_xdp_bridge = true;
@@ -1257,12 +1409,303 @@ mod tests {
         );
 
         assert!(inspection.managed_preview_yaml.is_none());
+        assert!(inspection.can_apply);
         assert!(
             inspection
                 .preview_note
                 .as_deref()
-                .is_some_and(|note| note.contains("manual workflow"))
+                .is_some_and(|note| note.contains("lqos.conf only"))
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn xdp_config_only_apply_ignores_unrelated_unmanaged_netplan_errors() {
+        let root = test_env("xdp-unrelated-netplan-error");
+        std::fs::write(
+            root.join("netplan").join("99-unrelated.yaml"),
+            "network: [invalid",
+        )
+        .expect("write invalid unrelated netplan fixture");
+        let system_ifaces = BTreeSet::from(["ens19".to_string(), "ens20".to_string()]);
+        let queue_caps = system_ifaces
+            .iter()
+            .map(|name| (name.clone(), true))
+            .collect::<BTreeMap<_, _>>();
+
+        let inspection = inspect_network_mode_with_paths(
+            &xdp_physical_config(),
+            &root.join("netplan"),
+            &root.join("pending"),
+            &system_ifaces,
+            &queue_caps,
+        );
+
+        assert_eq!(inspection.inspector_state, "Ready");
+        assert!(inspection.can_apply);
+        assert!(
+            inspection
+                .detected_files
+                .iter()
+                .any(|file| file.classification == "ComplexUnsupported")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn xdp_bridge_mode_cannot_save_missing_interfaces() {
+        let root = test_env("xdp-missing-interface");
+        let inspection = inspect_network_mode_with_paths(
+            &xdp_bond_config(),
+            &root.join("netplan"),
+            &root.join("pending"),
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+        );
+
+        assert_eq!(inspection.inspector_state, "Missing");
+        assert!(!inspection.can_apply);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn xdp_mode_offers_bond_masters_and_rejects_their_members() {
+        let root = test_env("xdp-bond-candidates");
+        std::fs::write(
+            root.join("netplan").join("50-bonds.yaml"),
+            r#"
+network:
+  version: 2
+  ethernets:
+    enp1s0:
+      dhcp4: false
+      dhcp6: false
+    enp2s0:
+      dhcp4: false
+      dhcp6: false
+    enp3s0:
+      dhcp4: false
+      dhcp6: false
+    enp4s0:
+      dhcp4: false
+      dhcp6: false
+  bonds:
+    bond-wan:
+      interfaces: [enp1s0, enp2s0]
+      parameters:
+        mode: 802.3ad
+    bond-lan:
+      interfaces: [enp3s0, enp4s0]
+      parameters:
+        mode: 802.3ad
+"#,
+        )
+        .expect("write bonded netplan fixture");
+
+        let system_ifaces = BTreeSet::from([
+            "bond-lan".to_string(),
+            "bond-wan".to_string(),
+            "enp1s0".to_string(),
+            "enp2s0".to_string(),
+            "enp3s0".to_string(),
+            "enp4s0".to_string(),
+        ]);
+        let queue_caps = system_ifaces
+            .iter()
+            .map(|name| (name.clone(), true))
+            .collect::<BTreeMap<_, _>>();
+        let inspection = inspect_network_mode_with_paths(
+            &xdp_bond_config(),
+            &root.join("netplan"),
+            &root.join("pending"),
+            &system_ifaces,
+            &queue_caps,
+        );
+
+        assert_eq!(inspection.inspector_state, "Ready");
+        assert_eq!(inspection.detected_files.len(), 1);
+        assert_eq!(inspection.detected_files[0].classification, "Relevant");
+        for bond_name in ["bond-wan", "bond-lan"] {
+            let candidate = inspection
+                .interface_candidates
+                .iter()
+                .find(|candidate| candidate.name == bond_name)
+                .expect("bond candidate");
+            assert!(candidate.xdp_bridge_eligible);
+            assert!(!candidate.bridge_eligible);
+            assert!(!candidate.single_interface_eligible);
+        }
+        let member = inspection
+            .interface_candidates
+            .iter()
+            .find(|candidate| candidate.name == "enp1s0")
+            .expect("bond member candidate");
+        assert!(!member.xdp_bridge_eligible);
+        assert!(
+            member
+                .details
+                .iter()
+                .any(|detail| detail.contains("bond-wan"))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn xdp_mode_rejects_bond_settings_without_native_xdp() {
+        let root = test_env("xdp-unsupported-bond-settings");
+        std::fs::write(
+            root.join("netplan").join("50-bonds.yaml"),
+            r#"
+network:
+  version: 2
+  bonds:
+    bond-wan:
+      interfaces: [enp1s0, enp2s0]
+      parameters:
+        mode: balance-alb
+    bond-lan:
+      interfaces: [enp3s0, enp4s0]
+      parameters:
+        mode: 802.3ad
+        transmit-hash-policy: vlan+srcmac
+"#,
+        )
+        .expect("write unsupported bonded netplan fixture");
+        let system_ifaces = BTreeSet::from(["bond-lan".to_string(), "bond-wan".to_string()]);
+        let queue_caps = system_ifaces
+            .iter()
+            .map(|name| (name.clone(), true))
+            .collect::<BTreeMap<_, _>>();
+
+        let inspection = inspect_network_mode_with_paths(
+            &xdp_bond_config(),
+            &root.join("netplan"),
+            &root.join("pending"),
+            &system_ifaces,
+            &queue_caps,
+        );
+
+        assert_eq!(inspection.inspector_state, "ComplexUnsupported");
+        for (bond_name, expected_issue) in [
+            ("bond-wan", "Bond mode balance-alb"),
+            ("bond-lan", "vlan+srcmac"),
+        ] {
+            let candidate = inspection
+                .interface_candidates
+                .iter()
+                .find(|candidate| candidate.name == bond_name)
+                .expect("bond candidate");
+            assert!(!candidate.xdp_bridge_eligible);
+            assert!(
+                candidate
+                    .details
+                    .iter()
+                    .any(|detail| detail.contains(expected_issue))
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn xdp_mode_rejects_a_bond_master_with_host_networking() {
+        let root = test_env("xdp-bond-host-networking");
+        std::fs::write(
+            root.join("netplan").join("50-bonds.yaml"),
+            r#"
+network:
+  version: 2
+  bonds:
+    bond-wan:
+      interfaces: [enp1s0, enp2s0]
+      parameters:
+        mode: 802.3ad
+      addresses: [192.0.2.10/24]
+    bond-lan:
+      interfaces: [enp3s0, enp4s0]
+      parameters:
+        mode: 802.3ad
+"#,
+        )
+        .expect("write bonded netplan fixture");
+        let system_ifaces = BTreeSet::from(["bond-lan".to_string(), "bond-wan".to_string()]);
+        let queue_caps = system_ifaces
+            .iter()
+            .map(|name| (name.clone(), true))
+            .collect::<BTreeMap<_, _>>();
+
+        let inspection = inspect_network_mode_with_paths(
+            &xdp_bond_config(),
+            &root.join("netplan"),
+            &root.join("pending"),
+            &system_ifaces,
+            &queue_caps,
+        );
+
+        assert_eq!(inspection.inspector_state, "ComplexUnsupported");
+        assert!(!inspection.can_apply);
+        let candidate = inspection
+            .interface_candidates
+            .iter()
+            .find(|candidate| candidate.name == "bond-wan")
+            .expect("bond candidate");
+        assert!(!candidate.xdp_bridge_eligible);
+        assert!(
+            candidate
+                .details
+                .iter()
+                .any(|detail| detail.contains("DHCP, static addressing, or routes"))
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn managed_linux_bridge_rejects_a_bond_master() {
+        let root = test_env("linux-bond-rejected");
+        std::fs::write(
+            root.join("netplan").join("50-bond.yaml"),
+            r#"
+network:
+  version: 2
+  bonds:
+    bond-wan:
+      interfaces: [enp1s0, enp2s0]
+      parameters:
+        mode: 802.3ad
+"#,
+        )
+        .expect("write bonded netplan fixture");
+        let mut config = linux_bridge_config();
+        config.bridge.as_mut().expect("bridge").to_internet = "bond-wan".to_string();
+        let system_ifaces = BTreeSet::from([
+            "bond-wan".to_string(),
+            "ens20".to_string(),
+            "enp1s0".to_string(),
+            "enp2s0".to_string(),
+        ]);
+        let queue_caps = system_ifaces
+            .iter()
+            .map(|name| (name.clone(), true))
+            .collect::<BTreeMap<_, _>>();
+
+        let inspection = inspect_network_mode_with_paths(
+            &config,
+            &root.join("netplan"),
+            &root.join("pending"),
+            &system_ifaces,
+            &queue_caps,
+        );
+
+        assert_eq!(inspection.inspector_state, "ComplexUnsupported");
+        assert!(!inspection.can_apply);
+        assert!(inspection.conflicts.iter().any(|detail| {
+            detail.contains("only supported as a LibreQoS interface in XDP bridge mode")
+        }));
+
         let _ = std::fs::remove_dir_all(root);
     }
 

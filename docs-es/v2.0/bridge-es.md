@@ -12,11 +12,11 @@ El puente regular de Linux es recomendado para la mayoría de las instalaciones.
 A continuación, se encuentran las instrucciones para configurar Netplan, ya sea usando el puente de Linux o el puente Bifrost con XDP:
 
 ```{note}
-La página Network Mode en la interfaz web de LibreQoS ahora inspecciona los archivos actuales de Netplan, ofrece en menús desplegables las interfaces elegibles que no forman parte de la ruta de gestión, prepara cambios administrados para `libreqos.yaml` en los modos puente de Linux y de interfaz única, los aplica con una ventana temporizada de reversión manejada por LibreQoS y le permite confirmar o revertir el cambio pendiente. También puede restaurar desde esa página la copia de seguridad administrada anterior. El modo puente XDP sigue siendo un flujo manual de Netplan.
+La página Network Mode de la interfaz web de LibreQoS inspecciona los archivos actuales de Netplan y ofrece interfaces elegibles que no forman parte de la ruta de gestión. Los modos puente de Linux e interfaz única pueden preparar y aplicar cambios administrados en `libreqos.yaml` con una ventana temporizada de reversión. El modo XDP guarda solamente `lqos.conf`; nunca genera ni aplica Netplan.
 ```
 
 ```{note}
-La configuración inicial actual solo ofrece Puente Linux e Interfaz Única para instalaciones nuevas. Si LibreQoS detecta un despliegue XDP existente, la configuración preserva ese modo XDP heredado y le avisa antes de migrar fuera de él.
+La configuración inicial ofrece Puente Linux, Puente XDP e Interfaz Única. Para usar XDP con un bond, configure primero el bond en Netplan y seleccione su interfaz maestra en LibreQoS. No seleccione una interfaz miembro del bond.
 ```
 
 ```{note}
@@ -99,3 +99,51 @@ sudo netplan apply
 ```
 
 Para usar el puente XDP, asegurese de establecer `use_xdp_bridge` como `true` en el archivo lqos.conf dentro de la sección [Configuración](configuration-es.md).
+
+### Puente XDP con bonds 802.3ad
+
+El controlador de bonding de Linux admite XDP nativo en interfaces maestras `802.3ad` cuando los controladores de todas las interfaces miembro también admiten XDP nativo. Configure LACP en los puertos conectados del switch y defina los bonds en Netplan antes de seleccionarlos en LibreQoS. El siguiente ejemplo usa un bond de dos puertos a cada lado del regulador:
+
+```yaml
+network:
+    ethernets:
+        enp1s0:
+            dhcp4: false
+            dhcp6: false
+        enp2s0:
+            dhcp4: false
+            dhcp6: false
+        enp3s0:
+            dhcp4: false
+            dhcp6: false
+        enp4s0:
+            dhcp4: false
+            dhcp6: false
+    bonds:
+        bond-wan:
+            interfaces: [enp1s0, enp2s0]
+            parameters:
+                mode: 802.3ad
+        bond-lan:
+            interfaces: [enp3s0, enp4s0]
+            parameters:
+                mode: 802.3ad
+    version: 2
+```
+
+Después seleccione `bond-wan` como interfaz orientada a Internet y `bond-lan` como interfaz orientada a la LAN. La sección equivalente de `lqos.conf` es:
+
+```toml
+[bridge]
+use_xdp_bridge = true
+to_internet = "bond-wan"
+to_network = "bond-lan"
+```
+
+No seleccione `enp1s0` a `enp4s0` en LibreQoS. Son miembros de los bonds; XDP debe adjuntarse a las interfaces maestras. Confirme que cada bond exponga varias colas RX/TX y que `lqosd` se adjunte en modo nativo del controlador antes de transportar tráfico de producción. La documentación del kernel de Linux enumera los [modos de bonding que admiten XDP nativo](https://docs.kernel.org/networking/bonding.html#what-bonding-modes-support-native-xdp).
+
+Después de cambiar un nodo existente para usar las interfaces maestras de los bonds, reinicie `lqosd` para que adjunte XDP a las nuevas interfaces seleccionadas:
+
+```shell
+sudo systemctl restart lqosd
+```

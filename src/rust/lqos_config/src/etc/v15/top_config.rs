@@ -882,6 +882,20 @@ mod test {
     }
 
     #[test]
+    fn xdp_bridge_accepts_bond_master_names() {
+        let raw = include_str!("example.toml")
+            .replace("to_internet = \"eth0\"", "to_internet = \"bond-wan\"")
+            .replace("to_network = \"eth1\"", "to_network = \"bond-lan\"")
+            .replace("use_xdp_bridge = false", "use_xdp_bridge = true");
+        let config = Config::load_from_string(&raw).expect("bond master names should load");
+        let bridge = config.bridge.expect("bridge config");
+
+        assert!(bridge.use_xdp_bridge);
+        assert_eq!(bridge.to_internet, "bond-wan");
+        assert_eq!(bridge.to_network, "bond-lan");
+    }
+
+    #[test]
     fn interface_mtu_values_deserialize() {
         let bridge_raw = include_str!("example.toml")
             .replace("to_network = \"eth1\"", "to_network = \"eth1\"\nmtu = 9000");
