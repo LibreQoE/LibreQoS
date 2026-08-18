@@ -1,7 +1,11 @@
 use serde::Serialize;
 
+use lqos_bus::SchedulerProgressReport;
+
+use crate::node_manager::runtime_onboarding::runtime_onboarding_state;
 use crate::tool_status::{
-    is_scheduler_available, scheduler_error_message, scheduler_output_message,
+    is_scheduler_available, scheduler_error_message, scheduler_last_seen_unix,
+    scheduler_output_message, scheduler_progress_state,
 };
 
 // Remove ANSI escape sequences (basic CSI/OSC handling) for browser display
@@ -60,17 +64,45 @@ fn strip_ansi(input: &str) -> String {
     out
 }
 
+/// Snapshot of scheduler availability for the node-manager widget.
 #[derive(Serialize, Debug, Clone)]
 pub struct SchedulerStatus {
+    /// Whether the scheduler has reported in within the last five minutes.
     pub available: bool,
+    /// The latest scheduler error, if one was reported.
     pub error: Option<String>,
+    /// The scheduler's last reported progress snapshot, if any.
+    pub progress: Option<SchedulerProgressReport>,
+    /// The best-known Unix timestamp for this scheduler snapshot.
+    pub updated_unix: Option<u64>,
+    /// Whether this snapshot is older than the scheduler availability window.
+    pub stale: bool,
+    /// Whether initial runtime onboarding is blocking scheduler activity.
+    pub setup_required: bool,
+    /// Operator-facing onboarding guidance when `setup_required` is true.
+    pub setup_message: Option<String>,
 }
 
+/// Detailed scheduler snapshot for the scheduler modal.
 #[derive(Serialize, Debug, Clone)]
 pub struct SchedulerDetails {
+    /// Whether the scheduler has reported in within the last five minutes.
     pub available: bool,
+    /// The latest scheduler error, if one was reported.
     pub error: Option<String>,
+    /// The latest non-error scheduler output line, if any.
     pub output: Option<String>,
+    /// The scheduler's last reported progress snapshot, if any.
+    pub progress: Option<SchedulerProgressReport>,
+    /// The best-known Unix timestamp for this scheduler snapshot.
+    pub updated_unix: Option<u64>,
+    /// Whether this snapshot is older than the scheduler availability window.
+    pub stale: bool,
+    /// Whether initial runtime onboarding is blocking scheduler activity.
+    pub setup_required: bool,
+    /// Operator-facing onboarding guidance when `setup_required` is true.
+    pub setup_message: Option<String>,
+    /// Human-readable raw details for the operator debug view.
     pub details: String,
 }
 
@@ -96,17 +128,102 @@ fn scheduler_output() -> Option<String> {
     })
 }
 
-pub fn scheduler_status_data() -> SchedulerStatus {
-    let available = is_scheduler_available();
-    let error = scheduler_error();
-    SchedulerStatus { available, error }
+fn scheduler_updated_unix(progress: Option<&SchedulerProgressReport>) -> Option<u64> {
+    let progress_updated = progress.and_then(|report| report.updated_unix);
+    match (progress_updated, scheduler_last_seen_unix()) {
+        (Some(progress_updated), Some(last_seen_updated)) => {
+            Some(progress_updated.max(last_seen_updated))
+        }
+        (Some(progress_updated), None) => Some(progress_updated),
+        (None, Some(last_seen_updated)) => Some(last_seen_updated),
+        (None, None) => None,
+    }
 }
 
+/// Builds the lightweight scheduler status snapshot for node-manager consumers.
+pub fn scheduler_status_data() -> SchedulerStatus {
+    let onboarding = runtime_onboarding_state();
+    if onboarding.required {
+        return SchedulerStatus {
+            available: false,
+            error: None,
+            progress: None,
+            updated_unix: None,
+            stale: false,
+            setup_required: true,
+            setup_message: Some(onboarding.summary),
+        };
+    }
+
+    let available = is_scheduler_available();
+    let error = scheduler_error();
+    let progress = scheduler_progress_state();
+    let updated_unix = scheduler_updated_unix(progress.as_ref());
+    SchedulerStatus {
+        available,
+        error,
+        progress,
+        updated_unix,
+        stale: updated_unix.is_some() && !available,
+        setup_required: false,
+        setup_message: None,
+    }
+}
+
+/// Builds the detailed scheduler snapshot for the scheduler modal.
 pub fn scheduler_details_data() -> SchedulerDetails {
     let status = scheduler_status_data();
     let output = scheduler_output();
     let mut body = String::new();
+    if status.setup_required {
+        let message = status.setup_message.clone().unwrap_or_else(|| {
+            "Choose a topology source in Complete Setup before expecting scheduler activity."
+                .to_string()
+        });
+        body.push_str("Scheduler status: setup required\n\n");
+        body.push_str("LibreQoS runtime onboarding is incomplete.\n");
+        body.push_str(&message);
+        body.push('\n');
+        return SchedulerDetails {
+            available: false,
+            error: None,
+            output: None,
+            progress: None,
+            updated_unix: None,
+            stale: false,
+            setup_required: true,
+            setup_message: Some(message),
+            details: body,
+        };
+    }
+
     body.push_str(&format!("Scheduler available: {}\n\n", status.available));
+    if let Some(updated_unix) = status.updated_unix {
+        body.push_str(&format!("Last updated Unix: {updated_unix}\n"));
+    } else {
+        body.push_str("Last updated Unix: unavailable\n");
+    }
+    body.push_str(&format!("Snapshot stale: {}\n\n", status.stale));
+    match status.progress.as_ref() {
+        Some(progress) => {
+            body.push_str("Current progress:\n");
+            body.push_str(&format!(
+                "- Active: {}\n- Phase: {}\n- Step: {}/{}\n- Percent: {}%\n",
+                progress.active,
+                progress.phase_label,
+                progress.step_index,
+                progress.step_count,
+                progress.percent
+            ));
+            if let Some(updated_unix) = progress.updated_unix {
+                body.push_str(&format!("- Updated Unix: {}\n", updated_unix));
+            }
+            body.push('\n');
+        }
+        None => {
+            body.push_str("No scheduler progress reported.\n\n");
+        }
+    }
     match status.error.as_ref() {
         Some(err) => {
             body.push_str("Reported error:\n");
@@ -134,6 +251,183 @@ pub fn scheduler_details_data() -> SchedulerDetails {
         available: status.available,
         error: status.error,
         output,
+        progress: status.progress,
+        updated_unix: status.updated_unix,
+        stale: status.stale,
+        setup_required: false,
+        setup_message: None,
         details: body,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{scheduler_details_data, scheduler_status_data};
+    use crate::test_support::runtime_config_test_lock;
+    use crate::tool_status::{
+        scheduler_error, scheduler_last_seen_unix, scheduler_output, scheduler_progress,
+        scheduler_seen,
+    };
+    use lqos_bus::SchedulerProgressReport;
+    use std::ffi::OsString;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_dir(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock before epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "libreqos-scheduler-status-{label}-{}-{unique}",
+            std::process::id()
+        ))
+    }
+
+    fn write_scheduler_test_config(runtime_dir: &Path) -> PathBuf {
+        let config_path = runtime_dir.join("lqos.conf");
+        let runtime_dir_display = runtime_dir.to_string_lossy();
+        let state_dir_display = runtime_dir.join("state").to_string_lossy().into_owned();
+        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
+            .replacen(
+                "lqos_directory = \"/opt/libreqos/src\"",
+                &format!("lqos_directory = {:?}", runtime_dir_display),
+                1,
+            )
+            .replacen(
+                "state_directory = \"/opt/libreqos/state\"",
+                &format!("state_directory = {:?}", state_dir_display),
+                1,
+            )
+            .replacen("enable_splynx = false", "enable_splynx = true", 1);
+        fs::write(&config_path, raw).expect("write scheduler test config");
+        config_path
+    }
+
+    struct SchedulerStatusTestContext {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        old_lqos_config: Option<OsString>,
+        old_lqos_directory: Option<OsString>,
+        runtime_dir: PathBuf,
+    }
+
+    impl SchedulerStatusTestContext {
+        fn new(label: &str) -> Self {
+            let guard = runtime_config_test_lock()
+                .lock()
+                .expect("scheduler status test lock should not be poisoned");
+            let runtime_dir = unique_test_dir(label);
+            fs::create_dir_all(runtime_dir.join("state")).expect("create runtime state directory");
+            let config_path = write_scheduler_test_config(&runtime_dir);
+            let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+            let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
+            unsafe {
+                std::env::set_var("LQOS_CONFIG", &config_path);
+                std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
+            }
+            lqos_config::clear_cached_config();
+            Self {
+                _guard: guard,
+                old_lqos_config,
+                old_lqos_directory,
+                runtime_dir,
+            }
+        }
+    }
+
+    impl Drop for SchedulerStatusTestContext {
+        fn drop(&mut self) {
+            scheduler_error(None);
+            scheduler_output(None);
+            scheduler_progress(None);
+            match &self.old_lqos_config {
+                Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+                None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+            }
+            match &self.old_lqos_directory {
+                Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
+                None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
+            }
+            lqos_config::clear_cached_config();
+            let _ = fs::remove_dir_all(&self.runtime_dir);
+        }
+    }
+
+    #[test]
+    fn scheduler_status_surfaces_validation_failure_for_ui_contract() {
+        let _context = SchedulerStatusTestContext::new("validation-failure");
+        scheduler_seen();
+        scheduler_error(Some(
+            "Scheduled shaping refresh blocked by validation: duplicate IPv4".to_string(),
+        ));
+        scheduler_output(Some(
+            "Scheduled shaping refresh blocked by validation: duplicate IPv4".to_string(),
+        ));
+        scheduler_progress(Some(SchedulerProgressReport {
+            active: false,
+            phase: "validation_failed".to_string(),
+            phase_label: "Scheduler validation failed".to_string(),
+            step_index: 5,
+            step_count: 5,
+            percent: 100,
+            updated_unix: Some(1_234_567_890),
+        }));
+
+        let status = scheduler_status_data();
+        let details = scheduler_details_data();
+        let expected_updated_unix = scheduler_last_seen_unix()
+            .map(|last_seen_unix| last_seen_unix.max(1_234_567_890))
+            .expect("scheduler last seen should be set");
+
+        assert!(status.available);
+        assert_eq!(
+            status.error.as_deref(),
+            Some("Scheduled shaping refresh blocked by validation: duplicate IPv4")
+        );
+        assert_eq!(
+            status
+                .progress
+                .as_ref()
+                .map(|progress| progress.phase.as_str()),
+            Some("validation_failed")
+        );
+        assert_eq!(status.updated_unix, Some(expected_updated_unix));
+        assert!(!status.stale);
+        assert!(!status.setup_required);
+
+        assert!(details.available);
+        assert_eq!(
+            details.error.as_deref(),
+            Some("Scheduled shaping refresh blocked by validation: duplicate IPv4")
+        );
+        assert_eq!(
+            details.output.as_deref(),
+            Some("Scheduled shaping refresh blocked by validation: duplicate IPv4")
+        );
+        assert_eq!(details.updated_unix, Some(expected_updated_unix));
+        assert!(!details.stale);
+        assert!(details.details.contains("Reported error:"));
+        assert!(details.details.contains("Snapshot stale: false"));
+        assert!(details.details.contains("Scheduler validation failed"));
+    }
+
+    #[test]
+    fn scheduler_status_uses_last_seen_when_progress_timestamp_is_missing() {
+        let _context = SchedulerStatusTestContext::new("last-seen-fallback");
+        scheduler_seen();
+
+        let status = scheduler_status_data();
+        let details = scheduler_details_data();
+        let last_seen_unix = scheduler_last_seen_unix().expect("scheduler last seen should be set");
+
+        assert_eq!(status.updated_unix, Some(last_seen_unix));
+        assert!(!status.stale);
+        assert_eq!(details.updated_unix, Some(last_seen_unix));
+        assert!(
+            details
+                .details
+                .contains(&format!("Last updated Unix: {last_seen_unix}"))
+        );
     }
 }

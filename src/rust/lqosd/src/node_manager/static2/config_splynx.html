@@ -6,7 +6,7 @@
             <div class="lqos-config-panel-header">
                 <div>
                     <h5 class="lqos-config-panel-title">Splynx Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Connect LibreQoS to Splynx and choose how much hierarchy should be imported into the shaping tree.</div>
+                    <div class="lqos-config-panel-subtitle">Connect LibreQoS to Splynx. Shared topology mode now lives under Integration - Common.</div>
                 </div>
             </div>
 
@@ -19,13 +19,21 @@
 
             <div class="mb-3">
                 <label for="apiKey" class="form-label">API Key</label>
-                <input type="text" class="form-control" id="apiKey" autocomplete="username">
+                <div class="input-group">
+                    <input type="password" class="form-control" id="apiKey" autocomplete="new-password">
+                    <button type="button" class="btn btn-outline-secondary" id="clearApiKey">Clear</button>
+                </div>
+                <div class="form-text" id="apiKeyStatus"></div>
                 <div class="form-text">Splynx API key for authentication</div>
             </div>
 
             <div class="mb-3">
                 <label for="apiSecret" class="form-label">API Secret</label>
-                <input type="password" class="form-control" id="apiSecret" autocomplete="new-password">
+                <div class="input-group">
+                    <input type="password" class="form-control" id="apiSecret" autocomplete="new-password">
+                    <button type="button" class="btn btn-outline-secondary" id="clearApiSecret">Clear</button>
+                </div>
+                <div class="form-text" id="apiSecretStatus"></div>
                 <div class="form-text">Splynx API secret for authentication</div>
             </div>
 
@@ -36,14 +44,14 @@
             </div>
 
             <div class="mb-3">
-                <label for="topologyStrategy" class="form-label">Topology Strategy</label>
-                <select class="form-select" id="topologyStrategy">
+                <label for="topologyStrategy" class="form-label">Topology Compile Mode</label>
+                <select class="form-select" id="topologyStrategy" disabled>
                     <option value="flat">Flat - Only shapes subscribers, no hierarchy (Lowest CPU)</option>
-                    <option value="ap_only">AP Only - Single layer: AP → Clients (Default, Low CPU)</option>
-                    <option value="ap_site">AP Site - Two layers: Site → AP → Clients (Medium CPU)</option>
+                    <option value="ap_only">AP Only - Single layer: AP → Clients (Low CPU)</option>
+                    <option value="ap_site">AP Site - Two layers: Site → AP → Clients (Default)</option>
                     <option value="full">Full - Complete topology mapping (Highest CPU)</option>
                 </select>
-                <div class="form-text">Select the topology strategy for network hierarchy. AP Only provides the best balance of performance and structure.</div>
+                <div class="form-text">Change this under <code>Integration - Common</code>. Splynx still keeps the legacy field for compatibility during upgrade.</div>
             </div>
 
             </div>

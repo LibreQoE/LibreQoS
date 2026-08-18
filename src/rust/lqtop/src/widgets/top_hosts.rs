@@ -3,6 +3,19 @@ use lqos_bus::{BusResponse, IpStats};
 use lqos_utils::packet_scale::{scale_bits, scale_packets};
 use ratatui::prelude::*;
 
+fn truncate_by_chars(input: &str, max_chars: usize) -> String {
+    input.chars().take(max_chars).collect()
+}
+
+fn circuit_label(circuit_id: &str) -> String {
+    let trimmed = circuit_id.trim();
+    if trimmed.is_empty() {
+        "-".to_string()
+    } else {
+        truncate_by_chars(trimmed, 28)
+    }
+}
+
 pub struct TopHosts {
     bus_link: tokio::sync::mpsc::Sender<crate::bus::BusMessage>,
     rx: std::sync::mpsc::Receiver<BusResponse>,
@@ -38,6 +51,7 @@ impl TopWidget for TopHosts {
 
     fn render_to_frame(&mut self, frame: &mut Frame) {
         let mut t = TableHelper::new([
+            "Circuit",
             "IP Address",
             "Down (bps)",
             "Up (bps)",
@@ -49,6 +63,7 @@ impl TopWidget for TopHosts {
 
         for host in self.stats.iter() {
             t.add_row([
+                circuit_label(&host.circuit_id),
                 host.ip_address.to_string(),
                 scale_bits(host.bits_per_second.down),
                 scale_bits(host.bits_per_second.up),

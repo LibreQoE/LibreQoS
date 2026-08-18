@@ -2,11 +2,13 @@ index.js
 template.js
 login.js
 first-run.js
+setup_runtime.js
 shaped-devices.js
 tree.js
+topology_manager.js
+topology_probes.js
 help.js
 unknown-ips.js
-configuration.js
 circuit.js
 ethernet_caps.js
 site_map.js
@@ -16,6 +18,7 @@ asn_analysis.js
 lts_trial.js
 lts_trial_setup.js
 config_general.js
+config_ssl.js
 config_rtt.js
 config_tuning.js
 config_queues.js
@@ -24,6 +27,8 @@ config_treeguard.js
 config_lts.js
 config_iprange.js
 config_flows.js
+config_dynamic_circuits.js
+config_radius_accounting.js
 config_integration.js
 config_splynx.js
 config_netzur.js

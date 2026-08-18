@@ -19,6 +19,28 @@ struct ip_hash_info {
 	__u64 device_id;
 };
 
+struct tc_classify_control {
+	__u32 bypass;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, struct tc_classify_control);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} tc_classify_control SEC(".maps");
+
+static __always_inline bool tc_classify_bypass_enabled(void) {
+	__u32 key = 0;
+	struct tc_classify_control *control = bpf_map_lookup_elem(&tc_classify_control, &key);
+	if (!control) {
+		// Fail safe: bypass classification rather than risk stale TC handles.
+		return true;
+	}
+	return control->bypass != 0;
+}
+
 // In on-a-stick mode, upload classes/CPUs are offset by this amount.
 // This is configured by userspace at load time.
 extern __u32 stick_offset;

@@ -5,6 +5,7 @@ use crate::node_manager::local_api::circuit_activity::{
     CircuitFlowSankeyRow, CircuitSummaryData, CircuitTopAsnsData, CircuitTopAsnsQuery,
     CircuitTrafficFlowsPage, CircuitTrafficFlowsQuery,
 };
+use crate::node_manager::local_api::config::{ConfigSecretClearRequest, ConfigView};
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
 use crate::node_manager::local_api::directories::{
@@ -15,9 +16,13 @@ use crate::node_manager::local_api::executive::{
     ExecutiveDashboardSummary, ExecutiveHeatmapPage, ExecutiveHeatmapPageQuery,
     ExecutiveLeaderboardPage, ExecutiveLeaderboardPageQuery,
 };
+use crate::node_manager::local_api::local_api_keys::LocalApiKeyCreation;
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
 use crate::node_manager::local_api::node_rate_overrides::{
     NodeRateOverrideData, NodeRateOverrideQuery, NodeRateOverrideUpdate,
+};
+use crate::node_manager::local_api::node_topology_overrides::{
+    NodeTopologyOverrideData, NodeTopologyOverrideQuery,
 };
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
@@ -25,6 +30,13 @@ use crate::node_manager::local_api::search::SearchResult;
 use crate::node_manager::local_api::shaped_devices_page::{
     ShapedDevicesPage, ShapedDevicesPageQuery,
 };
+use crate::node_manager::local_api::topology_manager::{
+    TopologyManagerAttachmentRateOverrideClear, TopologyManagerAttachmentRateOverrideUpdate,
+    TopologyManagerClear, TopologyManagerManualAttachmentGroupClear,
+    TopologyManagerManualAttachmentGroupUpdate, TopologyManagerProbePolicyUpdate,
+    TopologyManagerStateData, TopologyManagerUpdate,
+};
+use crate::node_manager::local_api::topology_probes::TopologyProbesStateData;
 use crate::node_manager::local_api::tree_attached_circuits::{
     TreeAttachedCircuitsPage, TreeAttachedCircuitsQuery,
 };
@@ -50,7 +62,10 @@ use crate::throughput_tracker::TcpRetransmitTotal;
 use crate::throughput_tracker::flow_data::{
     AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry,
 };
-use lqos_bus::{Circuit, FlowbeeSummaryData, QueueStoreTransit, StormguardDebugEntry};
+use lqos_bus::{
+    Circuit, FlowbeeSummaryData, LtsCapabilitiesSummary, QueueStoreTransit, StormguardDebugEntry,
+    StormguardRuntimeStatus,
+};
 use lqos_config::QooProfileInfo;
 use lqos_config::{Config, NetworkJsonTransport, ShapedDevice, WebUser};
 use lqos_utils::units::DownUpOrder;
@@ -79,6 +94,7 @@ pub enum PrivateRequest {
     StopCircuitWatcher,
     StopPingMonitorWatch,
     CakeWatcher { circuit: String },
+    StopCakeWatcher,
     Chatbot { browser_ts_ms: Option<f64> },
     ChatbotUserInput { text: String },
     WatchTreeAttachedCircuits { query: TreeAttachedCircuitsQuery },
@@ -133,6 +149,8 @@ pub enum WsRequest {
     LtsTrialConfig,
     CircuitCount,
     LtsStartSignup,
+    LtsCapabilities,
+    LtsRetryLicenseCheck,
     LtsSignUp {
         license_key: String,
     },
@@ -173,7 +191,16 @@ pub enum WsRequest {
     QooProfiles,
     UpdateConfig {
         config: Config,
+        #[serde(default)]
+        clear_secrets: ConfigSecretClearRequest,
     },
+    CreateLocalApiKey {
+        name: String,
+    },
+    RevokeLocalApiKey {
+        id: String,
+    },
+    RemoveLegacyLocalApiKey,
     UpdateNetworkJsonOnly {
         network_json: Value,
     },
@@ -189,6 +216,32 @@ pub enum WsRequest {
     },
     ClearNodeRateOverride {
         query: NodeRateOverrideQuery,
+    },
+    GetNodeTopologyOverride {
+        query: NodeTopologyOverrideQuery,
+    },
+    GetTopologyManagerState,
+    GetTopologyProbesState,
+    SetTopologyManagerOverride {
+        update: TopologyManagerUpdate,
+    },
+    ClearTopologyManagerOverride {
+        clear: TopologyManagerClear,
+    },
+    SetTopologyManagerProbePolicy {
+        update: TopologyManagerProbePolicyUpdate,
+    },
+    SetTopologyManagerAttachmentRateOverride {
+        update: TopologyManagerAttachmentRateOverrideUpdate,
+    },
+    ClearTopologyManagerAttachmentRateOverride {
+        clear: TopologyManagerAttachmentRateOverrideClear,
+    },
+    SetTopologyManagerManualAttachmentGroup {
+        update: TopologyManagerManualAttachmentGroupUpdate,
+    },
+    ClearTopologyManagerManualAttachmentGroup {
+        clear: TopologyManagerManualAttachmentGroupClear,
     },
     ListNics,
     NetworkJson,
@@ -280,12 +333,19 @@ pub enum WsRequest {
     ProtocolFlowTimeline {
         protocol: String,
     },
-    UrgentStatus,
-    UrgentList,
+    UrgentStatus {
+        request_id: Option<u64>,
+    },
+    UrgentList {
+        request_id: Option<u64>,
+    },
     UrgentClear {
         id: u64,
+        request_id: Option<u64>,
     },
-    UrgentClearAll,
+    UrgentClearAll {
+        request_id: Option<u64>,
+    },
     UnknownIps,
     UnknownIpsClear,
     UnknownIpsCsv,
@@ -404,6 +464,8 @@ pub struct BakeryStatusState {
     pub preflight: Option<BakeryPreflightData>,
     pub reload_required: bool,
     pub reload_required_reason: Option<String>,
+    pub passthrough_degraded: bool,
+    pub passthrough_degraded_reason: Option<String>,
     pub dirty_subtree_count: usize,
 }
 
@@ -432,6 +494,7 @@ pub struct BakeryRuntimeOperationsData {
     pub applying_count: usize,
     pub awaiting_cleanup_count: usize,
     pub failed_count: usize,
+    pub blocked_count: usize,
     pub dirty_count: usize,
     pub latest: Option<BakeryRuntimeOperationHeadlineData>,
 }
@@ -579,15 +642,23 @@ pub enum WsResponse {
     },
     UrgentStatus {
         data: UrgentStatus,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<u64>,
     },
     UrgentList {
         data: UrgentList,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<u64>,
     },
     UrgentClearResult {
         ok: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<u64>,
     },
     UrgentClearAllResult {
         ok: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_id: Option<u64>,
     },
     UnknownIps {
         data: Vec<UnknownIp>,
@@ -602,7 +673,7 @@ pub enum WsResponse {
         ok: bool,
     },
     GetConfig {
-        data: Config,
+        data: ConfigView,
     },
     QooProfiles {
         data: QooProfilesSummary,
@@ -617,6 +688,20 @@ pub enum WsResponse {
         data: Vec<ShapedDevice>,
     },
     UpdateConfigResult {
+        ok: bool,
+        message: String,
+    },
+    CreateLocalApiKeyResult {
+        ok: bool,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        key: Option<LocalApiKeyCreation>,
+    },
+    RevokeLocalApiKeyResult {
+        ok: bool,
+        message: String,
+    },
+    RemoveLegacyLocalApiKeyResult {
         ok: bool,
         message: String,
     },
@@ -673,6 +758,50 @@ pub enum WsResponse {
         message: String,
         data: NodeRateOverrideData,
     },
+    GetNodeTopologyOverride {
+        data: NodeTopologyOverrideData,
+    },
+    GetTopologyManagerState {
+        data: TopologyManagerStateData,
+    },
+    GetTopologyProbesState {
+        data: TopologyProbesStateData,
+    },
+    SetTopologyManagerOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerProbePolicyResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerAttachmentRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerAttachmentRateOverrideResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    SetTopologyManagerManualAttachmentGroupResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
+    ClearTopologyManagerManualAttachmentGroupResult {
+        ok: bool,
+        message: String,
+        data: TopologyManagerStateData,
+    },
     GetUsers {
         data: Vec<WebUser>,
     },
@@ -693,6 +822,9 @@ pub enum WsResponse {
     },
     CircuitCountResult {
         data: CircuitCount,
+    },
+    LtsCapabilitiesResult {
+        data: LtsCapabilitiesSummary,
     },
     LtsStartSignupResult {
         claim_id: String,
@@ -920,6 +1052,9 @@ pub enum WsResponse {
     },
     StormguardDebug {
         data: Vec<StormguardDebugEntry>,
+    },
+    StormguardRuntime {
+        data: StormguardRuntimeStatus,
     },
     BakeryStatus {
         data: BakeryStatusData,

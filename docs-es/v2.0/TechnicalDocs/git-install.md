@@ -21,15 +21,16 @@ By specifying `libreqos` at the end, git will ensure the folder name is lowercas
 You need to have a few packages from `apt` installed:
 
 ```shell
-sudo apt-get install -y python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
+sudo apt-get install -y python3-pip python3-venv clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
 ```
 
 Then you need to install some Python dependencies:
 
 ```shell
 cd /opt/libreqos
-PIP_BREAK_SYSTEM_PACKAGES=1 pip install -r requirements.txt
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install -r requirements.txt
+sudo python3 -m venv /opt/libreqos/venv
+sudo /opt/libreqos/venv/bin/python -m pip install --upgrade pip
+sudo /opt/libreqos/venv/bin/python -m pip install --upgrade -r requirements.txt
 ```
 
 ## Install the Rust development system

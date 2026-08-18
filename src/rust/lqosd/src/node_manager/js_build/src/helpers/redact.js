@@ -32,6 +32,19 @@ export function redactCell(cell) {
     cell.classList.add("redactable");
 }
 
+export function redactElement(el) {
+    if (!el) return el;
+    el.classList.add("redactable");
+    return el;
+}
+
+export function setRedactableText(el, text) {
+    if (!el) return el;
+    el.textContent = text ?? "";
+    el.classList.add("redactable");
+    return el;
+}
+
 function cssRedact() {
     let r = document.querySelector(':root');
     if (isRedacted()) {

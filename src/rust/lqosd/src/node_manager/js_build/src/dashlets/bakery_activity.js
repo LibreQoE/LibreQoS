@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {redactCell} from "../helpers/redact";
 import {formatUnixSecondsToLocalDateTime, mkBadge} from "./bakery_shared";
 import {renderOperationCards} from "./operation_cards";
 
@@ -85,12 +86,12 @@ function classifyEvent(entry) {
     if (event.endsWith("_started")) {
         outcome = "Running";
         outcomeClass = "bg-primary-subtle text-primary border border-primary-subtle";
-    } else if (event === "reload_required") {
+    } else if (event === "reload_required" || event === "passthrough_degraded") {
         stage = "Verify";
         scope = "Full Reload";
-        outcome = "Reload Required";
+        outcome = event === "passthrough_degraded" ? "Pass-Through" : "Reload Required";
         outcomeClass = "bg-danger-subtle text-danger border border-danger-subtle";
-    } else if (event === "reload_required_cleared") {
+    } else if (event === "reload_required_cleared" || event === "passthrough_degraded_cleared") {
         stage = "Verify";
         scope = "Full Reload";
         outcome = "Cleared";
@@ -98,6 +99,9 @@ function classifyEvent(entry) {
     } else if (event === "preflight_ok") {
         outcome = "Passed";
         outcomeClass = "bg-success-subtle text-success border border-success-subtle";
+    } else if (event === "preflight_warning") {
+        outcome = "Memory Warning";
+        outcomeClass = "bg-warning-subtle text-warning border border-warning-subtle";
     } else if (event === "preflight_blocked") {
         outcome = "Blocked";
         outcomeClass = "bg-warning-subtle text-warning border border-warning-subtle";
@@ -181,6 +185,8 @@ function describeOperation(entry, meta) {
         || event === "full_reload_started"
         || event === "reload_required"
         || event === "reload_required_cleared"
+        || event === "passthrough_degraded"
+        || event === "passthrough_degraded_cleared"
         || meta.scope === "Full Reload"
     ) {
         return {
@@ -579,6 +585,7 @@ export class BakeryActivityDashlet extends BaseDashlet {
             const fullSummary = displaySummary(entry);
             tdSummary.textContent = truncateSummary(fullSummary);
             tdSummary.title = fullSummary;
+            redactCell(tdSummary);
 
             tr.appendChild(tdTime);
             tr.appendChild(tdStage);

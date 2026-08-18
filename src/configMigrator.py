@@ -36,7 +36,6 @@ oldConfig = {
 
     # Common
     'circuitNameUseAddress': getIspConfigValue('circuitNameUseAddress', True),
-    'overwriteNetworkJSONalways': getIspConfigValue('overwriteNetworkJSONalways', False),
     'ignoreSubnets': getIspConfigValue('ignoreSubnets', ["192.168.0.0/16"]),
     'allowedSubnets': getIspConfigValue('allowedSubnets', ["100.64.0.0/10"]),
     'excludeSites': getIspConfigValue('excludeSites', []),
@@ -55,8 +54,8 @@ oldConfig = {
     'uispSite': getIspConfigValue('uispSite', 'Main Site'),
     'uispStrategy': getIspConfigValue('uispStrategy', 'full'),
     'uispSuspendedStrategy': getIspConfigValue('uispSuspendedStrategy', 'none'),
-    'airMax_capacity': getIspConfigValue('airMax_capacity', 0.65),
-    'ltu_capacity': getIspConfigValue('ltu_capacity', 0.90),
+    'airMax_capacity': getIspConfigValue('airMax_capacity', 1.0),
+    'ltu_capacity': getIspConfigValue('ltu_capacity', 1.0),
     'bandwidthOverheadFactor': getIspConfigValue('bandwidthOverheadFactor', 1.0),
     'committedBandwidthMultiplier': getIspConfigValue('committedBandwidthMultiplier', 0.98),
     'exceptionCPEs': getIspConfigValue('exceptionCPEs', {}),

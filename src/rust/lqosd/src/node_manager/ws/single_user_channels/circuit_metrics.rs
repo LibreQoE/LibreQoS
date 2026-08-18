@@ -2,9 +2,9 @@ use crate::node_manager::local_api::circuit_live::{
     CircuitLiveMetrics, CircuitMetricsQuery, circuit_live_metrics,
 };
 use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
+use crate::node_manager::ws::single_user_channels::try_send_private_payload;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
-use tracing::debug;
 
 pub(super) async fn watch_circuit_metrics(
     query: CircuitMetricsQuery,
@@ -33,8 +33,7 @@ pub(super) async fn watch_circuit_metrics(
         if let Some(response) = response {
             match encode_ws_message(&response) {
                 Ok(payload) => {
-                    if tx.send(payload).await.is_err() {
-                        debug!("CircuitMetrics watcher channel closed");
+                    if !try_send_private_payload(&tx, payload, "CircuitMetrics") {
                         break;
                     }
                 }

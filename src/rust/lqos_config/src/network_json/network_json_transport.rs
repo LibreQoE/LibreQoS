@@ -40,6 +40,9 @@ pub struct NetworkJsonTransport {
     /// TCP packets paired with current retransmit counts.
     #[serde(default)]
     pub current_tcp_retransmit_packets: (u64, u64),
+    /// TCP flows that contributed fresh RTT data in the current cycle.
+    #[serde(default)]
+    pub current_rtt_flows: (u32, u32),
     /// Cake marks
     pub current_marks: (u64, u64),
     /// Cake drops
@@ -64,6 +67,10 @@ pub struct NetworkJsonTransport {
     /// Optional node longitude from network.json metadata.
     #[serde(default)]
     pub longitude: Option<f32>,
+    /// Selected attachment name carried in `network.effective.json` metadata when runtime
+    /// squashing collapses attachment nodes into a site-centric tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_attachment_name: Option<String>,
     /// Total number of descendant site-tree nodes below this node.
     ///
     /// This excludes the node itself. For the synthetic root node, this is the

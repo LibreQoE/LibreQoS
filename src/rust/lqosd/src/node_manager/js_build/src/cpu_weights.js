@@ -1,4 +1,5 @@
 import { clearDiv, enableTooltips, simpleRow, theading } from "./helpers/builders";
+import { redactCell } from "./helpers/redact";
 import { scaleNumber, toNumber } from "./lq_js_common/helpers/scaling";
 import { get_ws_client } from "./pubsub/ws";
 
@@ -37,7 +38,7 @@ function requestConfig() {
         const timeout = setTimeout(() => finish(null), 5000);
         listenOnce("GetConfig", (msg) => {
             clearTimeout(timeout);
-            finish(msg && msg.data ? msg.data : null);
+            finish(msg && msg.data ? (msg.data.config || null) : null);
         });
         wsClient.send({ GetConfig: {} });
     });
@@ -322,7 +323,7 @@ function renderOverview() {
     if (!window.hasInsight) {
         const promo = document.createElement("div");
         promo.className = "cpu-affinity-inline-note mb-3";
-        promo.innerHTML = 'Enable <a href="lts_trial.html">Insight</a> to improve CPU planning with historical data.';
+        promo.innerHTML = 'Enable historical services in <a href="config_lts.html">License &amp; Services</a> to improve CPU planning.';
         body.appendChild(promo);
     }
 
@@ -478,6 +479,7 @@ function renderNodesTable(core) {
 
         const nameCell = document.createElement("td");
         nameCell.textContent = node.name || "";
+        redactCell(nameCell);
         tr.appendChild(nameCell);
 
         const assignmentCell = document.createElement("td");
@@ -537,9 +539,11 @@ function renderCircuits(page) {
             const a = document.createElement("a");
             a.href = `circuit.html?id=${encodeURIComponent(c.circuit_id)}`;
             a.textContent = c.circuit_name;
+            redactCell(a);
             nameCell.appendChild(a);
         } else {
             nameCell.textContent = c.circuit_name || "";
+            redactCell(nameCell);
         }
         tr.appendChild(nameCell);
         tr.appendChild(simpleRow(c.parent_node || "", true));

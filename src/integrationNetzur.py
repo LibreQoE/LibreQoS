@@ -12,7 +12,6 @@ from liblqos_python import (
 	netzur_api_key,
 	netzur_api_url,
 	netzur_api_timeout,
-	overwrite_network_json_always,
 )
 
 import json
@@ -61,6 +60,28 @@ def fetch_netzur_data() -> Tuple[List[dict], List[dict]]:
 
 def _build_exclusion_set() -> set:
     return {entry.lower().strip() for entry in exclude_sites() if entry}
+
+
+def _split_ip_field(raw_value) -> List[str]:
+    values: List[str] = []
+    if raw_value in (None, ""):
+        return values
+
+    if isinstance(raw_value, (list, tuple, set)):
+        parts = raw_value
+    else:
+        parts = str(raw_value).split(",")
+
+    seen = set()
+    for part in parts:
+        entry = str(part).strip()
+        if not entry or entry in seen:
+            continue
+        seen.add(entry)
+        values.append(entry)
+
+    return values
+
 
 def createShaper() -> NetworkGraph:
     LOG.info("[Netzur] Starting sync")
@@ -122,8 +143,8 @@ def createShaper() -> NetworkGraph:
                 )
             )
 
-        ipv4 = [subscriber["ip"]] if subscriber.get("ip") else []
-        ipv6 = [subscriber["ipv6"]] if subscriber.get("ipv6") else []
+        ipv4 = _split_ip_field(subscriber.get("ip"))
+        ipv6 = _split_ip_field(subscriber.get("ipv6"))
         mac = str(subscriber.get("mac") or "").strip()
         if ipv4 or ipv6 or mac:
             net.addRawNode(
@@ -146,12 +167,8 @@ def createShaper() -> NetworkGraph:
         except json.JSONDecodeError as err:
             LOG.warning("[Netzur] Unable to parse Mikrotik IPv6 map: %s", err)
 
-    if net.doesNetworkJsonExist() and not overwrite_network_json_always():
-        LOG.info("[Netzur] network.json exists and overwrite disabled; preserving current file")
-    else:
-        net.createNetworkJson()
-    net.createShapedDevices()
-    LOG.info("[Netzur] ShapedDevices.csv updated")
+    net.materializeCompiledTopology("python/netzur", "full")
+    LOG.info("[Netzur] Topology import artifacts updated")
     for error in net.getErrors():
         LOG.error("[Netzur] %s", error)
     return net

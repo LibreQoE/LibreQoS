@@ -46,6 +46,9 @@ fn ingestor_loop(rx: std::sync::mpsc::Receiver<IngestorCommand>) {
                 serial += 1;
             }
         } else {
+            if !crate::lts2_sys::can_submit_long_term_stats() {
+                continue;
+            }
             let mut message_queue_lock = message_queue.lock();
             message_queue_lock.ingest(msg);
         }

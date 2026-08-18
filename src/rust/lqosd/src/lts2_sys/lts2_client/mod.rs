@@ -450,6 +450,9 @@ pub async fn get_lts_license_trial_remaining_async() -> anyhow::Result<i32> {
 }
 
 pub fn ingest_batch_complete() -> anyhow::Result<()> {
+    if !crate::lts2_sys::can_submit_long_term_stats() {
+        return Ok(());
+    }
     if let Ok(tx) = client_commands::get_command_channel()
         && tx.send(LtsClientCommand::IngestBatchComplete).is_err()
     {

@@ -23,7 +23,7 @@ impl SupportInfo for TaskJournal {
 
     fn gather(&mut self) -> anyhow::Result<()> {
         let out = Command::new("/bin/journalctl")
-            .args(&["--no-pager", "-u", &self.target])
+            .args(["--no-pager", "-u", &self.target])
             .output()?;
 
         self.output = String::from_utf8_lossy(&out.stdout).to_string();

@@ -26,10 +26,14 @@ mod queue_math;
 mod utils;
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use lqos_utils::{
+    is_valid_ip_mapping_text, normalize_circuit_id_key, unique_mapped_circuit_hashes,
+};
 use parking_lot::RwLock;
+use std::cmp::Reverse;
 use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -41,7 +45,9 @@ use crate::commands::{
     ExecutionMode, RuntimeNodeOperationAction, RuntimeNodeOperationFailureReason,
     RuntimeNodeOperationSnapshot, RuntimeNodeOperationStatus,
 };
-use crate::diff::{CircuitDiffResult, SiteDiffResult, diff_circuits, diff_sites};
+use crate::diff::{
+    CircuitDiffResult, SiteDiffResult, StructuralSiteDiffDetails, diff_circuits, diff_sites,
+};
 use crate::qdisc_handles::QdiscHandleState;
 use crate::queue_math::{SqmKind, effective_sqm_kind, format_rate_for_tc_f32, quantum, r2q};
 use crate::utils::{
@@ -54,11 +60,12 @@ pub use commands::{
     BakeryCommands, RuntimeNodeOperationAction as BakeryRuntimeNodeOperationAction,
     RuntimeNodeOperationFailureReason as BakeryRuntimeNodeOperationFailureReason,
     RuntimeNodeOperationSnapshot as BakeryRuntimeNodeOperationSnapshot,
-    RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus,
+    RuntimeNodeOperationStatus as BakeryRuntimeNodeOperationStatus, StormGuardClassAdjustment,
+    StormGuardRestoreAdjustment,
 };
 use lqos_bus::{
-    BusRequest, BusResponse, InsightLicenseSummary, LibreqosBusClient, TcHandle, UrgentSeverity,
-    UrgentSource,
+    BusRequest, BusResponse, DEFAULT_MAPPED_CIRCUIT_LIMIT, InsightLicenseSummary,
+    LibreqosBusClient, TcHandle, UrgentSeverity, UrgentSource,
 };
 use lqos_config::{
     CircuitIdentityGroupInput, ClassIdentityPlannerConstraints, Config, LazyQueueMode,
@@ -68,6 +75,7 @@ use lqos_config::{
     plan_top_level_assignments,
 };
 use qdisc_handles::MqDeviceLayout;
+use serde::Deserialize;
 use serde_json::{Map, Value};
 
 const TEST_FAULT_ONCE_PATH: &str = "/tmp/lqos_bakery_fail_purpose_once.txt";
@@ -134,6 +142,7 @@ struct MigrationDirectionVerification {
     interface_name: String,
     expected_handle: TcHandle,
     expected_parent: TcHandle,
+    observed_present: bool,
     observed_parent: Option<TcHandle>,
     observed_leaf_qdisc_major: Option<u16>,
 }
@@ -145,19 +154,27 @@ impl MigrationDirectionVerification {
     }
 
     fn summary(&self, direction: &str) -> String {
-        let observed = match (self.observed_parent, self.observed_leaf_qdisc_major) {
-            (Some(parent), Some(leaf_major)) => format!(
+        let observed = match (
+            self.observed_present,
+            self.observed_parent,
+            self.observed_leaf_qdisc_major,
+        ) {
+            (false, _, _) => "observed missing".to_string(),
+            (true, Some(parent), Some(leaf_major)) => format!(
                 "observed parent {} with leaf qdisc 0x{:x}:",
                 parent.as_tc_string(),
                 leaf_major
             ),
-            (Some(parent), None) => {
+            (true, Some(parent), None) => {
                 format!(
                     "observed parent {} with no leaf qdisc",
                     parent.as_tc_string()
                 )
             }
-            (None, _) => "observed missing".to_string(),
+            (true, None, Some(leaf_major)) => {
+                format!("observed at root with leaf qdisc 0x{:x}:", leaf_major)
+            }
+            (true, None, None) => "observed at root with no leaf qdisc".to_string(),
         };
         format!(
             "{direction} {} expected class {} under parent {} with a leaf qdisc, {observed}",
@@ -166,6 +183,41 @@ impl MigrationDirectionVerification {
             self.expected_parent.as_tc_string()
         )
     }
+}
+
+fn wrong_parent_prune_commands_for_direction(
+    interface_name: String,
+    snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    expected_handle: TcHandle,
+    expected_parent: TcHandle,
+) -> Vec<Vec<String>> {
+    let Some(observed) = snapshot.get(&expected_handle) else {
+        return Vec::new();
+    };
+    if observed.parent == Some(expected_parent) {
+        return Vec::new();
+    }
+
+    let mut commands = Vec::new();
+    if observed.leaf_qdisc_major.is_some() {
+        commands.push(vec![
+            "qdisc".to_string(),
+            "del".to_string(),
+            "dev".to_string(),
+            interface_name.clone(),
+            "parent".to_string(),
+            expected_handle.as_tc_string(),
+        ]);
+    }
+    commands.push(vec![
+        "class".to_string(),
+        "del".to_string(),
+        "dev".to_string(),
+        interface_name,
+        "classid".to_string(),
+        expected_handle.as_tc_string(),
+    ]);
+    commands
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,6 +249,12 @@ impl MigrationBranchVerification {
 struct StormguardOverrideKey {
     interface: String,
     class: TcHandle,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StormguardOverrideValue {
+    planned_rate: u64,
+    planned_ceil: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -433,6 +491,516 @@ fn parse_ip_list(s: &str) -> Vec<String> {
         .map(|x| x.trim().to_string())
         .filter(|x| !x.is_empty())
         .collect()
+}
+
+const DYNAMIC_CIRCUITS_FILENAME: &str = "dynamic_circuits.json";
+
+#[derive(Clone, Debug)]
+struct DynamicCircuitOverlayEntry {
+    shaped_device: lqos_config::ShapedDevice,
+    class_minor: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PersistedDynamicCircuit {
+    shaped: lqos_config::ShapedDevice,
+    #[allow(dead_code)]
+    #[serde(default)]
+    last_seen_unix: u64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PersistedDynamicCircuitsFile {
+    #[serde(default)]
+    #[allow(dead_code)]
+    schema_version: u32,
+    #[serde(default)]
+    circuits: Vec<PersistedDynamicCircuit>,
+}
+
+fn dynamic_circuits_path(config: &Config) -> PathBuf {
+    Path::new(&config.lqos_directory).join(DYNAMIC_CIRCUITS_FILENAME)
+}
+
+fn recompute_shaped_hashes(device: &mut lqos_config::ShapedDevice) {
+    device.circuit_hash = runtime_hash_to_i64(&device.circuit_id);
+    device.device_hash = runtime_hash_to_i64(&device.device_id);
+    device.parent_hash = runtime_hash_to_i64(&device.parent_node);
+}
+
+fn load_dynamic_circuit_overlays_from_disk(
+    config: &Config,
+) -> HashMap<i64, DynamicCircuitOverlayEntry> {
+    let path = dynamic_circuits_path(config);
+    if !path.exists() {
+        return HashMap::new();
+    }
+
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                "Bakery: unable to read dynamic circuits file {} ({err}); treating as empty",
+                path.display()
+            );
+            return HashMap::new();
+        }
+    };
+
+    if raw.trim().is_empty() {
+        return HashMap::new();
+    }
+
+    let parsed: PersistedDynamicCircuitsFile = match serde_json::from_str(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                "Bakery: unable to parse dynamic circuits file {} ({err}); treating as empty",
+                path.display()
+            );
+            return HashMap::new();
+        }
+    };
+
+    let mut overlays = HashMap::new();
+    for entry in parsed.circuits {
+        let mut shaped = entry.shaped;
+        if shaped.circuit_id.trim().is_empty() {
+            continue;
+        }
+        if shaped.device_id.trim().is_empty() {
+            continue;
+        }
+        recompute_shaped_hashes(&mut shaped);
+        let circuit_hash = shaped.circuit_hash;
+        overlays.insert(
+            circuit_hash,
+            DynamicCircuitOverlayEntry {
+                shaped_device: shaped,
+                class_minor: None,
+            },
+        );
+    }
+
+    overlays
+}
+
+fn ip_list_from_shaped_device(device: &lqos_config::ShapedDevice) -> String {
+    let mut ips = Vec::new();
+    for (ip, prefix) in device.ipv4.iter() {
+        ips.push(format!("{ip}/{prefix}"));
+    }
+    for (ip, prefix) in device.ipv6.iter() {
+        ips.push(format!("{ip}/{prefix}"));
+    }
+    ips.sort();
+    ips.dedup();
+    ips.join(",")
+}
+
+fn find_free_dynamic_circuit_minor(
+    used_down: &HashSet<u16>,
+    used_up: &HashSet<u16>,
+) -> Option<u16> {
+    let start = ACTIVE_RUNTIME_MINOR_START.min(u16::MAX as u32) as u16;
+    (start..=0xFFFEu16).find(|m| !used_down.contains(m) && !used_up.contains(m))
+}
+
+fn append_dynamic_circuit_overlays_to_batch(
+    batch: &mut Vec<Arc<BakeryCommands>>,
+    overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
+    migrations: &HashMap<i64, Migration>,
+) {
+    if overlays.is_empty() {
+        return;
+    }
+
+    let planned_sites: HashMap<i64, Arc<BakeryCommands>> = batch
+        .iter()
+        .filter_map(|cmd| match cmd.as_ref() {
+            BakeryCommands::AddSite { site_hash, .. } => Some((*site_hash, Arc::clone(cmd))),
+            _ => None,
+        })
+        .collect();
+    let planned_circuits: HashMap<i64, Arc<BakeryCommands>> = batch
+        .iter()
+        .filter_map(|cmd| match cmd.as_ref() {
+            BakeryCommands::AddCircuit { circuit_hash, .. } => {
+                Some((*circuit_hash, Arc::clone(cmd)))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let mut overlay_keys: Vec<i64> = overlays.keys().copied().collect();
+    overlay_keys.sort_unstable();
+
+    let mut used_by_major: HashMap<(u16, u16), (HashSet<u16>, HashSet<u16>)> = HashMap::new();
+
+    for circuit_hash in overlay_keys {
+        let Some(entry) = overlays.get_mut(&circuit_hash) else {
+            continue;
+        };
+
+        if entry.shaped_device.circuit_id.trim().is_empty()
+            || entry.shaped_device.device_id.trim().is_empty()
+        {
+            continue;
+        }
+
+        recompute_shaped_hashes(&mut entry.shaped_device);
+        let site_hash = runtime_hash_to_i64(&entry.shaped_device.parent_node);
+        let Some(site_cmd) = planned_sites.get(&site_hash) else {
+            warn!(
+                "Bakery: skipping dynamic circuit overlay {} because parent node '{}' is not present in the current batch sites",
+                entry.shaped_device.circuit_id, entry.shaped_device.parent_node
+            );
+            continue;
+        };
+        let Some((down_parent, up_parent)) = site_class_handles(site_cmd.as_ref()) else {
+            warn!(
+                "Bakery: skipping dynamic circuit overlay {} because parent node '{}' did not resolve to a valid site class",
+                entry.shaped_device.circuit_id, entry.shaped_device.parent_node
+            );
+            continue;
+        };
+
+        let down_major = down_parent.get_major_minor().0;
+        let up_major = up_parent.get_major_minor().0;
+
+        let (used_down, used_up) =
+            used_by_major
+                .entry((down_major, up_major))
+                .or_insert_with(|| {
+                    let (mut used_down, mut used_up) =
+                        used_site_minors_for_majors(&planned_sites, down_major, up_major);
+                    let (used_circuit_down, used_circuit_up) =
+                        used_circuit_minors_for_majors(&planned_circuits, down_major, up_major);
+                    used_down.extend(used_circuit_down);
+                    used_up.extend(used_circuit_up);
+                    let (used_shadow_down, used_shadow_up) =
+                        used_pending_migration_shadow_minors_for_majors(
+                            migrations, down_major, up_major,
+                        );
+                    used_down.extend(used_shadow_down);
+                    used_up.extend(used_shadow_up);
+                    (used_down, used_up)
+                });
+
+        let mut desired_minor = entry.class_minor;
+        if let Some(minor) = desired_minor
+            && (minor < ACTIVE_RUNTIME_MINOR_START as u16
+                || used_down.contains(&minor)
+                || used_up.contains(&minor))
+        {
+            desired_minor = None;
+        }
+
+        let class_minor = match desired_minor
+            .or_else(|| find_free_dynamic_circuit_minor(used_down, used_up))
+        {
+            Some(minor) => minor,
+            None => {
+                warn!(
+                    "Bakery: unable to allocate a free class_minor for dynamic circuit overlay {} (down_major=0x{:x}, up_major=0x{:x})",
+                    entry.shaped_device.circuit_id, down_major, up_major
+                );
+                continue;
+            }
+        };
+        entry.class_minor = Some(class_minor);
+        used_down.insert(class_minor);
+        used_up.insert(class_minor);
+
+        // Ensure the overlay command is the only circuit entry for this hash.
+        batch.retain(|cmd| match cmd.as_ref() {
+            BakeryCommands::AddCircuit {
+                circuit_hash: h, ..
+            } => *h != circuit_hash,
+            _ => true,
+        });
+
+        let ip_addresses = ip_list_from_shaped_device(&entry.shaped_device);
+        let circuit_name = (!entry.shaped_device.circuit_name.trim().is_empty())
+            .then(|| entry.shaped_device.circuit_name.clone());
+        let site_name = (!entry.shaped_device.parent_node.trim().is_empty())
+            .then(|| entry.shaped_device.parent_node.clone());
+
+        batch.push(Arc::new(BakeryCommands::AddCircuit {
+            circuit_hash,
+            circuit_name,
+            site_name,
+            parent_class_id: down_parent,
+            up_parent_class_id: up_parent,
+            class_minor,
+            download_bandwidth_min: entry.shaped_device.download_min_mbps,
+            upload_bandwidth_min: entry.shaped_device.upload_min_mbps,
+            download_bandwidth_max: entry.shaped_device.download_max_mbps,
+            upload_bandwidth_max: entry.shaped_device.upload_max_mbps,
+            class_major: down_major,
+            up_class_major: up_major,
+            down_qdisc_handle: None,
+            up_qdisc_handle: None,
+            ip_addresses,
+            sqm_override: entry.shaped_device.sqm_override.clone(),
+        }));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_upsert_dynamic_circuit_overlay(
+    mut shaped_device: lqos_config::ShapedDevice,
+    overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
+    batch_in_progress: bool,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &mut HashMap<i64, u64>,
+    mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+    migrations: &HashMap<i64, Migration>,
+) -> Result<Option<TcHandle>, String> {
+    if shaped_device.circuit_id.trim().is_empty() {
+        return Err("dynamic circuit requires circuit_id".to_string());
+    }
+    if shaped_device.device_id.trim().is_empty() {
+        return Err("dynamic circuit requires device_id".to_string());
+    }
+    if shaped_device.parent_node.trim().is_empty() {
+        return Err("dynamic circuit requires parent_node".to_string());
+    }
+
+    recompute_shaped_hashes(&mut shaped_device);
+    let circuit_hash = shaped_device.circuit_hash;
+
+    let entry = overlays
+        .entry(circuit_hash)
+        .or_insert_with(|| DynamicCircuitOverlayEntry {
+            shaped_device: shaped_device.clone(),
+            class_minor: None,
+        });
+    entry.shaped_device = shaped_device;
+
+    if batch_in_progress {
+        // Avoid mutating live TC while a full batch is being assembled; the overlay will be
+        // applied when the batch is committed.
+        return Ok(None);
+    }
+
+    let Ok(config) = lqos_config::load_config() else {
+        return Err("unable to load config".to_string());
+    };
+
+    if config.queues.queue_mode.is_observe() {
+        return Ok(None);
+    }
+
+    // If we don't yet have a baseline MQ layout or any sites, keep the overlay and let the next
+    // commit batch create the circuit.
+    if !MQ_CREATED.load(Ordering::Relaxed) || mq_layout.is_none() || sites.is_empty() {
+        return Ok(None);
+    }
+
+    // If the circuit is already present, don't attempt to live-update it here yet.
+    if let Some(existing) = circuits.get(&circuit_hash) {
+        if let BakeryCommands::AddCircuit {
+            class_major,
+            class_minor,
+            ..
+        } = existing.as_ref()
+        {
+            return Ok(Some(TcHandle::from_u32(
+                ((*class_major as u32) << 16) | (*class_minor as u32),
+            )));
+        }
+        return Ok(None);
+    }
+
+    let site_hash = runtime_hash_to_i64(&entry.shaped_device.parent_node);
+    let Some(site_cmd) = sites.get(&site_hash) else {
+        return Err(format!(
+            "parent node '{}' is not present in current bakery site state",
+            entry.shaped_device.parent_node
+        ));
+    };
+    let Some((down_parent, up_parent)) = site_class_handles(site_cmd.as_ref()) else {
+        return Err(format!(
+            "parent node '{}' did not resolve to a valid site class",
+            entry.shaped_device.parent_node
+        ));
+    };
+
+    let down_major = down_parent.get_major_minor().0;
+    let up_major = up_parent.get_major_minor().0;
+
+    let (mut used_down, mut used_up) = used_site_minors_for_majors(sites, down_major, up_major);
+    let (used_circuit_down, used_circuit_up) =
+        used_circuit_minors_for_majors(circuits, down_major, up_major);
+    used_down.extend(used_circuit_down);
+    used_up.extend(used_circuit_up);
+    let (used_shadow_down, used_shadow_up) =
+        used_pending_migration_shadow_minors_for_majors(migrations, down_major, up_major);
+    used_down.extend(used_shadow_down);
+    used_up.extend(used_shadow_up);
+
+    let mut desired_minor = entry.class_minor;
+    if let Some(minor) = desired_minor
+        && (minor < ACTIVE_RUNTIME_MINOR_START as u16
+            || used_down.contains(&minor)
+            || used_up.contains(&minor))
+    {
+        desired_minor = None;
+    }
+    let class_minor = desired_minor
+        .or_else(|| find_free_dynamic_circuit_minor(&used_down, &used_up))
+        .ok_or_else(|| "unable to allocate free class_minor for dynamic circuit".to_string())?;
+    entry.class_minor = Some(class_minor);
+
+    let ip_addresses = ip_list_from_shaped_device(&entry.shaped_device);
+    let candidate = Arc::new(BakeryCommands::AddCircuit {
+        circuit_hash,
+        circuit_name: (!entry.shaped_device.circuit_name.trim().is_empty())
+            .then(|| entry.shaped_device.circuit_name.clone()),
+        site_name: (!entry.shaped_device.parent_node.trim().is_empty())
+            .then(|| entry.shaped_device.parent_node.clone()),
+        parent_class_id: down_parent,
+        up_parent_class_id: up_parent,
+        class_minor,
+        download_bandwidth_min: entry.shaped_device.download_min_mbps,
+        upload_bandwidth_min: entry.shaped_device.upload_min_mbps,
+        download_bandwidth_max: entry.shaped_device.download_max_mbps,
+        upload_bandwidth_max: entry.shaped_device.upload_max_mbps,
+        class_major: down_major,
+        up_class_major: up_major,
+        down_qdisc_handle: None,
+        up_qdisc_handle: None,
+        ip_addresses,
+        sqm_override: entry.shaped_device.sqm_override.clone(),
+    });
+
+    let mapped_limit = resolve_mapped_circuit_limit();
+    if is_mapped_add_circuit(candidate.as_ref())
+        && let Some(limit) = mapped_limit.effective_limit
+        && circuits
+            .values()
+            .filter(|c| is_mapped_add_circuit(c.as_ref()))
+            .count()
+            >= limit
+    {
+        let stats = MappedLimitStats {
+            enforced_limit: mapped_limit.effective_limit,
+            requested_mapped: 1,
+            allowed_mapped: 0,
+            dropped_mapped: 1,
+        };
+        warn!(
+            "Bakery mapped circuit cap enforced (dynamic circuit addition): requested={}, allowed={}, dropped={}, limit={} (licensed={}, max_circuits={:?})",
+            stats.requested_mapped,
+            stats.allowed_mapped,
+            stats.dropped_mapped,
+            format_mapped_limit(mapped_limit.effective_limit),
+            mapped_limit.licensed,
+            mapped_limit.max_circuits
+        );
+        maybe_emit_mapped_circuit_limit_urgent(&stats);
+        return Err("mapped circuit limit reached".to_string());
+    }
+
+    let Some(layout) = mq_layout.as_ref() else {
+        return Ok(None);
+    };
+    let live_reserved_handles =
+        snapshot_live_qdisc_handle_majors_or_empty(&config, "dynamic circuit additions");
+    let enriched = with_assigned_qdisc_handles_reserved(
+        &candidate,
+        &config,
+        layout,
+        qdisc_handles,
+        &live_reserved_handles,
+    );
+    let commands = enriched
+        .to_commands(&config, ExecutionMode::Builder)
+        .unwrap_or_default();
+    if !commands.is_empty() {
+        execute_and_record_live_change(&commands, "adding dynamic circuit");
+    }
+    circuits.insert(circuit_hash, enriched);
+    live_circuits.remove(&circuit_hash);
+    qdisc_handles.save(&config);
+    update_queue_distribution_snapshot(sites, circuits);
+
+    Ok(Some(TcHandle::from_u32(
+        ((down_major as u32) << 16) | (class_minor as u32),
+    )))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_remove_dynamic_circuit_overlay(
+    circuit_id: &str,
+    overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
+    batch_in_progress: bool,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    live_circuits: &mut HashMap<i64, u64>,
+    _mq_layout: &Option<MqDeviceLayout>,
+    qdisc_handles: &mut QdiscHandleState,
+) -> Result<(), String> {
+    let normalized = normalize_circuit_id_key(circuit_id);
+    let overlay_key = overlays
+        .iter()
+        .find(|(_, entry)| normalize_circuit_id_key(&entry.shaped_device.circuit_id) == normalized)
+        .map(|(k, _)| *k)
+        .or_else(|| {
+            let computed = runtime_hash_to_i64(circuit_id);
+            overlays.contains_key(&computed).then_some(computed)
+        });
+
+    if let Some(key) = overlay_key {
+        overlays.remove(&key);
+    }
+
+    if batch_in_progress {
+        // Avoid mutating live TC while a full batch is being assembled; the next commit batch
+        // will reconcile the removal.
+        return Ok(());
+    }
+
+    let Ok(config) = lqos_config::load_config() else {
+        return Err("unable to load config".to_string());
+    };
+
+    let circuit_hash = overlay_key.unwrap_or_else(|| runtime_hash_to_i64(circuit_id));
+    if let Some(circuit) = circuits.remove(&circuit_hash) {
+        let was_activated = live_circuits.contains_key(&circuit_hash);
+        let commands = match config.queues.lazy_queues.as_ref() {
+            None | Some(LazyQueueMode::No) => circuit.to_prune(&config, true),
+            Some(LazyQueueMode::Htb) => {
+                if was_activated {
+                    circuit.to_prune(&config, false)
+                } else {
+                    None
+                }
+            }
+            Some(LazyQueueMode::Full) => {
+                if was_activated {
+                    circuit.to_prune(&config, true)
+                } else {
+                    None
+                }
+            }
+        };
+        if let Some(cmd) = commands {
+            execute_and_record_live_change(&cmd, "removing dynamic circuit");
+        }
+        live_circuits.remove(&circuit_hash);
+        qdisc_handles.release_circuit(&config.isp_interface(), circuit_hash);
+        if !config.on_a_stick_mode() {
+            qdisc_handles.release_circuit(&config.internet_interface(), circuit_hash);
+        }
+        qdisc_handles.save(&config);
+        update_queue_distribution_snapshot(sites, circuits);
+    }
+
+    Ok(())
 }
 
 /*fn parse_ip_and_prefix(ip: &str) -> (String, u32) {
@@ -924,6 +1492,10 @@ fn circuits_with_pending_migration_targets(
 pub static ACTIVE_CIRCUITS: AtomicUsize = AtomicUsize::new(0);
 /// True while Bakery is applying a full reload batch to `tc`.
 static FULL_RELOAD_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+/// Monotonic count of committed Bakery shaping-tree changes.
+static STORMGUARD_TREE_GENERATION: AtomicU64 = AtomicU64::new(0);
+/// Latest generation produced by a successful full tree rebuild.
+static STORMGUARD_TREE_REBUILD_GENERATION: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 pub(crate) fn test_state_lock() -> &'static std::sync::Mutex<()> {
     static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
@@ -951,9 +1523,14 @@ pub const FQ_CODEL_QDISC_ESTIMATED_MEMORY_BYTES: u64 = 64 * 1024;
 /// substantially exceeding the earlier heuristic during busy periods.
 pub const CAKE_QDISC_ESTIMATED_MEMORY_BYTES: u64 = 512 * 1024;
 /// Minimum memory headroom Bakery tries to leave unused after a projected or in-flight apply.
-pub const BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES: u64 = 768 * 1024 * 1024;
-/// Maximum number of mapped circuits allowed without Insight.
-const DEFAULT_MAPPED_CIRCUITS_LIMIT: usize = 1000;
+pub const BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// Divisor used to scale Bakery's memory guard floor with installed RAM.
+pub const BAKERY_MEMORY_GUARD_TOTAL_RAM_DIVISOR: u64 = 8;
+
+/// Returns Bakery's effective memory guard floor for a host with `total_bytes` RAM.
+pub fn bakery_memory_guard_min_available_bytes(total_bytes: u64) -> u64 {
+    BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES.max(total_bytes / BAKERY_MEMORY_GUARD_TOTAL_RAM_DIVISOR)
+}
 /// Minimum interval between repeated mapped-circuit-limit urgent issues.
 const CIRCUIT_LIMIT_URGENT_INTERVAL_SECONDS: u64 = 30 * 60;
 /// Last timestamp at which we emitted a mapped-circuit-limit urgent issue.
@@ -1087,8 +1664,10 @@ pub struct BakeryRuntimeOperationsSnapshot {
     pub applying_count: usize,
     /// Number of operations awaiting deferred cleanup.
     pub awaiting_cleanup_count: usize,
-    /// Number of failed operations that may be retried.
+    /// Number of failed operations that are not classified as structural blocks.
     pub failed_count: usize,
+    /// Number of operations blocked by structural runtime constraints until topology changes.
+    pub blocked_count: usize,
     /// Number of operations marked Dirty.
     pub dirty_count: usize,
     /// Most recently updated runtime operation, if any.
@@ -1114,6 +1693,8 @@ pub struct BakeryPreflightSnapshot {
     pub memory_guard_min_available_bytes: u64,
     /// Whether the memory preflight passed.
     pub memory_ok: bool,
+    /// Whether the memory-only failure is an allowed lazy-queue warning.
+    pub memory_warning_only: bool,
     /// Per-interface planned qdisc counts.
     pub interfaces: Vec<BakeryCapacityInterfaceSnapshot>,
 }
@@ -1179,6 +1760,10 @@ pub struct BakeryStatusSnapshot {
     pub reload_required: bool,
     /// Operator-facing reason for why a full reload is now required, if any.
     pub reload_required_reason: Option<String>,
+    /// True when Bakery has put traffic into pass-through mode to avoid stale TC classification.
+    pub passthrough_degraded: bool,
+    /// Operator-facing reason for pass-through mode, if active.
+    pub passthrough_degraded_reason: Option<String>,
     /// Number of runtime node operations currently marked dirty.
     pub dirty_subtree_count: usize,
 }
@@ -1226,6 +1811,8 @@ struct BakeryTelemetryState {
     preflight: Option<BakeryPreflightSnapshot>,
     reload_required: bool,
     reload_required_reason: Option<String>,
+    passthrough_degraded: bool,
+    passthrough_degraded_reason: Option<String>,
     dirty_subtree_count: usize,
     runtime_operations_by_site: HashMap<i64, RuntimeNodeOperationSnapshot>,
     runtime_branch_states_by_site: HashMap<i64, BakeryRuntimeNodeBranchSnapshot>,
@@ -1331,6 +1918,7 @@ impl Default for BakeryTelemetryState {
                 applying_count: 0,
                 awaiting_cleanup_count: 0,
                 failed_count: 0,
+                blocked_count: 0,
                 dirty_count: 0,
                 latest: None,
             },
@@ -1340,6 +1928,8 @@ impl Default for BakeryTelemetryState {
             preflight: None,
             reload_required: false,
             reload_required_reason: None,
+            passthrough_degraded: false,
+            passthrough_degraded_reason: None,
             dirty_subtree_count: 0,
             runtime_operations_by_site: HashMap::new(),
             runtime_branch_states_by_site: HashMap::new(),
@@ -1372,8 +1962,128 @@ impl Drop for FullReloadScope {
     }
 }
 
+struct TcClassifyBypassGuard {
+    cleanup_on_drop: bool,
+    setter: fn(bool) -> anyhow::Result<()>,
+}
+
+struct BakeryFullReloadBatchResult {
+    result: ExecuteResult,
+    summary: String,
+    build_duration_ms: u64,
+    total_tc_commands: usize,
+    class_commands: usize,
+    qdisc_commands: usize,
+}
+
+struct ProcessBatchOptions<'a> {
+    extra_reserved_handles: &'a HashMap<String, HashSet<u16>>,
+    preserved_root_child_majors: &'a HashMap<String, HashSet<u16>>,
+}
+
+impl BakeryFullReloadBatchResult {
+    fn metrics<'a>(&self, summary: &'a str, ok: bool) -> BakeryApplyMetrics<'a> {
+        BakeryApplyMetrics {
+            apply_type: BakeryApplyType::FullReload,
+            summary,
+            build_duration_ms: self.build_duration_ms,
+            apply_duration_ms: self.result.duration_ms,
+            total_tc_commands: self.total_tc_commands,
+            class_commands: self.class_commands,
+            qdisc_commands: self.qdisc_commands,
+            ok,
+        }
+    }
+}
+
+impl TcClassifyBypassGuard {
+    fn new() -> anyhow::Result<Self> {
+        Self::with_setter(lqos_sys::set_tc_classify_bypass)
+    }
+
+    fn with_setter(setter: fn(bool) -> anyhow::Result<()>) -> anyhow::Result<Self> {
+        setter(true).map_err(|error| {
+            error!(
+                "Bakery full reload failed to enable TC classify bypass via tc_classify_control: {error}"
+            );
+            error
+        })?;
+        info!("Bakery full reload enabled TC classify bypass");
+        mark_passthrough_degraded(
+            "Bakery full reload is rebuilding TC. Traffic is temporarily passing without shaping to avoid stale class-handle classification.",
+            false,
+        );
+        Ok(Self {
+            cleanup_on_drop: true,
+            setter,
+        })
+    }
+
+    fn disable(&mut self) -> anyhow::Result<()> {
+        if !self.cleanup_on_drop {
+            return Ok(());
+        }
+        self.cleanup_on_drop = false;
+        (self.setter)(false).map_err(|error| {
+            error!(
+                "Bakery full reload failed to disable TC classify bypass via tc_classify_control: {error}"
+            );
+            mark_passthrough_degraded(format!(
+                "Bakery full reload applied TC commands but could not disable pass-through mode: {error}. Traffic may remain unshaped until operator intervention or a later successful reload."
+            ), true);
+            error
+        })?;
+        info!("Bakery full reload disabled TC classify bypass");
+        clear_passthrough_degraded(
+            "Bakery full reload disabled pass-through mode; normal shaping is active.",
+        );
+        Ok(())
+    }
+
+    fn keep_bypass_enabled_after_failure(&mut self, summary: &str) {
+        self.cleanup_on_drop = false;
+        error!(
+            "Bakery full reload keeping TC classify bypass enabled after failure: {}",
+            summary
+        );
+        mark_passthrough_degraded(
+            format!(
+                "{summary}. Traffic is passing without shaping until a successful full reload clears TC classify bypass."
+            ),
+            true,
+        );
+    }
+}
+
+impl Drop for TcClassifyBypassGuard {
+    fn drop(&mut self) {
+        if !self.cleanup_on_drop {
+            return;
+        }
+        if let Err(error) = self.disable() {
+            mark_reload_required(format!(
+                "Bakery full reload could not disable TC classify bypass after reload: {error}. Operator intervention may be required because traffic may remain unshaped."
+            ));
+        }
+    }
+}
+
 fn telemetry_state() -> &'static RwLock<BakeryTelemetryState> {
     BAKERY_TELEMETRY.get_or_init(|| RwLock::new(BakeryTelemetryState::default()))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TcCommandType {
+    Class,
+    Qdisc,
+}
+
+fn tc_command_type(argv: &[String]) -> Option<TcCommandType> {
+    match argv.first()?.as_str() {
+        "class" => Some(TcCommandType::Class),
+        "qdisc" => Some(TcCommandType::Qdisc),
+        _ => None,
+    }
 }
 
 fn count_tc_command_types(commands: &[Vec<String>]) -> (usize, usize, usize) {
@@ -1381,15 +2091,48 @@ fn count_tc_command_types(commands: &[Vec<String>]) -> (usize, usize, usize) {
     let mut class_count = 0usize;
     let mut qdisc_count = 0usize;
     for argv in commands {
-        if let Some(kind) = argv.first() {
-            match kind.as_str() {
-                "class" => class_count += 1,
-                "qdisc" => qdisc_count += 1,
-                _ => {}
-            }
+        match tc_command_type(argv) {
+            Some(TcCommandType::Class) => class_count += 1,
+            Some(TcCommandType::Qdisc) => qdisc_count += 1,
+            None => {}
         }
     }
     (total, class_count, qdisc_count)
+}
+
+fn count_tc_command_types_and_estimate_qdisc_memory(
+    commands: &[Vec<String>],
+) -> (usize, usize, usize, u64) {
+    let total = commands.len();
+    let mut class_count = 0usize;
+    let mut qdisc_count = 0usize;
+    let mut estimated_qdisc_memory_bytes = 0u64;
+    let mut seen_qdiscs = HashSet::new();
+
+    for argv in commands {
+        match tc_command_type(argv) {
+            Some(TcCommandType::Class) => class_count += 1,
+            Some(TcCommandType::Qdisc) => qdisc_count += 1,
+            None => {}
+        }
+
+        let Some(qdisc_identity) = planned_qdisc_identity(argv) else {
+            continue;
+        };
+        if !seen_qdiscs.insert(qdisc_identity) {
+            continue;
+        }
+        let kind = planned_qdisc_kind(argv).unwrap_or(PlannedQdiscKind::Infra);
+        estimated_qdisc_memory_bytes =
+            estimated_qdisc_memory_bytes.saturating_add(qdisc_kind_estimated_memory_bytes(kind));
+    }
+
+    (
+        total,
+        class_count,
+        qdisc_count,
+        estimated_qdisc_memory_bytes,
+    )
 }
 
 fn push_bakery_event(event: &str, status: &str, summary: String) {
@@ -1450,6 +2193,66 @@ fn mark_reload_required(summary: String) {
     if should_emit {
         push_bakery_event("reload_required", "error", summary);
     }
+}
+
+fn mark_passthrough_degraded(summary: impl Into<String>, emit_activity: bool) {
+    let summary = summary.into();
+    let mut should_emit = false;
+    {
+        let mut state = telemetry_state().write();
+        if !state.passthrough_degraded
+            || state.passthrough_degraded_reason.as_deref() != Some(summary.as_str())
+        {
+            state.passthrough_degraded = true;
+            state.passthrough_degraded_reason = Some(summary.clone());
+            should_emit = true;
+        }
+    }
+    if should_emit && emit_activity {
+        push_bakery_event("passthrough_degraded", "warning", summary);
+    }
+}
+
+fn clear_passthrough_degraded(summary: &str) {
+    let mut should_emit = false;
+    {
+        let mut state = telemetry_state().write();
+        if state.passthrough_degraded || state.passthrough_degraded_reason.is_some() {
+            state.passthrough_degraded = false;
+            state.passthrough_degraded_reason = None;
+            should_emit = true;
+        }
+    }
+    if should_emit {
+        push_bakery_event("passthrough_degraded_cleared", "info", summary.to_string());
+    }
+}
+
+fn is_live_migration_reload_required_reason(reason: &str) -> bool {
+    reason.starts_with("Bakery live-move ") || reason.starts_with("Bakery live migration ")
+}
+
+fn cancel_pending_migrations_for_observe_mode(
+    migrations: &mut HashMap<i64, Migration>,
+    reason: &str,
+) -> usize {
+    let canceled = migrations.len();
+    if canceled > 0 {
+        let summary = format!("Bakery canceled {canceled} pending live migration(s): {reason}");
+        info!("{summary}");
+        push_bakery_event("live_migrations_canceled", "info", summary);
+        migrations.clear();
+    }
+
+    if let Some(reload_reason) = bakery_reload_required_reason()
+        && is_live_migration_reload_required_reason(&reload_reason)
+    {
+        clear_reload_required(
+            "Observe mode canceled pending Bakery live-migration verification state; incremental live-move reload requirements were cleared.",
+        );
+    }
+
+    canceled
 }
 
 fn clear_reload_required(summary: &str) {
@@ -1563,6 +2366,8 @@ pub fn bakery_status_snapshot() -> BakeryStatusSnapshot {
         preflight: state.preflight,
         reload_required: state.reload_required,
         reload_required_reason: state.reload_required_reason,
+        passthrough_degraded: state.passthrough_degraded,
+        passthrough_degraded_reason: state.passthrough_degraded_reason,
         dirty_subtree_count: state.dirty_subtree_count,
     }
 }
@@ -1587,6 +2392,16 @@ pub fn bakery_runtime_node_branch_snapshot(
         .runtime_branch_states_by_site
         .get(&site_hash)
         .cloned()
+}
+
+/// Returns every retained Bakery runtime branch-state snapshot currently tracked.
+pub fn bakery_runtime_node_branch_snapshots() -> Vec<BakeryRuntimeNodeBranchSnapshot> {
+    telemetry_state()
+        .read()
+        .runtime_branch_states_by_site
+        .values()
+        .cloned()
+        .collect()
 }
 
 /// Returns the current Bakery reload-required reason, if runtime drift has frozen incremental
@@ -1646,18 +2461,27 @@ fn refresh_live_capacity_snapshot(config: &Config, force: bool) {
 /// This function is not pure: it updates retained in-memory Bakery telemetry state.
 pub fn record_qdisc_preflight_snapshot(snapshot: BakeryPreflightSnapshot) {
     let ok = snapshot.ok;
+    let memory_warning_only = snapshot.memory_warning_only;
     let summary = snapshot.message.clone();
     {
         let mut state = telemetry_state().write();
         state.preflight = Some(snapshot);
     }
     push_bakery_event(
-        if ok {
+        if memory_warning_only {
+            "preflight_warning"
+        } else if ok {
             "preflight_ok"
         } else {
             "preflight_blocked"
         },
-        if ok { "info" } else { "warning" },
+        if memory_warning_only {
+            "warning"
+        } else if ok {
+            "info"
+        } else {
+            "warning"
+        },
         summary,
     );
 }
@@ -1754,17 +2578,21 @@ pub struct QdiscBudgetEstimate {
     pub estimated_total_memory_bytes: u64,
     /// Current host memory snapshot used for preflight, if available.
     pub memory_snapshot: Option<MemorySnapshot>,
+    /// Effective memory floor used for the memory preflight.
+    pub memory_guard_min_available_bytes: u64,
     /// Whether the memory preflight passed.
     pub memory_ok: bool,
+    /// Whether lazy queue mode makes a memory-only preflight failure non-blocking.
+    pub memory_warning_only: bool,
 }
 
 impl QdiscBudgetEstimate {
-    /// Returns `true` when all planned per-interface counts fit within the safe budget.
+    /// Returns `true` when the qdisc count fits and memory preflight passes or is a lazy-queue warning.
     pub fn ok(&self) -> bool {
         self.interfaces
             .values()
             .all(|count| *count <= self.safe_budget)
-            && self.memory_ok
+            && (self.memory_ok || self.memory_warning_only)
     }
 }
 
@@ -1836,8 +2664,13 @@ fn planned_qdisc_identity(argv: &[String]) -> Option<(String, String)> {
     if let Some(handle) = find_arg_value(argv, "handle") {
         return Some((dev, format!("handle:{handle}")));
     }
-    let parent = find_arg_value(argv, "parent")?.to_string();
-    Some((dev, format!("parent:{parent}")))
+    if let Some(parent) = find_arg_value(argv, "parent") {
+        return Some((dev, format!("parent:{parent}")));
+    }
+    if argv.iter().any(|arg| arg == "root") {
+        return Some((dev, "root".to_string()));
+    }
+    None
 }
 
 /// Estimates total qdisc usage for the current full-reload builder queue.
@@ -1893,12 +2726,24 @@ pub fn estimate_full_reload_auto_qdisc_budget(
         acc.saturating_add(detail.estimated_memory_bytes)
     });
     let memory_snapshot = read_memory_snapshot().ok();
+    let memory_guard_min_available_bytes = memory_snapshot
+        .as_ref()
+        .map(|snapshot| bakery_memory_guard_min_available_bytes(snapshot.total_bytes))
+        .unwrap_or(BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES);
     let memory_ok = memory_snapshot.as_ref().is_none_or(|snapshot| {
         snapshot
             .available_bytes
-            .saturating_sub(BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES)
+            .saturating_sub(memory_guard_min_available_bytes)
             >= estimated_total_memory_bytes
     });
+    let qdisc_counts_fit = interfaces
+        .values()
+        .all(|count| *count <= SAFE_QDISC_BUDGET_PER_INTERFACE);
+    let memory_warning_only = lazy_queue_memory_preflight_is_warning(
+        config.queues.lazy_queues.as_ref(),
+        qdisc_counts_fit,
+        memory_ok,
+    );
 
     QdiscBudgetEstimate {
         interfaces,
@@ -1907,8 +2752,23 @@ pub fn estimate_full_reload_auto_qdisc_budget(
         hard_limit: HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE,
         estimated_total_memory_bytes,
         memory_snapshot,
+        memory_guard_min_available_bytes,
         memory_ok,
+        memory_warning_only,
     }
+}
+
+fn lazy_queue_memory_preflight_is_warning(
+    lazy_queue_mode: Option<&LazyQueueMode>,
+    qdisc_counts_fit: bool,
+    memory_ok: bool,
+) -> bool {
+    qdisc_counts_fit
+        && !memory_ok
+        && matches!(
+            lazy_queue_mode,
+            Some(LazyQueueMode::Htb | LazyQueueMode::Full)
+        )
 }
 
 fn desired_shaping_tree_active(config: &Arc<Config>) -> bool {
@@ -2058,42 +2918,271 @@ fn root_mq_add_command(interface_name: &str) -> Vec<String> {
     ]
 }
 
-fn prepare_root_mq_for_full_reload(config: &Arc<Config>) -> Result<(), String> {
+fn command_token_after<'a>(command: &'a [String], needle: &str) -> Option<&'a str> {
+    command
+        .windows(2)
+        .find(|tokens| tokens[0] == needle)
+        .map(|tokens| tokens[1].as_str())
+}
+
+fn command_handle_after(command: &[String], needle: &str) -> Option<TcHandle> {
+    command_token_after(command, needle).and_then(|token| TcHandle::from_string(token).ok())
+}
+
+fn command_interface(command: &[String]) -> Option<&str> {
+    command_token_after(command, "dev")
+}
+
+fn root_infra_class_handle(handle: TcHandle, root_child_majors: &HashSet<u16>) -> bool {
+    let (major, minor) = handle.get_major_minor();
+    root_child_majors.contains(&major) && matches!(minor, 1 | 2)
+}
+
+fn root_infra_class_entry(entry: &LiveTcClassEntry, root_child_majors: &HashSet<u16>) -> bool {
+    let (major, minor) = entry.class_id.get_major_minor();
+    if !root_child_majors.contains(&major) {
+        return false;
+    }
+    match (minor, entry.parent) {
+        (1, Some(parent)) => parent == tc_handle_from_major_minor(major, 0),
+        (2, Some(parent)) => parent == tc_handle_from_major_minor(major, 1),
+        _ => false,
+    }
+}
+
+fn root_infra_qdisc_entry(entry: &LiveTcQdiscEntry, root_child_majors: &HashSet<u16>) -> bool {
+    if entry.kind == "clsact" {
+        return true;
+    }
+    if entry.is_root {
+        return true;
+    }
+    if entry
+        .parent
+        .is_some_and(|parent| parent.get_major_minor().0 == ROOT_MQ_MAJOR)
+    {
+        return true;
+    }
+    entry.parent.is_some_and(|parent| {
+        let (major, minor) = parent.get_major_minor();
+        root_child_majors.contains(&major) && matches!(minor, 1 | 2)
+    })
+}
+
+fn root_infra_class_command(
+    command: &[String],
+    preserved_root_child_majors: &HashMap<String, HashSet<u16>>,
+) -> bool {
+    if !matches!(command.first().map(String::as_str), Some("class")) {
+        return false;
+    }
+    let Some(interface) = command_interface(command) else {
+        return false;
+    };
+    let Some(root_child_majors) = preserved_root_child_majors.get(interface) else {
+        return false;
+    };
+    command_handle_after(command, "classid")
+        .is_some_and(|handle| root_infra_class_handle(handle, root_child_majors))
+}
+
+fn root_infra_qdisc_command(
+    command: &[String],
+    preserved_root_child_majors: &HashMap<String, HashSet<u16>>,
+) -> bool {
+    if !matches!(command.first().map(String::as_str), Some("qdisc")) {
+        return false;
+    }
+    let Some(interface) = command_interface(command) else {
+        return false;
+    };
+    let Some(root_child_majors) = preserved_root_child_majors.get(interface) else {
+        return false;
+    };
+    command_handle_after(command, "parent").is_some_and(|parent| {
+        let (major, minor) = parent.get_major_minor();
+        major == ROOT_MQ_MAJOR || root_child_majors.contains(&major) && matches!(minor, 1 | 2)
+    })
+}
+
+fn idempotent_full_reload_command(
+    mut command: Vec<String>,
+    preserved_root_child_majors: &HashMap<String, HashSet<u16>>,
+) -> Vec<String> {
+    if matches!(command.get(1).map(String::as_str), Some("add"))
+        && root_infra_class_command(&command, preserved_root_child_majors)
+    {
+        command[1] = "replace".to_string();
+    }
+    command
+}
+
+fn class_depth(
+    handle: TcHandle,
+    snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    seen: &mut HashSet<TcHandle>,
+) -> usize {
+    if !seen.insert(handle) {
+        return 0;
+    }
+    snapshot
+        .get(&handle)
+        .and_then(|entry| entry.parent)
+        .map(|parent| 1 + class_depth(parent, snapshot, seen))
+        .unwrap_or(0)
+}
+
+fn class_delete_commands(
+    interface: &str,
+    class_snapshot: &HashMap<TcHandle, LiveTcClassEntry>,
+    root_child_majors: &HashSet<u16>,
+) -> Vec<Vec<String>> {
+    let mut entries = class_snapshot
+        .values()
+        .filter(|entry| {
+            entry.class_id.get_major_minor().0 != ROOT_MQ_MAJOR
+                && !root_infra_class_entry(entry, root_child_majors)
+        })
+        .filter_map(|entry| {
+            entry.parent.map(|parent| {
+                let mut seen = HashSet::new();
+                (
+                    class_depth(entry.class_id, class_snapshot, &mut seen),
+                    entry.class_id,
+                    parent,
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| Reverse(entry.0));
+    entries
+        .into_iter()
+        .map(|(_, class_id, parent)| {
+            vec![
+                "class".to_string(),
+                "del".to_string(),
+                "dev".to_string(),
+                interface.to_string(),
+                "parent".to_string(),
+                parent.as_tc_string(),
+                "classid".to_string(),
+                class_id.as_tc_string(),
+            ]
+        })
+        .collect()
+}
+
+fn qdisc_delete_commands(
+    interface: &str,
+    qdisc_snapshot: &[LiveTcQdiscEntry],
+    root_child_majors: &HashSet<u16>,
+) -> Vec<Vec<String>> {
+    qdisc_snapshot
+        .iter()
+        .filter(|entry| !root_infra_qdisc_entry(entry, root_child_majors))
+        .filter_map(|entry| entry.parent)
+        .map(|parent| {
+            vec![
+                "qdisc".to_string(),
+                "del".to_string(),
+                "dev".to_string(),
+                interface.to_string(),
+                "parent".to_string(),
+                parent.as_tc_string(),
+            ]
+        })
+        .collect()
+}
+
+fn tc_classify_attached(interface: &str) -> Result<bool, String> {
+    let output = std::process::Command::new("/sbin/tc")
+        .args(["filter", "show", "dev", interface, "egress"])
+        .output()
+        .map_err(|error| {
+            format!("Failed to inspect TC classify attachment on {interface}: {error}")
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!(
+                "Failed to inspect TC classify attachment on {interface}: tc exited with {:?}",
+                output.status.code()
+            )
+        } else {
+            format!("Failed to inspect TC classify attachment on {interface}: {stderr}")
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).contains("tc_iphash_to_cp"))
+}
+
+fn verify_tc_classify_attached(config: &Arc<Config>) -> Result<(), String> {
+    let mut missing = Vec::new();
+    for interface in managed_interfaces_for_config(config) {
+        match tc_classify_attached(&interface) {
+            Ok(true) => {}
+            Ok(false) => missing.push(interface),
+            Err(error) => return Err(error),
+        }
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "TC classify egress attachment missing on interface(s): {}",
+            missing.join(", ")
+        ))
+    }
+}
+
+fn drain_managed_tree_to_defaults(
+    interface: &str,
+    qdisc_snapshot: &[LiveTcQdiscEntry],
+) -> Result<HashSet<u16>, String> {
+    let root_child_majors = managed_root_child_parent_handles(qdisc_snapshot)
+        .into_iter()
+        .map(|parent| parent.get_major_minor().1)
+        .collect::<HashSet<_>>();
+    if root_child_majors.is_empty() {
+        return Ok(root_child_majors);
+    }
+    let class_snapshot = read_live_class_snapshot(interface)?;
+    let mut commands = qdisc_delete_commands(interface, qdisc_snapshot, &root_child_majors);
+    commands.extend(class_delete_commands(
+        interface,
+        &class_snapshot,
+        &root_child_majors,
+    ));
+    if commands.is_empty() {
+        return Ok(root_child_majors);
+    }
+    run_root_preflight_commands(
+        &commands,
+        &format!("full reload drain managed tree to defaults on {interface}"),
+    )?;
+    invalidate_live_tc_snapshots();
+    Ok(root_child_majors)
+}
+
+fn prepare_root_mq_for_full_reload(
+    config: &Arc<Config>,
+) -> Result<HashMap<String, HashSet<u16>>, String> {
+    let mut preserved_root_child_majors = HashMap::new();
     for interface in managed_interfaces_for_config(config) {
         let qdisc_snapshot = read_live_qdisc_snapshot(&interface)?;
         if retained_root_mq_entry(&qdisc_snapshot).is_some() {
-            let prune_commands = managed_root_child_parent_handles(&qdisc_snapshot)
-                .into_iter()
-                .map(|parent| {
-                    vec![
-                        "qdisc".to_string(),
-                        "del".to_string(),
-                        "dev".to_string(),
-                        interface.clone(),
-                        "parent".to_string(),
-                        parent.as_tc_string(),
-                    ]
-                })
-                .collect::<Vec<_>>();
-            if !prune_commands.is_empty() {
-                run_root_preflight_commands(
-                    &prune_commands,
-                    &format!("full reload retained-root child prune on {interface}"),
-                )?;
-                invalidate_live_tc_snapshots();
+            let has_managed_root_children =
+                !managed_root_child_parent_handles(&qdisc_snapshot).is_empty();
+            if has_managed_root_children {
+                let root_child_majors =
+                    drain_managed_tree_to_defaults(&interface, &qdisc_snapshot)?;
+                if !root_child_majors.is_empty() {
+                    preserved_root_child_majors.insert(interface.clone(), root_child_majors);
+                }
             }
-
-            let pruned_qdisc_snapshot = read_live_qdisc_snapshot(&interface)?;
-            let pruned_class_snapshot = read_live_class_snapshot(&interface)?;
-            if verify_clean_root_child_tree(
-                &pruned_qdisc_snapshot,
-                &pruned_class_snapshot,
-                &interface,
-            )
-            .is_ok()
-            {
-                continue;
-            }
+            info!(
+                "Bakery: preserving existing root mq/default path on {interface} during full reload"
+            );
+            continue;
         }
 
         let replace_summary = run_root_preflight_commands(
@@ -2141,7 +3230,7 @@ fn prepare_root_mq_for_full_reload(config: &Arc<Config>) -> Result<(), String> {
         )?;
     }
 
-    Ok(())
+    Ok(preserved_root_child_majors)
 }
 
 fn live_tree_mutations_allowed(config: &Arc<Config>) -> bool {
@@ -2156,6 +3245,13 @@ pub fn bakery_live_tree_mutation_blocker() -> Option<String> {
         return Some("configuration could not be loaded".to_string());
     };
     live_tree_mutation_blocker_for_config(&config)
+}
+
+/// Returns whether Bakery has completed root MQ setup for the active process.
+///
+/// This function is not pure: it reads Bakery's process-local runtime state.
+pub fn stormguard_bakery_ready() -> bool {
+    MQ_CREATED.load(Ordering::Relaxed)
 }
 
 /// Overrides Bakery's shaping-tree-active flag for tests and restores callers' access to the
@@ -2569,18 +3665,7 @@ fn migration_target_label(migration: &Migration) -> String {
 }
 
 fn runtime_network_json_path(config: &Config) -> std::path::PathBuf {
-    let base_path = Path::new(&config.lqos_directory);
-    if config
-        .long_term_stats
-        .enable_insight_topology
-        .unwrap_or(false)
-    {
-        let tmp_path = base_path.join("network.insight.json");
-        if tmp_path.exists() {
-            return tmp_path;
-        }
-    }
-    base_path.join("network.json")
+    lqos_config::NetworkJson::path_for_config(config)
 }
 
 fn runtime_hash_to_i64(text: &str) -> i64 {
@@ -2673,6 +3758,16 @@ pub fn full_reload_in_progress() -> bool {
     FULL_RELOAD_IN_PROGRESS.load(Ordering::Relaxed)
 }
 
+/// Returns the Bakery shaping-tree generation observed by StormGuard.
+pub fn stormguard_tree_generation() -> u64 {
+    STORMGUARD_TREE_GENERATION.load(Ordering::Acquire)
+}
+
+/// Returns the latest generation that replaced class handles with a full tree rebuild.
+pub fn stormguard_tree_rebuild_generation() -> u64 {
+    STORMGUARD_TREE_REBUILD_GENERATION.load(Ordering::Acquire)
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 struct MappedLimitStats {
     enforced_limit: Option<usize>,
@@ -2698,7 +3793,9 @@ fn is_mapped_add_circuit(cmd: &BakeryCommands) -> bool {
     let BakeryCommands::AddCircuit { ip_addresses, .. } = cmd else {
         return false;
     };
-    !parse_ip_list(ip_addresses).is_empty()
+    parse_ip_list(ip_addresses)
+        .iter()
+        .any(|mapping| is_valid_ip_mapping_text(mapping))
 }
 
 fn mapped_circuit_hash(cmd: &BakeryCommands) -> Option<i64> {
@@ -2723,7 +3820,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
             };
         }
     };
@@ -2733,7 +3830,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
             };
         };
         let Ok(reply) = bus
@@ -2743,7 +3840,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
             return ResolvedMappedLimit {
                 licensed: false,
                 max_circuits: None,
-                effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+                effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
             };
         };
 
@@ -2760,7 +3857,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
                 let effective_limit = if licensed {
                     max_circuits_usize
                 } else {
-                    Some(DEFAULT_MAPPED_CIRCUITS_LIMIT)
+                    Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize)
                 };
                 return ResolvedMappedLimit {
                     licensed,
@@ -2772,7 +3869,7 @@ fn resolve_mapped_circuit_limit() -> ResolvedMappedLimit {
         ResolvedMappedLimit {
             licensed: false,
             max_circuits: None,
-            effective_limit: Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            effective_limit: Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
         }
     })
 }
@@ -2782,16 +3879,11 @@ fn filter_batch_by_mapped_circuit_limit(
     existing_circuits: &HashMap<i64, Arc<BakeryCommands>>,
     effective_limit: Option<usize>,
 ) -> (Vec<Arc<BakeryCommands>>, MappedLimitStats) {
-    let mut mapped_candidates: Vec<i64> = Vec::new();
-    let mut seen = HashSet::new();
-
-    for cmd in &batch {
-        if let Some(hash) = mapped_circuit_hash(cmd.as_ref())
-            && seen.insert(hash)
-        {
-            mapped_candidates.push(hash);
-        }
-    }
+    let mapped_candidates = unique_mapped_circuit_hashes(
+        batch
+            .iter()
+            .filter_map(|command| mapped_circuit_hash(command.as_ref())),
+    );
 
     let requested = mapped_candidates.len();
     let Some(effective_limit) = effective_limit else {
@@ -2915,16 +4007,26 @@ fn maybe_emit_mapped_circuit_limit_urgent(stats: &MappedLimitStats) {
     });
 }
 
-fn maybe_emit_memory_guard_urgent(summary: &str) {
+fn maybe_emit_memory_guard_urgent(
+    summary: &str,
+    memory_guard_required_available_bytes: u64,
+    estimated_qdisc_memory_bytes: u64,
+) {
     if !summary.contains("Bakery memory guard stopped") {
         return;
     }
 
     let message = summary.to_string();
     let context = read_memory_snapshot().ok().map(|snapshot| {
+        let memory_guard_floor_bytes =
+            bakery_memory_guard_min_available_bytes(snapshot.total_bytes);
         format!(
-            "{{\"available_bytes\":{},\"total_bytes\":{},\"memory_guard_floor_bytes\":{}}}",
-            snapshot.available_bytes, snapshot.total_bytes, BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES
+            "{{\"available_bytes\":{},\"total_bytes\":{},\"memory_guard_floor_bytes\":{},\"estimated_qdisc_memory_bytes\":{},\"memory_guard_required_available_bytes\":{}}}",
+            snapshot.available_bytes,
+            snapshot.total_bytes,
+            memory_guard_floor_bytes,
+            estimated_qdisc_memory_bytes,
+            memory_guard_required_available_bytes
         )
     });
 
@@ -2971,8 +4073,10 @@ fn log_mapped_limit_decision(
     );
 }
 
-/// Starts the Bakery system, returning a channel sender for sending commands to the Bakery.
-pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
+/// Starts the Bakery system after receiving the one-shot startup readiness token.
+pub fn start_bakery(
+    startup_ready: Receiver<()>,
+) -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands>> {
     let (tx, rx) = crossbeam_channel::bounded(CHANNEL_CAPACITY);
     let inner_sender = tx.clone();
     if BAKERY_SENDER.set(tx.clone()).is_err() {
@@ -2981,10 +4085,25 @@ pub fn start_bakery() -> anyhow::Result<crossbeam_channel::Sender<BakeryCommands
     std::thread::Builder::new()
         .name("lqos_bakery".to_string())
         .spawn(move || {
+            if !wait_for_startup_ready(startup_ready) {
+                return;
+            }
             bakery_main(rx, inner_sender);
         })
         .map_err(|e| anyhow::anyhow!("Failed to start Bakery thread: {}", e))?;
     Ok(tx)
+}
+
+fn wait_for_startup_ready(startup_ready: Receiver<()>) -> bool {
+    match startup_ready.recv() {
+        Ok(()) => true,
+        Err(error) => {
+            error!(
+                "Bakery startup readiness channel closed before release: {error}; stopping worker"
+            );
+            false
+        }
+    }
 }
 
 fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
@@ -2998,11 +4117,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         .ok()
         .map(|config| QdiscHandleState::load(&config))
         .unwrap_or_default();
-    // Persist latest StormGuard ceilings keyed by interface + class so we can replay after rebuilds.
-    let mut stormguard_overrides: HashMap<StormguardOverrideKey, u64> = HashMap::new();
+    // Retain each StormGuard-owned class's original plan until disable/reset reconciliation.
+    let mut stormguard_overrides: HashMap<StormguardOverrideKey, StormguardOverrideValue> =
+        HashMap::new();
     let mut virtualized_sites: HashMap<i64, VirtualizedSiteState> = HashMap::new();
     let mut runtime_node_operations: HashMap<i64, RuntimeNodeOperation> = HashMap::new();
     let mut next_runtime_operation_id: u64 = 1;
+    let mut dynamic_circuit_overlays: HashMap<i64, DynamicCircuitOverlayEntry> =
+        lqos_config::load_config()
+            .ok()
+            .map(|config| load_dynamic_circuit_overlays_from_disk(&config))
+            .unwrap_or_default();
 
     // Mapping state
     #[derive(Clone, Hash, PartialEq, Eq, Debug)]
@@ -3245,6 +4370,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
             interface_name,
             expected_handle,
             expected_parent,
+            observed_present: observed.is_some(),
             observed_parent: observed.and_then(|entry| entry.parent),
             observed_leaf_qdisc_major: observed.and_then(|entry| entry.leaf_qdisc_major),
         }
@@ -3299,6 +4425,54 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         )
     }
 
+    fn migration_branch_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        down_handle: TcHandle,
+        down_parent: TcHandle,
+        up_handle: TcHandle,
+        up_parent: TcHandle,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_snapshot = read_live_class_snapshot(&config.isp_interface())?;
+        let mut commands = wrong_parent_prune_commands_for_direction(
+            config.isp_interface(),
+            &down_snapshot,
+            down_handle,
+            down_parent,
+        );
+
+        if config.on_a_stick_mode() {
+            return Ok(commands);
+        }
+
+        let up_snapshot = read_live_class_snapshot(&config.internet_interface())?;
+        commands.extend(wrong_parent_prune_commands_for_direction(
+            config.internet_interface(),
+            &up_snapshot,
+            up_handle,
+            up_parent,
+        ));
+        Ok(commands)
+    }
+
+    fn migration_shadow_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        migration: &Migration,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_handle = TcHandle::from_u32(
+            (u32::from(migration.class_major) << 16) | u32::from(migration.shadow_minor),
+        );
+        let up_handle = TcHandle::from_u32(
+            (u32::from(migration.up_class_major) << 16) | u32::from(migration.shadow_minor),
+        );
+        migration_branch_wrong_parent_prune_commands(
+            config,
+            down_handle,
+            migration.parent_class_id,
+            up_handle,
+            migration.up_parent_class_id,
+        )
+    }
+
     fn migration_final_verification(
         config: &Arc<Config>,
         migration: &Migration,
@@ -3318,6 +4492,25 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         )
     }
 
+    fn migration_final_wrong_parent_prune_commands(
+        config: &Arc<Config>,
+        migration: &Migration,
+    ) -> Result<Vec<Vec<String>>, String> {
+        let down_handle = TcHandle::from_u32(
+            (u32::from(migration.class_major) << 16) | u32::from(migration.final_minor),
+        );
+        let up_handle = TcHandle::from_u32(
+            (u32::from(migration.up_class_major) << 16) | u32::from(migration.final_minor),
+        );
+        migration_branch_wrong_parent_prune_commands(
+            config,
+            down_handle,
+            migration.parent_class_id,
+            up_handle,
+            migration.up_parent_class_id,
+        )
+    }
+
     fn process_pending_migrations(
         config: &Arc<Config>,
         circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
@@ -3327,6 +4520,14 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
         virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
         runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
     ) {
+        if config.queues.queue_mode.is_observe() {
+            cancel_pending_migrations_for_observe_mode(
+                migrations,
+                "queue_mode is observe; the shaping tree is not live.",
+            );
+            return;
+        }
+
         let mut advanced = 0usize;
         let mut to_remove = Vec::new();
         let mut effective_state_changed = false;
@@ -3343,13 +4544,24 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                         config,
                         "live-move: create shadow",
                     );
+                    let target_label = migration_target_label(mig);
+                    let mut cmds = match migration_shadow_wrong_parent_prune_commands(config, mig) {
+                        Ok(commands) => commands,
+                        Err(error) => {
+                            mark_reload_required(format!(
+                                "Bakery live-move shadow cleanup failed for {target_label}: {error}. A full reload is now required before further incremental topology mutations."
+                            ));
+                            mig.stage = MigrationStage::Done;
+                            advanced += 1;
+                            continue;
+                        }
+                    };
                     if let Some(temp) = build_shadow_add_cmd(
                         mig,
                         config,
                         &persisted_qdisc_handles,
                         &live_reserved_handles,
                     ) {
-                        let mut cmds = Vec::new();
                         match config.queues.lazy_queues.as_ref() {
                             None | Some(LazyQueueMode::No) => {
                                 if let Some(c) =
@@ -3460,7 +4672,17 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                 }
                 MigrationStage::BuildFinal => {
                     let target_label = migration_target_label(mig);
-                    let mut cmds = Vec::new();
+                    let mut cmds = match migration_final_wrong_parent_prune_commands(config, mig) {
+                        Ok(commands) => commands,
+                        Err(error) => {
+                            mark_reload_required(format!(
+                                "Bakery live-move final cleanup failed for {target_label}: {error}. A full reload is now required before further incremental topology mutations."
+                            ));
+                            mig.stage = MigrationStage::Done;
+                            advanced += 1;
+                            continue;
+                        }
+                    };
                     let live_qdisc_handles = snapshot_live_qdisc_handle_majors_or_empty(
                         config,
                         "live-move: build final",
@@ -3834,6 +5056,7 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut batch,
                     &mut sites,
                     &mut circuits,
+                    &mut dynamic_circuit_overlays,
                     &mut live_circuits,
                     &mut mq_layout,
                     &mut qdisc_handles,
@@ -3872,6 +5095,40 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     batch.push(Arc::new(command));
                 }
             }
+            BakeryCommands::UpsertDynamicCircuitOverlay {
+                shaped_device,
+                reply,
+            } => {
+                let result = handle_upsert_dynamic_circuit_overlay(
+                    *shaped_device,
+                    &mut dynamic_circuit_overlays,
+                    batch.is_some(),
+                    &sites,
+                    &mut circuits,
+                    &mut live_circuits,
+                    &mq_layout,
+                    &mut qdisc_handles,
+                    &migrations,
+                );
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
+            BakeryCommands::RemoveDynamicCircuitOverlay { circuit_id, reply } => {
+                let result = handle_remove_dynamic_circuit_overlay(
+                    &circuit_id,
+                    &mut dynamic_circuit_overlays,
+                    batch.is_some(),
+                    &sites,
+                    &mut circuits,
+                    &mut live_circuits,
+                    &mq_layout,
+                    &mut qdisc_handles,
+                );
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
             BakeryCommands::OnCircuitActivity { circuit_ids } => {
                 handle_circuit_activity(circuit_ids, &circuits, &mut live_circuits);
             }
@@ -3908,79 +5165,86 @@ fn bakery_main(rx: Receiver<BakeryCommands>, tx: Sender<BakeryCommands>) {
                     &mut sites,
                 );
             }
-            BakeryCommands::StormGuardAdjustment {
+            BakeryCommands::StormGuardAdjustmentBatch {
+                tree_generation,
                 dry_run,
-                interface_name,
-                class_id,
-                new_rate,
+                adjustments,
+                reply,
             } => {
-                let has_mq_run = MQ_CREATED.load(Relaxed);
-                if !has_mq_run {
-                    debug!("StormGuardAdjustment received before MQ setup, skipping.");
-                    continue;
+                let result = apply_stormguard_adjustment_batch(
+                    tree_generation,
+                    dry_run,
+                    &adjustments,
+                    &mut stormguard_overrides,
+                );
+                let _ = reply.send(result);
+            }
+            BakeryCommands::ResetStormGuardAdjustments {
+                tree_generation,
+                adjustments,
+                restore_untracked,
+                reply,
+            } => {
+                let current_generation = stormguard_tree_generation();
+                let has_work = !stormguard_overrides.is_empty()
+                    || (restore_untracked && !adjustments.is_empty());
+                let result = stormguard_reset_command_precondition(
+                    tree_generation,
+                    current_generation,
+                    batch.is_some(),
+                    has_work,
+                    restore_untracked,
+                    MQ_CREATED.load(Relaxed),
+                    FULL_RELOAD_IN_PROGRESS.load(Relaxed),
+                )
+                .and_then(|()| {
+                    reset_stormguard_adjustments(
+                        &adjustments,
+                        restore_untracked,
+                        &mut stormguard_overrides,
+                    )
+                });
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
                 }
-                let Ok(config) = lqos_config::load_config() else {
-                    error!("Failed to load configuration, skipping StormGuardAdjustment.");
-                    continue;
-                };
-                let Ok(tc_handle) = TcHandle::from_string(&class_id) else {
-                    warn!(
-                        "StormGuardAdjustment has invalid class_id [{}], skipping.",
-                        class_id
-                    );
-                    continue;
-                };
-                if !dry_run {
-                    let key = StormguardOverrideKey {
-                        interface: interface_name.to_string(),
-                        class: tc_handle,
-                    };
-                    stormguard_overrides.insert(key, new_rate);
-                }
-                if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
-                    info!(
-                        "Skipping StormGuard live class change for {} {} because {}.",
-                        interface_name, class_id, reason
-                    );
-                    continue;
-                }
-                let normalized_class = tc_handle.as_tc_string();
-                // Build the HTB command
-                let args = vec![
-                    "class".to_string(),
-                    "replace".to_string(),
-                    "dev".to_string(),
-                    interface_name.to_string(),
-                    "classid".to_string(),
-                    normalized_class.clone(),
-                    "htb".to_string(),
-                    "rate".to_string(),
-                    format!("{}mbit", new_rate.saturating_sub(1)),
-                    "ceil".to_string(),
-                    format!("{}mbit", new_rate),
-                ];
-                if dry_run {
-                    info!("DRY RUN: /sbin/tc {}", args.join(" "));
+            }
+            BakeryCommands::DiscardStormGuardAdjustments {
+                tree_generation,
+                reply,
+            } => {
+                let current_generation = stormguard_tree_generation();
+                let result = if tree_generation != current_generation {
+                    Err(format!(
+                        "StormGuard discard used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
+                    ))
+                } else if batch.is_some() {
+                    Err("Bakery queue rebuild batch is still open".to_string())
                 } else {
-                    let output = std::process::Command::new("/sbin/tc").args(&args).output();
-                    match output {
-                        Err(e) => {
-                            warn!("Failed to run tc command: {}", e);
-                        }
-                        Ok(out) => {
-                            if !out.status.success() {
-                                warn!(
-                                    "tc command failed: {}",
-                                    String::from_utf8_lossy(&out.stderr)
-                                );
-                            } else {
-                                debug!(
-                                    "tc command succeeded: {}",
-                                    String::from_utf8_lossy(&out.stdout)
-                                );
-                            }
-                        }
-                    }
+                    stormguard_overrides.clear();
+                    Ok(())
+                };
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+            }
+            BakeryCommands::StormGuardCircuitAdjustment {
+                tree_generation,
+                circuit_hash,
+                sqm_override,
+                reply,
+            } => {
+                let current_generation = stormguard_tree_generation();
+                let result = if tree_generation != current_generation {
+                    Err(format!(
+                        "StormGuard circuit adjustment used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
+                    ))
+                } else if batch.is_some() {
+                    Err("Bakery queue rebuild batch is still open".to_string())
+                } else {
+                    apply_stormguard_circuit_adjustment(circuit_hash, sqm_override, &mut circuits)
+                };
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
                 }
             }
             BakeryCommands::TreeGuardSetNodeVirtual {
@@ -4016,12 +5280,13 @@ fn handle_commit_batch(
     batch: &mut Option<Vec<Arc<BakeryCommands>>>,
     sites: &mut HashMap<i64, Arc<BakeryCommands>>,
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+    dynamic_circuit_overlays: &mut HashMap<i64, DynamicCircuitOverlayEntry>,
     live_circuits: &mut HashMap<i64, u64>,
     mq_layout: &mut Option<MqDeviceLayout>,
     qdisc_handles: &mut QdiscHandleState,
     tx: &Sender<BakeryCommands>,
     migrations: &mut HashMap<i64, Migration>,
-    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
+    stormguard_overrides: &HashMap<StormguardOverrideKey, StormguardOverrideValue>,
     virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
     runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
 ) {
@@ -4035,15 +5300,27 @@ fn handle_commit_batch(
         debug!("CommitBatch received without a batch to commit.");
         return;
     };
+    let mut raw_batch = raw_batch;
+    append_dynamic_circuit_overlays_to_batch(&mut raw_batch, dynamic_circuit_overlays, migrations);
     let (baseline_sites, baseline_circuits) =
         reconstruct_structural_baseline_state(sites, circuits, virtualized_sites);
     let effective_new_batch =
         apply_runtime_virtualization_overlay(raw_batch.clone(), virtualized_sites);
     let resolved_mq_layout = current_mq_layout(&raw_batch, &config, mq_layout);
+    let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
+    let shaping_tree_active = SHAPING_TREE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+    let desired_tree_active = desired_shaping_tree_active(&config);
 
     let mapped_limit = resolve_mapped_circuit_limit();
     let effective_limit = mapped_limit.effective_limit;
     let limit_label = format_mapped_limit(effective_limit);
+
+    if shaping_tree_active && !desired_tree_active {
+        cancel_pending_migrations_for_observe_mode(
+            migrations,
+            "queue mode transitioned to observe; a full reload will rebuild the retained root MQ without the shaping tree.",
+        );
+    }
 
     if let Some(reason) = bakery_reload_required_reason() {
         let summary = format!(
@@ -4079,7 +5356,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -4087,9 +5363,6 @@ fn handle_commit_batch(
         return;
     }
 
-    let has_mq_been_setup = MQ_CREATED.load(std::sync::atomic::Ordering::Relaxed);
-    let shaping_tree_active = SHAPING_TREE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
-    let desired_tree_active = desired_shaping_tree_active(&config);
     if !has_mq_been_setup {
         push_bakery_event(
             "baseline_rebuild_required",
@@ -4129,7 +5402,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -4175,7 +5447,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -4184,7 +5455,16 @@ fn handle_commit_batch(
     }
 
     let structural_site_change_mode = diff_sites(&raw_batch, &baseline_sites);
-    if let SiteDiffResult::RebuildRequired { summary } = &structural_site_change_mode {
+    if let SiteDiffResult::RebuildRequired { summary, details } = &structural_site_change_mode {
+        if let Some(details) = details {
+            log_structural_site_diff_baseline_origin(
+                *details,
+                sites,
+                &baseline_sites,
+                &raw_batch,
+                virtualized_sites,
+            );
+        }
         let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
             raw_batch.clone(),
             &baseline_circuits,
@@ -4216,7 +5496,6 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
             virtualized_sites,
             runtime_node_operations,
             summary.clone(),
@@ -4285,7 +5564,40 @@ fn handle_commit_batch(
             &config,
             new_batch,
             resolved_mq_layout,
-            stormguard_overrides,
+            virtualized_sites,
+            runtime_node_operations,
+            summary,
+        );
+        return;
+    }
+
+    if stormguard_site_changes_intersect_ownership(&site_change_mode, &config, stormguard_overrides)
+    {
+        let summary = "Bakery full reload triggered to keep StormGuard class ownership synchronized with a changed shaping plan.".to_string();
+        let (new_batch, mapped_limit_stats) = filter_batch_by_mapped_circuit_limit(
+            raw_batch.clone(),
+            &baseline_circuits,
+            effective_limit,
+        );
+        log_mapped_limit_decision(
+            "StormGuard-consistent rebuild",
+            mapped_limit,
+            mapped_limit_stats,
+        );
+        if mapped_limit_stats.dropped_mapped > 0 {
+            maybe_emit_mapped_circuit_limit_urgent(&mapped_limit_stats);
+        }
+        announce_full_reload(&summary);
+        full_reload(
+            batch,
+            sites,
+            circuits,
+            live_circuits,
+            mq_layout,
+            qdisc_handles,
+            &config,
+            new_batch,
+            resolved_mq_layout,
             virtualized_sites,
             runtime_node_operations,
             summary,
@@ -4338,13 +5650,18 @@ fn handle_commit_batch(
                     &config,
                     raw_batch.clone(),
                     resolved_mq_layout.clone(),
-                    stormguard_overrides,
                     virtualized_sites,
                     runtime_node_operations,
                     summary,
                 );
                 return; // Skip the rest of this CommitBatch processing
             }
+        }
+        if stormguard_live_enabled(&config) {
+            // Publish the generation only after every live speed command is in this same channel.
+            // Previously queued StormGuard work retains the old generation and will be rejected;
+            // work created for the new generation is queued behind the new site plan.
+            STORMGUARD_TREE_GENERATION.fetch_add(1, Ordering::Release);
         }
     }
 
@@ -4632,7 +5949,6 @@ fn handle_commit_batch(
                         &config,
                         raw_batch.clone(),
                         resolved_mq_layout.clone(),
-                        stormguard_overrides,
                         virtualized_sites,
                         runtime_node_operations,
                         summary,
@@ -4981,6 +6297,29 @@ fn handle_tick(
     execute_and_record_live_change(&commands, "pruning lazy queues");
 }
 
+fn stormguard_site_changes_intersect_ownership(
+    site_change_mode: &SiteDiffResult,
+    config: &Arc<Config>,
+    overrides: &HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> bool {
+    let SiteDiffResult::SpeedChanges { changes } = site_change_mode else {
+        return false;
+    };
+
+    changes.iter().any(|change| {
+        let Some((down_class, up_class)) = site_class_handles(change) else {
+            return false;
+        };
+        overrides.contains_key(&StormguardOverrideKey {
+            interface: config.isp_interface(),
+            class: down_class,
+        }) || overrides.contains_key(&StormguardOverrideKey {
+            interface: config.internet_interface(),
+            class: up_class,
+        })
+    })
+}
+
 fn handle_change_site_speed_live(
     site_hash: i64,
     download_bandwidth_min: f32,
@@ -5097,7 +6436,14 @@ fn handle_change_site_speed_live(
                 ),
             ],
         ];
-        execute_and_record_live_change(&commands, "changing site speed live");
+        let result = execute_and_record_live_change(&commands, "changing site speed live");
+        if !result.ok {
+            mark_reload_required(format!(
+                "Bakery live site speed update failed: {}",
+                summarize_apply_result("changing site speed live", &result)
+            ));
+            return;
+        }
         // Update the site speeds in the site map - create a new Arc with updated values
         let new_site = Arc::new(BakeryCommands::AddSite {
             site_hash,
@@ -5153,6 +6499,7 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
         site_hash,
         parent_class_id,
         up_parent_class_id,
+        class_minor,
         ..
     } = site
     else {
@@ -5169,6 +6516,18 @@ fn site_runtime_virtualization_eligibility_error(site: &BakeryCommands) -> Optio
     let Some((site_down_class, site_up_class)) = site_class_handles(site) else {
         return Some(format!("Site {} is not a valid AddSite command", site_hash));
     };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(down_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+        || u32::from(up_parent_minor) >= ACTIVE_RUNTIME_MINOR_START
+    {
+        return Some(format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ));
+    }
 
     let (parent_down_major, _) = parent_class_id.get_major_minor();
     let (parent_up_major, _) = up_parent_class_id.get_major_minor();
@@ -5257,6 +6616,38 @@ impl RuntimeNodeEligibilityError {
             failure_reason: Some(failure_reason),
         }
     }
+}
+
+fn nested_runtime_shadow_branch_eligibility_error(
+    site: &BakeryCommands,
+) -> Option<RuntimeNodeEligibilityError> {
+    let BakeryCommands::AddSite {
+        site_hash,
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = site
+    else {
+        return None;
+    };
+
+    let (_, down_parent_minor) = parent_class_id.get_major_minor();
+    let (_, up_parent_minor) = up_parent_class_id.get_major_minor();
+    if u32::from(*class_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(down_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+        && u32::from(up_parent_minor) < ACTIVE_RUNTIME_MINOR_START
+    {
+        return None;
+    }
+
+    Some(RuntimeNodeEligibilityError::new(
+        format!(
+            "Site {} is already inside a retained runtime shadow branch and cannot be nested in v1",
+            site_hash
+        ),
+        RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch,
+    ))
 }
 
 fn site_prune_commands(
@@ -5619,6 +7010,7 @@ fn rebuild_runtime_operations_snapshot(
     let mut applying_count = 0usize;
     let mut awaiting_cleanup_count = 0usize;
     let mut failed_count = 0usize;
+    let mut blocked_count = 0usize;
     let mut dirty_count = 0usize;
 
     let latest = runtime_node_operations
@@ -5628,7 +7020,13 @@ fn rebuild_runtime_operations_snapshot(
             RuntimeNodeOperationStatus::Deferred => deferred_count += 1,
             RuntimeNodeOperationStatus::Applying => applying_count += 1,
             RuntimeNodeOperationStatus::AppliedAwaitingCleanup => awaiting_cleanup_count += 1,
-            RuntimeNodeOperationStatus::Failed => failed_count += 1,
+            RuntimeNodeOperationStatus::Failed => {
+                if operation.failure_reason.is_some() {
+                    blocked_count += 1;
+                } else {
+                    failed_count += 1;
+                }
+            }
             RuntimeNodeOperationStatus::Dirty => dirty_count += 1,
             RuntimeNodeOperationStatus::Completed => {}
         })
@@ -5651,6 +7049,7 @@ fn rebuild_runtime_operations_snapshot(
         applying_count,
         awaiting_cleanup_count,
         failed_count,
+        blocked_count,
         dirty_count,
         latest,
     }
@@ -7530,6 +8929,119 @@ fn reconstruct_structural_baseline_state(
     (baseline_sites, baseline_circuits)
 }
 
+fn site_command_structure_summary(command: &BakeryCommands) -> Option<String> {
+    let BakeryCommands::AddSite {
+        parent_class_id,
+        up_parent_class_id,
+        class_minor,
+        ..
+    } = command
+    else {
+        return None;
+    };
+
+    Some(format!(
+        "parent={} up_parent={} minor=0x{:x}",
+        parent_class_id.as_tc_string(),
+        up_parent_class_id.as_tc_string(),
+        class_minor
+    ))
+}
+
+fn find_site_command_in_batch(
+    batch: &[Arc<BakeryCommands>],
+    site_hash: i64,
+) -> Option<&Arc<BakeryCommands>> {
+    batch.iter().find(|command| {
+        matches!(
+            command.as_ref(),
+            BakeryCommands::AddSite {
+                site_hash: command_site_hash,
+                ..
+            } if *command_site_hash == site_hash
+        )
+    })
+}
+
+fn format_virtualized_site_source(
+    owner_site_hash: i64,
+    owner_state: &VirtualizedSiteState,
+    origin: &str,
+) -> String {
+    format!(
+        "{origin}(owner_site_hash={owner_site_hash}, owner_site_name={}, lifecycle={:?}, active_branch={:?}, pending_prune={})",
+        owner_state.site_name,
+        owner_state.lifecycle,
+        owner_state.active_branch,
+        owner_state.pending_prune
+    )
+}
+
+fn log_structural_site_diff_baseline_origin(
+    details: StructuralSiteDiffDetails,
+    sites: &HashMap<i64, Arc<BakeryCommands>>,
+    baseline_sites: &HashMap<i64, Arc<BakeryCommands>>,
+    raw_batch: &[Arc<BakeryCommands>],
+    virtualized_sites: &HashMap<i64, VirtualizedSiteState>,
+) {
+    let Some(baseline_command) = baseline_sites.get(&details.site_hash) else {
+        warn!(
+            "Bakery structural site diff baseline origin: site_hash={} baseline_command_missing",
+            details.site_hash
+        );
+        return;
+    };
+
+    let baseline_summary = site_command_structure_summary(baseline_command.as_ref())
+        .unwrap_or_else(|| "non-site-command".to_string());
+    let current_summary = sites
+        .get(&details.site_hash)
+        .and_then(|command| site_command_structure_summary(command.as_ref()))
+        .unwrap_or_else(|| "missing".to_string());
+    let new_summary = find_site_command_in_batch(raw_batch, details.site_hash)
+        .and_then(|command| site_command_structure_summary(command.as_ref()))
+        .unwrap_or_else(|| "missing".to_string());
+
+    let mut baseline_sources = Vec::new();
+    if let Some(current_command) = sites.get(&details.site_hash)
+        && Arc::ptr_eq(current_command, baseline_command)
+    {
+        baseline_sources.push("current_sites".to_string());
+    }
+
+    for (owner_site_hash, owner_state) in virtualized_sites {
+        if Arc::ptr_eq(&owner_state.site, baseline_command) {
+            baseline_sources.push(format_virtualized_site_source(
+                *owner_site_hash,
+                owner_state,
+                "virtualized_state.site",
+            ));
+        }
+        if let Some(saved_site) = owner_state.saved_sites.get(&details.site_hash)
+            && Arc::ptr_eq(saved_site, baseline_command)
+        {
+            baseline_sources.push(format_virtualized_site_source(
+                *owner_site_hash,
+                owner_state,
+                "virtualized_state.saved_sites",
+            ));
+        }
+    }
+
+    if baseline_sources.is_empty() {
+        baseline_sources.push("unknown".to_string());
+    }
+
+    warn!(
+        "Bakery structural site diff baseline origin: site_hash={} baseline_sources=[{}] baseline={} current={} new={}",
+        details.site_hash,
+        baseline_sources.join(", "),
+        baseline_summary,
+        current_summary,
+        new_summary
+    );
+}
+
 fn runtime_virtualized_site_has_pending_migrations(
     state: &VirtualizedSiteState,
     migrations: &HashMap<i64, Migration>,
@@ -7761,6 +9273,34 @@ fn site_commands_observed_live(
         live_parent_matches(down_entry.parent, *parent_class_id)
             && live_parent_matches(up_entry.parent, *up_parent_class_id)
     })
+}
+
+fn read_optional_restore_class_snapshots(
+    config: &Arc<Config>,
+    site_label: &str,
+) -> Option<(
+    HashMap<TcHandle, LiveTcClassEntry>,
+    HashMap<TcHandle, LiveTcClassEntry>,
+)> {
+    let down_snapshot = match read_live_class_snapshot(&config.isp_interface()) {
+        Ok(snapshot) => snapshot,
+        Err(summary) => {
+            debug!(
+                "Bakery: skipping live restore shortcut for {site_label}; unable to snapshot downlink classes: {summary}"
+            );
+            return None;
+        }
+    };
+    let up_snapshot = match read_live_class_snapshot(&config.internet_interface()) {
+        Ok(snapshot) => snapshot,
+        Err(summary) => {
+            debug!(
+                "Bakery: skipping live restore shortcut for {site_label}; unable to snapshot uplink classes: {summary}"
+            );
+            return None;
+        }
+    };
+    Some((down_snapshot, up_snapshot))
 }
 
 fn live_parent_matches(observed: Option<TcHandle>, expected: TcHandle) -> bool {
@@ -9215,6 +10755,13 @@ fn handle_treeguard_set_node_virtual_live(
             }
 
             if let Some(reason) =
+                nested_runtime_shadow_branch_eligibility_error(target_site.as_ref())
+            {
+                failure_reason = reason.failure_reason;
+                return Err(reason.message);
+            }
+
+            if let Some(reason) =
                 site_runtime_virtualization_eligibility_error(target_site.as_ref())
             {
                 return Err(reason);
@@ -9290,28 +10837,27 @@ fn handle_treeguard_set_node_virtual_live(
         }
 
         let reversible_standby = saved_state.active_branch_hides_original_site();
-        let live_restore_snapshots = if reversible_standby {
-            Some((
-                read_live_class_snapshot(&config.isp_interface())?,
-                read_live_class_snapshot(&config.internet_interface())?,
-            ))
-        } else {
-            None
-        };
+        let mut live_restore_snapshots = None;
 
         if !saved_state.pending_prune
             && let Some(cmds) = saved_state
                 .site
                 .to_commands(&config, ExecutionMode::Builder)
         {
-            let root_already_live =
+            let root_already_live = if reversible_standby {
                 live_restore_snapshots
+                    .get_or_insert_with(|| {
+                        read_optional_restore_class_snapshots(&config, &site_label)
+                    })
                     .as_ref()
                     .is_some_and(|(down_snapshot, up_snapshot)| {
                         let mut only_root = HashMap::new();
                         only_root.insert(site_hash, saved_state.site.clone());
                         site_commands_observed_live(&only_root, down_snapshot, up_snapshot)
-                    });
+                    })
+            } else {
+                false
+            };
             if !root_already_live {
                 let result =
                     execute_and_record_live_change(&cmds, "TreeGuard runtime hidden site restore");
@@ -9340,8 +10886,9 @@ fn handle_treeguard_set_node_virtual_live(
                 )
             })
             .collect();
-        let originals_already_live =
+        let originals_already_live = if reversible_standby && !saved_state.saved_sites.is_empty() {
             live_restore_snapshots
+                .get_or_insert_with(|| read_optional_restore_class_snapshots(&config, &site_label))
                 .as_ref()
                 .is_some_and(|(down_snapshot, up_snapshot)| {
                     site_commands_observed_live(
@@ -9349,7 +10896,10 @@ fn handle_treeguard_set_node_virtual_live(
                         down_snapshot,
                         up_snapshot,
                     )
-                });
+                })
+        } else {
+            false
+        };
         if reversible_standby && originals_already_live {
             for (hash, command) in &saved_state.saved_sites {
                 sites.insert(*hash, Arc::clone(command));
@@ -9511,7 +11061,6 @@ fn full_reload(
     config: &Arc<Config>,
     new_batch: Vec<Arc<BakeryCommands>>,
     resolved_mq_layout: Option<MqDeviceLayout>,
-    stormguard_overrides: &HashMap<StormguardOverrideKey, u64>,
     virtualized_sites: &mut HashMap<i64, VirtualizedSiteState>,
     runtime_node_operations: &mut HashMap<i64, RuntimeNodeOperation>,
     trigger_summary: String,
@@ -9523,6 +11072,29 @@ fn full_reload(
         trigger_summary,
     );
     let _reload_scope = FullReloadScope;
+    let mut tc_bypass_guard = match TcClassifyBypassGuard::new() {
+        Ok(guard) => guard,
+        Err(error) => {
+            let summary =
+                format!("Failed to enable TC classify bypass before full reload: {error}");
+            error!("{summary}");
+            mark_reload_required(format!(
+                "{summary}. Full reload was not attempted because TC classify could not be safely bypassed."
+            ));
+            mark_bakery_action_finished(BakeryApplyMetrics {
+                apply_type: BakeryApplyType::FullReload,
+                summary: &summary,
+                build_duration_ms: 0,
+                apply_duration_ms: 0,
+                total_tc_commands: 0,
+                class_commands: 0,
+                qdisc_commands: 0,
+                ok: false,
+            });
+            *batch = None;
+            return;
+        }
+    };
     let previous_sites = sites.clone();
     let previous_circuits = circuits.clone();
     let previous_live_circuits = live_circuits.clone();
@@ -9530,22 +11102,29 @@ fn full_reload(
     let previous_mq_created = MQ_CREATED.load(Ordering::Relaxed);
     let previous_shaping_tree_active = SHAPING_TREE_ACTIVE.load(Ordering::Relaxed);
 
-    if let Err(error) = prepare_root_mq_for_full_reload(config) {
-        let summary = format!("Failed to prepare root mq state before full reload: {error}");
-        error!("{summary}");
-        mark_bakery_action_finished(BakeryApplyMetrics {
-            apply_type: BakeryApplyType::FullReload,
-            summary: &summary,
-            build_duration_ms: 0,
-            apply_duration_ms: 0,
-            total_tc_commands: 0,
-            class_commands: 0,
-            qdisc_commands: 0,
-            ok: false,
-        });
-        *batch = None;
-        return;
-    }
+    let preserved_root_child_majors = match prepare_root_mq_for_full_reload(config) {
+        Ok(preserved_root_child_majors) => preserved_root_child_majors,
+        Err(error) => {
+            let summary = format!("Failed to prepare root mq state before full reload: {error}");
+            error!("{summary}");
+            tc_bypass_guard.keep_bypass_enabled_after_failure(&summary);
+            mark_reload_required(format!(
+                "{summary}. TC classify bypass remains enabled to avoid stale class-handle classification until a successful reload or operator intervention."
+            ));
+            mark_bakery_action_finished(BakeryApplyMetrics {
+                apply_type: BakeryApplyType::FullReload,
+                summary: &summary,
+                build_duration_ms: 0,
+                apply_duration_ms: 0,
+                total_tc_commands: 0,
+                class_commands: 0,
+                qdisc_commands: 0,
+                ok: false,
+            });
+            *batch = None;
+            return;
+        }
+    };
     invalidate_live_tc_snapshots();
     MQ_CREATED.store(true, Ordering::Relaxed);
 
@@ -9555,6 +11134,10 @@ fn full_reload(
             let summary =
                 format!("Failed to snapshot live qdisc handles before full reload: {error}");
             error!("{summary}");
+            tc_bypass_guard.keep_bypass_enabled_after_failure(&summary);
+            mark_reload_required(format!(
+                "{summary}. TC classify bypass remains enabled to avoid stale class-handle classification until a successful reload or operator intervention."
+            ));
             mark_bakery_action_finished(BakeryApplyMetrics {
                 apply_type: BakeryApplyType::FullReload,
                 summary: &summary,
@@ -9578,17 +11161,20 @@ fn full_reload(
         warn!("Bakery: full reload skipped MQ layout restore because layout is unknown");
     }
 
-    let result = process_batch(
+    let batch_result = process_batch(
         new_batch,
         config,
         &mut working_sites,
         &mut working_circuits,
         &layout,
         &mut working_qdisc_handles,
-        &live_reserved_handles,
+        ProcessBatchOptions {
+            extra_reserved_handles: &live_reserved_handles,
+            preserved_root_child_majors: &preserved_root_child_majors,
+        },
     );
 
-    if result.ok {
+    if batch_result.result.ok {
         *sites = working_sites;
         *circuits = working_circuits;
         live_circuits.clear();
@@ -9606,7 +11192,13 @@ fn full_reload(
             "A successful Bakery full reload re-established baseline state; incremental topology mutations can resume.",
         );
         FIRST_COMMIT_APPLIED.store(true, Ordering::Relaxed);
-        apply_stormguard_overrides(stormguard_overrides, config);
+        let rebuild_generation = STORMGUARD_TREE_GENERATION
+            .load(Ordering::Relaxed)
+            .wrapping_add(1);
+        STORMGUARD_TREE_REBUILD_GENERATION.store(rebuild_generation, Ordering::Release);
+        STORMGUARD_TREE_GENERATION.store(rebuild_generation, Ordering::Release);
+        // StormGuard replays persisted adjustments after the queue tracker publishes the rebuilt
+        // structure. Replaying cached class handles here could target reassigned handles.
     } else {
         *sites = previous_sites;
         *circuits = previous_circuits;
@@ -9614,11 +11206,40 @@ fn full_reload(
         *mq_layout = previous_mq_layout;
         MQ_CREATED.store(previous_mq_created, Ordering::Relaxed);
         SHAPING_TREE_ACTIVE.store(previous_shaping_tree_active, Ordering::Relaxed);
+        let summary = "Bakery full reload failed while applying TC command batch";
+        tc_bypass_guard.keep_bypass_enabled_after_failure(summary);
+        mark_reload_required(format!(
+            "{summary}. TC classify bypass remains enabled to avoid stale class-handle classification until a successful reload or operator intervention."
+        ));
     }
-    if result.ok {
+    if batch_result.result.ok {
         refresh_live_capacity_snapshot(config, true);
+        update_queue_distribution_snapshot(sites, circuits);
+        if let Err(error) = verify_tc_classify_attached(config) {
+            let summary = format!(
+                "Bakery full reload applied TC commands but TC classify is not attached: {error}. Operator intervention may be required because traffic would otherwise remain unshaped."
+            );
+            tc_bypass_guard.keep_bypass_enabled_after_failure(&summary);
+            mark_reload_required(format!(
+                "{summary}. TC classify bypass remains enabled until a successful reload or lqosd restart restores classifier attachment."
+            ));
+            mark_bakery_action_finished(batch_result.metrics(&summary, false));
+            *batch = None;
+            return;
+        }
+        if let Err(error) = tc_bypass_guard.disable() {
+            let summary = format!(
+                "Bakery full reload applied TC commands but could not disable TC classify bypass: {error}. Operator intervention may be required because traffic may remain unshaped."
+            );
+            mark_reload_required(summary.clone());
+            mark_bakery_action_finished(batch_result.metrics(&summary, false));
+        } else {
+            mark_bakery_action_finished(batch_result.metrics(&batch_result.summary, true));
+        }
+    } else {
+        update_queue_distribution_snapshot(sites, circuits);
+        mark_bakery_action_finished(batch_result.metrics(&batch_result.summary, false));
     }
-    update_queue_distribution_snapshot(sites, circuits);
     *batch = None;
 }
 
@@ -9629,8 +11250,8 @@ fn process_batch(
     circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
     mq_layout: &MqDeviceLayout,
     qdisc_handles: &mut QdiscHandleState,
-    extra_reserved_handles: &HashMap<String, HashSet<u16>>,
-) -> ExecuteResult {
+    options: ProcessBatchOptions<'_>,
+) -> BakeryFullReloadBatchResult {
     info!("Bakery: Processing batch of {} commands", batch.len());
     update_bakery_apply_progress(Some("Building tc command batch"), 0, 0, 0, 0);
     let build_started = std::time::Instant::now();
@@ -9643,7 +11264,7 @@ fn process_batch(
                 config,
                 mq_layout,
                 qdisc_handles,
-                extra_reserved_handles,
+                options.extra_reserved_handles,
             )
         })
         .filter_map(|b| {
@@ -9661,12 +11282,19 @@ fn process_batch(
             b.to_commands(config, ExecutionMode::Builder)
         })
         .flatten()
+        .map(|command| idempotent_full_reload_command(command, options.preserved_root_child_majors))
+        .filter(|command| !root_infra_qdisc_command(command, options.preserved_root_child_majors))
         .collect::<Vec<Vec<String>>>();
 
-    let path = Path::new(&config.lqos_directory).join("linux_tc_rust.txt");
+    let path = config.debug_state_file_path("linux_tc_rust.txt");
     write_command_file(&path, &commands);
     let build_duration_ms = build_started.elapsed().as_millis() as u64;
-    let (total_tc_commands, class_commands, qdisc_commands) = count_tc_command_types(&commands);
+    let (total_tc_commands, class_commands, qdisc_commands, estimated_qdisc_memory_bytes) =
+        count_tc_command_types_and_estimate_qdisc_memory(&commands);
+    let memory_guard_required_available_bytes = read_memory_snapshot()
+        .map(|snapshot| bakery_memory_guard_min_available_bytes(snapshot.total_bytes))
+        .unwrap_or(BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES)
+        .saturating_add(estimated_qdisc_memory_bytes);
     let total_chunks = if total_tc_commands == 0 {
         0
     } else {
@@ -9683,7 +11311,7 @@ fn process_batch(
         &commands,
         "processing batch",
         FULL_RELOAD_TC_CHUNK_SIZE,
-        Some(BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES),
+        Some(memory_guard_required_available_bytes),
         |completed_tc_commands, total_tc_commands, completed_chunks, total_chunks| {
             update_bakery_apply_progress(
                 Some("Applying tc command chunks"),
@@ -9695,67 +11323,926 @@ fn process_batch(
         },
     );
     let summary = summarize_apply_result("processing batch", &result);
-    maybe_emit_memory_guard_urgent(&summary);
-    mark_bakery_action_finished(BakeryApplyMetrics {
-        apply_type: BakeryApplyType::FullReload,
-        summary: &summary,
+    maybe_emit_memory_guard_urgent(
+        &summary,
+        memory_guard_required_available_bytes,
+        estimated_qdisc_memory_bytes,
+    );
+    BakeryFullReloadBatchResult {
+        result,
+        summary,
         build_duration_ms,
-        apply_duration_ms: result.duration_ms,
         total_tc_commands,
         class_commands,
         qdisc_commands,
-        ok: result.ok,
-    });
-
-    result
+    }
 }
 
-fn apply_stormguard_overrides(
-    overrides: &HashMap<StormguardOverrideKey, u64>,
-    config: &Arc<Config>,
+fn stormguard_live_enabled(config: &Config) -> bool {
+    config
+        .stormguard
+        .as_ref()
+        .is_some_and(|stormguard| stormguard.enabled && !stormguard.dry_run)
+}
+
+fn record_stormguard_override(
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+    key: StormguardOverrideKey,
+    planned_rate: u64,
+    planned_ceil: u64,
 ) {
-    if config.queues.queue_mode.is_observe() {
-        push_bakery_event(
-            "stormguard_override_replay_skipped",
-            "info",
-            "Skipping StormGuard HTB override replay because queue_mode is observe.".to_string(),
-        );
-        return;
+    overrides.entry(key).or_insert(StormguardOverrideValue {
+        planned_rate,
+        planned_ceil,
+    });
+}
+
+fn apply_stormguard_adjustment_batch(
+    tree_generation: u64,
+    dry_run: bool,
+    adjustments: &[StormGuardClassAdjustment],
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> Result<(), String> {
+    let current_generation = stormguard_tree_generation();
+    if tree_generation != current_generation {
+        return Err(format!(
+            "StormGuard class batch used shaping-tree generation {tree_generation}, but Bakery is at generation {current_generation}"
+        ));
     }
-    if overrides.is_empty() {
-        return;
+    if adjustments.is_empty() {
+        return Err("StormGuard class batch must contain at least one adjustment".to_string());
     }
-    let mut commands = Vec::new();
-    for (key, rate) in overrides.iter() {
-        commands.push(vec![
-            "class".to_string(),
-            "replace".to_string(),
-            "dev".to_string(),
-            key.interface.clone(),
-            "classid".to_string(),
-            key.class.as_tc_string(),
-            "htb".to_string(),
-            "rate".to_string(),
-            format!("{}mbit", rate.saturating_sub(1)),
-            "ceil".to_string(),
-            format!("{}mbit", rate),
-        ]);
+    if !dry_run {
+        if !MQ_CREATED.load(Relaxed) {
+            return Err("StormGuard class batch received before MQ setup".to_string());
+        }
+        let config = lqos_config::load_config().map_err(|error| {
+            format!("failed to load configuration for StormGuard class batch: {error}")
+        })?;
+        if !stormguard_live_enabled(&config) {
+            return Err("StormGuard is disabled or in dry-run mode".to_string());
+        }
+        if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+            return Err(format!(
+                "StormGuard live class batch is blocked because {reason}"
+            ));
+        }
     }
-    let result = execute_in_memory(&commands, "replaying StormGuard overrides");
+
+    let commands: Vec<Vec<String>> = adjustments
+        .iter()
+        .map(|adjustment| {
+            let (rate, ceil) = stormguard_effective_rate_pair(
+                adjustment.new_rate,
+                adjustment.planned_rate,
+                adjustment.planned_ceil,
+            );
+            stormguard_htb_command(&adjustment.interface_name, adjustment.class_id, rate, ceil)
+        })
+        .collect();
+    if dry_run {
+        for command in &commands {
+            info!("DRY RUN: /sbin/tc {}", command.join(" "));
+        }
+        return Ok(());
+    }
+
+    let result = execute_stormguard_batch_commands(adjustments, commands, execute_in_memory);
+    finish_stormguard_adjustment_batch(overrides, adjustments, result)
+}
+
+fn execute_stormguard_batch_commands<F>(
+    adjustments: &[StormGuardClassAdjustment],
+    commands: Vec<Vec<String>>,
+    mut executor: F,
+) -> Result<(), String>
+where
+    F: FnMut(&[Vec<String>], &str) -> ExecuteResult,
+{
+    let result = executor(&commands, "applying StormGuard class batch");
     if !result.ok {
-        push_bakery_event(
-            "stormguard_override_replay_failed",
-            "error",
-            summarize_apply_result("replaying StormGuard overrides", &result),
+        let apply_error = summarize_apply_result("applying StormGuard class batch", &result);
+        let rollback_commands: Vec<Vec<String>> = adjustments
+            .iter()
+            .map(|adjustment| {
+                let (rate, ceil) = stormguard_effective_rate_pair(
+                    adjustment.previous_rate,
+                    adjustment.planned_rate,
+                    adjustment.planned_ceil,
+                );
+                stormguard_htb_command(&adjustment.interface_name, adjustment.class_id, rate, ceil)
+            })
+            .collect();
+        let rollback = executor(
+            &rollback_commands,
+            "rolling back failed StormGuard class batch",
+        );
+        if rollback.ok {
+            return Err(format!("{apply_error}; previous class rates restored"));
+        }
+        return Err(format!(
+            "{apply_error}; rollback also failed: {}",
+            summarize_apply_result("rolling back failed StormGuard class batch", &rollback)
+        ));
+    }
+    Ok(())
+}
+
+fn finish_stormguard_adjustment_batch(
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+    adjustments: &[StormGuardClassAdjustment],
+    result: Result<(), String>,
+) -> Result<(), String> {
+    result?;
+    for adjustment in adjustments {
+        record_stormguard_override(
+            overrides,
+            StormguardOverrideKey {
+                interface: adjustment.interface_name.clone(),
+                class: adjustment.class_id,
+            },
+            adjustment.planned_rate,
+            adjustment.planned_ceil,
         );
     }
+    Ok(())
+}
+
+fn stormguard_effective_rate_pair(
+    effective_limit: u64,
+    planned_rate: u64,
+    planned_ceil: u64,
+) -> (u64, u64) {
+    if effective_limit >= planned_ceil {
+        (planned_rate, planned_ceil)
+    } else {
+        (effective_limit.saturating_sub(1), effective_limit)
+    }
+}
+
+fn stormguard_htb_command(
+    interface_name: &str,
+    class_id: TcHandle,
+    rate: u64,
+    ceil: u64,
+) -> Vec<String> {
+    vec![
+        "class".to_string(),
+        "replace".to_string(),
+        "dev".to_string(),
+        interface_name.to_string(),
+        "classid".to_string(),
+        class_id.as_tc_string(),
+        "htb".to_string(),
+        "rate".to_string(),
+        format!("{}mbit", rate),
+        "ceil".to_string(),
+        format!("{}mbit", ceil),
+    ]
+}
+
+fn stormguard_restorations(
+    adjustments: &[StormGuardRestoreAdjustment],
+    restore_untracked: bool,
+    overrides: &HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> Vec<StormGuardRestoreAdjustment> {
+    let mut restorations: HashMap<StormguardOverrideKey, StormGuardRestoreAdjustment> =
+        HashMap::new();
+    if restore_untracked {
+        for adjustment in adjustments {
+            restorations.insert(
+                StormguardOverrideKey {
+                    interface: adjustment.interface_name.clone(),
+                    class: adjustment.class_id,
+                },
+                adjustment.clone(),
+            );
+        }
+    }
+    for (key, value) in overrides {
+        restorations.insert(
+            key.clone(),
+            StormGuardRestoreAdjustment {
+                interface_name: key.interface.clone(),
+                class_id: key.class,
+                planned_rate: value.planned_rate,
+                planned_ceil: value.planned_ceil,
+            },
+        );
+    }
+    restorations.into_values().collect()
+}
+
+fn stormguard_restore_precondition(
+    restore_untracked: bool,
+    mq_ready: bool,
+    full_reload_in_progress: bool,
+) -> Result<(), String> {
+    if full_reload_in_progress {
+        return Err("a full Bakery reload is currently in progress".to_string());
+    }
+    if !restore_untracked && !mq_ready {
+        return Err("Bakery MQ setup has not completed".to_string());
+    }
+    Ok(())
+}
+
+fn stormguard_reset_command_precondition(
+    requested_generation: u64,
+    current_generation: u64,
+    rebuild_batch_open: bool,
+    has_work: bool,
+    restore_untracked: bool,
+    mq_ready: bool,
+    full_reload_in_progress: bool,
+) -> Result<(), String> {
+    if requested_generation != current_generation {
+        return Err(format!(
+            "StormGuard reset used shaping-tree generation {requested_generation}, but Bakery is at generation {current_generation}"
+        ));
+    }
+    if rebuild_batch_open {
+        return Err("Bakery queue rebuild batch is still open".to_string());
+    }
+    if has_work {
+        stormguard_restore_precondition(restore_untracked, mq_ready, full_reload_in_progress)?;
+    }
+    Ok(())
+}
+
+fn stormguard_restore_commands(
+    restorations: &[StormGuardRestoreAdjustment],
+    live_classes: &HashMap<String, HashSet<TcHandle>>,
+) -> Vec<Vec<String>> {
+    restorations
+        .iter()
+        .filter_map(|restoration| {
+            let present = live_classes
+                .get(&restoration.interface_name)
+                .is_some_and(|classes| classes.contains(&restoration.class_id));
+            if !present {
+                debug!(
+                    "StormGuard restore skipped absent class {} on {}.",
+                    restoration.class_id.as_tc_string(),
+                    restoration.interface_name
+                );
+                return None;
+            }
+            Some(stormguard_htb_command(
+                &restoration.interface_name,
+                restoration.class_id,
+                restoration.planned_rate,
+                restoration.planned_ceil,
+            ))
+        })
+        .collect()
+}
+
+fn finish_stormguard_restore(
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+    result: Result<(), String>,
+) -> Result<(), String> {
+    result?;
+    overrides.clear();
+    Ok(())
+}
+
+fn reset_stormguard_adjustments(
+    adjustments: &[StormGuardRestoreAdjustment],
+    restore_untracked: bool,
+    overrides: &mut HashMap<StormguardOverrideKey, StormguardOverrideValue>,
+) -> Result<(), String> {
+    if overrides.is_empty() && (!restore_untracked || adjustments.is_empty()) {
+        overrides.clear();
+        debug!("Cleared inactive Bakery StormGuard replay state.");
+        return Ok(());
+    }
+    let mq_ready = MQ_CREATED.load(Relaxed);
+    stormguard_restore_precondition(
+        restore_untracked,
+        mq_ready,
+        FULL_RELOAD_IN_PROGRESS.load(Relaxed),
+    )?;
+    if !restore_untracked {
+        let config = lqos_config::load_config()
+            .map_err(|error| format!("failed to load configuration: {error}"))?;
+        if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+            return Err(format!("live queue mutation is blocked because {reason}"));
+        }
+    }
+
+    let restorations = stormguard_restorations(adjustments, restore_untracked, overrides);
+    invalidate_live_tc_snapshots();
+    let mut live_classes: HashMap<String, HashSet<TcHandle>> = HashMap::new();
+    for restoration in &restorations {
+        if !live_classes.contains_key(&restoration.interface_name) {
+            let snapshot = read_live_class_snapshot(&restoration.interface_name)?;
+            live_classes.insert(
+                restoration.interface_name.clone(),
+                snapshot.into_keys().collect(),
+            );
+        }
+    }
+    let commands = stormguard_restore_commands(&restorations, &live_classes);
+    let apply_result = if !commands.is_empty() {
+        let result = execute_in_memory(&commands, "restoring StormGuard planned rates");
+        if !result.ok {
+            Err(summarize_apply_result(
+                "restoring StormGuard planned rates",
+                &result,
+            ))
+        } else {
+            Ok(())
+        }
+    } else {
+        Ok(())
+    };
+
+    finish_stormguard_restore(overrides, apply_result)?;
+    debug!("Restored planned StormGuard rates and cleared retained adjustments.");
+    Ok(())
+}
+
+fn apply_stormguard_circuit_adjustment(
+    circuit_hash: i64,
+    sqm_override: Option<String>,
+    circuits: &mut HashMap<i64, Arc<BakeryCommands>>,
+) -> Result<bool, String> {
+    let Some(existing) = circuits.get(&circuit_hash) else {
+        return Ok(false);
+    };
+    let command = circuit_with_sqm_override(existing.as_ref(), sqm_override)?;
+    if !MQ_CREATED.load(Relaxed) {
+        return Err("Bakery MQ setup has not completed".to_string());
+    }
+    let config = lqos_config::load_config()
+        .map_err(|error| format!("failed to load configuration: {error}"))?;
+    if let Some(reason) = live_tree_mutation_blocker_for_config(&config) {
+        return Err(format!("live queue mutation is blocked because {reason}"));
+    }
+    let commands = add_commands_for_circuit(&command, &config, ExecutionMode::Builder)
+        .filter(|commands| !commands.is_empty())
+        .ok_or_else(|| "StormGuard circuit adjustment produced no live tc commands".to_string())?;
+    let result = execute_in_memory(&commands, "applying StormGuard circuit SQM adjustment");
+    if !result.ok {
+        return Err(summarize_apply_result(
+            "applying StormGuard circuit SQM adjustment",
+            &result,
+        ));
+    }
+    circuits.insert(circuit_hash, Arc::new(command));
+    Ok(true)
+}
+
+fn circuit_with_sqm_override(
+    existing: &BakeryCommands,
+    sqm_override: Option<String>,
+) -> Result<BakeryCommands, String> {
+    let mut command = existing.clone();
+    let BakeryCommands::AddCircuit {
+        sqm_override: current,
+        ..
+    } = &mut command
+    else {
+        return Err("existing Bakery circuit state is not AddCircuit".to_string());
+    };
+    *current = sqm_override;
+    Ok(command)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lqos_config::Config;
+    use lqos_config::{Config, StormguardConfig};
+    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TC_BYPASS_SETTER_CALLS: Mutex<Vec<bool>> = Mutex::new(Vec::new());
+
+    #[test]
+    fn startup_gate_blocks_worker_and_preserves_queued_command() {
+        let (startup_tx, startup_rx) = crossbeam_channel::bounded(1);
+        let (command_tx, command_rx) = crossbeam_channel::bounded(1);
+        let (processed_tx, processed_rx) = crossbeam_channel::bounded(1);
+        let (worker_started_tx, worker_started_rx) = crossbeam_channel::bounded(1);
+
+        let worker = std::thread::spawn(move || {
+            worker_started_tx
+                .send(())
+                .expect("worker-started receiver should remain connected");
+            assert!(wait_for_startup_ready(startup_rx));
+            let command = command_rx
+                .recv()
+                .expect("queued Bakery command should remain available");
+            processed_tx
+                .send(command)
+                .expect("processed Bakery command receiver should remain connected");
+        });
+
+        command_tx
+            .send(BakeryCommands::Tick)
+            .expect("queue the Bakery command before startup release");
+        worker_started_rx
+            .recv()
+            .expect("Bakery worker should reach the startup gate");
+        assert!(processed_rx.try_recv().is_err());
+
+        startup_tx
+            .send(())
+            .expect("release the Bakery startup gate");
+        assert!(matches!(
+            processed_rx.recv_timeout(Duration::from_secs(1)),
+            Ok(BakeryCommands::Tick)
+        ));
+        worker.join().expect("Bakery worker test should finish");
+    }
+
+    #[test]
+    fn startup_gate_stops_worker_when_readiness_channel_closes() {
+        let (startup_tx, startup_rx) = crossbeam_channel::bounded(1);
+        drop(startup_tx);
+        let (progress_tx, progress_rx) = crossbeam_channel::bounded(1);
+
+        let worker = std::thread::spawn(move || {
+            if wait_for_startup_ready(startup_rx) {
+                progress_tx
+                    .send(())
+                    .expect("progress receiver should remain connected");
+            }
+        });
+
+        worker.join().expect("closed-gate worker test should finish");
+        assert!(progress_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn stormguard_live_requires_enabled_non_dry_run_config() {
+        let mut config = Config::default();
+        assert!(!stormguard_live_enabled(&config));
+
+        config.stormguard = Some(StormguardConfig {
+            enabled: true,
+            dry_run: true,
+            ..StormguardConfig::default()
+        });
+        assert!(!stormguard_live_enabled(&config));
+
+        if let Some(stormguard) = &mut config.stormguard {
+            stormguard.dry_run = false;
+        }
+        assert!(stormguard_live_enabled(&config));
+    }
+
+    #[test]
+    fn stormguard_restore_command_uses_planned_rate() -> anyhow::Result<()> {
+        let command = stormguard_htb_command("eth0", TcHandle::from_string("1:2")?, 4, 10);
+        assert_eq!(
+            command,
+            [
+                "class", "replace", "dev", "eth0", "classid", "0x1:0x2", "htb", "rate", "4mbit",
+                "ceil", "10mbit"
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_effective_pair_restores_planned_guarantee_at_ceiling() {
+        assert_eq!(stormguard_effective_rate_pair(20, 5, 20), (5, 20));
+        assert_eq!(stormguard_effective_rate_pair(60, 5, 20), (5, 20));
+        assert_eq!(stormguard_effective_rate_pair(15, 5, 20), (14, 15));
+    }
+
+    #[test]
+    fn stormguard_override_retains_original_rate_pair() -> anyhow::Result<()> {
+        let key = StormguardOverrideKey {
+            interface: "eth0".to_string(),
+            class: TcHandle::from_string("1:2")?,
+        };
+        let mut overrides = HashMap::new();
+        record_stormguard_override(&mut overrides, key.clone(), 4, 10);
+        record_stormguard_override(&mut overrides, key.clone(), 99, 100);
+        let Some(value) = overrides.get(&key) else {
+            anyhow::bail!("missing StormGuard override");
+        };
+        assert_eq!(value.planned_rate, 4);
+        assert_eq!(value.planned_ceil, 10);
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_batch_rejects_stale_generation_and_empty_work() {
+        let current_generation = stormguard_tree_generation();
+        let stale = apply_stormguard_adjustment_batch(
+            current_generation.wrapping_add(1),
+            true,
+            &[],
+            &mut HashMap::new(),
+        );
+        assert!(stale.expect_err("stale generation").contains("generation"));
+
+        let empty =
+            apply_stormguard_adjustment_batch(current_generation, true, &[], &mut HashMap::new());
+        assert!(empty.expect_err("empty batch").contains("at least one"));
+    }
+
+    #[test]
+    fn stormguard_batch_records_ownership_only_after_acknowledged_success() -> anyhow::Result<()> {
+        let adjustment = StormGuardClassAdjustment {
+            interface_name: "eth0".to_string(),
+            class_id: TcHandle::from_string("1:2")?,
+            new_rate: 50,
+            previous_rate: 60,
+            planned_rate: 5,
+            planned_ceil: 100,
+        };
+        let mut overrides = HashMap::new();
+        let failure = finish_stormguard_adjustment_batch(
+            &mut overrides,
+            std::slice::from_ref(&adjustment),
+            Err("synthetic tc failure".to_string()),
+        );
+        assert!(failure.is_err());
+        assert!(overrides.is_empty());
+
+        finish_stormguard_adjustment_batch(
+            &mut overrides,
+            std::slice::from_ref(&adjustment),
+            Ok(()),
+        )
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(overrides.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_batch_failure_rolls_back_every_class_without_recording_ownership()
+    -> anyhow::Result<()> {
+        let adjustments = vec![
+            StormGuardClassAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: TcHandle::from_string("1:2")?,
+                new_rate: 50,
+                previous_rate: 60,
+                planned_rate: 5,
+                planned_ceil: 100,
+            },
+            StormGuardClassAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: TcHandle::from_string("1:3")?,
+                new_rate: 40,
+                previous_rate: 60,
+                planned_rate: 4,
+                planned_ceil: 80,
+            },
+        ];
+        let commands = adjustments
+            .iter()
+            .map(|adjustment| {
+                let (rate, ceil) = stormguard_effective_rate_pair(
+                    adjustment.new_rate,
+                    adjustment.planned_rate,
+                    adjustment.planned_ceil,
+                );
+                stormguard_htb_command(&adjustment.interface_name, adjustment.class_id, rate, ceil)
+            })
+            .collect();
+        let mut calls = Vec::new();
+        let mut outcomes = VecDeque::from([
+            ExecuteResult {
+                ok: false,
+                duration_ms: 1,
+                failure_summary: Some("synthetic apply failure".to_string()),
+            },
+            ExecuteResult {
+                ok: true,
+                duration_ms: 1,
+                failure_summary: None,
+            },
+        ]);
+        let apply_result =
+            execute_stormguard_batch_commands(&adjustments, commands, |commands, purpose| {
+                calls.push((purpose.to_string(), commands.to_vec()));
+                outcomes.pop_front().expect("executor outcome")
+            });
+        let mut overrides = HashMap::new();
+        let error = finish_stormguard_adjustment_batch(&mut overrides, &adjustments, apply_result)
+            .expect_err("apply failure must be reported");
+        assert!(error.contains("previous class rates restored"));
+        assert!(overrides.is_empty());
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].1.len(), adjustments.len());
+        assert_eq!(calls[1].1.len(), adjustments.len());
+        assert!(calls[0].1[0].contains(&"50mbit".to_string()));
+        assert!(calls[1].1[0].contains(&"60mbit".to_string()));
+
+        let commands = calls.remove(0).1;
+        let rollback_failure =
+            execute_stormguard_batch_commands(&adjustments, commands, |_commands, purpose| {
+                ExecuteResult {
+                    ok: false,
+                    duration_ms: 1,
+                    failure_summary: Some(format!("synthetic {purpose} failure")),
+                }
+            })
+            .expect_err("rollback failure must be reported");
+        assert!(rollback_failure.contains("rollback also failed"));
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_dry_run_batch_does_not_require_mq_setup() -> anyhow::Result<()> {
+        let _guard = test_state_lock().lock().expect("Bakery test state lock");
+        let previous_mq = MQ_CREATED.swap(false, Ordering::Relaxed);
+        let adjustment = StormGuardClassAdjustment {
+            interface_name: "eth0".to_string(),
+            class_id: TcHandle::from_string("1:2")?,
+            new_rate: 50,
+            previous_rate: 60,
+            planned_rate: 5,
+            planned_ceil: 100,
+        };
+        let result = apply_stormguard_adjustment_batch(
+            stormguard_tree_generation(),
+            true,
+            &[adjustment],
+            &mut HashMap::new(),
+        );
+        MQ_CREATED.store(previous_mq, Ordering::Relaxed);
+        result.map_err(anyhow::Error::msg)
+    }
+
+    #[test]
+    fn stormguard_circuit_adjustment_reports_missing_bakery_state() {
+        let result =
+            apply_stormguard_circuit_adjustment(42, Some("cake".to_string()), &mut HashMap::new());
+        assert_eq!(result, Ok(false));
+    }
+
+    #[test]
+    fn stormguard_rebuild_gate_only_matches_changed_owned_site() {
+        let config = Arc::new(Config {
+            bridge: Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: false,
+                to_internet: "internet0".to_string(),
+                to_network: "isp0".to_string(),
+                mtu: None,
+            }),
+            ..Config::default()
+        });
+        let changed_site = mk_add_site(42, 0x1_0000, 0x2_0000, 0x10);
+        let change_mode = SiteDiffResult::SpeedChanges {
+            changes: vec![changed_site.as_ref().clone()],
+        };
+        let (down_class, up_class) =
+            site_class_handles(changed_site.as_ref()).expect("site class handles");
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            StormguardOverrideKey {
+                interface: config.isp_interface(),
+                class: down_class,
+            },
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        );
+
+        assert!(stormguard_site_changes_intersect_ownership(
+            &change_mode,
+            &config,
+            &overrides
+        ));
+
+        overrides.clear();
+        overrides.insert(
+            StormguardOverrideKey {
+                interface: config.internet_interface(),
+                class: up_class,
+            },
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        );
+        assert!(stormguard_site_changes_intersect_ownership(
+            &change_mode,
+            &config,
+            &overrides
+        ));
+
+        overrides.clear();
+        overrides.insert(
+            StormguardOverrideKey {
+                interface: config.isp_interface(),
+                class: TcHandle::from_u32(0x9_0009),
+            },
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        );
+        assert!(!stormguard_site_changes_intersect_ownership(
+            &change_mode,
+            &config,
+            &overrides
+        ));
+    }
+
+    #[test]
+    fn stormguard_reset_prefers_successful_bakery_ownership() -> anyhow::Result<()> {
+        let class = TcHandle::from_string("1:2")?;
+        let supplied = [
+            StormGuardRestoreAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: class,
+                planned_rate: 99,
+                planned_ceil: 100,
+            },
+            StormGuardRestoreAdjustment {
+                interface_name: "eth0".to_string(),
+                class_id: TcHandle::from_string("1:3")?,
+                planned_rate: 7,
+                planned_ceil: 20,
+            },
+        ];
+        let key = StormguardOverrideKey {
+            interface: "eth0".to_string(),
+            class,
+        };
+        let mut overrides = HashMap::new();
+        record_stormguard_override(&mut overrides, key, 4, 10);
+
+        let restorations = stormguard_restorations(&supplied, true, &overrides);
+        assert_eq!(restorations.len(), 2);
+        let cached = restorations
+            .iter()
+            .find(|adjustment| adjustment.class_id == class)
+            .ok_or_else(|| anyhow::anyhow!("missing cached restoration"))?;
+        assert_eq!(cached.planned_rate, 4);
+        assert_eq!(cached.planned_ceil, 10);
+
+        let startup = stormguard_restorations(&supplied, true, &HashMap::new());
+        assert_eq!(startup.len(), 2);
+        assert!(stormguard_restorations(&supplied, false, &HashMap::new()).is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_early_restore_allows_persisted_classes_before_mq_only() {
+        assert!(stormguard_restore_precondition(true, false, false).is_ok());
+        assert_eq!(
+            stormguard_restore_precondition(false, false, false),
+            Err("Bakery MQ setup has not completed".to_string())
+        );
+        assert!(
+            stormguard_restore_precondition(true, true, true)
+                .expect_err("full reload must block restoration")
+                .contains("full Bakery reload")
+        );
+    }
+
+    #[test]
+    fn stormguard_reset_command_gate_covers_generation_rebuild_and_early_recovery() {
+        assert!(
+            stormguard_reset_command_precondition(7, 7, false, true, true, false, false).is_ok()
+        );
+        assert!(
+            stormguard_reset_command_precondition(6, 7, false, true, true, false, false)
+                .expect_err("stale generation")
+                .contains("generation")
+        );
+        assert!(
+            stormguard_reset_command_precondition(7, 7, true, true, true, false, false)
+                .expect_err("open rebuild")
+                .contains("batch is still open")
+        );
+        assert!(
+            stormguard_reset_command_precondition(7, 7, false, true, true, false, true)
+                .expect_err("full reload")
+                .contains("full Bakery reload")
+        );
+        assert!(
+            stormguard_reset_command_precondition(7, 7, false, true, false, false, false)
+                .expect_err("normal reset before MQ")
+                .contains("MQ setup")
+        );
+    }
+
+    #[test]
+    fn stormguard_restore_skips_absent_live_classes() -> anyhow::Result<()> {
+        let class = TcHandle::from_string("1:2")?;
+        let restorations = vec![StormGuardRestoreAdjustment {
+            interface_name: "eth0".to_string(),
+            class_id: class,
+            planned_rate: 10,
+            planned_ceil: 100,
+        }];
+        assert!(stormguard_restore_commands(&restorations, &HashMap::new()).is_empty());
+
+        let live_classes = HashMap::from([("eth0".to_string(), HashSet::from([class]))]);
+        assert_eq!(
+            stormguard_restore_commands(&restorations, &live_classes).len(),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_restore_retains_ownership_after_failure() -> anyhow::Result<()> {
+        let key = StormguardOverrideKey {
+            interface: "eth0".to_string(),
+            class: TcHandle::from_string("1:2")?,
+        };
+        let mut overrides = HashMap::from([(
+            key,
+            StormguardOverrideValue {
+                planned_rate: 10,
+                planned_ceil: 100,
+            },
+        )]);
+        let result = finish_stormguard_restore(
+            &mut overrides,
+            Err("synthetic restoration failure".to_string()),
+        );
+        assert!(result.is_err());
+        assert_eq!(overrides.len(), 1);
+        finish_stormguard_restore(&mut overrides, Ok(())).map_err(anyhow::Error::msg)?;
+        assert!(overrides.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn stormguard_circuit_sqm_change_preserves_qdisc_handles() -> anyhow::Result<()> {
+        let existing = BakeryCommands::AddCircuit {
+            circuit_hash: 42,
+            circuit_name: Some("Circuit A".to_string()),
+            site_name: Some("Site A".to_string()),
+            parent_class_id: TcHandle::from_string("1:1")?,
+            up_parent_class_id: TcHandle::from_string("2:1")?,
+            class_minor: 3,
+            download_bandwidth_min: 5.0,
+            upload_bandwidth_min: 2.0,
+            download_bandwidth_max: 10.0,
+            upload_bandwidth_max: 4.0,
+            class_major: 1,
+            up_class_major: 2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            ip_addresses: "192.0.2.1".to_string(),
+            sqm_override: Some("cake".to_string()),
+        };
+        let updated = circuit_with_sqm_override(&existing, None).map_err(anyhow::Error::msg)?;
+        let BakeryCommands::AddCircuit {
+            down_qdisc_handle,
+            up_qdisc_handle,
+            sqm_override,
+            ..
+        } = updated
+        else {
+            anyhow::bail!("expected AddCircuit");
+        };
+        assert_eq!(down_qdisc_handle, Some(0x9000));
+        assert_eq!(up_qdisc_handle, Some(0x9001));
+        assert_eq!(sqm_override, None);
+        Ok(())
+    }
+
+    fn recording_tc_bypass_setter(enabled: bool) -> anyhow::Result<()> {
+        TC_BYPASS_SETTER_CALLS
+            .lock()
+            .expect("record setter call")
+            .push(enabled);
+        Ok(())
+    }
+
+    fn failing_tc_bypass_setter(enabled: bool) -> anyhow::Result<()> {
+        TC_BYPASS_SETTER_CALLS
+            .lock()
+            .expect("record setter call")
+            .push(enabled);
+        Err(anyhow::anyhow!(
+            "synthetic TC classify bypass setter failure"
+        ))
+    }
+
+    fn disable_failing_tc_bypass_setter(enabled: bool) -> anyhow::Result<()> {
+        TC_BYPASS_SETTER_CALLS
+            .lock()
+            .expect("record setter call")
+            .push(enabled);
+        if enabled {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(
+                "synthetic TC classify bypass disable failure"
+            ))
+        }
+    }
+
+    fn take_tc_bypass_setter_calls() -> Vec<bool> {
+        std::mem::take(&mut *TC_BYPASS_SETTER_CALLS.lock().expect("take setter calls"))
+    }
 
     fn bakery_test_lock() -> &'static std::sync::Mutex<()> {
         crate::test_state_lock()
@@ -9772,10 +12259,12 @@ mod tests {
 
             let config = lqos_config::Config {
                 lqos_directory: runtime_dir.display().to_string(),
+                state_directory: None,
                 bridge: Some(lqos_config::BridgeConfig {
                     use_xdp_bridge: false,
                     to_internet: "lo".to_string(),
                     to_network: "lo".to_string(),
+                    mtu: None,
                 }),
                 ..lqos_config::Config::default()
             };
@@ -9800,7 +12289,101 @@ mod tests {
         SHAPING_TREE_ACTIVE.store(false, Ordering::Relaxed);
         FIRST_COMMIT_APPLIED.store(false, Ordering::Relaxed);
         FULL_RELOAD_IN_PROGRESS.store(false, Ordering::Relaxed);
+        take_tc_bypass_setter_calls();
         install_bakery_test_config();
+    }
+
+    #[test]
+    fn tc_classify_bypass_guard_disables_on_scope_exit() {
+        let _guard = bakery_test_lock().lock().expect("bakery test lock");
+        reset_bakery_test_state();
+
+        {
+            let _bypass_guard = TcClassifyBypassGuard::with_setter(recording_tc_bypass_setter)
+                .expect("enable bypass guard");
+            assert_eq!(take_tc_bypass_setter_calls(), vec![true]);
+        }
+
+        assert_eq!(take_tc_bypass_setter_calls(), vec![false]);
+        let status = bakery_status_snapshot();
+        assert!(!status.passthrough_degraded);
+        assert!(status.passthrough_degraded_reason.is_none());
+    }
+
+    #[test]
+    fn tc_classify_bypass_guard_disables_on_early_return() {
+        fn early_return() -> Result<(), ()> {
+            let _bypass_guard =
+                TcClassifyBypassGuard::with_setter(recording_tc_bypass_setter).map_err(|_| ())?;
+            Err(())
+        }
+
+        let _guard = bakery_test_lock().lock().expect("bakery test lock");
+        reset_bakery_test_state();
+
+        assert_eq!(early_return(), Err(()));
+
+        assert_eq!(take_tc_bypass_setter_calls(), vec![true, false]);
+    }
+
+    #[test]
+    fn tc_classify_bypass_guard_does_not_disable_when_enable_fails() {
+        let _guard = bakery_test_lock().lock().expect("bakery test lock");
+        reset_bakery_test_state();
+
+        assert!(TcClassifyBypassGuard::with_setter(failing_tc_bypass_setter).is_err());
+
+        assert_eq!(take_tc_bypass_setter_calls(), vec![true]);
+        let status = bakery_status_snapshot();
+        assert!(!status.passthrough_degraded);
+        assert!(status.passthrough_degraded_reason.is_none());
+    }
+
+    #[test]
+    fn tc_classify_bypass_guard_reports_disable_failure_once() {
+        let _guard = bakery_test_lock().lock().expect("bakery test lock");
+        reset_bakery_test_state();
+
+        {
+            let mut bypass_guard =
+                TcClassifyBypassGuard::with_setter(disable_failing_tc_bypass_setter)
+                    .expect("enable bypass guard");
+            assert!(bypass_guard.disable().is_err());
+        }
+
+        assert_eq!(take_tc_bypass_setter_calls(), vec![true, false]);
+        let status = bakery_status_snapshot();
+        assert!(status.passthrough_degraded);
+        assert!(
+            status
+                .passthrough_degraded_reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("could not disable pass-through mode")
+        );
+    }
+
+    #[test]
+    fn tc_classify_bypass_guard_keeps_bypass_enabled_after_failure() {
+        let _guard = bakery_test_lock().lock().expect("bakery test lock");
+        reset_bakery_test_state();
+
+        {
+            let mut bypass_guard = TcClassifyBypassGuard::with_setter(recording_tc_bypass_setter)
+                .expect("enable bypass guard");
+            bypass_guard.keep_bypass_enabled_after_failure("test failure after TC mutation");
+        }
+
+        assert_eq!(take_tc_bypass_setter_calls(), vec![true]);
+        let status = bakery_status_snapshot();
+        assert!(status.passthrough_degraded);
+        assert!(
+            status
+                .passthrough_degraded_reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Traffic is passing without shaping")
+        );
     }
 
     fn mk_add_circuit(hash: i64, ip_addresses: &str) -> Arc<BakeryCommands> {
@@ -9851,6 +12434,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lqos-bakery-{name}-{ts}"));
         std::fs::create_dir_all(&dir).expect("temp runtime dir");
         cfg.lqos_directory = dir.display().to_string();
+        // Keep Bakery qdisc-handle state under the per-test runtime directory so
+        // these allocator tests do not share `/opt/libreqos/state` across
+        // parallel test threads.
+        cfg.state_directory = None;
         Arc::new(cfg)
     }
 
@@ -9955,9 +12542,12 @@ mod tests {
         let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
             batch,
             &existing,
-            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
         );
-        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(
+            stats.enforced_limit,
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize)
+        );
         assert_eq!(stats.requested_mapped, 1001);
         assert_eq!(stats.allowed_mapped, 1000);
         assert_eq!(stats.dropped_mapped, 1);
@@ -9982,9 +12572,12 @@ mod tests {
         let (filtered, stats) = filter_batch_by_mapped_circuit_limit(
             batch,
             &existing,
-            Some(DEFAULT_MAPPED_CIRCUITS_LIMIT),
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize),
         );
-        assert_eq!(stats.enforced_limit, Some(DEFAULT_MAPPED_CIRCUITS_LIMIT));
+        assert_eq!(
+            stats.enforced_limit,
+            Some(DEFAULT_MAPPED_CIRCUIT_LIMIT as usize)
+        );
         assert_eq!(stats.requested_mapped, 1000);
         assert_eq!(stats.allowed_mapped, 1000);
         assert_eq!(stats.dropped_mapped, 0);
@@ -10828,6 +13421,18 @@ mod tests {
     }
 
     #[test]
+    fn nested_runtime_shadow_branch_rejects_non_top_level_virtualization() {
+        let site = mk_add_site(77, 0x10003, 0x20003, 0x2001);
+        let reason = nested_runtime_shadow_branch_eligibility_error(site.as_ref())
+            .expect("runtime shadow site should be rejected");
+        assert!(reason.message.contains("retained runtime shadow branch"));
+        assert_eq!(
+            reason.failure_reason,
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch)
+        );
+    }
+
+    #[test]
     fn site_runtime_virtualization_rejects_non_site_commands() {
         let circuit = mk_add_circuit(77, "192.0.2.77/32");
         let reason = site_runtime_virtualization_eligibility_error(circuit.as_ref())
@@ -10953,6 +13558,55 @@ mod tests {
                 .as_deref()
                 .unwrap_or_default()
                 .contains("one top-level TreeGuard runtime operation in flight")
+        );
+    }
+
+    #[test]
+    fn structural_runtime_failures_are_counted_as_blocked_not_failed() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+
+        let now = unix_now();
+        let mut retryable = RuntimeNodeOperation::new(
+            1,
+            20,
+            Some("retryable-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now,
+        );
+        retryable.update_status(
+            RuntimeNodeOperationStatus::Failed,
+            now,
+            Some("transient runtime failure".to_string()),
+            None,
+        );
+
+        let mut blocked = RuntimeNodeOperation::new(
+            2,
+            21,
+            Some("blocked-site".to_string()),
+            RuntimeNodeOperationAction::Virtualize,
+            now.saturating_add(1),
+        );
+        blocked.update_status_with_reason(
+            RuntimeNodeOperationStatus::Failed,
+            now.saturating_add(1),
+            Some("inside a retained runtime shadow branch".to_string()),
+            Some(RuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch),
+            None,
+        );
+
+        let runtime_node_operations = HashMap::from([(20, retryable), (21, blocked)]);
+        let snapshot = rebuild_runtime_operations_snapshot(&runtime_node_operations);
+
+        assert_eq!(snapshot.failed_count, 1);
+        assert_eq!(snapshot.blocked_count, 1);
+        assert_eq!(
+            snapshot
+                .latest
+                .as_ref()
+                .and_then(|entry| entry.site_name.as_deref()),
+            Some("blocked-site")
         );
     }
 
@@ -11460,10 +14114,12 @@ mod tests {
         reset_bakery_test_state();
 
         let cfg = Config {
+            state_directory: None,
             bridge: Some(lqos_config::BridgeConfig {
                 use_xdp_bridge: false,
                 to_internet: "__bakery-missing-wan__".to_string(),
                 to_network: "__bakery-missing-lan__".to_string(),
+                mtu: None,
             }),
             ..Config::default()
         };
@@ -11797,6 +14453,84 @@ mod tests {
     }
 
     #[test]
+    fn bakery_memory_guard_floor_scales_with_host_ram() {
+        assert_eq!(
+            bakery_memory_guard_min_available_bytes(8 * 1024 * 1024 * 1024),
+            BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES
+        );
+        assert_eq!(
+            bakery_memory_guard_min_available_bytes(64 * 1024 * 1024 * 1024),
+            8 * 1024 * 1024 * 1024
+        );
+    }
+
+    #[test]
+    fn memory_warning_only_allows_preflight_to_continue() {
+        let mut estimate = QdiscBudgetEstimate {
+            interfaces: BTreeMap::from([("eth0".to_string(), 1)]),
+            interface_details: BTreeMap::new(),
+            safe_budget: SAFE_QDISC_BUDGET_PER_INTERFACE,
+            hard_limit: HARD_QDISC_HANDLE_LIMIT_PER_INTERFACE,
+            estimated_total_memory_bytes: 1,
+            memory_snapshot: None,
+            memory_guard_min_available_bytes: BAKERY_MEMORY_GUARD_MIN_AVAILABLE_BYTES,
+            memory_ok: false,
+            memory_warning_only: true,
+        };
+
+        assert!(estimate.ok());
+        estimate.memory_warning_only = false;
+        assert!(!estimate.ok());
+    }
+
+    #[test]
+    fn command_qdisc_memory_estimate_deduplicates_qdisc_identity() {
+        let commands = vec![
+            vec![
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "1:10".to_string(),
+                "cake".to_string(),
+            ],
+            vec![
+                "qdisc".to_string(),
+                "replace".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "1:10".to_string(),
+                "cake".to_string(),
+            ],
+            vec![
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth1".to_string(),
+                "parent".to_string(),
+                "1:10".to_string(),
+                "cake".to_string(),
+            ],
+            vec![
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "1:11".to_string(),
+                "fq_codel".to_string(),
+            ],
+        ];
+
+        assert_eq!(
+            count_tc_command_types_and_estimate_qdisc_memory(&commands).3,
+            (CAKE_QDISC_ESTIMATED_MEMORY_BYTES * 2) + FQ_CODEL_QDISC_ESTIMATED_MEMORY_BYTES
+        );
+    }
+
+    #[test]
     fn qdisc_budget_estimate_counts_only_root_mq_in_observe_mode() {
         let _guard = bakery_test_lock().lock().expect("lock");
         reset_bakery_test_state();
@@ -11972,6 +14706,169 @@ mod tests {
             managed_root_child_parent_handles(&managed_snapshot),
             HashSet::from([TcHandle::from_u32(0x7fff0001)])
         );
+    }
+
+    #[test]
+    fn root_infra_qdisc_entry_preserves_clsact() {
+        let root_child_majors = HashSet::from([0x1]);
+        assert!(root_infra_qdisc_entry(
+            &live_qdisc_entry("clsact", Some(0xffff0000), Some(0xfffffff1), false),
+            &root_child_majors,
+        ));
+    }
+
+    #[test]
+    fn qdisc_delete_commands_skip_clsact() {
+        let qdisc_snapshot = vec![
+            live_qdisc_entry("clsact", Some(0xffff0000), Some(0xfffffff1), false),
+            live_qdisc_entry("fq_codel", Some(0x95000000), Some(0x10020), false),
+        ];
+        assert_eq!(
+            qdisc_delete_commands("eth0", &qdisc_snapshot, &HashSet::from([0x1])),
+            vec![vec![
+                "qdisc".to_string(),
+                "del".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "0x1:0x20".to_string(),
+            ]]
+        );
+    }
+
+    #[test]
+    fn idempotent_full_reload_command_replaces_class_adds() {
+        let root_child_majors = HashMap::from([("eth0".to_string(), HashSet::from([0x1]))]);
+        assert_eq!(
+            idempotent_full_reload_command(
+                vec![
+                    "class".to_string(),
+                    "add".to_string(),
+                    "dev".to_string(),
+                    "eth0".to_string(),
+                    "classid".to_string(),
+                    "0x1:1".to_string(),
+                ],
+                &root_child_majors,
+            ),
+            vec![
+                "class".to_string(),
+                "replace".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "classid".to_string(),
+                "0x1:1".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn idempotent_full_reload_command_leaves_non_add_commands_unchanged() {
+        let root_child_majors = HashMap::from([("eth0".to_string(), HashSet::from([0x1]))]);
+        assert_eq!(
+            idempotent_full_reload_command(
+                vec![
+                    "qdisc".to_string(),
+                    "add".to_string(),
+                    "dev".to_string(),
+                    "eth0".to_string(),
+                ],
+                &root_child_majors,
+            ),
+            vec![
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+            ]
+        );
+        assert_eq!(
+            idempotent_full_reload_command(
+                vec![
+                    "class".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    "eth0".to_string(),
+                ],
+                &root_child_majors,
+            ),
+            vec![
+                "class".to_string(),
+                "del".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+            ]
+        );
+        assert_eq!(
+            idempotent_full_reload_command(
+                vec![
+                    "filter".to_string(),
+                    "add".to_string(),
+                    "dev".to_string(),
+                    "eth0".to_string(),
+                ],
+                &root_child_majors,
+            ),
+            vec![
+                "filter".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn root_infra_qdisc_command_matches_root_and_default_qdiscs() {
+        let root_child_majors = HashMap::from([("eth0".to_string(), HashSet::from([0x1]))]);
+        assert!(root_infra_qdisc_command(
+            &[
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "7FFF:0x1".to_string()
+            ],
+            &root_child_majors,
+        ));
+        assert!(root_infra_qdisc_command(
+            &[
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "0x1:2".to_string()
+            ],
+            &root_child_majors,
+        ));
+        assert!(!root_infra_qdisc_command(
+            &[
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "0x1:0x20".to_string()
+            ],
+            &root_child_majors,
+        ));
+        assert!(!root_infra_qdisc_command(
+            &[
+                "qdisc".to_string(),
+                "add".to_string(),
+                "dev".to_string(),
+                "eth0".to_string(),
+                "parent".to_string(),
+                "0x3:2".to_string()
+            ],
+            &root_child_majors,
+        ));
+        assert!(!root_infra_qdisc_command(
+            &["class".to_string(), "replace".to_string()],
+            &root_child_majors,
+        ));
     }
 
     #[test]
@@ -12806,6 +15703,105 @@ mod tests {
         assert!(bakery_reload_required_reason().is_none());
     }
 
+    fn sample_test_migration(hash: i64) -> Migration {
+        Migration {
+            circuit_hash: hash,
+            circuit_name: Some(format!("circuit-{hash}")),
+            site_name: Some(format!("site-{hash}")),
+            old_class_major: 0x1,
+            old_up_class_major: 0x2,
+            old_down_qdisc_handle: Some(0x9000),
+            old_up_qdisc_handle: Some(0x9001),
+            parent_class_id: TcHandle::from_u32(0x10034),
+            up_parent_class_id: TcHandle::from_u32(0x20034),
+            class_major: 0x1,
+            up_class_major: 0x2,
+            down_qdisc_handle: Some(0x9000),
+            up_qdisc_handle: Some(0x9001),
+            old_down_min: 1.0,
+            old_down_max: 10.0,
+            old_up_min: 1.0,
+            old_up_max: 10.0,
+            new_down_min: 1.0,
+            new_down_max: 20.0,
+            new_up_min: 1.0,
+            new_up_max: 20.0,
+            old_minor: 0x21,
+            shadow_minor: 0x2000,
+            final_minor: 0x35,
+            ips: vec![format!("192.0.2.{hash}/32")],
+            sqm_override: None,
+            desired_cmd: mk_test_circuit(
+                hash,
+                0x10034,
+                0x20034,
+                0x35,
+                0x1,
+                0x2,
+                &format!("192.0.2.{hash}/32"),
+            ),
+            stage: MigrationStage::VerifyFinalReady,
+            shadow_verify_attempts: 0,
+            final_verify_attempts: 0,
+        }
+    }
+
+    #[test]
+    fn observe_transition_cancels_pending_live_migrations_and_clears_live_migration_reload_state() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+        clear_reload_required(
+            "reset before observe_transition_cancels_pending_live_migrations_and_clears_live_migration_reload_state",
+        );
+
+        let mut migrations = HashMap::from([(9007, sample_test_migration(9007))]);
+        mark_reload_required(
+            "Bakery live-move final verification did not find the expected final class/qdisc for circuit 9007: observed missing. A full reload is now required before further incremental topology mutations."
+                .to_string(),
+        );
+
+        let canceled = cancel_pending_migrations_for_observe_mode(
+            &mut migrations,
+            "queue mode transitioned to observe; the shaping tree is no longer live.",
+        );
+
+        assert_eq!(canceled, 1);
+        assert!(migrations.is_empty());
+        assert!(bakery_reload_required_reason().is_none());
+        assert!(bakery_activity_snapshot().iter().any(|entry| {
+            entry.event == "live_migrations_canceled"
+                && entry.summary.contains("pending live migration")
+        }));
+    }
+
+    #[test]
+    fn observe_transition_preserves_non_migration_reload_required_state() {
+        let _guard = bakery_test_lock().lock().expect("test lock");
+        reset_bakery_test_state();
+        clear_reload_required(
+            "reset before observe_transition_preserves_non_migration_reload_required_state",
+        );
+
+        let unrelated_reason = "Bakery full reload triggered because site speed live-change enqueue failed: synthetic failure.";
+        let mut migrations = HashMap::from([(9008, sample_test_migration(9008))]);
+        mark_reload_required(unrelated_reason.to_string());
+
+        let canceled = cancel_pending_migrations_for_observe_mode(
+            &mut migrations,
+            "queue mode transitioned to observe; the shaping tree is no longer live.",
+        );
+
+        assert_eq!(canceled, 1);
+        assert!(migrations.is_empty());
+        assert_eq!(
+            bakery_reload_required_reason().as_deref(),
+            Some(unrelated_reason)
+        );
+        clear_reload_required(
+            "reset after observe_transition_preserves_non_migration_reload_required_state",
+        );
+    }
+
     #[test]
     fn migration_target_label_includes_circuit_and_site_names_when_known() {
         let migration = Migration {
@@ -12854,6 +15850,7 @@ mod tests {
                 interface_name: "if-down".to_string(),
                 expected_handle: TcHandle::from_u32(0x4002000),
                 expected_parent: TcHandle::from_u32(0x4000015),
+                observed_present: true,
                 observed_parent: Some(TcHandle::from_u32(0x4000013)),
                 observed_leaf_qdisc_major: None,
             },
@@ -12861,6 +15858,7 @@ mod tests {
                 interface_name: "if-up".to_string(),
                 expected_handle: TcHandle::from_u32(0x5002000),
                 expected_parent: TcHandle::from_u32(0x5000015),
+                observed_present: false,
                 observed_parent: None,
                 observed_leaf_qdisc_major: None,
             }),
@@ -12879,6 +15877,84 @@ mod tests {
         assert!(summary.contains("500"));
         assert!(summary.contains("observed missing"));
         assert!(!verification.ready());
+    }
+
+    #[test]
+    fn migration_branch_verification_summary_reports_root_attached_class() {
+        let verification = MigrationDirectionVerification {
+            interface_name: "if-root".to_string(),
+            expected_handle: TcHandle::from_u32(0x221f5),
+            expected_parent: TcHandle::from_u32(0x2103a),
+            observed_present: true,
+            observed_parent: None,
+            observed_leaf_qdisc_major: Some(0x96c8),
+        };
+
+        let summary = verification.summary("down");
+        assert!(summary.contains("observed at root"));
+        assert!(summary.contains("96c8"));
+    }
+
+    #[test]
+    fn wrong_parent_prune_commands_delete_root_attached_target_class() {
+        let snapshot = HashMap::from([(
+            TcHandle::from_u32(0x221f5),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x221f5),
+                parent: None,
+                leaf_qdisc_major: Some(0x96c8),
+            },
+        )]);
+
+        let commands = wrong_parent_prune_commands_for_direction(
+            "if-root".to_string(),
+            &snapshot,
+            TcHandle::from_u32(0x221f5),
+            TcHandle::from_u32(0x2103a),
+        );
+
+        assert_eq!(
+            commands,
+            vec![
+                vec![
+                    "qdisc".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    "if-root".to_string(),
+                    "parent".to_string(),
+                    "0x2:0x21f5".to_string(),
+                ],
+                vec![
+                    "class".to_string(),
+                    "del".to_string(),
+                    "dev".to_string(),
+                    "if-root".to_string(),
+                    "classid".to_string(),
+                    "0x2:0x21f5".to_string(),
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn wrong_parent_prune_commands_skip_target_when_parent_already_matches() {
+        let snapshot = HashMap::from([(
+            TcHandle::from_u32(0x221f5),
+            LiveTcClassEntry {
+                class_id: TcHandle::from_u32(0x221f5),
+                parent: Some(TcHandle::from_u32(0x2103a)),
+                leaf_qdisc_major: Some(0x96c8),
+            },
+        )]);
+
+        let commands = wrong_parent_prune_commands_for_direction(
+            "if-ok".to_string(),
+            &snapshot,
+            TcHandle::from_u32(0x221f5),
+            TcHandle::from_u32(0x2103a),
+        );
+
+        assert!(commands.is_empty());
     }
 
     #[test]

@@ -1,120 +1,287 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
-import {DashboardGraph} from "../graphs/dashboard_graph";
 import {colorByRttMs} from "../helpers/color_scales";
 import {isDarkMode} from "../helpers/dark_mode";
+import {ensureMapLibreAssets} from "./world_map_assets.mjs";
+import {applyWorldMapFeatureUpdate, WORLD_MAP_ENCODING_DESCRIPTION} from "./world_map_dashlet_state.mjs";
+import {emptyFeatureCollection, rowsToEndpointFeatures} from "./world_map_model.mjs";
 
-function ensureWorldMap() {
-    try {
-        if (typeof echarts !== 'undefined' && echarts.getMap && echarts.getMap('world')) {
-            return Promise.resolve();
-        }
-    } catch (_) {}
-    if (window._worldMapPromise) return window._worldMapPromise;
-    window._worldMapPromise = new Promise((resolve, reject) => {
-        // Try local vendor first (static2/vendor/world.js)
-        const load = (src, onfail) => {
-            const s = document.createElement('script');
-            s.src = src;
-            s.onload = () => resolve();
-            s.onerror = () => onfail ? onfail() : reject();
-            document.head.appendChild(s);
+const WORLD_CENTER = [0, 18];
+const WORLD_ZOOM = 0.85;
+const ENDPOINT_SOURCE_ID = "dashboard-world-endpoints";
+const ENDPOINT_LAYER_ID = "dashboard-world-endpoints-circle";
+const ENDPOINT_HEAT_LAYER_ID = "dashboard-world-endpoints-heat";
+const COASTLINE_SOURCE_ID = "dashboard-world-coastlines";
+const COASTLINE_LAYER_ID = "dashboard-world-coastlines-line";
+const BACKGROUND_LAYER_ID = "dashboard-world-background";
+
+function mapThemePalette() {
+    if (isDarkMode()) {
+        return {
+            background: "#101820",
+            coastline: "#94a3b8",
+            endpointStroke: "#111827",
         };
-        load('vendor/world.js', () => {
-            // Fallback to CDN if local not present
-            load('https://fastly.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js');
-        });
-    });
-    return window._worldMapPromise;
+    }
+    return {
+        background: "#edf2f7",
+        coastline: "#64748b",
+        endpointStroke: "#ffffff",
+    };
 }
 
-export class WorldMap3DGraph extends DashboardGraph {
-    constructor(id) {
-        super(id);
-        // Do not dim the world map; remove the global 'muted' filter.
-        if (this.dom && this.dom.classList) {
-            this.dom.classList.remove('muted');
-        }
-        const envColor = isDarkMode() ? '#000000' : '#e6eaef';
-        const landColor = isDarkMode() ? '#6a6a6a' : '#bcbcbc';
-        this.option = {
-            backgroundColor: 'transparent',
-            geo3D: {
-                map: 'world',
-                shading: 'realistic',
-                silent: true,
-                // Match page theme: black in dark mode, light grey in light mode
-                environment: envColor,
-                realisticMaterial: { roughness: 0.8, metalness: 0 },
-                // Disable post-processing to avoid shimmer/pulsing
-                postEffect: { enable: false },
-                groundPlane: { show: false },
-                light: {
-                    main: { intensity: 1.0, alpha: 30 },
-                    ambient: { intensity: 0.0 }
-                },
-                viewControl: { distance: 70, alpha: 89, panMouseButton: 'left', rotateMouseButton: 'right' },
-                itemStyle: {
-                    color: landColor,
-                    // Hide coastlines/outlines that appear as stray dots at this zoom
-                    borderColor: landColor,
-                    borderWidth: 0.3
-                },
-                regionHeight: 0.5
+function worldMapStyle() {
+    const palette = mapThemePalette();
+    return {
+        version: 8,
+        sources: {
+            [COASTLINE_SOURCE_ID]: {
+                type: "geojson",
+                data: "vendor/site_map_coastlines.geojson",
             },
-            series: [
-                {
-                    type: 'scatter3D',
-                    coordinateSystem: 'geo3D',
-                    // Remove additive blending that causes glow in dark mode
-                    // blendMode: 'lighter',
-                    symbolSize: 2,
-                    itemStyle: { opacity: 0.6 },
-                    lineStyle: { width: 0.2, opacity: 0.05 },
-                    data: []
-                }
-            ]
-        };
-        this.chart.setOption(this.option);
-        this.baseApplied = false;
-    }
-    update(data){
-        this.chart.hideLoading();
-        // Ensure the base option (with geo3D) is applied once after the world map is registered.
-        if (!this.baseApplied && typeof echarts !== 'undefined' && echarts.getMap && echarts.getMap('world')) {
-            this.chart.setOption(this.option, true);
-            this.baseApplied = true;
+            [ENDPOINT_SOURCE_ID]: {
+                type: "geojson",
+                data: emptyFeatureCollection(),
+            },
+        },
+        layers: [
+            {
+                id: BACKGROUND_LAYER_ID,
+                type: "background",
+                paint: {
+                    "background-color": palette.background,
+                },
+            },
+            {
+                id: COASTLINE_LAYER_ID,
+                type: "line",
+                source: COASTLINE_SOURCE_ID,
+                paint: {
+                    "line-color": palette.coastline,
+                    "line-opacity": 0.74,
+                    "line-width": [
+                        "interpolate", ["linear"], ["zoom"],
+                        0, 0.55,
+                        3, 1.2,
+                    ],
+                },
+            },
+            {
+                id: ENDPOINT_HEAT_LAYER_ID,
+                type: "heatmap",
+                source: ENDPOINT_SOURCE_ID,
+                maxzoom: 5,
+                paint: {
+                    "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 1, 1],
+                    "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.5, 4, 1.8],
+                    "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 7, 4, 20],
+                    "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 0, 0.68, 5, 0],
+                    "heatmap-color": [
+                        "interpolate", ["linear"], ["heatmap-density"],
+                        0, "rgba(0,0,0,0)",
+                        0.25, "rgba(79, 172, 254, 0.45)",
+                        0.55, "rgba(124, 255, 178, 0.55)",
+                        0.8, "rgba(253, 221, 96, 0.7)",
+                        1, "rgba(255, 110, 118, 0.8)",
+                    ],
+                },
+            },
+            {
+                id: ENDPOINT_LAYER_ID,
+                type: "circle",
+                source: ENDPOINT_SOURCE_ID,
+                paint: {
+                    "circle-color": ["get", "color"],
+                    "circle-radius": ["get", "radius"],
+                    "circle-opacity": 0.76,
+                    "circle-stroke-color": palette.endpointStroke,
+                    "circle-stroke-width": 0.75,
+                },
+            },
+        ],
+    };
+}
+
+export class WorldMapGraph {
+    constructor(id) {
+        this.dom = document.getElementById(id);
+        this.map = null;
+        this.themeObserver = null;
+        this.resizeHandler = () => this.resize();
+        this.pendingFeatures = emptyFeatureCollection();
+        this.ready = false;
+        this.disposed = false;
+        if (!this.dom) {
+            throw new Error(`WorldMapGraph: missing DOM element '${id}'`);
         }
-        // Then only update series data to avoid re-rendering geo3D and post effects
-        this.chart.setOption({ series: [{ data }] }, false, false);
+        this.dom.classList.add("lqos-dashboard-map");
+        this.dom.textContent = "";
+        ensureMapLibreAssets()
+            .then(() => this.initMap())
+            .catch((err) => {
+                if (this.disposed) return;
+                this.dom.textContent = err?.message || "Unable to load map";
+            });
     }
-    onThemeChange(){
-        // Only adjust the environment to maintain appropriate background
-        const envColor = isDarkMode() ? '#000000' : '#e6eaef';
-        const landColor = isDarkMode() ? '#6a6a6a' : '#bcbcbc';
-        if (!this.option.geo3D) this.option.geo3D = {};
-        this.option.geo3D.environment = envColor;
-        if (!this.option.geo3D.itemStyle) this.option.geo3D.itemStyle = {};
-        this.option.geo3D.itemStyle.color = landColor;
-        this.option.geo3D.itemStyle.borderColor = landColor;
-        this.chart.setOption(this.option, true);
-        this.baseApplied = true;
+
+    initMap() {
+        if (this.disposed || this.map || !window.maplibregl?.Map) {
+            return;
+        }
+        this.map = new window.maplibregl.Map({
+            container: this.dom,
+            style: worldMapStyle(),
+            center: WORLD_CENTER,
+            zoom: WORLD_ZOOM,
+            minZoom: 0,
+            maxZoom: 5,
+            attributionControl: false,
+            interactive: true,
+            renderWorldCopies: false,
+        });
+        this.map.scrollZoom.disable();
+        this.map.dragRotate.disable();
+        this.map.touchZoomRotate.disableRotation();
+        this.map.addControl(new window.maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+        const renderWhenReady = () => {
+            if (this.disposed || !this.map || !this.map.getSource(ENDPOINT_SOURCE_ID)) {
+                return;
+            }
+            this.ready = true;
+            this.applyCanvasAccessibility();
+            this.applyTheme();
+            this.renderFeatures();
+            this.map.resize();
+        };
+        this.map.on("load", renderWhenReady);
+        window.addEventListener("resize", this.resizeHandler);
+        this.observeThemeChanges();
+        renderWhenReady();
+    }
+
+    applyCanvasAccessibility() {
+        const canvas = this.dom.querySelector(".maplibregl-canvas");
+        if (!canvas) {
+            return;
+        }
+        const label = this.dom.getAttribute("aria-label");
+        const describedBy = this.dom.getAttribute("aria-describedby");
+        if (label) {
+            canvas.setAttribute("aria-label", label);
+        }
+        if (describedBy) {
+            canvas.setAttribute("aria-describedby", describedBy);
+        }
+    }
+
+    observeThemeChanges() {
+        if (this.themeObserver) {
+            return;
+        }
+        this.themeObserver = new MutationObserver(() => this.applyTheme());
+        this.themeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["data-bs-theme"],
+        });
+    }
+
+    applyTheme() {
+        if (!this.map) {
+            return;
+        }
+        const palette = mapThemePalette();
+        if (this.map.getLayer(BACKGROUND_LAYER_ID)) {
+            this.map.setPaintProperty(BACKGROUND_LAYER_ID, "background-color", palette.background);
+        }
+        if (this.map.getLayer(COASTLINE_LAYER_ID)) {
+            this.map.setPaintProperty(COASTLINE_LAYER_ID, "line-color", palette.coastline);
+        }
+        if (this.map.getLayer(ENDPOINT_LAYER_ID)) {
+            this.map.setPaintProperty(ENDPOINT_LAYER_ID, "circle-stroke-color", palette.endpointStroke);
+        }
+    }
+
+    updateFeatures(features) {
+        this.pendingFeatures = {
+            type: "FeatureCollection",
+            features,
+        };
+        this.renderFeatures();
+    }
+
+    renderFeatures() {
+        if (!this.ready || !this.map) {
+            return;
+        }
+        const source = this.map.getSource(ENDPOINT_SOURCE_ID);
+        if (source?.setData) {
+            source.setData(this.pendingFeatures);
+        }
+    }
+
+    resize() {
+        if (this.map) {
+            this.map.resize();
+        }
+    }
+
+    dispose() {
+        this.disposed = true;
+        if (this.themeObserver) {
+            this.themeObserver.disconnect();
+            this.themeObserver = null;
+        }
+        window.removeEventListener("resize", this.resizeHandler);
+        if (this.map) {
+            this.map.remove();
+            this.map = null;
+        }
     }
 }
 
-export class ShaperWorldMapDown extends BaseDashlet {
-    constructor(slot){ super(slot); this.last = null; this._emptyId = this.id + "_empty"; }
+export class ShaperWorldMapDashlet extends BaseDashlet {
+    constructor(slot, title){
+        super(slot);
+        this._emptyId = this.id + "_empty";
+        this._descriptionId = this.id + "_description";
+        this._statusId = this.id + "_status";
+        this._title = title;
+    }
     canBeSlowedDown(){ return true; }
-    title(){ return "Shaper World Map (Download)"; }
-    tooltip(){ return "<h5>World Map</h5><p>Endpoint locations sized by traffic and colored by RTT."; }
+    title(){ return this._title; }
+    tooltip(){ return `<h5>${this.title()}</h5><p>${WORLD_MAP_ENCODING_DESCRIPTION}</p>`; }
     subscribeTo(){ return ["EndpointLatLon"]; }
-    buildContainer(){ let b=super.buildContainer(); b.appendChild(this.graphDiv()); return b; }
+    buildContainer(){
+        let b = super.buildContainer();
+        const graph = this.graphDiv();
+        graph.setAttribute("aria-label", this.title());
+        graph.setAttribute("aria-describedby", `${this._descriptionId} ${this._statusId}`);
+        const description = document.createElement("div");
+        description.id = this._descriptionId;
+        description.classList.add("visually-hidden");
+        description.textContent = `World map showing recent endpoint locations. ${WORLD_MAP_ENCODING_DESCRIPTION}`;
+        const status = document.createElement("div");
+        status.id = this._statusId;
+        status.classList.add("visually-hidden");
+        status.setAttribute("role", "status");
+        status.setAttribute("aria-live", "polite");
+        b.appendChild(graph);
+        b.appendChild(description);
+        b.appendChild(status);
+        return b;
+    }
     setup(){
         this.traceRender("setup-start");
-        this.graph = new WorldMap3DGraph(this.graphDivId());
+        this.graph = new WorldMapGraph(this.graphDivId());
         this.traceRender("setup-complete", { graphId: this.graphDivId() });
-        if (this.last) this.graph.update(this.last);
     }
-    _showEmpty(show, msg = "No recent data"){
+    onTabActivated(){
+        requestAnimationFrame(() => this.graph?.resize());
+    }
+    _setStatus(msg){
+        const status = document.getElementById(this._statusId);
+        if (status) status.textContent = msg;
+    }
+    _showEmpty(show, msg = "No recent endpoint location data"){
         const card = document.getElementById(this.id);
         if (!card) return;
         let empty = document.getElementById(this._emptyId);
@@ -130,58 +297,21 @@ export class ShaperWorldMapDown extends BaseDashlet {
         if (show) {
             empty.style.display = '';
             if (graph) graph.style.display = 'none';
+            this._setStatus("No recent endpoint location data.");
         } else {
             empty.style.display = 'none';
             if (graph) graph.style.display = '';
+            this.graph?.resize();
         }
     }
     onMessage(msg){
         if (msg.event !== "EndpointLatLon") return;
         const rows = msg.data || [];
-        let maxBytes = 0;
-        for (let i=0;i<rows.length;i++) {
-            const b = Number(rows[i][3] || 0);
-            if (b > maxBytes) maxBytes = b;
-        }
-        const minSize = 1, maxSize = 8;
-        const out = [];
-        for (let i=0;i<rows.length;i++) {
-            const lat = rows[i][0], lon = rows[i][1];
-            const bytes = Number(rows[i][3] || 0);
-            const rtt = Number(rows[i][4]||0);
-            const color = colorByRttMs(rtt);
-            let norm = 0;
-            if (maxBytes > 0) {
-                norm = Math.sqrt(bytes / maxBytes);
-                if (!isFinite(norm) || norm < 0) norm = 0;
-                if (norm > 1) norm = 1;
-            }
-            const size = Math.round(minSize + (maxSize - minSize) * norm);
-            out.push({ value: [lon, lat], symbolSize: size, itemStyle: { color, opacity: 0.6 } });
-        }
-        const hasData = out.length > 0;
-        this._showEmpty(!hasData);
-        if (hasData) {
-            this.last = out;
-            this.traceRender("onMessage", { eventName: msg.event, pointCount: out.length });
-            ensureWorldMap().then(() => {
-                try {
-                    this.graph.update(out);
-                    this.traceRender("update-ok", { eventName: msg.event, pointCount: out.length });
-                } catch (err) {
-                    this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err) });
-                    throw err;
-                }
-            }).catch(() => {
-                // If the world map fails to load, still attempt to render points
-                try {
-                    this.graph.update(out);
-                    this.traceRender("update-ok", { eventName: msg.event, pointCount: out.length, fallback: true });
-                } catch (err) {
-                    this.traceRender("update-error", { eventName: msg.event, error: err && err.message ? err.message : String(err), fallback: true });
-                    throw err;
-                }
-            });
-        }
+        const features = rowsToEndpointFeatures(rows, colorByRttMs);
+        applyWorldMapFeatureUpdate(this, features, msg.event);
     }
+}
+
+export class ShaperWorldMapDown extends ShaperWorldMapDashlet {
+    constructor(slot){ super(slot, "Shaper World Map (Download)"); }
 }

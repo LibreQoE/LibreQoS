@@ -212,32 +212,22 @@ pub fn current_license_summary() -> (Option<Uuid>, Option<u64>) {
     (grant.license_uuid, grant.max_circuits)
 }
 
-pub fn current_license_limits() -> (bool, Option<u64>) {
-    let Some(state) = GRANT_STATE.get() else {
-        return current_license_limits_from_status();
-    };
+pub fn current_valid_grant() -> Option<LicenseGrant> {
+    let state = GRANT_STATE.get()?;
     let guard = state.lock();
-    let Some(grant) = guard.as_ref() else {
-        return current_license_limits_from_status();
-    };
+    let grant = guard.as_ref()?;
     let now = unix_now().unwrap_or(0) as i64;
-    if grant.grant_expires <= now {
-        return current_license_limits_from_status();
-    }
-    (true, grant.max_circuits)
+    (grant.grant_expires > now).then(|| grant.clone())
 }
 
-fn current_license_limits_from_status() -> (bool, Option<u64>) {
-    let (status, _) = crate::lts2_sys::get_lts_license_status();
-    let licensed = !matches!(
-        status,
-        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
-    );
-    if licensed {
-        (true, None)
-    } else {
-        (false, None)
-    }
+pub fn current_license_limits() -> (bool, Option<u64>) {
+    let caps = crate::lts2_sys::capabilities::current_capabilities();
+    let status = LtsStatus::from_i32(caps.license_state);
+    let licensed = !matches!(status, LtsStatus::Invalid | LtsStatus::NotChecked);
+    (
+        licensed,
+        licensed.then_some(caps.mapped_circuit_limit).flatten(),
+    )
 }
 
 fn store_grant_state(grant: Option<LicenseGrant>) {
@@ -424,6 +414,42 @@ mod tests {
                 &envelope,
                 now,
                 &wrong_signer.public_key,
+                lqosd.public_key.as_slice(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn expired_license_grant_is_rejected() {
+        let signer = SigningKeyPair::gen_with_defaults();
+        let lqosd = SigningKeyPair::gen_with_defaults();
+        let now = 1_700_000_000i64;
+        let grant = LicenseGrant {
+            license_state: LtsStatus::ForeverFreeApi as i32,
+            trial_expiration: 0,
+            grant_expires: now,
+            issued_at: now - 3600,
+            license_uuid: Some(Uuid::new_v4()),
+            node_id: Some("node-1".to_string()),
+            max_circuits: Some(1_500),
+            lqosd_public_key: lqosd.public_key.as_slice().to_vec(),
+        };
+        let payload = serde_cbor::to_vec(&grant).expect("grant should serialize");
+        let signed = signer
+            .sign_with_defaults(payload.clone())
+            .expect("grant should sign");
+        let (signature, _message) = signed.into_parts();
+        let envelope = LicenseGrantEnvelope {
+            payload,
+            signature: signature.as_slice().to_vec(),
+        };
+
+        assert!(
+            verify_grant_with_time_and_keys(
+                &envelope,
+                now,
+                &signer.public_key,
                 lqosd.public_key.as_slice(),
             )
             .is_err()

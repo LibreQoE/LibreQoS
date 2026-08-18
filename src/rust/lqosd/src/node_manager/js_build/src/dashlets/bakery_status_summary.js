@@ -58,6 +58,10 @@ export class BakeryStatusSummaryDashlet extends BaseDashlet {
         this.lastFailureSummaryEl = document.createElement("span");
         this.lastFailureSummaryEl.style.whiteSpace = "normal";
         this.lastFailureSummaryEl.style.wordBreak = "break-word";
+        this.shapingStateEl = document.createElement("div");
+        this.passthroughReasonEl = document.createElement("span");
+        this.passthroughReasonEl.style.whiteSpace = "normal";
+        this.passthroughReasonEl.style.wordBreak = "break-word";
         this.reloadRequiredEl = document.createElement("div");
         this.reloadReasonEl = document.createElement("span");
         this.reloadReasonEl.style.whiteSpace = "normal";
@@ -65,10 +69,12 @@ export class BakeryStatusSummaryDashlet extends BaseDashlet {
 
         tbody.appendChild(mkRow("Current Mode", this.modeEl));
         tbody.appendChild(mkRow("Current Duration", this.durationEl));
+        tbody.appendChild(mkRow("Shaping State", this.shapingStateEl));
         tbody.appendChild(mkRow("Runtime Drift", this.reloadRequiredEl));
         tbody.appendChild(mkRow("Last Success", this.lastSuccessEl));
         tbody.appendChild(mkRow("Last Failure", this.lastFailureEl));
         tbody.appendChild(mkRow("Failure Summary", this.lastFailureSummaryEl));
+        tbody.appendChild(mkRow("Pass-Through Reason", this.passthroughReasonEl));
         tbody.appendChild(mkRow("Reload Reason", this.reloadReasonEl));
 
         table.appendChild(tbody);
@@ -91,6 +97,12 @@ export class BakeryStatusSummaryDashlet extends BaseDashlet {
 
         this.modeEl.innerHTML = "";
         this.modeEl.appendChild(bakeryModeBadge(status.mode));
+        this.shapingStateEl.innerHTML = "";
+        this.shapingStateEl.appendChild(
+            status.passthroughDegraded
+                ? mkBadge("Pass-Through / Unshaped", "bg-danger-subtle text-danger border border-danger-subtle")
+                : mkBadge("Normal Shaping", "bg-success-subtle text-success border border-success-subtle"),
+        );
         this.reloadRequiredEl.innerHTML = "";
         this.reloadRequiredEl.appendChild(
             status.reloadRequired
@@ -104,6 +116,7 @@ export class BakeryStatusSummaryDashlet extends BaseDashlet {
         this.lastSuccessEl.textContent = formatUnixSecondsToLocalDateTime(status.lastSuccessUnix);
         this.lastFailureEl.textContent = formatUnixSecondsToLocalDateTime(status.lastFailureUnix);
         this.lastFailureSummaryEl.textContent = status.lastFailureSummary || "—";
+        this.passthroughReasonEl.textContent = status.passthroughDegradedReason || "—";
         this.reloadReasonEl.textContent = status.reloadRequiredReason || "—";
     }
 }

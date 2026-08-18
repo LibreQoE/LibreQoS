@@ -42,8 +42,8 @@ Example symptoms:
 
 Representative issues:
 
-- [#860 - always_overwrite_network_json default behavior confusion](https://github.com/LibreQoE/LibreQoS/issues/860)
-- [#899 - UISP: always_overwrite_network_json=false and missing ShapedDevices.csv](https://github.com/LibreQoE/LibreQoS/issues/899)
+- [#860 - legacy network.json overwrite-default confusion](https://github.com/LibreQoE/LibreQoS/issues/860)
+- [#899 - UISP: legacy overwrite-disabled path and missing ShapedDevices.csv](https://github.com/LibreQoE/LibreQoS/issues/899)
 - [#845 - UISP: multi-services with same site name](https://github.com/LibreQoE/LibreQoS/issues/845)
 - [#699 - UISP: trailing spaces break matching](https://github.com/LibreQoE/LibreQoS/issues/699)
 

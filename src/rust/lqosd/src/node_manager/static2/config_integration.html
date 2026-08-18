@@ -6,7 +6,7 @@
             <div class="lqos-config-panel-header">
                 <div>
                     <h5 class="lqos-config-panel-title">Integration Defaults</h5>
-                    <div class="lqos-config-panel-subtitle">Set import behavior shared across integrations, including naming, overwrite policy, queue-refresh timing, and bandwidth adjustments.</div>
+                    <div class="lqos-config-panel-subtitle">Set behavior shared across integrations, including topology compile mode, naming, DIY overwrite policy, queue-refresh timing, and bandwidth adjustments.</div>
                 </div>
             </div>
 
@@ -14,24 +14,35 @@
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Import Behavior</h6>
-                        <div class="lqos-config-section-subtitle">Control how imported topology and subscriber metadata are written into LibreQoS state files.</div>
+                        <div class="lqos-config-section-subtitle">Control how imported topology and subscriber metadata are turned into runtime shaping state.</div>
 
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="circuitNameAsAddress">
-                            <label class="form-check-label" for="circuitNameAsAddress">Use Circuit Name as Address</label>
-                            <div class="form-text">Replace IP addresses with circuit names in <code>network.json</code>.</div>
+                        <div class="mb-3">
+                            <label for="topologyCompileMode" class="form-label">Topology Compile Mode</label>
+                            <select class="form-select" id="topologyCompileMode">
+                                <option value="flat">Flat - Only shapes subscribers, no hierarchy</option>
+                                <option value="ap_only">AP Only - AP to clients</option>
+                                <option value="ap_site">AP Site - Site to AP to clients (Default)</option>
+                                <option value="full">Full - Preserve the richest hierarchy</option>
+                            </select>
+                            <div class="form-text">Shared topology mode used by Topology Manager and the scheduler for integration-driven imports.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="queueAutoVirtualizeThresholdMbps" class="form-label">Queue Auto-Virtualize Threshold (Mbps)</label>
+                            <input type="number" class="form-control" id="queueAutoVirtualizeThresholdMbps" min="5001" step="1" value="5001">
+                            <div class="form-text">Aggregation-only sites at or above this rate can be auto-virtualized so they stay visible with the ghost indicator but do not consume real HTB classes.</div>
                         </div>
 
                         <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="alwaysOverwriteNetworkJson">
-                            <label class="form-check-label" for="alwaysOverwriteNetworkJson">Always Overwrite network.json</label>
-                            <div class="form-text">Force overwrite of <code>network.json</code> on every update.</div>
+                            <input type="checkbox" class="form-check-input" id="circuitNameAsAddress">
+                            <label class="form-check-label" for="circuitNameAsAddress">Use Address for Circuit Name</label>
+                            <div class="form-text">For Python-based integrations, write the circuit address into the generated <code>Circuit Name</code> in <code>ShapedDevices.csv</code> and <code>circuit_anchors.json</code> instead of the customer or display name. Some integrations do not provide a real address.</div>
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="useMikrotikIpv6">
                             <label class="form-check-label" for="useMikrotikIpv6">Enrich IPv6 via Mikrotik</label>
-                            <div class="form-text">Use <code>mikrotikDHCPRouterList.csv</code> to map IPv4 subscribers to Mikrotik-advertised IPv6 prefixes.</div>
+                            <div class="form-text">Use <code>/etc/libreqos/mikrotik_ipv6.toml</code> to map IPv4 subscribers to Mikrotik-advertised IPv6 prefixes. Legacy CSV credentials are auto-migrated on upgrade.</div>
                         </div>
 
                         <div class="mb-0">
@@ -45,7 +56,7 @@
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Promotion and Scaling</h6>
-                        <div class="lqos-config-section-subtitle">Promote selected circuits to the root and adjust imported subscriber bandwidth values before shaping.</div>
+                        <div class="lqos-config-section-subtitle">Promote selected circuits to the root, adjust imported subscriber bandwidth values, and apply shared Ethernet-port headroom policy before shaping.</div>
 
                         <div class="mb-3">
                             <label for="promoteToRoot" class="form-label">Promote to Root Nodes</label>
@@ -57,6 +68,18 @@
                             <label for="clientBandwidthMultiplier" class="form-label">Client Bandwidth Multiplier</label>
                             <input type="number" class="form-control" id="clientBandwidthMultiplier" step="0.1" min="0.1" value="1.0">
                             <div class="form-text">Multiplier applied to client bandwidth values. <code>1.0</code> means no adjustment.</div>
+                        </div>
+
+                        <div class="mt-3 mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="ethernetPortLimitsEnabled">
+                            <label class="form-check-label" for="ethernetPortLimitsEnabled">Enable Ethernet Port Limits</label>
+                            <div class="form-text">Apply negotiated Ethernet port headroom when an integration can detect subscriber-facing port speed.</div>
+                        </div>
+
+                        <div class="mb-0">
+                            <label for="ethernetPortLimitMultiplier" class="form-label">Ethernet Port Limit Multiplier</label>
+                            <input type="number" class="form-control" id="ethernetPortLimitMultiplier" step="0.01" min="0.01" max="1.0" value="0.94">
+                            <div class="form-text">Shared headroom multiplier applied to negotiated Ethernet rates. Leave at <code>0.94</code> for the default conservative payload-safe cap.</div>
                         </div>
                     </div>
                 </div>

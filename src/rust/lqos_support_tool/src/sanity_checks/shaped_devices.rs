@@ -19,7 +19,7 @@ pub fn shaped_devices_exists(results: &mut Vec<SanityCheck>) {
 }
 
 pub fn can_we_read_shaped_devices(results: &mut Vec<SanityCheck>) {
-    match lqos_config::ConfigShapedDevices::load() {
+    match lqos_network_devices::load_shaped_devices() {
         Ok(sd) => {
             results.push(SanityCheck {
                 name: "ShapedDevices.csv Loads?".to_string(),
@@ -38,7 +38,7 @@ pub fn can_we_read_shaped_devices(results: &mut Vec<SanityCheck>) {
 }
 
 pub fn parent_check(results: &mut Vec<SanityCheck>) {
-    if let Ok(net_json) = lqos_config::NetworkJson::load() {
+    if let Ok(net_json) = lqos_network_devices::load_network_json() {
         if net_json.get_nodes_when_ready().len() < 2 {
             results.push(SanityCheck {
                 name: "Flat Network - Skipping Parent Check".to_string(),
@@ -48,7 +48,7 @@ pub fn parent_check(results: &mut Vec<SanityCheck>) {
             return;
         }
 
-        if let Ok(shaped_devices) = lqos_config::ConfigShapedDevices::load() {
+        if let Ok(shaped_devices) = lqos_network_devices::load_shaped_devices() {
             for sd in shaped_devices.devices.iter() {
                 if !net_json
                     .get_nodes_when_ready()

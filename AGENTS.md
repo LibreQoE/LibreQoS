@@ -169,3 +169,9 @@ Canonical shared Codex skills for this repo live in `.codex-repo/skills/`.
 ## Documentation
 
 - Always keep the documentation updated to match code changes.
+- Public docs in `docs/` and `docs-es/` are ISP/operator-facing by default. Write them for customers using LibreQoS, not for contributors, Codex, or internal support staff.
+- Do not write public docs like internal change logs, AGENTS notes, implementation plans, or support-only commentary.
+- Prefer operator-visible behavior, setup steps, and validation guidance over browser/server mechanics, internal file-flow details, or code-architecture commentary.
+- If a topic is mainly for contributors, support, or engineering, keep it in clearly separate technical/reference documentation rather than mixing it into customer pages.
+- Keep Spanish public docs fully translated and idiomatic; avoid leaking English implementation terms unless they are the actual UI label.
+- Follow `DOCS_STYLE.md` when editing public documentation.

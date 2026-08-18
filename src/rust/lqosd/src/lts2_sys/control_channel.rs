@@ -1,5 +1,5 @@
 use anyhow::{Result, bail};
-use futures_util::{StreamExt, sink::SinkExt};
+use futures_util::{StreamExt, sink::SinkExt, stream::SplitSink};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use tokio::net::TcpStream;
@@ -10,17 +10,27 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 use tungstenite::Message;
 
+use crate::lts2_sys::capabilities;
 use crate::lts2_sys::license_grant;
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
+use lqos_probe::ProbeClass;
 
 mod messages;
-use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use crate::throughput_tracker::{
+    flow_data::for_each_active_flow_for_circuit, retire_check, THROUGHPUT_TRACKER,
+};
 pub use messages::{
     RemoteInsightRequest, SupportTicket, SupportTicketComment, SupportTicketStatus,
     SupportTicketSummary, WsMessage,
 };
 
 const SHAPER_VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
+const CONTROL_CHANNEL_QUEUE_DEPTH: usize = 256;
+const CONNECTION_COMMAND_QUEUE_DEPTH: usize = 1024;
+const SOCKET_SENDER_QUEUE_DEPTH: usize = 32;
+const STREAMING_CIRCUIT_FLOW_WINDOW: Duration = Duration::from_secs(300);
+
+type ControlSocketWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 
 fn current_shaper_version() -> Option<String> {
     let version = SHAPER_VERSION_STRING.trim();
@@ -131,7 +141,7 @@ pub struct ControlChannelBuilder {
 
 pub fn init_control_channel() -> Result<ControlChannelBuilder> {
     // Doing this two-step: make the channel here and then spawn the task
-    let (tx, rx) = tokio::sync::mpsc::channel(256);
+    let (tx, rx) = tokio::sync::mpsc::channel(CONTROL_CHANNEL_QUEUE_DEPTH);
     Ok(ControlChannelBuilder { tx, rx })
 }
 
@@ -146,7 +156,7 @@ pub async fn start_control_channel(builder: ControlChannelBuilder) -> Result<()>
 
 async fn control_channel_loop(mut builder: ControlChannelBuilder) -> Result<()> {
     // Handle the persistent channel to Insight here
-    let (tx, rx) = tokio::sync::mpsc::channel::<ConnectionCommand>(1024);
+    let (tx, rx) = tokio::sync::mpsc::channel::<ConnectionCommand>(CONNECTION_COMMAND_QUEUE_DEPTH);
     tokio::spawn(persistent_connection(rx));
 
     while let Some(cmd) = builder.rx.recv().await {
@@ -271,21 +281,95 @@ const TCP_TIMEOUT: Duration = Duration::from_secs(30);
 // Prevent unbounded growth while waiting for Welcome
 const MAX_PENDING_CHATBOT_MESSAGES: usize = 256;
 
+fn encode_ws_binary(
+    message: &messages::WsMessage,
+    label: &'static str,
+) -> std::result::Result<Message, ()> {
+    let Ok((_, _, bytes)) = message.to_bytes() else {
+        error!("Failed to serialize {label} message");
+        return Err(());
+    };
+    Ok(Message::Binary(bytes))
+}
+
+async fn send_ws_message_now(
+    write: &mut ControlSocketWriter,
+    message: Message,
+    label: &'static str,
+) -> std::result::Result<(), ()> {
+    let Ok(Ok(_)) = timeout(TCP_TIMEOUT, write.send(message)).await else {
+        error!("Failed to send {label} message");
+        return Err(());
+    };
+    Ok(())
+}
+
+async fn send_ingest_batch(
+    write: &mut ControlSocketWriter,
+    serial: usize,
+    chunks: Vec<Vec<u8>>,
+) -> std::result::Result<usize, ()> {
+    let n_chunks = chunks.len();
+    let byte_count = chunks.iter().map(|chunk| chunk.len()).sum::<usize>();
+
+    let begin = messages::WsMessage::BeginIngest {
+        unique_id: serial as u64,
+        n_chunks: n_chunks as u64,
+    };
+    send_ws_message_now(
+        write,
+        encode_ws_binary(&begin, "BeginIngest")?,
+        "BeginIngest",
+    )
+    .await?;
+
+    for (chunk_index, chunk) in chunks.into_iter().enumerate() {
+        let ingest_chunk = messages::WsMessage::IngestChunk {
+            unique_id: serial as u64,
+            chunk: chunk_index as u64,
+            n_chunks: n_chunks as u64,
+            data: chunk,
+        };
+        send_ws_message_now(
+            write,
+            encode_ws_binary(&ingest_chunk, "IngestChunk")?,
+            "IngestChunk",
+        )
+        .await?;
+    }
+
+    let end = messages::WsMessage::EndIngest {
+        unique_id: serial as u64,
+        n_chunks: n_chunks as u64,
+    };
+    send_ws_message_now(write, encode_ws_binary(&end, "EndIngest")?, "EndIngest").await?;
+
+    Ok(byte_count)
+}
+
 async fn persistent_connection(
     mut rx: tokio::sync::mpsc::Receiver<ConnectionCommand>,
 ) -> std::result::Result<(), String> {
     let mut sleep_seconds = 60;
     'reconnect: loop {
+        if !capabilities::can_open_control_channel() {
+            capabilities::set_control_service_reachable(false);
+            capabilities::wait_for_control_channel_retry(Duration::from_secs(sleep_seconds)).await;
+            continue 'reconnect;
+        }
+
         if let Ok(mut socket) = connect().await {
             let mut permitted = false;
             // Preamble - get connected
             if let Err(e) = send_magic_number(&mut socket).await {
                 warn!("Failed to send magic number: {}", e);
+                capabilities::set_control_service_reachable(false);
                 tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
                 continue 'reconnect;
             }
             if let Err(e) = send_license(&mut socket).await {
                 warn!("Failed to send license info: {}", e);
+                capabilities::set_control_service_reachable(false);
                 tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
                 continue 'reconnect;
             }
@@ -293,7 +377,7 @@ async fn persistent_connection(
             // Split the socket
             let (mut write, mut read) = socket.split();
             let (socket_sender_tx, mut socket_sender_rx) =
-                tokio::sync::mpsc::channel::<Message>(32);
+                tokio::sync::mpsc::channel::<Message>(SOCKET_SENDER_QUEUE_DEPTH);
             let mut ping_interval = tokio::time::interval(Duration::from_secs(10));
             let mut license_interval = tokio::time::interval(Duration::from_secs(60 * 15)); // 15 minutes
             let mut pending_history: HashMap<
@@ -353,61 +437,11 @@ async fn persistent_connection(
                                     info!("Not permitted to send chunks yet");
                                     continue 'message_pump;
                                 }
-                                let n_chunks = chunks.len();
-                                let byte_count = chunks.iter().map(|c| c.len()).sum::<usize>();
-
-                                // Send BeginIngest
-                                let Ok((_, _, bytes)) = messages::WsMessage::BeginIngest { unique_id: serial as u64, n_chunks: n_chunks as u64 }.to_bytes() else {
-                                    error!("Failed to serialize BeginIngest message");
+                                let Ok(byte_count) =
+                                    send_ingest_batch(&mut write, serial, chunks).await
+                                else {
                                     break 'message_pump;
                                 };
-                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
-                                    match e {
-                                        TrySendError::Full(_) => {
-                                            warn!("Send unavailable: BeginIngest queue full; dropping message");
-                                        }
-                                        TrySendError::Closed(_) => {
-                                            error!("Failed to send BeginIngest message: channel closed");
-                                            break 'message_pump;
-                                        }
-                                    }
-                                }
-
-                                // Submit Each Chunk
-                                for (i, chunk) in chunks.into_iter().enumerate() {
-                                    let Ok((_, _, bytes)) = messages::WsMessage::IngestChunk { unique_id: serial as u64, chunk: i as u64, n_chunks: n_chunks as u64, data: chunk }.to_bytes() else {
-                                        error!("Failed to serialize IngestChunk message");
-                                        break 'message_pump;
-                                    };
-                                    if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
-                                        match e {
-                                            TrySendError::Full(_) => {
-                                                warn!("Send unavailable: IngestChunk queue full; dropping chunk");
-                                            }
-                                            TrySendError::Closed(_) => {
-                                                error!("Failed to send IngestChunk message: channel closed");
-                                                break 'message_pump;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Send EndIngest
-                                let Ok((_, _, bytes)) = messages::WsMessage::EndIngest { unique_id: serial as u64, n_chunks: n_chunks as u64 }.to_bytes() else {
-                                    error!("Failed to serialize EndIngest message");
-                                    break 'message_pump;
-                                };
-                                if let Err(e) = socket_sender_tx.try_send(Message::Binary(bytes)) {
-                                    match e {
-                                        TrySendError::Full(_) => {
-                                            warn!("Send unavailable: EndIngest queue full; dropping message");
-                                        }
-                                        TrySendError::Closed(_) => {
-                                            error!("Failed to send EndIngest message: channel closed");
-                                            break 'message_pump;
-                                        }
-                                    }
-                                }
                                 debug!("Submitted {} bytes for ingestion", byte_count);
                             }
                             Some(ConnectionCommand::FetchHistory { request, responder }) => {
@@ -773,7 +807,7 @@ async fn persistent_connection(
                     message = timeout(TCP_TIMEOUT, read.next()) => {
                         let Ok(Some(Ok(message))) = message else {
                             // Timeout hit
-                            error!("Timeout or read error on WSS read");
+                            debug!("Timeout or read error on WSS read");
                             break 'message_pump;
                         };
                         match message {
@@ -792,6 +826,8 @@ async fn persistent_connection(
                                                 license_type: license_state,
                                                 trial_expires: expiration_date as i32,
                                             });
+                                            capabilities::clear_bootstrap_suppression();
+                                            capabilities::set_control_service_reachable(true);
                                             permitted = true;
                                             sleep_seconds = 60;
                                             // Flush any pending chatbot messages now that we're permitted
@@ -824,10 +860,19 @@ async fn persistent_connection(
                                                 license_type: 0,
                                                 trial_expires: -1,
                                             });
-                                            permitted = false;
+                                            capabilities::set_control_service_reachable(false);
+                                            if let Ok(config) = lqos_config::load_config()
+                                                && let Some(license_key) =
+                                                    config.long_term_stats.license_key.as_deref()
+                                            {
+                                                capabilities::suppress_bootstrap_for_license_key(
+                                                    license_key,
+                                                );
+                                            }
                                             if let Err(e) = license_grant::invalidate_license_grant() {
                                                 warn!("Failed to invalidate stored license grant: {e:?}");
                                             }
+                                            break 'message_pump;
                                         }
                                     }
                                     messages::WsMessage::InsightPublicKey { public_key } => {
@@ -868,7 +913,15 @@ async fn persistent_connection(
                                         }
                                     }
                                     messages::WsMessage::RemoteCommands { commands } => {
-                                        crate::lts2_sys::lts2_client::enqueue(commands);
+                                        if crate::lts2_sys::current_capabilities()
+                                            .can_receive_remote_commands
+                                        {
+                                            crate::lts2_sys::lts2_client::enqueue(commands);
+                                        } else {
+                                            warn!(
+                                                "Ignoring remote commands because the current license tier does not permit them"
+                                            );
+                                        }
                                     }
                                     messages::WsMessage::ChatbotChunk { request_id, data } => {
                                         if let Some(tx) = chatbot_streams.get(&request_id) {
@@ -1112,8 +1165,9 @@ async fn persistent_connection(
                 }
             }
         }
+        capabilities::set_control_service_reachable(false);
         debug!("Sleeping before reconnecting the persistent channel");
-        tokio::time::sleep(Duration::from_secs(sleep_seconds)).await;
+        capabilities::wait_for_control_channel_retry(Duration::from_secs(sleep_seconds)).await;
         sleep_seconds = 60;
     }
 }
@@ -1325,20 +1379,19 @@ async fn shaper_snapshot_streaming(
     request_id: u64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
-    // Mirror node_manager ticker throughput: fetch current throughput and send compact tuple data
-    use lqos_bus::BusResponse;
-
-    let resp = crate::throughput_tracker::current_throughput();
-    if let BusResponse::CurrentThroughput {
-        bits_per_second,
-        packets_per_second,
-        shaped_bits_per_second,
-        ..
-    } = resp
+    // Mirror node_manager ticker throughput: send compact tuple data.
+    // Note: field names are historical; values are bits per second.
     {
+        let bits_per_second =
+            crate::throughput_tracker::THROUGHPUT_TRACKER.actual_bits_per_second();
+        let shaped_bits_per_second =
+            crate::throughput_tracker::THROUGHPUT_TRACKER.shaped_actual_bits_per_second();
+        let packets_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER
+            .packets_per_second
+            .as_down_up();
+
         let message = messages::WsMessage::StreamingShaper {
             request_id,
-            // Note: field names are historical; values are bits per second
             bytes_down: bits_per_second.down,
             bytes_up: bits_per_second.up,
             shaped_bytes_down: shaped_bits_per_second.down,
@@ -1362,45 +1415,76 @@ async fn shaper_snapshot_streaming(
     Ok(())
 }
 
+#[derive(Serialize, Deserialize)]
+struct DeviceSnapshot {
+    device_id: String,
+    device_name: String,
+    addresses: Vec<(std::net::IpAddr, u8)>,
+    last_ping_ms: Option<f32>,
+    bits_per_second: (u64, u64),
+    median_tcp_rtt_ms: Option<f32>,
+    tcp_retransmit_pct: (f64, f64),
+}
+
+#[derive(Serialize, Deserialize)]
+struct FlowSnapshot {
+    remote_ip: std::net::IpAddr,
+    local_ip: std::net::IpAddr,
+    src_port: u16,
+    dst_port: u16,
+    ip_protocol: u8,
+    // Legacy Insight field name; payload value is the flow age at snapshot time.
+    #[serde(rename = "last_seen_nanos")]
+    age_nanos_wire: u64,
+    rate_bps: (u32, u32),
+    bytes_sent: (u64, u64),
+    packets_sent: (u64, u64),
+    tcp_retransmits: (u16, u16),
+    rtt_ms: (f32, f32),
+}
+
+#[derive(Serialize, Deserialize)]
+struct StreamingCircuitPayload {
+    devices: Vec<DeviceSnapshot>,
+    flows: Vec<FlowSnapshot>,
+}
+
+fn streaming_circuit_flow_snapshots(
+    circuit_hash: i64,
+    now_nanos: u64,
+) -> Vec<FlowSnapshot> {
+    let five_minutes_ago =
+        now_nanos.saturating_sub(STREAMING_CIRCUIT_FLOW_WINDOW.as_nanos() as u64);
+    let mut flows_out = Vec::new();
+
+    for_each_active_flow_for_circuit(circuit_hash, five_minutes_ago, |flow| {
+        let rtt_ms = (
+            flow.rtt_nanos.down as f32 / 1_000_000.0,
+            flow.rtt_nanos.up as f32 / 1_000_000.0,
+        );
+        flows_out.push(FlowSnapshot {
+            remote_ip: flow.key.remote_ip.as_ip(),
+            local_ip: flow.key.local_ip.as_ip(),
+            src_port: flow.key.src_port,
+            dst_port: flow.key.dst_port,
+            ip_protocol: flow.key.ip_protocol,
+            age_nanos_wire: flow.age_nanos(now_nanos),
+            rate_bps: (flow.rate_estimate_bps.down, flow.rate_estimate_bps.up),
+            bytes_sent: (flow.bytes_sent.down, flow.bytes_sent.up),
+            packets_sent: (flow.packets_sent.down, flow.packets_sent.up),
+            tcp_retransmits: (flow.tcp_retransmits.down, flow.tcp_retransmits.up),
+            rtt_ms,
+        });
+    });
+
+    flows_out
+}
+
 async fn circuit_snapshot_streaming(
     request_id: u64,
     circuit_hash: i64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
-    #[derive(Serialize, Deserialize)]
-    struct DeviceSnapshot {
-        device_id: String,
-        device_name: String,
-        addresses: Vec<(std::net::IpAddr, u8)>,
-        last_ping_ms: Option<f32>,
-        // down, up bits per second
-        bits_per_second: (u64, u64),
-        median_tcp_rtt_ms: Option<f32>,
-        // down, up retransmit percentage
-        tcp_retransmit_pct: (f64, f64),
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct FlowSnapshot {
-        remote_ip: std::net::IpAddr,
-        local_ip: std::net::IpAddr,
-        src_port: u16,
-        dst_port: u16,
-        ip_protocol: u8,
-        last_seen_nanos: u64,
-        // Down/Up tuples for compact transport
-        rate_bps: (u32, u32),
-        bytes_sent: (u64, u64),
-        packets_sent: (u64, u64),
-        tcp_retransmits: (u16, u16),
-        rtt_ms: (f32, f32),
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct StreamingCircuitPayload {
-        devices: Vec<DeviceSnapshot>,
-        flows: Vec<FlowSnapshot>,
-    }
 
     // Helper: choose a host IP for ping (only /32 or /128)
     fn choose_host_ip(
@@ -1418,87 +1502,76 @@ async fn circuit_snapshot_streaming(
 
     // Helper: run one ping with 1s timeout; respects disable_icmp_ping
     async fn one_ping(ip: std::net::IpAddr) -> Option<f32> {
-        let Ok(cfg) = lqos_config::load_config() else {
-            return None;
-        };
-        if cfg.disable_icmp_ping.unwrap_or(false) {
-            return None;
-        }
-        use rand::random;
-        use surge_ping::{Client, Config, ICMP, IcmpPacket, PingIdentifier, PingSequence};
-        let client = match ip {
-            std::net::IpAddr::V4(_) => Client::new(&Config::default()),
-            std::net::IpAddr::V6(_) => Client::new(&Config::builder().kind(ICMP::V6).build()),
-        };
-        if client.is_err() {
-            return None;
-        }
-        let client = client.ok()?;
-        let payload = [0; 56];
-        let mut pinger = client.pinger(ip, PingIdentifier(random())).await;
-        pinger.timeout(Duration::from_secs(1));
-        match pinger.ping(PingSequence(0), &payload).await {
-            Ok((IcmpPacket::V4(..), dur)) | Ok((IcmpPacket::V6(..), dur)) => {
-                Some(dur.as_secs_f32() * 1000.0)
+        match crate::probe_provider::probe_round_trip_time(
+            ip.to_string(),
+            ProbeClass::Diagnostic,
+            Duration::from_secs(1),
+            Duration::from_millis(250),
+        )
+        .await
+        {
+            Ok(observation) if observation.reachable => observation.rtt_ms.map(|rtt| rtt as f32),
+            Ok(_) => None,
+            Err(err) => {
+                debug!("Unable to sample shared RTT probe for {ip}: {err}");
+                None
             }
-            _ => None,
         }
     }
 
-    // Load "shaped devices" snapshot and pick devices in the target circuit
-    let shaped = crate::shaped_devices_tracker::SHAPED_DEVICES.load();
-    let shaped_cache = crate::shaped_devices_tracker::SHAPED_DEVICE_HASH_CACHE.load();
-    let mut device_indexes: Vec<usize> = Vec::new();
-    for (idx, dev) in shaped.devices.iter().enumerate() {
-        if dev.circuit_hash == circuit_hash {
-            device_indexes.push(idx);
-        }
-    }
+    // Load network devices catalog and pick devices in the target circuit.
+    // This includes dynamic circuits so circuit streaming works consistently for runtime overlays.
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let circuit_devices = catalog
+        .iter_all_devices()
+        .filter(|dev| dev.circuit_hash == circuit_hash)
+        .cloned()
+        .collect::<Vec<_>>();
 
-    // Aggregation holders per device index
+    // Aggregation holders per device hash
     use lqos_utils::units::{DownUpOrder, down_up_divide};
-    struct Agg {
+    #[derive(Default)]
+    struct DeviceTrafficAggregate {
         bps_bytes: DownUpOrder<u64>,
         tcp_packets: DownUpOrder<u64>,
         tcp_retries: DownUpOrder<u64>,
         rtts: Vec<f32>,
     }
-    let mut aggregates: std::collections::HashMap<usize, Agg> = std::collections::HashMap::new();
-    for idx in &device_indexes {
-        aggregates.insert(
-            *idx,
-            Agg {
-                bps_bytes: DownUpOrder::zeroed(),
-                tcp_packets: DownUpOrder::zeroed(),
-                tcp_retries: DownUpOrder::zeroed(),
-                rtts: Vec::new(),
-            },
-        );
-    }
+    let mut aggregates: std::collections::HashMap<i64, DeviceTrafficAggregate> =
+        std::collections::HashMap::new();
 
     // Walk raw throughput data and fold into devices of this circuit
     {
-        let raw = crate::throughput_tracker::THROUGHPUT_TRACKER
-            .raw_data
-            .lock();
-        for (_xdp_ip, te) in raw.iter() {
-            // Only consider entries known to belong to this circuit and are fresh enough
-            if te.circuit_hash != Some(circuit_hash) {
+        let raw_cycle = THROUGHPUT_TRACKER
+            .cycle
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let raw = THROUGHPUT_TRACKER.raw_data.lock();
+        for (xdp_ip, te) in raw.iter() {
+            if !retire_check(raw_cycle, te.most_recent_cycle) {
                 continue;
             }
-            // retire_check is local; use the same heuristic: require most_recent_cycle >= tp_cycle - RETIRE_AFTER_SECONDS
-            // We don't have RETIRE_AFTER_SECONDS here; accept all entries for snapshot.
-            if let Some(device_hash) = te.device_hash
-                && let Some(id) = shaped_cache.index_by_device_hash(&shaped, device_hash)
-                && let Some(agg) = aggregates.get_mut(&id)
-            {
-                // bytes_per_second -> later convert to bits
-                agg.bps_bytes += te.bytes_per_second;
-                agg.tcp_packets += te.tcp_packets;
-                agg.tcp_retries += te.tcp_retransmits;
-                if let Some(rtt) = te.median_latency() {
-                    agg.rtts.push(rtt);
-                }
+            let device = catalog
+                .device_by_hashes(te.device_hash, te.circuit_hash)
+                .or_else(|| {
+                    catalog
+                        .device_longest_match_for_ip(xdp_ip)
+                        .map(|(_, device)| device)
+                });
+            let matches_desired = te.circuit_hash == Some(circuit_hash)
+                || device.is_some_and(|device| device.circuit_hash == circuit_hash);
+            if !matches_desired {
+                continue;
+            }
+            let Some(device_hash) = device.map(|device| device.device_hash) else {
+                continue;
+            };
+            let agg = aggregates.entry(device_hash).or_default();
+            // bytes_per_second -> later convert to bits
+            agg.bps_bytes += te.bytes_per_second;
+            agg.tcp_packets += te.tcp_packets;
+            agg.tcp_retries += te.tcp_retransmits;
+            if let Some(rtt) = te.median_latency() {
+                agg.rtts.push(rtt);
             }
         }
         // raw lock dropped here
@@ -1506,14 +1579,8 @@ async fn circuit_snapshot_streaming(
 
     // Build device snapshots
     let mut devices_out: Vec<DeviceSnapshot> = Vec::new();
-    for idx in device_indexes {
-        let dev = &shaped.devices[idx];
-        let agg = aggregates.remove(&idx).unwrap_or(Agg {
-            bps_bytes: DownUpOrder::zeroed(),
-            tcp_packets: DownUpOrder::zeroed(),
-            tcp_retries: DownUpOrder::zeroed(),
-            rtts: Vec::new(),
-        });
+    for dev in circuit_devices {
+        let agg = aggregates.remove(&dev.device_hash).unwrap_or_default();
         // Compact addresses into a single list
         let mut addresses: Vec<(std::net::IpAddr, u8)> = Vec::new();
         addresses.extend(
@@ -1567,42 +1634,12 @@ async fn circuit_snapshot_streaming(
         });
     }
 
-    // Build flow snapshots for this circuit (recent, last 5 minutes)
-    let mut flows_out: Vec<FlowSnapshot> = Vec::new();
-    if let Ok(now_ts) = lqos_utils::unix_time::time_since_boot() {
-        let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
-        let five_minutes_ago = now_nanos.saturating_sub(300 * 1_000_000_000);
-        let all_flows = crate::throughput_tracker::flow_data::ALL_FLOWS.lock();
-        for (key, (local, ..)) in all_flows.flow_data.iter() {
-            if local.last_seen < five_minutes_ago {
-                continue;
-            }
-            if local.circuit_hash != Some(circuit_hash) {
-                continue;
-            }
-
-            let local_ip_addr = key.local_ip.as_ip();
-            let remote_ip_addr = key.remote_ip.as_ip();
-
-            let rtt_ms = (
-                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Download) as f32,
-                local.get_summary_rtt_as_millis(FlowbeeEffectiveDirection::Upload) as f32,
-            );
-            flows_out.push(FlowSnapshot {
-                remote_ip: remote_ip_addr,
-                local_ip: local_ip_addr,
-                src_port: key.src_port,
-                dst_port: key.dst_port,
-                ip_protocol: key.ip_protocol,
-                last_seen_nanos: now_nanos.saturating_sub(local.last_seen),
-                rate_bps: (local.rate_estimate_bps.down, local.rate_estimate_bps.up),
-                bytes_sent: (local.bytes_sent.down, local.bytes_sent.up),
-                packets_sent: (local.packets_sent.down, local.packets_sent.up),
-                tcp_retransmits: (local.tcp_retransmits.down, local.tcp_retransmits.up),
-                rtt_ms,
-            });
-        }
-    }
+    let flows_out = lqos_utils::unix_time::time_since_boot()
+        .map(|now_ts| {
+            let now_nanos = std::time::Duration::from(now_ts).as_nanos() as u64;
+            streaming_circuit_flow_snapshots(circuit_hash, now_nanos)
+        })
+        .unwrap_or_default();
 
     let payload = StreamingCircuitPayload {
         devices: devices_out,
@@ -1657,32 +1694,34 @@ async fn tree_snapshot_streaming(
     }
 
     // Use the same data source as local_api::network_tree
-    let net_json = crate::shaped_devices_tracker::NETWORK_JSON.read();
-    let result: Vec<(usize, LiveNetworkTransport)> = net_json
-        .get_nodes_when_ready()
-        .iter()
-        .enumerate()
-        .map(|(i, n)| {
-            let t = n.clone_to_transit();
-            let mapped = LiveNetworkTransport {
-                name: t.name,
-                max_throughput: t.max_throughput,
-                current_throughput: t.current_throughput,
-                current_packets: t.current_packets,
-                current_tcp_packets: t.current_tcp_packets,
-                current_udp_packets: t.current_udp_packets,
-                current_icmp_packets: t.current_icmp_packets,
-                current_retransmits: t.current_retransmits,
-                current_marks: t.current_marks,
-                current_drops: t.current_drops,
-                rtts: t.rtts,
-                parents: t.parents,
-                immediate_parent: t.immediate_parent,
-                node_type: t.node_type,
-            };
-            (i, mapped)
-        })
-        .collect();
+    let result: Vec<(usize, LiveNetworkTransport)> =
+        lqos_network_devices::with_network_json_read(|net_json| {
+            net_json
+                .get_nodes_when_ready()
+                .iter()
+                .enumerate()
+                .map(|(i, n)| {
+                    let t = n.clone_to_transit();
+                    let mapped = LiveNetworkTransport {
+                        name: t.name,
+                        max_throughput: t.max_throughput,
+                        current_throughput: t.current_throughput,
+                        current_packets: t.current_packets,
+                        current_tcp_packets: t.current_tcp_packets,
+                        current_udp_packets: t.current_udp_packets,
+                        current_icmp_packets: t.current_icmp_packets,
+                        current_retransmits: t.current_retransmits,
+                        current_marks: t.current_marks,
+                        current_drops: t.current_drops,
+                        rtts: t.rtts,
+                        parents: t.parents,
+                        immediate_parent: t.immediate_parent,
+                        node_type: t.node_type,
+                    };
+                    (i, mapped)
+                })
+                .collect()
+        });
 
     let Ok(bytes) = serde_cbor::to_vec(&result) else {
         error!("Failed to serialize LiveNetworkTransport payload");
@@ -1706,4 +1745,296 @@ async fn tree_snapshot_streaming(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{ActiveFlowSnapshotTestContext, active_flow_entry};
+    use crate::throughput_tracker::{replace_raw_throughput_for_test, RawThroughputTestEntry};
+    use crate::throughput_tracker::flow_data::{
+        FlowbeeEffectiveDirection, RttBuffer, RttData, replace_active_flows_for_test,
+        replace_active_flows_live_for_test,
+    };
+    use lqos_config::ShapedDevice;
+    use lqos_utils::units::DownUpOrder;
+    use lqos_utils::hash_to_i64;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn encode_ws_binary_round_trips_begin_ingest() {
+        let encoded = encode_ws_binary(
+            &messages::WsMessage::BeginIngest {
+                unique_id: 42,
+                n_chunks: 7,
+            },
+            "BeginIngest",
+        )
+        .expect("BeginIngest should encode");
+
+        let Message::Binary(bytes) = encoded else {
+            panic!("BeginIngest should encode to a binary websocket frame");
+        };
+
+        match messages::WsMessage::from_bytes(&bytes).expect("BeginIngest should decode") {
+            messages::WsMessage::BeginIngest {
+                unique_id,
+                n_chunks,
+            } => {
+                assert_eq!(unique_id, 42);
+                assert_eq!(n_chunks, 7);
+            }
+            other => panic!("unexpected decoded message: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn streaming_circuit_flow_snapshots_filter_snapshot_by_age_and_circuit() {
+        let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "streaming-circuit-test",
+            vec![ShapedDevice {
+                circuit_id: "insight-circuit".to_string(),
+                circuit_name: "Insight Circuit".to_string(),
+                device_id: "insight-device".to_string(),
+                device_name: "Insight Device".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 52), 32)],
+                ..Default::default()
+            }],
+        );
+        let circuit_hash = hash_to_i64("insight-circuit");
+        let now_nanos = 1_000_000_000_000;
+        let mut hash_matched = active_flow_entry(
+            [192, 0, 2, 99],
+            [198, 51, 100, 62],
+            50_002,
+            now_nanos - 10_000_000_000,
+            DownUpOrder::new(30_000, 40_000),
+            DownUpOrder::new(1_000, 2_000),
+            DownUpOrder::new(10, 20),
+        );
+        hash_matched.1.0.circuit_hash = Some(circuit_hash);
+        let mut ip_matched = active_flow_entry(
+            [192, 0, 2, 52],
+            [198, 51, 100, 60],
+            50_000,
+            now_nanos - 1_000_000_000,
+            DownUpOrder::new(30_000, 40_000),
+            DownUpOrder::new(1_000, 2_000),
+            DownUpOrder::new(10, 20),
+        );
+        let mut rtt = RttBuffer::new(
+            RttData::from_nanos(12_000_000),
+            FlowbeeEffectiveDirection::Download,
+            now_nanos,
+        );
+        rtt.push(
+            RttData::from_nanos(12_000_000),
+            FlowbeeEffectiveDirection::Download,
+            now_nanos,
+        );
+        rtt.push(
+            RttData::from_nanos(34_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            now_nanos,
+        );
+        rtt.push(
+            RttData::from_nanos(34_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            now_nanos,
+        );
+        ip_matched.1.0.set_rtt_buffer(rtt);
+
+        replace_active_flows_for_test(vec![
+            ip_matched,
+            active_flow_entry(
+                [192, 0, 2, 52],
+                [198, 51, 100, 61],
+                50_001,
+                now_nanos - 301_000_000_000,
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+            active_flow_entry(
+                [192, 0, 2, 52],
+                [198, 51, 100, 64],
+                50_004,
+                now_nanos - STREAMING_CIRCUIT_FLOW_WINDOW.as_nanos() as u64,
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+            hash_matched,
+            active_flow_entry(
+                [192, 0, 2, 53],
+                [198, 51, 100, 63],
+                50_003,
+                now_nanos - 1_000_000_000,
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+        ]);
+
+        let flows = streaming_circuit_flow_snapshots(circuit_hash, now_nanos);
+
+        assert_eq!(flows.len(), 3);
+        let mut remote_ips = flows
+            .iter()
+            .map(|flow| flow.remote_ip.to_string())
+            .collect::<Vec<_>>();
+        remote_ips.sort();
+        assert_eq!(
+            remote_ips,
+            vec!["198.51.100.60", "198.51.100.62", "198.51.100.64"]
+        );
+        let ip_matched = flows
+            .iter()
+            .find(|flow| flow.remote_ip.to_string() == "198.51.100.60")
+            .expect("IP-matched flow should be included");
+        assert_eq!(ip_matched.age_nanos_wire, 1_000_000_000);
+        let wire_flow = serde_json::to_value(ip_matched).expect("flow should serialize");
+        assert_eq!(wire_flow["last_seen_nanos"], 1_000_000_000);
+        assert!(wire_flow.get("age_nanos").is_none());
+        assert_eq!(ip_matched.rate_bps, (30_000, 40_000));
+        assert_eq!(ip_matched.bytes_sent, (1_000, 2_000));
+        assert_eq!(ip_matched.packets_sent, (10, 20));
+        assert_eq!(ip_matched.tcp_retransmits, (1, 2));
+        assert_eq!(ip_matched.rtt_ms, (14.0, 35.0));
+
+        replace_active_flows_live_for_test(Vec::new());
+        assert_eq!(
+            streaming_circuit_flow_snapshots(circuit_hash, now_nanos).len(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn circuit_snapshot_streaming_aggregates_only_fresh_raw_device_rows() {
+        let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
+            "streaming-circuit-raw-test",
+            vec![ShapedDevice {
+                circuit_id: "raw-circuit".to_string(),
+                circuit_name: "Raw Circuit".to_string(),
+                device_id: "raw-device".to_string(),
+                device_name: "Raw Device".to_string(),
+                parent_node: "Parent".to_string(),
+                ipv4: vec![(Ipv4Addr::new(192, 0, 2, 0), 24)],
+                ..Default::default()
+            }],
+        );
+        let circuit_hash = hash_to_i64("raw-circuit");
+        let device_hash = hash_to_i64("raw-device");
+        let _raw_guard = replace_raw_throughput_for_test(
+            100,
+            vec![
+                RawThroughputTestEntry {
+                    ip: lqos_utils::XdpIpAddress::from_ip(Ipv4Addr::new(192, 0, 2, 10).into()),
+                    circuit_hash: Some(circuit_hash),
+                    device_hash: Some(device_hash),
+                    most_recent_cycle: 99,
+                    bytes_per_second: DownUpOrder::new(1_000, 2_000),
+                    tcp_packets: DownUpOrder::new(100, 200),
+                    tcp_retransmits: DownUpOrder::new(10, 20),
+                },
+                RawThroughputTestEntry {
+                    ip: lqos_utils::XdpIpAddress::from_ip(Ipv4Addr::new(192, 0, 2, 11).into()),
+                    circuit_hash: Some(circuit_hash),
+                    device_hash: Some(device_hash),
+                    most_recent_cycle: 60,
+                    bytes_per_second: DownUpOrder::new(9_000, 9_000),
+                    tcp_packets: DownUpOrder::new(900, 900),
+                    tcp_retransmits: DownUpOrder::new(90, 90),
+                },
+                RawThroughputTestEntry {
+                    ip: lqos_utils::XdpIpAddress::from_ip(Ipv4Addr::new(192, 0, 2, 12).into()),
+                    circuit_hash: Some(circuit_hash),
+                    device_hash: Some(device_hash),
+                    most_recent_cycle: 70,
+                    bytes_per_second: DownUpOrder::new(100, 200),
+                    tcp_packets: DownUpOrder::new(10, 20),
+                    tcp_retransmits: DownUpOrder::new(1, 2),
+                },
+            ],
+        );
+        let now_nanos = std::time::Duration::from(
+            lqos_utils::unix_time::time_since_boot()
+                .expect("test system clock should report time since boot"),
+        )
+        .as_nanos() as u64;
+        replace_active_flows_for_test(vec![
+            active_flow_entry(
+                [192, 0, 2, 10],
+                [198, 51, 100, 70],
+                50_010,
+                now_nanos.saturating_sub(1_000_000_000),
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+            active_flow_entry(
+                [192, 0, 2, 12],
+                [198, 51, 100, 72],
+                50_012,
+                now_nanos.saturating_sub(1_000_000_000),
+                DownUpOrder::new(30_000, 40_000),
+                DownUpOrder::new(1_000, 2_000),
+                DownUpOrder::new(10, 20),
+            ),
+        ]);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+
+        circuit_snapshot_streaming(77, circuit_hash, tx)
+            .await
+            .expect("streaming circuit snapshot should send");
+
+        let Some(Message::Binary(bytes)) = rx.recv().await else {
+            panic!("streaming circuit should emit one binary frame");
+        };
+        let messages::WsMessage::StreamingCircuit {
+            request_id,
+            circuit_hash: payload_circuit_hash,
+            data,
+        } = messages::WsMessage::from_bytes(&bytes).expect("streaming circuit should decode")
+        else {
+            panic!("unexpected websocket message");
+        };
+        assert_eq!(request_id, 77);
+        assert_eq!(payload_circuit_hash, circuit_hash);
+        let payload: StreamingCircuitPayload =
+            serde_cbor::from_slice(&data).expect("streaming circuit payload should decode");
+
+        assert_eq!(payload.devices.len(), 1);
+        assert_eq!(payload.devices[0].device_id, "raw-device");
+        assert_eq!(payload.devices[0].bits_per_second, (8_000, 16_000));
+        assert_eq!(payload.devices[0].tcp_retransmit_pct, (0.1, 0.1));
+        let mut flow_ips = payload
+            .flows
+            .iter()
+            .map(|flow| flow.remote_ip.to_string())
+            .collect::<Vec<_>>();
+        flow_ips.sort();
+        assert_eq!(flow_ips, vec!["198.51.100.70", "198.51.100.72"]);
+    }
+
+    #[test]
+    fn streaming_flow_snapshot_decodes_legacy_last_seen_nanos_wire_field() {
+        let decoded: FlowSnapshot = serde_json::from_value(serde_json::json!({
+            "remote_ip": "198.51.100.62",
+            "local_ip": "192.0.2.99",
+            "src_port": 443,
+            "dst_port": 50002,
+            "ip_protocol": 6,
+            "last_seen_nanos": 1_000_000_000_u64,
+            "rate_bps": [30_000, 40_000],
+            "bytes_sent": [1_000, 2_000],
+            "packets_sent": [10, 20],
+            "tcp_retransmits": [1, 2],
+            "rtt_ms": [12.0, 34.0]
+        }))
+        .expect("legacy flow snapshot should deserialize");
+
+        assert_eq!(decoded.age_nanos_wire, 1_000_000_000);
+    }
 }

@@ -3,6 +3,10 @@
 const RAW_SAMPLES: usize = 60;
 const SUMMARY_BLOCKS: usize = 14;
 const TOTAL_BLOCKS: usize = SUMMARY_BLOCKS + 1;
+/// Minimum TCP packet count required before executive retransmit heatmaps color a sample.
+pub const EXECUTIVE_RETRANSMIT_MIN_PACKETS: u64 = 100;
+/// Minimum TCP retransmit count required before executive retransmit heatmaps color a sample.
+pub const EXECUTIVE_RETRANSMIT_MIN_RETRANSMITS: u64 = 2;
 
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
@@ -270,6 +274,20 @@ impl TemporalHeatmap {
     }
 }
 
+/// Compute the executive-summary retransmit percentage for a heatmap sample.
+///
+/// Returns `None` when the sample is too small to be considered trustworthy for the
+/// executive and queue-dynamics summary heatmaps.
+pub fn executive_retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
+    if retransmits < EXECUTIVE_RETRANSMIT_MIN_RETRANSMITS
+        || packets < EXECUTIVE_RETRANSMIT_MIN_PACKETS
+    {
+        return None;
+    }
+    let value = (retransmits as f32 / packets as f32) * 100.0;
+    if value > 50.0 { None } else { Some(value) }
+}
+
 impl Default for TemporalHeatmap {
     fn default() -> Self {
         Self::new()
@@ -278,7 +296,10 @@ impl Default for TemporalHeatmap {
 
 #[cfg(test)]
 mod tests {
-    use super::{RAW_SAMPLES, SUMMARY_BLOCKS, TOTAL_BLOCKS, TemporalHeatmap};
+    use super::{
+        EXECUTIVE_RETRANSMIT_MIN_PACKETS, EXECUTIVE_RETRANSMIT_MIN_RETRANSMITS, RAW_SAMPLES,
+        SUMMARY_BLOCKS, TOTAL_BLOCKS, TemporalHeatmap, executive_retransmit_percent,
+    };
 
     #[test]
     fn new_is_empty() {
@@ -355,5 +376,49 @@ mod tests {
         assert_eq!(blocks.rtt[TOTAL_BLOCKS - 1], Some(3.0));
         assert_eq!(blocks.rtt_p50_down[TOTAL_BLOCKS - 1], Some(3.0));
         assert_eq!(blocks.rtt_p50_up[TOTAL_BLOCKS - 1], Some(3.0));
+    }
+
+    #[test]
+    fn executive_retransmit_percent_requires_confidence_floor() {
+        assert_eq!(
+            executive_retransmit_percent(
+                EXECUTIVE_RETRANSMIT_MIN_RETRANSMITS - 1,
+                EXECUTIVE_RETRANSMIT_MIN_PACKETS,
+            ),
+            None
+        );
+        assert_eq!(
+            executive_retransmit_percent(
+                EXECUTIVE_RETRANSMIT_MIN_RETRANSMITS,
+                EXECUTIVE_RETRANSMIT_MIN_PACKETS - 1,
+            ),
+            None
+        );
+        assert_eq!(
+            executive_retransmit_percent(
+                EXECUTIVE_RETRANSMIT_MIN_RETRANSMITS,
+                EXECUTIVE_RETRANSMIT_MIN_PACKETS,
+            ),
+            Some(2.0)
+        );
+    }
+
+    #[test]
+    fn executive_retransmit_percent_rejects_implausible_ratio() {
+        assert_eq!(executive_retransmit_percent(60, 100), None);
+        assert_eq!(executive_retransmit_percent(50, 100), Some(50.0));
+    }
+
+    #[test]
+    fn retransmit_median_ignores_suppressed_samples() {
+        let mut heatmap = TemporalHeatmap::new();
+        heatmap.add_sample(10.0, 10.0, None, None, None, None, None, None);
+        heatmap.add_sample(10.0, 10.0, None, None, None, None, Some(2.0), Some(4.0));
+        heatmap.add_sample(10.0, 10.0, None, None, None, None, Some(6.0), Some(8.0));
+
+        let blocks = heatmap.blocks();
+        assert_eq!(blocks.retransmit_down[TOTAL_BLOCKS - 1], Some(4.0));
+        assert_eq!(blocks.retransmit_up[TOTAL_BLOCKS - 1], Some(6.0));
+        assert_eq!(blocks.retransmit[TOTAL_BLOCKS - 1], Some(5.0));
     }
 }

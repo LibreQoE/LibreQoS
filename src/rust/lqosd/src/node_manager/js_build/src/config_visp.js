@@ -1,4 +1,10 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    bindSecretField,
+    loadConfig,
+    renderConfigMenu,
+    saveConfig,
+    secretWillExistAfterSave,
+} from "./config/config_helper";
 
 function validateConfig() {
     const enabled = document.getElementById("enableVisp").checked;
@@ -12,8 +18,7 @@ function validateConfig() {
         return false;
     }
 
-    const clientSecret = document.getElementById("vispClientSecret").value.trim();
-    if (!clientSecret) {
+    if (!secretWillExistAfterSave("visp_integration", "client_secret", "vispClientSecret")) {
         alert("Client Secret is required when VISP integration is enabled");
         return false;
     }
@@ -24,8 +29,7 @@ function validateConfig() {
         return false;
     }
 
-    const password = document.getElementById("vispPassword").value.trim();
-    if (!password) {
+    if (!secretWillExistAfterSave("visp_integration", "password", "vispPassword")) {
         alert("Appuser Password is required when VISP integration is enabled");
         return false;
     }
@@ -66,12 +70,24 @@ loadConfig(() => {
     const cfg = window.config.visp_integration ?? {};
     document.getElementById("enableVisp").checked = cfg.enable_visp ?? false;
     document.getElementById("vispClientId").value = cfg.client_id ?? "";
-    document.getElementById("vispClientSecret").value = cfg.client_secret ?? "";
     document.getElementById("vispUsername").value = cfg.username ?? "";
-    document.getElementById("vispPassword").value = cfg.password ?? "";
     document.getElementById("vispIspId").value = cfg.isp_id ?? "";
     document.getElementById("vispTimeout").value = cfg.timeout_secs ?? 20;
     document.getElementById("vispOnlineUsersDomain").value = cfg.online_users_domain ?? "";
+    bindSecretField({
+        section: "visp_integration",
+        field: "client_secret",
+        inputId: "vispClientSecret",
+        statusId: "vispClientSecretStatus",
+        clearButtonId: "clearVispClientSecret",
+    });
+    bindSecretField({
+        section: "visp_integration",
+        field: "password",
+        inputId: "vispPassword",
+        statusId: "vispPasswordStatus",
+        clearButtonId: "clearVispPassword",
+    });
 
     document.getElementById("saveVisp").addEventListener('click', () => {
         if (validateConfig()) {

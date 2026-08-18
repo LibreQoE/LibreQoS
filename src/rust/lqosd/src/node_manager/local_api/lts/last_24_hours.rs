@@ -1,7 +1,12 @@
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tokio::time::timeout;
 use tracing::warn;
+
+const SHAPER_QUERY_RESPONSE_TIMEOUT: Duration = Duration::from_secs(35);
+const SHAPER_QUERY_SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub struct ThroughputData {
@@ -136,20 +141,54 @@ pub struct RecentMedians {
     pub last_week: (i64, i64),
 }
 
+async fn wait_for_shaper_response<T>(
+    context: &'static str,
+    rx: tokio::sync::oneshot::Receiver<Vec<T>>,
+) -> Result<Vec<T>, StatusCode> {
+    match timeout(SHAPER_QUERY_RESPONSE_TIMEOUT, rx).await {
+        Ok(Ok(response)) => Ok(response),
+        Ok(Err(err)) => {
+            warn!("Error getting {context}: {err:?}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+        Err(_) => {
+            warn!("Timed out waiting for {context}");
+            Err(StatusCode::GATEWAY_TIMEOUT)
+        }
+    }
+}
+
+async fn send_shaper_query(
+    context: &'static str,
+    shaper_query: &tokio::sync::mpsc::Sender<ShaperQueryCommand>,
+    command: ShaperQueryCommand,
+) -> Result<(), StatusCode> {
+    match timeout(SHAPER_QUERY_SEND_TIMEOUT, shaper_query.send(command)).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) => {
+            warn!("Error sending {context} query");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+        Err(_) => {
+            warn!("Timed out queueing {context} query");
+            Err(StatusCode::GATEWAY_TIMEOUT)
+        }
+    }
+}
+
 pub async fn throughput_period_data(
     shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
     seconds: i32,
 ) -> Result<Vec<ThroughputData>, StatusCode> {
     super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperThroughput { seconds, reply: tx })
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting total throughput: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "throughput",
+        &shaper_query,
+        ShaperQueryCommand::ShaperThroughput { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("total throughput", rx).await?;
     Ok(throughput)
 }
 
@@ -159,17 +198,13 @@ pub async fn packets_period_data(
 ) -> Result<Vec<FullPacketData>, StatusCode> {
     super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperPackets { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending packets period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting packets period: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "packets period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperPackets { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("packets period", rx).await?;
     Ok(throughput)
 }
 
@@ -179,17 +214,13 @@ pub async fn percent_shaped_period_data(
 ) -> Result<Vec<PercentShapedWeb>, StatusCode> {
     super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperPercent { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending percent shaped period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting percent shaped: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "percent shaped period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperPercent { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("percent shaped", rx).await?;
     Ok(throughput)
 }
 
@@ -199,17 +230,13 @@ pub async fn percent_flows_period_data(
 ) -> Result<Vec<FlowCountViewWeb>, StatusCode> {
     super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperFlows { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending flows period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting flows: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "flows period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperFlows { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("flows", rx).await?;
     Ok(throughput)
 }
 
@@ -218,19 +245,14 @@ pub async fn rtt_histo_period_data(
     seconds: i32,
 ) -> Result<Vec<ShaperRttHistogramEntry>, StatusCode> {
     super::insight_gate().await?;
-    tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperRttHistogram { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending flows period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting flows: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "RTT histogram period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperRttHistogram { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("RTT histogram", rx).await?;
     Ok(throughput)
 }
 
@@ -239,19 +261,14 @@ pub async fn top10_downloaders_period_data(
     seconds: i32,
 ) -> Result<Vec<Top10Circuit>, StatusCode> {
     super::insight_gate().await?;
-    tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperTopDownloaders { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending flows period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting flows: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "top downloaders period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperTopDownloaders { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("top downloaders", rx).await?;
     Ok(throughput)
 }
 
@@ -260,19 +277,14 @@ pub async fn worst10_rtt_period_data(
     seconds: i32,
 ) -> Result<Vec<Worst10RttCircuit>, StatusCode> {
     super::insight_gate().await?;
-    tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperWorstRtt { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending flows period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting flows: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "worst RTT period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperWorstRtt { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("worst RTT", rx).await?;
     Ok(throughput)
 }
 
@@ -281,19 +293,14 @@ pub async fn worst10_rxmit_period_data(
     seconds: i32,
 ) -> Result<Vec<Worst10RxmitCircuit>, StatusCode> {
     super::insight_gate().await?;
-    tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperWorstRxmit { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending flows period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting flows: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "worst retransmits period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperWorstRxmit { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("worst retransmits", rx).await?;
     Ok(throughput)
 }
 
@@ -302,19 +309,14 @@ pub async fn top10_flows_period_data(
     seconds: i32,
 ) -> Result<Vec<AsnFlowSizeWeb>, StatusCode> {
     super::insight_gate().await?;
-    tracing::error!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperTopFlows { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending flows period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting flows: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "top flows period",
+        &shaper_query,
+        ShaperQueryCommand::ShaperTopFlows { seconds, reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("top flows", rx).await?;
     Ok(throughput)
 }
 
@@ -322,19 +324,14 @@ pub async fn recent_medians_data(
     shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>,
 ) -> Result<Vec<RecentMedians>, StatusCode> {
     super::insight_gate().await?;
-    tracing::debug!("rtt_histo_period");
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::ShaperRecentMedian { reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending flows period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let throughput = rx.await.map_err(|e| {
-        warn!("Error getting flows: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "recent median",
+        &shaper_query,
+        ShaperQueryCommand::ShaperRecentMedian { reply: tx },
+    )
+    .await?;
+    let throughput = wait_for_shaper_response("recent medians", rx).await?;
     Ok(throughput)
 }
 
@@ -344,16 +341,12 @@ pub async fn cake_period_data(
 ) -> Result<Vec<CakeData>, StatusCode> {
     super::insight_gate().await?;
     let (tx, rx) = tokio::sync::oneshot::channel();
-    shaper_query
-        .send(ShaperQueryCommand::CakeTotals { seconds, reply: tx })
-        .await
-        .map_err(|_| {
-            warn!("Error sending cake stats period");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let response = rx.await.map_err(|e| {
-        warn!("Error getting cake stats: {:?}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    send_shaper_query(
+        "cake stats period",
+        &shaper_query,
+        ShaperQueryCommand::CakeTotals { seconds, reply: tx },
+    )
+    .await?;
+    let response = wait_for_shaper_response("cake stats", rx).await?;
     Ok(response)
 }

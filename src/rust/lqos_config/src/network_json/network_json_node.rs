@@ -44,6 +44,9 @@ pub struct NetworkJsonNode {
     /// TCP packets paired to the retransmit counters for the current cycle.
     pub current_tcp_retransmit_packets: DownUpOrder<u64>,
 
+    /// TCP flows that contributed fresh RTT data in the current cycle.
+    pub current_rtt_flows: DownUpOrder<u32>,
+
     /// Current Cake Marks
     pub current_marks: DownUpOrder<u64>,
 
@@ -70,6 +73,10 @@ pub struct NetworkJsonNode {
 
     /// Optional geographic longitude carried in `network.json` metadata.
     pub longitude: Option<f32>,
+
+    /// Selected attachment name carried in `network.effective.json` metadata when runtime
+    /// squashing collapses attachment nodes into a site-centric tree.
+    pub active_attachment_name: Option<String>,
 
     /// Rolling per-site TemporalHeatmap (optional, allocated when enabled).
     pub heatmap: Option<TemporalHeatmap>,
@@ -142,6 +149,10 @@ impl NetworkJsonNode {
                 self.current_tcp_retransmit_packets.get_down(),
                 self.current_tcp_retransmit_packets.get_up(),
             ),
+            current_rtt_flows: (
+                self.current_rtt_flows.get_down(),
+                self.current_rtt_flows.get_up(),
+            ),
             current_marks: (self.current_marks.get_down(), self.current_marks.get_up()),
             current_drops: (self.current_drops.get_down(), self.current_drops.get_up()),
             rtts,
@@ -151,6 +162,7 @@ impl NetworkJsonNode {
             node_type: self.node_type.clone(),
             latitude: self.latitude,
             longitude: self.longitude,
+            active_attachment_name: self.active_attachment_name.clone(),
             subtree_site_count: 0,
             subtree_circuit_count: 0,
             subtree_device_count: 0,

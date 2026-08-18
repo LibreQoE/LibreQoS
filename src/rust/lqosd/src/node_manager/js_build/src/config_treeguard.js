@@ -1,13 +1,13 @@
 import {
     loadAllCircuitDirectoryRows,
     loadConfig,
-    loadNetworkJson,
+    loadNodeDirectory,
     renderConfigMenu,
     saveConfig,
 } from "./config/config_helper";
 import {defaultTreeguardConfig, ensureTreeguardConfig} from "./config/treeguard_defaults";
 
-let networkData = null;
+let nodeRows = [];
 let circuitRows = null;
 let selectedNodes = [];
 let selectedCircuits = [];
@@ -98,21 +98,22 @@ function updateCircuitsEnrollmentUi() {
 
 function loadNetworkData() {
     return new Promise((resolve, reject) => {
-        loadNetworkJson(
+        loadNodeDirectory(
             (data) => {
-                if (typeof data === "string" && data === "Not done yet") {
-                    console.error("Network.json file not found on server");
-                    alert("Network configuration not found. Please ensure network.json exists.");
-                    resolve();
-                    return;
-                }
-                networkData = data;
+                nodeRows = Array.isArray(data)
+                    ? data.filter((entry) => (entry?.node_name || "").toString().trim().length > 0)
+                    : [];
+                nodeRows.sort((a, b) => {
+                    const left = (a?.node_name || "").toString();
+                    const right = (b?.node_name || "").toString();
+                    return left.localeCompare(right);
+                });
                 populateNodeSelector();
                 resolve();
             },
             (err) => {
-                console.error("Error loading network data:", err);
-                alert("Failed to load network nodes. You can still add nodes manually.");
+                console.error("Error loading node directory:", err);
+                alert("Topology data is not ready yet. Run the integration or scheduler refresh and try again. You can still add nodes manually.");
                 reject(err);
             },
         );
@@ -145,31 +146,17 @@ function populateNodeSelector() {
     const selector = document.getElementById("nodeSelector");
     selector.innerHTML = '<option value="">Select a node...</option>';
 
-    function iterate(data, level = 0) {
-        if (typeof data !== "object" || data === null) {
+    nodeRows.forEach((entry) => {
+        const name = (entry?.node_name || "").toString().trim();
+        if (!name) {
             return;
         }
-
-        for (const [key, value] of Object.entries(data)) {
-            const option = document.createElement("option");
-            option.value = key;
-
-            let prefix = "";
-            for (let i = 0; i < level; i++) {
-                prefix += "- ";
-            }
-            option.textContent = prefix + key;
-            selector.appendChild(option);
-
-            if (value && typeof value === "object" && value.children != null) {
-                iterate(value.children, level + 1);
-            }
-        }
-    }
-
-    if (networkData) {
-        iterate(networkData);
-    }
+        const type = (entry?.node_type || "").toString().trim();
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = type ? `${name} (${type})` : name;
+        selector.appendChild(option);
+    });
 }
 
 function populateCircuitSelector() {

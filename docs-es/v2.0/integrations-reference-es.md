@@ -16,7 +16,6 @@ La guía canónica y orientada a tareas está en las páginas por integración e
     + [Burst](#burst)
     + [Ejemplo de Configuración](#ejemplo-de-configuración)
     + [Sobrescrituras de UISP](#sobrescrituras-de-uisp)
-      - [Sobrescrituras de Rutas UISP](#sobrescrituras-de-rutas-uisp)
   * [Integración con WISPGate](#integración-con-wispgate)
   * [Integración con Powercode](#integración-con-powercode)
   * [Integración con Sonar](#integración-con-sonar)
@@ -26,7 +25,7 @@ Si usa scripts propios como fuente de verdad para `network.json` y `ShapedDevice
 
 Comportamiento importante cuando hay integraciones habilitadas:
 - `ShapedDevices.csv` normalmente se regenera por los jobs de sincronización.
-- El comportamiento de sobrescritura de `network.json` depende de su configuración de integración (por ejemplo `always_overwrite_network_json`).
+- `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
 - Las ediciones manuales pueden sobrescribirse en el próximo ciclo de refresco.
 
 ## Integración con Splynx
@@ -43,8 +42,8 @@ LibreQoS soporta múltiples estrategias de topología para la integración con S
 |------------|-------------|-------------|-------------|
 | `flat` | Solo regula suscriptores, sin jerarquía | Menor | Máximo rendimiento, regulación simple de suscriptores únicamente |
 | `ap_only` | Una capa: AP → Clientes | Bajo | **Predeterminado**. Mejor balance entre rendimiento y estructura |
-| `ap_site` | Dos capas: Sitio → AP → Clientes | Medio | Agregación a nivel de sitio con complejidad moderada |
-| `full` | Mapeo completo de topología | Mayor | Representación completa de jerarquía de red |
+| `ap_site` | Dos capas: Sitio → AP → Clientes | Medio | Agregación a nivel de sitio usando Splynx Network Sites cuando estén disponibles |
+| `full` | Mapeo completo de la jerarquía de monitoreo | Mayor | Conserva la jerarquía más rica de monitoreo de Splynx en vez de compactarla a Network Sites |
 
 Configure la estrategia en `/etc/lqos.conf` bajo la sección `[splynx]`:
 
@@ -122,21 +121,18 @@ python3 integrationSplynx.py
 En la primera ejecución exitosa, se crearán los archivos ShapedDevices.csv y network.json.
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración con Splynx.
 
-Para asegurarse de que network.json siempre se sobrescriba con la versión más reciente obtenida por la integración, edite `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor `always_overwrite_network_json` a `true`.
-Luego ejecute `sudo systemctl restart lqosd`.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 Tiene la opción de ejecutar integrationSplynx.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_splynx = true``` bajo la sección ```[splynx_integration]``` en `/etc/lqos.conf`.
 Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
 ### Sobrescrituras de Splynx
 
-También puede modificar el archivo `integrationSplynxBandwidths.csv` para sobrescribir los anchos de banda predeterminados de cada Nodo (Sitio, AP).
+Use las sobrescrituras de la interfaz web de LibreQoS para cambiar la velocidad configurada de un Sitio o AP.
 
-Hay una plantilla disponible en la carpeta `/opt/libreqos/src`. Para usarla, copie el archivo `integrationSplynxBandwidths.template.csv` (eliminando la parte `.template` del nombre) y edítelo con la información correspondiente. Por ejemplo, si desea cambiar el bando de ancha de un sitio, ejecutaría:
-```
-sudo cp /opt/libreqos/src/integrationSplynxBandwidths.template.csv /opt/libreqos/src/integrationSplynxBandwidths.csv
-```
-Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
+Abra el nodo correspondiente en la vista de árbol o de topología y guarde allí el ancho de banda deseado. LibreQoS conservará esa sobrescritura del operador en futuras actualizaciones de Splynx.
+
+No cree ni dependa de archivos heredados `integrationSplynxBandwidths*.csv` en implementaciones nuevas. El flujo compatible es el sistema normal de sobrescrituras desde la interfaz web.
 
 ## Integración con Netzur
 
@@ -155,7 +151,35 @@ use_mikrotik_ipv6 = false
 - `api_key` es el token Bearer generado dentro de Netzur.
 - `api_url` debe devolver un JSON con los arreglos `zones` (convertidos en sitios) y `customers` (convertidos en circuitos y dispositivos).
 - `timeout_secs` permite incrementar el tiempo de espera de la petición cuando el API responde lentamente (por defecto 60 segundos).
-- `use_mikrotik_ipv6` agrega prefijos IPv6 obtenidos de `mikrotikDHCPRouterList.csv`.
+- `use_mikrotik_ipv6` agrega prefijos IPv6 obtenidos de `/etc/libreqos/mikrotik_ipv6.toml`. LibreQoS relaciona IPv4 e IPv6 por dirección MAC usando datos de ARP, DHCPv4, DHCPv6 y vecinos IPv6 de MikroTik.
+
+### Credenciales de routers MikroTik para IPv6
+
+Cuando `use_mikrotik_ipv6` o `ipv6_with_mikrotik` esté habilitado, cree `/etc/libreqos/mikrotik_ipv6.toml`. Agregue un bloque `[[router]]` por cada router MikroTik que LibreQoS deba consultar:
+
+```toml
+version = 1
+
+[[router]]
+name = "core-1"
+host = "100.64.0.1"
+port = 8728
+username = "libreqos"
+password = "secreto"
+use_ssl = false
+plaintext_login = true
+
+[[router]]
+name = "core-2"
+host = "100.64.0.2"
+port = 8728
+username = "libreqos"
+password = "secreto"
+use_ssl = false
+plaintext_login = true
+```
+
+Agregue más bloques `[[router]]` para más routers. `port`, `use_ssl` y `plaintext_login` pueden omitirse cuando los valores por defecto son correctos: puerto `8728`, SSL deshabilitado y login en texto plano habilitado.
 
 Para una importación manual:
 
@@ -163,7 +187,7 @@ Para una importación manual:
 python3 integrationNetzur.py
 ```
 
-La integración actualiza `ShapedDevices.csv` y, salvo que `always_overwrite_network_json` esté deshabilitado, también `network.json`. Ajuste la opción Integración → Común si necesita preservar un `network.json` existente entre ejecuciones de Netzur.
+La integración actualiza sus artefactos propios de topología y shaping. `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
 
 ## Integración con VISP
 
@@ -185,9 +209,11 @@ timeout_secs = 20
 
 Notas:
 
-- La importación VISP usa GraphQL y actualmente trabaja en estrategia `flat`.
+- La importación VISP usa GraphQL.
+- El importador prioriza consultas bulk rápidas y completa de forma selectiva los suscriptores/servicios que no estén cubiertos por esa ruta.
+- Cuando las relaciones IRM de dispositivo upstream están pobladas en VISP, el importador también construye topología de sitio/upstream para los suscriptores importados.
 - La integración reescribe `ShapedDevices.csv` en cada ejecución.
-- `network.json` solo se sobrescribe cuando `always_overwrite_network_json = true` (en `[integration_common]`).
+- `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
 - Los tokens de VISP se cachean en `<lqos_directory>/.visp_token_cache_*.json`.
 
 Importación manual:
@@ -283,12 +309,13 @@ suspended_strategy = "none"
 
 # Ajustes de Capacidad
 # Las capacidades de AP reportadas por UISP pueden ser optimistas
-airmax_capacity = 0.65  # Usar 65% de la capacidad reportada de AirMax
-ltu_capacity = 0.95     # Usar 95% de la capacidad reportada de LTU
+airmax_capacity = 0.8  # Usar 80% de la capacidad reportada de AirMax en instalaciones nuevas
+airmax_flexible_frame_download_ratio = 0.8  # Reparto de respaldo para flexible framing de AirMax cuando UISP no expone dlRatio
+ltu_capacity = 1.0      # Usar 100% de la capacidad reportada de LTU en instalaciones nuevas
+infrastructure_transport_caps_enabled = true  # Limitar automáticamente la capacidad del radio al techo activo/conocido de los puertos Ethernet
 
 # Gestión de Sitios
 exclude_sites = []  # Sitios a excluir, ej: ["Sitio_Prueba", "Sitio_Lab"]
-use_ptmp_as_parent = true  # Para sitios conectados a través de APs PtMP
 
 # Ajustes de Ancho de Banda
 bandwidth_overhead_factor = 1.15  # Dar a clientes 15% sobre velocidad del plan
@@ -296,11 +323,9 @@ commit_bandwidth_multiplier = 0.98  # Establecer mínimo al 98% del máximo (CIR
 
 # Opciones Avanzadas
 ipv6_with_mikrotik = false  # Habilitar si usa DHCPv6 con MikroTik
-always_overwrite_network_json = true  # Recomendado para despliegues guiados por integración
 exception_cpes = []  # Excepciones de CPE en formato ["cpe:parent"]
 squash_sites = []  # Opcional: sitios a compactar
-enable_squashing = false  # Opcional: habilita lógica adicional de compactación
-do_not_squash_sites = []  # Opcional: sitios excluidos de compactación
+do_not_squash_sites = []  # Opcional: nombres de sitios que deben permanecer sin compactar en runtime/exportación
 ignore_calculated_capacity = false  # Opcional: prioriza capacidad configurada sobre la calculada
 insecure_ssl = false  # Opcional: ignora validación TLS del API UISP
 ```
@@ -312,17 +337,23 @@ Las compilaciones actuales también incluyen estas opciones en los editores de c
 - `exclude_sites`: lista de sitios a excluir de la importación.
 - `exception_cpes`: sobrescrituras `cpe:parent` para asignación ambigua.
 - `squash_sites`: lista opcional de sitios a compactar en flujos `full`.
-- `enable_squashing`: habilita compactación adicional donde aplique.
-- `do_not_squash_sites`: exclusiones explícitas de compactación.
-- `use_ptmp_as_parent`: prioriza AP PtMP como padre en rutas relevantes.
+- `do_not_squash_sites`: exclusiones explícitas por nombre de sitio para la compactación de runtime/exportación.
 - `ignore_calculated_capacity`: usa capacidades configuradas en lugar de calculadas.
 - `insecure_ssl`: deshabilita validación de certificados TLS para UISP.
+- `airmax_flexible_frame_download_ratio`: cuando UISP reporta capacidad agregada de un AP AirMax con flexible framing y no entrega `dlRatio`, LibreQoS usa esta proporción de descarga como respaldo. `0.8` significa 80/20 descarga/subida.
+
+Los sondeos de salud de adjuntos en Topology Manager usan las IPs de gestión reportadas por UISP para el par de adjuntos seleccionado. Las compilaciones actuales ya no filtran esas IPs de sondeo mediante `allow_subnets` de shaping; la lista permitida de direcciones de shaping sigue aplicándose a los datos generados de shaping de suscriptores/dispositivos, pero no a los destinos de sondeo de topología del plano de gestión.
+
+Las versiones actuales limitan este manejo de flexible framing a equipos donde UISP reporta `identification.type == "airMax"` y `identification.role == "ap"`. En esos AP AirMax, `theoreticalTotalCapacity` se usa solo como pista de flexible framing. La velocidad real de shaping sale de `totalCapacity` cuando UISP lo entrega, o de la capacidad direccional más fuerte cuando no lo hace, y la división sigue prefiriendo `dlRatio` cuando UISP lo reporta.
 
 Uso recomendado:
 
 1. Mantenga `insecure_ssl = false` salvo necesidad interna clara (PKI/self-signed).
 2. Use primero `exclude_sites` y `do_not_squash_sites` para cambios más seguros.
-3. Aplique `squash_sites`/`enable_squashing` de forma incremental y valide colocación de colas tras cada cambio.
+3. La compactación UISP de runtime/exportación siempre está habilitada después de Topology Manager. Use `do_not_squash_sites` solo cuando un camino concreto de sitio deba permanecer sin compactar.
+
+Nota heredada:
+- Los valores existentes de `enable_squashing` en `/etc/lqos.conf` se ignoran por compatibilidad hacia atrás.
 
 Para probar la integración con UISP, ejecute:
 
@@ -331,47 +362,33 @@ cd /opt/libreqos/src
 sudo /opt/libreqos/src/bin/uisp_integration
 ```
 En la primera ejecución exitosa, se crearán los archivos network.json y ShapedDevices.csv.
-Si ya existe un archivo network.json, no será sobrescrito a menos que configure ```always_overwrite_network_json = true```.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración de UISP.
 
-Para asegurarse de que network.json siempre sea sobrescrito con la versión más reciente obtenida por la integración, edite el archivo `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor  `always_overwrite_network_json` a `true`.
-Luego ejecute: `sudo systemctl restart lqosd`.
+Si UISP expone nombres visibles duplicados, las compilaciones actuales conservan los IDs estables de UISP y diferencian los nombres duplicados exportados de dispositivos/AP con un sufijo de ID corto, como `Nanoswitch [7c57e383]`. En colisiones de nombre entre sitio y AP, el sitio conserva el nombre simple y el lado AP recibe el sufijo para que una rama no oculte otra en el árbol heredado.
+
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 Tiene la opción de ejecutar `uisp_integration` automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_uisp = true``` en `/etc/lqos.conf`. Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
 ### Sobrescrituras de UISP
 
-También puede modificar los siguientes archivos para reflejar su red con mayor precisión:
-- integrationUISPbandwidths.csv
-- integrationUISProutes.csv
+Puede usar las siguientes entradas de override para reflejar su red con mayor precisión:
+- `Rate Override` para cambios de ancho de banda a nivel de nodo guardados como entradas operatorias `AdjustSiteSpeed` en `lqos_overrides.json`
+- `Topology Override` para correcciones de selección de padre en UISP `full`, también guardadas en `lqos_overrides.json`
+- integrationUISPbandwidths.csv solo como entrada heredada de compatibilidad
+
+Las compilaciones actuales aplican `Topology Override` antes de generar `network.json` y `ShapedDevices.csv`. El soporte actual en WebUI es solo `Pinned Parent`, forzando un único padre inmediato detectado.
+
+Las compilaciones UISP actuales también auto-migran un `integrationUISPbandwidths.csv` heredado hacia overrides operatorios `AdjustSiteSpeed` en la siguiente ejecución de la integración cuando todavía no existen overrides de tasa del operador. Si ya existen, el CSV se ignora.
+Las entradas JSON heredadas `uisp.bandwidth_overrides` se ignoran. La ruta autoritativa para overrides de ancho de banda es `AdjustSiteSpeed` en `lqos_overrides.json`.
+Las compilaciones UISP actuales ignoran las entradas heredadas `uisp.route_overrides` en `lqos_overrides.json` y los archivos heredados `integrationUISProutes.csv`. Si existe cualquiera de los dos, LibreQoS registra una advertencia y usa la topología detectada más los overrides de Topology Manager.
 
 Cada uno de los archivos mencionados arriba tienen plantillas, las cuales están disponibles en la carpeta `/opt/libreqos/src`. Si no los encuentra, puede obtenerlos [aquí](https://github.com/LibreQoE/LibreQoS/tree/develop/src). Para utilizarlos, copie el archivo (eliminando la parte `.template` del nombre) y edítelo con la información correspondiente.
-Por ejemplo, si desea cambiar el bando de ancha de un sitio, ejecutaría:
-```
-sudo cp /opt/libreqos/src/integrationUISPbandwidths.template.csv /opt/libreqos/src/integrationUISPbandwidths.csv
-```
-Y luego editaría el CSV con LibreOffice o el editor de CSV de su preferencia.
+Para cambios nuevos de ancho de banda, use los overrides operatorios en `lqos_overrides.json`. `integrationUISPbandwidths.csv` queda como una entrada heredada para migración única hacia `AdjustSiteSpeed`, no como el flujo preferido a largo plazo.
 
-#### Sobrescrituras de Rutas UISP
-
-El costo predeterminado entre nodos suele ser 10. La integración genera un archivo de gráfico en formato dot: `/opt/libreqos/src/graph.dot` el cuál puede visualizarse con [Graphviz](https://dreampuf.github.io/GraphvizOnline/). Esto genera un mapa con los costos de todos los enlaces.
-
-![image](https://github.com/user-attachments/assets/4edba4b5-c377-4659-8798-dfc40d50c859)
-
-Ejemplo:
-Tiene Sitio 1, Sitio 2 y Sitio 3.
-Existe un camino de respaldo entre Sitio 1 y Sitio 3, pero no es el preferido.
-El camino preferido debería ser: Sitio 1 > Sitio 2 > Sitio 3, pero la integración conecta directamente Sitio 1 > Sitio 3 por predeterminado.
-
-Para solucionar esto, agregue un costo mayor al predeterminado entre Sitio 1 y Sitio 3:
-```
-Site 1, Site 3, 100
-Site 3, Site 1, 100
-```
-De esta forma, el tráfico seguirá el camino: Sitio 1 > Sitio 2 > Sitio 3.
-
-Para aplicar el cambio, reinicie la integración ejecutando: ```sudo systemctl restart lqos_scheduler```.
+Para la intención de camino, use la selección de padre y la preferencia de attachments en Topology Manager. Ese es ahora el reemplazo soportado para los antiguos overrides de costo de ruta de UISP.
 
 ## Integración con WISPGate
 Primero, configure los parámetros relevantes de WISPGate en `/etc/lqos.conf`.
@@ -396,8 +413,7 @@ python3 integrationWISPGate.py
 En la primera ejecución exitosa, se crearán los archivos network.json y ShapedDevices.csv.
 ShapedDevices.csv será sobrescrito cada vez que se ejecute la integración de WISPGate.
 
-Para asegurarse de que network.json siempre sea sobrescrito con la versión más reciente obtenida por la integración, edite el archivo `/etc/lqos.conf` con el comando `sudo nano /etc/lqos.conf` y configure el valor  `always_overwrite_network_json` a `true`.
-Luego ejecute: `sudo systemctl restart lqosd`.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 
 Tiene la opción de ejecutar integrationWISPGate.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_wispgate = true``` en `/etc/lqos.conf`. Una vez configurado, ejecute `sudo systemctl restart lqos_scheduler`.
 
@@ -427,7 +443,7 @@ python3 integrationSonar.py
 ```
 
 En la primera ejecución exitosa, se crearán los archivos network.json y ShapedDevices.csv.
-Si ya existe un archivo network.json, no será sobrescrito a menos que configure ```always_overwrite_network_json = true```.
+Las integraciones incluidas no sobrescriben `network.json`; conserve `network.json` como entrada DIY/manual operada por el usuario.
 Puede modificar el archivo network.json para reflejar con mayor precisión los límites de ancho de banda.
 El archivo ShapedDevices.csv se sobrescribirá cada vez que se ejecute la integración de Sonar.
 Tiene la opción de ejecutar integrationSonar.py automáticamente al iniciar el equipo y cada X minutos (configurado con el parámetro `queue_refresh_interval_mins`), lo cual es altamente recomendado. Esto se habilita estableciendo ```enable_sonar = true``` en `/etc/lqos.conf`.

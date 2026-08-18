@@ -127,12 +127,12 @@ fn connect_queues_to_circuit(structure: &[QueueNode], queues: &[QueueType]) -> V
                     //println!("It matched!");
                     if let Some(circuit_hash) = &s.circuit_hash {
                         //println!("Circuit hash: {:?}", circuit_hash);
-                        let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
+                        let marks: u64 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
                         if cake.drops > 0 || marks > 0 {
                             return Some(TrackedQueue {
                                 circuit_hash: *circuit_hash,
-                                drops: cake.drops as u64,
-                                marks: marks as u64,
+                                drops: cake.drops,
+                                marks,
                             });
                         }
                     }
@@ -157,12 +157,12 @@ fn connect_queues_to_circuit_up(
                     .find(|s| s.up_class_major == major as u32 && s.class_minor == minor as u32)
                     && let Some(circuit_hash) = &s.circuit_hash
                 {
-                    let marks: u32 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
+                    let marks: u64 = cake.tins.iter().map(|tin| tin.ecn_marks).sum();
                     if cake.drops > 0 || marks > 0 {
                         return Some(TrackedQueue {
                             circuit_hash: *circuit_hash,
-                            drops: cake.drops as u64,
-                            marks: marks as u64,
+                            drops: cake.drops,
+                            marks,
                         });
                     }
                 }

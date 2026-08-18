@@ -7,7 +7,9 @@ Si usas el puente XDP, el tráfico dejará de pasar por el puente mientras lqosd
 ## Si instalaste el .deb
 
 ```{important}
-Desde v2.0, la ingesta de circuitos mapeados depende del estado válido de la licencia Insight. Sin una suscripción/licencia Insight válida, LibreQoS solo lee los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Esto incluye estado local de grant/licencia expirado o inválido por cualquier motivo. Vea [Comportamiento de licenciamiento de Insight](insight-es.md#límites-de-circuitos-mapeados-y-estado-de-licencia) y [Solución de problemas](troubleshooting-es.md).
+Desde v2.0, la ingesta de circuitos mapeados depende de un estado válido de licencia/grant con derecho. Sin un estado válido de licencia/grant de Insight o Local, LibreQoS solo lee los primeros 1000 circuitos mapeados válidos al estado de shaping activo. Esto incluye estado local de grant/licencia expirado o inválido por cualquier motivo. Vea [Comportamiento de licenciamiento de Insight](insight-es.md#límites-de-circuitos-mapeados-y-estado-de-licencia) y [Solución de problemas](troubleshooting-es.md).
+
+A partir de v2.2, la API del nodo usa la misma política. Las redes con 1.000 circuitos mapeados válidos o menos pueden usar la API sin una suscripción a Insight; las redes mayores requieren un derecho válido de API o Insight. Las llamadas continúan autenticadas. Un administrador puede crear hasta 16 claves locales con nombre en **License & Services**; cada clave se muestra una sola vez, se guarda únicamente como resumen SHA-256 y se puede revocar. Las claves de licencia y el token local heredado siguen siendo compatibles, y los cambios pueden tardar hasta 30 segundos en surtir efecto.
 ```
 
 Ejecuta:
@@ -39,7 +41,15 @@ sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 
-El instalador del hotfix configura el repositorio APT de LibreQoS en `https://repo.libreqos.com`, instala el conjunto parchado de paquetes `systemd` de Noble y fija esos paquetes para futuras actualizaciones.
+El instalador del hotfix configura el repositorio APT firmado de LibreQoS en `https://repo.libreqos.com`, instala el conjunto parchado de paquetes `systemd` de Noble y fija esos paquetes para futuras actualizaciones.
+De forma predeterminada, selecciona la versión actual del hotfix desde ese repositorio.
+Si Soporte de LibreQoS te indica que tu paquete instalado es anterior a v2.2, usa este comando de recuperación en su lugar:
+
+```bash
+sudo HOTFIX_PACKAGE_VERSION=255.4-1ubuntu9999+libreqos1 /opt/libreqos/src/systemd_hotfix.sh install
+sudo dpkg --configure -a
+sudo reboot
+```
 
 Después del reinicio, reanuda la actualización y reinicia los servicios:
 
@@ -99,6 +109,8 @@ Si el script indica que el hotfix debe ofrecerse, instálalo y reinicia antes de
 sudo ./systemd_hotfix.sh install
 sudo reboot
 ```
+
+El instalador selecciona la versión actual del hotfix desde el repositorio APT firmado de LibreQoS. Soporte de LibreQoS puede proporcionar un valor `HOTFIX_PACKAGE_VERSION` para un incidente específico.
 
 Ejecuta los siguientes comandos para recargar los servicios de LibreQoS:
 

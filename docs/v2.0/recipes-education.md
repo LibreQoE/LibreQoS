@@ -39,7 +39,7 @@ Recommended patterns:
 Example row:
 
 ```text
-Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm
+Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm
 UNI-BLDG-A-10.40.12.77,BLDG-A-10.40.12.77,UNI-BLDG-A-10.40.12.77,Host-10.40.12.77,BLDG-A,,10.40.12.77,,1,1,150,60,Education per-IP circuit,cake
 ```
 

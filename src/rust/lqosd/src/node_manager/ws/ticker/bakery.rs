@@ -5,7 +5,6 @@ use crate::node_manager::ws::messages::{
 };
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::shaped_devices_tracker::NETWORK_JSON;
 use lqos_bakery::{
     BakeryActivityEntry as BakeryActivitySnapshot, BakeryApplyType, BakeryMode,
     BakeryPreflightSnapshot, BakeryRuntimeNodeOperationAction, BakeryRuntimeNodeOperationStatus,
@@ -79,11 +78,12 @@ fn map_preflight(snapshot: BakeryPreflightSnapshot) -> BakeryPreflightData {
 }
 
 fn resolve_site_name(site_hash: i64) -> Option<String> {
-    let reader = NETWORK_JSON.read();
-    reader
-        .get_nodes_when_ready()
-        .iter()
-        .find_map(|node| (hash_to_i64(&node.name) == site_hash).then(|| node.name.clone()))
+    lqos_network_devices::with_network_json_read(|net_json| {
+        net_json
+            .get_nodes_when_ready()
+            .iter()
+            .find_map(|node| (hash_to_i64(&node.name) == site_hash).then(|| node.name.clone()))
+    })
 }
 
 fn resolve_runtime_site_name(site_hash: i64) -> Option<String> {
@@ -131,6 +131,7 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
                 applying_count: snapshot.runtime_operations.applying_count,
                 awaiting_cleanup_count: snapshot.runtime_operations.awaiting_cleanup_count,
                 failed_count: snapshot.runtime_operations.failed_count,
+                blocked_count: snapshot.runtime_operations.blocked_count,
                 dirty_count: snapshot.runtime_operations.dirty_count,
                 latest: snapshot.runtime_operations.latest.map(|entry| {
                     BakeryRuntimeOperationHeadlineData {
@@ -151,6 +152,8 @@ fn map_status(snapshot: BakeryStatusSnapshot) -> BakeryStatusData {
             },
             reload_required: snapshot.reload_required,
             reload_required_reason: snapshot.reload_required_reason,
+            passthrough_degraded: snapshot.passthrough_degraded,
+            passthrough_degraded_reason: snapshot.passthrough_degraded_reason,
             dirty_subtree_count: snapshot.dirty_subtree_count,
             queue_distribution: snapshot
                 .queue_distribution

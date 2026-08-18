@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+LAB_ROOT=$(cd -- "$(dirname -- "$0")" && pwd)
+source "$LAB_ROOT/lib/common.sh"
+source "$LAB_ROOT/lab.env"
+
+readonly UBUNTU_BASE="$IMAGE_DIR/$(basename "$UBUNTU_IMAGE_URL")"
+readonly ROUTER_ARCHIVE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.img.zip"
+readonly ROUTER_BASE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.qcow2"
+readonly SSH_KEY="$RUN_DIR/id_ed25519"
+OVMF_CODE=
+OVMF_VARS=
+
+usage() {
+    cat <<'EOF'
+Usage: ./radius-harness/lab <command>
+
+Commands: init up status configure test down purge console
+EOF
+}
+
+require_host_tools() {
+    for tool in virsh virt-install qemu-img cloud-localds curl unzip sha256sum rsync ssh scp; do require_command "$tool"; done
+}
+
+ensure_ssh_key() {
+    mkdir -p "$RUN_DIR"
+    [[ -f $SSH_KEY ]] || ssh-keygen -q -t ed25519 -N '' -f "$SSH_KEY"
+}
+
+resolve_ovmf() {
+    local code_path vars_path
+    if [[ -n ${OVMF_CODE_PATH:-} || -n ${OVMF_VARS_PATH:-} ]]; then
+        [[ -n ${OVMF_CODE_PATH:-} && -n ${OVMF_VARS_PATH:-} ]] || die "set both OVMF_CODE_PATH and OVMF_VARS_PATH"
+        [[ -r $OVMF_CODE_PATH && -r $OVMF_VARS_PATH ]] || die "configured OVMF firmware paths are not readable"
+        OVMF_CODE=$OVMF_CODE_PATH
+        OVMF_VARS=$OVMF_VARS_PATH
+        return
+    fi
+
+    for code_path in \
+        /usr/share/OVMF/OVMF_CODE_4M.fd \
+        /usr/share/OVMF/OVMF_CODE.fd \
+        /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
+        /usr/share/edk2/ovmf/OVMF_CODE.fd; do
+        vars_path=${code_path/CODE/VARS}
+        if [[ -r $code_path && -r $vars_path ]]; then
+            OVMF_CODE=$code_path
+            OVMF_VARS=$vars_path
+            return
+        fi
+    done
+    die "OVMF firmware was not found; install OVMF/edk2 or set OVMF_CODE_PATH and OVMF_VARS_PATH"
+}
+
+download_routeros() {
+    [[ -n ${ROUTEROS_CHR_SHA256:-} ]] || die "set ROUTEROS_CHR_SHA256 in lab.env before downloading RouterOS"
+    if [[ ! -f $ROUTER_ARCHIVE ]]; then
+        note "downloading RouterOS CHR $ROUTEROS_VERSION"
+        curl --fail --location --output "$ROUTER_ARCHIVE.partial" "$ROUTEROS_CHR_URL"
+        printf '%s  %s\n' "$ROUTEROS_CHR_SHA256" "$ROUTER_ARCHIVE.partial" | sha256sum --check --status || die "RouterOS archive checksum did not match"
+        mv "$ROUTER_ARCHIVE.partial" "$ROUTER_ARCHIVE"
+    fi
+    printf '%s  %s\n' "$ROUTEROS_CHR_SHA256" "$ROUTER_ARCHIVE" | sha256sum --check --status || die "cached RouterOS archive checksum did not match"
+    if [[ ! -f $ROUTER_BASE ]]; then
+        unzip -p "$ROUTER_ARCHIVE" >"$IMAGE_DIR/chr-$ROUTEROS_VERSION.img"
+        qemu-img convert -f raw -O qcow2 "$IMAGE_DIR/chr-$ROUTEROS_VERSION.img" "$ROUTER_BASE"
+        rm -f "$IMAGE_DIR/chr-$ROUTEROS_VERSION.img"
+    fi
+}
+
+download_ubuntu() {
+    [[ -n ${UBUNTU_IMAGE_SHA256:-} ]] || die "set UBUNTU_IMAGE_SHA256 in lab.env before downloading Ubuntu"
+    if [[ ! -f $UBUNTU_BASE ]]; then
+        note "downloading Ubuntu 24.04 cloud image"
+        curl --fail --location --output "$UBUNTU_BASE.partial" "$UBUNTU_IMAGE_URL"
+        printf '%s  %s\n' "$UBUNTU_IMAGE_SHA256" "$UBUNTU_BASE.partial" | sha256sum --check --status || die "Ubuntu image checksum did not match"
+        mv "$UBUNTU_BASE.partial" "$UBUNTU_BASE"
+    fi
+    printf '%s  %s\n' "$UBUNTU_IMAGE_SHA256" "$UBUNTU_BASE" | sha256sum --check --status || die "cached Ubuntu image checksum did not match"
+}
+
+build_runtime_bundle() {
+    [[ -d $REPO_ROOT/src/rust ]] || die "LibreQoS checkout not found: $REPO_ROOT"
+    note "building lqosd and lqos_python on the host"
+    (cd "$REPO_ROOT/src/rust" && cargo build --release -p lqosd -p lqos_python)
+    safe_remove "$RUNTIME_DIR"
+    mkdir -p "$RUNTIME_DIR/bin" "$RUNTIME_DIR/src"
+    install -m 0755 "$REPO_ROOT/src/rust/target/release/lqosd" "$RUNTIME_DIR/bin/lqosd"
+    install -m 0755 "$REPO_ROOT/src/rust/target/release/liblqos_python.so" "$RUNTIME_DIR/liblqos_python.so"
+    rsync -a --delete --exclude rust --exclude dist --exclude bin --exclude geo2.bin --exclude lts2 --exclude '*.pyc' --exclude '__pycache__' "$REPO_ROOT/src/" "$RUNTIME_DIR/src/"
+}
+
+create_network() { local name=$1 xml=$2; if ! network_exists "$name"; then virsh_lab net-define "$xml"; virsh_lab net-start "$name"; fi; }
+destroy_network() { local name=$1; if network_exists "$name"; then virsh_lab net-destroy "$name" >/dev/null 2>&1 || true; virsh_lab net-undefine "$name"; fi; }
+create_overlay() { local name=$1 backing=$2 size=${3:-}; if [[ -n $size ]]; then qemu-img create -f qcow2 -F qcow2 -b "$backing" "$RUN_DIR/$name.qcow2" "$size" >/dev/null; else qemu-img create -f qcow2 -F qcow2 -b "$backing" "$RUN_DIR/$name.qcow2" >/dev/null; fi; }
+
+render_cloud_init() {
+    local name=$1 network_config=$2
+    sed "s|__LAB_SSH_KEY__|$(<"$SSH_KEY.pub")|" "$LAB_ROOT/templates/user-data.yaml" >"$RUN_DIR/$name-user-data"
+    cloud-localds --network-config="$network_config" "$RUN_DIR/$name-seed.iso" "$RUN_DIR/$name-user-data"
+}
+
+install_linux_domain() {
+    local name=$1 memory=$2 vcpus=$3 network_args=$4
+    install -m 0644 "$OVMF_VARS" "$RUN_DIR/$name-vars.fd"
+    virt-install --connect "$LIBVIRT_URI" --name "$name" --memory "$memory" --vcpus "$vcpus" --import --boot "loader=$OVMF_CODE,loader.type=pflash,loader.readonly=yes,loader.secure=no,nvram=$RUN_DIR/$name-vars.fd" --disk "path=$RUN_DIR/$name.qcow2,format=qcow2,bus=virtio" --disk "path=$RUN_DIR/$name-seed.iso,device=cdrom" --os-variant ubuntu24.04 --graphics vnc,listen=127.0.0.1 --noautoconsole $network_args
+}
+
+create_domains() {
+    create_overlay "$LQOS_DOMAIN" "$UBUNTU_BASE" 8G; create_overlay "$RADIUS_DOMAIN" "$UBUNTU_BASE" 8G; create_overlay "$CLIENT_DOMAIN" "$UBUNTU_BASE" 8G; create_overlay "$ROUTER_DOMAIN" "$ROUTER_BASE"
+    install_linux_domain "$LQOS_DOMAIN" 4096 2 "--network network=$MANAGEMENT_NETWORK,model=virtio,mac=52:54:00:10:00:10 --network network=$CONTROL_NETWORK,model=virtio,mac=52:54:00:10:00:11 --network network=$TRANSIT_NETWORK,model=virtio,mac=52:54:00:10:00:12"
+    install_linux_domain "$RADIUS_DOMAIN" 512 1 "--network network=$MANAGEMENT_NETWORK,model=virtio,mac=52:54:00:20:00:10 --network network=$CONTROL_NETWORK,model=virtio,mac=52:54:00:20:00:11"
+    install_linux_domain "$CLIENT_DOMAIN" 512 1 "--network network=$MANAGEMENT_NETWORK,model=virtio,mac=52:54:00:30:00:10 --network network=$ACCESS_NETWORK,model=virtio,mac=02:00:00:00:00:42"
+    virt-install --connect "$LIBVIRT_URI" --name "$ROUTER_DOMAIN" --memory 512 --vcpus 1 --import --disk "path=$RUN_DIR/$ROUTER_DOMAIN.qcow2,format=qcow2,bus=virtio" --os-variant generic --graphics none --noautoconsole --network network=$MANAGEMENT_NETWORK,model=virtio,mac=52:54:00:40:00:10 --network network=$CONTROL_NETWORK,model=virtio,mac=52:54:00:40:00:11 --network network=$ACCESS_NETWORK,model=virtio,mac=52:54:00:40:00:12 --network network=$TRANSIT_NETWORK,model=virtio,mac=52:54:00:40:00:13
+    sleep 5
+}
+
+destroy_domain() { local name=$1; if domain_exists "$name"; then virsh_lab destroy "$name" >/dev/null 2>&1 || true; virsh_lab undefine "$name" --nvram >/dev/null 2>&1 || virsh_lab undefine "$name"; fi; }
+cmd_init() { require_host_tools; mkdir -p "$IMAGE_DIR" "$RUN_DIR"; download_ubuntu; download_routeros; build_runtime_bundle; note "lab bases and runtime bundle are ready"; }
+cmd_up() {
+    require_host_tools; resolve_ovmf; [[ -f $UBUNTU_BASE && -f $ROUTER_BASE && -x $RUNTIME_DIR/bin/lqosd ]] || die "run ./radius-harness/lab init first"; ensure_lab_stopped
+    trap 'status=$?; trap - ERR; note "lab creation failed; removing partial resources"; cmd_down || true; exit "$status"' ERR
+    safe_remove "$RUN_DIR"; mkdir -p "$RUN_DIR"; ensure_ssh_key
+    for guest in lqos radius client; do cp "$LAB_ROOT/templates/$guest-network.yaml" "$RUN_DIR/$guest-network.yaml"; done
+    render_cloud_init "$LQOS_DOMAIN" "$RUN_DIR/lqos-network.yaml"; render_cloud_init "$RADIUS_DOMAIN" "$RUN_DIR/radius-network.yaml"; render_cloud_init "$CLIENT_DOMAIN" "$RUN_DIR/client-network.yaml"
+    create_network "$CONTROL_NETWORK" "$LAB_ROOT/templates/network-control.xml"; create_network "$ACCESS_NETWORK" "$LAB_ROOT/templates/network-access.xml"; create_network "$TRANSIT_NETWORK" "$LAB_ROOT/templates/network-transit.xml"; create_domains
+    trap - ERR; note "VMs created. Use ./radius-harness/lab console once to set RouterOS admin password, then run ./radius-harness/lab configure."
+}
+cmd_status() { for item in "$LQOS_DOMAIN 52:54:00:10:00:10" "$RADIUS_DOMAIN 52:54:00:20:00:10" "$CLIENT_DOMAIN 52:54:00:30:00:10" "$ROUTER_DOMAIN 52:54:00:40:00:10"; do set -- $item; printf '%-20s %s\n' "$1" "$(management_ip "$2" || true)"; done; }
+cmd_console() { domain_exists "$ROUTER_DOMAIN" || die "RouterOS domain is not running; use ./radius-harness/lab up first"; virsh_lab console "$ROUTER_DOMAIN"; }
+cmd_configure() { "$LAB_ROOT/lib/configure.sh"; }
+cmd_test() { "$LAB_ROOT/lib/test-lifecycle.sh"; }
+cmd_down() { for domain in "$CLIENT_DOMAIN" "$RADIUS_DOMAIN" "$ROUTER_DOMAIN" "$LQOS_DOMAIN"; do destroy_domain "$domain"; done; for network in "$TRANSIT_NETWORK" "$ACCESS_NETWORK" "$CONTROL_NETWORK"; do destroy_network "$network"; done; [[ -d $RUN_DIR ]] && safe_remove "$RUN_DIR"; note "disposable lab resources removed"; }
+cmd_purge() { cmd_down; [[ -d $IMAGE_DIR ]] && safe_remove "$IMAGE_DIR"; [[ -d $RUNTIME_DIR ]] && safe_remove "$RUNTIME_DIR"; note "cached bases and runtime artifacts removed"; }
+
+case ${1:-} in init) cmd_init ;; up) cmd_up ;; status) cmd_status ;; configure) cmd_configure ;; test) cmd_test ;; down) cmd_down ;; purge) cmd_purge ;; console) cmd_console ;; *) usage; exit 2 ;; esac

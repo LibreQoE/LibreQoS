@@ -1,4 +1,5 @@
 import {DashletBaseInsight} from "./insight_dashlet_base";
+import {redactCell} from "../helpers/redact";
 import {formatUnixSecondsToLocalDateTime, mkBadge} from "./bakery_shared";
 
 const CIRCUIT_ACTIVITY_MAX_ITEMS = 1;
@@ -15,10 +16,16 @@ function classifyOutcome(entry) {
     const event = (entry?.event ?? "").toString().trim().toLowerCase();
     const status = (entry?.status ?? "").toString().trim().toLowerCase();
 
-    if (event === "reload_required") {
+    if (event === "reload_required" || event === "passthrough_degraded") {
         return {
-            label: "Reload Required",
+            label: event === "passthrough_degraded" ? "Pass-Through" : "Reload Required",
             className: "bg-danger-subtle text-danger border border-danger-subtle",
+        };
+    }
+    if (event === "passthrough_degraded_cleared") {
+        return {
+            label: "Shaping Restored",
+            className: "bg-success-subtle text-success border border-success-subtle",
         };
     }
     if (event === "apply_failed" || status === "error") {
@@ -184,6 +191,7 @@ export class BakeryStatusDashlet extends DashletBaseInsight {
             const fullSummary = (entry?.summary ?? "Bakery update").toString();
             summary.textContent = truncateSummary(fullSummary);
             summary.title = fullSummary;
+            redactCell(summary);
             top.appendChild(summary);
             top.appendChild(mkBadge(outcome.label, outcome.className, fullSummary));
             card.appendChild(top);

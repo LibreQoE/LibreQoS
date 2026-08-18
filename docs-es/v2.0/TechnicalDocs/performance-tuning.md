@@ -14,10 +14,14 @@ systemctl show -p WantedBy network-online.target
 systemctl disable cloud-config iscsid cloud-final
 ```
 
-### Set proper governor for CPU (baremetal/hypervisior host)
+### CPU governor on bare metal / hypervisor hosts
+
+LibreQoS now attempts to set the CPU governor to `performance` automatically during startup tuning.
+
+Disable it only if needed with `[tuning].set_cpu_governor_performance = false`, or verify the active governor with:
 
 ```shell
-cpupower frequency-set --governor performance
+cpupower frequency-info | grep 'current policy'
 ```
 
 ### OSPF

@@ -7,8 +7,25 @@
 #
 # Don't forget to setup `/etc/lqos.conf`
 
+FAST_BUILD=0
+for arg in "$@"
+do
+    case "$arg" in
+        --fast)
+            FAST_BUILD=1
+            ;;
+        *)
+            echo "Unknown argument: $arg"
+            echo "Usage: $0 [--fast]"
+            exit 2
+            ;;
+    esac
+done
+
+VENV_PYTHON="/opt/libreqos/venv/bin/python"
+
 # Check Pre-Requisites
-sudo apt install python3-pip clang gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
+sudo apt install python3-pip python3-venv clang gcc gcc-multilib llvm libelf-dev git nano curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
 
 if ! rustup -V &> /dev/null
 then
@@ -26,8 +43,14 @@ fi
 #BUILD_FLAGS=""
 #TARGET=debug
 # Otherwise
-BUILD_FLAGS=--release
-TARGET=release
+if [ "$FAST_BUILD" -eq 1 ]; then
+    BUILD_FLAGS="--profile fast-release"
+    TARGET=fast-release
+    echo "Using fast local iteration profile"
+else
+    BUILD_FLAGS=--release
+    TARGET=release
+fi
 
 # Enable this if you are building on the same computer you are running on
 RUSTFLAGS="-C target-cpu=native"
@@ -38,45 +61,62 @@ rustup update
 
 # Start building
 echo "Please wait while the system is compiled. Service will not be interrupted during this stage."
-PROGS="lqosd lqtop xdp_iphash_to_cpu_cmdline xdp_pping lqusers lqos_setup lqos_map_perf uisp_integration lqos_overrides"
+PROGS=(
+    lqosd
+    lqos_netplan_helper
+    lqtop
+    xdp_iphash_to_cpu_cmdline
+    xdp_pping
+    lqusers
+    lqos_setup
+    lqos_map_perf
+    uisp_integration
+    lqos_overrides
+)
+BUILD_PACKAGES=(
+    lqosd
+    lqos_netplan_helper
+    lqtop
+    xdp_iphash_to_cpu_cmdline
+    xdp_pping
+    lqusers
+    lqos_setup
+    lqos_map_perf
+    uisp_integration
+    lqos_overrides
+    lqos_topology
+    lqos_python
+)
 mkdir -p bin/static
 pushd rust > /dev/null || exit
 #cargo clean
-for prog in $PROGS
+PACKAGE_ARGS=()
+for pkg in "${BUILD_PACKAGES[@]}"
 do
-    # If prog is lqosd
-    if [ $prog == "lqosd" ]; then
-        # If the environment variable FLAMEGRAPHS is set, set the FEATURE variable to flamegraph, otherwise it's empty
-        if [ -n "$FLAMEGRAPHS" ]; then
-            echo "Building lqosd with flamegraph support"
-            FEATURE="-F flamegraphs"
-        else
-            echo "Building lqosd without flamegraph support"
-            FEATURE=""
-        fi
-        echo "Building lqosd"
-        pushd lqosd > /dev/null || exit
-        cargo build $BUILD_FLAGS $FEATURE
-        if [ $? -ne 0 ]; then
-          echo "Cargo build failed. Exiting with code 1."
-          exit 1
-        fi
-        popd > /dev/null || exit
-    else
-      pushd $prog > /dev/null || exit
-      cargo build $BUILD_FLAGS
-      if [ $? -ne 0 ]; then
-        echo "Cargo build failed. Exiting with code 1."
-        exit 1
-      fi
-      popd || exit
-    fi
+    PACKAGE_ARGS+=("-p" "$pkg")
 done
+
+# If the environment variable FLAMEGRAPHS is set, lqosd needs its own build with that feature.
+if [ -n "${FLAMEGRAPHS:-}" ]; then
+    echo "Building lqosd with flamegraph support"
+    cargo build $BUILD_FLAGS -p lqosd -F flamegraphs
+    NON_LQOSD_ARGS=()
+    for pkg in "${BUILD_PACKAGES[@]}"
+    do
+        if [ "$pkg" != "lqosd" ]; then
+            NON_LQOSD_ARGS+=("-p" "$pkg")
+        fi
+    done
+    cargo build $BUILD_FLAGS "${NON_LQOSD_ARGS[@]}"
+else
+    echo "Building Rust workspace binaries and lqos_python"
+    cargo build $BUILD_FLAGS "${PACKAGE_ARGS[@]}"
+fi
 popd > /dev/null || exit
 
 echo "Installing new binaries into bin folder."
 pushd rust > /dev/null || exit
-for prog in $PROGS
+for prog in "${PROGS[@]}"
 do
     echo "Installing $prog in bin folder"
     cp target/$TARGET/$prog ../bin/$prog.new || exit
@@ -92,26 +132,66 @@ pushd rust/lqosd > /dev/null || exit
 popd > /dev/null || exit
 
 # Copy the Python library for LibreQoS.py et al.
-pushd rust/lqos_python > /dev/null || exit
-cargo build $BUILD_FLAGS
-popd > /dev/null || exit
 cp rust/target/$TARGET/liblqos_python.so ./liblqos_python.so.new
 mv liblqos_python.so.new liblqos_python.so
+
+# Ensure runtime helper scripts required by the WebUI/setup flows exist and stay executable.
+for helper_script in update_api.sh install_caddy.sh disable_caddy.sh
+do
+    if [ ! -f "$helper_script" ]; then
+        echo "Expected runtime helper $helper_script to exist."
+        exit 1
+    fi
+    chmod a+x "$helper_script"
+done
 
 
 
 # Update the lqos_api binary
 echo "Updating lqos_api binary..."
-bash ./update_api.sh || echo "Warning: Failed to update lqos_api (continuing)."
+bash ./update_api.sh --no-restart || echo "Warning: Failed to update lqos_api (continuing)."
+
+set_libreqos_operator_permissions() {
+    local runtime_paths=()
+    [ -e /opt/libreqos/src ] && runtime_paths+=("/opt/libreqos/src")
+    [ -e /opt/libreqos/state ] && runtime_paths+=("/opt/libreqos/state")
+    [ ${#runtime_paths[@]} -eq 0 ] && return
+
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+        sudo chown -R "$SUDO_USER:$SUDO_USER" "${runtime_paths[@]}"
+        sudo chmod -R u+rwX "${runtime_paths[@]}" || true
+        echo "Granted $SUDO_USER ownership of /opt/libreqos/src and /opt/libreqos/state for SFTP editing."
+    else
+        echo "Unable to determine the installing operator account automatically."
+        echo "If you plan to edit LibreQoS files over SFTP, run: sudo chown -R <username>:<username> /opt/libreqos/src /opt/libreqos/state"
+    fi
+}
+
+set_libreqos_operator_permissions
 
 # If we're running systemd, we need to restart processes
-service_exists() {
+service_unit_exists() {
     local n=$1
     if [[ $(systemctl list-units --all -t service --full --no-legend "$n.service" | sed 's/^\s*//g' | cut -f1 -d' ') == $n.service ]]; then
         return 0
     else
         return 1
     fi
+}
+
+service_is_active() {
+    local n=$1
+    systemctl is-active --quiet "$n.service"
+}
+
+service_is_enabled() {
+    local n=$1
+    systemctl is-enabled --quiet "$n.service" 2>/dev/null
+}
+
+service_is_failed() {
+    local n=$1
+    systemctl is-failed --quiet "$n.service" 2>/dev/null
 }
 
 refresh_service_unit() {
@@ -123,6 +203,12 @@ refresh_service_unit() {
         sudo cp "$src" "$dst"
         SERVICE_UNITS_UPDATED=1
     fi
+}
+
+hotfix_blocks_service_restart() {
+    local script_path="./systemd_hotfix.sh"
+    [ -x "$script_path" ] || return 1
+    "$script_path" should-offer >/dev/null 2>&1
 }
 
 clear_pinned_maps_before_lqosd_restart() {
@@ -139,38 +225,84 @@ clear_pinned_maps_before_lqosd_restart() {
     fi
 }
 
+rebuild_python_venv() {
+    local script_path="./bin/rebuild_python_venv.sh"
+    if [ ! -x "$script_path" ]; then
+        echo "Expected $script_path to exist and be executable before refreshing Python services."
+        exit 1
+    fi
+
+    echo "Rebuilding /opt/libreqos/venv before restarting Python services."
+    if ! sudo "$script_path"; then
+        echo "Failed to rebuild /opt/libreqos/venv. Skipping service refresh/restarts."
+        exit 1
+    fi
+
+    if [ ! -x "$VENV_PYTHON" ]; then
+        echo "Expected $VENV_PYTHON to exist and be executable after rebuilding the Python venv."
+        echo "Skipping service refresh/restarts."
+        exit 1
+    fi
+}
+
 SERVICE_UNITS_UPDATED=0
+
+rebuild_python_venv
+
 refresh_service_unit lqosd
 refresh_service_unit lqos_scheduler
 refresh_service_unit lqos_api
+refresh_service_unit lqos_setup
 
 if [ "$SERVICE_UNITS_UPDATED" -eq 1 ]; then
     echo "Reloading systemd unit definitions."
     sudo systemctl daemon-reload
 fi
 
-if service_exists lqos_node_manager; then
+if service_unit_exists lqos_node_manager; then
     echo "lqos_node_manager is running as a service. It's not needed anymore. Killing it."
     sudo systemctl stop lqos_node_manager
     sudo systemctl disable lqos_node_manager
 fi
-if service_exists lqosd; then
-    clear_pinned_maps_before_lqosd_restart
-    echo "lqosd is running as a service. Restarting it. You may need to enter your sudo password."
-    sudo systemctl restart lqosd
+if service_unit_exists lqos_netplan_helper; then
+    echo "lqos_netplan_helper is no longer run as a service. Stopping and disabling it."
+    sudo systemctl stop lqos_netplan_helper || true
+    sudo systemctl disable lqos_netplan_helper || true
+    if [ -f /etc/systemd/system/lqos_netplan_helper.service ]; then
+        sudo rm -f /etc/systemd/system/lqos_netplan_helper.service
+        sudo systemctl daemon-reload
+    fi
 fi
-if service_exists lqos_scheduler; then
-    echo "lqos_scheduler is running as a service. Restarting it. You may need to enter your sudo password."
-    sudo systemctl restart lqos_scheduler
-fi
-if service_exists lqos_api; then
-    echo "lqos_api is running as a service. Restarting it. You may need to enter your sudo password."
-    sudo systemctl restart lqos_api
+
+if hotfix_blocks_service_restart; then
+    echo "Ubuntu 24.04 systemd hotfix is still required. Skipping LibreQoS service restarts."
+    echo "Install it with: sudo ./systemd_hotfix.sh install"
+    echo "Then reboot before restarting LibreQoS services."
+else
+    if service_is_active lqosd; then
+        clear_pinned_maps_before_lqosd_restart
+        echo "lqosd is active as a service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl restart lqosd
+    fi
+    if service_is_active lqos_scheduler || service_is_failed lqos_scheduler || service_is_enabled lqos_scheduler; then
+        echo "lqos_scheduler is installed as an active, failed, or enabled service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl reset-failed lqos_scheduler || true
+        sudo systemctl restart lqos_scheduler
+    fi
+    if service_is_active lqos_api || service_is_failed lqos_api || service_is_enabled lqos_api; then
+        echo "lqos_api is installed as an active, failed, or enabled service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl restart lqos_api
+    fi
+    if service_is_active lqos_setup; then
+        echo "lqos_setup is active as a service. Restarting it. You may need to enter your sudo password."
+        sudo systemctl restart lqos_setup
+    fi
 fi
 
 echo "-----------------------------------------------------------------"
 echo "Don't forget to setup /etc/lqos.conf!"
 echo "Template .service files can be found in bin/"
+echo "Debian package installs create/update /opt/libreqos/venv for Python dependencies."
 echo "If src/deb-requirements-constraints.txt exists, Debian package installs use it to constrain Python dependencies."
 echo "Use ./systemd_hotfix.sh to evaluate or install the Ubuntu 24.04 networkd hotfix from the LibreQoS APT repo at https://repo.libreqos.com."
 echo "The hotfix installer now offers to schedule a reboot after it finishes."

@@ -29,6 +29,9 @@ def install_sonar_stubs():
     lqlib.sonar_active_status_ids = lambda: []
     lqlib.sonar_recurring_service_rates = lambda: []
     lqlib.sonar_recurring_excluded_service_names = lambda: []
+    lqlib.sonar_strategy = lambda: "full"
+    lqlib.write_compiled_topology_from_python_graph_payload = lambda *_args, **_kwargs: None
+    lqlib.get_libreqos_directory = lambda: ""
     sys.modules["liblqos_python"] = lqlib
 
 
@@ -59,8 +62,13 @@ def inventory_item(item_id, name, ips=None, mac=""):
     }
 
 
-def sonar_account(address_items=None, radius_accounts=None):
-    return {
+def sonar_account(address_items=None, radius_accounts=None, account_ips=None, uninventoried_mac_addresses=None):
+    account = {
+        "id": 1,
+        "name": "Account 1",
+        "ip_assignments": {
+            "entities": [{"subnet": subnet} for subnet in (account_ips or [])]
+        },
         "addresses": {
             "entities": [
                 {
@@ -74,7 +82,9 @@ def sonar_account(address_items=None, radius_accounts=None):
         },
         "radius_accounts": {"entities": radius_accounts or []},
         "all_account_services": {"entities": []},
+        "uninventoried_mac_addresses": {"entities": uninventoried_mac_addresses or []},
     }
+    return account
 
 
 def radius_account(radius_id, ips):
@@ -82,6 +92,16 @@ def radius_account(radius_id, ips):
         "id": radius_id,
         "ip_assignments": {
             "entities": [{"subnet": subnet} for subnet in ips]
+        },
+    }
+
+
+def uninventoried_mac_address(mac_id, mac_address, ips=None):
+    return {
+        "id": mac_id,
+        "mac_address": mac_address,
+        "ip_assignments": {
+            "entities": [{"subnet": subnet} for subnet in (ips or [])]
         },
     }
 
@@ -147,6 +167,171 @@ class TestIntegrationSonarDevices(unittest.TestCase):
         self.assertEqual(devices[1]["id"], "sonar:radius-account:88")
         self.assertEqual(devices[1]["ips"], ["100.64.3.31/32"])
 
+    def test_account_level_ips_emit_stable_account_ip_device(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                address_items=[
+                    inventory_item(
+                        42,
+                        "ONU",
+                        ips=[],
+                        mac="AA:BB:CC:DD:EE:03",
+                    )
+                ],
+                account_ips=["100.64.8.80", "100.64.8.81"],
+            )
+        )
+
+        self.assertEqual(len(devices), 2)
+        self.assertEqual(devices[0]["id"], "sonar:device:42")
+        self.assertEqual(devices[0]["mac"], "AA:BB:CC:DD:EE:03")
+        self.assertEqual(devices[0]["ips"], [])
+        self.assertEqual(devices[1]["id"], "sonar:account-ip-assignments:1")
+        self.assertEqual(devices[1]["name"], "Account IP Assignments")
+        self.assertEqual(devices[1]["ips"], ["100.64.8.80", "100.64.8.81"])
+        self.assertEqual(devices[1]["mac"], "")
+        self.assertEqual(devices[1]["source"], "account_ip_assignments")
+
+    def test_split_ip_versions_preserves_ipv6_prefixes(self):
+        ipv4, ipv6, invalid = integrationSonar.splitIpVersions([
+            "100.64.8.80",
+            "2605:40c1:300::/56",
+            "not an ip",
+        ])
+
+        self.assertEqual(ipv4, ["100.64.8.80"])
+        self.assertEqual(ipv6, ["2605:40c1:300::/56"])
+        self.assertEqual(invalid, ["not an ip"])
+
+    def test_account_level_ips_are_deduped_against_inventory_and_radius_ips(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                address_items=[
+                    inventory_item(
+                        42,
+                        "ONU",
+                        ips=["100.64.9.90"],
+                        mac="AA:BB:CC:DD:EE:09",
+                    )
+                ],
+                radius_accounts=[
+                    radius_account(99, ["100.64.9.91"])
+                ],
+                account_ips=["100.64.9.90", "100.64.9.91", "100.64.9.92"],
+            )
+        )
+
+        self.assertEqual(len(devices), 3)
+        self.assertEqual(devices[2]["id"], "sonar:account-ip-assignments:1")
+        self.assertEqual(devices[2]["ips"], ["100.64.9.92"])
+
+    def test_uninventoried_mac_device_emits_with_stable_id_and_label(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                uninventoried_mac_addresses=[
+                    uninventoried_mac_address(555, "AA:BB:CC:DD:EE:55", ips=["100.64.12.12/32"]),
+                ]
+            )
+        )
+
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]["id"], "sonar:uninventoried-mac-address:555")
+        self.assertEqual(devices[0]["raw_id"], 555)
+        self.assertEqual(devices[0]["name"], "Uninventoried MAC Address: AA:BB:CC:DD:EE:55")
+        self.assertEqual(devices[0]["ips"], ["100.64.12.12/32"])
+        self.assertEqual(devices[0]["mac"], "AA:BB:CC:DD:EE:55")
+        self.assertEqual(devices[0]["source"], "uninventoried_mac_addresses")
+
+    def test_uninventoried_mac_ips_are_deduped_against_inventory_radius_and_account_ips(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                address_items=[
+                    inventory_item(42, "ONU", ips=["100.64.13.13/32"], mac="AA:BB:CC:DD:EE:42"),
+                ],
+                radius_accounts=[
+                    radius_account(43, ["100.64.13.14/32"]),
+                ],
+                account_ips=["100.64.13.15"],
+                uninventoried_mac_addresses=[
+                    uninventoried_mac_address(444, "AA:BB:CC:DD:EE:44", ips=[
+                        "100.64.13.13/32",
+                        "100.64.13.14/32",
+                        "100.64.13.15",
+                        "100.64.13.16",
+                    ]),
+                ],
+            )
+        )
+
+        self.assertEqual([d["id"] for d in devices], [
+            "sonar:device:42",
+            "sonar:radius-account:43",
+            "sonar:account-ip-assignments:1",
+            "sonar:uninventoried-mac-address:444",
+        ])
+        self.assertEqual(devices[3]["ips"], ["100.64.13.16"])
+
+    def test_uninventoried_mac_device_is_skipped_when_all_ips_are_duplicates(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                address_items=[
+                    inventory_item(42, "ONU", ips=["100.64.14.14/32"], mac="AA:BB:CC:DD:EE:42"),
+                ],
+                uninventoried_mac_addresses=[
+                    uninventoried_mac_address(666, "AA:BB:CC:DD:EE:66", ips=["100.64.14.14/32"]),
+                ],
+            )
+        )
+
+        self.assertEqual([d["id"] for d in devices], ["sonar:device:42"])
+
+    def test_uninventoried_mac_device_is_skipped_when_it_has_no_ip_assignments(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                address_items=[
+                    inventory_item(42, "ONU", ips=["100.64.15.15/32"], mac="AA:BB:CC:DD:EE:42"),
+                ],
+                uninventoried_mac_addresses=[
+                    uninventoried_mac_address(777, "AA:BB:CC:DD:EE:77", ips=[]),
+                ],
+            )
+        )
+
+        self.assertEqual([d["id"] for d in devices], ["sonar:device:42"])
+
+    def test_uninventoried_mac_devices_emit_after_account_level_ip_devices(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                account_ips=["100.64.16.16"],
+                uninventoried_mac_addresses=[
+                    uninventoried_mac_address(888, "AA:BB:CC:DD:EE:88", ips=["100.64.16.17"]),
+                ],
+            )
+        )
+
+        self.assertEqual([d["id"] for d in devices], [
+            "sonar:account-ip-assignments:1",
+            "sonar:uninventoried-mac-address:888",
+        ])
+
+    def test_uninventoried_mac_label_falls_back_when_mac_is_blank(self):
+        devices = integrationSonar.buildAccountDevices(
+            sonar_account(
+                uninventoried_mac_addresses=[
+                    uninventoried_mac_address(999, "   ", ips=["100.64.17.17"]),
+                ]
+            )
+        )
+
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0]["name"], "Uninventoried MAC Address")
+        self.assertEqual(devices[0]["mac"], "")
+
+    def test_account_with_no_uninventoried_mac_addresses_emits_no_extra_device(self):
+        devices = integrationSonar.buildAccountDevices(sonar_account())
+
+        self.assertEqual(devices, [])
+
     def test_inventory_mac_devices_are_preserved_when_radius_supplies_ips(self):
         devices = integrationSonar.buildAccountDevices(
             sonar_account(
@@ -194,6 +379,31 @@ class TestIntegrationSonarDevices(unittest.TestCase):
         self.assertIsNotNone(record)
         self.assertEqual(record["address"], "Parent Address")
         self.assertEqual(record["id"], "sonar:account:500")
+
+    def test_child_account_imports_account_level_ips(self):
+        child = sonar_account(
+            address_items=[],
+            account_ips=["100.64.10.10"],
+        )
+        child["addresses"] = {"entities": []}
+        child["id"] = 501
+        child["name"] = "Suite 501"
+        child["account_services"] = {
+            "entities": [{
+                "service": {
+                    "data_service_detail": {
+                        "download_speed_kilobits_per_second": 100000,
+                        "upload_speed_kilobits_per_second": 20000,
+                    }
+                }
+            }]
+        }
+
+        record = integrationSonar.buildAccountRecord(child, fallback_address="Parent Address")
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["devices"][0]["id"], "sonar:account-ip-assignments:501")
+        self.assertEqual(record["devices"][0]["ips"], ["100.64.10.10"])
 
     def test_child_accounts_are_added_without_duplicate_top_level_records(self):
         top_level = sonar_account(
@@ -337,6 +547,39 @@ class TestIntegrationSonarDevices(unittest.TestCase):
         record = integrationSonar.buildAccountRecord(account)
 
         self.assertIsNone(record)
+
+    def test_import_summary_counts_account_level_ip_devices(self):
+        account = {
+            "parent": "ap_1",
+            "devices": [
+                {
+                    "id": "sonar:device:42",
+                    "ips": [],
+                    "source": "inventory_item",
+                },
+                {
+                    "id": "sonar:account-ip-assignments:1",
+                    "ips": ["100.64.11.11", "2605:40c1:300::/56"],
+                    "source": "account_ip_assignments",
+                },
+            ],
+        }
+
+        summary = integrationSonar.sonarImportSummary(
+            sites=[{"id": "site_1"}],
+            aps=[{"id": "ap_1"}],
+            accounts=[account],
+        )
+
+        self.assertIn("sites=1", summary)
+        self.assertIn("aps=1", summary)
+        self.assertIn("accounts=1", summary)
+        self.assertIn("accounts_with_ap_parent=1", summary)
+        self.assertIn("devices=2", summary)
+        self.assertIn("devices_with_ips=1", summary)
+        self.assertIn("ipv4_assignments=1", summary)
+        self.assertIn("ipv6_assignments=1", summary)
+        self.assertIn("account_level_ip_devices=1", summary)
 
 
 class FakeResponse:

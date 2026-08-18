@@ -3,6 +3,7 @@ import {
     linkToExecutiveMetricRow,
     pollExecutiveHeatmapPage,
 } from "./executive_utils";
+import {disposeTooltipsWithin, enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {
     heatRow,
     rttHeatRow,
@@ -10,6 +11,7 @@ import {
     utilizationHeatRow,
     formatLatest,
     colorByCapacity,
+    replaceHeatmapHtml,
 } from "./dashlets/executive_heatmap_shared";
 import {colorByRttMs, colorByRetransmitPct} from "./helpers/color_scales";
 import {toNumber} from "./lq_js_common/helpers/scaling";
@@ -193,7 +195,7 @@ function renderHeatmapTable(targetId, metricKey) {
         const generatedAt = toNumber(data?.generated_at_unix_ms, Date.now());
         const body = (data?.rows || []).map((row) => renderMetricRow(cfg, metricKey, row)).join("");
 
-        target.innerHTML = `
+        const html = `
             <div class="card shadow-sm">
                 <div class="card-body">
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
@@ -211,7 +213,13 @@ function renderHeatmapTable(targetId, metricKey) {
                 </div>
             </div>
         `;
-        attachPaginationHandlers(target, state);
+        replaceHeatmapHtml(target, html, (nextHtml) => {
+            disposeTooltipsWithin(target);
+            target.innerHTML = nextHtml;
+            target.__lqosLastHeatmapHtml = nextHtml;
+            attachPaginationHandlers(target, state);
+            enableTooltipsWithin(target);
+        });
     };
 
     window.addEventListener("colorBlindModeChanged", () => {

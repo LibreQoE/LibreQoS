@@ -142,6 +142,7 @@ class TestShapingSkipReport(unittest.TestCase):
 
         self.assertEqual(len(skipped), 1)
         self.assertEqual(skipped[0]["reasonCode"], "unattached_flat_network")
+        self.assertIn("generated parent queues", skipped[0]["reasonText"])
 
     def test_format_unshaped_device_line_contains_context(self):
         line = format_unshaped_device_line(

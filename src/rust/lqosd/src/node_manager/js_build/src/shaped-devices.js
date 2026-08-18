@@ -13,6 +13,7 @@ let shapedDevices = [];
 let devicesPerPage = 24;
 let page = 0;
 let searchTerm = "";
+let shapedDevicesKind = "Static";
 let metricElsByCircuitId = new Map();
 const latestByCircuitId = new Map();
 const planByCircuitId = new Map();
@@ -20,6 +21,8 @@ let totalRows = 0;
 let totalCircuits = 0;
 let circuitMetricsWatchSignature = null;
 const wsClient = get_ws_client();
+const DYNAMIC_VIEW_MODE_STORAGE_KEY = "lqosShapedDevicesDynamicViewMode";
+let dynamicViewMode = loadDynamicViewMode();
 
 const QOO_TOOLTIP_HTML =
     "<h5>Quality of Outcome (QoO)</h5>" +
@@ -74,8 +77,96 @@ function formatPlanValue(value) {
     return formatted;
 }
 
+function normalizeDynamicViewMode(mode) {
+    return mode === "list" ? "list" : "cards";
+}
+
+function loadDynamicViewMode() {
+    try {
+        if (window.localStorage) {
+            return normalizeDynamicViewMode(window.localStorage.getItem(DYNAMIC_VIEW_MODE_STORAGE_KEY));
+        }
+    } catch (_error) {
+        // Ignore storage failures and fall back to the default cards view.
+    }
+    return "cards";
+}
+
+function persistDynamicViewMode(mode) {
+    try {
+        if (window.localStorage) {
+            window.localStorage.setItem(
+                DYNAMIC_VIEW_MODE_STORAGE_KEY,
+                normalizeDynamicViewMode(mode),
+            );
+        }
+    } catch (_error) {
+        // Ignore storage failures and keep the current in-memory preference.
+    }
+}
+
+function isDynamicListView() {
+    return shapedDevicesKind === "Dynamic" && dynamicViewMode === "list";
+}
+
 function countCircuits() {
     return totalCircuits;
+}
+
+function updateKindTabs() {
+    const staticTab = document.getElementById("sdTabStatic");
+    const dynamicTab = document.getElementById("sdTabDynamic");
+    if (!staticTab || !dynamicTab) {
+        return;
+    }
+    const isDynamic = shapedDevicesKind === "Dynamic";
+    staticTab.classList.toggle("active", !isDynamic);
+    dynamicTab.classList.toggle("active", isDynamic);
+    staticTab.setAttribute("aria-selected", (!isDynamic).toString());
+    dynamicTab.setAttribute("aria-selected", isDynamic.toString());
+}
+
+function renderCounts() {
+    const countEl = $("#count");
+    const circuitEl = $("#countCircuit");
+    if (shapedDevicesKind === "Dynamic") {
+        countEl.text(totalRows + " dynamic circuits");
+        circuitEl.text("");
+        circuitEl.addClass("d-none");
+    } else {
+        countEl.text(totalRows + " devices");
+        circuitEl.text(totalCircuits + " circuits");
+        circuitEl.removeClass("d-none");
+    }
+}
+
+function setShapedDevicesKind(kind) {
+    if (!kind || (kind !== "Static" && kind !== "Dynamic")) {
+        kind = "Static";
+    }
+    if (shapedDevicesKind === kind) {
+        return;
+    }
+    shapedDevicesKind = kind;
+    page = 0;
+    searchTerm = "";
+    const searchBox = document.getElementById("sdSearch");
+    if (searchBox) {
+        searchBox.value = "";
+    }
+    circuitMetricsWatchSignature = null;
+    updateKindTabs();
+    requestShapedDevicesPage();
+}
+
+function setDynamicViewMode(mode) {
+    const normalized = normalizeDynamicViewMode(mode);
+    if (dynamicViewMode === normalized) {
+        return;
+    }
+    dynamicViewMode = normalized;
+    persistDynamicViewMode(dynamicViewMode);
+    renderDevices();
 }
 
 function filterDevices() {
@@ -257,6 +348,96 @@ function metricTableRow(labelEl, downEl, upEl) {
     return tr;
 }
 
+function buildDeviceIdentity(device, options = {}) {
+    const {
+        circuitClasses = [],
+        deviceClasses = [],
+    } = options;
+    const wrapper = document.createElement("div");
+    wrapper.style.minWidth = "0";
+
+    if (device.circuit_id) {
+        const circuitLink = document.createElement("a");
+        circuitLink.href = "circuit.html?id=" + encodeURI(device.circuit_id);
+        circuitClasses.forEach((className) => circuitLink.classList.add(className));
+        circuitLink.innerText = device.circuit_name || "(Unknown circuit)";
+        wrapper.appendChild(circuitLink);
+
+        if (device.device_name) {
+            const deviceLink = document.createElement("a");
+            deviceLink.href = "circuit.html?id=" + encodeURI(device.circuit_id);
+            deviceClasses.forEach((className) => deviceLink.classList.add(className));
+            deviceLink.innerText = device.device_name;
+            wrapper.appendChild(deviceLink);
+        }
+    } else {
+        const circuitName = document.createElement("div");
+        circuitClasses.forEach((className) => circuitName.classList.add(className));
+        circuitName.innerText = device.circuit_name || "(Unknown circuit)";
+        wrapper.appendChild(circuitName);
+
+        if (device.device_name) {
+            const deviceName = document.createElement("div");
+            deviceClasses.forEach((className) => deviceName.classList.add(className));
+            deviceName.innerText = device.device_name;
+            wrapper.appendChild(deviceName);
+        }
+    }
+
+    return wrapper;
+}
+
+function buildPlanBadge(device, extraClasses = []) {
+    const badge = document.createElement("span");
+    badge.classList.add("badge", "text-bg-secondary", "exec-badge", ...extraClasses);
+    badge.innerText =
+        formatPlanValue(device.download_max_mbps) + " / " + formatPlanValue(device.upload_max_mbps) + " Mbps";
+    return badge;
+}
+
+function buildMetricValueEl() {
+    const span = document.createElement("span");
+    span.innerHTML = "-";
+    return span;
+}
+
+function buildMetricPairCell(circuitId, downMetricName, upMetricName) {
+    const wrapper = document.createElement("div");
+    wrapper.classList.add("lqos-direction-metric");
+
+    const addLine = (label, metricName) => {
+        const line = document.createElement("div");
+        line.classList.add("lqos-direction-metric-line");
+
+        const labelEl = document.createElement("span");
+        labelEl.classList.add("lqos-direction-metric-label");
+        labelEl.innerText = label;
+        line.appendChild(labelEl);
+
+        const valueEl = buildMetricValueEl();
+        line.appendChild(valueEl);
+        wrapper.appendChild(line);
+        registerMetricEl(circuitId, metricName, valueEl);
+    };
+
+    addLine("DL", downMetricName);
+    addLine("UL", upMetricName);
+
+    return wrapper;
+}
+
+function appendListCell(row, content, classNames = []) {
+    const td = document.createElement("td");
+    classNames.forEach((className) => td.classList.add(className));
+    if (typeof content === "string") {
+        td.innerText = content;
+    } else if (content) {
+        td.appendChild(content);
+    }
+    row.appendChild(td);
+    return td;
+}
+
 function buildDeviceCard(device) {
     const card = document.createElement("div");
     card.classList.add("executive-card", "h-100");
@@ -265,37 +446,12 @@ function buildDeviceCard(device) {
     const header = document.createElement("div");
     header.classList.add("d-flex", "justify-content-between", "align-items-start", "gap-2");
 
-    const titleWrap = document.createElement("div");
-    titleWrap.style.minWidth = "0";
+    const titleWrap = buildDeviceIdentity(device, {
+        circuitClasses: ["redactable", "fw-semibold", "text-decoration-none"],
+        deviceClasses: ["redactable", "d-block", "small", "text-body-secondary", "text-decoration-none"],
+    });
 
-    if (device.circuit_id) {
-        const circuitLink = document.createElement("a");
-        circuitLink.href = "circuit.html?id=" + encodeURI(device.circuit_id);
-        circuitLink.classList.add("redactable", "fw-semibold", "text-decoration-none");
-        circuitLink.innerText = device.circuit_name || "(Unknown circuit)";
-        titleWrap.appendChild(circuitLink);
-
-        const deviceLink = document.createElement("a");
-        deviceLink.href = "circuit.html?id=" + encodeURI(device.circuit_id);
-        deviceLink.classList.add("redactable", "d-block", "small", "text-body-secondary", "text-decoration-none");
-        deviceLink.innerText = device.device_name || "";
-        titleWrap.appendChild(deviceLink);
-    } else {
-        const circuitName = document.createElement("div");
-        circuitName.classList.add("fw-semibold", "redactable");
-        circuitName.innerText = device.circuit_name || "(Unknown circuit)";
-        titleWrap.appendChild(circuitName);
-
-        const deviceName = document.createElement("div");
-        deviceName.classList.add("small", "text-body-secondary", "redactable");
-        deviceName.innerText = device.device_name || "";
-        titleWrap.appendChild(deviceName);
-    }
-
-    const planBadge = document.createElement("span");
-    planBadge.classList.add("badge", "text-bg-secondary", "exec-badge", "ms-auto");
-    planBadge.innerText =
-        formatPlanValue(device.download_max_mbps) + " / " + formatPlanValue(device.upload_max_mbps) + " Mbps";
+    const planBadge = buildPlanBadge(device, ["ms-auto"]);
 
     header.appendChild(titleWrap);
     header.appendChild(planBadge);
@@ -399,19 +555,57 @@ function buildDeviceCard(device) {
     return card;
 }
 
+function buildDeviceListRow(device) {
+    const row = document.createElement("tr");
+    row.classList.add("align-middle");
+
+    const identity = buildDeviceIdentity(device, {
+        circuitClasses: ["redactable", "fw-semibold", "text-decoration-none"],
+        deviceClasses: ["redactable", "d-block", "small", "text-body-secondary", "text-decoration-none"],
+    });
+    appendListCell(row, identity);
+
+    const parent = document.createElement("div");
+    parent.classList.add("small", "redactable");
+    parent.innerText = device.parent_node || "-";
+    appendListCell(row, parent);
+
+    appendListCell(row, buildPlanBadge(device));
+    appendListCell(row, buildMetricPairCell(device.circuit_id, "tpDown", "tpUp"), ["text-nowrap"]);
+    appendListCell(row, buildMetricPairCell(device.circuit_id, "rttDown", "rttUp"), ["text-nowrap"]);
+    appendListCell(row, buildMetricPairCell(device.circuit_id, "qooDown", "qooUp"), ["text-nowrap"]);
+    appendListCell(row, buildMetricPairCell(device.circuit_id, "reXmitDown", "reXmitUp"), ["text-nowrap"]);
+
+    const lastSeenValue = document.createElement("span");
+    lastSeenValue.innerText = "-";
+    appendListCell(row, lastSeenValue, ["text-nowrap"]);
+    registerMetricEl(device.circuit_id, "lastSeen", lastSeenValue);
+
+    appendListCell(row, buildIpListEl(device), ["text-nowrap"]);
+
+    return row;
+}
+
 function ensureLayout() {
     const target = document.getElementById("deviceTable");
     if (!target) return null;
 
     let toolbar = document.getElementById("sdToolbar");
     let grid = document.getElementById("sdCardsGrid");
-    if (toolbar && grid) {
+    let listWrap = document.getElementById("sdListWrap");
+    let listBody = document.getElementById("sdListBody");
+    if (toolbar && grid && listWrap && listBody) {
         return {
             target,
             toolbar,
             grid,
+            listWrap,
+            listBody,
             searchInput: document.getElementById("sdSearch"),
             perPageSelect: document.getElementById("sdPerPage"),
+            viewToggleWrap: document.getElementById("sdViewToggleWrap"),
+            viewCardsButton: document.getElementById("sdViewCards"),
+            viewListButton: document.getElementById("sdViewList"),
             prevButton: document.getElementById("sdPrevPage"),
             nextButton: document.getElementById("sdNextPage"),
             pageCounter: document.getElementById("sdPageCounter"),
@@ -482,6 +676,41 @@ function ensureLayout() {
     perPageWrap.appendChild(perPageSelect);
     toolbar.appendChild(perPageWrap);
 
+    const viewToggleWrap = document.createElement("div");
+    viewToggleWrap.id = "sdViewToggleWrap";
+    viewToggleWrap.classList.add("d-none", "d-flex", "align-items-center", "gap-1");
+    const viewLabel = document.createElement("span");
+    viewLabel.classList.add("small", "text-body-secondary");
+    viewLabel.innerText = "View";
+    const viewToggle = document.createElement("div");
+    viewToggle.classList.add("btn-group", "btn-group-sm", "lqos-shaped-devices-view-toggle");
+    viewToggle.setAttribute("role", "group");
+    viewToggle.setAttribute("aria-label", "Dynamic circuits view");
+
+    const viewCards = document.createElement("button");
+    viewCards.id = "sdViewCards";
+    viewCards.type = "button";
+    viewCards.classList.add("btn", "btn-outline-secondary");
+    viewCards.innerHTML = "<i class='fa fa-th-large me-1'></i>Cards";
+    viewCards.onclick = () => {
+        setDynamicViewMode("cards");
+    };
+
+    const viewList = document.createElement("button");
+    viewList.id = "sdViewList";
+    viewList.type = "button";
+    viewList.classList.add("btn", "btn-outline-secondary");
+    viewList.innerHTML = "<i class='fa fa-list me-1'></i>List";
+    viewList.onclick = () => {
+        setDynamicViewMode("list");
+    };
+
+    viewToggle.appendChild(viewCards);
+    viewToggle.appendChild(viewList);
+    viewToggleWrap.appendChild(viewLabel);
+    viewToggleWrap.appendChild(viewToggle);
+    toolbar.appendChild(viewToggleWrap);
+
     const pagerWrap = document.createElement("div");
     pagerWrap.classList.add("d-flex", "align-items-center", "gap-2");
     const pager = document.createElement("div");
@@ -533,12 +762,50 @@ function ensureLayout() {
     grid.classList.add("row", "row-cols-1", "row-cols-md-2", "row-cols-xl-3", "g-3");
     target.appendChild(grid);
 
+    listWrap = document.createElement("div");
+    listWrap.id = "sdListWrap";
+    listWrap.classList.add("table-responsive", "lqos-table-wrap", "d-none");
+
+    const listTable = document.createElement("table");
+    listTable.classList.add("lqos-table", "lqos-table-tight", "mb-0", "lqos-shaped-devices-list-table");
+
+    const listHead = document.createElement("thead");
+    const listHeadRow = document.createElement("tr");
+    [
+        "Circuit",
+        "Parent",
+        "Plan",
+        "Throughput",
+        "RTT",
+        "QoO",
+        "Retransmits",
+        "Last Seen",
+        "IPs",
+    ].forEach((label) => {
+        const th = document.createElement("th");
+        th.innerText = label;
+        listHeadRow.appendChild(th);
+    });
+    listHead.appendChild(listHeadRow);
+    listTable.appendChild(listHead);
+
+    listBody = document.createElement("tbody");
+    listBody.id = "sdListBody";
+    listTable.appendChild(listBody);
+    listWrap.appendChild(listTable);
+    target.appendChild(listWrap);
+
     return {
         target,
         toolbar,
         grid,
+        listWrap,
+        listBody,
         searchInput,
         perPageSelect,
+        viewToggleWrap,
+        viewCardsButton: viewCards,
+        viewListButton: viewList,
         prevButton: prev,
         nextButton: next,
         pageCounter,
@@ -550,6 +817,7 @@ function currentShapedDevicesPageQuery() {
     const query = {
         page,
         page_size: devicesPerPage,
+        kind: shapedDevicesKind,
     };
     if (searchTerm && searchTerm.trim() !== "") {
         query.search = searchTerm;
@@ -608,19 +876,36 @@ async function requestShapedDevicesPage() {
             current.up = Math.max(toNumber(current.up, 0), toNumber(device.upload_max_mbps, 0));
             planByCircuitId.set(device.circuit_id, current);
         });
-        renderCards();
+        renderDevices();
         requestCircuitMetricsWatch(true);
-        $("#count").text(totalRows + " devices");
-        $("#countCircuit").text(totalCircuits + " circuits");
+        renderCounts();
     } catch (_error) {
         shapedDevices = [];
         totalRows = 0;
         totalCircuits = 0;
-        renderCards();
+        renderDevices();
+        renderCounts();
     }
 }
 
-function renderCards() {
+function updateViewToggle(layout) {
+    const showToggle = shapedDevicesKind === "Dynamic";
+    if (layout.viewToggleWrap) {
+        layout.viewToggleWrap.classList.toggle("d-none", !showToggle);
+        layout.viewToggleWrap.classList.toggle("d-flex", showToggle);
+    }
+    const cardsActive = !isDynamicListView();
+    if (layout.viewCardsButton) {
+        layout.viewCardsButton.classList.toggle("active", cardsActive);
+        layout.viewCardsButton.setAttribute("aria-pressed", cardsActive.toString());
+    }
+    if (layout.viewListButton) {
+        layout.viewListButton.classList.toggle("active", !cardsActive);
+        layout.viewListButton.setAttribute("aria-pressed", (!cardsActive).toString());
+    }
+}
+
+function renderDevices() {
     const layout = ensureLayout();
     if (!layout) return;
 
@@ -631,6 +916,7 @@ function renderCards() {
     if (layout.perPageSelect && String(devicesPerPage) !== layout.perPageSelect.value) {
         layout.perPageSelect.value = String(devicesPerPage);
     }
+    updateViewToggle(layout);
     if (layout.prevButton) layout.prevButton.disabled = page <= 0;
     if (layout.nextButton) layout.nextButton.disabled = page >= totalPages - 1;
     if (layout.pageCounter) layout.pageCounter.innerText = "Page " + (page + 1) + " / " + totalPages;
@@ -640,21 +926,36 @@ function renderCards() {
         } else {
             const start = page * devicesPerPage + 1;
             const end = Math.min((page + 1) * devicesPerPage, totalRows);
-            layout.summary.innerText = "Showing " + start + "–" + end + " of " + totalRows;
+            let summary = "Showing " + start + "–" + end + " of " + totalRows;
+            if (shapedDevicesKind === "Dynamic") {
+                summary += " (highest throughput first)";
+            }
+            layout.summary.innerText = summary;
         }
     }
 
     metricElsByCircuitId = new Map();
     clearDiv(layout.grid);
+    clearDiv(layout.listBody);
 
-    shapedDevices.forEach((device) => {
-        const col = document.createElement("div");
-        col.classList.add("col");
-        col.appendChild(buildDeviceCard(device));
-        layout.grid.appendChild(col);
-    });
+    const showList = isDynamicListView();
+    layout.grid.classList.toggle("d-none", showList);
+    layout.listWrap.classList.toggle("d-none", !showList);
 
-    // Fill visible cards from cached live data immediately.
+    if (showList) {
+        shapedDevices.forEach((device) => {
+            layout.listBody.appendChild(buildDeviceListRow(device));
+        });
+    } else {
+        shapedDevices.forEach((device) => {
+            const col = document.createElement("div");
+            col.classList.add("col");
+            col.appendChild(buildDeviceCard(device));
+            layout.grid.appendChild(col);
+        });
+    }
+
+    // Fill visible metrics from cached live data immediately.
     metricElsByCircuitId.forEach((_metrics, circuitId) => {
         const latest = latestByCircuitId.get(circuitId);
         if (latest) {
@@ -676,7 +977,16 @@ function handleCircuitMetrics(msg) {
 wsClient.on("CircuitMetricsSnapshot", handleCircuitMetrics);
 wsClient.on("CircuitMetricsUpdate", handleCircuitMetrics);
 wsClient.on("join", () => {
+    updateKindTabs();
     requestShapedDevicesPage();
 });
 
+document.getElementById("sdTabStatic")?.addEventListener("click", () => {
+    setShapedDevicesKind("Static");
+});
+document.getElementById("sdTabDynamic")?.addEventListener("click", () => {
+    setShapedDevicesKind("Dynamic");
+});
+
+updateKindTabs();
 requestShapedDevicesPage();

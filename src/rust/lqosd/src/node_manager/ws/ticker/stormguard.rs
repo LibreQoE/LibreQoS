@@ -5,6 +5,8 @@ use lqos_bus::{BusReply, BusRequest, BusResponse};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
+use super::request_internal_bus;
+
 pub async fn stormguard_ticker(
     pubsub: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
@@ -15,39 +17,60 @@ pub async fn stormguard_ticker(
     let debug_alive = pubsub
         .is_channel_alive(PublishedChannels::StormguardDebug)
         .await;
+    let runtime_alive = pubsub
+        .is_channel_alive(PublishedChannels::StormguardRuntime)
+        .await;
 
-    if !status_alive && !debug_alive {
+    if !status_alive && !debug_alive && !runtime_alive {
         return;
     }
 
     // Request stats from bus
-    if status_alive {
-        let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-        let request = BusRequest::GetStormguardStats;
-        if let Ok(_) = bus_tx.send((tx, request)).await
-            && let Ok(replies) = rx.await
-        {
-            for response in replies.responses {
-                if let BusResponse::StormguardStats(stats) = response {
-                    let msg = WsResponse::StormguardStatus { data: stats };
-                    pubsub.send(PublishedChannels::StormguardStatus, msg).await;
-                }
+    if status_alive
+        && let Some(replies) = request_internal_bus(
+            "StormguardStatus",
+            bus_tx.clone(),
+            BusRequest::GetStormguardStats,
+        )
+        .await
+    {
+        for response in replies.responses {
+            if let BusResponse::StormguardStats(stats) = response {
+                let msg = WsResponse::StormguardStatus { data: stats };
+                pubsub.send(PublishedChannels::StormguardStatus, msg).await;
             }
         }
     }
 
-    if debug_alive {
-        let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-        let request = BusRequest::GetStormguardDebug;
-        if let Ok(_) = bus_tx.send((tx, request)).await
-            && let Ok(replies) = rx.await
-        {
-            for response in replies.responses {
-                if let BusResponse::StormguardDebug(stats) = response {
-                    let msg = WsResponse::StormguardDebug { data: stats };
+    if debug_alive
+        && let Some(replies) = request_internal_bus(
+            "StormguardDebug",
+            bus_tx.clone(),
+            BusRequest::GetStormguardDebug,
+        )
+        .await
+    {
+        for response in replies.responses {
+            if let BusResponse::StormguardDebug(stats) = response {
+                let msg = WsResponse::StormguardDebug { data: stats };
 
-                    pubsub.send(PublishedChannels::StormguardDebug, msg).await;
-                }
+                pubsub.send(PublishedChannels::StormguardDebug, msg).await;
+            }
+        }
+    }
+
+    if runtime_alive
+        && let Some(replies) = request_internal_bus(
+            "StormguardRuntime",
+            bus_tx,
+            BusRequest::GetStormguardRuntimeStatus,
+        )
+        .await
+    {
+        for response in replies.responses {
+            if let BusResponse::StormguardRuntimeStatus(status) = response {
+                let msg = WsResponse::StormguardRuntime { data: status };
+                pubsub.send(PublishedChannels::StormguardRuntime, msg).await;
             }
         }
     }

@@ -124,6 +124,8 @@ anterior.
 
 Las decisiones SQM por circuito de TreeGuard también son overrides de tiempo de ejecución. El scheduler no materializa los cambios SQM propiedad de TreeGuard de vuelta en el `ShapedDevices.csv` base, por lo que limpiar TreeGuard no reescribe permanentemente la política SQM definida por el operador.
 
+TreeGuard solo gestiona circuitos estáticos de `ShapedDevices.csv`. Los circuitos dinámicos, incluidos los overlays de promoción de IPs desconocidas, permanecen bajo el ciclo de vida de circuitos dinámicos y overlays de Bakery, y no se enrolan en la conmutación SQM de TreeGuard.
+
 TreeGuard también se niega a gestionar nodos que ya estén marcados con `"virtual": true` en el `network.json` base. Si existen overrides legados de TreeGuard para esos nodos, TreeGuard limpia ese estado legado y vuelve a respetar la definición base de la topología.
 
 Para la gestión SQM por circuito, TreeGuard trata los valores duplicados de `device_id` como colisiones de identidad inseguras. Si el mismo `device_id` aparece en más de un circuito dentro de `ShapedDevices.csv`, TreeGuard omite esos circuitos afectados y limpia cualquier override SQM de TreeGuard asociado a esos `device_id` duplicados.

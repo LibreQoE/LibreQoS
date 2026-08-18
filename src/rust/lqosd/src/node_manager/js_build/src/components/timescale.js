@@ -20,7 +20,10 @@ class TimeControls {
             button.classList.add("btn", "btn-sm", "me-1");
             button.onclick = () => {
                 if (period !== "Live" && !window.hasLts) {
-                    createAndShowModal('Extended Time Periods Require Insight', 'Displaying extended time periods requires an Insight subscription or free trial. Click the "Insight" button in the menu to learn more. Invest in your network --- sign up for Insight today!');
+                    createAndShowModal(
+                        "Extended History Requires an Entitled License",
+                        'Displaying extended time periods requires an entitled license with history access. Open "License & Services" in the menu to review availability for this node.',
+                    );
                     return;
                 }
 

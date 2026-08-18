@@ -3,6 +3,23 @@ use lqos_bus::{BusResponse, FlowbeeSummaryData};
 use lqos_utils::packet_scale::scale_bits;
 use ratatui::prelude::*;
 
+fn truncate_by_chars(input: &str, max_chars: usize) -> String {
+    input.chars().take(max_chars).collect()
+}
+
+fn flow_circuit_label(flow: &FlowbeeSummaryData) -> String {
+    let candidate = if !flow.circuit_name.trim().is_empty() {
+        flow.circuit_name.trim()
+    } else {
+        flow.circuit_id.trim()
+    };
+    if candidate.is_empty() {
+        "-".to_string()
+    } else {
+        truncate_by_chars(candidate, 28)
+    }
+}
+
 pub struct TopFlows {
     bus_link: tokio::sync::mpsc::Sender<crate::bus::BusMessage>,
     rx: std::sync::mpsc::Receiver<BusResponse>,
@@ -38,6 +55,7 @@ impl TopWidget for TopFlows {
 
     fn render_to_frame(&mut self, frame: &mut Frame) {
         let mut t = TableHelper::new([
+            "Circuit",
             "Src IP",
             "Dst IP",
             "Type",
@@ -49,6 +67,7 @@ impl TopWidget for TopFlows {
         ]);
         for flow in self.flows.iter() {
             t.add_row([
+                flow_circuit_label(flow),
                 flow.local_ip.to_string(),
                 flow.remote_ip.to_string(),
                 flow.analysis.to_string(),

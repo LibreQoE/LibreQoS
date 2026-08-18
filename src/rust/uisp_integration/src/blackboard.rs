@@ -31,9 +31,9 @@ pub async fn blackboard_blob<T: Serialize>(key: &str, value: T) -> anyhow::Resul
             part: i,
             blob: chunk.to_vec(),
         }];
-        let err = lqos_bus::bus_request(req).await;
+        let _err = lqos_bus::bus_request(req).await;
         #[cfg(debug_assertions)]
-        if let Err(e) = err {
+        if let Err(e) = _err {
             tracing::error!(
                 "Error writing to blackboard (only an error if lqosd is running): {e:?}"
             );

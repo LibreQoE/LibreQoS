@@ -91,3 +91,69 @@ def build_physical_network(logical_network):
 
     return physical
 
+
+def collect_physical_parent_node_aliases(network):
+    """
+    Returns a mapping of acceptable parent-node aliases to the physical node key
+    that exists in the shaping tree.
+
+    This lets shaping-time code resolve attachment-style names that may survive
+    in `ShapedDevices.csv` even after the physical tree is flattened or promoted.
+    """
+    aliases = {}
+
+    def recurse(level):
+        if not isinstance(level, dict):
+            return
+
+        for key, node in level.items():
+            if not isinstance(key, str) or not isinstance(node, dict):
+                continue
+
+            candidates = [key, node.get("name"), node.get("active_attachment_name")]
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+                alias = str(candidate).strip()
+                if not alias:
+                    continue
+                aliases.setdefault(alias, key)
+
+            children = node.get("children")
+            if isinstance(children, dict):
+                recurse(children)
+
+    recurse(network)
+    return aliases
+
+
+def collect_physical_parent_node_ids(network):
+    """
+    Returns a mapping of `network.json` node IDs to the physical node key that
+    exists in the shaping tree.
+
+    This lets shaping-time code resolve circuits by stable node identifier
+    instead of relying only on display names.
+    """
+    node_ids = {}
+
+    def recurse(level):
+        if not isinstance(level, dict):
+            return
+
+        for key, node in level.items():
+            if not isinstance(key, str) or not isinstance(node, dict):
+                continue
+
+            node_id = node.get("id")
+            if node_id is not None:
+                node_id = str(node_id).strip()
+                if node_id:
+                    node_ids.setdefault(node_id, key)
+
+            children = node.get("children")
+            if isinstance(children, dict):
+                recurse(children)
+
+    recurse(network)
+    return node_ids

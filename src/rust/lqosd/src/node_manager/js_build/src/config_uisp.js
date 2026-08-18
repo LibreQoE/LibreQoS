@@ -1,10 +1,39 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    bindSecretField,
+    loadConfig,
+    renderConfigMenu,
+    saveConfig,
+    secretWillExistAfterSave,
+} from "./config/config_helper";
+
+function currentTopologyMode() {
+    return (
+        window.config?.topology?.compile_mode
+        ?? document.getElementById("uispStrategy").value.trim()
+    );
+}
+
+function rootSiteRequiredForMode(mode) {
+    return mode === "full" || mode === "full2";
+}
+
+function updateRootSiteRequirement() {
+    const required = rootSiteRequiredForMode(currentTopologyMode());
+    const siteInput = document.getElementById("uispSite");
+    const siteLabel = document.getElementById("uispSiteLabel");
+    const siteHelp = document.getElementById("uispSiteHelp");
+
+    siteInput.required = required;
+    siteLabel.textContent = required ? "Root UISP Site" : "Root UISP Site (Optional)";
+    siteHelp.textContent = required
+        ? "Required for full topology mode. Enter the exact UISP site name at the root of the network."
+        : "Optional in this topology mode. Leave blank to let LibreQoS choose the import root.";
+}
 
 function validateConfig() {
     // Validate required fields when enabled
     if (document.getElementById("enableUisp").checked) {
-        const token = document.getElementById("uispToken").value.trim();
-        if (!token) {
+        if (!secretWillExistAfterSave("uisp_integration", "token", "uispToken")) {
             alert("API Token is required when UISP integration is enabled");
             return false;
         }
@@ -22,14 +51,8 @@ function validateConfig() {
         }
 
         const site = document.getElementById("uispSite").value.trim();
-        if (!site) {
-            alert("UISP Site is required when UISP integration is enabled");
-            return false;
-        }
-
-        const strategy = document.getElementById("uispStrategy").value.trim();
-        if (!strategy) {
-            alert("Strategy is required when UISP integration is enabled");
+        if (rootSiteRequiredForMode(currentTopologyMode()) && !site) {
+            alert("Root UISP Site is required when full topology mode is selected");
             return false;
         }
 
@@ -43,6 +66,12 @@ function validateConfig() {
         const airmaxCapacity = parseFloat(document.getElementById("uispAirmaxCapacity").value);
         if (isNaN(airmaxCapacity) || airmaxCapacity < 0) {
             alert("Airmax Capacity must be a number greater than or equal to 0");
+            return false;
+        }
+
+        const airmaxFlexibleFrameDownloadRatio = parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value);
+        if (isNaN(airmaxFlexibleFrameDownloadRatio) || airmaxFlexibleFrameDownloadRatio <= 0 || airmaxFlexibleFrameDownloadRatio >= 1) {
+            alert("AirMax Flexible Frame Download Ratio must be a number greater than 0 and less than 1");
             return false;
         }
 
@@ -81,6 +110,9 @@ function validateConfig() {
 function updateConfig() {
     // Update only the uisp_integration section
     // Parse comma-separated strings into arrays
+    const existingUisp = { ...(window.config.uisp_integration || {}) };
+    delete existingUisp.enable_squashing;
+
     const excludeSites = document.getElementById("uispExcludeSites").value.trim();
     const excludeSitesArray = excludeSites ? excludeSites.split(',').map(s => s.trim()) : [];
 
@@ -98,25 +130,24 @@ function updateConfig() {
 
     // Update the config object
     window.config.uisp_integration = {
-        ...(window.config.uisp_integration || {}),  // Preserve existing values
+        ...existingUisp,
         enable_uisp: document.getElementById("enableUisp").checked,
         token: document.getElementById("uispToken").value.trim(),
         url: document.getElementById("uispUrl").value.trim(),
         site: document.getElementById("uispSite").value.trim(),
-        strategy: document.getElementById("uispStrategy").value.trim(),
+        strategy: window.config.topology?.compile_mode ?? document.getElementById("uispStrategy").value.trim(),
         suspended_strategy: document.getElementById("uispSuspendedStrategy").value.trim(),
         airmax_capacity: parseFloat(document.getElementById("uispAirmaxCapacity").value),
+        airmax_flexible_frame_download_ratio: parseFloat(document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value),
         ltu_capacity: parseFloat(document.getElementById("uispLtuCapacity").value),
         ipv6_with_mikrotik: document.getElementById("uispIpv6WithMikrotik").checked,
         bandwidth_overhead_factor: parseFloat(document.getElementById("uispBandwidthOverhead").value),
         commit_bandwidth_multiplier: parseFloat(document.getElementById("uispCommitMultiplier").value),
-        use_ptmp_as_parent: document.getElementById("uispUsePtmpAsParent").checked,
         ignore_calculated_capacity: document.getElementById("uispIgnoreCalculatedCapacity").checked,
         insecure_ssl: document.getElementById("uispInsecureSsl").checked,
         exclude_sites: excludeSitesArray,
         squash_sites: squashSitesArray && squashSitesArray.length > 0 ? squashSitesArray : null,
         exception_cpes: exceptionCpesArray,
-        enable_squashing: document.getElementById("uispEnableSquashing").checked,
         do_not_squash_sites: doNotSquashSitesArray && doNotSquashSitesArray.length > 0 ? doNotSquashSitesArray : null,
     };
 }
@@ -133,20 +164,20 @@ loadConfig(() => {
         // Boolean fields
         document.getElementById("enableUisp").checked = uisp.enable_uisp ?? false;
         document.getElementById("uispIpv6WithMikrotik").checked = uisp.ipv6_with_mikrotik ?? false;
-        document.getElementById("uispUsePtmpAsParent").checked = uisp.use_ptmp_as_parent ?? false;
         document.getElementById("uispIgnoreCalculatedCapacity").checked = uisp.ignore_calculated_capacity ?? false;
         document.getElementById("uispInsecureSsl").checked = uisp.insecure_ssl ?? false;
 
         // String fields
-        document.getElementById("uispToken").value = uisp.token ?? "";
         document.getElementById("uispUrl").value = uisp.url ?? "";
         document.getElementById("uispSite").value = uisp.site ?? "";
-        document.getElementById("uispStrategy").value = uisp.strategy ?? "full";
+        document.getElementById("uispStrategy").value = window.config.topology?.compile_mode ?? uisp.strategy ?? "ap_site";
         document.getElementById("uispSuspendedStrategy").value = uisp.suspended_strategy ?? "none";
+        updateRootSiteRequirement();
 
         // Numeric fields
-        document.getElementById("uispAirmaxCapacity").value = uisp.airmax_capacity ?? 0.0;
-        document.getElementById("uispLtuCapacity").value = uisp.ltu_capacity ?? 0.0;
+        document.getElementById("uispAirmaxCapacity").value = uisp.airmax_capacity ?? 1.0;
+        document.getElementById("uispAirmaxFlexibleFrameDownloadRatio").value = uisp.airmax_flexible_frame_download_ratio ?? 0.8;
+        document.getElementById("uispLtuCapacity").value = uisp.ltu_capacity ?? 1.0;
         document.getElementById("uispBandwidthOverhead").value = uisp.bandwidth_overhead_factor ?? 1.0;
         document.getElementById("uispCommitMultiplier").value = uisp.commit_bandwidth_multiplier ?? 1.0;
 
@@ -154,8 +185,17 @@ loadConfig(() => {
         document.getElementById("uispExcludeSites").value = uisp.exclude_sites?.join(", ") || "";
         document.getElementById("uispSquashSites").value = uisp.squash_sites?.join(", ") || "";
         document.getElementById("uispExceptionCpes").value = uisp.exception_cpes?.map(e => `${e.cpe}:${e.parent}`).join(", ") || "";
-        document.getElementById("uispEnableSquashing").checked = uisp.enable_squashing ?? false;
         document.getElementById("uispDoNotSquashSites").value = uisp.do_not_squash_sites?.join(", ") || "";
+
+        bindSecretField({
+            section: "uisp_integration",
+            field: "token",
+            inputId: "uispToken",
+            statusId: "uispTokenStatus",
+            clearButtonId: "clearUispToken",
+        });
+
+        document.getElementById("uispStrategy").addEventListener("change", updateRootSiteRequirement);
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

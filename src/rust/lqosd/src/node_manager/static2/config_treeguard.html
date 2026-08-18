@@ -6,7 +6,7 @@
             <div class="lqos-config-panel-header">
                 <div>
                     <h5 class="lqos-config-panel-title">TreeGuard Control Loop</h5>
-                    <div class="lqos-config-panel-subtitle">Global enablement, evaluation cadence, and CPU-response behavior for TreeGuard.</div>
+                    <div class="lqos-config-panel-subtitle">Global enablement, evaluation cadence, and CPU-response behavior for TreeGuard circuit SQM and optional runtime link virtualization.</div>
                 </div>
             </div>
 
@@ -44,7 +44,7 @@
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="enabled">
                             <label class="form-check-label" for="enabled">Enable TreeGuard</label>
-                            <div class="form-text">Enable intelligent node management (virtualization plus SQM switching).</div>
+                            <div class="form-text">Enable TreeGuard control loops for circuit SQM and, if separately enabled below, runtime link virtualization.</div>
                         </div>
 
                         <div class="mb-3 form-check">
@@ -95,7 +95,7 @@
             <div class="lqos-config-panel-header">
                 <div>
                     <h5 class="lqos-config-panel-title">Links and Virtualization</h5>
-                    <div class="lqos-config-panel-subtitle">Choose which nodes TreeGuard may virtualize and the thresholds used to do it safely.</div>
+                    <div class="lqos-config-panel-subtitle">Optional runtime virtualization on top of the static queue-visible topology produced by <code>lqos_topology</code>.</div>
                 </div>
             </div>
 
@@ -103,18 +103,18 @@
                 <div class="col-12 col-xl-5">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Managed Links</h6>
-                        <div class="lqos-config-section-subtitle">Define TreeGuard scope for node virtualization.</div>
+                        <div class="lqos-config-section-subtitle">Define TreeGuard scope for live node virtualization. This is disabled by default because static queue policy is the primary queue-planning mechanism.</div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="linksEnabled">
                             <label class="form-check-label" for="linksEnabled">Enable Link Virtualization</label>
-                            <div class="form-text">Allow TreeGuard to mark enrolled nodes as virtual or physical.</div>
+                            <div class="form-text">Allow TreeGuard to add live runtime virtualization on top of the baseline effective topology.</div>
                         </div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="linksAllNodes">
                             <label class="form-check-label" for="linksAllNodes">All links</label>
-                            <div class="form-text">If enabled, TreeGuard manages all non-root nodes in <code>network.json</code> and ignores the allowlist.</div>
+                            <div class="form-text">If enabled, TreeGuard manages all eligible queue-visible nodes in the runtime tree and ignores the allowlist.</div>
                         </div>
 
                         <div id="nodesAllowlistSection">
@@ -139,12 +139,12 @@
                 <div class="col-12 col-xl-7">
                     <div class="lqos-config-section h-100">
                         <h6 class="lqos-config-section-title">Virtualization Thresholds</h6>
-                        <div class="lqos-config-section-subtitle">Top-level handling, idle detection, and rate limiting for state changes.</div>
+                        <div class="lqos-config-section-subtitle">Top-level handling, idle detection, and rate limiting for live runtime changes after static queue policy has already been applied.</div>
 
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="topLevelAutoVirtualize">
                             <label class="form-check-label" for="topLevelAutoVirtualize">Auto-virtualize top-level nodes</label>
-                            <div class="form-text">Top-level nodes are keys of the root object in <code>network.json</code>. If enabled, TreeGuard may virtualize them even if not allowlisted.</div>
+                            <div class="form-text">If enabled, TreeGuard may virtualize top-level queue-visible nodes even if they are not allowlisted.</div>
                         </div>
 
                         <div class="row g-3">

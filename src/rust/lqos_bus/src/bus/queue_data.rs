@@ -25,8 +25,8 @@ pub struct QueueStoreTransit {
 #[allow(missing_docs)]
 pub struct CakeDiffTransit {
     pub bytes: u64,
-    pub packets: u32,
-    pub qlen: u32,
+    pub packets: u64,
+    pub qlen: u64,
     pub tins: Vec<CakeDiffTinTransit>,
 }
 
@@ -34,10 +34,19 @@ pub struct CakeDiffTransit {
 #[allow(missing_docs)]
 pub struct CakeDiffTinTransit {
     pub sent_bytes: u64,
-    pub backlog_bytes: u32,
-    pub drops: u32,
-    pub marks: u32,
-    pub base_delay_us: u32,
+    pub backlog_bytes: u64,
+    pub drops: u64,
+    pub marks: u64,
+    pub base_delay_us: u64,
+    pub sent_packets: Option<u64>,
+    pub peak_delay_us: Option<u64>,
+    pub avg_delay_us: Option<u64>,
+    pub way_indirect_hits: Option<u64>,
+    pub way_misses: Option<u64>,
+    pub way_collisions: Option<u64>,
+    pub sparse_flows: Option<u64>,
+    pub bulk_flows: Option<u64>,
+    pub unresponsive_flows: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default, Allocative)]
@@ -46,21 +55,21 @@ pub struct CakeTransit {
     //pub handle: TcHandle,
     //pub parent: TcHandle,
     //pub bytes: u64,
-    //pub packets: u32,
-    //pub overlimits: u32,
-    //pub requeues: u32,
-    //pub backlog: u32,
-    //pub qlen: u32,
-    pub memory_used: u32,
-    //pub memory_limit: u32,
-    //pub capacity_estimate: u32,
-    //pub min_network_size: u16,
-    //pub max_network_size: u16,
-    //pub min_adj_size: u16,
-    //pub max_adj_size: u16,
-    //pub avg_hdr_offset: u16,
+    //pub packets: u64,
+    //pub overlimits: u64,
+    //pub requeues: u64,
+    //pub backlog: u64,
+    //pub qlen: u64,
+    pub memory_used: u64,
+    //pub memory_limit: u64,
+    //pub capacity_estimate: u64,
+    //pub min_network_size: u64,
+    //pub max_network_size: u64,
+    //pub min_adj_size: u64,
+    //pub max_adj_size: u64,
+    //pub avg_hdr_offset: u64,
     //pub tins: Vec<CakeTinTransit>,
-    //pub drops: u32,
+    //pub drops: u64,
 }
 
 /*
@@ -88,23 +97,93 @@ pub struct CakeOptionsTransit {
 pub struct CakeTinTransit {
     //pub threshold_rate: u64,
     //pub sent_bytes: u64,
-    //pub backlog_bytes: u32,
-    //pub target_us: u32,
-    //pub interval_us: u32,
-    //pub peak_delay_us: u32,
-    //pub avg_delay_us: u32,
-    //pub base_delay_us: u32,
-    //pub sent_packets: u32,
-    //pub way_indirect_hits: u16,
-    //pub way_misses: u16,
-    //pub way_collisions: u16,
-    //pub drops: u32,
-    //pub ecn_marks: u32,
-    //pub ack_drops: u32,
-    //pub sparse_flows: u16,
-    //pub bulk_flows: u16,
-    //pub unresponsive_flows: u16,
-    //pub max_pkt_len: u16,
-    //pub flow_quantum: u16,
+    //pub backlog_bytes: u64,
+    //pub target_us: u64,
+    //pub interval_us: u64,
+    //pub peak_delay_us: u64,
+    //pub avg_delay_us: u64,
+    //pub base_delay_us: u64,
+    //pub sent_packets: u64,
+    //pub way_indirect_hits: u64,
+    //pub way_misses: u64,
+    //pub way_collisions: u64,
+    //pub drops: u64,
+    //pub ecn_marks: u64,
+    //pub ack_drops: u64,
+    //pub sparse_flows: u64,
+    //pub bulk_flows: u64,
+    //pub unresponsive_flows: u64,
+    //pub max_pkt_len: u64,
+    //pub flow_quantum: u64,
 }
 */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct LegacyCakeDiffTinTransit {
+        sent_bytes: u64,
+        backlog_bytes: u32,
+        drops: u32,
+        marks: u32,
+        base_delay_us: u32,
+    }
+
+    #[test]
+    fn cake_diff_tin_transit_accepts_legacy_payloads() {
+        let legacy = LegacyCakeDiffTinTransit {
+            sent_bytes: 100,
+            backlog_bytes: 10,
+            drops: 2,
+            marks: 3,
+            base_delay_us: 42,
+        };
+        let bytes = serde_cbor::to_vec(&legacy).expect("legacy tin should serialize");
+        let decoded: CakeDiffTinTransit =
+            serde_cbor::from_slice(&bytes).expect("legacy tin should deserialize");
+
+        assert_eq!(decoded.sent_bytes, 100);
+        assert_eq!(decoded.backlog_bytes, 10);
+        assert_eq!(decoded.drops, 2);
+        assert_eq!(decoded.marks, 3);
+        assert_eq!(decoded.base_delay_us, 42);
+        assert_eq!(decoded.sent_packets, None);
+        assert_eq!(decoded.peak_delay_us, None);
+        assert_eq!(decoded.avg_delay_us, None);
+        assert_eq!(decoded.way_indirect_hits, None);
+        assert_eq!(decoded.way_misses, None);
+        assert_eq!(decoded.way_collisions, None);
+        assert_eq!(decoded.sparse_flows, None);
+        assert_eq!(decoded.bulk_flows, None);
+        assert_eq!(decoded.unresponsive_flows, None);
+    }
+
+    #[test]
+    fn cake_diff_tin_transit_round_trips_extended_payloads() {
+        let tin = CakeDiffTinTransit {
+            sent_bytes: 100,
+            backlog_bytes: 10,
+            drops: 2,
+            marks: 3,
+            base_delay_us: 42,
+            sent_packets: Some(5_000_000_000),
+            peak_delay_us: Some(101),
+            avg_delay_us: Some(51),
+            way_indirect_hits: Some(70_000),
+            way_misses: Some(80_000),
+            way_collisions: Some(90_000),
+            sparse_flows: Some(11),
+            bulk_flows: Some(12),
+            unresponsive_flows: Some(13),
+        };
+
+        let bytes = serde_cbor::to_vec(&tin).expect("extended tin should serialize");
+        let decoded: CakeDiffTinTransit =
+            serde_cbor::from_slice(&bytes).expect("extended tin should deserialize");
+
+        assert_eq!(decoded, tin);
+    }
+}

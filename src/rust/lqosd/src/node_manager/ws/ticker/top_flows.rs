@@ -7,6 +7,8 @@ use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
 
+use super::request_internal_bus;
+
 pub async fn top_flows_bytes(
     channels: Arc<PubSub>,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<BusReply>, BusRequest)>,
@@ -18,24 +20,12 @@ pub async fn top_flows_bytes(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::TopFlows {
         flow_type: TopFlowType::Bytes,
         n: 10,
     };
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("TopFlowsBytes: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("TopFlowsBytes", bus_tx, request).await else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "TopFlowsBytes: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::TopFlows(flows) = reply {
@@ -58,24 +48,12 @@ pub async fn top_flows_rate(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
     let request = BusRequest::TopFlows {
         flow_type: TopFlowType::RateEstimate,
         n: 10,
     };
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("TopFlowsRate: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus("TopFlowsRate", bus_tx, request).await else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "TopFlowsRate: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::TopFlows(flows) = reply {

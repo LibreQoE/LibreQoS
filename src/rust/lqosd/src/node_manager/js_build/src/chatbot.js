@@ -4,12 +4,16 @@ import { get_ws_client } from "./pubsub/ws";
 const log = document.getElementById('chatLog');
 const input = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
-const insightEnabled = typeof window.hasInsight !== 'undefined' ? !!window.hasInsight : false;
+const chatbotEnabled = typeof window.hasChatbot !== 'undefined' ? !!window.hasChatbot : false;
+const liveControlAvailable = typeof window.liveControlAvailable !== 'undefined'
+  ? !!window.liveControlAvailable
+  : false;
+const libbyAvailable = chatbotEnabled && liveControlAvailable;
 
 function scrollToBottom() { log.scrollTop = log.scrollHeight; }
 
 function ensureInsightNotice() {
-  if (insightEnabled) return;
+  if (libbyAvailable) return;
   const chatWrap = document.querySelector('.chat-wrap');
   const chatLog = document.getElementById('chatLog');
   if (!chatWrap || !chatLog) return;
@@ -23,8 +27,12 @@ function ensureInsightNotice() {
       <div class="d-flex align-items-center">
         <div class="me-2 text-info"><i class="fa fa-circle-info fa-lg"></i></div>
         <div>
-          <div class="fw-semibold">Libby is an Insight feature.</div>
-          <a class="alert-link" href="lts_trial.html">Start an Insight free trial</a> to enable Libby on this node.
+          <div class="fw-semibold">${
+            chatbotEnabled
+              ? "License valid, control service unavailable."
+              : "Libby requires an entitled license."
+          }</div>
+          <a class="alert-link" href="config_lts.html">Open License &amp; Services</a> to review availability for this node.
         </div>
       </div>`;
     chatWrap.insertBefore(notice, chatLog);
@@ -37,14 +45,18 @@ function ensureInsightNotice() {
 ensureInsightNotice();
 
 function disableChatWhenUnavailable() {
-  if (insightEnabled) return;
+  if (libbyAvailable) return;
   if (input) {
     input.disabled = true;
-    input.placeholder = 'Insight required to chat with Libby';
+    input.placeholder = chatbotEnabled
+      ? 'license valid, control service unavailable'
+      : 'An entitled license is required to chat with Libby';
   }
   if (sendBtn) {
     sendBtn.disabled = true;
-    sendBtn.title = 'Enable Insight to chat with Libby';
+    sendBtn.title = chatbotEnabled
+      ? 'license valid, control service unavailable'
+      : 'Enable an entitled license to chat with Libby';
   }
 }
 
@@ -217,7 +229,7 @@ function handleStreamText(text) {
 }
 
 let client = null;
-if (insightEnabled) {
+if (libbyAvailable) {
   client = get_ws_client();
   client.on("ChatbotChunk", (msg) => {
     if (msg && typeof msg.text === "string") {
@@ -227,12 +239,12 @@ if (insightEnabled) {
   appendSys("Connected to Libby");
   client.send({ Private: { Chatbot: { browser_ts_ms: Date.now() } } });
 } else {
-  appendSys("Libby requires an active Insight subscription. Start a free trial to enable chat.");
+  appendSys("Libby requires an entitled license. Open License & Services to enable chat.");
 }
 
 function sendText() {
   const text = input.value.trim();
-  if (!insightEnabled) return;
+  if (!libbyAvailable) return;
   if (!text) return;
   bubbleUser(text);
   if (client) {

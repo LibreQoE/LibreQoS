@@ -11,18 +11,20 @@
                     <tr>
                         <td class="table-label-cell">Max</td>
                         <td class="table-value-cell">
-                            <span id="bwMax"></span>
-                            <a
-                                id="ethernetAdvisoryBadge"
-                                class="badge rounded-pill text-bg-warning ms-2 d-none"
-                                href="#"
-                                tabindex="0"
-                                aria-label="Ethernet speed warning"
-                                data-bs-toggle="tooltip"
-                                data-bs-placement="top"
-                            >
-                                <i class="fa fa-ethernet me-1"></i><span id="ethernetAdvisoryBadgeText"></span>
-                            </a>
+                            <span class="lqos-inline-value-badge">
+                                <span id="bwMax" class="lqos-inline-value-badge-text"></span>
+                                <a
+                                    id="ethernetAdvisoryBadge"
+                                    class="badge rounded-pill text-bg-warning ms-2 d-none lqos-inline-value-badge-item"
+                                    href="#"
+                                    tabindex="0"
+                                    aria-label="Ethernet speed warning"
+                                    data-bs-toggle="tooltip"
+                                    data-bs-placement="top"
+                                >
+                                    <i class="fa fa-ethernet me-1"></i><span id="ethernetAdvisoryBadgeText"></span>
+                                </a>
+                            </span>
                         </td>
                     </tr>
                     <tr>
@@ -134,7 +136,11 @@
                 <div class="lqos-circuit-activity-controls">
                     <div class="lqos-circuit-activity-legend" aria-label="Queue Dynamics Legend">
                         <span class="lqos-circuit-activity-legend-item">
-                            <span class="lqos-circuit-activity-legend-dot is-throughput"></span>
+                            <span id="queuingActivityLegendEnqueued" class="lqos-circuit-activity-legend-dot is-enqueued"></span>
+                            <span>Enqueued</span>
+                        </span>
+                        <span class="lqos-circuit-activity-legend-item">
+                            <span id="queuingActivityLegendThroughput" class="lqos-circuit-activity-legend-dot is-throughput"></span>
                             <span>Throughput</span>
                         </span>
                         <span class="lqos-circuit-activity-legend-item">
@@ -164,7 +170,7 @@
             <div class="row g-2 mt-2">
                 <div class="col-12 col-md-6 col-xl-3">
                     <div class="lqos-circuit-activity-kpi">
-                        <div class="lqos-circuit-activity-kpi-label">Throughput</div>
+                        <div class="lqos-circuit-activity-kpi-label">Enqueued throughput</div>
                         <div id="queuingActivityThroughput" class="lqos-circuit-activity-kpi-value">-</div>
                     </div>
                 </div>

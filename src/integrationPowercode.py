@@ -110,12 +110,7 @@ def createShaper():
 			net.addRawNode(newDevice)
 	print("Imported " + str(len(devicesByCustomerID)) + " customers")
 	net.prepareTree()
-	net.plotNetworkGraph(False)
-	if net.doesNetworkJsonExist():
-		print("network.json already exists. Leaving in-place.")
-	else:
-		net.createNetworkJson()
-	net.createShapedDevices()
+	net.materializeCompiledTopology("python/powercode", "full")
 
 def importFromPowercode():
 	#createNetworkJSON()

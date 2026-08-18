@@ -1,74 +1,352 @@
 mod directionality;
-mod dot;
 mod graph_mapping;
 mod link_mapping;
 mod net_json_parent;
 
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
-use crate::ethernet_advisory::{apply_ethernet_rate_cap, write_ethernet_advisories};
+use crate::ethernet_advisory::apply_ethernet_rate_cap;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
-use crate::strategies::full::routes_override::RouteOverride;
-use crate::strategies::full::shaped_devices_writer::ShapedDevice;
 use crate::strategies::full2::directionality::{
     build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
 };
-use crate::strategies::full2::dot::save_dot_file;
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
-use crate::strategies::full2::net_json_parent::{NetJsonParent, walk_parents};
-use crate::uisp_types::UispDevice;
-use lqos_config::{CircuitEthernetMetadata, Config};
+use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
+use crate::strategies::legacy_bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
+use crate::strategies::legacy_routes_override::RouteOverride;
+use crate::uisp_types::{UispAttachmentRateSource, UispDevice};
+use lqos_config::{
+    CircuitAnchor, CircuitAnchorsFile, CircuitEthernetMetadata, Config, ConfigShapedDevices,
+    EthernetCapTargetKind, EthernetPortLimitPolicy, RequestedCircuitRates,
+    ShapedDevice as ConfigShapedDevice, TOPOLOGY_ATTACHMENT_AUTO_ID, TopologyAllowedParent,
+    TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
+    TopologyCanonicalIngressKind, TopologyCanonicalStateFile, TopologyEditorNode,
+    TopologyEditorStateFile, TopologyParentCandidate, TopologyParentCandidatesFile,
+    TopologyParentCandidatesNode, TopologyQueueVisibilityPolicy, topology_auto_attachment_option,
+};
+#[cfg(test)]
+use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
+use lqos_topology_compile::ImportedTopologyBundle;
 use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::fs::write;
-use std::path::Path;
+use std::env;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use std::time::Instant;
+use tracing::{debug, info, warn};
 
 type GraphType = petgraph::Graph<GraphMapping, LinkMapping, Directed>;
+const GENERATED_INTERNET_ROOT_NAME: &str = "INSERTED_INTERNET";
+const GENERATED_INTERNET_ROOT_ID: &str = "ROOT-001";
 
-pub async fn build_full_network_v2(
+/// Builds advisory metadata for a topology node whose infrastructure transport cap reduced it.
+fn topology_node_ethernet_advisory(device: &UispDevice) -> Option<CircuitEthernetMetadata> {
+    let applied_ethernet_cap = device.transport_cap_mbps?;
+    let auto_capped = device.download < device.raw_download || device.upload < device.raw_upload;
+    if !auto_capped {
+        return None;
+    }
+
+    let target_id = format!("uisp:device:{}", device.id);
+    Some(CircuitEthernetMetadata {
+        device_ids: vec![device.id.clone()],
+        source: "uisp/infrastructure_transport".to_string(),
+        negotiated_ethernet_mbps: device
+            .transport_cap_line_rate_mbps
+            .or(device.negotiated_ethernet_mbps)
+            .unwrap_or(applied_ethernet_cap),
+        requested_download_mbps: device.raw_download as f32,
+        requested_upload_mbps: device.raw_upload as f32,
+        applied_download_mbps: device.download as f32,
+        applied_upload_mbps: device.upload as f32,
+        auto_capped,
+        limiting_device_id: Some(device.id.clone()),
+        limiting_device_name: Some(device.name.clone()),
+        limiting_interface_name: device
+            .transport_cap_interface
+            .clone()
+            .or_else(|| device.negotiated_ethernet_interface.clone()),
+        ..CircuitEthernetMetadata::for_target(
+            EthernetCapTargetKind::Node,
+            target_id,
+            device.name.clone(),
+        )
+    })
+}
+
+#[derive(Clone, Debug)]
+struct LegacyShapedDevice {
+    circuit_id: String,
+    circuit_name: String,
+    device_id: String,
+    device_name: String,
+    parent_node: String,
+    parent_node_id: String,
+    anchor_node_id: String,
+    mac: String,
+    ipv4: String,
+    ipv6: String,
+    download_min: f32,
+    upload_min: f32,
+    download_max: f32,
+    upload_max: f32,
+    comment: String,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+struct TopologyParentOverrideSelection {
+    mode: TopologyParentOverrideMode,
+    parent_node_ids: Vec<String>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+struct TopologyAttachmentOverrideSelection {
+    parent_node_id: String,
+    mode: TopologyAttachmentMode,
+    attachment_preference_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+struct TopologyAllowedParentGroup {
+    logical_parent: NodeIndex,
+    candidate_nodes: Vec<NodeIndex>,
+}
+
+fn now_unix() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs())
+}
+
+fn config_shaped_device(legacy: LegacyShapedDevice) -> ConfigShapedDevice {
+    let headers = csv::StringRecord::from(vec![
+        "circuit_id",
+        "circuit_name",
+        "device_id",
+        "device_name",
+        "parent_node",
+        "parent_node_id",
+        "anchor_node_id",
+        "mac",
+        "ipv4",
+        "ipv6",
+        "download_min",
+        "upload_min",
+        "download_max",
+        "upload_max",
+        "comment",
+    ]);
+    let record = csv::StringRecord::from(vec![
+        legacy.circuit_id,
+        legacy.circuit_name,
+        legacy.device_id,
+        legacy.device_name,
+        legacy.parent_node,
+        legacy.parent_node_id,
+        legacy.anchor_node_id,
+        legacy.mac,
+        legacy.ipv4,
+        legacy.ipv6,
+        legacy.download_min.to_string(),
+        legacy.upload_min.to_string(),
+        legacy.download_max.to_string(),
+        legacy.upload_max.to_string(),
+        legacy.comment,
+    ]);
+    ConfigShapedDevice::from_csv(&record, Some(&headers))
+        .expect("UISP shaped-device rows must remain valid during compile conversion")
+}
+
+fn config_shaped_devices(rows: Vec<LegacyShapedDevice>) -> ConfigShapedDevices {
+    let mut shaped_devices = ConfigShapedDevices::default();
+    shaped_devices.replace_with_new_data(rows.into_iter().map(config_shaped_device).collect());
+    shaped_devices
+}
+
+fn debug_graph_output_enabled() -> bool {
+    env::var_os("LIBREQOS_UISP_DEBUG_GRAPH").is_some()
+}
+
+fn anchor_for_site_ap(
+    site_id: &str,
+    site_name: &str,
+    ap_device: &UispDevice,
+    parents: &HashMap<String, NetJsonParent<'_>>,
+) -> Option<CircuitAnchor> {
+    let ap_node_id = format!("uisp:device:{}", ap_device.id);
+    parents.contains_key(&ap_node_id).then(|| CircuitAnchor {
+        circuit_id: site_id.to_owned(),
+        circuit_name: Some(site_name.to_owned()),
+        anchor_node_id: ap_node_id,
+        anchor_node_name: Some(ap_device.name.to_owned()),
+    })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ResolvedRootSite {
+    Existing(String),
+    GeneratedInternet,
+}
+
+impl ResolvedRootSite {
+    fn name(&self) -> String {
+        match self {
+            ResolvedRootSite::Existing(name) => name.clone(),
+            ResolvedRootSite::GeneratedInternet => GENERATED_INTERNET_ROOT_NAME.to_string(),
+        }
+    }
+}
+
+fn generated_internet_root() -> GraphMapping {
+    GraphMapping::Root {
+        name: GENERATED_INTERNET_ROOT_NAME.to_string(),
+        id: GENERATED_INTERNET_ROOT_ID.to_string(),
+        latitude: None,
+        longitude: None,
+    }
+}
+
+fn resolve_root_site_from_names(
+    configured_site: &str,
+    site_names: &[String],
+    internet_site_candidates: &[String],
+    require_configured_root_site: bool,
+) -> Result<ResolvedRootSite, UispIntegrationError> {
+    let configured_site = configured_site.trim();
+    if !configured_site.is_empty() {
+        if site_names.iter().any(|site_name| site_name == configured_site) {
+            info!("Using root UISP site from /etc/lqos.conf: {configured_site}");
+            return Ok(ResolvedRootSite::Existing(configured_site.to_string()));
+        }
+
+        let mut sorted_site_names = site_names.to_vec();
+        sorted_site_names.sort_unstable();
+        let sample_sites = sorted_site_names
+            .iter()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        if require_configured_root_site {
+            tracing::error!(
+                "Configured UISP root site '{configured_site}' was not found. Available non-client site sample: {sample_sites}"
+            );
+            return Err(UispIntegrationError::NoRootSite(configured_site.to_string()));
+        }
+
+        warn!(
+            "Configured UISP root site '{configured_site}' was not found. Non-full topology mode will auto-detect a root instead."
+        );
+    } else {
+        warn!("Root UISP site is blank; attempting to auto-detect an import root.");
+    }
+
+    let mut candidates = internet_site_candidates
+        .iter()
+        .filter(|candidate| site_names.iter().any(|site_name| site_name == *candidate))
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+
+    match candidates.len() {
+        0 => {
+            tracing::error!("Unable to auto-detect a UISP root site from Internet data-links.");
+            Err(UispIntegrationError::NoRootSite(
+                "no Internet-connected UISP sites were found".to_string(),
+            ))
+        }
+        1 => {
+            info!(
+                "Auto-detected root UISP site from Internet data-links: {}",
+                candidates[0]
+            );
+            Ok(ResolvedRootSite::Existing(candidates.remove(0)))
+        }
+        _ => {
+            warn!(
+                "Multiple Internet-connected UISP sites detected. Creating a generated Internet root."
+            );
+            Ok(ResolvedRootSite::GeneratedInternet)
+        }
+    }
+}
+
+fn resolve_root_site(
+    config: &Config,
+    uisp_data: &UispData,
+    require_configured_root_site: bool,
+) -> Result<ResolvedRootSite, UispIntegrationError> {
+    let mut site_names = uisp_data
+        .sites_raw
+        .iter()
+        .filter(|site| !site.is_client_site())
+        .map(|site| site.name_or_blank())
+        .collect::<Vec<_>>();
+    site_names.sort_unstable();
+    site_names.dedup();
+
+    let mut internet_site_ids = uisp_data
+        .data_links_raw
+        .iter()
+        .filter(|link| !link.can_delete)
+        .filter_map(|link| {
+            link.from
+                .site
+                .as_ref()
+                .map(|site| site.identification.id.clone())
+        })
+        .collect::<Vec<_>>();
+    internet_site_ids.sort_unstable();
+    internet_site_ids.dedup();
+
+    let mut internet_site_candidates = uisp_data
+        .sites_raw
+        .iter()
+        .filter(|site| internet_site_ids.iter().any(|site_id| site_id == &site.id))
+        .map(|site| site.name_or_blank())
+        .collect::<Vec<_>>();
+    internet_site_candidates.sort_unstable();
+    internet_site_candidates.dedup();
+
+    resolve_root_site_from_names(
+        &config.uisp_integration.site,
+        &site_names,
+        &internet_site_candidates,
+        require_configured_root_site,
+    )
+}
+
+async fn build_imported_full2_bundle_from_data(
     config: Arc<Config>,
-    ip_ranges: IpRanges,
-) -> Result<(), UispIntegrationError> {
-    // Fetch the data
-    let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+    uisp_data: UispData,
+    require_configured_root_site: bool,
+    build_started: Instant,
+) -> Result<ImportedTopologyBundle, UispIntegrationError> {
+    let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
 
-    if let Err(e) = blackboard_blob("uisp_sites", &uisp_data.sites_raw).await {
-        warn!("Unable to write sites to blackboard: {e:?}");
-    }
-    if let Err(e) = blackboard_blob("uisp_devices", &uisp_data.devices_raw).await {
-        warn!("Unable to write devices to blackboard: {e:?}");
-    }
-    if let Err(e) = blackboard_blob("uisp_data_links", &uisp_data.data_links_raw).await {
-        warn!("Unable to write data links to blackboard: {e:?}");
-    }
-
-    // Report on obvious UISP errors that should be fixed
-    let _trouble = crate::strategies::ap_site::find_troublesome_sites(&uisp_data)
-        .await
-        .map_err(|e| {
-            error!("Error finding troublesome sites");
-            error!("{e:?}");
-            UispIntegrationError::UnknownSiteType
-        })?;
-
-    // Load overrides
     let bandwidth_overrides =
-        crate::strategies::full::bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
-    let routing_overrides = crate::strategies::full::routes_override::get_route_overrides(&config)?;
+        crate::strategies::legacy_bandwidth_overrides::get_site_bandwidth_overrides(&config)?;
+    let routing_overrides =
+        crate::strategies::legacy_routes_override::get_route_overrides(&config)?;
 
     // Create a new graph
     let mut graph = GraphType::new();
 
     // Find the root
-    let root_site_name = config.uisp_integration.site.clone();
+    let resolved_root_site =
+        resolve_root_site(&config, &uisp_data, require_configured_root_site)?;
+    let root_site_name = resolved_root_site.name();
 
     // Add all sites to the graph
+    let graph_build_started = Instant::now();
     let mut site_map = HashMap::new();
     let mut root_idx = None;
     add_all_sites_to_graph(
@@ -78,10 +356,19 @@ pub async fn build_full_network_v2(
         &mut site_map,
         &mut root_idx,
     );
-    let root_idx = root_idx.expect("Root site not found");
+    let root_idx = match (root_idx, resolved_root_site) {
+        (Some(root_idx), _) => root_idx,
+        (None, ResolvedRootSite::GeneratedInternet) => graph.add_node(generated_internet_root()),
+        (None, ResolvedRootSite::Existing(root_site_name)) => {
+            tracing::error!("Root UISP site '{root_site_name}' was not added to the graph.");
+            return Err(UispIntegrationError::NoRootSite(root_site_name));
+        }
+    };
+    let site_graph_elapsed_ms = graph_build_started.elapsed().as_millis();
 
     // Iterate all UISP devices and if their parent site is in the graph, add them
     let mut device_map = HashMap::new();
+    let device_graph_started = Instant::now();
     add_devices_to_graph(
         &uisp_data,
         &mut graph,
@@ -90,9 +377,12 @@ pub async fn build_full_network_v2(
         &config,
         &bandwidth_overrides,
     );
+    let device_graph_elapsed_ms = device_graph_started.elapsed().as_millis();
 
     // Now we iterate all the data links looking for DEVICE linkage
+    let device_link_graph_started = Instant::now();
     add_device_links_to_graph(&uisp_data, &mut graph, &mut device_map, &config);
+    let device_link_graph_elapsed_ms = device_link_graph_started.elapsed().as_millis();
 
     // Now we iterate only sites, looking for connectivity to the root
     let orphans = graph.add_node(GraphMapping::GeneratedSite {
@@ -136,16 +426,14 @@ pub async fn build_full_network_v2(
     // Point-to-point squashing will happen after we know which APs have clients
 
     // Client mapping
+    let client_mapping_started = Instant::now();
     let client_mappings = uisp_data.map_clients_to_aps();
+    let client_mapping_elapsed_ms = client_mapping_started.elapsed().as_millis();
 
     // Find the APs that have clients
     let mut aps_with_clients = HashSet::new();
     for (ap_id, _client_ids) in client_mappings.iter() {
-        let Some(ap_device) = uisp_data
-            .devices_raw
-            .iter()
-            .find(|d| d.identification.id == *ap_id)
-        else {
+        let Some(ap_device) = uisp_data.find_device_by_id(ap_id) else {
             // Orphaning is already handled
             continue;
         };
@@ -186,55 +474,52 @@ pub async fn build_full_network_v2(
         graph.remove_node(*ap_ref);
     }
 
-    // Now look for point-to-point squash candidates (after client mapping)
-    if config.uisp_integration.enable_squashing.unwrap_or(false) {
-        find_point_to_point_squash_candidates(&mut graph, &aps_with_clients, &config);
+    if debug_graph_output_enabled() {
+        let _ = blackboard_blob("uisp-graph", vec![graph.clone()]).await;
     }
 
-    // Visualizer
-    save_dot_file(&graph)?;
-    let _ = blackboard_blob("uisp-graph", vec![graph.clone()]).await;
+    info!(
+        site_nodes = site_map.len(),
+        access_points = device_map.len(),
+        graph_nodes = graph.node_count(),
+        graph_edges = graph.edge_count(),
+        site_graph_elapsed_ms,
+        device_graph_elapsed_ms,
+        device_link_graph_elapsed_ms,
+        client_mapping_elapsed_ms,
+        "Built UISP topology graph"
+    );
+
+    let mut route_cache = RouteCache::new(&uisp_data.devices, &routing_overrides);
+    let export_names = assign_export_names(
+        graph
+            .node_indices()
+            .map(|node| (graph[node].network_json_id(), &graph[node])),
+    );
+    let root_node_id = graph[root_idx].network_json_id();
+    let orphans_node_id = graph[orphans].network_json_id();
+    let orphans_node_name = export_names
+        .get(&orphans_node_id)
+        .cloned()
+        .unwrap_or_else(|| graph[orphans].name());
 
     // Figure out the network.json layers
+    let export_started = Instant::now();
     let mut parents = HashMap::<String, NetJsonParent>::new();
+    let mut topology_parent_candidates = Vec::<TopologyParentCandidatesNode>::new();
+    let mut topology_editor_nodes = Vec::<TopologyEditorNode>::new();
     for node in graph.node_indices() {
-        if node == root_idx {
-            continue;
-        }
         match &graph[node] {
             GraphMapping::GeneratedSite { name }
             | GraphMapping::Site { name, .. }
             | GraphMapping::AccessPoint { name, .. } => {
-                // Generate two routes - one per direction
-                let route_from_root_to_node = petgraph::algo::astar(
-                    &graph,
-                    root_idx,
-                    |n| n == node,
-                    |e| {
-                        (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            e.weight(),
-                            &uisp_data.devices,
-                            &routing_overrides,
-                        ))
-                    },
-                    |_| 0,
-                )
-                .unwrap_or((0, vec![]));
-
-                let route_from_node_to_root = petgraph::algo::astar(
-                    &graph,
-                    node,
-                    |n| n == root_idx,
-                    |e| {
-                        (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
-                            e.weight(),
-                            &uisp_data.devices,
-                            &routing_overrides,
-                        ))
-                    },
-                    |_| 0,
-                )
-                .unwrap_or((0, vec![]));
+                let node_id = graph[node].network_json_id();
+                let export_name = export_names
+                    .get(&node_id)
+                    .cloned()
+                    .unwrap_or_else(|| name.to_owned());
+                let route_from_root_to_node = route_cache.route(&graph, root_idx, node);
+                let route_from_node_to_root = route_cache.route(&graph, node, root_idx);
 
                 // println!("From node to root:");
                 // println!("{:?}", route_from_node_to_root);
@@ -244,23 +529,41 @@ pub async fn build_full_network_v2(
                 // println!("{:?}", route_from_root_to_node);
                 // println!("{:?}", edges_from_node_path(&graph, &route_from_root_to_node.1));
 
-                if route_from_root_to_node.1.is_empty() {
+                if route_from_root_to_node.is_empty() {
                     //println!("No path detected from {:?} to {}", graph[node], root_site_name);
                     parents.insert(
-                        name.to_owned(),
+                        node_id.clone(),
                         NetJsonParent {
-                            parent_name: "Orphans".to_string(),
+                            node_id: node_id.clone(),
+                            node_name: name.to_owned(),
+                            export_name: export_name.clone(),
+                            parent_id: Some(orphans_node_id.clone()),
+                            parent_name: orphans_node_name.clone(),
                             mapping: &graph[node],
                             download: config.queues.generated_pn_download_mbps,
                             upload: config.queues.generated_pn_upload_mbps,
                         },
                     );
                 } else {
+                    let native_parent = immediate_parent_from_route(&route_from_root_to_node);
+                    let candidate_parents = topology_parent_candidates_for_node_cached(
+                        &graph,
+                        root_idx,
+                        node,
+                        &mut route_cache,
+                    );
+                    let grouped_allowed_parents = topology_allowed_parent_groups_for_node_cached(
+                        &graph,
+                        root_idx,
+                        node,
+                        &candidate_parents,
+                        &mut route_cache,
+                    );
                     // Obtain capacities from route traversal
                     let mut download_capacity =
-                        min_capacity_along_route(&graph, &route_from_root_to_node.1);
+                        min_capacity_along_route(&graph, &route_from_root_to_node);
                     let mut upload_capacity =
-                        min_capacity_along_route(&graph, &route_from_node_to_root.1);
+                        min_capacity_along_route(&graph, &route_from_node_to_root);
 
                     // Apply AP capacities
                     if let GraphMapping::AccessPoint {
@@ -291,29 +594,123 @@ pub async fn build_full_network_v2(
 
                     // Overrides
                     if !bandwidth_overrides.is_empty()
-                        && let Some(bw_override) = bandwidth_overrides.get(name)
+                        && let Some(bw_override) = find_bandwidth_override(
+                            &bandwidth_overrides,
+                            Some(&graph[node].network_json_id()),
+                            name,
+                        )
                     {
                         debug!("Applying bandwidth override for {}", name);
                         debug!("Capacity was: {} / {}", download_capacity, upload_capacity);
-                        download_capacity = bw_override.0 as u64;
-                        upload_capacity = bw_override.1 as u64;
+                        if let Some(down) = bw_override.download_bandwidth_mbps {
+                            download_capacity = down as u64;
+                        }
+                        if let Some(up) = bw_override.upload_bandwidth_mbps {
+                            upload_capacity = up as u64;
+                        }
                         debug!(
                             "Capacity is now: {} / {}",
                             download_capacity, upload_capacity
                         );
                     }
 
-                    let parent_node =
-                        route_from_root_to_node.1[route_from_root_to_node.1.len() - 2];
+                    let Some(parent_node) = immediate_parent_from_route(&route_from_root_to_node)
+                    else {
+                        continue;
+                    };
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(_edge) = graph.find_edge(parent_node, node) {
-                        let parent = graph
-                            [route_from_root_to_node.1[route_from_root_to_node.1.len() - 2]]
-                            .name();
+                        let parent_id = graph[parent_node].network_json_id();
+                        let parent = graph[parent_node].name();
+                        let parent_export_name = export_names
+                            .get(&parent_id)
+                            .cloned()
+                            .unwrap_or_else(|| parent.clone());
+                        let current_parent = if is_real_topology_node(&graph, parent_node) {
+                            Some(TopologyParentCandidate {
+                                node_id: parent_id.clone(),
+                                node_name: parent.clone(),
+                            })
+                        } else {
+                            None
+                        };
+                        let logical_current_parent = native_parent
+                            .map(|candidate| {
+                                logical_parent_for_candidate_cached(
+                                    &graph,
+                                    root_idx,
+                                    node,
+                                    candidate,
+                                    &mut route_cache,
+                                )
+                            })
+                            .filter(|candidate| is_real_topology_node(&graph, *candidate))
+                            .map(|candidate| TopologyParentCandidate {
+                                node_id: graph[candidate].network_json_id(),
+                                node_name: graph[candidate].name(),
+                            });
+                        let candidate_parent_rows: Vec<TopologyParentCandidate> = candidate_parents
+                            .iter()
+                            .copied()
+                            .filter(|candidate| is_real_topology_node(&graph, *candidate))
+                            .map(|candidate| TopologyParentCandidate {
+                                node_id: graph[candidate].network_json_id(),
+                                node_name: graph[candidate].name(),
+                            })
+                            .collect();
+                        let allowed_parents = topology_allowed_parents_from_groups_cached(
+                            &graph,
+                            &grouped_allowed_parents,
+                            &aps_with_clients,
+                            &mut route_cache,
+                        );
+
+                        if is_real_topology_node(&graph, node) {
+                            topology_parent_candidates.push(TopologyParentCandidatesNode {
+                                node_id: graph[node].network_json_id(),
+                                node_name: name.to_owned(),
+                                current_parent_node_id: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_id.clone()),
+                                current_parent_node_name: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_name.clone()),
+                                candidate_parents: candidate_parent_rows,
+                            });
+                            topology_editor_nodes.push(TopologyEditorNode {
+                                node_id: graph[node].network_json_id(),
+                                node_name: name.to_owned(),
+                                latitude: graph[node].latitude(),
+                                longitude: graph[node].longitude(),
+                                current_parent_node_id: logical_current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_id.clone()),
+                                current_parent_node_name: logical_current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_name.clone()),
+                                current_attachment_id: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_id.clone()),
+                                current_attachment_name: current_parent
+                                    .as_ref()
+                                    .map(|candidate| candidate.node_name.clone()),
+                                can_move: !allowed_parents.is_empty(),
+                                allowed_parents,
+                                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
+                                preferred_attachment_id: None,
+                                preferred_attachment_name: None,
+                                effective_attachment_id: None,
+                                effective_attachment_name: None,
+                            });
+                        }
                         parents.insert(
-                            name.to_owned(),
+                            node_id.clone(),
                             NetJsonParent {
-                                parent_name: parent,
+                                node_id: node_id.clone(),
+                                node_name: name.to_owned(),
+                                export_name: export_name.clone(),
+                                parent_id: Some(parent_id),
+                                parent_name: parent_export_name,
                                 mapping: &graph[node],
                                 download: download_capacity,
                                 upload: upload_capacity,
@@ -324,7 +721,26 @@ pub async fn build_full_network_v2(
                     }
                 }
             }
-            _ => {}
+            GraphMapping::Root { name, .. } => {
+                topology_editor_nodes.push(TopologyEditorNode {
+                    node_id: graph[node].network_json_id(),
+                    node_name: name.to_owned(),
+                    latitude: graph[node].latitude(),
+                    longitude: graph[node].longitude(),
+                    current_parent_node_id: None,
+                    current_parent_node_name: None,
+                    current_attachment_id: None,
+                    current_attachment_name: None,
+                    can_move: false,
+                    allowed_parents: Vec::new(),
+                    queue_visibility_policy:
+                        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
+                    preferred_attachment_id: None,
+                    preferred_attachment_name: None,
+                    effective_attachment_id: None,
+                    effective_attachment_name: None,
+                });
+            }
         }
     }
 
@@ -347,43 +763,77 @@ pub async fn build_full_network_v2(
     // Write the network.json file
     let mut network_json = serde_json::Map::new();
     let mut visited = HashSet::new();
-    for (name, node_info) in parents.iter().filter(|(_name, parent)| {
-        // Include if it's a direct child of root OR if it's in promote_to_root list
-        parent.parent_name == root_site_name || promote_to_root_set.contains(_name.as_str())
-    }) {
+    let mut root_child_ids: Vec<&String> = parents
+        .iter()
+        .filter(|(_node_id, parent)| {
+            parent.parent_id.as_deref() == Some(root_node_id.as_str())
+                || promote_to_root_set.contains(parent.node_name.as_str())
+        })
+        .map(|(node_id, _node_info)| node_id)
+        .collect();
+    root_child_ids.sort_unstable_by(|left_id, right_id| {
+        let left = parents
+            .get(*left_id)
+            .expect("top-level node id should exist when sorting");
+        let right = parents
+            .get(*right_id)
+            .expect("top-level node id should exist when sorting");
+        left.export_name
+            .cmp(&right.export_name)
+            .then_with(|| left.node_id.cmp(&right.node_id))
+    });
+    for node_id in root_child_ids {
+        let node_info = parents
+            .get(node_id)
+            .expect("top-level node id should exist when building network.json");
+        visited.insert(node_id.clone());
         network_json.insert(
-            name.into(),
-            walk_parents(&parents, name, node_info, &mut visited).into(),
+            node_info.export_name.clone(),
+            walk_parents(&parents, node_id, &mut visited).into(),
         );
     }
-    let network_path = Path::new(&config.lqos_directory).join("network.json");
-    if network_path.exists() && !config.integration_common.always_overwrite_network_json {
-        warn!(
-            "Network.json exists, and always overwrite network json is not true - not writing network.json"
-        );
-    } else {
-        let json = serde_json::to_string_pretty(&network_json).unwrap();
-        write(network_path, json).map_err(|e| {
-            error!("Unable to write network.json");
-            error!("{e:?}");
-            UispIntegrationError::WriteNetJson
-        })?;
-        info!("Written network.json");
-    }
+    topology_parent_candidates.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
+    let topology_candidates_file = TopologyParentCandidatesFile {
+        source: "uisp/full".to_string(),
+        ingress_identity: None,
+        nodes: topology_parent_candidates,
+    };
+    topology_editor_nodes.sort_unstable_by(|left, right| left.node_id.cmp(&right.node_id));
+    let topology_editor_state = TopologyEditorStateFile {
+        schema_version: 1,
+        source: "uisp/full2".to_string(),
+        generated_unix: now_unix(),
+        ingress_identity: None,
+        nodes: topology_editor_nodes,
+    };
+    let exported_uisp_device_ids: HashSet<&str> = topology_editor_state
+        .nodes
+        .iter()
+        .filter_map(|node| node.node_id.strip_prefix("uisp:device:"))
+        .collect();
+    let canonical_state = TopologyCanonicalStateFile::from_editor_and_network(
+        &topology_editor_state,
+        &Value::Object(network_json.clone()),
+        TopologyCanonicalIngressKind::NativeIntegration,
+    );
+    let export_elapsed_ms = export_started.elapsed().as_millis();
 
     // Shaped Devices
+    let shaped_devices_started = Instant::now();
     let mut shaped_devices = Vec::new();
+    let mut circuit_anchors = Vec::<CircuitAnchor>::new();
     let mut seen_pairs = HashSet::new();
+    let mut seen_circuits = HashSet::new();
     let mut processed_site_pairs = 0usize;
     let mut shaped_device_count = 0usize;
     let mut ethernet_advisories: Vec<CircuitEthernetMetadata> = Vec::new();
 
     for (ap_id, client_sites) in client_mappings.iter() {
         for site_id in client_sites.iter() {
-            let Some(ap_device) = uisp_data.devices.iter().find(|d| d.id == *ap_id) else {
+            let Some(ap_device) = uisp_data.find_parsed_device_by_id(ap_id) else {
                 continue;
             };
-            let Some(site) = uisp_data.sites.iter().find(|s| s.id == *site_id) else {
+            let Some(site) = uisp_data.find_site_by_id(site_id) else {
                 continue;
             };
             processed_site_pairs = processed_site_pairs.saturating_add(1);
@@ -392,9 +842,9 @@ pub async fn build_full_network_v2(
                 site.name, site.id, ap_device.name, ap_device.id
             );
             let site_devices: Vec<&UispDevice> = uisp_data
-                .devices
-                .iter()
-                .filter(|d| d.site_id == *site_id && d.has_address())
+                .find_parsed_devices_in_site(site_id)
+                .into_iter()
+                .filter(|d| d.has_address())
                 .collect();
 
             let requested =
@@ -424,32 +874,54 @@ pub async fn build_full_network_v2(
                     )
                 };
             let ethernet_decision = apply_ethernet_rate_cap(
+                ethernet_policy,
                 &site.id,
                 &site.name,
                 site_devices.iter().copied(),
-                requested.0,
-                requested.2,
-                requested.1,
-                requested.3,
+                RequestedCircuitRates {
+                    download_min: requested.0,
+                    upload_min: requested.2,
+                    download_max: requested.1,
+                    upload_max: requested.3,
+                },
             );
             if let Some(advisory) = ethernet_decision.advisory.clone() {
                 ethernet_advisories.push(advisory);
             }
-            for device in uisp_data.devices.iter().filter(|d| d.site_id == *site_id) {
+            if !site_devices.is_empty() && seen_circuits.insert(site.id.clone()) {
+                if let Some(anchor) = anchor_for_site_ap(&site.id, &site.name, ap_device, &parents)
+                {
+                    circuit_anchors.push(anchor);
+                } else {
+                    debug!(
+                        "Skipping circuit anchor for '{}' because AP '{}' ({}) is not present in topology; circuit will resolve from ingress parent data.",
+                        site.name, ap_device.name, ap_device.id
+                    );
+                }
+            }
+            for device in uisp_data.find_parsed_devices_in_site(site_id) {
                 if !device.has_address() {
                     continue;
                 }
 
                 let parent_node = {
-                    if parents.contains_key(&ap_device.name) {
-                        ap_device.name.clone()
+                    let ap_node_id = format!("uisp:device:{}", ap_device.id);
+                    if let Some(parent) = parents.get(&ap_node_id) {
+                        parent.export_name.clone()
                     } else {
                         warn!(
-                            "AP device '{}' not found in parents HashMap, assigning to Orphans",
-                            ap_device.name
+                            "AP device '{}' ({}) not found in parents HashMap, assigning to {}",
+                            ap_device.name, ap_device.id, orphans_node_name
                         );
-                        "Orphans".to_string()
+                        orphans_node_name.clone()
                     }
+                };
+                let parent_node_id = {
+                    let ap_node_id = format!("uisp:device:{}", ap_device.id);
+                    parents
+                        .get(&ap_node_id)
+                        .map(|parent| parent.node_id.clone())
+                        .unwrap_or_default()
                 };
 
                 let key = (site.id.clone(), device.id.clone());
@@ -457,12 +929,14 @@ pub async fn build_full_network_v2(
                     continue;
                 }
 
-                let shaped_device = ShapedDevice {
+                let shaped_device = LegacyShapedDevice {
                     circuit_id: site.id.to_owned(),
                     circuit_name: site.name.to_owned(),
                     device_id: device.id.to_owned(),
                     device_name: device.name.to_owned(),
                     parent_node: parent_node.clone(),
+                    parent_node_id,
+                    anchor_node_id: String::new(),
                     mac: device.mac.to_owned(),
                     ipv4: device.ipv4_list(),
                     ipv6: device.ipv6_list(),
@@ -485,24 +959,55 @@ pub async fn build_full_network_v2(
         "UISP shaped devices: processed {} site/AP pair(s) and produced {} shaped device row(s).",
         processed_site_pairs, shaped_device_count
     );
-    let file_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
-    let mut writer = csv::WriterBuilder::new()
-        .has_headers(true)
-        .from_path(file_path)
-        .unwrap();
+    info!(
+        shaped_devices = shaped_devices.len(),
+        shaped_device_elapsed_ms = shaped_devices_started.elapsed().as_millis(),
+        export_elapsed_ms,
+        total_elapsed_ms = build_started.elapsed().as_millis(),
+        "Completed UISP full2 import bundle"
+    );
 
-    for d in shaped_devices.iter() {
-        writer.serialize(d).unwrap();
-    }
-    writer.flush().map_err(|e| {
-        error!("Unable to flush CSV file");
-        error!("{e:?}");
-        UispIntegrationError::CsvError
-    })?;
-    write_ethernet_advisories(&config, &ethernet_advisories)?;
-    info!("Wrote {} lines to ShapedDevices.csv", shaped_devices.len());
+    ethernet_advisories.extend(
+        uisp_data
+            .devices
+            .iter()
+            .filter(|device| exported_uisp_device_ids.contains(device.id.as_str()))
+            .filter_map(topology_node_ethernet_advisory),
+    );
 
-    Ok(())
+    Ok(ImportedTopologyBundle {
+        source: "uisp/full2".to_string(),
+        generated_unix: topology_editor_state.generated_unix,
+        ingress_identity: None,
+        native_canonical: Some(canonical_state),
+        native_editor: Some(topology_editor_state),
+        parent_candidates: Some(topology_candidates_file),
+        compatibility_network_json: Value::Object(network_json),
+        shaped_devices: config_shaped_devices(shaped_devices),
+        circuit_anchors: CircuitAnchorsFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: now_unix(),
+            anchors: circuit_anchors,
+        },
+        ethernet_advisories,
+    })
+}
+
+pub async fn build_imported_full2_bundle(
+    config: Arc<Config>,
+    ip_ranges: IpRanges,
+    require_configured_root_site: bool,
+) -> Result<ImportedTopologyBundle, UispIntegrationError> {
+    let build_started = Instant::now();
+    let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
+    build_imported_full2_bundle_from_data(
+        config,
+        uisp_data,
+        require_configured_root_site,
+        build_started,
+    )
+    .await
 }
 
 fn add_device_links_to_graph(
@@ -531,14 +1036,8 @@ fn add_device_links_to_graph(
             // If the devices are the same, we don't need to add an edge
             continue;
         }
-        if let Some(dev_a) = uisp_data
-            .devices_raw
-            .iter()
-            .find(|d| d.get_id() == from_device.identification.id)
-            && let Some(dev_b) = uisp_data
-                .devices_raw
-                .iter()
-                .find(|d| d.get_id() == to_device.identification.id)
+        if let Some(dev_a) = uisp_data.find_device_by_id(&from_device.identification.id)
+            && let Some(dev_b) = uisp_data.find_device_by_id(&to_device.identification.id)
             && dev_a.get_site_id().unwrap_or_default() == dev_b.get_site_id().unwrap_or_default()
         {
             // If the devices are in the same site, we don't need to add an edge
@@ -568,7 +1067,7 @@ fn add_device_links_to_graph(
                 to_name = %to_device.identification.name,
                 "Unable to determine AP/station direction for UISP data-link; falling back to from/to mapping (capacity may be reversed)"
             );
-            get_capacity_from_datalink_device(id_a, &uisp_data.devices, config)
+            get_capacity_from_datalink_device(id_a, uisp_data, config)
         };
         graph.add_edge(
             *a_ref,
@@ -593,10 +1092,10 @@ fn add_device_links_to_graph(
 
 fn get_capacity_from_datalink_device(
     device_id: &str,
-    devices: &[UispDevice],
+    uisp_data: &UispData,
     config: &Arc<Config>,
 ) -> (u64, u64) {
-    if let Some(device) = devices.iter().find(|d| d.id == device_id) {
+    if let Some(device) = uisp_data.find_parsed_device_by_id(device_id) {
         return (device.download, device.upload);
     }
 
@@ -612,17 +1111,22 @@ fn add_devices_to_graph(
     site_map: &mut HashMap<String, NodeIndex>,
     device_map: &mut HashMap<String, NodeIndex>,
     config: &Arc<Config>,
-    bandwidth_overrides: &BandwidthOverrides,
+    bandwidth_overrides: &[BandwidthOverride],
 ) {
     for device in uisp_data.devices_raw.iter() {
+        if device_map.contains_key(&device.identification.id) {
+            warn!(
+                device_id = %device.identification.id,
+                device_name = %device.get_name().unwrap_or_default(),
+                "Skipping duplicate UISP device row while building topology graph"
+            );
+            continue;
+        }
         let Some(site_id) = &device.identification.site else {
             continue;
         };
         let site_id = &site_id.id;
-        let Some(device_details) = uisp_data
-            .devices
-            .iter()
-            .find(|d| d.id == device.identification.id)
+        let Some(device_details) = uisp_data.find_parsed_device_by_id(&device.identification.id)
         else {
             continue;
         };
@@ -644,9 +1148,17 @@ fn add_devices_to_graph(
             upload_mbps = config.queues.generated_pn_upload_mbps;
         }
 
-        if let Some(bw_override) = bandwidth_overrides.get(&device.get_name().unwrap_or_default()) {
-            download_mbps = bw_override.0 as u64;
-            upload_mbps = bw_override.1 as u64;
+        if let Some(bw_override) = find_bandwidth_override(
+            bandwidth_overrides,
+            Some(&format!("uisp:device:{}", device.identification.id)),
+            &device.get_name().unwrap_or_default(),
+        ) {
+            if let Some(down) = bw_override.download_bandwidth_mbps {
+                download_mbps = down as u64;
+            }
+            if let Some(up) = bw_override.upload_bandwidth_mbps {
+                upload_mbps = up as u64;
+            }
         }
 
         let device_entry = GraphMapping::AccessPoint {
@@ -766,8 +1278,822 @@ fn link_capacity_mbps_for_routing(
     }
 }
 
-use crate::strategies::full::bandwidth_overrides::BandwidthOverrides;
 use petgraph::prelude::*;
+
+fn astar_route(
+    graph: &GraphType,
+    start: NodeIndex,
+    end: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Vec<NodeIndex> {
+    petgraph::algo::astar(
+        graph,
+        start,
+        |n| n == end,
+        |e| {
+            (10_000u64).saturating_sub(link_capacity_mbps_for_routing(
+                e.weight(),
+                devices,
+                route_overrides,
+            ))
+        },
+        |_| 0,
+    )
+    .map(|(_, path)| path)
+    .unwrap_or_default()
+}
+
+struct RouteCache<'a> {
+    devices: &'a [UispDevice],
+    route_overrides: &'a [RouteOverride],
+    cached_paths: HashMap<(NodeIndex, NodeIndex), Vec<NodeIndex>>,
+}
+
+impl<'a> RouteCache<'a> {
+    fn new(devices: &'a [UispDevice], route_overrides: &'a [RouteOverride]) -> Self {
+        Self {
+            devices,
+            route_overrides,
+            cached_paths: HashMap::new(),
+        }
+    }
+
+    fn route(&mut self, graph: &GraphType, start: NodeIndex, end: NodeIndex) -> Vec<NodeIndex> {
+        if let Some(path) = self.cached_paths.get(&(start, end)) {
+            return path.clone();
+        }
+        let path = astar_route(graph, start, end, self.devices, self.route_overrides);
+        self.cached_paths.insert((start, end), path.clone());
+        path
+    }
+}
+
+fn is_real_topology_node(graph: &GraphType, node: NodeIndex) -> bool {
+    matches!(
+        graph[node],
+        GraphMapping::Root { .. } | GraphMapping::Site { .. } | GraphMapping::AccessPoint { .. }
+    )
+}
+
+fn is_site_anchor_node(graph: &GraphType, node: NodeIndex) -> bool {
+    matches!(
+        graph[node],
+        GraphMapping::Root { .. } | GraphMapping::Site { .. } | GraphMapping::GeneratedSite { .. }
+    )
+}
+
+fn topology_site_neighbor_for_access_point(
+    graph: &GraphType,
+    candidate: NodeIndex,
+) -> Option<NodeIndex> {
+    if !matches!(graph[candidate], GraphMapping::AccessPoint { .. }) {
+        return None;
+    }
+
+    graph
+        .neighbors_directed(candidate, petgraph::Incoming)
+        .chain(graph.neighbors_directed(candidate, petgraph::Outgoing))
+        .find(|neighbor| is_site_anchor_node(graph, *neighbor))
+}
+
+fn logical_parent_from_path(graph: &GraphType, path: &[NodeIndex]) -> Option<NodeIndex> {
+    path.iter()
+        .rev()
+        .skip(1)
+        .copied()
+        .find(|node| {
+            matches!(
+                graph[*node],
+                GraphMapping::Root { .. } | GraphMapping::Site { .. }
+            )
+        })
+        .or_else(|| immediate_parent_from_route(path))
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn remote_logical_parent_for_local_attachment(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node_being_edited: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Option<NodeIndex> {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    remote_logical_parent_for_local_attachment_cached(
+        graph,
+        root_idx,
+        node_being_edited,
+        candidate,
+        &mut route_cache,
+    )
+}
+
+fn remote_logical_parent_for_local_attachment_cached(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node_being_edited: NodeIndex,
+    candidate: NodeIndex,
+    route_cache: &mut RouteCache<'_>,
+) -> Option<NodeIndex> {
+    let local_site = topology_site_neighbor_for_access_point(graph, candidate)?;
+    if local_site != node_being_edited {
+        return None;
+    }
+
+    graph
+        .neighbors_directed(candidate, petgraph::Incoming)
+        .chain(graph.neighbors_directed(candidate, petgraph::Outgoing))
+        .filter(|peer| matches!(graph[*peer], GraphMapping::AccessPoint { .. }))
+        .filter(|peer| *peer != candidate)
+        .filter_map(|peer| {
+            let peer_site = topology_site_neighbor_for_access_point(graph, peer)?;
+            if peer_site == local_site {
+                return None;
+            }
+
+            let path = route_cache.route(graph, root_idx, peer);
+            if path.is_empty() || path.contains(&node_being_edited) {
+                return None;
+            }
+
+            let logical_parent = logical_parent_from_path(graph, &path)?;
+            if !is_real_topology_node(graph, logical_parent) || logical_parent == node_being_edited
+            {
+                return None;
+            }
+
+            Some((
+                path.len(),
+                stable_node_key(graph, logical_parent),
+                stable_node_key(graph, peer),
+                logical_parent,
+            ))
+        })
+        .min_by_key(|candidate| (candidate.0, candidate.1.clone(), candidate.2.clone()))
+        .map(|candidate| candidate.3)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn logical_parent_for_candidate(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node_being_edited: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> NodeIndex {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    logical_parent_for_candidate_cached(
+        graph,
+        root_idx,
+        node_being_edited,
+        candidate,
+        &mut route_cache,
+    )
+}
+
+fn logical_parent_for_candidate_cached(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node_being_edited: NodeIndex,
+    candidate: NodeIndex,
+    route_cache: &mut RouteCache<'_>,
+) -> NodeIndex {
+    if let Some(remote_parent) = remote_logical_parent_for_local_attachment_cached(
+        graph,
+        root_idx,
+        node_being_edited,
+        candidate,
+        route_cache,
+    ) {
+        return remote_parent;
+    }
+
+    match &graph[candidate] {
+        GraphMapping::Root { .. } | GraphMapping::Site { .. } => candidate,
+        GraphMapping::GeneratedSite { .. } => candidate,
+        GraphMapping::AccessPoint { .. } => {
+            let path = route_cache.route(graph, root_idx, candidate);
+            logical_parent_from_path(graph, &path).unwrap_or(candidate)
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn topology_allowed_parent_groups_for_node(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node_being_edited: NodeIndex,
+    candidate_parents: &[NodeIndex],
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Vec<TopologyAllowedParentGroup> {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    topology_allowed_parent_groups_for_node_cached(
+        graph,
+        root_idx,
+        node_being_edited,
+        candidate_parents,
+        &mut route_cache,
+    )
+}
+
+fn topology_allowed_parent_groups_for_node_cached(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node_being_edited: NodeIndex,
+    candidate_parents: &[NodeIndex],
+    route_cache: &mut RouteCache<'_>,
+) -> Vec<TopologyAllowedParentGroup> {
+    let mut groups = Vec::<TopologyAllowedParentGroup>::new();
+
+    for candidate in candidate_parents
+        .iter()
+        .copied()
+        .filter(|candidate| is_real_topology_node(graph, *candidate))
+    {
+        let logical_parent = logical_parent_for_candidate_cached(
+            graph,
+            root_idx,
+            node_being_edited,
+            candidate,
+            route_cache,
+        );
+        if let Some(existing) = groups
+            .iter_mut()
+            .find(|group| group.logical_parent == logical_parent)
+        {
+            let candidate_id = graph[candidate].network_json_id();
+            if !existing.candidate_nodes.iter().any(|existing_candidate| {
+                graph[*existing_candidate].network_json_id() == candidate_id
+            }) {
+                existing.candidate_nodes.push(candidate);
+            }
+            continue;
+        }
+
+        groups.push(TopologyAllowedParentGroup {
+            logical_parent,
+            candidate_nodes: vec![candidate],
+        });
+    }
+
+    groups.sort_unstable_by_key(|group| stable_node_key(graph, group.logical_parent));
+    groups
+}
+
+fn attachment_kind_for_candidate(graph: &GraphType, candidate: NodeIndex) -> &'static str {
+    match &graph[candidate] {
+        GraphMapping::AccessPoint { .. } => "device",
+        GraphMapping::Root { .. }
+        | GraphMapping::Site { .. }
+        | GraphMapping::GeneratedSite { .. } => "site",
+    }
+}
+
+fn access_point_id(graph: &GraphType, node: NodeIndex) -> Option<&str> {
+    match &graph[node] {
+        GraphMapping::AccessPoint { id, .. } => Some(id.as_str()),
+        _ => None,
+    }
+}
+
+fn attachment_role_for_candidate(
+    graph: &GraphType,
+    candidate: NodeIndex,
+    peer_candidate: Option<NodeIndex>,
+    aps_with_clients: &HashSet<String>,
+) -> TopologyAttachmentRole {
+    if graph[candidate].network_json_id() == TOPOLOGY_ATTACHMENT_AUTO_ID {
+        return TopologyAttachmentRole::Unknown;
+    }
+    if attachment_kind_for_candidate(graph, candidate) == "site" {
+        return TopologyAttachmentRole::WiredUplink;
+    }
+
+    if peer_candidate
+        .and_then(|peer| access_point_id(graph, peer))
+        .is_some_and(|peer_id| aps_with_clients.contains(peer_id))
+    {
+        return TopologyAttachmentRole::PtmpUplink;
+    }
+
+    if peer_candidate.is_some() {
+        return TopologyAttachmentRole::PtpBackhaul;
+    }
+
+    TopologyAttachmentRole::WiredUplink
+}
+
+fn first_probe_ip_for_device(devices: &[UispDevice], device_id: &str) -> Option<String> {
+    let device = devices.iter().find(|device| device.id == device_id)?;
+    device
+        .probe_ipv4
+        .iter()
+        .min()
+        .cloned()
+        .or_else(|| device.probe_ipv6.iter().min().cloned())
+}
+
+fn attachment_pair_id(left: &str, right: &str) -> String {
+    if left <= right {
+        format!("{left}|{right}")
+    } else {
+        format!("{right}|{left}")
+    }
+}
+
+struct AttachmentRateMetadata {
+    rate_source: TopologyAttachmentRateSource,
+    can_override_rate: bool,
+    rate_override_disabled_reason: Option<String>,
+    download_bandwidth_mbps: Option<u64>,
+    upload_bandwidth_mbps: Option<u64>,
+    transport_cap_mbps: Option<u64>,
+    transport_cap_reason: Option<String>,
+}
+
+fn rate_override_metadata_for_candidate(
+    graph: &GraphType,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+) -> AttachmentRateMetadata {
+    match &graph[candidate] {
+        GraphMapping::AccessPoint {
+            id,
+            download_mbps,
+            upload_mbps,
+            ..
+        } => {
+            let matched_device = devices.iter().find(|device| device.id == *id);
+            let rate_source = matched_device
+                .map(|device| match device.attachment_rate_source {
+                    UispAttachmentRateSource::DynamicIntegration
+                        if *download_mbps == device.download && *upload_mbps == device.upload =>
+                    {
+                        TopologyAttachmentRateSource::DynamicIntegration
+                    }
+                    _ => TopologyAttachmentRateSource::Static,
+                })
+                .unwrap_or(TopologyAttachmentRateSource::Unknown);
+            let (can_override_rate, disabled_reason) = if rate_source
+                == TopologyAttachmentRateSource::DynamicIntegration
+            {
+                (
+                    false,
+                    Some("Rates are driven by dynamic UISP radio capacity telemetry.".to_string()),
+                )
+            } else {
+                (true, None)
+            };
+            AttachmentRateMetadata {
+                rate_source,
+                can_override_rate,
+                rate_override_disabled_reason: disabled_reason,
+                download_bandwidth_mbps: Some(*download_mbps),
+                upload_bandwidth_mbps: Some(*upload_mbps),
+                transport_cap_mbps: matched_device.and_then(|device| device.transport_cap_mbps),
+                transport_cap_reason: matched_device
+                    .and_then(|device| device.transport_cap_reason.clone()),
+            }
+        }
+        _ => AttachmentRateMetadata {
+            rate_source: TopologyAttachmentRateSource::Unknown,
+            can_override_rate: false,
+            rate_override_disabled_reason: Some(
+                "This attachment does not expose attachment-scoped rate controls.".to_string(),
+            ),
+            download_bandwidth_mbps: None,
+            upload_bandwidth_mbps: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+        },
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn topology_attachment_option_for_candidate(
+    graph: &GraphType,
+    logical_parent: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    aps_with_clients: &HashSet<String>,
+    route_overrides: &[RouteOverride],
+) -> TopologyAttachmentOption {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    topology_attachment_option_for_candidate_cached(
+        graph,
+        logical_parent,
+        candidate,
+        devices,
+        aps_with_clients,
+        &mut route_cache,
+    )
+}
+
+fn topology_attachment_option_for_candidate_cached(
+    graph: &GraphType,
+    logical_parent: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    aps_with_clients: &HashSet<String>,
+    route_cache: &mut RouteCache<'_>,
+) -> TopologyAttachmentOption {
+    let attachment_id = graph[candidate].network_json_id();
+    let attachment_name = graph[candidate].name();
+    let attachment_kind = attachment_kind_for_candidate(graph, candidate).to_string();
+    let attachment_rate_metadata = rate_override_metadata_for_candidate(graph, candidate, devices);
+    let rate_source = attachment_rate_metadata.rate_source;
+    let can_override_rate = attachment_rate_metadata.can_override_rate;
+    let rate_override_disabled_reason = attachment_rate_metadata.rate_override_disabled_reason;
+    let download_bandwidth_mbps = attachment_rate_metadata.download_bandwidth_mbps;
+    let upload_bandwidth_mbps = attachment_rate_metadata.upload_bandwidth_mbps;
+    let transport_cap_mbps = attachment_rate_metadata.transport_cap_mbps;
+    let transport_cap_reason = attachment_rate_metadata.transport_cap_reason;
+    let capacity_mbps = match (download_bandwidth_mbps, upload_bandwidth_mbps) {
+        (Some(download), Some(upload)) => Some(download.min(upload)),
+        (Some(download), None) => Some(download),
+        (None, Some(upload)) => Some(upload),
+        (None, None) => None,
+    };
+
+    let peer_candidate = peer_attachment_candidate_for_candidate_cached(
+        graph,
+        logical_parent,
+        candidate,
+        route_cache,
+    );
+
+    let peer_attachment_id = peer_candidate.map(|node| graph[node].network_json_id());
+    let peer_attachment_name = peer_candidate.map(|node| graph[node].name());
+    let attachment_role =
+        attachment_role_for_candidate(graph, candidate, peer_candidate, aps_with_clients);
+    let local_probe_ip = match &graph[candidate] {
+        GraphMapping::AccessPoint { id, .. } => first_probe_ip_for_device(devices, id),
+        _ => None,
+    };
+    let remote_probe_ip = match peer_candidate {
+        Some(node) => match &graph[node] {
+            GraphMapping::AccessPoint { id, .. } => first_probe_ip_for_device(devices, id),
+            _ => None,
+        },
+        None => None,
+    };
+    let pair_id = peer_attachment_id
+        .as_ref()
+        .map(|peer_id| attachment_pair_id(&attachment_id, peer_id));
+
+    TopologyAttachmentOption {
+        attachment_id,
+        attachment_name,
+        attachment_kind,
+        attachment_role,
+        pair_id,
+        peer_attachment_id,
+        peer_attachment_name,
+        capacity_mbps,
+        download_bandwidth_mbps,
+        upload_bandwidth_mbps,
+        transport_cap_mbps,
+        transport_cap_reason,
+        rate_source,
+        can_override_rate,
+        rate_override_disabled_reason,
+        has_rate_override: false,
+        local_probe_ip,
+        remote_probe_ip,
+        probe_enabled: false,
+        probeable: false,
+        health_status: lqos_config::TopologyAttachmentHealthStatus::Disabled,
+        health_reason: None,
+        suppressed_until_unix: None,
+        effective_selected: false,
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn peer_attachment_candidate_for_candidate(
+    graph: &GraphType,
+    logical_parent: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Option<NodeIndex> {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    peer_attachment_candidate_for_candidate_cached(
+        graph,
+        logical_parent,
+        candidate,
+        &mut route_cache,
+    )
+}
+
+fn peer_attachment_candidate_for_candidate_cached(
+    graph: &GraphType,
+    logical_parent: NodeIndex,
+    candidate: NodeIndex,
+    route_cache: &mut RouteCache<'_>,
+) -> Option<NodeIndex> {
+    let route_from_parent = route_cache.route(graph, logical_parent, candidate);
+    if route_from_parent.len() < 2 {
+        return None;
+    }
+
+    route_from_parent
+        .get(route_from_parent.len().saturating_sub(2))
+        .copied()
+        .filter(|node| *node != logical_parent && *node != candidate)
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn topology_allowed_parents_from_groups(
+    graph: &GraphType,
+    groups: &[TopologyAllowedParentGroup],
+    devices: &[UispDevice],
+    aps_with_clients: &HashSet<String>,
+    route_overrides: &[RouteOverride],
+) -> Vec<TopologyAllowedParent> {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    topology_allowed_parents_from_groups_cached(graph, groups, aps_with_clients, &mut route_cache)
+}
+
+fn topology_allowed_parents_from_groups_cached(
+    graph: &GraphType,
+    groups: &[TopologyAllowedParentGroup],
+    aps_with_clients: &HashSet<String>,
+    route_cache: &mut RouteCache<'_>,
+) -> Vec<TopologyAllowedParent> {
+    let mut allowed_parents = Vec::with_capacity(groups.len());
+    for group in groups {
+        let parent = {
+            let mut attachment_options = vec![topology_auto_attachment_option()];
+            let mut seen_attachment_ids = HashSet::from([TOPOLOGY_ATTACHMENT_AUTO_ID.to_string()]);
+
+            attachment_options.extend(
+                group
+                    .candidate_nodes
+                    .iter()
+                    .copied()
+                    .filter(|candidate| {
+                        matches!(graph[*candidate], GraphMapping::AccessPoint { .. })
+                    })
+                    .filter(|candidate| {
+                        seen_attachment_ids.insert(graph[*candidate].network_json_id())
+                    })
+                    .map(|candidate| {
+                        topology_attachment_option_for_candidate_cached(
+                            graph,
+                            group.logical_parent,
+                            candidate,
+                            route_cache.devices,
+                            aps_with_clients,
+                            route_cache,
+                        )
+                    }),
+            );
+
+            TopologyAllowedParent {
+                parent_node_id: graph[group.logical_parent].network_json_id(),
+                parent_node_name: graph[group.logical_parent].name(),
+                attachment_options,
+                all_attachments_suppressed: false,
+                has_probe_unavailable_attachments: false,
+            }
+        };
+        allowed_parents.push(parent);
+    }
+    allowed_parents
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn topology_parent_candidates_for_node(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Vec<NodeIndex> {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    topology_parent_candidates_for_node_cached(graph, root_idx, node, &mut route_cache)
+}
+
+fn topology_parent_candidates_for_node_cached(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node: NodeIndex,
+    route_cache: &mut RouteCache<'_>,
+) -> Vec<NodeIndex> {
+    let mut candidates: Vec<NodeIndex> = graph
+        .neighbors_directed(node, petgraph::Incoming)
+        .filter(|candidate| is_real_topology_node(graph, *candidate))
+        .filter(|candidate| {
+            is_upstream_parent_candidate_cached(graph, root_idx, node, *candidate, route_cache)
+        })
+        .collect();
+    candidates.sort_unstable_by_key(|candidate| stable_node_key(graph, *candidate));
+    let mut seen_ids = HashSet::new();
+    candidates.retain(|candidate| seen_ids.insert(graph[*candidate].network_json_id()));
+    candidates
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn is_upstream_parent_candidate(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> bool {
+    let mut route_cache = RouteCache::new(devices, route_overrides);
+    is_upstream_parent_candidate_cached(graph, root_idx, node, candidate, &mut route_cache)
+}
+
+fn is_upstream_parent_candidate_cached(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node: NodeIndex,
+    candidate: NodeIndex,
+    route_cache: &mut RouteCache<'_>,
+) -> bool {
+    if node == candidate {
+        return false;
+    }
+
+    let path_to_candidate = route_cache.route(graph, root_idx, candidate);
+    if path_to_candidate.is_empty() {
+        return false;
+    }
+
+    // Direct child radios normally look like descendants because the shortest path to the
+    // local radio can traverse the site being edited. When that radio has a remote peer that
+    // reaches the root without traversing the local site, treat it as a legal inter-site
+    // parent candidate instead of rejecting it as a child loop.
+    if !path_to_candidate.contains(&node) {
+        return true;
+    }
+
+    remote_logical_parent_for_local_attachment_cached(graph, root_idx, node, candidate, route_cache)
+        .is_some()
+}
+
+fn immediate_parent_from_route(path: &[NodeIndex]) -> Option<NodeIndex> {
+    if path.len() < 2 {
+        None
+    } else {
+        path.get(path.len().saturating_sub(2)).copied()
+    }
+}
+
+#[cfg(test)]
+fn resolve_parent_candidate(
+    graph: &GraphType,
+    node: NodeIndex,
+    native_parent: Option<NodeIndex>,
+    candidates: &[NodeIndex],
+    overrides: &HashMap<String, TopologyParentOverrideSelection>,
+) -> Option<NodeIndex> {
+    let node_id = graph[node].network_json_id();
+    let Some(override_entry) = overrides.get(&node_id) else {
+        return native_parent.or_else(|| candidates.first().copied());
+    };
+
+    match override_entry.mode {
+        TopologyParentOverrideMode::Pinned | TopologyParentOverrideMode::PreferredOrder => {
+            if override_entry.mode == TopologyParentOverrideMode::PreferredOrder {
+                warn!(
+                    node = %graph[node].name(),
+                    node_id = %node_id,
+                    "Legacy preferred-upstream topology override detected; using the first saved parent as a pinned parent"
+                );
+            }
+            let chosen = override_entry
+                .parent_node_ids
+                .first()
+                .and_then(|desired_id| {
+                    candidates
+                        .iter()
+                        .copied()
+                        .find(|candidate| graph[*candidate].network_json_id() == *desired_id)
+                });
+            if chosen.is_none() {
+                warn!(
+                    node = %graph[node].name(),
+                    node_id = %node_id,
+                    "Pinned topology parent override is stale; falling back to native UISP selection"
+                );
+            }
+            chosen
+                .or(native_parent)
+                .or_else(|| candidates.first().copied())
+        }
+    }
+}
+
+#[cfg(test)]
+fn resolve_attachment_parent_candidate(
+    graph: &GraphType,
+    node: NodeIndex,
+    native_parent: Option<NodeIndex>,
+    groups: &[TopologyAllowedParentGroup],
+    overrides: &HashMap<String, TopologyAttachmentOverrideSelection>,
+) -> Option<NodeIndex> {
+    let node_id = graph[node].network_json_id();
+    let override_entry = overrides.get(&node_id)?;
+
+    let Some(group) = groups.iter().find(|group| {
+        graph[group.logical_parent].network_json_id() == override_entry.parent_node_id
+    }) else {
+        warn!(
+            node = %graph[node].name(),
+            node_id = %node_id,
+            parent_node_id = %override_entry.parent_node_id,
+            "Topology manager override parent is stale; falling back to legacy/native selection"
+        );
+        return None;
+    };
+
+    let native_in_group =
+        native_parent.filter(|candidate| group.candidate_nodes.contains(candidate));
+    let first_candidate = group.candidate_nodes.first().copied();
+
+    match override_entry.mode {
+        TopologyAttachmentMode::Auto => native_in_group.or(first_candidate),
+        TopologyAttachmentMode::PreferredOrder => override_entry
+            .attachment_preference_ids
+            .iter()
+            .find_map(|attachment_id| {
+                group
+                    .candidate_nodes
+                    .iter()
+                    .copied()
+                    .find(|candidate| graph[*candidate].network_json_id() == *attachment_id)
+            })
+            .or(native_in_group)
+            .or(first_candidate),
+    }
+}
+
+#[cfg(test)]
+fn build_constrained_route(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    node: NodeIndex,
+    parent: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> Option<(Vec<NodeIndex>, Vec<NodeIndex>)> {
+    if graph.find_edge(parent, node).is_none() || graph.find_edge(node, parent).is_none() {
+        return None;
+    }
+
+    let mut from_root = astar_route(graph, root_idx, parent, devices, route_overrides);
+    let mut to_root = astar_route(graph, parent, root_idx, devices, route_overrides);
+    if from_root.is_empty() || to_root.is_empty() {
+        return None;
+    }
+
+    from_root.push(node);
+    let mut from_node = vec![node];
+    from_node.append(&mut to_root);
+    Some((from_root, from_node))
+}
+
+#[cfg(test)]
+fn export_parent_anchor_for_override(
+    graph: &GraphType,
+    node: NodeIndex,
+    logical_parent: NodeIndex,
+    candidate: NodeIndex,
+    devices: &[UispDevice],
+    route_overrides: &[RouteOverride],
+) -> NodeIndex {
+    let GraphMapping::AccessPoint { site_name, .. } = &graph[candidate] else {
+        return candidate;
+    };
+    if *site_name != graph[node].name() {
+        return candidate;
+    }
+
+    peer_attachment_candidate_for_candidate(
+        graph,
+        logical_parent,
+        candidate,
+        devices,
+        route_overrides,
+    )
+    .unwrap_or(candidate)
+}
 
 fn edges_from_node_path(graph: &GraphType, path: &[NodeIndex]) -> Vec<EdgeIndex> {
     let mut edge_ids = Vec::new();
@@ -793,6 +2119,7 @@ fn min_capacity_along_route(graph: &GraphType, path: &[NodeIndex]) -> u64 {
         .unwrap_or(0)
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 struct SquashCandidate {
     endpoint_a: NodeIndex,
@@ -809,6 +2136,7 @@ struct SquashCandidate {
     endpoint_b_name: String,
 }
 
+#[cfg(test)]
 impl SquashCandidate {
     fn new(
         graph: &GraphType,
@@ -889,6 +2217,7 @@ fn stable_node_key(graph: &GraphType, node: NodeIndex) -> (String, String) {
     (graph[node].network_json_id(), graph[node].name())
 }
 
+#[cfg(test)]
 fn sorted_unique_neighbors(graph: &GraphType, node: NodeIndex) -> Vec<NodeIndex> {
     let mut neighbors: Vec<NodeIndex> = graph
         .neighbors_directed(node, petgraph::Incoming)
@@ -899,15 +2228,996 @@ fn sorted_unique_neighbors(graph: &GraphType, node: NodeIndex) -> Vec<NodeIndex>
     neighbors
 }
 
+#[cfg(test)]
+mod topology_override_tests {
+    use super::{
+        GraphType, TopologyAllowedParentGroup, TopologyAttachmentOverrideSelection,
+        TopologyParentOverrideSelection, UispDevice, build_constrained_route,
+        build_imported_full2_bundle_from_data,
+        export_parent_anchor_for_override, first_probe_ip_for_device, immediate_parent_from_route,
+        is_upstream_parent_candidate, logical_parent_for_candidate,
+        resolve_attachment_parent_candidate, resolve_parent_candidate,
+        topology_allowed_parent_groups_for_node, topology_allowed_parents_from_groups,
+        topology_parent_candidates_for_node,
+    };
+    use crate::strategies::common::UispData;
+    use crate::strategies::full2::graph_mapping::GraphMapping;
+    use crate::strategies::full2::link_mapping::LinkMapping;
+    use crate::uisp_types::{UispAttachmentRateSource, UispSite, UispSiteType};
+    use lqos_config::{TopologyAttachmentRole, TopologyQueueVisibilityPolicy};
+    use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
+    use serde_json::{Map, Value, json};
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+    use uisp::{DataLink, Device, Site};
+
+    fn site(name: &str, id: &str) -> GraphMapping {
+        GraphMapping::Site {
+            name: name.to_string(),
+            id: id.to_string(),
+            latitude: None,
+            longitude: None,
+        }
+    }
+
+    fn ap(name: &str, id: &str, site_name: &str) -> GraphMapping {
+        GraphMapping::AccessPoint {
+            name: name.to_string(),
+            id: id.to_string(),
+            site_name: site_name.to_string(),
+            download_mbps: 1000,
+            upload_mbps: 1000,
+        }
+    }
+
+    fn unique_temp_dir(name: &str) -> std::path::PathBuf {
+        let unique = format!(
+            "libreqos-uisp-full2-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        std::fs::create_dir_all(&path).expect("temp dir should be created");
+        path
+    }
+
+    fn raw_site(id: &str, name: &str, site_type: &str) -> Site {
+        serde_json::from_value(json!({
+            "id": id,
+            "identification": {
+                "id": id,
+                "name": name,
+                "type": site_type,
+                "suspended": false
+            }
+        }))
+        .expect("raw site fixture should deserialize")
+    }
+
+    fn raw_device(id: &str, name: &str, site_id: &str) -> Device {
+        serde_json::from_value(json!({
+            "identification": {
+                "id": id,
+                "hostname": name,
+                "site": {
+                    "id": site_id
+                }
+            }
+        }))
+        .expect("raw device fixture should deserialize")
+    }
+
+    struct LinkEndpoint<'a> {
+        site_id: &'a str,
+        site_name: &'a str,
+        device_id: &'a str,
+        device_name: &'a str,
+    }
+
+    fn data_link_endpoint(endpoint: &LinkEndpoint<'_>) -> serde_json::Value {
+        json!({
+            "site": {
+                "identification": {
+                    "id": endpoint.site_id,
+                    "name": endpoint.site_name
+                }
+            },
+            "device": {
+                "identification": {
+                    "id": endpoint.device_id,
+                    "name": endpoint.device_name
+                }
+            }
+        })
+    }
+
+    fn device_data_link(id: &str, from: LinkEndpoint<'_>, to: LinkEndpoint<'_>) -> DataLink {
+        serde_json::from_value(json!({
+            "id": id,
+            "from": data_link_endpoint(&from),
+            "to": data_link_endpoint(&to),
+            "canDelete": true
+        }))
+        .expect("data link fixture should deserialize")
+    }
+
+    fn parsed_site(id: &str, name: &str) -> UispSite {
+        UispSite {
+            id: id.to_string(),
+            name: name.to_string(),
+            site_type: UispSiteType::Site,
+            max_down_mbps: 10_000,
+            max_up_mbps: 10_000,
+            ..Default::default()
+        }
+    }
+
+    fn parsed_device(id: &str, name: &str, site_id: &str) -> UispDevice {
+        UispDevice {
+            id: id.to_string(),
+            name: name.to_string(),
+            mac: String::new(),
+            role: None,
+            wireless_mode: None,
+            site_id: site_id.to_string(),
+            raw_download: 10_000,
+            raw_upload: 10_000,
+            download: 10_000,
+            upload: 10_000,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: UispAttachmentRateSource::Static,
+        }
+    }
+
+    fn find_network_node_with_parent<'a>(
+        value: &'a Value,
+        target_id: &str,
+        parent_id: Option<&str>,
+    ) -> Option<(&'a Map<String, Value>, Option<String>)> {
+        let map = value.as_object()?;
+        if map.get("id").and_then(Value::as_str) == Some(target_id) {
+            return Some((map, parent_id.map(ToOwned::to_owned)));
+        }
+
+        let node_id = map.get("id").and_then(Value::as_str);
+        map.values()
+            .find_map(|child| find_network_node_with_parent(child, target_id, node_id))
+    }
+
+    fn find_network_node_by_id<'a>(
+        value: &'a Value,
+        target_id: &str,
+    ) -> Option<&'a Map<String, Value>> {
+        find_network_node_with_parent(value, target_id, None).map(|(node, _parent_id)| node)
+    }
+
+    fn find_network_parent_id(value: &Value, target_id: &str) -> Option<Option<String>> {
+        find_network_node_with_parent(value, target_id, None).map(|(_node, parent_id)| parent_id)
+    }
+
+    #[tokio::test]
+    async fn full2_import_emits_queue_auto_for_device_backed_branches() {
+        let temp_dir = unique_temp_dir("uisp-full2-queue-auto");
+        let mut config = lqos_config::Config {
+            lqos_directory: temp_dir.to_string_lossy().to_string(),
+            state_directory: Some(temp_dir.join("state").to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+        config.uisp_integration.site = "Root Site".to_string();
+        config.queues.generated_pn_download_mbps = 10_000;
+        config.queues.generated_pn_upload_mbps = 10_000;
+        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
+        let config_for_topology = config.clone();
+
+        let root_site = raw_site("site-root", "Root Site", "site");
+        let child_site = raw_site("site-child", "Child Site", "site");
+        let root_device = raw_device("device-root-switch", "Root Switch", "site-root");
+        let child_device = raw_device("device-child-switch", "Child Switch", "site-child");
+        let root_parsed_device = parsed_device("device-root-switch", "Root Switch", "site-root");
+        let child_parsed_device =
+            parsed_device("device-child-switch", "Child Switch", "site-child");
+        let uisp_data = UispData::from_parts(
+            vec![root_site, child_site],
+            vec![root_device, child_device],
+            vec![device_data_link(
+                "link-root-child",
+                LinkEndpoint {
+                    site_id: "site-root",
+                    site_name: "Root Site",
+                    device_id: "device-root-switch",
+                    device_name: "Root Switch",
+                },
+                LinkEndpoint {
+                    site_id: "site-child",
+                    site_name: "Child Site",
+                    device_id: "device-child-switch",
+                    device_name: "Child Switch",
+                },
+            )],
+            vec![
+                parsed_site("site-root", "Root Site"),
+                parsed_site("site-child", "Child Site"),
+            ],
+            vec![root_parsed_device, child_parsed_device],
+        );
+
+        let bundle = build_imported_full2_bundle_from_data(
+            Arc::new(config),
+            uisp_data,
+            true,
+            std::time::Instant::now(),
+        )
+        .await
+        .expect("in-memory UISP import should build");
+        let editor = bundle
+            .native_editor
+            .as_ref()
+            .expect("full2 import should include native editor state");
+        let root_switch = editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-root-switch")
+            .expect("root switch should be exported as a topology editor node");
+
+        assert_eq!(
+            root_switch.queue_visibility_policy,
+            TopologyQueueVisibilityPolicy::QueueAuto
+        );
+
+        let mut compiled = lqos_topology_compile::compile_topology(
+            bundle,
+            lqos_topology_compile::TopologyCompileMode::Full,
+        )
+        .expect("full topology should compile from full2 import");
+        let compiled_child_switch = compiled
+            .editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-child-switch")
+            .expect("compiled editor should include the child switch");
+        assert_eq!(
+            compiled_child_switch.queue_visibility_policy,
+            TopologyQueueVisibilityPolicy::QueueAuto
+        );
+        assert_eq!(
+            compiled_child_switch.current_parent_node_id.as_deref(),
+            Some("uisp:site:site-root")
+        );
+        assert_eq!(
+            compiled_child_switch.current_parent_node_name.as_deref(),
+            Some("Root Site")
+        );
+        assert_eq!(
+            compiled_child_switch.current_attachment_id.as_deref(),
+            Some("uisp:device:device-root-switch")
+        );
+        assert_eq!(
+            compiled_child_switch.current_attachment_name.as_deref(),
+            Some("Root Switch")
+        );
+        assert!(
+            !compiled_child_switch
+                .allowed_parents
+                .iter()
+                .any(|parent| parent.parent_node_id == "uisp:device:device-root-switch")
+        );
+        let compiled_child_site = compiled
+            .editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("compiled editor should include the child site");
+        assert_eq!(
+            compiled_child_site.queue_visibility_policy,
+            TopologyQueueVisibilityPolicy::QueueAuto
+        );
+        assert_eq!(
+            compiled_child_site.current_parent_node_id.as_deref(),
+            Some("uisp:site:site-root")
+        );
+        assert_eq!(
+            compiled_child_site.current_parent_node_name.as_deref(),
+            Some("Root Site")
+        );
+        assert_eq!(
+            compiled_child_site.current_attachment_id.as_deref(),
+            Some("uisp:device:device-child-switch")
+        );
+        assert_eq!(
+            compiled_child_site.current_attachment_name.as_deref(),
+            Some("Child Switch")
+        );
+        assert!(
+            !compiled_child_site
+                .allowed_parents
+                .iter()
+                .any(|parent| parent.parent_node_id == "uisp:device:device-child-switch")
+        );
+
+        for node in &mut compiled.canonical.nodes {
+            match node.node_id.as_str() {
+                "uisp:device:device-child-switch" => {
+                    node.current_attachment_name = Some("stale root switch label".to_string());
+                }
+                "uisp:site:site-child" => {
+                    node.current_attachment_name = Some("stale child switch label".to_string());
+                }
+                _ => {}
+            }
+        }
+
+        let artifacts = lqos_topology::build_effective_topology_artifacts_from_canonical(
+            &config_for_topology,
+            &compiled.canonical,
+            &lqos_overrides::TopologyOverridesFile::default(),
+            &lqos_config::TopologyAttachmentHealthStateFile::default(),
+        )
+        .expect("effective topology should compile from full2 canonical output");
+        let effective_network = artifacts
+            .effective_network
+            .as_ref()
+            .expect("effective topology should include a network tree");
+        assert!(
+            find_network_node_by_id(effective_network, "uisp:device:device-root-switch").is_none()
+        );
+        let effective_child_switch = artifacts
+            .effective
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-child-switch")
+            .expect("effective state should retain child switch attachment metadata");
+        assert_eq!(
+            effective_child_switch.logical_parent_node_id,
+            "uisp:site:site-root"
+        );
+        assert_eq!(
+            effective_child_switch.effective_attachment_id.as_deref(),
+            Some("uisp:device:device-root-switch")
+        );
+        let ui_child_switch = artifacts
+            .ui_state
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:device:device-child-switch")
+            .expect("UI state should retain child switch attachment metadata");
+        assert_eq!(
+            ui_child_switch.effective_attachment_name.as_deref(),
+            Some("Root Switch")
+        );
+        let effective_child_site = artifacts
+            .effective
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("effective state should retain child site attachment metadata");
+        assert_eq!(
+            effective_child_site.logical_parent_node_id,
+            "uisp:site:site-root"
+        );
+        assert_eq!(
+            effective_child_site.effective_attachment_id.as_deref(),
+            Some("uisp:device:device-child-switch")
+        );
+        let ui_child_site = artifacts
+            .ui_state
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("UI state should retain child site attachment metadata");
+        assert_eq!(
+            ui_child_site.effective_attachment_name.as_deref(),
+            Some("Child Switch")
+        );
+        assert_eq!(
+            find_network_parent_id(effective_network, "uisp:site:site-child"),
+            Some(None)
+        );
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    fn build_test_graph() -> (
+        GraphType,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+    ) {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let t1 = graph.add_node(site("T1", "t1"));
+        let t2 = graph.add_node(site("T2", "t2"));
+        let t3 = graph.add_node(site("T3", "t3"));
+
+        for (from, to) in [
+            (root, t1),
+            (t1, root),
+            (root, t3),
+            (t3, root),
+            (t1, t2),
+            (t2, t1),
+            (t3, t2),
+            (t2, t3),
+            (root, t2),
+            (t2, root),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        (graph, root, t1, t2, t3)
+    }
+
+    #[test]
+    fn legacy_preferred_override_uses_first_saved_parent() {
+        let (graph, root, t1, t2, t3) = build_test_graph();
+        let candidates = topology_parent_candidates_for_node(&graph, root, t2, &[], &[]);
+        let native_parent = Some(t1);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            graph[t2].network_json_id(),
+            TopologyParentOverrideSelection {
+                mode: TopologyParentOverrideMode::PreferredOrder,
+                parent_node_ids: vec![graph[t3].network_json_id(), graph[t1].network_json_id()],
+            },
+        );
+
+        let resolved = resolve_parent_candidate(&graph, t2, native_parent, &candidates, &overrides);
+        assert_eq!(resolved, Some(t3));
+    }
+
+    #[test]
+    fn stale_override_falls_back_to_native_parent() {
+        let (graph, root, t1, t2, _t3) = build_test_graph();
+        let candidates = topology_parent_candidates_for_node(&graph, root, t2, &[], &[]);
+        let native_parent = Some(t1);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            graph[t2].network_json_id(),
+            TopologyParentOverrideSelection {
+                mode: TopologyParentOverrideMode::Pinned,
+                parent_node_ids: vec!["uisp:site:missing".to_string()],
+            },
+        );
+
+        let resolved = resolve_parent_candidate(&graph, t2, native_parent, &candidates, &overrides);
+        assert_eq!(resolved, Some(t1));
+    }
+
+    #[test]
+    fn child_access_points_are_not_offered_as_topology_parent_candidates() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let target_site = graph.add_node(site("TrailerCity", "site-trailercity"));
+        let parent_site = graph.add_node(site("MRE", "site-mre"));
+        let child_ap = graph.add_node(GraphMapping::AccessPoint {
+            name: "JR_AP_TC_A".to_string(),
+            id: "device-jr-ap-tc-a".to_string(),
+            site_name: "TrailerCity".to_string(),
+            download_mbps: 1000,
+            upload_mbps: 1000,
+        });
+
+        for (from, to) in [
+            (root, parent_site),
+            (parent_site, root),
+            (parent_site, target_site),
+            (target_site, parent_site),
+            (target_site, child_ap),
+            (child_ap, target_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        let candidates = topology_parent_candidates_for_node(&graph, root, target_site, &[], &[]);
+        assert_eq!(candidates, vec![parent_site]);
+        assert!(is_upstream_parent_candidate(
+            &graph,
+            root,
+            target_site,
+            parent_site,
+            &[],
+            &[],
+        ));
+        assert!(!is_upstream_parent_candidate(
+            &graph,
+            root,
+            target_site,
+            child_ap,
+            &[],
+            &[],
+        ));
+    }
+
+    #[test]
+    fn legacy_bad_child_override_falls_back_to_native_parent() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let parent_site = graph.add_node(site("MRE", "site-mre"));
+        let target_site = graph.add_node(site("TrailerCity", "site-trailercity"));
+        let child_ap = graph.add_node(GraphMapping::AccessPoint {
+            name: "JR_AP_TC_A".to_string(),
+            id: "device-jr-ap-tc-a".to_string(),
+            site_name: "TrailerCity".to_string(),
+            download_mbps: 1000,
+            upload_mbps: 1000,
+        });
+
+        for (from, to) in [
+            (root, parent_site),
+            (parent_site, root),
+            (parent_site, target_site),
+            (target_site, parent_site),
+            (target_site, child_ap),
+            (child_ap, target_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        let candidates = topology_parent_candidates_for_node(&graph, root, target_site, &[], &[]);
+        let native_parent = Some(parent_site);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            graph[target_site].network_json_id(),
+            TopologyParentOverrideSelection {
+                mode: TopologyParentOverrideMode::Pinned,
+                parent_node_ids: vec![graph[child_ap].network_json_id()],
+            },
+        );
+
+        let resolved =
+            resolve_parent_candidate(&graph, target_site, native_parent, &candidates, &overrides);
+        assert_eq!(resolved, Some(parent_site));
+    }
+
+    fn build_parallel_attachment_graph() -> (
+        GraphType,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+        petgraph::graph::NodeIndex,
+    ) {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let parent_site = graph.add_node(site("Parent Site", "site-parent"));
+        let child_site = graph.add_node(site("Child Site", "site-child"));
+        let parent_wave = graph.add_node(ap(
+            "Backhaul Wave Parent",
+            "device-parent-wave",
+            "Parent Site",
+        ));
+        let child_wave =
+            graph.add_node(ap("Backhaul Wave Child", "device-child-wave", "Child Site"));
+        let parent_4600 = graph.add_node(ap(
+            "Backhaul AirFiber Parent",
+            "device-parent-airfiber",
+            "Parent Site",
+        ));
+        let child_4600 = graph.add_node(ap(
+            "Backhaul AirFiber Child",
+            "device-child-airfiber",
+            "Child Site",
+        ));
+
+        for (from, to) in [
+            (root, parent_site),
+            (parent_site, root),
+            (parent_site, parent_wave),
+            (parent_wave, parent_site),
+            (parent_site, parent_4600),
+            (parent_4600, parent_site),
+            (parent_wave, child_wave),
+            (child_wave, parent_wave),
+            (parent_4600, child_4600),
+            (child_4600, parent_4600),
+            (child_site, child_wave),
+            (child_wave, child_site),
+            (child_site, child_4600),
+            (child_4600, child_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        (
+            graph,
+            root,
+            parent_site,
+            child_site,
+            parent_wave,
+            child_wave,
+            parent_4600,
+            child_4600,
+        )
+    }
+
+    #[test]
+    fn parallel_device_candidates_group_under_one_logical_parent() {
+        let (
+            graph,
+            root,
+            parent_site,
+            child_site,
+            _parent_wave,
+            child_wave,
+            _parent_4600,
+            child_4600,
+        ) = build_parallel_attachment_graph();
+
+        let candidates = topology_parent_candidates_for_node(&graph, root, child_site, &[], &[]);
+        assert_eq!(candidates, vec![child_4600, child_wave]);
+
+        let groups = topology_allowed_parent_groups_for_node(
+            &graph,
+            root,
+            child_site,
+            &candidates,
+            &[],
+            &[],
+        );
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].logical_parent, parent_site);
+        assert_eq!(groups[0].candidate_nodes, vec![child_4600, child_wave]);
+
+        let allowed =
+            topology_allowed_parents_from_groups(&graph, &groups, &[], &HashSet::new(), &[]);
+        assert_eq!(allowed.len(), 1);
+        assert_eq!(
+            allowed[0].parent_node_id,
+            graph[parent_site].network_json_id()
+        );
+        assert_eq!(allowed[0].parent_node_name, "Parent Site");
+        assert_eq!(
+            allowed[0]
+                .attachment_options
+                .iter()
+                .map(|option| option.attachment_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Auto", "Backhaul AirFiber Child", "Backhaul Wave Child"]
+        );
+        assert!(
+            allowed[0]
+                .attachment_options
+                .iter()
+                .skip(1)
+                .all(|option| option.attachment_role == TopologyAttachmentRole::PtpBackhaul)
+        );
+    }
+
+    #[test]
+    fn ptmp_child_attachment_is_classified_as_ptmp_uplink() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Upstream".to_string(),
+            id: "root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let parent_site = graph.add_node(site("Parent Site", "site-parent"));
+        let child_site = graph.add_node(site("Child Site", "site-child"));
+        let parent_ap = graph.add_node(ap("Access AP", "device-parent-ap", "Parent Site"));
+        let child_cpe = graph.add_node(ap("Child CPE", "device-child-cpe", "Child Site"));
+
+        for (from, to) in [
+            (root, parent_site),
+            (parent_site, root),
+            (parent_site, parent_ap),
+            (parent_ap, parent_site),
+            (parent_ap, child_cpe),
+            (child_cpe, parent_ap),
+            (child_site, child_cpe),
+            (child_cpe, child_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        let groups = vec![TopologyAllowedParentGroup {
+            logical_parent: parent_site,
+            candidate_nodes: vec![child_cpe],
+        }];
+        let mut aps_with_clients = HashSet::new();
+        aps_with_clients.insert("device-parent-ap".to_string());
+
+        let allowed =
+            topology_allowed_parents_from_groups(&graph, &groups, &[], &aps_with_clients, &[]);
+        let attachment = allowed[0]
+            .attachment_options
+            .iter()
+            .find(|option| option.attachment_id == graph[child_cpe].network_json_id())
+            .expect("expected explicit child-side attachment");
+        assert_eq!(
+            attachment.attachment_role,
+            TopologyAttachmentRole::PtmpUplink
+        );
+        assert_eq!(
+            attachment.peer_attachment_name.as_deref(),
+            Some("Access AP")
+        );
+    }
+
+    #[test]
+    fn topology_manager_attachment_override_picks_requested_parallel_path() {
+        let (
+            graph,
+            root,
+            parent_site,
+            child_site,
+            _parent_wave,
+            child_wave,
+            _parent_4600,
+            child_4600,
+        ) = build_parallel_attachment_graph();
+        let candidates = topology_parent_candidates_for_node(&graph, root, child_site, &[], &[]);
+        let groups = topology_allowed_parent_groups_for_node(
+            &graph,
+            root,
+            child_site,
+            &candidates,
+            &[],
+            &[],
+        );
+        let native_parent = Some(child_wave);
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            graph[child_site].network_json_id(),
+            TopologyAttachmentOverrideSelection {
+                parent_node_id: graph[parent_site].network_json_id(),
+                mode: TopologyAttachmentMode::PreferredOrder,
+                attachment_preference_ids: vec![graph[child_4600].network_json_id()],
+            },
+        );
+
+        let resolved = resolve_attachment_parent_candidate(
+            &graph,
+            child_site,
+            native_parent,
+            &groups,
+            &overrides,
+        );
+        assert_eq!(resolved, Some(child_4600));
+    }
+
+    #[test]
+    fn logical_parent_for_parallel_attachment_candidate_is_upstream_site() {
+        let (
+            graph,
+            root,
+            parent_site,
+            child_site,
+            _parent_wave,
+            child_wave,
+            _parent_4600,
+            _child_4600,
+        ) = build_parallel_attachment_graph();
+
+        let logical_parent =
+            logical_parent_for_candidate(&graph, root, child_site, child_wave, &[], &[]);
+        assert_eq!(logical_parent, parent_site);
+    }
+
+    #[test]
+    fn sibling_site_linked_by_local_attachment_is_legal_parent() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Site Gamma".to_string(),
+            id: "site-root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let beta_site = graph.add_node(site("Site Beta", "site-beta"));
+        let alpha_site = graph.add_node(site("Site Alpha", "site-alpha"));
+        let gamma_to_beta =
+            graph.add_node(ap("Gamma - Beta MLO6", "device-gamma-beta", "Site Gamma"));
+        let beta_to_gamma =
+            graph.add_node(ap("Beta - Gamma MLO6", "device-beta-gamma", "Site Beta"));
+        let gamma_to_alpha = graph.add_node(ap("Gamma-Alpha", "device-gamma-alpha", "Site Gamma"));
+        let alpha_to_gamma = graph.add_node(ap("Alpha-Gamma", "device-alpha-gamma", "Site Alpha"));
+        let beta_to_alpha =
+            graph.add_node(ap("Beta - Alpha MLO5", "device-beta-alpha", "Site Beta"));
+        let alpha_to_beta =
+            graph.add_node(ap("Alpha - Beta MLO5", "device-alpha-beta", "Site Alpha"));
+
+        for (from, to) in [
+            (root, gamma_to_beta),
+            (gamma_to_beta, root),
+            (gamma_to_beta, beta_to_gamma),
+            (beta_to_gamma, gamma_to_beta),
+            (beta_site, beta_to_gamma),
+            (beta_to_gamma, beta_site),
+            (root, gamma_to_alpha),
+            (gamma_to_alpha, root),
+            (gamma_to_alpha, alpha_to_gamma),
+            (alpha_to_gamma, gamma_to_alpha),
+            (alpha_site, alpha_to_gamma),
+            (alpha_to_gamma, alpha_site),
+            (beta_site, beta_to_alpha),
+            (beta_to_alpha, beta_site),
+            (beta_to_alpha, alpha_to_beta),
+            (alpha_to_beta, beta_to_alpha),
+            (alpha_site, alpha_to_beta),
+            (alpha_to_beta, alpha_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        let candidates = topology_parent_candidates_for_node(&graph, root, beta_site, &[], &[]);
+        assert_eq!(candidates, vec![beta_to_alpha, beta_to_gamma]);
+        assert!(is_upstream_parent_candidate(
+            &graph,
+            root,
+            beta_site,
+            beta_to_alpha,
+            &[],
+            &[],
+        ));
+
+        let groups =
+            topology_allowed_parent_groups_for_node(&graph, root, beta_site, &candidates, &[], &[]);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].logical_parent, alpha_site);
+        assert_eq!(groups[0].candidate_nodes, vec![beta_to_alpha]);
+        assert_eq!(groups[1].logical_parent, root);
+        assert_eq!(groups[1].candidate_nodes, vec![beta_to_gamma]);
+
+        let allowed =
+            topology_allowed_parents_from_groups(&graph, &groups, &[], &HashSet::new(), &[]);
+        assert_eq!(
+            allowed
+                .iter()
+                .map(|parent| parent.parent_node_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Site Alpha", "Site Gamma"]
+        );
+        let alpha_parent = allowed
+            .iter()
+            .find(|parent| parent.parent_node_name == "Site Alpha")
+            .expect("expected Site Alpha as a legal parent");
+        assert_eq!(
+            alpha_parent
+                .attachment_options
+                .iter()
+                .map(|option| option.attachment_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Auto", "Beta - Alpha MLO5"]
+        );
+    }
+
+    #[test]
+    fn export_override_anchors_under_peer_attachment_for_child_owned_candidate() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(GraphMapping::Root {
+            name: "Site Gamma".to_string(),
+            id: "site-root".to_string(),
+            latitude: None,
+            longitude: None,
+        });
+        let beta_site = graph.add_node(site("Site Beta", "site-beta"));
+        let alpha_site = graph.add_node(site("Site Alpha", "site-alpha"));
+        let gamma_to_alpha = graph.add_node(ap("Gamma-Alpha", "device-gamma-alpha", "Site Gamma"));
+        let alpha_to_gamma = graph.add_node(ap("Alpha-Gamma", "device-alpha-gamma", "Site Alpha"));
+        let beta_to_alpha = graph.add_node(ap("Beta - Alpha 60", "device-beta-alpha", "Site Beta"));
+        let alpha_to_beta = graph.add_node(ap("Alpha-Beta-60", "device-alpha-beta", "Site Alpha"));
+
+        for (from, to) in [
+            (root, gamma_to_alpha),
+            (gamma_to_alpha, root),
+            (gamma_to_alpha, alpha_to_gamma),
+            (alpha_to_gamma, gamma_to_alpha),
+            (alpha_site, alpha_to_gamma),
+            (alpha_to_gamma, alpha_site),
+            (beta_site, beta_to_alpha),
+            (beta_to_alpha, beta_site),
+            (beta_to_alpha, alpha_to_beta),
+            (alpha_to_beta, beta_to_alpha),
+            (alpha_site, alpha_to_beta),
+            (alpha_to_beta, alpha_site),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+
+        let (route_from_root, _) =
+            build_constrained_route(&graph, root, beta_site, beta_to_alpha, &[], &[])
+                .expect("expected constrained route for override export");
+        assert_eq!(
+            immediate_parent_from_route(&route_from_root),
+            Some(beta_to_alpha)
+        );
+
+        let logical_parent =
+            logical_parent_for_candidate(&graph, root, beta_site, beta_to_alpha, &[], &[]);
+        assert_eq!(logical_parent, alpha_site);
+        assert_eq!(
+            export_parent_anchor_for_override(
+                &graph,
+                beta_site,
+                logical_parent,
+                beta_to_alpha,
+                &[],
+                &[],
+            ),
+            alpha_to_beta
+        );
+    }
+
+    #[test]
+    fn probe_ip_selection_uses_unfiltered_management_ips_without_cidr() {
+        let devices = vec![UispDevice {
+            id: "device-mre-wave".to_string(),
+            name: "WavePro-MREToRochester".to_string(),
+            mac: String::new(),
+            role: Some("station".to_string()),
+            wireless_mode: Some("sta-ptp".to_string()),
+            site_id: "site-mre".to_string(),
+            raw_download: 1000,
+            raw_upload: 1000,
+            download: 1000,
+            upload: 1000,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            probe_ipv4: HashSet::from(["100.126.0.226".to_string()]),
+            probe_ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: UispAttachmentRateSource::Static,
+        }];
+
+        assert_eq!(
+            first_probe_ip_for_device(&devices, "device-mre-wave").as_deref(),
+            Some("100.126.0.226")
+        );
+    }
+}
+
+#[cfg(test)]
 fn total_degree(graph: &GraphType, node: NodeIndex) -> usize {
     graph.neighbors_directed(node, petgraph::Incoming).count()
         + graph.neighbors_directed(node, petgraph::Outgoing).count()
 }
 
+#[cfg(test)]
 fn is_relay_node(graph: &GraphType, node: NodeIndex) -> bool {
     total_degree(graph, node) == 4 && sorted_unique_neighbors(graph, node).len() == 2
 }
 
+#[cfg(test)]
 fn is_meaningful_endpoint(graph: &GraphType, node: NodeIndex) -> bool {
     let unique_neighbors = sorted_unique_neighbors(graph, node);
     !(total_degree(graph, node) == 4 && unique_neighbors.len() == 2)
@@ -915,6 +3225,7 @@ fn is_meaningful_endpoint(graph: &GraphType, node: NodeIndex) -> bool {
         && !matches!(graph[node], GraphMapping::AccessPoint { .. })
 }
 
+#[cfg(test)]
 fn should_skip_squash(
     graph: &GraphType,
     config: &Arc<Config>,
@@ -932,6 +3243,7 @@ fn should_skip_squash(
         .any(|name| do_not_squash.contains(&name))
 }
 
+#[cfg(test)]
 fn find_point_to_point_squash_candidates(
     graph: &mut GraphType,
     aps_with_clients: &HashSet<String>,
@@ -957,6 +3269,7 @@ fn find_point_to_point_squash_candidates(
     perform_squashing(graph, &candidates);
 }
 
+#[cfg(test)]
 fn collect_point_to_point_squash_candidates(
     graph: &GraphType,
     aps_with_clients: &HashSet<String>,
@@ -1068,6 +3381,7 @@ fn collect_point_to_point_squash_candidates(
     candidates
 }
 
+#[cfg(test)]
 fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
     let mut nodes_to_remove = std::collections::HashSet::new();
 
@@ -1149,6 +3463,7 @@ fn perform_squashing(graph: &mut GraphType, candidates: &[SquashCandidate]) {
     );
 }
 
+#[cfg(test)]
 fn calculate_chain_capacity(graph: &GraphType, chain_nodes: &[NodeIndex]) -> (u64, u64) {
     let mut min_forward_capacity = u64::MAX;
     let mut min_reverse_capacity = u64::MAX;
@@ -1189,6 +3504,57 @@ fn calculate_chain_capacity(graph: &GraphType, chain_nodes: &[NodeIndex]) -> (u6
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
+    fn test_uisp_device(id: &str, name: &str) -> UispDevice {
+        UispDevice {
+            id: id.to_string(),
+            name: name.to_string(),
+            mac: String::new(),
+            role: None,
+            wireless_mode: None,
+            site_id: String::new(),
+            raw_download: 0,
+            raw_upload: 0,
+            download: 0,
+            upload: 0,
+            ipv4: HashSet::new(),
+            ipv6: HashSet::new(),
+            probe_ipv4: HashSet::new(),
+            probe_ipv6: HashSet::new(),
+            negotiated_ethernet_mbps: None,
+            negotiated_ethernet_interface: None,
+            transport_cap_line_rate_mbps: None,
+            transport_cap_interface: None,
+            transport_cap_mbps: None,
+            transport_cap_reason: None,
+            attachment_rate_source: UispAttachmentRateSource::Static,
+        }
+    }
+
+    #[test]
+    fn topology_node_ethernet_advisory_preserves_the_port_cap_details() {
+        let mut device = test_uisp_device("ap-1", "AP One");
+        device.raw_download = 500;
+        device.raw_upload = 200;
+        device.download = 94;
+        device.upload = 94;
+        device.negotiated_ethernet_mbps = Some(100);
+        device.negotiated_ethernet_interface = Some("eth0".to_string());
+        device.transport_cap_line_rate_mbps = Some(100);
+        device.transport_cap_interface = Some("eth0".to_string());
+        device.transport_cap_mbps = Some(94);
+
+        let advisory = topology_node_ethernet_advisory(&device)
+            .expect("reduced infrastructure node should produce an Ethernet advisory");
+
+        assert_eq!(advisory.target_kind, EthernetCapTargetKind::Node);
+        assert_eq!(advisory.target_id, "uisp:device:ap-1");
+        assert_eq!(advisory.negotiated_ethernet_mbps, 100);
+        assert_eq!(advisory.requested_download_mbps, 500.0);
+        assert_eq!(advisory.applied_upload_mbps, 94.0);
+        assert_eq!(advisory.limiting_interface_name.as_deref(), Some("eth0"));
+    }
 
     fn add_site(graph: &mut GraphType, name: &str, id: &str) -> NodeIndex {
         graph.add_node(GraphMapping::Site {
@@ -1295,6 +3661,50 @@ mod tests {
     }
 
     #[test]
+    fn root_resolution_accepts_configured_site() {
+        let sites = vec!["Main".to_string(), "Backup".to_string()];
+        let internet_candidates = vec!["Backup".to_string()];
+
+        let root =
+            resolve_root_site_from_names("Main", &sites, &internet_candidates, true).unwrap();
+
+        assert_eq!(root, ResolvedRootSite::Existing("Main".to_string()));
+    }
+
+    #[test]
+    fn root_resolution_rejects_bad_configured_site_for_full_mode() {
+        let sites = vec!["Main".to_string(), "Backup".to_string()];
+        let internet_candidates = vec!["Backup".to_string()];
+
+        let error =
+            resolve_root_site_from_names("Old Root", &sites, &internet_candidates, true)
+                .unwrap_err();
+
+        assert_eq!(error, UispIntegrationError::NoRootSite("Old Root".to_string()));
+    }
+
+    #[test]
+    fn root_resolution_auto_detects_for_non_full_mode() {
+        let sites = vec!["Main".to_string(), "Backup".to_string()];
+        let internet_candidates = vec!["Backup".to_string()];
+
+        let root =
+            resolve_root_site_from_names("Old Root", &sites, &internet_candidates, false).unwrap();
+
+        assert_eq!(root, ResolvedRootSite::Existing("Backup".to_string()));
+    }
+
+    #[test]
+    fn root_resolution_uses_generated_root_for_multiple_internet_sites() {
+        let sites = vec!["Main".to_string(), "Backup".to_string()];
+        let internet_candidates = vec!["Main".to_string(), "Backup".to_string()];
+
+        let root = resolve_root_site_from_names("", &sites, &internet_candidates, false).unwrap();
+
+        assert_eq!(root, ResolvedRootSite::GeneratedInternet);
+    }
+
+    #[test]
     fn squash_candidate_collection_is_deterministic() {
         let config = Arc::new(Config::default());
         let aps_with_clients = HashSet::new();
@@ -1343,5 +3753,44 @@ mod tests {
         assert!(graph_a.find_edge(right_a, left_a).is_some());
         assert!(graph_b.find_edge(left_b, right_b).is_some());
         assert!(graph_b.find_edge(right_b, left_b).is_some());
+    }
+
+    #[test]
+    fn full2_skips_orphaned_circuit_anchor_when_ap_is_not_in_topology() {
+        let device = test_uisp_device("device-missing", "Missing AP");
+        let parents = HashMap::<String, NetJsonParent<'_>>::new();
+
+        let anchor = anchor_for_site_ap("circuit-1", "Circuit 1", &device, &parents);
+
+        assert!(anchor.is_none());
+    }
+
+    #[test]
+    fn full2_emits_circuit_anchor_when_ap_exists_in_topology() {
+        let mut graph = GraphType::new();
+        let ap = add_ap(&mut graph, "Present AP", "device-present", "Present Site");
+        let mapping = &graph[ap];
+        let mut parents = HashMap::<String, NetJsonParent<'_>>::new();
+        let node_id = mapping.network_json_id();
+        parents.insert(
+            node_id.clone(),
+            NetJsonParent {
+                node_id: node_id.clone(),
+                node_name: mapping.name(),
+                export_name: mapping.name(),
+                parent_id: None,
+                parent_name: "Parent".to_string(),
+                mapping,
+                download: 1000,
+                upload: 1000,
+            },
+        );
+        let device = test_uisp_device("device-present", "Present AP");
+
+        let anchor = anchor_for_site_ap("circuit-1", "Circuit 1", &device, &parents)
+            .expect("expected anchor to be emitted");
+
+        assert_eq!(anchor.anchor_node_id, "uisp:device:device-present");
+        assert_eq!(anchor.anchor_node_name.as_deref(), Some("Present AP"));
     }
 }

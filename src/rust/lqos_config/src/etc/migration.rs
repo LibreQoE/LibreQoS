@@ -156,6 +156,7 @@ fn migrate_top_level(old_config: &EtcLqos, new_config: &mut Config) -> Result<()
 
 fn migrate_tunables(old_config: &EtcLqos, new_config: &mut Config) -> Result<(), MigrationError> {
     if let Some(tunables) = &old_config.tuning {
+        new_config.tuning.set_cpu_governor_performance = tunables.set_cpu_governor_performance;
         new_config.tuning.stop_irq_balance = tunables.stop_irq_balance;
         new_config.tuning.netdev_budget_packets = tunables.netdev_budget_packets;
         new_config.tuning.netdev_budget_usecs = tunables.netdev_budget_usecs;
@@ -181,6 +182,7 @@ fn migrate_bridge(
             interface: python_config.interface_a.clone(),
             internet_vlan: python_config.stick_vlan_a as u32,
             network_vlan: python_config.stick_vlan_b as u32,
+            mtu: None,
         });
     } else {
         new_config.single_interface = None;
@@ -192,6 +194,7 @@ fn migrate_bridge(
                 .use_xdp_bridge,
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
+            mtu: None,
         });
     }
     Ok(())
@@ -254,8 +257,6 @@ fn migrate_integration_common(
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
     new_config.integration_common.circuit_name_as_address = python_config.circuit_name_use_address;
-    new_config.integration_common.always_overwrite_network_json =
-        python_config.overwrite_network_jsonalways;
     new_config.integration_common.queue_refresh_interval_mins =
         python_config.queue_refresh_interval_mins as u32;
     new_config.integration_common.use_mikrotik_ipv6 = python_config.find_ipv6using_mikrotik_api;
@@ -270,6 +271,7 @@ fn migrate_splynx(
     new_config.splynx_integration.api_key = python_config.splynx_api_key.clone();
     new_config.splynx_integration.api_secret = python_config.splynx_api_secret.clone();
     new_config.splynx_integration.url = python_config.splynx_api_url.clone();
+    new_config.topology.compile_mode = "ap_site".to_string();
     Ok(())
 }
 
@@ -303,6 +305,10 @@ fn migrate_uisp(
     new_config.uisp_integration.url = python_config.uispbase_url.clone();
     new_config.uisp_integration.site = python_config.uisp_site.clone();
     new_config.uisp_integration.strategy = python_config.uisp_strategy.clone();
+    new_config.topology.compile_mode =
+        crate::etc::v15::normalize_topology_compile_mode(&python_config.uisp_strategy)
+            .unwrap_or("full")
+            .to_string();
     new_config.uisp_integration.suspended_strategy = python_config.uisp_suspended_strategy.clone();
     new_config.uisp_integration.airmax_capacity = python_config.air_max_capacity as f32;
     new_config.uisp_integration.ltu_capacity = python_config.ltu_capacity as f32;
@@ -331,4 +337,35 @@ fn migrate_influx(
         new_config.influxdb = Some(cfg);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::etc::test_data::OLD_CONFIG;
+
+    #[test]
+    fn legacy_migration_defaults_cpu_governor_to_true_when_missing() {
+        let old_raw = OLD_CONFIG
+            .lines()
+            .filter(|line| !line.trim().starts_with("set_cpu_governor_performance"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let old_config = EtcLqos::load_from_string(&old_raw).expect("Legacy config should parse");
+        let python_config = PythonMigration {
+            sqm: "cake diffserv4".to_string(),
+            upstream_bandwidth_capacity_download_mbps: 1000,
+            upstream_bandwidth_capacity_upload_mbps: 1000,
+            generated_pndownload_mbps: 1000,
+            generated_pnupload_mbps: 1000,
+            interface_a: "veth_tointernal".to_string(),
+            interface_b: "veth_toexternal".to_string(),
+            enable_actual_shell_commands: true,
+            ..Default::default()
+        };
+
+        let migrated =
+            do_migration_14_to_15(&old_config, &python_config).expect("Migration should succeed");
+        assert!(migrated.tuning.set_cpu_governor_performance);
+    }
 }

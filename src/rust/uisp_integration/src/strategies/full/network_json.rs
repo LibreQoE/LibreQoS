@@ -21,12 +21,6 @@ pub fn write_network_file(
     root_idx: usize,
 ) -> Result<(), UispIntegrationError> {
     let network_path = Path::new(&config.lqos_directory).join("network.json");
-    if network_path.exists() && !config.integration_common.always_overwrite_network_json {
-        tracing::warn!(
-            "Network.json exists, and always overwrite network json is not true - not writing network.json"
-        );
-        return Ok(());
-    }
 
     // Write the network JSON file
     let root = traverse_sites(sites, root_idx, 0)?;

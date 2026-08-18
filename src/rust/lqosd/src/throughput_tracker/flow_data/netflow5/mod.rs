@@ -29,7 +29,7 @@ impl Netflow5 {
                 };
 
                 let sequence = AtomicU32::new(0);
-                let mut accumulator = Vec::with_capacity(15);
+                let mut accumulator = Vec::with_capacity(NETFLOW5_MAX_FLOWS_PER_PACKET);
                 let mut last_sent = std::time::Instant::now();
                 while let Ok((key, (data, analysis))) = rx.recv() {
                     // Exclude one-way flows
@@ -39,11 +39,10 @@ impl Netflow5 {
 
                     accumulator.push((key, (data, analysis)));
 
-                    // Send if there is more than 15 records AND it has been more than 1 second since the last send
-                    if accumulator.len() >= 15 && last_sent.elapsed().as_secs() > 1 {
-                        for chunk in accumulator.chunks(15) {
-                            Self::queue_handler(chunk, &socket, &target, &sequence);
-                        }
+                    if accumulator.len() >= NETFLOW5_MAX_FLOWS_PER_PACKET
+                        || last_sent.elapsed().as_secs() > 1
+                    {
+                        Self::flush_accumulator(&accumulator, &socket, &target, &sequence);
                         accumulator.clear();
                         last_sent = std::time::Instant::now();
                     }
@@ -51,13 +50,22 @@ impl Netflow5 {
 
                 // Handle any remaining flows when shutting down
                 if !accumulator.is_empty() {
-                    for chunk in accumulator.chunks(15) {
-                        Self::queue_handler(chunk, &socket, &target, &sequence);
-                    }
+                    Self::flush_accumulator(&accumulator, &socket, &target, &sequence);
                 }
             })?;
 
         Ok(tx)
+    }
+
+    fn flush_accumulator(
+        accumulator: &[(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))],
+        socket: &UdpSocket,
+        target: &str,
+        sequence: &AtomicU32,
+    ) {
+        for chunk in accumulator.chunks(NETFLOW5_MAX_FLOWS_PER_PACKET) {
+            Self::queue_handler(chunk, socket, target, sequence);
+        }
     }
 
     fn queue_handler(
@@ -66,7 +74,34 @@ impl Netflow5 {
         target: &str,
         sequence: &AtomicU32,
     ) {
-        let num_records = (accumulator.len() * 2) as u16;
+        if accumulator.is_empty() {
+            return;
+        }
+
+        if accumulator.len() > NETFLOW5_MAX_FLOWS_PER_PACKET {
+            for chunk in accumulator.chunks(NETFLOW5_MAX_FLOWS_PER_PACKET) {
+                Self::queue_handler(chunk, socket, target, sequence);
+            }
+            return;
+        }
+
+        let mut records = Vec::with_capacity(accumulator.len() * 2);
+        for (key, (data, _)) in accumulator {
+            if let Ok((packet1, packet2)) = to_netflow_5(key, data) {
+                records.push(packet1);
+                records.push(packet2);
+            }
+        }
+
+        let Ok(num_records) = u16::try_from(records.len()) else {
+            tracing::error!("NetFlow5 record count exceeded u16::MAX; dropping export packet");
+            return;
+        };
+
+        if num_records == 0 {
+            return;
+        }
+
         let sequence_number = sequence.load(std::sync::atomic::Ordering::Relaxed);
         let header = Netflow5Header::new(sequence_number, num_records);
         let header_bytes = unsafe {
@@ -77,34 +112,25 @@ impl Netflow5 {
         };
 
         let mut buffer = Vec::with_capacity(
-            header_bytes.len() + (accumulator.len() * 2 * std::mem::size_of::<Netflow5Record>()),
+            header_bytes.len() + (records.len() * std::mem::size_of::<Netflow5Record>()),
         );
 
         buffer.extend_from_slice(header_bytes);
-        for (key, (data, _)) in accumulator {
-            if let Ok((packet1, packet2)) = to_netflow_5(key, data) {
-                let packet1_bytes = unsafe {
-                    std::slice::from_raw_parts(
-                        &packet1 as *const _ as *const u8,
-                        std::mem::size_of::<Netflow5Record>(),
-                    )
-                };
-                let packet2_bytes = unsafe {
-                    std::slice::from_raw_parts(
-                        &packet2 as *const _ as *const u8,
-                        std::mem::size_of::<Netflow5Record>(),
-                    )
-                };
-                buffer.extend_from_slice(packet1_bytes);
-                buffer.extend_from_slice(packet2_bytes);
-            }
+        for record in &records {
+            let record_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    record as *const _ as *const u8,
+                    std::mem::size_of::<Netflow5Record>(),
+                )
+            };
+            buffer.extend_from_slice(record_bytes);
         }
 
         if let Err(e) = socket.send_to(&buffer, target) {
             tracing::error!("Failed to send Netflow5 data to {}: {}", target, e);
             // Don't increment sequence on failure to maintain consistency
         } else {
-            sequence.fetch_add(num_records as u32, std::sync::atomic::Ordering::Relaxed);
+            sequence.fetch_add(u32::from(num_records), std::sync::atomic::Ordering::Relaxed);
         }
     }
 }

@@ -269,7 +269,7 @@ fn memory_guard_failure_summary(
     phase: &str,
 ) -> String {
     format!(
-        "Bakery memory guard stopped {purpose} {phase} chunk {}/{}: available memory {} bytes is below safety floor {} bytes (total RAM {} bytes).",
+        "Bakery memory guard stopped {purpose} {phase} chunk {}/{}: available memory {} bytes is below required available memory {} bytes (total RAM {} bytes).",
         chunk_number,
         total_chunks,
         snapshot.available_bytes,
@@ -721,6 +721,16 @@ where
 
 pub(crate) fn write_command_file(path: &Path, commands: &[Vec<String>]) -> Option<String> {
     let mut lines = String::new();
+    if let Some(parent) = path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        error!(
+            "Failed to create output directory {}: {}",
+            parent.display(),
+            e
+        );
+        return None;
+    }
     let Ok(file) = File::create(path) else {
         error!("Failed to create output file: {}", path.display());
         return None;

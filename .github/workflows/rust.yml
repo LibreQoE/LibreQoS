@@ -18,25 +18,13 @@ jobs:
         sudo /bin/apt-get update
         sudo /bin/apt-get install --no-install-recommends \
           python3-pip clang gcc gcc-multilib llvm libelf-dev graphviz esbuild \
-          pkg-config libbpf-dev mold unzip curl ca-certificates
+          pkg-config libbpf-dev mold unzip linux-tools-generic
 
-        BPFTOOL_VERSION="7.7.0"
-        case "$(uname -m)" in
-          x86_64) BPFTOOL_ARCH="amd64" ;;
-          aarch64) BPFTOOL_ARCH="arm64" ;;
-          *)
-            echo "Unsupported architecture for upstream bpftool binary: $(uname -m)" >&2
-            exit 1
-            ;;
-        esac
+        BPFTOOL_BIN="$(find /usr/lib/linux-tools -name bpftool | sort -V | tail -n1)"
+        test -n "${BPFTOOL_BIN}"
+        BPFTOOL_BIN="$(readlink -f "${BPFTOOL_BIN}")"
 
-        BPFTOOL_TARBALL="bpftool-v${BPFTOOL_VERSION}-${BPFTOOL_ARCH}.tar.gz"
-        BPFTOOL_BASE_URL="https://github.com/libbpf/bpftool/releases/download/v${BPFTOOL_VERSION}"
-        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}"
-        curl -fsSLO "${BPFTOOL_BASE_URL}/${BPFTOOL_TARBALL}.sha256sum"
-        sha256sum -c "${BPFTOOL_TARBALL}.sha256sum"
-        tar -xzf "${BPFTOOL_TARBALL}"
-        sudo install -m 0755 bpftool /usr/local/bin/bpftool
+        sudo install -m 0755 "${BPFTOOL_BIN}" /usr/local/bin/bpftool
         command -v bpftool
         bpftool version
     - name: Build

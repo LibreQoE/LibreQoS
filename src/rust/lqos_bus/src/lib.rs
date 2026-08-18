@@ -17,6 +17,10 @@
 
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
+
+/// Maximum number of valid mapped circuits allowed without an entitled license.
+pub use lqos_utils::DEFAULT_MAPPED_CIRCUIT_LIMIT;
+
 mod bus;
 mod ip_stats;
 pub use ip_stats::{
@@ -26,17 +30,20 @@ pub use ip_stats::{
 mod tc_handle;
 pub use bus::response::{
     AsnHeatmapData, AsnListEntry, BakeryStatsSnapshot, CircuitCapacityRow, CircuitCount,
-    CircuitHeatmapData, CountryListEntry, DeviceCounts, ExecutiveSummaryHeader, FlowMapPoint,
-    FlowTimelineEntry, InsightLicenseSummary, NodeCapacity, ProtocolListEntry, QueueStatsTotal,
-    RetransmitSummary, SchedulerDetails, SearchResultEntry, SiteHeatmapData,
-    StormguardDebugDirection, StormguardDebugEntry, TreeGuardRuntimeNodeBranchSnapshot,
-    TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue, WarningLevel,
+    CircuitHeatmapData, CircuitRollup, CountryListEntry, DeviceCounts, ExecutiveSummaryHeader,
+    FlowMapPoint, FlowTimelineEntry, InsightLicenseSummary, LtsCapabilitiesSummary, NodeCapacity,
+    OverrideMutationResult, ProtocolListEntry, QooData, QueueStatsTotal, RetransmitSummary,
+    SchedulerDetails, SearchResultEntry, SiteHeatmapData, StormguardDebugDirection,
+    StormguardDebugEntry, StormguardRuntimeSettings, StormguardRuntimeStatus,
+    TreeGuardRuntimeNodeBranchSnapshot, TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue,
+    WarningLevel,
 };
 pub use bus::{
     BUS_SOCKET_PATH, BakeryCapacityReportInterface, BlackboardSystem, BusClientError, BusReply,
     BusRequest, BusResponse, BusSession, CakeDiffTinTransit, CakeDiffTransit, CakeTransit,
-    LibreqosBusClient, QueueStoreTransit, TopFlowType, UnixSocketServer, UrgentSeverity,
-    UrgentSource, bus_request,
+    LibreqosBusClient, OverrideLayerSelection, OverrideMutation, QueueStoreTransit,
+    SchedulerProgressReport, TopFlowType, UnixSocketServer, UrgentSeverity, UrgentSource,
+    bus_request, bus_request_with_timeout,
 };
 pub use tc_handle::TcHandle;
 

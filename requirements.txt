@@ -2,7 +2,6 @@ binpacking
 flask
 flask_httpauth
 flask_restful
-graphviz
 ipaddress
 psutil
 requests

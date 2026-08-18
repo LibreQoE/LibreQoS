@@ -73,6 +73,7 @@ pub struct UrgentItem {
     pub code: String,
     pub message: String,
     pub context: Option<String>,
+    pub clearable: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -80,17 +81,32 @@ pub struct UrgentList {
     pub items: Vec<UrgentItem>,
 }
 
-pub fn urgent_status_data() -> UrgentStatus {
-    let items = urgent::list();
-    UrgentStatus {
-        has_urgent: !items.is_empty(),
-        count: items.len(),
+fn bakery_passthrough_issue() -> Option<UrgentItem> {
+    let status = lqos_bakery::bakery_status_snapshot();
+    if !status.reload_required || !status.passthrough_degraded {
+        return None;
     }
+    Some(UrgentItem {
+        id: u64::MAX,
+        ts: status
+            .last_failure_unix
+            .or(status.current_action_started_unix)
+            .unwrap_or_default(),
+        source: "System".to_string(),
+        severity: "Error".to_string(),
+        code: "BAKERY_PASSTHROUGH_DEGRADED".to_string(),
+        message: status.passthrough_degraded_reason.unwrap_or_else(|| {
+            "Bakery full reload failed while pass-through mode was active. Traffic may be unshaped until a successful full reload clears the degraded state.".to_string()
+        }),
+        context: status.reload_required_reason.map(|reason| {
+            format!("Reload required reason: {reason}")
+        }),
+        clearable: false,
+    })
 }
 
-pub fn urgent_list_data() -> UrgentList {
-    let items = urgent::list();
-    let items: Vec<UrgentItem> = items
+fn merged_urgent_items() -> Vec<UrgentItem> {
+    let mut items: Vec<UrgentItem> = urgent::list()
         .into_iter()
         .map(|i| UrgentItem {
             id: i.id,
@@ -100,9 +116,29 @@ pub fn urgent_list_data() -> UrgentList {
             code: i.code,
             message: strip_ansi(&i.message),
             context: i.context,
+            clearable: true,
         })
         .collect();
-    UrgentList { items }
+    if let Some(issue) = bakery_passthrough_issue() {
+        items.push(issue);
+    }
+    items.sort_by_key(|item| item.ts);
+    items.reverse();
+    items
+}
+
+pub fn urgent_status_data() -> UrgentStatus {
+    let items = merged_urgent_items();
+    UrgentStatus {
+        has_urgent: !items.is_empty(),
+        count: items.len(),
+    }
+}
+
+pub fn urgent_list_data() -> UrgentList {
+    UrgentList {
+        items: merged_urgent_items(),
+    }
 }
 
 pub fn urgent_clear_id(id: u64) -> bool {

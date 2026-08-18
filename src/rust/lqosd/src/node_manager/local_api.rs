@@ -12,16 +12,23 @@ pub(crate) mod executive;
 pub(crate) mod executive_cache;
 pub(crate) mod flow_explorer;
 pub(crate) mod flow_map;
+pub(crate) mod local_api_keys;
 pub mod lts;
+pub(crate) mod network_mode;
 pub(crate) mod network_tree;
 pub(crate) mod network_tree_lite;
 pub(crate) mod node_rate_overrides;
+pub(crate) mod node_topology_overrides;
 pub(crate) mod packet_analysis;
 pub(crate) mod reload_libreqos;
 pub(crate) mod scheduler;
 pub(crate) mod search;
 pub(crate) mod shaped_device_api;
 pub(crate) mod shaped_devices_page;
+pub(crate) mod ssl;
+pub(crate) mod throughput_attribution_debug;
+pub(crate) mod topology_manager;
+pub(crate) mod topology_probes;
 pub(crate) mod tree_attached_circuits;
 pub(crate) mod unknown_ips;
 pub(crate) mod urgent;
@@ -29,14 +36,31 @@ pub(crate) mod warnings;
 
 use crate::node_manager::auth::auth_layer;
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Extension, Router};
-use tower_http::cors::CorsLayer;
 
 pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
         .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
+        .route(
+            "/throughputAttributionDebug",
+            get(throughput_attribution_debug::throughput_attribution_debug),
+        )
+        .route("/network-mode/status", get(network_mode::status))
+        .route("/network-mode/inspect", post(network_mode::inspect))
+        .route("/network-mode/apply", post(network_mode::apply))
+        .route("/network-mode/confirm", post(network_mode::confirm))
+        .route("/network-mode/revert", post(network_mode::revert))
+        .route("/network-mode/rollback", post(network_mode::rollback))
+        .route(
+            "/network-mode/retry-shaping",
+            post(network_mode::retry_shaping),
+        )
+        .route("/config/cobrand", post(config::upload_cobrand))
+        .route("/ssl/status", get(ssl::status))
+        .route("/ssl/setup", post(ssl::setup))
+        .route("/ssl/disable", post(ssl::disable))
+        .with_state(network_mode::NetworkModeApiState::default())
         .layer(Extension(shaper_query))
-        .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
 }

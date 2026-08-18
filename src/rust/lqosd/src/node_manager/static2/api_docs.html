@@ -17,13 +17,12 @@
 
 <script>
 (function(){
-  const proto = window.location.protocol;
-  const host = window.location.hostname;
-  const url = `${proto}//${host}:9122/api-docs`;
+  const url = window.location.protocol === "https:"
+    ? "/api/v1/api-docs"
+    : `${window.location.protocol}//${window.location.hostname}:9122/api-docs`;
   const f = document.getElementById('apiFrame');
   const btn = document.getElementById('openNew');
   f.src = url;
   btn.href = url;
 })();
 </script>
-

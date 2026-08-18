@@ -228,7 +228,7 @@ Flujo general:
 
 Controles clave:
 
-1. `lazy_queues`: diferir creación de partes de la jerarquía hasta uso real.
+1. `lazy_queues`: diferir la creación de partes de la jerarquía hasta el uso real. Cuando está activado, una comprobación previa que solo indica falta de memoria se informa como advertencia para que la actualización pueda continuar; asegúrese de que el host tenga RAM suficiente.
 2. `lazy_expire_seconds`: remover estado de cola inactivo tras timeout.
 
 Efecto práctico:
@@ -270,14 +270,15 @@ flowchart TD
 3. Esperar mayor riesgo cuando coinciden muchos circuitos y muchos cambios estructurales.
 4. Diseñar la cadencia operativa para priorizar cambios incrementalmente seguros.
 
-### 7.4 Guardrails de seguridad para recargas completas
+### 7.4 Salvaguardas de seguridad para recargas completas
 
-Las recargas completas actuales de Bakery aplican dos verificaciones conservadoras de seguridad antes y durante reconstrucciones grandes de colas:
+Las recargas completas actuales de Bakery aplican verificaciones conservadoras de seguridad antes y durante reconstrucciones grandes de colas:
 
 1. Un preflight de qdisc estima los qdisc planificados por interfaz y además separa qdisc de infraestructura, hojas `cake` y hojas `fq_codel`.
 2. Ese mismo preflight aplica una proyección conservadora de memoria y bloquea de forma estricta las recargas completas claramente inseguras antes de arrancar `tc -batch`.
-3. Durante la aplicación chunked de una recarga completa, Bakery vuelve a revisar la memoria del host en los límites de chunk y aborta el resto de la aplicación si la memoria disponible cae por debajo de su piso de seguridad.
-4. Estos guardrails están sesgados intencionalmente hacia falsos positivos en recargas grandes para fallar temprano con diagnósticos en lugar de entrar en una espiral OOM.
+3. El piso de memoria de Bakery escala con la RAM del host: mantiene al menos 2 GiB disponibles, o un octavo de la RAM total en sistemas más grandes.
+4. Durante la aplicación por fragmentos de una recarga completa, Bakery vuelve a revisar la memoria del host en los límites de cada fragmento y aborta el resto de la aplicación si la memoria disponible cae por debajo del piso escalado más la memoria qdisc proyectada para el lote.
+5. Estas salvaguardas están sesgadas intencionalmente hacia falsos positivos en recargas grandes para fallar temprano con diagnósticos en lugar de entrar en una espiral OOM.
 
 ## 8) Límites de Diseño para Operadores
 

@@ -1,8 +1,9 @@
 import { Encoder, decode } from "../lq_js_common/helpers/cbor-x";
+import { websocketHelloReply } from "./ws_auth.mjs";
 
 const ACK_TEXT = "I accept that this is an unstable, internal API and is unsupported";
 const EXPECTED_UI_VERSION = (window.LQOS_UI_VERSION || "").trim() || null;
-const USER_TOKEN_COOKIE = "User-Token";
+const VERSION_RELOAD_KEY = "lqosWsVersionReload";
 const encoder = new Encoder({ useRecords: false, variableMapSize: true });
 const DIAGNOSTIC_CHANNELS = new Set(["Cpu", "Ram", "RttHistogram"]);
 
@@ -62,20 +63,26 @@ function dashboardWsInteresting(event, channels = [], details = {}) {
     });
 }
 
-function get_cookie_value(name) {
-    const cookies = document.cookie ? document.cookie.split(";") : [];
-    const prefix = `${name}=`;
-    for (let i = 0; i < cookies.length; i++) {
-        const entry = cookies[i].trim();
-        if (entry.startsWith(prefix)) {
-            return decodeURIComponent(entry.slice(prefix.length));
-        }
-    }
-    return "";
+function versionReloadKey(serverVersion) {
+    const clientVersion = EXPECTED_UI_VERSION || "missing";
+    const wsVersion = (serverVersion || "missing").toString().trim() || "missing";
+    return `${clientVersion}->${wsVersion}`;
 }
 
-function get_user_token() {
-    return get_cookie_value(USER_TOKEN_COOKIE);
+function hasReloadedForVersionMismatch(mismatchKey) {
+    try {
+        if (window.sessionStorage.getItem(VERSION_RELOAD_KEY) === mismatchKey) {
+            return true;
+        }
+        window.sessionStorage.setItem(VERSION_RELOAD_KEY, mismatchKey);
+        return false;
+    } catch (_) {
+        if (window.__lqosWsVersionReload === mismatchKey) {
+            return true;
+        }
+        window.__lqosWsVersionReload = mismatchKey;
+        return false;
+    }
 }
 
 export function ws_proto() {
@@ -95,11 +102,15 @@ export class WsClient {
         this.reconnectTimer = null;
         this.reconnectDelayMs = 1000;
         this.manualClose = false;
+        this.versionReloading = false;
     }
 
     connect() {
         if (this.ws) {
-            return;
+            if (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN) {
+                return;
+            }
+            this._dropSocket("stale-socket");
         }
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
@@ -159,7 +170,9 @@ export class WsClient {
             });
             this.ws = null;
             this.handshake_done = false;
-            this._scheduleReconnect();
+            if (!this.versionReloading) {
+                this._scheduleReconnect();
+            }
         };
 
         socket.onerror = () => {
@@ -171,7 +184,14 @@ export class WsClient {
             });
             this.ws = null;
             this.handshake_done = false;
-            this._scheduleReconnect();
+            try {
+                socket.close();
+            } catch (_) {
+                // The browser may already have closed the socket.
+            }
+            if (!this.versionReloading) {
+                this._scheduleReconnect();
+            }
         };
     }
 
@@ -192,6 +212,54 @@ export class WsClient {
         this.pending = [];
         this.desiredChannels.clear();
         this.handlers.clear();
+    }
+
+    _dropSocket(reason = "unspecified") {
+        dashboardWsDebug("drop-socket", {
+            reason,
+            desiredChannels: Array.from(this.desiredChannels.keys()),
+        });
+        const oldSocket = this.ws;
+        this.ws = null;
+        this.handshake_done = false;
+        if (oldSocket) {
+            try {
+                oldSocket.close();
+            } catch (_) {
+                // Ignore close errors; reconnect/reload handling continues below.
+            }
+        }
+    }
+
+    _reloadForVersionMismatch(serverVersion) {
+        const mismatchKey = versionReloadKey(serverVersion);
+        dashboardWsDebug("version-mismatch", {
+            expected: EXPECTED_UI_VERSION || "missing",
+            actual: serverVersion || "missing",
+            mismatchKey,
+        });
+
+        if (!hasReloadedForVersionMismatch(mismatchKey)) {
+            this.versionReloading = true;
+            this._dropSocket("version-mismatch");
+            window.location.reload();
+            window.setTimeout(() => {
+                if (this.versionReloading) {
+                    this.versionReloading = false;
+                    this._scheduleReconnect();
+                }
+            }, 3000);
+            return true;
+        }
+
+        console.error(
+            "Websocket version mismatch persisted after reload:",
+            `client=${EXPECTED_UI_VERSION || "missing"}`,
+            `server=${serverVersion || "missing"}`,
+        );
+        this._dropSocket("version-mismatch-persistent");
+        this._scheduleReconnect();
+        return true;
     }
 
     refreshSubscriptions(reason = "unspecified") {
@@ -236,7 +304,7 @@ export class WsClient {
                 dashboardWsInteresting("subscribe-wire-interesting", [channel], {
                     desiredChannels: Array.from(this.desiredChannels.keys()),
                 });
-                this.ws.send(encoder.encode({ Subscribe: { channel } }));
+                this._sendControl({ Subscribe: { channel } });
             }
         }
         if (channels.length > 0) {
@@ -263,7 +331,7 @@ export class WsClient {
                     dashboardWsInteresting("unsubscribe-wire-interesting", [channel], {
                         desiredChannels: Array.from(this.desiredChannels.keys()),
                     });
-                    this.ws.send(encoder.encode({ Unsubscribe: { channel } }));
+                    this._sendControl({ Unsubscribe: { channel } });
                 }
             } else {
                 this.desiredChannels.set(channel, current - 1);
@@ -279,11 +347,16 @@ export class WsClient {
         if (!this.ws) {
             this.connect();
         }
-        if (!this.handshake_done) {
+        if (!this.handshake_done || !this._socketIsOpen()) {
             this.pending.push(normalized);
+            if (this.handshake_done && this.ws && !this._socketIsOpen()) {
+                this._retireSocket();
+            }
             return;
         }
-        this.ws.send(encoder.encode(normalized));
+        if (!this._sendControl(normalized)) {
+            this.pending.push(normalized);
+        }
     }
 
     on(event_name, handler) {
@@ -318,33 +391,63 @@ export class WsClient {
                 "Websocket version mismatch:",
                 hello ? hello.version : "missing",
             );
-            this.close();
+            this._reloadForVersionMismatch(hello ? hello.version : null);
             return;
+        }
+        try {
+            window.sessionStorage.removeItem(VERSION_RELOAD_KEY);
+        } catch (_) {
+            // Storage cleanup is best-effort.
         }
         this.handshake_done = true;
         dashboardWsDebug("handshake-complete", {
             desiredChannels: Array.from(this.desiredChannels.keys()),
         });
-        this.ws.send(
-            encoder.encode({
-                HelloReply: {
-                    ack: ACK_TEXT,
-                    token: get_user_token(),
-                },
-            }),
-        );
-        for (let i = 0; i < this.pending.length; i++) {
-            this.ws.send(encoder.encode(this.pending[i]));
+        if (!this._sendControl(websocketHelloReply(ACK_TEXT))) {
+            return;
         }
+        const pending = this.pending;
         this.pending = [];
+        for (let i = 0; i < pending.length; i++) {
+            if (!this._sendControl(pending[i])) {
+                this.pending = pending.slice(i).concat(this.pending);
+                return;
+            }
+        }
         for (const channel of this.desiredChannels.keys()) {
             dashboardWsInteresting("subscribe-wire-interesting", [channel], {
                 desiredChannels: Array.from(this.desiredChannels.keys()),
                 fromHandshake: true,
             });
-            this.ws.send(encoder.encode({ Subscribe: { channel } }));
+            if (!this._sendControl({ Subscribe: { channel } })) {
+                return;
+            }
         }
         this.reconnectDelayMs = 1000;
+    }
+
+    _socketIsOpen() {
+        return this.ws && this.ws.readyState === WebSocket.OPEN;
+    }
+
+    _retireSocket() {
+        this._dropSocket("retire-socket");
+        this._scheduleReconnect();
+    }
+
+    _sendControl(request_obj) {
+        if (!this._socketIsOpen()) {
+            this._retireSocket();
+            return false;
+        }
+        try {
+            this.ws.send(encoder.encode(request_obj));
+            return true;
+        } catch (err) {
+            console.warn("Websocket send failed; reconnecting", err);
+            this._retireSocket();
+            return false;
+        }
     }
 
     _dispatch(msg) {
@@ -356,7 +459,15 @@ export class WsClient {
             return;
         }
         for (const handler of Array.from(list)) {
-            handler(msg);
+            try {
+                handler(msg);
+            } catch (err) {
+                console.error(`Websocket handler failed for ${msg.event}`, err);
+                dashboardWsDebug("handler-error", {
+                    eventName: msg.event,
+                    message: err && err.message ? err.message : String(err),
+                });
+            }
         }
     }
 

@@ -16,6 +16,10 @@ pub struct BridgeConfig {
 
     /// The name of the second interface, facing the LAN
     pub to_network: String,
+
+    /// Optional MTU for LibreQoS-managed Linux bridge interfaces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtu: Option<u32>,
 }
 
 impl Default for BridgeConfig {
@@ -24,6 +28,7 @@ impl Default for BridgeConfig {
             use_xdp_bridge: true,
             to_internet: "eth0".to_string(),
             to_network: "eth1".to_string(),
+            mtu: None,
         }
     }
 }
@@ -39,6 +44,10 @@ pub struct SingleInterfaceConfig {
 
     /// The VLAN ID facing the LAN
     pub network_vlan: u32,
+
+    /// Optional MTU for the LibreQoS-managed trunk interface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtu: Option<u32>,
 }
 
 impl Default for SingleInterfaceConfig {
@@ -47,6 +56,7 @@ impl Default for SingleInterfaceConfig {
             interface: "eth0".to_string(),
             internet_vlan: 2,
             network_vlan: 3,
+            mtu: None,
         }
     }
 }

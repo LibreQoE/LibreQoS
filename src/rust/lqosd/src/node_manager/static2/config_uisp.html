@@ -6,7 +6,7 @@
             <div class="lqos-config-panel-header">
                 <div>
                     <h5 class="lqos-config-panel-title">UISP Integration</h5>
-                    <div class="lqos-config-panel-subtitle">Connect to UISP, choose import strategy, and control how topology, suspended accounts, capacity, and site overrides are handled.</div>
+                    <div class="lqos-config-panel-subtitle">Connect to UISP and control suspended accounts, capacity, and site overrides. Topology mode now lives under Integration - Common.</div>
                 </div>
             </div>
 
@@ -24,7 +24,11 @@
 
                         <div class="mb-3">
                             <label for="uispToken" class="form-label">API Token</label>
-                            <input type="text" class="form-control" id="uispToken">
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="uispToken" autocomplete="new-password">
+                                <button type="button" class="btn btn-outline-secondary" id="clearUispToken">Clear</button>
+                            </div>
+                            <div class="form-text" id="uispTokenStatus"></div>
                             <div class="form-text">UISP API token for authentication.</div>
                         </div>
 
@@ -35,9 +39,9 @@
                         </div>
 
                         <div class="mb-3">
-                            <label for="uispSite" class="form-label">UISP Site</label>
+                            <label for="uispSite" class="form-label" id="uispSiteLabel">Root UISP Site</label>
                             <input type="text" class="form-control" id="uispSite">
-                            <div class="form-text">Optional site identifier in UISP.</div>
+                            <div class="form-text" id="uispSiteHelp">Required only for full topology mode. Leave blank in other modes to let LibreQoS choose the import root.</div>
                         </div>
 
                         <div class="mb-3 form-check">
@@ -56,18 +60,18 @@
 
                 <div class="col-12 col-xl-6">
                     <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Strategy and Capacity</h6>
-                        <div class="lqos-config-section-subtitle">Choose the imported hierarchy depth and how LibreQoS should interpret suspended accounts and device capacity.</div>
+                        <h6 class="lqos-config-section-title">Topology and Capacity</h6>
+                        <div class="lqos-config-section-subtitle">Review the shared topology compile mode and choose how LibreQoS should interpret suspended accounts and device capacity.</div>
 
                         <div class="mb-3">
-                            <label for="uispStrategy" class="form-label">Strategy</label>
-                            <select class="form-select" id="uispStrategy">
+                            <label for="uispStrategy" class="form-label">Topology Compile Mode</label>
+                            <select class="form-select" id="uispStrategy" disabled>
                                 <option value="flat">Flat - Only shapes subscribers by service plan speed</option>
                                 <option value="ap_only">AP Only - Shapes by service plan and Access Point</option>
                                 <option value="ap_site">AP Site - Shapes by service plan, Access Point, and Site</option>
                                 <option value="full">Full - Shapes entire network including backhauls, Sites, APs, and clients</option>
                             </select>
-                            <div class="form-text">Select the topology strategy for network hierarchy.</div>
+                            <div class="form-text">Change this under <code>Integration - Common</code>. UISP still keeps the legacy field for compatibility during upgrade.</div>
                         </div>
 
                         <div class="mb-3">
@@ -82,13 +86,19 @@
 
                         <div class="mb-3">
                             <label for="uispAirmaxCapacity" class="form-label">Airmax Capacity</label>
-                            <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1">
+                            <input type="number" class="form-control" id="uispAirmaxCapacity" step="0.1" value="1.0">
                             <div class="form-text">Capacity factor for Airmax devices.</div>
                         </div>
 
                         <div class="mb-3">
+                            <label for="uispAirmaxFlexibleFrameDownloadRatio" class="form-label">AirMax Flexible Frame Download Ratio</label>
+                            <input type="number" class="form-control" id="uispAirmaxFlexibleFrameDownloadRatio" step="0.01" min="0.01" max="0.99" value="0.8">
+                            <div class="form-text">Fallback download share for AirMax APs when UISP reports aggregate flexible-frame capacity but does not expose a live downlink ratio. <code>0.8</code> means 80/20 download/upload.</div>
+                        </div>
+
+                        <div class="mb-3">
                             <label for="uispLtuCapacity" class="form-label">LTU Capacity</label>
-                            <input type="number" class="form-control" id="uispLtuCapacity" step="0.1">
+                            <input type="number" class="form-control" id="uispLtuCapacity" step="0.1" value="1.0">
                             <div class="form-text">Capacity factor for LTU devices.</div>
                         </div>
 
@@ -104,10 +114,8 @@
                             <div class="form-text">Multiplier for commit bandwidth calculations.</div>
                         </div>
 
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="uispUsePtmpAsParent">
-                            <label class="form-check-label" for="uispUsePtmpAsParent">Use PTMP as Parent</label>
-                            <div class="form-text">Treat PTMP devices as parent nodes.</div>
+                        <div class="mb-3">
+                            <div class="form-text">Parent-path decisions for UISP full and full2 now come from Topology Manager candidate parents and saved topology overrides. The old PTMP-parent toggle is retired.</div>
                         </div>
 
                         <div class="mb-0 form-check">
@@ -145,15 +153,7 @@
                             <div class="col-12 col-lg-6">
                                 <label for="uispDoNotSquashSites" class="form-label">Do Not Squash Sites</label>
                                 <input type="text" class="form-control" id="uispDoNotSquashSites">
-                                <div class="form-text">Comma-separated list of site IDs that should not be squashed.</div>
-                            </div>
-
-                            <div class="col-12">
-                                <div class="mb-0 form-check">
-                                    <input type="checkbox" class="form-check-input" id="uispEnableSquashing">
-                                    <label class="form-check-label" for="uispEnableSquashing">Enable Squashing</label>
-                                    <div class="form-text">Enable site squashing functionality.</div>
-                                </div>
+                                <div class="form-text">Runtime/export squashing is always enabled for UISP after Topology Manager. Use this comma-separated list of site names to keep specific paths unsquashed.</div>
                             </div>
                         </div>
                     </div>

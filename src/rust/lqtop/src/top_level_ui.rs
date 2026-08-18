@@ -105,7 +105,7 @@ impl TopUi {
         let final_region = constraints.len();
         constraints.push(Constraint::Fill(1));
 
-        let main_layout = Layout::new(Direction::Vertical, constraints).split(frame.size());
+        let main_layout = Layout::new(Direction::Vertical, constraints).split(frame.area());
 
         // Add Widgets
         frame.render_widget(help_display(), main_layout[help_region]);

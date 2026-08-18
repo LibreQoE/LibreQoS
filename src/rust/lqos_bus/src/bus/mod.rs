@@ -9,18 +9,18 @@ mod request;
 pub mod response;
 mod session;
 mod unix_socket_server;
-pub use client::{LibreqosBusClient, bus_request};
+pub use client::{LibreqosBusClient, bus_request, bus_request_with_timeout};
 pub use queue_data::*;
 pub use reply::BusReply;
 pub use request::{
-    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, TopFlowType, UrgentSeverity,
-    UrgentSource,
+    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, OverrideLayerSelection,
+    OverrideMutation, SchedulerProgressReport, TopFlowType, UrgentSeverity, UrgentSource,
 };
 #[allow(unused_imports)]
 pub use response::{
-    AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, SiteHeatmapData,
-    StormguardDebugDirection, StormguardDebugEntry, TreeGuardRuntimeNodeBranchSnapshot,
-    TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue,
+    AsnHeatmapData, BakeryStatsSnapshot, BusResponse, CircuitHeatmapData, OverrideMutationResult,
+    SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry, StormguardRuntimeStatus,
+    TreeGuardRuntimeNodeBranchSnapshot, TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue,
 };
 pub use session::BusSession;
 use thiserror::Error;
@@ -55,6 +55,9 @@ pub enum BusClientError {
     /// Reading the reply from the socket failed.
     #[error("Cannot read from socket")]
     StreamReadError,
+    /// The socket operation exceeded the caller's deadline.
+    #[error("Timed out waiting for bus response")]
+    TimedOut,
     /// The socket connection is no longer usable.
     #[error("Stream is no longer connected")]
     StreamNotConnected,

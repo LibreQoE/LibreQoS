@@ -16,7 +16,7 @@ Use este patron cuando su operacion este centrada en un CRM/NMS soportado (UISP,
 ## Implementacion
 
 1. Configure credenciales y parametros en WebUI (`Configuration -> Integrations`).
-2. Para despliegues guiados por integracion, mantenga `always_overwrite_network_json = true`.
+2. Para despliegues guiados por integración, trate `network.json` como solo DIY/manual y deje que la integración publique `topology_import.json`.
 3. Elija la estrategia de topologia mas liviana que cumpla su necesidad.
 
 | Necesidad | Estrategia sugerida |

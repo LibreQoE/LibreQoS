@@ -13,10 +13,16 @@
 
 use anyhow::Result;
 use lqos_bus::{BusRequest, BusResponse};
-use lqos_config::{ConfigShapedDevices, ShapedDevice, load_config};
+use lqos_config::{ShapedDevice, load_config};
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{
+    sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
+};
+
+const REMOTE_WEIGHT_SUCCESS_TTL: Duration = Duration::from_secs(300);
+const REMOTE_WEIGHT_FAILURE_BACKOFF: Duration = Duration::from_secs(300);
 
 /// This struct is used to send a request to the Long Term Stats API
 #[derive(Serialize, Deserialize)]
@@ -30,13 +36,64 @@ pub struct DeviceWeightRequest {
 
 /// This struct is used to receive a response from the Long Term Stats API
 /// It contains the circuit_id and the weight of the device
-#[derive(Serialize, Deserialize, Debug)]
-#[pyclass]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[pyclass(skip_from_py_object)]
 pub struct DeviceWeightResponse {
     #[pyo3(get)]
     pub circuit_id: String,
     #[pyo3(get)]
     pub weight: i64,
+}
+
+#[derive(Clone)]
+struct CachedRemoteWeights {
+    fetched_at: Instant,
+    weights: Vec<DeviceWeightResponse>,
+}
+
+#[derive(Default)]
+struct RemoteWeightCache {
+    last_success: Option<CachedRemoteWeights>,
+    last_failure: Option<Instant>,
+}
+
+fn remote_weight_cache() -> &'static Mutex<RemoteWeightCache> {
+    static CACHE: OnceLock<Mutex<RemoteWeightCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(RemoteWeightCache::default()))
+}
+
+fn cached_remote_weights() -> Option<Vec<DeviceWeightResponse>> {
+    let cache = remote_weight_cache().lock().ok()?;
+    let cached = cache.last_success.as_ref()?;
+    if cached.fetched_at.elapsed() <= REMOTE_WEIGHT_SUCCESS_TTL {
+        return Some(cached.weights.clone());
+    }
+    None
+}
+
+fn recent_remote_weight_failure() -> bool {
+    let Ok(cache) = remote_weight_cache().lock() else {
+        return false;
+    };
+    cache
+        .last_failure
+        .is_some_and(|failed_at| failed_at.elapsed() <= REMOTE_WEIGHT_FAILURE_BACKOFF)
+}
+
+fn remember_remote_weight_success(weights: &[DeviceWeightResponse]) {
+    if let Ok(mut cache) = remote_weight_cache().lock() {
+        cache.last_success = Some(CachedRemoteWeights {
+            fetched_at: Instant::now(),
+            weights: weights.to_vec(),
+        });
+        cache.last_failure = None;
+    }
+}
+
+fn remember_remote_weight_failure() {
+    if let Ok(mut cache) = remote_weight_cache().lock() {
+        cache.last_failure = Some(Instant::now());
+    }
 }
 
 /// This function is used to get the device weights from the Long Term Stats API
@@ -84,7 +141,7 @@ fn get_weights_from_lts(
 
 /// This function is used to get the device weights from the ShapedDevices.csv file
 fn get_weights_from_shaped_devices() -> Result<Vec<DeviceWeightResponse>> {
-    let mut devices_list = ConfigShapedDevices::load()?.devices;
+    let mut devices_list = lqos_network_devices::load_shaped_devices()?.devices;
     devices_list.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
     let mut result = vec![];
     let mut prev_id = String::new();
@@ -114,11 +171,11 @@ fn use_lts_weights() -> bool {
     if !(config.long_term_stats.gather_stats && config.long_term_stats.license_key.is_some()) {
         return false;
     }
-    // Ask lqosd (via bus) whether Insight is actually enabled/licensed
-    if let Ok(responses) = crate::blocking::run_query(vec![BusRequest::CheckInsight]) {
+    // Ask lqosd (via bus) whether long-term stats submission is actually enabled/licensed
+    if let Ok(responses) = crate::blocking::run_query(vec![BusRequest::GetLtsCapabilities]) {
         for resp in responses.into_iter() {
-            if let BusResponse::InsightStatus(enabled) = resp {
-                return enabled;
+            if let BusResponse::LtsCapabilitiesSummary(summary) = resp {
+                return summary.can_submit_long_term_stats;
             }
         }
     }
@@ -147,10 +204,28 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
         let duration_seconds = 60 * 60 * 24; // 1 day
         let percentile = 0.95;
 
-        eprintln!("Getting weights from Insight");
-        let weights = get_weights_from_lts(&org_key, &node_id, start, duration_seconds, percentile);
-        if let Ok(weights) = weights {
-            eprintln!("Retrieved {} weights from Insight", weights.len());
+        let remote_weights = if let Some(weights) = cached_remote_weights() {
+            eprintln!("Using cached Insight weights");
+            Some(weights)
+        } else if recent_remote_weight_failure() {
+            eprintln!("Skipping Insight weight fetch; recent request failed");
+            None
+        } else {
+            eprintln!("Getting weights from Insight");
+            match get_weights_from_lts(&org_key, &node_id, start, duration_seconds, percentile) {
+                Ok(weights) => {
+                    eprintln!("Retrieved {} weights from Insight", weights.len());
+                    remember_remote_weight_success(&weights);
+                    Some(weights)
+                }
+                Err(err) => {
+                    remember_remote_weight_failure();
+                    eprintln!("Failed to get weights from Insight: {:?}", err);
+                    None
+                }
+            }
+        };
+        if let Some(weights) = remote_weights {
             // Merge them
             for weight in weights.iter() {
                 if let Some(existing) = shaped_devices_weights
@@ -160,8 +235,6 @@ pub(crate) fn get_weights_rust() -> Result<Vec<DeviceWeightResponse>> {
                     existing.weight = weight.weight;
                 }
             }
-        } else {
-            eprintln!("Failed to get weights from Insight: {:?}", weights);
         }
     }
 
@@ -211,9 +284,9 @@ pub struct NetworkNodeWeight {
 /// Calculate the top-level network tree nodes and then
 /// calculate the weights for each node
 pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
-    let device_list = ConfigShapedDevices::load()?.devices;
+    let device_list = lqos_network_devices::load_shaped_devices()?.devices;
     let device_weights = get_weights_rust()?;
-    let network = lqos_config::NetworkJson::load()?;
+    let network = lqos_network_devices::load_network_json()?;
     let root_index = network
         .get_nodes_when_ready()
         .iter()
@@ -238,6 +311,6 @@ pub(crate) fn calculate_tree_weights() -> Result<Vec<NetworkNodeWeight>> {
             });
         });
 
-    result.sort_by(|a, b| b.weight.cmp(&a.weight));
+    result.sort_by_key(|entry| std::cmp::Reverse(entry.weight));
     Ok(result)
 }

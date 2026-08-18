@@ -21,6 +21,12 @@
                         <div class="lqos-config-section-subtitle">Control how aggressively the host services NIC interrupts and packet processing.</div>
 
                         <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="setCpuGovernorPerformance" aria-describedby="setCpuGovernorPerformanceHelp">
+                            <label class="form-check-label" for="setCpuGovernorPerformance">Set CPU Governor to Performance</label>
+                            <div id="setCpuGovernorPerformanceHelp" class="form-text">Runs <code>cpupower frequency-set --governor performance</code> during LibreQoS tuning. Enabled by default.</div>
+                        </div>
+
+                        <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="stopIrqBalance">
                             <label class="form-check-label" for="stopIrqBalance">Stop IRQ Balance Service</label>
                             <div class="form-text">Disables the <code>irq_balance</code> system service.</div>

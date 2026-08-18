@@ -1,5 +1,7 @@
 use std::{
+    collections::HashSet,
     fs::read_to_string,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -7,9 +9,7 @@ use anyhow::Result;
 use lqos_config::ShapedDevice;
 use serde::{Deserialize, Serialize};
 
-use crate::overrides_file::file_lock::FileLock;
-
-mod file_lock;
+use crate::file_lock::FileLock;
 
 const OPERATOR_OVERRIDES_FILE: &str = "lqos_overrides.json";
 const STORMGUARD_OVERRIDES_FILE: &str = "lqos_overrides.stormguard.json";
@@ -110,6 +110,29 @@ pub enum NetworkAdjustment {
         /// Whether the node should be treated as virtual.
         virtual_node: bool,
     },
+    /// Overrides immediate upstream parent selection for a topology node.
+    TopologyParentOverride {
+        /// Stable node identifier from `network.json`.
+        node_id: String,
+        /// Display name of the node being overridden.
+        node_name: String,
+        /// Override behavior mode.
+        mode: TopologyParentOverrideMode,
+        /// Ordered parent node identifiers.
+        parent_node_ids: Vec<String>,
+        /// Ordered parent display names matching `parent_node_ids`.
+        parent_node_names: Vec<String>,
+    },
+}
+
+/// Override behavior for topology parent selection.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopologyParentOverrideMode {
+    /// Force one immediate parent.
+    Pinned,
+    /// Try parents in operator-specified order, then fall back to native selection.
+    PreferredOrder,
 }
 
 /// Consolidated UISP-specific overrides stored in an override file.
@@ -117,20 +140,24 @@ pub enum NetworkAdjustment {
 pub struct UispOverrides {
     #[serde(default)]
     /// Per-site UISP bandwidth overrides keyed by site name as `(download_mbps, upload_mbps)`.
+    /// Deprecated legacy entries. Current UISP builds ignore these and use
+    /// operator `AdjustSiteSpeed` entries instead.
     pub bandwidth_overrides: std::collections::HashMap<String, (f32, f32)>,
     #[serde(default)]
-    /// Route overrides applied between UISP sites.
+    /// Deprecated legacy UISP route overrides. Current UISP builds ignore these
+    /// entries and use Topology Manager parent or attachment preferences instead.
     pub route_overrides: Vec<UispRouteOverride>,
 }
 
 /// A UISP route cost override between two sites.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UispRouteOverride {
-    /// Source site name.
+    /// Source site name for a deprecated legacy UISP route override.
     pub from_site: String,
-    /// Destination site name.
+    /// Destination site name for a deprecated legacy UISP route override.
     pub to_site: String,
-    /// Replacement routing cost between the two sites.
+    /// Replacement routing cost between the two sites. Current UISP builds ignore
+    /// this value.
     pub cost: u32,
 }
 
@@ -176,6 +203,9 @@ fn treeguard_read_path(config: &lqos_config::Config) -> PathBuf {
 
 fn load_from_path(path: &Path) -> Result<OverrideFile> {
     let raw = read_to_string(path)?;
+    if raw.trim().is_empty() {
+        anyhow::bail!("Overrides file '{}' was empty", path.display());
+    }
     let as_json = serde_json::from_str(&raw)?;
     Ok(as_json)
 }
@@ -187,13 +217,43 @@ fn ensure_exists_default(path: &Path) -> Result<()> {
     // Create a default empty file
     let new_override_file = OverrideFile::default();
     let as_json = serde_json::to_string(&new_override_file)?;
-    std::fs::write(path, as_json.as_bytes())?;
+    write_atomic(path, as_json.as_bytes())?;
     Ok(())
 }
 
 fn save_to_path(path: &Path, overrides: &OverrideFile) -> Result<()> {
     let as_json = serde_json::to_string_pretty(overrides)?;
-    std::fs::write(path, as_json.as_bytes())?;
+    write_atomic(path, as_json.as_bytes())?;
+    Ok(())
+}
+
+fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Overrides path '{}' has no parent directory",
+            path.display()
+        )
+    })?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("Overrides path '{}' has no file name", path.display()))?;
+    let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let tmp_name = format!("{}.tmp.{}.{}", file_name.to_string_lossy(), pid, nanos);
+    let tmp_path = parent.join(tmp_name);
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp_path)?;
+    file.write_all(contents)?;
+    file.sync_all()?;
+    drop(file);
+
+    std::fs::rename(&tmp_path, path)?;
     Ok(())
 }
 
@@ -407,6 +467,7 @@ fn merge_network_adjustments_owned(
     let mut operator_virtual_seen: HashSet<&str> = HashSet::new();
     let mut operator_site_speed_seen: HashSet<String> = HashSet::new();
     let mut operator_site_name_seen: HashSet<String> = HashSet::new();
+    let mut operator_topology_seen: HashSet<&str> = HashSet::new();
 
     for adj in operator_adjustments {
         match adj {
@@ -441,6 +502,26 @@ fn merge_network_adjustments_owned(
                     site_name: site_name.clone(),
                     download_bandwidth_mbps: *download_bandwidth_mbps,
                     upload_bandwidth_mbps: *upload_bandwidth_mbps,
+                });
+            }
+            NetworkAdjustment::TopologyParentOverride {
+                node_id,
+                node_name,
+                mode,
+                parent_node_ids,
+                parent_node_names,
+            } => {
+                let node_id_ref = node_id.as_str();
+                if operator_topology_seen.contains(node_id_ref) {
+                    continue;
+                }
+                operator_topology_seen.insert(node_id_ref);
+                out.push(NetworkAdjustment::TopologyParentOverride {
+                    node_id: node_id.clone(),
+                    node_name: node_name.clone(),
+                    mode: *mode,
+                    parent_node_ids: parent_node_ids.clone(),
+                    parent_node_names: parent_node_names.clone(),
                 });
             }
         }
@@ -504,9 +585,30 @@ fn merge_owned_sections(
 }
 
 impl OverrideFile {
+    /// Returns the canonical operator overrides path for `config`.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn operator_path_for_config(config: &lqos_config::Config) -> PathBuf {
+        overrides_path(config, OverrideLayer::Operator)
+    }
+
+    /// Loads overrides from an explicit filesystem path.
+    ///
+    /// Side effects: reads the selected overrides file from disk.
+    pub fn load_from_explicit_path(path: &Path) -> Result<Self> {
+        load_from_path(path)
+    }
+
+    /// Saves overrides to an explicit filesystem path.
+    ///
+    /// Side effects: writes the selected overrides file to disk.
+    pub fn save_to_explicit_path(&self, path: &Path) -> Result<()> {
+        save_to_path(path, self)
+    }
+
     /// Loads the operator-owned overrides file, creating an empty file if it does not exist.
     pub fn load() -> Result<Self> {
-        let lock = FileLock::new()?;
+        let lock = FileLock::new_for_operation("load operator overrides")?;
         let config = lqos_config::load_config()?;
         let path = overrides_path(&config, OverrideLayer::Operator);
         ensure_exists_default(&path)?;
@@ -517,7 +619,7 @@ impl OverrideFile {
 
     /// Saves this value to the operator-owned overrides file.
     pub fn save(&self) -> Result<()> {
-        let lock = FileLock::new()?;
+        let lock = FileLock::new_for_operation("save operator overrides")?;
         let config = lqos_config::load_config()?;
         let path = overrides_path(&config, OverrideLayer::Operator);
         save_to_path(&path, self)?;
@@ -813,6 +915,111 @@ impl OverrideFile {
         before.saturating_sub(self.network_adjustments.len())
     }
 
+    /// Remove virtual-node overrides for all names in `node_names` in one pass.
+    /// Returns the sorted list of node names that had at least one override removed.
+    pub fn remove_network_node_virtual_by_names(&mut self, node_names: &[String]) -> Vec<String> {
+        if node_names.is_empty() {
+            return Vec::new();
+        }
+
+        let requested_names = node_names
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let mut removed_names = HashSet::new();
+        self.network_adjustments.retain(|adj| match adj {
+            NetworkAdjustment::SetNodeVirtual { node_name, .. }
+                if requested_names.contains(node_name.as_str()) =>
+            {
+                removed_names.insert(node_name.clone());
+                false
+            }
+            _ => true,
+        });
+
+        let mut removed_names = removed_names.into_iter().collect::<Vec<_>>();
+        removed_names.sort();
+        removed_names
+    }
+
+    /// Returns the stored topology parent override for `node_id`, if present.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn find_topology_parent_override(&self, node_id: &str) -> Option<&NetworkAdjustment> {
+        self.network_adjustments.iter().find(|adj| {
+            matches!(
+                adj,
+                NetworkAdjustment::TopologyParentOverride {
+                    node_id: current_node_id,
+                    ..
+                } if current_node_id == node_id
+            )
+        })
+    }
+
+    /// Adds or replaces a topology parent override for `node_id`. Returns true if changed.
+    pub fn set_topology_parent_override_return_changed(
+        &mut self,
+        node_id: String,
+        node_name: String,
+        mode: TopologyParentOverrideMode,
+        parent_nodes: Vec<(String, String)>,
+    ) -> bool {
+        let normalized_node_id = node_id.trim().to_string();
+        let normalized_node_name = node_name.trim().to_string();
+        let mut parent_node_ids = Vec::new();
+        let mut parent_node_names = Vec::new();
+        let mut seen_parent_ids = std::collections::HashSet::new();
+
+        for (parent_id, parent_name) in parent_nodes {
+            let trimmed_id = parent_id.trim();
+            let trimmed_name = parent_name.trim();
+            if trimmed_id.is_empty() || !seen_parent_ids.insert(trimmed_id.to_string()) {
+                continue;
+            }
+            parent_node_ids.push(trimmed_id.to_string());
+            parent_node_names.push(trimmed_name.to_string());
+        }
+
+        let desired = NetworkAdjustment::TopologyParentOverride {
+            node_id: normalized_node_id.clone(),
+            node_name: normalized_node_name,
+            mode,
+            parent_node_ids,
+            parent_node_names,
+        };
+        if self.find_topology_parent_override(&normalized_node_id) == Some(&desired) {
+            return false;
+        }
+
+        self.network_adjustments.retain(|adj| {
+            !matches!(
+                adj,
+                NetworkAdjustment::TopologyParentOverride {
+                    node_id: current_node_id,
+                    ..
+                } if current_node_id == &normalized_node_id
+            )
+        });
+        self.network_adjustments.push(desired);
+        true
+    }
+
+    /// Removes any topology parent override for `node_id`. Returns number removed.
+    pub fn remove_topology_parent_override_by_node_id_count(&mut self, node_id: &str) -> usize {
+        let before = self.network_adjustments.len();
+        self.network_adjustments.retain(|adj| {
+            !matches!(
+                adj,
+                NetworkAdjustment::TopologyParentOverride {
+                    node_id: current_node_id,
+                    ..
+                } if current_node_id == node_id
+            )
+        });
+        before.saturating_sub(self.network_adjustments.len())
+    }
+
     /// Remove a network adjustment by index. Returns true if removed.
     pub fn remove_network_adjustment_by_index(&mut self, index: usize) -> bool {
         if index < self.network_adjustments.len() {
@@ -829,13 +1036,17 @@ impl OverrideFile {
         self.uisp.as_mut().unwrap()
     }
 
-    /// Adds or replaces the UISP bandwidth override for `site_name`.
+    /// Adds or replaces a deprecated legacy UISP bandwidth override for `site_name`.
+    ///
+    /// Current UISP builds ignore these entries. Use `set_site_bandwidth_override`
+    /// to create authoritative operator `AdjustSiteSpeed` overrides instead.
     pub fn set_uisp_bandwidth_override(&mut self, site_name: String, down: f32, up: f32) {
         let uisp = self.ensure_uisp_mut();
         uisp.bandwidth_overrides.insert(site_name, (down, up));
     }
 
-    /// Removes the UISP bandwidth override for `site_name`. Returns `true` when one existed.
+    /// Removes a deprecated legacy UISP bandwidth override for `site_name`.
+    /// Returns `true` when one existed.
     pub fn remove_uisp_bandwidth_override(&mut self, site_name: &str) -> bool {
         let uisp = self.ensure_uisp_mut();
         uisp.bandwidth_overrides.remove(site_name).is_some()
@@ -886,17 +1097,23 @@ fn site_speed_override_matches(
 }
 
 impl OverrideStore {
+    /// Returns the filesystem path for one overrides layer using a caller-supplied config snapshot.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn path_for_layer_config(config: &lqos_config::Config, layer: OverrideLayer) -> PathBuf {
+        match layer {
+            OverrideLayer::Operator | OverrideLayer::Stormguard => overrides_path(config, layer),
+            OverrideLayer::Treeguard => treeguard_read_path(config),
+        }
+    }
+
     /// Loads a single overrides layer.
     ///
     /// Side effects: acquires the global overrides lock and may create the operator overrides file.
     pub fn load_layer(layer: OverrideLayer) -> Result<OverrideFile> {
-        let lock = FileLock::new()?;
+        let lock = FileLock::new_for_operation(&format!("load {layer:?} overrides"))?;
         let config = lqos_config::load_config()?;
-        let path = match layer {
-            OverrideLayer::Operator => overrides_path(&config, layer),
-            OverrideLayer::Stormguard => overrides_path(&config, layer),
-            OverrideLayer::Treeguard => treeguard_read_path(&config),
-        };
+        let path = Self::path_for_layer_config(&config, layer);
         let overrides = match layer {
             OverrideLayer::Operator => {
                 ensure_exists_default(&path)?;
@@ -918,7 +1135,7 @@ impl OverrideStore {
     ///
     /// Side effects: acquires the global overrides lock and writes the selected overrides file.
     pub fn save_layer(layer: OverrideLayer, overrides: &OverrideFile) -> Result<()> {
-        let lock = FileLock::new()?;
+        let lock = FileLock::new_for_operation(&format!("save {layer:?} overrides"))?;
         let config = lqos_config::load_config()?;
         let path = overrides_path(&config, layer);
         save_to_path(&path, overrides)?;
@@ -932,35 +1149,57 @@ impl OverrideStore {
     ///
     /// Side effects: acquires the global overrides lock and may create the operator overrides file.
     pub fn load_effective(apply_stormguard: bool, apply_treeguard: bool) -> Result<OverrideFile> {
-        let lock = FileLock::new()?;
+        let lock = FileLock::new_for_operation("load effective overrides")?;
         let config = lqos_config::load_config()?;
+        let merged =
+            Self::load_effective_for_config_inner(&config, apply_stormguard, apply_treeguard)?;
+        drop(lock);
+        Ok(merged)
+    }
 
-        let operator_path = overrides_path(&config, OverrideLayer::Operator);
+    /// Loads the effective overrides view using a caller-supplied config snapshot.
+    ///
+    /// This function reads override files from the config's LibreQoS directory without
+    /// reloading `/etc/lqos.conf`.
+    ///
+    /// Side effects: reads override files from disk and may create the operator
+    /// overrides file if it does not exist.
+    pub fn load_effective_for_config(
+        config: &lqos_config::Config,
+        apply_stormguard: bool,
+        apply_treeguard: bool,
+    ) -> Result<OverrideFile> {
+        Self::load_effective_for_config_inner(config, apply_stormguard, apply_treeguard)
+    }
+
+    fn load_effective_for_config_inner(
+        config: &lqos_config::Config,
+        apply_stormguard: bool,
+        apply_treeguard: bool,
+    ) -> Result<OverrideFile> {
+        let operator_path = overrides_path(config, OverrideLayer::Operator);
         ensure_exists_default(&operator_path)?;
         let operator = load_from_path(&operator_path)?;
 
         if !apply_stormguard && !apply_treeguard {
-            drop(lock);
             return Ok(operator);
         }
 
-        let stormguard_path = overrides_path(&config, OverrideLayer::Stormguard);
+        let stormguard_path = overrides_path(config, OverrideLayer::Stormguard);
         let stormguard = if !apply_stormguard || !stormguard_path.exists() {
             OverrideFile::default()
         } else {
             load_from_path(&stormguard_path)?
         };
 
-        let treeguard_path = treeguard_read_path(&config);
+        let treeguard_path = treeguard_read_path(config);
         let treeguard = if !apply_treeguard || !treeguard_path.exists() {
             OverrideFile::default()
         } else {
             load_from_path(&treeguard_path)?
         };
 
-        let merged = merge_owned_sections(operator, stormguard, treeguard);
-        drop(lock);
-        Ok(merged)
+        Ok(merge_owned_sections(operator, stormguard, treeguard))
     }
 }
 
@@ -1168,6 +1407,95 @@ mod tests {
                 upload_bandwidth_mbps: Some(upload),
                 ..
             }) if node_id == "node-ap27" && *download == 120.5 && *upload == 60.25
+        ));
+    }
+
+    #[test]
+    fn topology_parent_override_set_replace_and_remove_are_idempotent() {
+        let mut of = OverrideFile::default();
+        assert!(of.set_topology_parent_override_return_changed(
+            "uisp:site:site-t2".to_string(),
+            "T2".to_string(),
+            TopologyParentOverrideMode::PreferredOrder,
+            vec![
+                ("uisp:site:site-t1".to_string(), "T1".to_string()),
+                ("uisp:site:site-t3".to_string(), "T3".to_string()),
+            ],
+        ));
+        assert!(!of.set_topology_parent_override_return_changed(
+            "uisp:site:site-t2".to_string(),
+            "T2".to_string(),
+            TopologyParentOverrideMode::PreferredOrder,
+            vec![
+                ("uisp:site:site-t1".to_string(), "T1".to_string()),
+                ("uisp:site:site-t3".to_string(), "T3".to_string()),
+            ],
+        ));
+
+        let found = of.find_topology_parent_override("uisp:site:site-t2");
+        assert!(matches!(
+            found,
+            Some(NetworkAdjustment::TopologyParentOverride {
+                mode: TopologyParentOverrideMode::PreferredOrder,
+                parent_node_ids,
+                ..
+            }) if parent_node_ids == &vec![
+                "uisp:site:site-t1".to_string(),
+                "uisp:site:site-t3".to_string(),
+            ]
+        ));
+
+        assert!(of.set_topology_parent_override_return_changed(
+            "uisp:site:site-t2".to_string(),
+            "T2".to_string(),
+            TopologyParentOverrideMode::Pinned,
+            vec![("uisp:site:site-t1".to_string(), "T1".to_string())],
+        ));
+        let found = of.find_topology_parent_override("uisp:site:site-t2");
+        assert!(matches!(
+            found,
+            Some(NetworkAdjustment::TopologyParentOverride {
+                mode: TopologyParentOverrideMode::Pinned,
+                parent_node_ids,
+                ..
+            }) if parent_node_ids == &vec!["uisp:site:site-t1".to_string()]
+        ));
+
+        assert_eq!(
+            of.remove_topology_parent_override_by_node_id_count("uisp:site:site-t2"),
+            1
+        );
+        assert_eq!(
+            of.remove_topology_parent_override_by_node_id_count("uisp:site:site-t2"),
+            0
+        );
+    }
+
+    #[test]
+    fn effective_merge_keeps_operator_topology_parent_override() {
+        let mut operator = OverrideFile::default();
+        operator.set_topology_parent_override_return_changed(
+            "uisp:site:site-t2".to_string(),
+            "T2".to_string(),
+            TopologyParentOverrideMode::Pinned,
+            vec![("uisp:site:site-t1".to_string(), "T1".to_string())],
+        );
+
+        let stormguard = OverrideFile::default();
+        let mut treeguard = OverrideFile::default();
+        treeguard.add_network_adjustment(NetworkAdjustment::SetNodeVirtual {
+            node_name: "NodeA".to_string(),
+            virtual_node: true,
+        });
+
+        let merged = merge_owned_sections(operator, stormguard, treeguard);
+        assert!(matches!(
+            merged.find_topology_parent_override("uisp:site:site-t2"),
+            Some(NetworkAdjustment::TopologyParentOverride {
+                mode: TopologyParentOverrideMode::Pinned,
+                parent_node_ids,
+                ..
+            }) if parent_node_ids == &vec!["uisp:site:site-t1".to_string()]
         ));
     }
 

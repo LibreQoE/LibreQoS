@@ -1,11 +1,11 @@
 import {
     loadConfig,
-    loadNetworkJson,
+    loadNodeDirectory,
     renderConfigMenu,
     saveConfig,
 } from "./config/config_helper";
 
-let networkData = null;
+let siteRows = [];
 let selectedTargets = [];
 let excludedSites = [];
 
@@ -75,26 +75,31 @@ function updateStrategyUi() {
     }
 }
 
-// Load network.json for site dropdown
+function nodeType(entry) {
+    return (entry?.node_type || "").toString().trim().toLowerCase();
+}
+
+function displayName(entry) {
+    return (entry?.node_name || "").toString().trim();
+}
+
+// Load the active runtime node directory for site dropdowns.
 function loadNetworkData() {
     return new Promise((resolve, reject) => {
-        loadNetworkJson(
+        loadNodeDirectory(
             (data) => {
-                // Check if we got the "Not done yet" response
-                if (typeof data === 'string' && data === 'Not done yet') {
-                    console.error('Network.json file not found on server');
-                    alert('Network configuration not found. Please ensure network.json exists.');
-                    resolve();
-                    return;
-                }
-                networkData = data;
-                console.log('Network data loaded:', networkData);
+                const rows = Array.isArray(data) ? data : [];
+                const siteCandidates = rows.filter((entry) => nodeType(entry) === "site");
+                const sourceRows = siteCandidates.length > 0 ? siteCandidates : rows;
+                siteRows = sourceRows
+                    .filter((entry) => displayName(entry).length > 0);
+                siteRows.sort((a, b) => displayName(a).localeCompare(displayName(b)));
                 populateSiteSelectors();
                 resolve();
             },
             (err) => {
-                console.error('Error loading network data:', err);
-                alert('Failed to load network sites. Please refresh the page.');
+                console.error('Error loading node directory:', err);
+                alert('Topology data is not ready yet. Run the integration or scheduler refresh and try again.');
                 reject(err);
             },
         );
@@ -105,32 +110,13 @@ function setSelectorOptions(selectorId) {
     const selector = document.getElementById(selectorId);
     selector.innerHTML = '<option value="">Select a site...</option>';
 
-    function iterate(data, level = 0) {
-        if (typeof data !== 'object' || data === null) {
-            return;
-        }
-
-        for (const [key, value] of Object.entries(data)) {
-            const option = document.createElement('option');
-            option.value = key;
-
-            let prefix = '';
-            for (let i = 0; i < level; i++) {
-                prefix += '- ';
-            }
-            option.textContent = prefix + key;
-
-            selector.appendChild(option);
-
-            if (value && typeof value === 'object' && value.children != null) {
-                iterate(value.children, level + 1);
-            }
-        }
-    }
-
-    if (networkData) {
-        iterate(networkData);
-    }
+    siteRows.forEach((entry) => {
+        const name = displayName(entry);
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        selector.appendChild(option);
+    });
 }
 
 function populateSiteSelectors() {

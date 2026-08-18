@@ -25,7 +25,11 @@
 
             <div class="mb-3">
                 <label for="sonarApiKey" class="form-label">API Key</label>
-                <input type="text" class="form-control" id="sonarApiKey">
+                <div class="input-group">
+                    <input type="password" class="form-control" id="sonarApiKey" autocomplete="new-password">
+                    <button type="button" class="btn btn-outline-secondary" id="clearSonarApiKey">Clear</button>
+                </div>
+                <div class="form-text" id="sonarApiKeyStatus"></div>
                 <div class="form-text">Sonar API key for authentication</div>
             </div>
 

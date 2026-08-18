@@ -6,12 +6,19 @@ use thiserror::Error;
 use toml_edit::{DocumentMut, value};
 use tracing::{error, info};
 
+fn default_true() -> bool {
+    true
+}
+
 /// Represents the top-level of the `/etc/lqos.conf` file. Serialization
 /// structure.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EtcLqos {
     /// The directory in which LibreQoS is installed.
     pub lqos_directory: String,
+
+    /// Optional directory in which LibreQoS stores machine-managed runtime state.
+    pub state_directory: Option<String>,
 
     /// How frequently should `lqosd` read the `tc show qdisc` data?
     /// In ms.
@@ -52,6 +59,10 @@ pub struct EtcLqos {
 /// applied (in place of the previous version's offload service)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Tunables {
+    /// Should LibreQoS set the CPU governor to `performance` during tuning?
+    #[serde(default = "default_true")]
+    pub set_cpu_governor_performance: bool,
+
     /// Should the `irq_balance` system service be stopped?
     pub stop_irq_balance: bool,
 
@@ -240,8 +251,9 @@ fn check_config(cfg_doc: &mut DocumentMut, cfg: &mut EtcLqos) {
         && let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id")
     {
         let hash = sha2::Sha256::new().chain(machine_id).finalize();
-        cfg.node_id = Some(format!("{:x}", hash));
-        cfg_doc["node_id"] = value(format!("{:x}", hash));
+        let node_id = crate::hex_encoding::encode_hex_lower(hash);
+        cfg.node_id = Some(node_id.clone());
+        cfg_doc["node_id"] = value(node_id);
         println!("Updating");
         if let Err(e) = cfg.save(cfg_doc) {
             error!("Unable to save /etc/lqos.conf");
@@ -266,6 +278,8 @@ pub enum EtcLqosError {
 
 #[cfg(test)]
 mod test {
+    use crate::etc::test_data::OLD_CONFIG;
+
     const EXAMPLE_LQOS_CONF: &str = include_str!("../../../../lqos.example");
 
     #[test]
@@ -285,5 +299,22 @@ mod test {
         doc["node_id"] = toml_edit::value("test");
         let reserialized = doc.to_string();
         assert!(reserialized.contains("node_id = \"test\""));
+    }
+
+    #[test]
+    fn legacy_tuning_defaults_cpu_governor_to_true_when_missing() {
+        let raw = OLD_CONFIG
+            .lines()
+            .filter(|line| !line.trim().starts_with("set_cpu_governor_performance"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config =
+            super::EtcLqos::load_from_string(&raw).expect("Unable to read legacy config fixture");
+        assert!(
+            config
+                .tuning
+                .expect("Legacy config fixture should contain tuning")
+                .set_cpu_governor_performance
+        );
     }
 }

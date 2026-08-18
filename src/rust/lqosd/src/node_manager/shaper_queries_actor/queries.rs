@@ -9,7 +9,10 @@ use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::shaper_queries_actor::caches::Caches;
 use std::time::Duration;
 use tokio::sync::oneshot;
+use tokio::time::timeout;
 use tracing::{info, warn};
+
+const HISTORY_QUERY_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone)]
 struct HistoryClient {
@@ -26,21 +29,30 @@ impl HistoryClient {
         request: RemoteInsightRequest,
     ) -> Result<HistoryQueryResultPayload, ()> {
         let (tx, rx) = oneshot::channel();
-        if self
-            .control_tx
-            .send(ControlChannelCommand::FetchHistory {
+        let send_result = timeout(
+            HISTORY_QUERY_ATTEMPT_TIMEOUT,
+            self.control_tx.send(ControlChannelCommand::FetchHistory {
                 request,
                 responder: tx,
-            })
-            .await
-            .is_err()
-        {
-            return Err(());
+            }),
+        )
+        .await;
+        match send_result {
+            Ok(Ok(())) => {}
+            Ok(Err(_)) => return Err(()),
+            Err(_) => {
+                warn!("Timed out queueing Insight history request");
+                return Err(());
+            }
         }
 
-        match rx.await {
-            Ok(result) => result,
-            Err(_) => Err(()),
+        match timeout(HISTORY_QUERY_ATTEMPT_TIMEOUT, rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(()),
+            Err(_) => {
+                warn!("Timed out waiting for Insight history response");
+                Err(())
+            }
         }
     }
 }
@@ -89,6 +101,9 @@ macro_rules! shaper_query {
                         break;
                     }
                     Err(()) => {
+                        if my_reply.is_closed() {
+                            break;
+                        }
                         attempts += 1;
                         if attempts >= 3 {
                             warn!("History request exhausted retries");

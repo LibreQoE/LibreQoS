@@ -10,6 +10,11 @@ import {
     updateShapedDevice,
     validNodeList,
 } from "./config/config_helper";
+import {
+    handleShapedDeviceActionClick,
+    shapedDeviceRowForId,
+} from "./config/shaped_device_identity.mjs";
+import { parseIpInput } from "./config/shaped_device_wire.mjs";
 
 let current_rows = [];
 let network_json = null;
@@ -187,27 +192,6 @@ function ipListToText(list, defaultPrefix) {
         .join("\n");
 }
 
-function parseIpInput(text, family) {
-    if (!text) return [];
-    const defaultPrefix = family === 6 ? 128 : 32;
-    const tokens = text.split(/[\n,]+/);
-    const result = [];
-    tokens.forEach((token) => {
-        const trimmed = token.trim();
-        if (!trimmed) return;
-        const parts = trimmed.split("/");
-        const addr = parts[0].trim();
-        if (!addr) return;
-        let prefix = defaultPrefix;
-        if (parts.length > 1 && parts[1].trim().length > 0) {
-            const parsed = parseInt(parts[1].trim(), 10);
-            if (!Number.isNaN(parsed)) prefix = parsed;
-        }
-        result.push([addr, prefix]);
-    });
-    return result;
-}
-
 function parseSqmOverride(raw) {
     const normalized = (raw || "").toLowerCase();
     let down = "";
@@ -359,7 +343,7 @@ function renderTable() {
     html += "<th class='text-nowrap'>Device ID</th>";
     html += "<th>Device Name</th>";
     html += "<th>Parent Node</th>";
-    html += "<th class='text-nowrap'>MAC</th>";
+    html += "<th class='text-nowrap'>MAC or RADIUS Username</th>";
     html += "<th>IP Addresses</th>";
     html += "<th class='text-nowrap'>Min Mbps</th>";
     html += "<th class='text-nowrap'>Max Mbps</th>";
@@ -568,7 +552,7 @@ function collectModalDevice() {
 }
 
 function findCurrentRow(deviceId) {
-    return current_rows.find((row) => row.device_id === deviceId);
+    return shapedDeviceRowForId(current_rows, deviceId);
 }
 
 function openEditModal(deviceId) {
@@ -763,19 +747,11 @@ function start() {
     });
 
     $("#sdTableContainer").on("click", ".sd-edit", (event) => {
-        event.preventDefault();
-        const deviceId = $(event.currentTarget).data("device-id");
-        if (typeof deviceId === "string" && deviceId.length > 0) {
-            openEditModal(deviceId);
-        }
+        handleShapedDeviceActionClick(event, openEditModal);
     });
 
     $("#sdTableContainer").on("click", ".sd-delete", (event) => {
-        event.preventDefault();
-        const deviceId = $(event.currentTarget).data("device-id");
-        if (typeof deviceId === "string" && deviceId.length > 0) {
-            deleteDevice(deviceId);
-        }
+        handleShapedDeviceActionClick(event, deleteDevice);
     });
 
     $("#btnAddDevice").on("click", (event) => {
@@ -795,7 +771,7 @@ function start() {
 
     loadConfig(
         (msg) => {
-            const config = msg?.data || window.config || {};
+            const config = window.config || msg?.data?.config || {};
             topology_editor_locked = topologyEditorsLocked(config);
             topology_editor_lock_message = topologyEditorsLockMessage(config);
             applyEditorLockState();

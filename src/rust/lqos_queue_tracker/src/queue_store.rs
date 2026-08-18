@@ -106,8 +106,7 @@ impl Into<CakeDiffTransit> for QueueDiff {
                     sent_bytes: c.bytes,
                     backlog_bytes: c.backlog,
                     drops: c.ddrops,
-                    marks: 0,
-                    base_delay_us: 0,
+                    ..CakeDiffTinTransit::default()
                 });
                 // Add three zeroed tins for UI expectations
                 for _ in 0..3 {
@@ -134,6 +133,15 @@ impl Into<CakeDiffTinTransit> for CakeDiffTin {
             drops: self.drops,
             marks: self.marks,
             base_delay_us: self.base_delay_us,
+            sent_packets: Some(self.sent_packets),
+            peak_delay_us: Some(self.peak_delay_us),
+            avg_delay_us: Some(self.avg_delay_us),
+            way_indirect_hits: Some(self.way_indirect_hits),
+            way_misses: Some(self.way_misses),
+            way_collisions: Some(self.way_collisions),
+            sparse_flows: Some(self.sparse_flows),
+            bulk_flows: Some(self.bulk_flows),
+            unresponsive_flows: Some(self.unresponsive_flows),
         }
     }
 }
@@ -165,6 +173,76 @@ impl Into<CakeTransit> for QueueType {
             }
         } else {
             CakeTransit::default()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::queue_diff::{CakeDiff, FqCodelDiff};
+
+    #[test]
+    fn cake_diff_conversion_populates_extended_tin_fields() {
+        let diff = QueueDiff::Cake(CakeDiff {
+            bytes: 1000,
+            packets: 20,
+            qlen: 3,
+            tins: vec![CakeDiffTin {
+                sent_bytes: 500,
+                backlog_bytes: 30,
+                drops: 2,
+                marks: 1,
+                base_delay_us: 10,
+                sent_packets: 5_000_000_000,
+                peak_delay_us: 50,
+                avg_delay_us: 25,
+                way_indirect_hits: 70_000,
+                way_misses: 80_000,
+                way_collisions: 90_000,
+                sparse_flows: 4,
+                bulk_flows: 5,
+                unresponsive_flows: 6,
+            }],
+        });
+
+        let transit: CakeDiffTransit = diff.into();
+        let tin = transit.tins.first().expect("tin should convert");
+
+        assert_eq!(tin.sent_packets, Some(5_000_000_000));
+        assert_eq!(tin.peak_delay_us, Some(50));
+        assert_eq!(tin.avg_delay_us, Some(25));
+        assert_eq!(tin.way_indirect_hits, Some(70_000));
+        assert_eq!(tin.way_misses, Some(80_000));
+        assert_eq!(tin.way_collisions, Some(90_000));
+        assert_eq!(tin.sparse_flows, Some(4));
+        assert_eq!(tin.bulk_flows, Some(5));
+        assert_eq!(tin.unresponsive_flows, Some(6));
+    }
+
+    #[test]
+    fn fq_codel_conversion_leaves_cake_only_fields_empty() {
+        let diff = QueueDiff::FqCodel(FqCodelDiff {
+            bytes: 1000,
+            packets: 20,
+            backlog: 3,
+            flows: 4,
+            ddrops: 2,
+        });
+
+        let transit: CakeDiffTransit = diff.into();
+
+        assert_eq!(transit.tins.len(), 4);
+        for tin in transit.tins {
+            assert_eq!(tin.sent_packets, None);
+            assert_eq!(tin.peak_delay_us, None);
+            assert_eq!(tin.avg_delay_us, None);
+            assert_eq!(tin.way_indirect_hits, None);
+            assert_eq!(tin.way_misses, None);
+            assert_eq!(tin.way_collisions, None);
+            assert_eq!(tin.sparse_flows, None);
+            assert_eq!(tin.bulk_flows, None);
+            assert_eq!(tin.unresponsive_flows, None);
         }
     }
 }

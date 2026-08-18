@@ -1,27 +1,40 @@
 import { get_ws_client } from "../pubsub/ws";
 
 const wsClient = get_ws_client();
+const secretBindings = [];
+const CONFIG_SAVE_TIMEOUT_MS = 10000;
 
-function sendWsRequest(responseEvent, request, onComplete, onError) {
+export function sendWsRequest(responseEvent, request, onComplete, onError, options = {}) {
     let done = false;
-    const responseHandler = (msg) => {
+    let timeoutId = null;
+    const finish = (callback, msg) => {
         if (done) return;
         done = true;
+        if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+        }
         wsClient.off(responseEvent, responseHandler);
         wsClient.off("Error", errorHandler);
-        onComplete(msg);
+        if (callback) {
+            callback(msg);
+        }
+    };
+    const responseHandler = (msg) => {
+        finish(onComplete, msg);
     };
     const errorHandler = (msg) => {
-        if (done) return;
-        done = true;
-        wsClient.off(responseEvent, responseHandler);
-        wsClient.off("Error", errorHandler);
-        if (onError) {
-            onError(msg);
-        }
+        finish(onError, msg);
     };
     wsClient.on(responseEvent, responseHandler);
     wsClient.on("Error", errorHandler);
+    if (Number.isFinite(options.timeoutMs) && options.timeoutMs > 0) {
+        timeoutId = setTimeout(() => {
+            finish(onError, {
+                message: options.timeoutMessage || `Timed out waiting for ${responseEvent}`,
+            });
+        }, options.timeoutMs);
+    }
     wsClient.send(request);
 }
 
@@ -32,6 +45,21 @@ function ensureOptionalConfigSections(config) {
 
     if (!config.splynx_integration || typeof config.splynx_integration !== "object") {
         config.splynx_integration = {};
+    }
+    if (!config.integration_common || typeof config.integration_common !== "object") {
+        config.integration_common = {};
+    }
+    if (!config.topology || typeof config.topology !== "object") {
+        config.topology = {};
+    }
+    if (!config.ssl || typeof config.ssl !== "object") {
+        config.ssl = {};
+    }
+    if (!config.local_api || typeof config.local_api !== "object") {
+        config.local_api = {};
+    }
+    if (!config.uisp_integration || typeof config.uisp_integration !== "object") {
+        config.uisp_integration = {};
     }
 
     if (!config.sonar_integration || typeof config.sonar_integration !== "object") {
@@ -59,7 +87,44 @@ function ensureOptionalConfigSections(config) {
     if (typeof splynx.api_secret !== "string") splynx.api_secret = "";
     if (typeof splynx.url !== "string") splynx.url = "";
     if (typeof splynx.strategy !== "string" || splynx.strategy.length === 0) {
-        splynx.strategy = "ap_only";
+        splynx.strategy = "ap_site";
+    }
+
+    const topology = config.topology;
+    const ssl = config.ssl;
+    if (typeof ssl.enabled !== "boolean") ssl.enabled = false;
+    if (typeof ssl.managed_by_libreqos !== "boolean") ssl.managed_by_libreqos = false;
+    if (typeof ssl.external_hostname !== "string" && ssl.external_hostname !== null) {
+        ssl.external_hostname = null;
+    }
+
+    const normalizeMode = (mode) => {
+        if (typeof mode !== "string") {
+            return "";
+        }
+        const lowered = mode.trim().toLowerCase();
+        if (lowered === "full2") {
+            return "full";
+        }
+        return ["flat", "ap_only", "ap_site", "full"].includes(lowered) ? lowered : "";
+    };
+    if (typeof topology.compile_mode !== "string" || topology.compile_mode.length === 0) {
+        topology.compile_mode = normalizeMode(topology.compile_mode)
+            || normalizeMode(config.uisp_integration?.strategy)
+            || normalizeMode(splynx.strategy)
+            || (config.uisp_integration?.enable_uisp ? "full" : "")
+            || (splynx.enable_splynx ? "ap_site" : "")
+            || "ap_site";
+    } else {
+        topology.compile_mode = normalizeMode(topology.compile_mode) || "ap_site";
+    }
+    if (!Number.isFinite(Number(topology.queue_auto_virtualize_threshold_mbps))
+        || Number(topology.queue_auto_virtualize_threshold_mbps) < 5001) {
+        topology.queue_auto_virtualize_threshold_mbps = 5001;
+    } else {
+        topology.queue_auto_virtualize_threshold_mbps = Math.trunc(
+            Number(topology.queue_auto_virtualize_threshold_mbps),
+        );
     }
 
     return config;
@@ -98,7 +163,10 @@ export function loadConfig(onComplete, onError) {
         "GetConfig",
         { GetConfig: {} },
         (msg) => {
-            window.config = ensureOptionalConfigSections(msg.data);
+            const payload = msg && msg.data ? msg.data : {};
+            window.config = ensureOptionalConfigSections(payload.config || {});
+            window.configSecretState = payload.secret_state || {};
+            window.configSecretClears = {};
             if (onComplete) onComplete(msg);
         },
         onError,
@@ -106,63 +174,198 @@ export function loadConfig(onComplete, onError) {
 }
 
 export function saveConfig(onComplete, onError) {
+    const clearSecrets = window.configSecretClears || {};
+    const reportError = (msg) => {
+        const errorMsg = (msg && msg.message) ? msg.message : "Request failed";
+        const detail = (msg && typeof msg === "object")
+            ? { ...msg, message: errorMsg }
+            : { message: errorMsg };
+        if (onError) {
+            onError(detail);
+        } else {
+            alert("Error saving configuration: " + errorMsg);
+        }
+    };
     sendWsRequest(
         "UpdateConfigResult",
-        { UpdateConfig: { config: window.config } },
-        (msg) => {
-            if (onComplete) onComplete(msg);
+        {
+            UpdateConfig: {
+                config: window.config,
+                clear_secrets: clearSecrets,
+            },
         },
         (msg) => {
-            if (onError) {
-                onError(msg);
-            } else {
-                alert("That didn't work");
+            if (!msg || !msg.ok) {
+                reportError(msg);
+                return;
             }
+            secretBindings.forEach((binding) => {
+                const sectionState = secretFieldMap(window.configSecretState || {}, binding.section);
+                const inputValue = binding.input.value.trim();
+                sectionState[binding.field] = clearSecrets?.[binding.section]?.[binding.field]
+                    ? false
+                    : (inputValue.length > 0 || sectionState[binding.field]);
+                if (window.config?.[binding.section] && typeof window.config[binding.section] === "object") {
+                    window.config[binding.section][binding.field] = "";
+                }
+                binding.input.value = "";
+                setSecretClear(binding.section, binding.field, false);
+                binding.updateStatus();
+            });
+            if (onComplete) onComplete(msg);
+        },
+        reportError,
+        {
+            timeoutMs: CONFIG_SAVE_TIMEOUT_MS,
+            timeoutMessage: "Timed out waiting for the config save result. The websocket may have disconnected.",
         },
     );
 }
 
-export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, onError) {
-    // Validate network_json structure
-    if (!network_json || typeof network_json !== 'object') {
-        alert("Invalid network configuration");
+function secretFieldMap(container, section) {
+    if (!container[section] || typeof container[section] !== "object") {
+        container[section] = {};
+    }
+    return container[section];
+}
+
+export function secretConfigured(section, field) {
+    return !!window.configSecretState?.[section]?.[field];
+}
+
+export function secretClearMarked(section, field) {
+    return !!window.configSecretClears?.[section]?.[field];
+}
+
+export function setSecretClear(section, field, clear) {
+    if (!window.configSecretClears || typeof window.configSecretClears !== "object") {
+        window.configSecretClears = {};
+    }
+    const sectionMap = secretFieldMap(window.configSecretClears, section);
+    if (clear) {
+        sectionMap[field] = true;
+    } else {
+        delete sectionMap[field];
+        if (Object.keys(sectionMap).length === 0) {
+            delete window.configSecretClears[section];
+        }
+    }
+}
+
+export function secretWillExistAfterSave(section, field, inputId) {
+    const input = document.getElementById(inputId);
+    const hasReplacement = !!(input && input.value.trim().length > 0);
+    if (hasReplacement) {
+        return true;
+    }
+    if (secretClearMarked(section, field)) {
+        return false;
+    }
+    return secretConfigured(section, field);
+}
+
+export function bindSecretField({
+    section,
+    field,
+    inputId,
+    statusId,
+    clearButtonId,
+    configuredMessage = "Stored on server. Leave blank to keep the current value.",
+    emptyMessage = "No value stored.",
+}) {
+    const input = document.getElementById(inputId);
+    const status = document.getElementById(statusId);
+    const clearButton = clearButtonId ? document.getElementById(clearButtonId) : null;
+    if (!input || !status) {
         return;
     }
 
-    // Validate shaped_devices structure
+    const updateStatus = () => {
+        const hasReplacement = input.value.trim().length > 0;
+        const configured = secretConfigured(section, field);
+        const clearing = secretClearMarked(section, field);
+
+        if (hasReplacement) {
+            status.textContent = "A new value will replace the stored secret when you save.";
+        } else if (clearing) {
+            status.textContent = "The stored secret will be cleared when you save.";
+        } else if (configured) {
+            status.textContent = configuredMessage;
+        } else {
+            status.textContent = emptyMessage;
+        }
+
+        if (clearButton) {
+            clearButton.disabled = !configured && !hasReplacement && !clearing;
+        }
+    };
+
+    input.addEventListener("input", () => {
+        if (input.value.trim().length > 0) {
+            setSecretClear(section, field, false);
+        }
+        updateStatus();
+    });
+
+    if (clearButton) {
+        clearButton.addEventListener("click", () => {
+            input.value = "";
+            setSecretClear(section, field, secretConfigured(section, field));
+            updateStatus();
+        });
+    }
+
+    secretBindings.push({
+        section,
+        field,
+        input,
+        updateStatus,
+    });
+    updateStatus();
+}
+
+export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, onError) {
+    if (!network_json || typeof network_json !== "object") {
+        alert("Invalid network configuration");
+        return;
+    }
     if (!Array.isArray(shaped_devices)) {
         alert("Invalid shaped devices configuration");
         return;
     }
 
-    // Validate individual shaped devices
     const validationErrors = [];
     const validNodes = validNodeList(network_json);
-    console.log(validNodes);
-    
     shaped_devices.forEach((device, index) => {
-        // Required fields
         if (!device.circuit_id || device.circuit_id.trim() === "") {
             validationErrors.push(`Device ${index + 1}: Circuit ID is required`);
         }
         if (!device.device_id || device.device_id.trim() === "") {
             validationErrors.push(`Device ${index + 1}: Device ID is required`);
         }
-
-        // Parent node validation
-        if (device.parent_node && validNodes.length > 0 && !validNodes.includes(device.parent_node)) {
-            validationErrors.push(`Device ${index + 1}: Parent node '${device.parent_node}' does not exist`);
+        if (
+            device.parent_node &&
+            validNodes.length > 0 &&
+            !validNodes.includes(device.parent_node)
+        ) {
+            validationErrors.push(
+                `Device ${index + 1}: Parent node '${device.parent_node}' does not exist`,
+            );
         }
 
-        // Bandwidth validation (supports fractional Mbps)
-        // Minimums must be >= 0.1 Mbps, maximums must be >= 0.2 Mbps
         const dmin = parseFloat(device.download_min_mbps);
         const umin = parseFloat(device.upload_min_mbps);
         const dmax = parseFloat(device.download_max_mbps);
         const umax = parseFloat(device.upload_max_mbps);
-
-        if (Number.isNaN(dmin) || Number.isNaN(umin) || Number.isNaN(dmax) || Number.isNaN(umax)) {
-            validationErrors.push(`Device ${index + 1}: One or more bandwidth fields are not valid numbers`);
+        if (
+            Number.isNaN(dmin) ||
+            Number.isNaN(umin) ||
+            Number.isNaN(dmax) ||
+            Number.isNaN(umax)
+        ) {
+            validationErrors.push(
+                `Device ${index + 1}: One or more bandwidth fields are not valid numbers`,
+            );
         } else {
             if (dmin < 0.1 || umin < 0.1) {
                 validationErrors.push(`Device ${index + 1}: Min rates must be >= 0.1 Mbps`);
@@ -178,21 +381,14 @@ export function saveNetworkAndDevices(network_json, shaped_devices, onComplete, 
         return;
     }
 
-    // Prepare data for submission
-    const submission = {
-        network_json,
-        shaped_devices
-    };
-    console.log(submission);
-
     sendWsRequest(
         "UpdateNetworkAndDevicesResult",
-        { UpdateNetworkAndDevices: submission },
+        { UpdateNetworkAndDevices: { network_json, shaped_devices } },
         (msg) => {
             if (onComplete) onComplete(!!msg.ok, msg.message);
         },
         (msg) => {
-            const errorMsg = (msg && msg.message) ? msg.message : "Request failed";
+            const errorMsg = msg && msg.message ? msg.message : "Request failed";
             if (onComplete) onComplete(false, errorMsg);
             if (onError) {
                 onError(msg);
@@ -476,15 +672,18 @@ export function validNodeList(network_json) {
 export function renderConfigMenu(currentPage) {
     const menuItems = [
         { href: "config_general.html", icon: "fa-server", text: "General", id: "general" },
+        { href: "config_ssl.html", icon: "fa-lock", text: "SSL Setup", id: "ssl" },
         { href: "config_rtt.html", icon: "fa-stopwatch", text: "RTT Thresholds", id: "rtt" },
         { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
-        { href: "config_interface.html", icon: "fa-chain", text: "Network Mode", id: "interface" },
+        { href: "config_interface.html", icon: "fa-chain", text: "Bridge & Interface Mode", id: "interface" },
         { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
         { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
         { href: "config_treeguard.html", icon: "fa-shield-halved", text: "TreeGuard", id: "treeguard" },
-        { href: "config_lts.html", icon: "fa-line-chart", text: "LibreQoS Insight", id: "lts" },
+        { href: "config_lts.html", icon: "fa-line-chart", text: "License & Services", id: "lts" },
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },
+        { href: "config_dynamic_circuits.html", icon: "fa-layer-group", text: "Dynamic Circuits", id: "dynamic_circuits" },
+        { href: "config_radius_accounting.html", icon: "fa-satellite-dish", text: "RADIUS Accounting", id: "radius_accounting" },
         { href: "config_integration.html", icon: "fa-link", text: "Integration - Common", id: "integration" },
         { href: "config_splynx.html", icon: "fa-link", text: "Splynx", id: "splynx" },
         { href: "config_netzur.html", icon: "fa-link", text: "Netzur", id: "netzur" },

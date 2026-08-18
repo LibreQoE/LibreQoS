@@ -96,7 +96,7 @@ export class QueueStatsTotalDash extends DashletBaseInsight {
         }
 
         if (!window.hasLts) {
-            historyGraph.innerHTML = "<p class='text-secondary small'>You need an active LibreQoS Insight account to view this data.</p>";
+            historyGraph.innerHTML = "<p class='text-secondary small'>You need an entitled license with history access to view this data.</p>";
             return;
         }
 

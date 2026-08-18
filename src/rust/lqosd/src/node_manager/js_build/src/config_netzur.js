@@ -1,4 +1,10 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {
+    bindSecretField,
+    loadConfig,
+    renderConfigMenu,
+    saveConfig,
+    secretWillExistAfterSave,
+} from "./config/config_helper";
 
 function validateConfig() {
     const enabled = document.getElementById("enableNetzur").checked;
@@ -6,8 +12,7 @@ function validateConfig() {
         return true;
     }
 
-    const apiKey = document.getElementById("netzurApiKey").value.trim();
-    if (!apiKey) {
+    if (!secretWillExistAfterSave("netzur_integration", "api_key", "netzurApiKey")) {
         alert("API Key is required when Netzur integration is enabled");
         return false;
     }
@@ -53,9 +58,15 @@ loadConfig(() => {
 
     const cfg = window.config.netzur_integration ?? {};
     document.getElementById("enableNetzur").checked = cfg.enable_netzur ?? false;
-    document.getElementById("netzurApiKey").value = cfg.api_key ?? "";
     document.getElementById("netzurApiUrl").value = cfg.api_url ?? "";
     document.getElementById("netzurTimeout").value = cfg.timeout_secs ?? 60;
+    bindSecretField({
+        section: "netzur_integration",
+        field: "api_key",
+        inputId: "netzurApiKey",
+        statusId: "netzurApiKeyStatus",
+        clearButtonId: "clearNetzurApiKey",
+    });
     document.getElementById("saveNetzur").addEventListener('click', () => {
         if (validateConfig()) {
             updateConfig();

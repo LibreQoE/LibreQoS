@@ -1,4 +1,5 @@
 import {mkBadge} from "./bakery_shared";
+import {redactCell} from "../helpers/redact";
 
 export function renderOperationCards(host, groups, options = {}) {
     const emptyText = options.emptyText || "No recent operations";
@@ -23,6 +24,7 @@ export function renderOperationCards(host, groups, options = {}) {
         const title = document.createElement("div");
         title.classList.add("fw-semibold");
         title.textContent = group.label || "Operation";
+        redactCell(title);
         titleWrap.appendChild(title);
 
         const right = document.createElement("div");
@@ -43,6 +45,7 @@ export function renderOperationCards(host, groups, options = {}) {
             const summary = document.createElement("div");
             summary.classList.add("small");
             summary.textContent = group.summary;
+            redactCell(summary);
             if (group.summaryTitle) {
                 summary.title = group.summaryTitle;
             }
@@ -54,6 +57,9 @@ export function renderOperationCards(host, groups, options = {}) {
 
         const footerLeft = document.createElement("div");
         footerLeft.textContent = group.footerLeft || "";
+        if ((group.footerLeft || "").toString().trim()) {
+            redactCell(footerLeft);
+        }
         footer.appendChild(footerLeft);
 
         const footerRight = document.createElement("div");
@@ -79,6 +85,7 @@ export function renderOperationCards(host, groups, options = {}) {
             const stages = document.createElement("div");
             stages.classList.add("small", "text-body-secondary");
             stages.textContent = group.stages.join(" -> ");
+            redactCell(stages);
             card.appendChild(stages);
         }
 

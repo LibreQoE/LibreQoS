@@ -6,6 +6,27 @@ use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
 
+/// Override layer selected for a bus-backed override mutation.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Allocative)]
+pub enum OverrideLayerSelection {
+    /// Operator-owned overrides (`lqos_overrides.json`).
+    Operator,
+    /// StormGuard-owned overrides (`lqos_overrides.stormguard.json`).
+    Stormguard,
+    /// TreeGuard-owned overrides (`lqos_overrides.treeguard.json`).
+    Treeguard,
+}
+
+/// A single override mutation that `lqosd` should apply through its override writer actor.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
+pub enum OverrideMutation {
+    /// Remove node-virtual state for multiple node names in one load/save cycle.
+    ClearNodeVirtualBatch {
+        /// Exact node names from `network.json`.
+        node_names: Vec<String>,
+    },
+}
+
 /// Per-interface Bakery qdisc-budget report entry.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
 pub struct BakeryCapacityReportInterface {
@@ -43,6 +64,25 @@ pub enum UrgentSeverity {
     Error,
     /// Warning is informative/high-visibility
     Warning,
+}
+
+/// Scheduler progress metadata for startup or long-running refresh phases.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
+pub struct SchedulerProgressReport {
+    /// Whether the scheduler is actively working through a known phase sequence.
+    pub active: bool,
+    /// Stable machine-readable phase key.
+    pub phase: String,
+    /// Human-readable phase label for UI display.
+    pub phase_label: String,
+    /// Current 1-based step index within the reported phase sequence.
+    pub step_index: u32,
+    /// Total number of steps in the reported phase sequence.
+    pub step_count: u32,
+    /// Coarse completion percentage in the range `0..=100`.
+    pub percent: u8,
+    /// Unix timestamp when the progress state was last updated, if known.
+    pub updated_unix: Option<u64>,
 }
 
 /// One or more `BusRequest` objects must be included in a `BusSession`
@@ -199,6 +239,23 @@ pub enum BusRequest {
     /// Requests that the configuration be updated
     UpdateLqosdConfig(Box<lqos_config::Config>),
 
+    /// Create or update a runtime-only dynamic circuit overlay entry.
+    ///
+    /// This does **not** mutate `ShapedDevices.csv`. The daemon may ignore this request when
+    /// dynamic circuits are disabled in the configuration.
+    CreateDynamicCircuit {
+        /// Shaped-device-like definition for the dynamic circuit/device.
+        shaped_device: Box<lqos_config::ShapedDevice>,
+    },
+
+    /// Remove a runtime-only dynamic circuit overlay entry.
+    ///
+    /// The daemon may ignore this request when dynamic circuits are disabled in the configuration.
+    RemoveDynamicCircuit {
+        /// Stable circuit identifier to remove.
+        circuit_id: String,
+    },
+
     /// Invalidate cached Node Manager authentication state.
     InvalidateAuthCache,
 
@@ -212,6 +269,15 @@ pub enum BusRequest {
     GetNetworkMap {
         /// The parent of the map to retrieve
         parent: usize,
+    },
+
+    /// Request a batch of active probe observations from the shared probe
+    /// provider owned by `lqosd`.
+    ProbeBatch {
+        /// Probe requests to execute or satisfy from cache.
+        requests: Vec<lqos_probe::ProbeRequest>,
+        /// Maximum acceptable observation age in milliseconds.
+        max_age_ms: u64,
     },
 
     /// Request the full network tree
@@ -230,6 +296,15 @@ pub enum BusRequest {
     /// Get circuit usage statistics for a single circuit ID
     GetCircuitById {
         /// Circuit ID to query
+        circuit_id: String,
+    },
+
+    /// Get live usage rollups aggregated by circuit ID.
+    GetAllCircuitRollups,
+
+    /// Get one live usage rollup aggregated by circuit ID.
+    GetCircuitRollupById {
+        /// Circuit ID to query.
         circuit_id: String,
     },
 
@@ -381,6 +456,9 @@ pub enum BusRequest {
     /// Get current Stormguard debug snapshot
     GetStormguardDebug,
 
+    /// Get current StormGuard lifecycle and dependency health.
+    GetStormguardRuntimeStatus,
+
     /// Get current Bakery statistics
     GetBakeryStats,
 
@@ -435,6 +513,14 @@ pub enum BusRequest {
         node_name: String,
     },
 
+    /// Apply a batch of override mutations through the `lqosd` override writer actor.
+    ApplyOverrideMutationBatch {
+        /// Override layer to mutate.
+        layer: OverrideLayerSelection,
+        /// Mutations to apply in one load/save cycle.
+        mutations: Vec<OverrideMutation>,
+    },
+
     /// Announce that the API is ready
     ApiReady,
 
@@ -449,6 +535,9 @@ pub enum BusRequest {
 
     /// Announce informational scheduler output
     SchedulerOutput(String),
+
+    /// Announce scheduler startup or refresh progress metadata.
+    SchedulerProgress(SchedulerProgressReport),
 
     /// Write an informational message to the lqosd logs
     LogInfo(String),
@@ -490,6 +579,14 @@ pub enum BusRequest {
 
     /// Clear a specific urgent issue by ID
     ClearUrgentIssue(u64),
+
+    /// Clear urgent issues matching a code and dedupe key
+    ClearUrgentIssueByIdentity {
+        /// Machine-readable issue code
+        code: String,
+        /// Dedupe key used when the issue was submitted
+        dedupe_key: String,
+    },
 
     /// Clear all urgent issues
     ClearAllUrgentIssues,
@@ -536,6 +633,21 @@ pub enum BusRequest {
     /// Retrieve queue marks/drops totals
     GetQueueStatsTotal,
 
+    /// Retrieve current top-level QoO history.
+    GetQoo,
+
+    /// Retrieve current QoO history for a site by site name.
+    GetSiteQoo {
+        /// Site name to query.
+        site_name: String,
+    },
+
+    /// Retrieve current QoO history for a circuit by circuit ID.
+    GetCircuitQoo {
+        /// Circuit ID to query.
+        circuit_id: String,
+    },
+
     /// Retrieve per-circuit capacity utilization
     GetCircuitCapacity,
 
@@ -557,11 +669,209 @@ pub enum BusRequest {
     /// Retrieve current global warning list
     GetGlobalWarnings,
 
-    /// Is Insight Enabled?
-    CheckInsight,
+    /// Retrieve the current local LTS/license capability summary.
+    GetLtsCapabilities,
 
     /// Retrieve current Insight license summary (licensed + optional max circuits).
     GetInsightLicenseSummary,
+
+    /// Update configuration while preserving authoritative API credentials.
+    ///
+    /// This variant is appended to preserve existing bincode discriminants.
+    UpdateLqosdConfigPreserveApiCredentials(Box<lqos_config::Config>),
+}
+
+impl BusRequest {
+    /// Returns the stable request-type label used in bus diagnostics.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Ping => "Ping",
+            Self::GetCurrentThroughput => "GetCurrentThroughput",
+            Self::GetTopNDownloaders { .. } => "GetTopNDownloaders",
+            Self::GetTopNUploaders { .. } => "GetTopNUploaders",
+            Self::GetCircuitHeatmaps => "GetCircuitHeatmaps",
+            Self::GetSiteHeatmaps => "GetSiteHeatmaps",
+            Self::GetAsnHeatmaps => "GetAsnHeatmaps",
+            Self::GetGlobalHeatmap => "GetGlobalHeatmap",
+            Self::GetExecutiveSummaryHeader => "GetExecutiveSummaryHeader",
+            Self::GetWorstRtt { .. } => "GetWorstRtt",
+            Self::GetWorstRetransmits { .. } => "GetWorstRetransmits",
+            Self::GetBestRtt { .. } => "GetBestRtt",
+            Self::GetHostCounter => "GetHostCounter",
+            Self::MapIpToFlow { .. } => "MapIpToFlow",
+            Self::ClearHotCache => "ClearHotCache",
+            Self::DelIpFlow { .. } => "DelIpFlow",
+            Self::ClearIpFlow => "ClearIpFlow",
+            Self::ListIpFlow => "ListIpFlow",
+            Self::XdpPping => "XdpPping",
+            Self::RttHistogram => "RttHistogram",
+            Self::HostCounts => "HostCounts",
+            Self::AllUnknownIps => "AllUnknownIps",
+            Self::ReloadLibreQoS => "ReloadLibreQoS",
+            Self::GetRawQueueData(_) => "GetRawQueueData",
+            Self::UpdateLqosDTuning(_, _) => "UpdateLqosDTuning",
+            Self::UpdateLqosdConfig(_) => "UpdateLqosdConfig",
+            Self::CreateDynamicCircuit { .. } => "CreateDynamicCircuit",
+            Self::RemoveDynamicCircuit { .. } => "RemoveDynamicCircuit",
+            Self::InvalidateAuthCache => "InvalidateAuthCache",
+            Self::WatchQueue(_) => "WatchQueue",
+            Self::ValidateShapedDevicesCsv => "ValidateShapedDevicesCsv",
+            Self::GetNetworkMap { .. } => "GetNetworkMap",
+            Self::ProbeBatch { .. } => "ProbeBatch",
+            Self::GetFullNetworkMap => "GetFullNetworkMap",
+            Self::TopMapQueues(_) => "TopMapQueues",
+            Self::GetNodeNamesFromIds(_) => "GetNodeNamesFromIds",
+            Self::GetAllCircuits => "GetAllCircuits",
+            Self::GetCircuitById { .. } => "GetCircuitById",
+            Self::GetAllCircuitRollups => "GetAllCircuitRollups",
+            Self::GetCircuitRollupById { .. } => "GetCircuitRollupById",
+            Self::GetFunnel { .. } => "GetFunnel",
+            Self::GetLqosStats => "GetLqosStats",
+            Self::GatherPacketData(_) => "GatherPacketData",
+            Self::GetPacketHeaderDump(_) => "GetPacketHeaderDump",
+            Self::GetPcapDump(_) => "GetPcapDump",
+            #[cfg(feature = "equinix_tests")]
+            Self::RequestLqosEquinixTest => "RequestLqosEquinixTest",
+            Self::DumpActiveFlows => "DumpActiveFlows",
+            Self::CountActiveFlows => "CountActiveFlows",
+            Self::TopFlows { .. } => "TopFlows",
+            Self::FlowsByIp(_) => "FlowsByIp",
+            Self::CurrentEndpointsByCountry => "CurrentEndpointsByCountry",
+            Self::CurrentEndpointLatLon => "CurrentEndpointLatLon",
+            Self::FlowDuration => "FlowDuration",
+            Self::EtherProtocolSummary => "EtherProtocolSummary",
+            Self::IpProtocolSummary => "IpProtocolSummary",
+            Self::BlackboardData { .. } => "BlackboardData",
+            Self::BlackboardBlob { .. } => "BlackboardBlob",
+            Self::BlackboardFinish => "BlackboardFinish",
+            Self::BakeryStart => "BakeryStart",
+            Self::BakeryCommit => "BakeryCommit",
+            Self::BakeryMqSetup { .. } => "BakeryMqSetup",
+            Self::BakeryAddSite { .. } => "BakeryAddSite",
+            Self::BakeryAddCircuit { .. } => "BakeryAddCircuit",
+            Self::GetStormguardStats => "GetStormguardStats",
+            Self::GetStormguardDebug => "GetStormguardDebug",
+            Self::GetStormguardRuntimeStatus => "GetStormguardRuntimeStatus",
+            Self::GetBakeryStats => "GetBakeryStats",
+            Self::BakeryReportPreflight { .. } => "BakeryReportPreflight",
+            Self::TreeGuardSetNodeVirtual { .. } => "TreeGuardSetNodeVirtual",
+            Self::TreeGuardGetNodeVirtualStatus { .. } => "TreeGuardGetNodeVirtualStatus",
+            Self::TreeGuardGetNodeVirtualBranchState { .. } => "TreeGuardGetNodeVirtualBranchState",
+            Self::ApplyOverrideMutationBatch { .. } => "ApplyOverrideMutationBatch",
+            Self::ApiReady => "ApiReady",
+            Self::ChatbotReady => "ChatbotReady",
+            Self::SchedulerReady => "SchedulerReady",
+            Self::SchedulerError(_) => "SchedulerError",
+            Self::SchedulerOutput(_) => "SchedulerOutput",
+            Self::SchedulerProgress(_) => "SchedulerProgress",
+            Self::LogInfo(_) => "LogInfo",
+            Self::CheckSchedulerStatus => "CheckSchedulerStatus",
+            Self::BakeryChangeSiteSpeedLive { .. } => "BakeryChangeSiteSpeedLive",
+            Self::SubmitUrgentIssue { .. } => "SubmitUrgentIssue",
+            Self::GetUrgentIssues => "GetUrgentIssues",
+            Self::ClearUrgentIssue(_) => "ClearUrgentIssue",
+            Self::ClearUrgentIssueByIdentity { .. } => "ClearUrgentIssueByIdentity",
+            Self::ClearAllUrgentIssues => "ClearAllUrgentIssues",
+            Self::GetDeviceCounts => "GetDeviceCounts",
+            Self::GetCircuitCount => "GetCircuitCount",
+            Self::GetFlowMap => "GetFlowMap",
+            Self::GetAsnList => "GetAsnList",
+            Self::GetCountryList => "GetCountryList",
+            Self::GetProtocolList => "GetProtocolList",
+            Self::GetAsnFlowTimeline { .. } => "GetAsnFlowTimeline",
+            Self::GetCountryFlowTimeline { .. } => "GetCountryFlowTimeline",
+            Self::GetProtocolFlowTimeline { .. } => "GetProtocolFlowTimeline",
+            Self::GetSchedulerDetails => "GetSchedulerDetails",
+            Self::GetQueueStatsTotal => "GetQueueStatsTotal",
+            Self::GetCircuitCapacity => "GetCircuitCapacity",
+            Self::GetTreeCapacity => "GetTreeCapacity",
+            Self::GetRetransmitSummary => "GetRetransmitSummary",
+            Self::GetTreeSummaryL2 => "GetTreeSummaryL2",
+            Self::Search { .. } => "Search",
+            Self::GetGlobalWarnings => "GetGlobalWarnings",
+            Self::GetQoo => "GetQoo",
+            Self::GetSiteQoo { .. } => "GetSiteQoo",
+            Self::GetCircuitQoo { .. } => "GetCircuitQoo",
+            Self::GetLtsCapabilities => "GetLtsCapabilities",
+            Self::GetInsightLicenseSummary => "GetInsightLicenseSummary",
+            Self::UpdateLqosdConfigPreserveApiCredentials(_) => {
+                "UpdateLqosdConfigPreserveApiCredentials"
+            }
+        }
+    }
+
+    /// Returns true when a timed-out request can fail fast without hiding daemon-side mutation.
+    pub fn can_fail_fast_on_timeout(&self) -> bool {
+        matches!(
+            self,
+            Self::Ping
+                | Self::GetCurrentThroughput
+                | Self::GetTopNDownloaders { .. }
+                | Self::GetTopNUploaders { .. }
+                | Self::GetCircuitHeatmaps
+                | Self::GetSiteHeatmaps
+                | Self::GetAsnHeatmaps
+                | Self::GetGlobalHeatmap
+                | Self::GetExecutiveSummaryHeader
+                | Self::GetWorstRtt { .. }
+                | Self::GetWorstRetransmits { .. }
+                | Self::GetBestRtt { .. }
+                | Self::GetHostCounter
+                | Self::ListIpFlow
+                | Self::XdpPping
+                | Self::RttHistogram
+                | Self::HostCounts
+                | Self::AllUnknownIps
+                | Self::GetRawQueueData(_)
+                | Self::ValidateShapedDevicesCsv
+                | Self::GetNetworkMap { .. }
+                | Self::GetFullNetworkMap
+                | Self::TopMapQueues(_)
+                | Self::GetNodeNamesFromIds(_)
+                | Self::GetAllCircuits
+                | Self::GetCircuitById { .. }
+                | Self::GetFunnel { .. }
+                | Self::GetLqosStats
+                | Self::GetPacketHeaderDump(_)
+                | Self::GetPcapDump(_)
+                | Self::DumpActiveFlows
+                | Self::CountActiveFlows
+                | Self::TopFlows { .. }
+                | Self::FlowsByIp(_)
+                | Self::CurrentEndpointsByCountry
+                | Self::CurrentEndpointLatLon
+                | Self::FlowDuration
+                | Self::EtherProtocolSummary
+                | Self::IpProtocolSummary
+                | Self::GetStormguardStats
+                | Self::GetStormguardDebug
+                | Self::GetStormguardRuntimeStatus
+                | Self::GetBakeryStats
+                | Self::TreeGuardGetNodeVirtualStatus { .. }
+                | Self::TreeGuardGetNodeVirtualBranchState { .. }
+                | Self::CheckSchedulerStatus
+                | Self::GetUrgentIssues
+                | Self::GetDeviceCounts
+                | Self::GetCircuitCount
+                | Self::GetFlowMap
+                | Self::GetAsnList
+                | Self::GetCountryList
+                | Self::GetProtocolList
+                | Self::GetAsnFlowTimeline { .. }
+                | Self::GetCountryFlowTimeline { .. }
+                | Self::GetProtocolFlowTimeline { .. }
+                | Self::GetSchedulerDetails
+                | Self::GetQueueStatsTotal
+                | Self::GetCircuitCapacity
+                | Self::GetTreeCapacity
+                | Self::GetRetransmitSummary
+                | Self::GetTreeSummaryL2
+                | Self::Search { .. }
+                | Self::GetGlobalWarnings
+                | Self::GetLtsCapabilities
+                | Self::GetInsightLicenseSummary
+        )
+    }
 }
 
 /// Defines the parts of the blackboard
@@ -590,4 +900,40 @@ pub enum TopFlowType {
     Drops,
     /// Top flows by round-trip time estimate
     RoundTripTime,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BusRequest, OverrideLayerSelection, OverrideMutation, TopFlowType};
+
+    #[test]
+    fn request_kind_omits_payload_details() {
+        assert_eq!(BusRequest::Ping.kind(), "Ping");
+        assert_eq!(
+            BusRequest::GetNetworkMap { parent: 42 }.kind(),
+            "GetNetworkMap"
+        );
+        assert_eq!(
+            BusRequest::TopFlows {
+                flow_type: TopFlowType::RateEstimate,
+                n: 10,
+            }
+            .kind(),
+            "TopFlows"
+        );
+    }
+
+    #[test]
+    fn override_write_request_kinds_and_timeout_classification_are_explicit() {
+        let batch_write_request = BusRequest::ApplyOverrideMutationBatch {
+            layer: OverrideLayerSelection::Treeguard,
+            mutations: vec![OverrideMutation::ClearNodeVirtualBatch {
+                node_names: vec!["Node A".to_string(), "Node B".to_string()],
+            }],
+        };
+
+        assert_eq!(batch_write_request.kind(), "ApplyOverrideMutationBatch");
+
+        assert!(!batch_write_request.can_fail_fast_on_timeout());
+    }
 }

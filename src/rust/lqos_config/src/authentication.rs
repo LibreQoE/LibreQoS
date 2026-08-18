@@ -110,9 +110,9 @@ pub struct WebUsers {
     #[serde(default = "default_auth_epoch")]
     auth_epoch: u64,
     #[serde(default)]
-    allow_unauthenticated_to_view: bool,
-    #[serde(default)]
     users: Vec<WebUser>,
+    #[serde(skip)]
+    base_path_override: Option<PathBuf>,
 }
 
 impl Default for WebUsers {
@@ -120,14 +120,14 @@ impl Default for WebUsers {
         Self {
             version: AUTH_FILE_VERSION,
             auth_epoch: INITIAL_AUTH_EPOCH,
-            allow_unauthenticated_to_view: false,
             users: Vec::new(),
+            base_path_override: None,
         }
     }
 }
 
 impl WebUsers {
-    fn base_path() -> Result<PathBuf, AuthenticationError> {
+    fn default_base_path() -> Result<PathBuf, AuthenticationError> {
         let base_path = crate::load_config()
             .map_err(|_| AuthenticationError::UnableToLoadEtcLqos)?
             .lqos_directory
@@ -135,12 +135,27 @@ impl WebUsers {
         Ok(PathBuf::from(base_path))
     }
 
+    fn primary_path_for(base_path: &Path) -> PathBuf {
+        base_path.join(CURRENT_AUTH_FILE_NAME)
+    }
+
+    fn legacy_path_for(base_path: &Path) -> PathBuf {
+        base_path.join(LEGACY_AUTH_FILE_NAME)
+    }
+
+    fn resolved_base_path(&self) -> Result<PathBuf, AuthenticationError> {
+        if let Some(path) = &self.base_path_override {
+            return Ok(path.clone());
+        }
+        Self::default_base_path()
+    }
+
     fn primary_path() -> Result<PathBuf, AuthenticationError> {
-        Ok(Self::base_path()?.join(CURRENT_AUTH_FILE_NAME))
+        Ok(Self::primary_path_for(&Self::default_base_path()?))
     }
 
     fn legacy_path() -> Result<PathBuf, AuthenticationError> {
-        Ok(Self::base_path()?.join(LEGACY_AUTH_FILE_NAME))
+        Ok(Self::legacy_path_for(&Self::default_base_path()?))
     }
 
     /// Returns the current `lqusers.toml` path.
@@ -178,7 +193,8 @@ impl WebUsers {
     }
 
     fn save_to_disk(&self) -> Result<(), AuthenticationError> {
-        let path = Self::primary_path()?;
+        let base_path = self.resolved_base_path()?;
+        let path = Self::primary_path_for(&base_path);
         let tmp_path = path.with_extension(format!("toml.tmp-{}", Uuid::new_v4()));
         let normalized = self.normalize_for_save();
         let new_contents = toml_edit::ser::to_string(&normalized)
@@ -210,7 +226,7 @@ impl WebUsers {
             AuthenticationError::UnableToWrite
         })?;
 
-        let legacy_path = Self::legacy_path()?;
+        let legacy_path = Self::legacy_path_for(&base_path);
         if legacy_path != path
             && legacy_path.exists()
             && let Err(e) = remove_file(&legacy_path)
@@ -221,8 +237,12 @@ impl WebUsers {
         Ok(())
     }
 
-    fn migrate_if_needed(&mut self, loaded_from: &Path) -> Result<(), AuthenticationError> {
-        let current_path = Self::primary_path()?;
+    fn migrate_if_needed(
+        &mut self,
+        loaded_from: &Path,
+        removed_anonymous_setting_present: bool,
+    ) -> Result<(), AuthenticationError> {
+        let current_path = Self::primary_path_for(&self.resolved_base_path()?);
         let loaded_from_legacy_path = loaded_from != current_path;
         let mut needs_rewrite = false;
 
@@ -237,6 +257,10 @@ impl WebUsers {
         }
 
         if loaded_from_legacy_path {
+            needs_rewrite = true;
+        }
+
+        if removed_anonymous_setting_present {
             needs_rewrite = true;
         }
 
@@ -260,14 +284,52 @@ impl WebUsers {
                 error!("Unable to read auth file {:?}: {e}", path);
                 AuthenticationError::UnableToRead
             })?;
+            let removed_anonymous_setting_present = auth_file_has_removed_anonymous_setting(&raw);
             let mut users: Self = toml_edit::de::from_str(&raw).map_err(|e| {
                 error!("Unable to deserialize auth file {:?}: {e}", path);
                 AuthenticationError::UnableToParse
             })?;
-            users.migrate_if_needed(&path)?;
+            users.base_path_override = Some(Self::default_base_path()?);
+            users.migrate_if_needed(&path, removed_anonymous_setting_present)?;
             Ok(users)
         } else {
             let new_users = Self::default();
+            new_users.save_to_disk()?;
+            Ok(new_users)
+        }
+    }
+
+    /// Try to load `lqusers.toml` from an explicit LibreQoS directory, creating
+    /// a new version 2 file there if none exists yet.
+    pub fn load_or_create_in(base_path: &Path) -> Result<Self, AuthenticationError> {
+        let current = Self::primary_path_for(base_path);
+        let legacy = Self::legacy_path_for(base_path);
+        let existing = if current.exists() {
+            Some(current)
+        } else if legacy.exists() {
+            Some(legacy)
+        } else {
+            None
+        };
+
+        if let Some(path) = existing {
+            let raw = read_to_string(&path).map_err(|e| {
+                error!("Unable to read auth file {:?}: {e}", path);
+                AuthenticationError::UnableToRead
+            })?;
+            let removed_anonymous_setting_present = auth_file_has_removed_anonymous_setting(&raw);
+            let mut users: Self = toml_edit::de::from_str(&raw).map_err(|e| {
+                error!("Unable to deserialize auth file {:?}: {e}", path);
+                AuthenticationError::UnableToParse
+            })?;
+            users.base_path_override = Some(base_path.to_path_buf());
+            users.migrate_if_needed(&path, removed_anonymous_setting_present)?;
+            Ok(users)
+        } else {
+            let new_users = Self {
+                base_path_override: Some(base_path.to_path_buf()),
+                ..Self::default()
+            };
             new_users.save_to_disk()?;
             Ok(new_users)
         }
@@ -285,7 +347,7 @@ impl WebUsers {
         let salted = format!("!x{password}{LEGACY_PASSWORD_PEPPER}");
         let mut sha256 = Sha256::new();
         sha256.update(salted);
-        format!("{:X}", sha256.finalize())
+        crate::hex_encoding::encode_hex_upper(sha256.finalize())
     }
 
     fn verify_password(
@@ -428,21 +490,12 @@ impl WebUsers {
     pub fn get_users(&self) -> Vec<WebUser> {
         self.users.clone()
     }
+}
 
-    /// Sets the "allow unauthenticated users" field. If true,
-    /// unauthenticated users gain read-only access. This is useful
-    /// for demonstration purposes.
-    pub fn allow_anonymous(&mut self, allow: bool) -> Result<(), AuthenticationError> {
-        self.allow_unauthenticated_to_view = allow;
-        self.bump_auth_epoch();
-        self.save_to_disk()?;
-        Ok(())
-    }
-
-    /// Do we allow unauthenticated users to read site data?
-    pub fn do_we_allow_anonymous(&self) -> bool {
-        self.allow_unauthenticated_to_view
-    }
+fn auth_file_has_removed_anonymous_setting(raw: &str) -> bool {
+    raw.parse::<toml_edit::DocumentMut>()
+        .map(|document| document.contains_key("allow_unauthenticated_to_view"))
+        .unwrap_or(false)
 }
 
 /// Errors that can occur while managing web-UI authentication.
@@ -474,4 +527,43 @@ pub enum AuthenticationError {
     /// Username/password did not match.
     #[error("Invalid Login")]
     InvalidLogin,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn temp_auth_dir(test_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("libreqos-auth-{test_name}-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn load_removes_legacy_anonymous_access_setting() {
+        let dir = temp_auth_dir("anonymous-setting");
+        fs::create_dir_all(&dir).expect("create auth test directory");
+        let path = dir.join(CURRENT_AUTH_FILE_NAME);
+        fs::write(
+            &path,
+            r#"version = 2
+auth_epoch = 1
+allow_unauthenticated_to_view = true
+
+[[users]]
+username = "support"
+password_hash = "legacy"
+role = "ReadOnly"
+"#,
+        )
+        .expect("write auth file");
+
+        let users = WebUsers::load_or_create_in(&dir).expect("load auth file");
+        assert_eq!(users.auth_epoch(), 2);
+        assert_eq!(users.get_users().len(), 1);
+
+        let saved = fs::read_to_string(&path).expect("read migrated auth file");
+        assert!(!saved.contains("allow_unauthenticated_to_view"));
+
+        fs::remove_dir_all(&dir).expect("remove auth test directory");
+    }
 }

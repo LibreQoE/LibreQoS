@@ -3,7 +3,7 @@ import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 
 const WINDOW_MS = 30_000;
 const MAX_SAMPLES = 90;
-const RENDER_INTERVAL_MS = 33;
+const RENDER_INTERVAL_MS = 16;
 const DISPLAY_LAG_MS = 1_200;
 const SAMPLE_INTERVAL_MS = 1_000;
 
@@ -42,9 +42,38 @@ function throughputPaletteColor(direction, fallback) {
     return window.graphPalette?.[paletteIndex] || fallback;
 }
 
+function maskedEnqueuedSeriesData(enqueuedData, throughputData) {
+    const pointCount = Math.min(enqueuedData.length, throughputData.length);
+    const points = [];
+    for (let i = 0; i < pointCount; i++) {
+        const timestamp = enqueuedData[i]?.[0] ?? throughputData[i]?.[0];
+        const enqueuedValue = toNumber(enqueuedData[i]?.[1], 0);
+        const throughputValue = toNumber(throughputData[i]?.[1], 0);
+        points.push([
+            timestamp,
+            enqueuedValue > throughputValue ? enqueuedValue : null,
+        ]);
+    }
+    return points;
+}
+
+function directionalSeriesBaseData(samples, direction, valueKey, fallback = 0) {
+    if (!samples || samples.length === 0) {
+        return [];
+    }
+
+    const points = samples.map((sample) => ([
+        sample.timestamp,
+        toNumber(sample?.[valueKey]?.[direction], fallback),
+    ]));
+    const lastPoint = points[points.length - 1];
+    points.push([lastPoint[0], lastPoint[1]]);
+    return points;
+}
+
 function getWaveformTheme(direction = "down") {
     const isDark = document.documentElement.getAttribute("data-bs-theme") !== "light";
-    const throughputColor = throughputPaletteColor(direction, isDark ? "#4992ff" : "#d87c7c");
+    const throughputColor = throughputPaletteColor(direction, direction === "up" ? "#32d3bd" : "#4992ff");
 
     if (isDark) {
         return {
@@ -53,10 +82,12 @@ function getWaveformTheme(direction = "down") {
             axisLine: "rgba(216, 226, 244, 0.28)",
             axisTick: "rgba(216, 226, 244, 0.2)",
             splitLine: "rgba(216, 226, 244, 0.045)",
+            enqueuedLine: throughputColor,
+            enqueuedGlow: "transparent",
             throughputLine: throughputColor,
-            throughputGlow: hexToRgba(throughputColor, 0.34),
-            throughputAreaTop: hexToRgba(throughputColor, 0.48),
-            throughputAreaMid: hexToRgba(throughputColor, 0.28),
+            throughputGlow: hexToRgba(throughputColor, 0.26),
+            throughputAreaTop: hexToRgba(throughputColor, 0.36),
+            throughputAreaMid: hexToRgba(throughputColor, 0.2),
             throughputAreaBottom: "rgba(9, 20, 31, 0.03)",
             rttLine: "#b7a5ff",
             rttGlow: "rgba(183, 165, 255, 0.32)",
@@ -78,8 +109,10 @@ function getWaveformTheme(direction = "down") {
         axisLine: "rgba(77, 94, 118, 0.28)",
         axisTick: "rgba(77, 94, 118, 0.18)",
         splitLine: "rgba(77, 94, 118, 0.08)",
+        enqueuedLine: throughputColor,
+        enqueuedGlow: "transparent",
         throughputLine: throughputColor,
-        throughputGlow: hexToRgba(throughputColor, 0.2),
+        throughputGlow: hexToRgba(throughputColor, 0.16),
         throughputAreaTop: hexToRgba(throughputColor, 0.24),
         throughputAreaMid: hexToRgba(throughputColor, 0.13),
         throughputAreaBottom: "rgba(255, 255, 255, 0.02)",
@@ -108,122 +141,12 @@ function normalizeRttThresholds(rawThresholds) {
     };
 }
 
-function directionalSeriesData(samples, direction, valueKey, windowStart, windowEnd, fallback = 0) {
-    if (!samples || samples.length === 0) {
-        return [];
+function syncTrailingPoint(points, windowEnd) {
+    if (!Array.isArray(points) || points.length === 0) {
+        return points;
     }
-
-    const points = [];
-    let previous = null;
-    let next = null;
-
-    for (const sample of samples) {
-        if (sample.timestamp < windowStart) {
-            previous = sample;
-            continue;
-        }
-        if (sample.timestamp > windowEnd) {
-            next = sample;
-            break;
-        }
-        points.push([
-            sample.timestamp,
-            toNumber(sample?.[valueKey]?.[direction], fallback),
-        ]);
-    }
-
-    if (previous) {
-        points.unshift([
-            windowStart,
-            toNumber(previous?.[valueKey]?.[direction], fallback),
-        ]);
-    }
-    if (next) {
-        points.push([
-            Math.min(next.timestamp, windowEnd),
-            toNumber(next?.[valueKey]?.[direction], fallback),
-        ]);
-    } else if (points.length > 0) {
-        points.push([
-            windowEnd,
-            points[points.length - 1][1],
-        ]);
-    }
-
+    points[points.length - 1][0] = windowEnd;
     return points;
-}
-
-function scalarSeriesData(samples, valueKey, windowStart, windowEnd) {
-    if (!samples || samples.length === 0) {
-        return [];
-    }
-
-    const points = [];
-    let previous = null;
-    let next = null;
-
-    for (const sample of samples) {
-        if (sample.timestamp < windowStart) {
-            previous = sample;
-            continue;
-        }
-        if (sample.timestamp > windowEnd) {
-            next = sample;
-            break;
-        }
-        points.push([
-            sample.timestamp,
-            sample?.[valueKey] ?? null,
-        ]);
-    }
-
-    if (previous) {
-        points.unshift([
-            windowStart,
-            previous?.[valueKey] ?? null,
-        ]);
-    }
-    if (next) {
-        points.push([
-            Math.min(next.timestamp, windowEnd),
-            next?.[valueKey] ?? null,
-        ]);
-    } else if (points.length > 0) {
-        points.push([
-            windowEnd,
-            points[points.length - 1][1],
-        ]);
-    }
-
-    return points;
-}
-
-function ceilingSeriesData(samples, direction, windowStart, windowEnd) {
-    const throughputData = directionalSeriesData(samples, direction, "throughputBps", windowStart, windowEnd);
-    const ceilingData = directionalSeriesData(samples, direction, "ceilingBps", windowStart, windowEnd);
-
-    const pointCount = Math.min(throughputData.length, ceilingData.length);
-    const base = [];
-    const active = [];
-    for (let i = 0; i < pointCount; i++) {
-        const timestamp = ceilingData[i][0];
-        const nextTimestamp = i + 1 < pointCount ? ceilingData[i + 1][0] : windowEnd;
-        const ceilingBps = toNumber(ceilingData[i][1], 0);
-        const throughputBps = toNumber(throughputData[i][1], 0);
-        const atCeiling = ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95);
-        const activeValue = atCeiling ? ceilingBps : null;
-
-        if (base.length === 0) {
-            base.push([timestamp, ceilingBps]);
-            active.push([timestamp, activeValue]);
-        } else {
-            active.push([timestamp, activeValue]);
-        }
-
-        base.push([nextTimestamp, ceilingBps]);
-        active.push([nextTimestamp, activeValue]);
-    }
-    return { base, active };
 }
 
 function rttMarkAreas(colors, thresholds, chartMax) {
@@ -283,6 +206,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.renderNow = Date.now();
         this.renderRaf = null;
         this.lastRenderTimestamp = 0;
+        this.renderingEnabled = true;
         this.rttThresholds = normalizeRttThresholds();
 
         this.option = {
@@ -426,6 +350,24 @@ export class QueuingActivityWaveform extends DashboardGraph {
             ],
             series: [
                 {
+                    name: "Enqueued",
+                    type: "line",
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    showSymbol: false,
+                    smooth: false,
+                    step: "start",
+                    lineStyle: {
+                        width: 2.1,
+                        type: "dotted",
+                        color: this.colors.enqueuedLine,
+                        shadowBlur: 0,
+                        shadowColor: this.colors.enqueuedGlow,
+                    },
+                    data: [],
+                    z: 3,
+                },
+                {
                     name: "Throughput",
                     type: "line",
                     xAxisIndex: 0,
@@ -447,6 +389,7 @@ export class QueuingActivityWaveform extends DashboardGraph {
                         ]),
                     },
                     data: [],
+                    z: 5,
                 },
                 {
                     name: "Ceiling Base",
@@ -463,42 +406,6 @@ export class QueuingActivityWaveform extends DashboardGraph {
                         color: this.colors.ceilingInactive,
                         shadowBlur: 14,
                         shadowColor: this.colors.ceilingInactiveGlow,
-                    },
-                    data: [],
-                },
-                {
-                    name: "Ceiling Active",
-                    type: "line",
-                    xAxisIndex: 0,
-                    yAxisIndex: 0,
-                    showSymbol: false,
-                    silent: true,
-                    smooth: false,
-                    connectNulls: false,
-                    step: "start",
-                    lineStyle: {
-                        width: 2.8,
-                        color: this.colors.ceilingActive,
-                        shadowBlur: 14,
-                        shadowColor: this.colors.ceilingActiveGlow,
-                    },
-                    data: [],
-                },
-                {
-                    name: "Ceiling Live",
-                    type: "line",
-                    xAxisIndex: 0,
-                    yAxisIndex: 0,
-                    showSymbol: false,
-                    silent: true,
-                    smooth: false,
-                    connectNulls: false,
-                    step: "start",
-                    lineStyle: {
-                        width: 2.8,
-                        color: this.colors.ceilingActive,
-                        shadowBlur: 14,
-                        shadowColor: this.colors.ceilingActiveGlow,
                     },
                     data: [],
                 },
@@ -554,26 +461,24 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.option.yAxis[1].axisTick.lineStyle.color = this.colors.axisTick;
         this.option.yAxis[1].splitLine.lineStyle.color = this.colors.splitLine;
         this.option.yAxis[1].axisLabel.color = this.colors.axisText;
-        this.option.series[0].lineStyle.color = this.colors.throughputLine;
-        this.option.series[0].lineStyle.shadowColor = this.colors.throughputGlow;
-        this.option.series[0].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        this.option.series[0].lineStyle.color = this.colors.enqueuedLine;
+        this.option.series[0].lineStyle.shadowColor = this.colors.enqueuedGlow;
+        this.option.series[1].lineStyle.color = this.colors.throughputLine;
+        this.option.series[1].lineStyle.shadowColor = this.colors.throughputGlow;
+        this.option.series[1].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: this.colors.throughputAreaTop },
             { offset: 0.45, color: this.colors.throughputAreaMid },
             { offset: 1, color: this.colors.throughputAreaBottom },
         ]);
-        this.option.series[1].lineStyle.color = this.colors.ceilingInactive;
-        this.option.series[1].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
-        this.option.series[2].lineStyle.color = this.colors.ceilingActive;
-        this.option.series[2].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
-        this.option.series[3].lineStyle.color = this.colors.ceilingActive;
-        this.option.series[3].lineStyle.shadowColor = this.colors.ceilingActiveGlow;
-        this.option.series[4].lineStyle.color = this.colors.rttLine;
-        this.option.series[4].lineStyle.shadowColor = this.colors.rttGlow;
-        this.option.series[4].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        this.option.series[2].lineStyle.color = this.colors.ceilingInactive;
+        this.option.series[2].lineStyle.shadowColor = this.colors.ceilingInactiveGlow;
+        this.option.series[3].lineStyle.color = this.colors.rttLine;
+        this.option.series[3].lineStyle.shadowColor = this.colors.rttGlow;
+        this.option.series[3].areaStyle.color = new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: this.colors.rttAreaTop },
             { offset: 1, color: this.colors.rttAreaBottom },
         ]);
-        this.option.series[4].markArea.data = rttMarkAreas(
+        this.option.series[3].markArea.data = rttMarkAreas(
             this.colors,
             this.rttThresholds,
             this.option.yAxis[1].max || this.rttThresholds.red_ms,
@@ -581,8 +486,15 @@ export class QueuingActivityWaveform extends DashboardGraph {
     }
 
     scheduleRenderLoop() {
+        if (!this.renderingEnabled || this.renderRaf !== null) {
+            return;
+        }
         const step = (timestamp) => {
             if (!this.chart) {
+                this.renderRaf = null;
+                return;
+            }
+            if (!this.renderingEnabled) {
                 this.renderRaf = null;
                 return;
             }
@@ -622,13 +534,31 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.render();
     }
 
+    setRenderingEnabled(enabled) {
+        const nextEnabled = !!enabled;
+        if (this.renderingEnabled === nextEnabled) {
+            return;
+        }
+        this.renderingEnabled = nextEnabled;
+        if (!this.renderingEnabled) {
+            if (this.renderRaf) {
+                window.cancelAnimationFrame(this.renderRaf);
+                this.renderRaf = null;
+            }
+            return;
+        }
+        this.lastRenderTimestamp = 0;
+        this.scheduleRenderLoop();
+        this.render();
+    }
+
     setRttThresholds(rawThresholds) {
         this.rttThresholds = normalizeRttThresholds(rawThresholds);
         this.option.yAxis[1].max = this.rttThresholds.red_ms;
-        this.option.series[4].markArea.data = rttMarkAreas(this.colors, this.rttThresholds, this.rttThresholds.red_ms);
+        this.option.series[3].markArea.data = rttMarkAreas(this.colors, this.rttThresholds, this.rttThresholds.red_ms);
         this.chart.setOption({
             yAxis: [{}, { max: this.rttThresholds.red_ms }],
-            series: [{}, {}, {}, {}, { markArea: { data: this.option.series[4].markArea.data } }],
+            series: [{}, {}, {}, { markArea: { data: this.option.series[3].markArea.data } }],
         });
         this.render();
     }
@@ -639,6 +569,10 @@ export class QueuingActivityWaveform extends DashboardGraph {
             throughputBps: {
                 down: toNumber(sample.throughputBps?.down, 0),
                 up: toNumber(sample.throughputBps?.up, 0),
+            },
+            actualThroughputBps: {
+                down: toNumber(sample.actualThroughputBps?.down, 0),
+                up: toNumber(sample.actualThroughputBps?.up, 0),
             },
             ceilingBps: {
                 down: toNumber(sample.ceilingBps?.down, 0),
@@ -673,11 +607,49 @@ export class QueuingActivityWaveform extends DashboardGraph {
         if (!this.samples.length) {
             this.cachedSeries = {
                 direction: this.direction,
+                throughputData: [],
+                actualThroughputData: [],
+                enqueuedOverlayData: [],
+                rttData: [],
+                ceilingSeries: [],
+                observedRttMax: 0,
             };
             return;
         }
+        const throughputData = directionalSeriesBaseData(
+            this.samples,
+            this.direction,
+            "throughputBps",
+            0,
+        );
+        const actualThroughputData = directionalSeriesBaseData(
+            this.samples,
+            this.direction,
+            "actualThroughputBps",
+            0,
+        );
+        const rttData = directionalSeriesBaseData(
+            this.samples,
+            this.direction,
+            "rttP50Ms",
+            null,
+        );
         this.cachedSeries = {
             direction: this.direction,
+            throughputData,
+            actualThroughputData,
+            enqueuedOverlayData: maskedEnqueuedSeriesData(throughputData, actualThroughputData),
+            rttData,
+            ceilingSeries: directionalSeriesBaseData(
+                this.samples,
+                this.direction,
+                "ceilingBps",
+                0,
+            ),
+            observedRttMax: rttData.reduce((max, point) => {
+                const value = toNumber(point?.[1], NaN);
+                return Number.isFinite(value) ? Math.max(max, value) : max;
+            }, 0),
         };
     }
 
@@ -708,40 +680,15 @@ export class QueuingActivityWaveform extends DashboardGraph {
         this.renderNow = Date.now();
         const displayNow = this.renderNow - DISPLAY_LAG_MS;
         const windowStart = displayNow - WINDOW_MS;
-        const throughputData = directionalSeriesData(
-            this.samples,
-            this.direction,
-            "throughputBps",
-            windowStart,
-            displayNow,
+        const throughputData = syncTrailingPoint(this.cachedSeries.throughputData || [], displayNow);
+        const actualThroughputData = syncTrailingPoint(this.cachedSeries.actualThroughputData || [], displayNow);
+        const enqueuedOverlayData = syncTrailingPoint(this.cachedSeries.enqueuedOverlayData || [], displayNow);
+        const rttData = syncTrailingPoint(this.cachedSeries.rttData || [], displayNow);
+        const ceilingSeries = syncTrailingPoint(this.cachedSeries.ceilingSeries || [], displayNow);
+        const rttAxisMaxValue = rttAxisMax(
+            this.rttThresholds,
+            this.cachedSeries.observedRttMax || 0,
         );
-        const rttData = directionalSeriesData(
-            this.samples,
-            this.direction,
-            "rttP50Ms",
-            windowStart,
-            displayNow,
-            null,
-        );
-        const currentState = this.currentSeriesState();
-        const ceilingSeries = ceilingSeriesData(
-            this.samples,
-            this.direction,
-            windowStart,
-            displayNow,
-        );
-        const observedRttMax = rttData.reduce((max, point) => {
-            const value = toNumber(point?.[1], NaN);
-            return Number.isFinite(value) ? Math.max(max, value) : max;
-        }, 0);
-        const rttAxisMaxValue = rttAxisMax(this.rttThresholds, observedRttMax);
-        const liveCeilingData = currentState.atCeiling && currentState.ceilingBps > 0
-            ? [
-                [Math.max(windowStart, toNumber(currentState.latestTimestamp, windowStart)), currentState.ceilingBps],
-                [displayNow, currentState.ceilingBps],
-            ]
-            : [];
-
         const patch = {
             xAxis: [
                 {
@@ -761,31 +708,23 @@ export class QueuingActivityWaveform extends DashboardGraph {
             ],
             series: [
                 {
+                    name: "Enqueued",
+                    data: enqueuedOverlayData,
+                },
+                {
                     name: "Throughput",
-                    data: throughputData,
+                    data: actualThroughputData,
+                    lineStyle: {
+                        color: this.colors.throughputLine,
+                        shadowColor: this.colors.throughputGlow,
+                    },
                 },
                 {
                     name: "Ceiling Base",
-                    data: ceilingSeries.base,
+                    data: ceilingSeries,
                     lineStyle: {
                         color: this.colors.ceilingInactive,
                         shadowColor: this.colors.ceilingInactiveGlow,
-                    },
-                },
-                {
-                    name: "Ceiling Active",
-                    data: ceilingSeries.active,
-                    lineStyle: {
-                        color: this.colors.ceilingActive,
-                        shadowColor: this.colors.ceilingActiveGlow,
-                    },
-                },
-                {
-                    name: "Ceiling Live",
-                    data: liveCeilingData,
-                    lineStyle: {
-                        color: this.colors.ceilingActive,
-                        shadowColor: this.colors.ceilingActiveGlow,
                     },
                 },
                 {

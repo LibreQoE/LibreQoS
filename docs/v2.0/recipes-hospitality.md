@@ -25,7 +25,7 @@ Per-device shaping can raise circuit count quickly. Validate:
 ## Example Entry
 
 ```text
-Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm
+Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm
 HTL-ROOM-1204,Room1204-Device,HTL-ROOM-1204,Room1204-DeviceA,Floor12,,100.70.12.44,,2,2,50,20,Hospitality per-device plan,cake
 ```
 

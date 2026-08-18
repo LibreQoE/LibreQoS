@@ -22,6 +22,7 @@ mod ip_mapping;
 mod kernel_wrapper;
 mod linux;
 mod lqos_kernel;
+mod tc_classify_control;
 mod throughput;
 
 pub use bpf_iterator::{end_flows, expire_throughput, iterate_flows};
@@ -33,6 +34,8 @@ pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
 pub use lqos_kernel::interface_name_to_index;
 pub use lqos_kernel::ip_mapping_capacity;
+pub use lqos_kernel::ip_mapping_subsystem_ready;
 pub use lqos_kernel::max_tracked_ips;
 pub use lqos_kernel::unload_xdp_from_interface;
+pub use tc_classify_control::{initialize_tc_classify_bypass, set_tc_classify_bypass};
 pub use throughput::{HostCounter, throughput_for_each};

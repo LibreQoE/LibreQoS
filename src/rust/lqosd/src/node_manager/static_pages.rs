@@ -4,7 +4,6 @@ use anyhow::{Result, bail};
 use axum::Router;
 use lqos_config::load_config;
 use std::path::Path;
-use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
 pub(super) fn vendor_route() -> Result<Router> {
@@ -32,9 +31,10 @@ pub(super) fn static_routes() -> Result<Router> {
         "index.html",
         "shaped_devices.html",
         "tree.html",
+        "topology_manager.html",
+        "topology_probes.html",
         "help.html",
         "unknown_ips.html",
-        "configuration.html",
         "circuit.html",
         "ethernet_caps.html",
         "site_map.html",
@@ -58,12 +58,15 @@ pub(super) fn static_routes() -> Result<Router> {
         "executive_heatmap_download.html",
         "executive_heatmap_upload.html",
         "config_general.html",
+        "config_ssl.html",
         "config_rtt.html",
         "config_tuning.html",
         "config_queues.html",
         "config_lts.html",
         "config_iprange.html",
         "config_flows.html",
+        "config_dynamic_circuits.html",
+        "config_radius_accounting.html",
         "config_integration.html",
         "config_splynx.html",
         "config_netzur.html",
@@ -71,6 +74,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_uisp.html",
         "config_powercode.html",
         "config_sonar.html",
+        "setup_runtime.html",
         "config_interface.html",
         "config_network.html",
         "config_devices.html",
@@ -108,7 +112,6 @@ pub(super) fn static_routes() -> Result<Router> {
     router = router.route_service("/config_spylnx.html", ServeFile::new(splynx_path));
 
     router = router
-        .layer(CorsLayer::very_permissive())
         .route_layer(axum::middleware::from_fn(auth_layer))
         .route_layer(axum::middleware::from_fn(apply_templates));
 

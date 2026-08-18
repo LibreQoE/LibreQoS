@@ -1,4 +1,5 @@
 use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
+use crate::node_manager::ws::single_user_channels::try_send_private_payload;
 use lqos_queue_tracker::{add_watched_queue, get_raw_circuit_data, still_watching};
 
 pub(super) async fn cake_watcher(
@@ -16,11 +17,10 @@ pub(super) async fn cake_watcher(
 
         if let lqos_bus::BusResponse::RawQueueData(Some(msg)) = get_raw_circuit_data(&circuit_id) {
             let response = WsResponse::CakeWatcher { data: *msg };
-            if let Ok(payload) = encode_ws_message(&response) {
-                let send_result = tx.send(payload).await;
-                if send_result.is_err() {
-                    break;
-                }
+            if let Ok(payload) = encode_ws_message(&response)
+                && !try_send_private_payload(&tx, payload, "CakeWatcher")
+            {
+                break;
             }
         }
     }

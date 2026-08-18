@@ -1,4 +1,4 @@
-Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
 10001,"968 Circle St., Gurnee, IL 60031",1,Device 1,AP_A,,"100.64.0.1, 100.64.0.2",fdd7:b724:0:100::/56,1,1,155,20,
 10002,"31 Marconi Street, Lake In The Hills, IL 60156",2,Device 2,AP_A,,100.64.0.3,fdd7:b724:0:200::/56,0.5,0.5,2.5,1,
 10003,"255 NW. Newport Ave., Jamestown, NY 14701",3,Device 3,AP_9,,100.64.0.4,fdd7:b724:0:300::/56,1.25,0.75,10.5,5.25,

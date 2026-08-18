@@ -1,10 +1,53 @@
+//! Host tuning commands for sysctls, NIC offloads, and CPU governor policy.
+
 use lqos_config::Tunables;
-use std::process::Command;
+use std::{io::ErrorKind, process::Command};
+use tracing::warn;
 
 pub fn bpf_sysctls() {
     let _ = Command::new("/sbin/sysctl")
         .arg("net.core.bpf_jit_enable=1")
         .output();
+}
+
+pub fn set_cpu_governor_performance() {
+    for cpupower in ["/usr/bin/cpupower", "/usr/sbin/cpupower", "cpupower"] {
+        match Command::new(cpupower)
+            .args(["frequency-set", "--governor", "performance"])
+            .output()
+        {
+            Ok(output) if output.status.success() => return,
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                if stderr.is_empty() {
+                    warn!(
+                        command = cpupower,
+                        status = %output.status,
+                        "Failed to set CPU governor to performance"
+                    );
+                } else {
+                    warn!(
+                        command = cpupower,
+                        status = %output.status,
+                        stderr = %stderr,
+                        "Failed to set CPU governor to performance"
+                    );
+                }
+                return;
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => {
+                warn!(
+                    command = cpupower,
+                    error = %error,
+                    "Failed to run cpupower to set CPU governor to performance"
+                );
+                return;
+            }
+        }
+    }
+
+    warn!("Unable to set CPU governor to performance because cpupower was not found");
 }
 
 pub fn stop_irq_balance() {

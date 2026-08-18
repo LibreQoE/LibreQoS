@@ -10,6 +10,8 @@ extern int tc_attach_egress(int ifindex, bool verbose, struct lqos_kern *obj);
 extern int tc_detach_egress(int ifindex, bool verbose, bool flush_hook, const char * ifname);
 extern int tc_attach_ingress(int ifindex, bool verbose, struct lqos_kern *obj);
 extern int tc_detach_ingress(int ifindex, bool verbose, bool flush_hook, const char * ifname);
+extern struct bpf_link * attach_xmit_kprobe(struct lqos_kern *obj);
+extern void destroy_bpf_link(struct bpf_link *link);
 extern __u64 max_tracker_ips();
 extern void do_not_print();
 int read_tp_buffer(struct bpf_program *prog, struct bpf_map *map);

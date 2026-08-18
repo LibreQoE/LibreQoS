@@ -137,6 +137,7 @@ pub struct DeviceIdentification {
     pub mac: Option<String>,
     pub model: Option<String>,
     pub modelName: Option<String>,
+    pub r#type: Option<String>,
     pub role: Option<String>,
     pub site: Option<DeviceSite>,
     pub firmwareVersion: Option<String>,
@@ -211,8 +212,12 @@ pub struct DeviceOverview {
     pub frequency: Option<f64>,
     pub outageScore: Option<f64>,
     pub stationsCount: Option<i64>,
+    pub totalCapacity: Option<i64>,
     pub downlinkCapacity: Option<i64>,
     pub uplinkCapacity: Option<i64>,
+    pub theoreticalTotalCapacity: Option<i64>,
+    pub theoreticalDownlinkCapacity: Option<i64>,
+    pub theoreticalUplinkCapacity: Option<i64>,
     pub channelWidth: Option<i64>,
     pub transmitPower: Option<i64>,
     pub signal: Option<i64>,
@@ -226,6 +231,7 @@ pub struct DeviceOverview {
     pub temperature: Option<i64>,
     pub uptime: Option<i64>,
     pub wirelessMode: Option<String>,
+    pub wirelessActiveInterfaceIds: Option<Vec<String>>,
     pub linkScore: Option<DeviceLinkScore>,
     pub antenna: Option<DeviceAntenna>,
 }
@@ -256,6 +262,7 @@ pub struct DeviceAntenna {
 #[derive(Serialize, Deserialize, Debug, Allocative)]
 pub struct DeviceWireless {
     pub noiseFloor: Option<i64>,
+    pub dlRatio: Option<f64>,
 }
 
 #[allow(non_snake_case)]

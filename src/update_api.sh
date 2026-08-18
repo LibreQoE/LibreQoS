@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Fetch and install the lqos_api binary into src/bin (or an alternate destination)
-# - Downloads https://download.libreqos.com/api2.zip
+# - Downloads https://download.libreqos.com/api3.zip by default
 # - Extracts the single file lqos_api
 # - Places it into ./bin alongside other binaries (override with --bin-dir)
 
@@ -11,18 +11,21 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TMP_ZIP="$(mktemp /tmp/lqos_api.XXXXXX.zip)"
 
 BIN_DIR="${LQOS_API_BIN_DIR:-$SCRIPT_DIR/bin}"
+API_URL="${LQOS_API_URL:-https://download.libreqos.com/api3.zip}"
 RESTART_SERVICE="${LQOS_API_RESTART_SERVICE:-1}"
 
 usage() {
   cat <<EOF
-Usage: $0 [--bin-dir DIR] [--no-restart]
+Usage: $0 [--bin-dir DIR] [--url URL] [--no-restart]
 
 Options:
   --bin-dir DIR   Destination directory for lqos_api (default: $SCRIPT_DIR/bin)
+  --url URL       Download URL for lqos_api zip (default: $API_URL)
   --no-restart    Do not restart the lqos_api systemd service
 
 Environment:
   LQOS_API_BIN_DIR            Same as --bin-dir
+  LQOS_API_URL                Same as --url
   LQOS_API_RESTART_SERVICE    1 to restart service (default), 0 to skip
 EOF
 }
@@ -36,6 +39,15 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       BIN_DIR="$2"
+      shift 2
+      ;;
+    --url)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --url requires a URL argument"
+        usage
+        exit 2
+      fi
+      API_URL="$2"
       shift 2
       ;;
     --no-restart)
@@ -54,8 +66,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-echo "Downloading lqos_api..."
-if ! curl -fsSL -o "$TMP_ZIP" "https://download.libreqos.com/api2.zip"; then
+echo "Downloading lqos_api from $API_URL..."
+if ! curl -fsSL -o "$TMP_ZIP" "$API_URL"; then
   echo "Warning: Failed to download lqos_api; leaving existing binary untouched."
   rm -f "$TMP_ZIP"
   exit 0

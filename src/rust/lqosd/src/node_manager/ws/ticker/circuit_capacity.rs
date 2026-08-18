@@ -1,7 +1,6 @@
 use crate::node_manager::ws::messages::{CircuitCapacityRow, WsResponse};
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use lqos_utils::units::DownUpOrder;
 use std::collections::HashMap;
@@ -47,14 +46,13 @@ pub async fn circuit_capacity(channels: Arc<PubSub>) {
         });
 
     // Map circuits to capacities
-    let shaped_devices = SHAPED_DEVICES.load();
+    let catalog = lqos_network_devices::network_devices_catalog();
     let capacities: Vec<CircuitCapacityRow> = {
         circuits
             .iter()
             .filter_map(|(circuit_id, accumulator)| {
-                if let Some(device) = shaped_devices
-                    .devices
-                    .iter()
+                if let Some(device) = catalog
+                    .iter_all_devices()
                     .find(|sd| sd.circuit_id == *circuit_id)
                 {
                     let down_mbps = (accumulator.bytes.down as f64 * 8.0) / 1_000_000.0;

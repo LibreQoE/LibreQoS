@@ -1,20 +1,23 @@
 #!/bin/bash
+set -euo pipefail
 
 ####################################################
 # Copyright (c) 2022, Herbert Wolverson and LibreQoE
 # This is all GPL2.
 
 BUILD_DATE=$(date +%Y%m%d%H%M)
-[ "$1" = "--nostamp" ] && BUILD_DATE=""
+[ "${1:-}" = "--nostamp" ] && BUILD_DATE=""
 
 PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
 PKGVERSION="${PACKAGE}_${VERSION}"
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-APT_DEPENDENCIES="python3-pip, nano, graphviz, curl, ca-certificates"
+APT_DEPENDENCIES="python3-pip, python3-venv, nano, curl, ca-certificates"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
+LQOS_STATE_DIR=$DPKG_DIR/opt/libreqos/state
 ETC_DIR=$DPKG_DIR/etc
+ETC_LIBREQOS_DIR=$DPKG_DIR/etc/libreqos
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
   csvToNetworkJSON.py
@@ -24,6 +27,7 @@ LQOS_FILES=(
   integrationNetzur.py
   integrationRestHttp.py
   integrationSonar.py
+  integrationUtils.py
   integrationSplynx.py
   integrationVISP.py
   integrationWISPGate.py
@@ -31,20 +35,18 @@ LQOS_FILES=(
   lqos.example
   lqTools.py
   mikrotikFindIPv6.py
+  mikrotik_ipv6.example.toml
   network.example.json
   pythonCheck.py
   qoo_profiles.json
-  README.md
   scheduler.py
   ShapedDevices.example.csv
   shaping_skip_report.py
   systemd_hotfix.sh
+  install_caddy.sh
+  disable_caddy.sh
   virtual_tree_nodes.py
-  mikrotikDHCPRouterList.template.csv
-  integrationUISPbandwidths.template.csv
   manualNetwork.template.csv
-  integrationUISProutes.template.csv
-  integrationSplynxBandwidths.template.csv
   ../requirements.txt
   update_api.sh
 )
@@ -53,10 +55,13 @@ LQOS_BIN_FILES=(
   lqos_scheduler.service.example
   lqosd.service.example
   lqos_api.service.example
+  lqos_setup.service.example
+  rebuild_python_venv.sh
 )
 
 RUSTPROGS=(
   lqosd
+  lqos_netplan_helper
   lqtop
   xdp_iphash_to_cpu_cmdline
   xdp_pping
@@ -78,7 +83,8 @@ rm -rf dist
 # The Debian Packaging Bit
 
 # Create the basic directory structure
-mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
+mkdir -p "$LQOS_DIR"/bin/static2 "$DEBIAN_DIR" "$ETC_DIR" "$ETC_LIBREQOS_DIR" "$LQOS_DIR"/rust "$LQOS_DIR"/bin/dashboards
+mkdir -p "$LQOS_STATE_DIR"/topology "$LQOS_STATE_DIR"/shaping "$LQOS_STATE_DIR"/stats "$LQOS_STATE_DIR"/cache "$LQOS_STATE_DIR"/debug "$LQOS_STATE_DIR"/quarantine
 
 # shellcheck disable=SC2086
 mkdir -p $MOTD_DIR
@@ -95,11 +101,14 @@ Depends: $APT_DEPENDENCIES
 EOF
 popd > /dev/null || exit
 
-# Build the Rust programs (before the control file, we need to LDD lqosd)
+# Build the Rust programs (before the control file, we need to LDD lqosd).
+# Keep package artifacts on the full release profile; build_rust.sh --fast is
+# intentionally a local-iteration-only shortcut.
 pushd rust > /dev/null || exit
 # Build only required binaries and artifacts (exclude lqos_support_tool executable)
 cargo build --release \
   -p lqosd \
+  -p lqos_netplan_helper \
   -p lqtop \
   -p xdp_iphash_to_cpu_cmdline \
   -p xdp_pping \
@@ -108,7 +117,8 @@ cargo build --release \
   -p lqos_map_perf \
   -p uisp_integration \
   -p lqos_python \
-  -p lqos_overrides
+  -p lqos_overrides \
+  -p lqos_topology
 popd > /dev/null || exit
 
 # Create the post-installation file
@@ -117,56 +127,86 @@ cat <<'EOF' > postinst
 #!/bin/bash
 set -euo pipefail
 
-if /opt/libreqos/src/systemd_hotfix.sh should-offer >/dev/null 2>&1; then
-cat >&2 <<'HOTFIX'
-LibreQoS detected the Ubuntu 24.04 systemd-networkd hotfix requirement on this host.
+set_libreqos_operator_permissions() {
+local runtime_paths=()
+[ -e /opt/libreqos/src ] && runtime_paths+=("/opt/libreqos/src")
+[ -e /opt/libreqos/state ] && runtime_paths+=("/opt/libreqos/state")
+[ ${#runtime_paths[@]} -eq 0 ] && return
 
-Run:
-  sudo /opt/libreqos/src/systemd_hotfix.sh install
-
-The hotfix installer bootstraps the LibreQoS APT repo at https://repo.libreqos.com and will offer to schedule a reboot.
-
-After the reboot, finish the LibreQoS package configuration with:
-  sudo dpkg --configure -a
-HOTFIX
-exit 1
-fi
-
-# Install Python Dependencies
-pushd /opt/libreqos > /dev/null
-# - Setup Python dependencies as a post-install task
-if [ -s src/deb-requirements-constraints.txt ]; then
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -c src/deb-requirements-constraints.txt -r src/requirements.txt
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" >/dev/null 2>&1; then
+    chown -R "$SUDO_USER:$SUDO_USER" "${runtime_paths[@]}"
+    chmod -R u+rwX "${runtime_paths[@]}" || true
+    echo "Granted $SUDO_USER ownership of /opt/libreqos/src and /opt/libreqos/state for SFTP editing."
 else
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install -r src/requirements.txt
+    echo "Unable to determine the installing operator account automatically."
+    echo "If you plan to edit LibreQoS files over SFTP, run: sudo chown -R <username>:<username> /opt/libreqos/src /opt/libreqos/state"
 fi
-# - Setup Python dependencies as a post-install task - handle issue with packages on Ubuntu Server 24.04
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip uninstall apscheduler deepdiff --yes
-PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install apscheduler deepdiff
+}
+
+# - Setup Python dependencies in a root-owned virtual environment. LibreQoS
+#   services still run as root, but Python packages no longer mix with
+#   apt-managed system site-packages.
+/opt/libreqos/src/bin/rebuild_python_venv.sh
 
 # Ensure folder permissions are correct post-install
-sudo chown -R root:root /opt/libreqos
+set_libreqos_operator_permissions
 
-# - Run lqsetup
-/opt/libreqos/src/bin/lqos_setup
 # - Setup the services
 install -m 0644 /opt/libreqos/src/bin/lqosd.service.example /etc/systemd/system/lqosd.service
 install -m 0644 /opt/libreqos/src/bin/lqos_scheduler.service.example /etc/systemd/system/lqos_scheduler.service
 install -m 0644 /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
+install -m 0644 /opt/libreqos/src/bin/lqos_setup.service.example /etc/systemd/system/lqos_setup.service
+/bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
-/bin/systemctl stop lqos_node_manager || true # In case it's running from a previous release
-/bin/systemctl disable lqos_node_manager || true # In case it's running from a previous release
-/bin/systemctl enable lqosd lqos_scheduler lqos_api || true
-/bin/systemctl restart lqosd lqos_scheduler lqos_api || true
-popd > /dev/null
+
+unit_stop_disable_if_present() {
+local unit="$1"
+if /bin/systemctl cat "${unit}" >/dev/null 2>&1 \
+    || [ -e "/etc/systemd/system/${unit}" ] \
+    || [ -e "/lib/systemd/system/${unit}" ] \
+    || [ -e "/usr/lib/systemd/system/${unit}" ]; then
+    /bin/systemctl stop "${unit}" || true
+    /bin/systemctl disable "${unit}" || true
+fi
+}
+
+unit_stop_disable_if_present lqos_node_manager.service # In case it's running from a previous release
+unit_stop_disable_if_present lqos_netplan_helper.service
+case "$(/opt/libreqos/src/bin/lqos_setup postinst-action)" in
+activate_runtime)
+  /opt/libreqos/src/bin/lqos_setup activate-runtime
+  ;;
+activate_setup)
+  /opt/libreqos/src/bin/lqos_setup activate-setup
+  /opt/libreqos/src/bin/lqos_setup print-link || true
+  ;;
+block_for_hotfix)
+  /opt/libreqos/src/bin/lqos_setup hotfix-status || true
+  cat <<'HOTFIX'
+
+Install the Noble systemd hotfix before package configuration can start LibreQoS services.
+
+Run:
+  sudo /opt/libreqos/src/systemd_hotfix.sh install
+
+Then re-run the LibreQoS package installation.
+HOTFIX
+  exit 1
+  ;;
+*)
+  echo "Unknown LibreQoS post-install action." >&2
+  exit 1
+  ;;
+esac
 EOF
 
 # Uninstall Script
 cat <<EOF > postrm
 #!/bin/bash
 set +e
-/bin/systemctl stop lqosd lqos_scheduler lqos_api || true
-/bin/systemctl disable lqosd lqos_scheduler lqos_api || true
+/bin/systemctl stop lqos_netplan_helper lqosd lqos_scheduler lqos_api lqos_setup || true
+/bin/systemctl disable lqos_netplan_helper lqosd lqos_scheduler lqos_api lqos_setup || true
+/bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 /bin/systemctl daemon-reload || true
 exit 0
 EOF
@@ -175,22 +215,35 @@ popd > /dev/null || exit
 
 # Copy files into the LibreQoS directory
 for file in "${LQOS_FILES[@]}"; do
-  cp "$file" "$LQOS_DIR" || echo "Error copying $file"
+  if [ ! -f "$file" ]; then
+    echo "Missing packaged file: $file" >&2
+    exit 1
+  fi
+done
+
+for file in "${LQOS_FILES[@]}"; do
+  cp "$file" "$LQOS_DIR"
 done
 
 if [ -f deb-requirements-constraints.txt ]; then
-  cp deb-requirements-constraints.txt "$LQOS_DIR" || echo "Error copying deb-requirements-constraints.txt"
+  cp deb-requirements-constraints.txt "$LQOS_DIR"
 fi
 
+cp mikrotik_ipv6.example.toml "$ETC_LIBREQOS_DIR"/mikrotik_ipv6.example.toml
+
 # Ensure helper scripts are executable in the package
-if [ -f "$LQOS_DIR/update_api.sh" ]; then
-  chmod a+x "$LQOS_DIR/update_api.sh" || true
-fi
+for helper_script in update_api.sh install_caddy.sh disable_caddy.sh; do
+  if [ -f "$LQOS_DIR/$helper_script" ]; then
+    chmod a+x "$LQOS_DIR/$helper_script"
+  fi
+done
 
 # Copy files into the LibreQoS/bin directory
 for file in "${LQOS_BIN_FILES[@]}"; do
-  cp "bin/$file" "$LQOS_DIR/bin" || echo "Error copying $file"
+  cp "bin/$file" "$LQOS_DIR/bin"
 done
+
+chmod a+x "$LQOS_DIR/bin/rebuild_python_venv.sh"
 
 # Copy the remove pinned maps
 cp rust/remove_pinned_maps.sh "$LQOS_DIR"/rust
@@ -207,7 +260,7 @@ popd || exit
 cp rust/target/release/liblqos_python.so "$LQOS_DIR"
 # - The main executables
 for prog in "${RUSTPROGS[@]}"; do
-  cp rust/target/release/"$prog" "$LQOS_DIR"/bin || echo "Error copying $prog"
+  cp rust/target/release/"$prog" "$LQOS_DIR"/bin
 done
 
 cp -r bin/static2/* "$LQOS_DIR"/bin/static2

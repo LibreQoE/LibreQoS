@@ -1,6 +1,6 @@
 use super::{QueueStructureError, queue_node::QueueNode};
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::error;
 
 pub struct QueueNetwork {
@@ -13,8 +13,7 @@ impl QueueNetwork {
             error!("unable to read /etc/lqos.conf");
             return Err(QueueStructureError::LqosConf);
         };
-        let base_path = Path::new(&cfg.lqos_directory);
-        Ok(base_path.join("queuingStructure.json"))
+        Ok(cfg.shaping_state_read_path("queuingStructure.json"))
     }
 
     fn exists() -> bool {

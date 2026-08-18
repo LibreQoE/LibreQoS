@@ -9,6 +9,13 @@ strip = true
 lto = "thin"
 incremental = false
 
+[profile.fast-release]
+inherits = "release"
+strip = false
+lto = "off"
+incremental = true
+codegen-units = 256
+
 [profile.release.build-override]
 opt-level = 3
 codegen-units = 16
@@ -17,6 +24,7 @@ codegen-units = 16
 members = [
     "lqos_sys", # System support for handling the XDP component
     "lqos_config", # Configuration support
+    "lqos_network_devices", # Shared network.json + ShapedDevices.csv runtime access layer
     "lqosd", # LibreQoS Daemon
     "lqos_bus", # Bus data types
     "lqtop", # A command line utility to show current activity
@@ -30,9 +38,15 @@ members = [
     "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
+    "lqos_probe", # Shared active probe provider and result types.
+    "lqos_radius", # Rootless RADIUS accounting packet parsing and diagnostic UDP listener.
     "lqos_stormguard", # An implementation of CAKE AutoRotate using dynamic bus information. EXPERIMENTAL.
     "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
     "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
+    "lqos_topology", # Shared topology runtime domain logic and health/effective-state helper.
+    "lqos_topology_compile", # Shared topology compilation and mode projection layer.
+    "lqos_support_tool", # Support/sanity-check CLI for gathering and submitting support dumps.
+    "lqos_netplan_helper", # Managed netplan inspection/transaction helper.
 ]
 
 [dependencies]
@@ -53,8 +67,10 @@ serde_json = "1"
 csv = "1"
 ip_network_table = "0"
 ip_network = "0"
-sha2 = "0"
+sha2 = "0.10"
 hmac = "0.12"
+md-5 = "0.10"
+subtle = "2.6"
 base64 = "0.22"
 argon2 = "0.5"
 rand_core = { version = "0.6", features = ["getrandom"] }
@@ -66,7 +82,7 @@ sysinfo = { version = "0", default-features = false, features = [ "system" ] }
 default-net = "0"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls-no-provider", "charset", "http2", "system-proxy"] }
 rustls = "0.23"
-pyo3 = "0.25.1"
+pyo3 = "0.29.0"
 colored = "2"
 miniz_oxide = "0.8"
 byteorder = "1"

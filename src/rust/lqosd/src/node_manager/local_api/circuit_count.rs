@@ -1,4 +1,3 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::throughput_tracker::THROUGHPUT_TRACKER;
 use lqos_utils::unix_time::time_since_boot;
 use serde::Serialize;
@@ -35,23 +34,24 @@ pub fn circuit_count_data() -> CircuitCount {
         .filter_map(|(_k, d)| d.circuit_id.clone())
         .collect();
 
-    // Get configured circuits from ShapedDevices
-    let shaped_devices = SHAPED_DEVICES.load();
-    let configured_circuits: HashSet<&str> = shaped_devices
-        .devices
-        .iter()
-        .map(|device| device.circuit_id.as_str())
-        .collect();
+    // Get configured circuits from ShapedDevices + dynamic overlay
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let configured_count = catalog
+        .iter_all_devices()
+        .map(|device| device.circuit_id.trim())
+        .filter(|id| !id.is_empty())
+        .collect::<HashSet<_>>()
+        .len();
 
     // Use active count if > 0, otherwise fall back to configured count
     let count = if !active_circuits.is_empty() {
         active_circuits.len()
     } else {
-        configured_circuits.len()
+        configured_count
     };
 
     CircuitCount {
         count,
-        configured_count: configured_circuits.len(),
+        configured_count,
     }
 }

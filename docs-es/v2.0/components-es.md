@@ -10,7 +10,8 @@ flowchart LR
     B --> E[Refresco del plan de colas/shaping]
     E --> F[lqosd]
     F --> G[Shaping runtime XDP/TC]
-    F --> H[WebUI :9123]
+    F --> H[Servicio WebUI :9123]
+    J[HTTPS opcional con Caddy :443] --> H
     B --> I[Estado del scheduler / problemas urgentes]
     F --> I
 ```
@@ -19,7 +20,8 @@ flowchart LR
 
 - Administra la lógica de shaping/XDP.
 - Implementado en Rust.
-- Ejecuta la UI local disponible en `http://a.b.c.d:9123`.
+- Ejecuta la UI local disponible en `http://a.b.c.d:9123` por defecto.
+- Si HTTPS opcional está habilitado, Caddy publica `https://hostname/` o `https://ip-de-gestión/` y proxya la WebUI hacia `127.0.0.1:9123`.
 - Hospeda páginas de WebUI (Node Manager) como:
   - Site Map
   - Flow Globe
@@ -51,15 +53,15 @@ sudo journalctl -u lqos_scheduler -b
 
 ### Depuración de lqos_scheduler
 
-`lqos_scheduler` ejecuta `scheduler.py`, que a su vez invoca `LibreQoS.py`.
+`lqos_scheduler` ejecuta `scheduler.py`, que a su vez invoca `LibreQoS.py`. En instalaciones empaquetadas, Python se ejecuta desde el entorno virtual propiedad de root en `/opt/libreqos/venv`.
 
 Flujo de depuración recomendado:
 
 ```bash
 sudo systemctl stop lqos_scheduler
 cd /opt/libreqos/src
-sudo ./LibreQoS.py --debug
-sudo python3 scheduler.py
+sudo /opt/libreqos/venv/bin/python /opt/libreqos/src/LibreQoS.py --debug
+sudo /opt/libreqos/venv/bin/python /opt/libreqos/src/scheduler.py
 sudo systemctl start lqos_scheduler
 ```
 

@@ -5,7 +5,9 @@ Requires=lqosd.service
 
 [Service]
 WorkingDirectory=/opt/libreqos/src
-ExecStart=/usr/bin/python3 /opt/libreqos/src/scheduler.py
+ExecStartPre=/bin/test -x /opt/libreqos/venv/bin/python
+ExecStartPre=/opt/libreqos/venv/bin/python -c "import apscheduler, chardet, deepdiff, psutil, requests"
+ExecStart=/opt/libreqos/venv/bin/python /opt/libreqos/src/scheduler.py
 Restart=always
 
 [Install]

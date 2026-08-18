@@ -2,12 +2,11 @@ mod last_24_hours;
 mod shaper_status;
 
 use crate::lts2_sys::lts2_client::{LicenseStatus, set_license_status};
-use crate::lts2_sys::shared_types::LtsStatus;
 use crate::node_manager::auth::LoginResult;
 use crate::node_manager::local_api::circuit_count;
 use axum::http::StatusCode;
 pub use last_24_hours::*;
-use lqos_bus::{BusRequest, bus_request};
+use lqos_bus::LtsCapabilitiesSummary;
 use lqos_config::load_config;
 use serde::{Deserialize, Serialize};
 pub use shaper_status::ShaperStatus;
@@ -18,6 +17,7 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 const SIGNUP_POLL_INTERVAL: Duration = Duration::from_secs(10);
+const SERVICE_RESTART_TIMEOUT: Duration = Duration::from_secs(10);
 const INSIGHT_FREE_TRIAL_STATUS_CODE: i32 = 2;
 const INSIGHT_TRIAL_DAYS_HINT: i32 = 30;
 
@@ -117,21 +117,32 @@ fn classify_signup_check_response(response: SignupCheckResponse) -> Result<Signu
     }
 }
 
-async fn apply_insight_license(license_key: String, restart_lqos_api: bool) -> Result<(), StatusCode> {
+async fn apply_insight_license(
+    license_key: String,
+    restart_lqos_api: bool,
+) -> Result<(), StatusCode> {
     let license_key = license_key.trim().to_string();
     if license_key.is_empty() {
         return Err(StatusCode::BAD_GATEWAY);
     }
 
+    let _guard = super::local_api_keys::lock_config_update().await;
     let mut cfg = load_config()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .as_ref()
         .clone();
     cfg.long_term_stats.gather_stats = true;
     cfg.long_term_stats.license_key = Some(license_key.clone());
-    bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(cfg))])
+    super::local_api_keys::persist_config(cfg)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|err| {
+            warn!("Unable to update config with Insight license: {err}");
+            StatusCode::GATEWAY_TIMEOUT
+        })?;
+    drop(_guard);
+    crate::lts2_sys::capabilities::set_signup_bootstrap_active(false);
+    crate::lts2_sys::capabilities::clear_bootstrap_suppression();
+    crate::lts2_sys::capabilities::wake_control_channel();
 
     set_license_status(LicenseStatus {
         license_type: INSIGHT_FREE_TRIAL_STATUS_CODE,
@@ -141,15 +152,28 @@ async fn apply_insight_license(license_key: String, restart_lqos_api: bool) -> R
     info!("LQOSD configuration updated with new Insight license key.");
 
     if restart_lqos_api {
-        let _ = Command::new("/bin/systemctl")
-            .args(["restart", "lqos_api"])
-            .output();
+        let restart = tokio::time::timeout(
+            SERVICE_RESTART_TIMEOUT,
+            tokio::task::spawn_blocking(|| {
+                Command::new("/bin/systemctl")
+                    .args(["restart", "lqos_api"])
+                    .output()
+            }),
+        )
+        .await;
+        match restart {
+            Ok(Ok(Ok(_))) => {}
+            Ok(Ok(Err(err))) => warn!("Unable to restart lqos_api: {err}"),
+            Ok(Err(err)) => warn!("lqos_api restart task failed: {err}"),
+            Err(_) => warn!("Timed out restarting lqos_api"),
+        }
     }
 
     Ok(())
 }
 
 pub async fn lts_trial_start_signup_data() -> Result<String, StatusCode> {
+    crate::lts2_sys::capabilities::set_signup_bootstrap_active(true);
     let config = load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let start_url = build_insight_url(config.long_term_stats.lts_url.as_deref(), "/su/start");
     let request = SignupStartRequest {
@@ -250,6 +274,7 @@ async fn poll_signup_until_complete(claim_id: String) -> Result<(), StatusCode> 
             Ok(SignupCheckState::Pending) => {}
             Ok(SignupCheckState::Expired) => {
                 debug!(claim_id = %claim_id, "Insight signup claim expired");
+                crate::lts2_sys::capabilities::set_signup_bootstrap_active(false);
                 return Ok(());
             }
             Ok(SignupCheckState::Provisioned { account_key }) => {
@@ -260,6 +285,7 @@ async fn poll_signup_until_complete(claim_id: String) -> Result<(), StatusCode> 
                             account_key = %account_key,
                             "Applied Insight license from signup flow"
                         );
+                        crate::lts2_sys::capabilities::set_signup_bootstrap_active(false);
                         return Ok(());
                     }
                     Err(status) => {
@@ -269,6 +295,7 @@ async fn poll_signup_until_complete(claim_id: String) -> Result<(), StatusCode> 
                             status = %status,
                             "Failed to apply Insight license; stopping signup poll loop"
                         );
+                        crate::lts2_sys::capabilities::set_signup_bootstrap_active(false);
                         return Err(status);
                     }
                 }
@@ -278,6 +305,7 @@ async fn poll_signup_until_complete(claim_id: String) -> Result<(), StatusCode> 
                     claim_id = %claim_id,
                     "Insight signup status poll returned an unexpected payload"
                 );
+                crate::lts2_sys::capabilities::set_signup_bootstrap_active(false);
                 return Err(StatusCode::BAD_GATEWAY);
             }
         }
@@ -285,31 +313,49 @@ async fn poll_signup_until_complete(claim_id: String) -> Result<(), StatusCode> 
 }
 
 pub(crate) async fn insight_gate() -> Result<(), StatusCode> {
-    let (status, _) = crate::lts2_sys::get_lts_license_status_async().await;
-    match status {
-        LtsStatus::Invalid | LtsStatus::NotChecked => Err(StatusCode::FORBIDDEN),
-        _ => Ok(()),
+    let capabilities = crate::lts2_sys::current_capabilities();
+    if !capabilities.can_view_insight_ui {
+        Err(StatusCode::FORBIDDEN)
+    } else if !capabilities.control_service_reachable {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    } else {
+        Ok(())
     }
 }
 
 pub(crate) async fn support_ticket_gate() -> Result<(), StatusCode> {
-    let (status, _) = crate::lts2_sys::get_lts_license_status_async().await;
-    match status {
-        LtsStatus::AlwaysFree | LtsStatus::FreeTrial | LtsStatus::SelfHosted | LtsStatus::Full => {
-            Ok(())
-        }
-        _ => Err(StatusCode::FORBIDDEN),
+    let capabilities = crate::lts2_sys::current_capabilities();
+    if !capabilities.can_use_support_tickets {
+        Err(StatusCode::FORBIDDEN)
+    } else if !capabilities.control_service_reachable {
+        Err(StatusCode::SERVICE_UNAVAILABLE)
+    } else {
+        Ok(())
     }
 }
 
 pub async fn lts_trial_signup_data(license_key: String) -> Result<(), StatusCode> {
-    info!("Received license key, enabling free trial: {}", license_key);
     if license_key == "FAIL" {
         warn!("Free trial request failed");
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
-    info!("Free trial request succeeded, license key: {}", license_key);
     apply_insight_license(license_key, true).await
+}
+
+pub fn lts_capabilities_data(login: LoginResult) -> Result<LtsCapabilitiesSummary, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(crate::lts2_sys::current_capabilities())
+}
+
+pub fn retry_license_check_data(login: LoginResult) -> Result<LtsCapabilitiesSummary, StatusCode> {
+    if login != LoginResult::Admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    crate::lts2_sys::capabilities::clear_bootstrap_suppression();
+    crate::lts2_sys::capabilities::wake_control_channel();
+    Ok(crate::lts2_sys::current_capabilities())
 }
 
 #[cfg(test)]

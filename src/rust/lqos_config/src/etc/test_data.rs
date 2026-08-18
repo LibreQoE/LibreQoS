@@ -14,6 +14,7 @@ send_anonymous = true
 anonymous_server = \"127.0.0.1:9125\"
 
 [tuning]
+set_cpu_governor_performance = true
 # IRQ balance breaks XDP_Redirect, which we use. Recommended to leave as true.
 stop_irq_balance = false
 netdev_budget_usecs = 8000
@@ -121,9 +122,6 @@ influxDBtoken = \"\"
 
 # Use Customer Name or Address as Circuit Name
 circuitNameUseAddress = True
-
-# Should integrationUISP overwrite network.json on each run?
-overwriteNetworkJSONalways = False
 
 # If a device shows a WAN IP within these subnets, assume they are behind NAT / un-shapable, and ignore them
 ignoreSubnets = ['192.168.0.0/16']

@@ -7,13 +7,16 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
-use crate::node_manager::auth::{LoginResult, login_from_token};
+use crate::lts2_sys::control_channel::ControlChannelCommand;
+use crate::node_manager::auth::{LoginResult, login_from_cookie_header};
 use crate::node_manager::local_api::{
     circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
-    ethernet_caps, executive, flow_explorer, flow_map, lts, network_tree, network_tree_lite,
-    node_rate_overrides, packet_analysis, reload_libreqos, scheduler, search, shaped_device_api,
-    shaped_devices_page, unknown_ips, urgent, warnings,
+    ethernet_caps, executive, flow_explorer, flow_map, local_api_keys, lts, network_tree,
+    network_tree_lite, node_rate_overrides, node_topology_overrides, packet_analysis,
+    reload_libreqos, scheduler, search, shaped_device_api, shaped_devices_page, topology_manager,
+    topology_probes, unknown_ips, urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -35,14 +38,16 @@ use axum::{
         WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::{HeaderMap, StatusCode, header},
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode, Uri, header},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
 use lqos_bus::BusRequest;
+use lqos_probe::ProbeClient;
+use once_cell::sync::Lazy;
 use serde_cbor::Value as CborValue;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{Semaphore, mpsc::Sender};
 use tracing::{info, warn};
 
 pub(crate) mod messages;
@@ -53,6 +58,109 @@ mod ticker;
 
 const WS_VERSION: &str = include_str!("../../../../VERSION_STRING");
 const HANDSHAKE_TIMEOUT_SECS: u64 = 10;
+const CONTROL_CHANNEL_SEND_TIMEOUT: Duration = Duration::from_secs(5);
+const TOPOLOGY_MANAGER_BLOCKING_TIMEOUT: Duration = Duration::from_secs(10);
+const REQUEST_TIMEOUT_SECS: u64 = 15;
+static TOPOLOGY_MANAGER_READ_PERMITS: Lazy<Arc<Semaphore>> =
+    Lazy::new(|| Arc::new(Semaphore::new(1)));
+static TOPOLOGY_MANAGER_BLOCKING_PERMITS: Lazy<Arc<Semaphore>> =
+    Lazy::new(|| Arc::new(Semaphore::new(1)));
+
+struct WsUpgradeContext {
+    channels: Arc<PubSub>,
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+    control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
+    probe_client: ProbeClient,
+    shaper_query: Sender<ShaperQueryCommand>,
+    browser_language: Option<String>,
+    login: LoginResult,
+}
+
+async fn send_control_command(
+    control_tx: &tokio::sync::mpsc::Sender<ControlChannelCommand>,
+    command: ControlChannelCommand,
+) -> bool {
+    match tokio::time::timeout(CONTROL_CHANNEL_SEND_TIMEOUT, control_tx.send(command)).await {
+        Ok(Ok(())) => true,
+        Ok(Err(_)) => false,
+        Err(_) => {
+            warn!("Timed out queueing websocket control-channel command");
+            false
+        }
+    }
+}
+
+async fn run_topology_manager_blocking<F>(
+    operation: &'static str,
+    work: F,
+) -> Result<topology_manager::TopologyManagerStateData, StatusCode>
+where
+    F: FnOnce() -> Result<topology_manager::TopologyManagerStateData, StatusCode> + Send + 'static,
+{
+    run_topology_manager_blocking_with_timeout(
+        operation,
+        TOPOLOGY_MANAGER_BLOCKING_TIMEOUT,
+        TOPOLOGY_MANAGER_READ_PERMITS.clone(),
+        work,
+    )
+    .await
+}
+
+async fn run_topology_manager_mutation_blocking<F>(
+    operation: &'static str,
+    work: F,
+) -> Result<topology_manager::TopologyManagerStateData, StatusCode>
+where
+    F: FnOnce() -> Result<topology_manager::TopologyManagerStateData, StatusCode> + Send + 'static,
+{
+    run_topology_manager_blocking_with_timeout(
+        operation,
+        TOPOLOGY_MANAGER_BLOCKING_TIMEOUT,
+        TOPOLOGY_MANAGER_BLOCKING_PERMITS.clone(),
+        work,
+    )
+    .await
+}
+
+async fn run_topology_manager_blocking_with_timeout<F>(
+    operation: &'static str,
+    timeout_duration: Duration,
+    permits: Arc<Semaphore>,
+    work: F,
+) -> Result<topology_manager::TopologyManagerStateData, StatusCode>
+where
+    F: FnOnce() -> Result<topology_manager::TopologyManagerStateData, StatusCode> + Send + 'static,
+{
+    let permit = match tokio::time::timeout(timeout_duration, permits.acquire_owned()).await {
+        Ok(Ok(permit)) => permit,
+        Ok(Err(_)) => {
+            warn!(
+                operation,
+                "Topology manager blocking semaphore is unavailable"
+            );
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+        Err(_) => {
+            warn!(
+                operation,
+                timeout_ms = timeout_duration.as_millis(),
+                "Timed out waiting for topology manager blocking slot"
+            );
+            return Err(StatusCode::GATEWAY_TIMEOUT);
+        }
+    };
+
+    tokio::task::block_in_place(move || {
+        let _permit = permit;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+            Ok(result) => result,
+            Err(_) => {
+                warn!(operation, "Topology manager blocking task panicked");
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    })
+}
 
 /// Provides an Axum router for the websocket system. Exposes a single /ws route that supports
 /// pubsub subscriptions and private commands.
@@ -60,6 +168,7 @@ pub fn websocket_router(
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
     control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
+    probe_client: ProbeClient,
     shaper_query: Sender<ShaperQueryCommand>,
 ) -> Router {
     let channels = PubSub::new();
@@ -78,6 +187,7 @@ pub fn websocket_router(
         .layer(Extension(channels))
         .layer(Extension(bus_tx.clone()))
         .layer(Extension(control_tx.clone()))
+        .layer(Extension(probe_client.clone()))
         .layer(Extension(shaper_query.clone()))
 }
 
@@ -90,9 +200,15 @@ async fn ws_handler(
     Extension(control_tx): Extension<
         tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
     >,
+    Extension(probe_client): Extension<ProbeClient>,
     Extension(shaper_query): Extension<Sender<ShaperQueryCommand>>,
     headers: HeaderMap,
-) -> impl IntoResponse {
+) -> Response {
+    if !websocket_origin_allowed(&headers) {
+        warn!("Rejected websocket upgrade with cross-origin Origin header");
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     let has_cookie = headers.contains_key(header::COOKIE);
     let user_agent = headers
         .get(header::USER_AGENT)
@@ -104,28 +220,74 @@ async fn ws_handler(
         .get(header::ACCEPT_LANGUAGE)
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
+    let login = login_from_cookie_header(
+        headers
+            .get(header::COOKIE)
+            .and_then(|value| value.to_str().ok()),
+    )
+    .await;
     ws.on_upgrade(move |socket| async move {
         handle_socket(
             socket,
-            channels,
-            bus_tx,
-            control_tx,
-            shaper_query,
-            browser_language,
+            WsUpgradeContext {
+                channels,
+                bus_tx,
+                control_tx,
+                probe_client,
+                shaper_query,
+                browser_language,
+                login,
+            },
         )
         .await;
     })
+    .into_response()
 }
 
-async fn handle_socket(
-    socket: WebSocket,
-    channels: Arc<PubSub>,
-    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
-    control_tx: tokio::sync::mpsc::Sender<crate::lts2_sys::control_channel::ControlChannelCommand>,
-    shaper_query: Sender<ShaperQueryCommand>,
-    browser_language: Option<String>,
-) {
+fn websocket_origin_allowed(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    else {
+        return true;
+    };
+
+    let Some(host) = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+    else {
+        return false;
+    };
+
+    let Ok(uri) = origin.parse::<Uri>() else {
+        return false;
+    };
+    let Some(scheme) = uri.scheme_str() else {
+        return false;
+    };
+    if scheme != "http" && scheme != "https" {
+        return false;
+    }
+
+    uri.authority()
+        .map(|authority| authority.as_str().eq_ignore_ascii_case(host))
+        .unwrap_or(false)
+}
+
+async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
     info!("Websocket connected");
+
+    let WsUpgradeContext {
+        channels,
+        bus_tx,
+        control_tx,
+        probe_client,
+        shaper_query,
+        browser_language,
+        mut login,
+    } = context;
 
     let (mut ws_tx, mut ws_rx) = socket.split();
 
@@ -141,7 +303,6 @@ async fn handle_socket(
     });
     let mut subscribed_channels = HashSet::new();
     let mut handshake_complete = false;
-    let mut login = LoginResult::Denied;
     let handshake_timeout =
         tokio::time::sleep(std::time::Duration::from_secs(HANDSHAKE_TIMEOUT_SECS));
     tokio::pin!(handshake_timeout);
@@ -158,8 +319,13 @@ async fn handle_socket(
         return;
     }
 
-    let mut private_state =
-        single_user_channels::PrivateState::new(tx.clone(), bus_tx, control_tx, browser_language);
+    let mut private_state = single_user_channels::PrivateState::new(
+        tx.clone(),
+        bus_tx,
+        control_tx,
+        probe_client,
+        browser_language,
+    );
     loop {
         tokio::select! {
             _ = &mut handshake_timeout, if !handshake_complete => {
@@ -170,19 +336,29 @@ async fn handle_socket(
                 // Received a websocket message
                 match inbound {
                     Some(Ok(msg)) => {
-                        let should_close = receive_channel_message(
-                            msg,
-                            channels.clone(),
-                            tx.clone(),
-                            &mut subscribed_channels,
-                            &mut handshake_complete,
-                            &mut WsRequestState {
-                                private_state: &mut private_state,
-                                login: &mut login,
-                                shaper_query: shaper_query.clone(),
-                            },
+                        let should_close = match tokio::time::timeout(
+                            std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS),
+                            receive_channel_message(
+                                msg,
+                                channels.clone(),
+                                tx.clone(),
+                                &mut subscribed_channels,
+                                &mut handshake_complete,
+                                &mut WsRequestState {
+                                    private_state: &mut private_state,
+                                    login: &mut login,
+                                    shaper_query: shaper_query.clone(),
+                                },
+                            ),
                         )
-                        .await;
+                        .await
+                        {
+                            Ok(should_close) => should_close,
+                            Err(_) => {
+                                warn!("Websocket request timed out; closing connection");
+                                true
+                            }
+                        };
                         if should_close {
                             break;
                         }
@@ -200,6 +376,11 @@ async fn handle_socket(
             }
         }
     }
+    for channel in subscribed_channels.drain() {
+        channels.unsubscribe(channel, tx.clone()).await;
+    }
+    drop(private_state);
+    drop(tx);
     outbound_handle.abort();
     let _ = outbound_handle.await;
     info!("Websocket disconnected");
@@ -217,6 +398,10 @@ struct WsRequestState<'a> {
     private_state: &'a mut single_user_channels::PrivateState,
     login: &'a mut LoginResult,
     shaper_query: Sender<ShaperQueryCommand>,
+}
+
+fn can_write_dashboard_themes(login: LoginResult) -> bool {
+    login == LoginResult::Admin
 }
 
 async fn receive_channel_message(
@@ -269,13 +454,10 @@ async fn receive_channel_message(
                 warn!("Websocket handshake ack mismatch");
                 return true;
             }
-            let token = reply.token.trim();
-            let login_result = login_from_token(token).await;
-            if login_result == LoginResult::Denied {
-                warn!("Websocket handshake token rejected");
+            if *request_state.login == LoginResult::Denied {
+                warn!("Websocket handshake cookie rejected");
                 return true;
             }
-            *request_state.login = login_result;
             *handshake_complete = true;
             info!("Websocket handshake completed");
             return false;
@@ -307,17 +489,25 @@ async fn receive_channel_message(
             }
         }
         WsRequest::DashletSave { name, entries } => {
-            let data = dashboard_themes::DashletSave { name, entries };
-            let result = dashboard_themes::save_theme_data(&data);
-            let response = match result {
-                Ok(_) => WsResponse::DashletSaveResult {
-                    ok: true,
-                    error: None,
-                },
-                Err(err) => WsResponse::DashletSaveResult {
+            let response = if can_write_dashboard_themes(*request_state.login) {
+                let data = dashboard_themes::DashletSave { name, entries };
+                match dashboard_themes::save_theme_data(&data) {
+                    Ok(_) => WsResponse::DashletSaveResult {
+                        ok: true,
+                        error: None,
+                    },
+                    Err(err) => WsResponse::DashletSaveResult {
+                        ok: false,
+                        error: Some(err),
+                    },
+                }
+            } else {
+                WsResponse::DashletSaveResult {
                     ok: false,
-                    error: Some(err),
-                },
+                    error: Some(
+                        "Only administrators can save shared dashboard layouts.".to_string(),
+                    ),
+                }
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -331,16 +521,24 @@ async fn receive_channel_message(
             }
         }
         WsRequest::DashletDelete { name } => {
-            let result = dashboard_themes::delete_theme_file(&name);
-            let response = match result {
-                Ok(_) => WsResponse::DashletDeleteResult {
-                    ok: true,
-                    error: None,
-                },
-                Err(err) => WsResponse::DashletDeleteResult {
+            let response = if can_write_dashboard_themes(*request_state.login) {
+                match dashboard_themes::delete_theme_file(&name) {
+                    Ok(_) => WsResponse::DashletDeleteResult {
+                        ok: true,
+                        error: None,
+                    },
+                    Err(err) => WsResponse::DashletDeleteResult {
+                        ok: false,
+                        error: Some(err),
+                    },
+                }
+            } else {
+                WsResponse::DashletDeleteResult {
                     ok: false,
-                    error: Some(err),
-                },
+                    error: Some(
+                        "Only administrators can delete shared dashboard layouts.".to_string(),
+                    ),
+                }
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -445,7 +643,8 @@ async fn receive_channel_message(
             }
         }
         WsRequest::CircuitDevices { circuit } => {
-            let devices = circuit_devices_snapshot(&circuit, request_state.private_state.bus_tx()).await;
+            let devices =
+                circuit_devices_snapshot(&circuit, request_state.private_state.bus_tx()).await;
             let response = circuit_devices_result(circuit, devices);
             if send_ws_response(&tx, response).await {
                 return true;
@@ -614,29 +813,31 @@ async fn receive_channel_message(
             }
         }
         WsRequest::AsnFlowTimeline { asn } => {
-            let response = WsResponse::AsnFlowTimeline {
-                asn,
-                data: flow_explorer::flow_timeline_data(asn),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::flow_timeline_data(asn)
+                .map(|data| WsResponse::AsnFlowTimeline { asn, data });
+            if send_flow_timeline_response(&tx, "ASN", response).await {
                 return true;
             }
         }
         WsRequest::CountryFlowTimeline { iso_code } => {
-            let response = WsResponse::CountryFlowTimeline {
-                iso_code: iso_code.clone(),
-                data: flow_explorer::country_timeline_data(&iso_code),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::country_timeline_data(&iso_code).map(|data| {
+                WsResponse::CountryFlowTimeline {
+                    iso_code: iso_code.clone(),
+                    data,
+                }
+            });
+            if send_flow_timeline_response(&tx, "country", response).await {
                 return true;
             }
         }
         WsRequest::ProtocolFlowTimeline { protocol } => {
-            let response = WsResponse::ProtocolFlowTimeline {
-                protocol: protocol.clone(),
-                data: flow_explorer::protocol_timeline_data(&protocol),
-            };
-            if send_ws_response(&tx, response).await {
+            let response = flow_explorer::protocol_timeline_data(&protocol).map(|data| {
+                WsResponse::ProtocolFlowTimeline {
+                    protocol: protocol.clone(),
+                    data,
+                }
+            });
+            if send_flow_timeline_response(&tx, "protocol", response).await {
                 return true;
             }
         }
@@ -647,32 +848,37 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::UrgentStatus => {
+        WsRequest::UrgentStatus { request_id } => {
             let response = WsResponse::UrgentStatus {
                 data: urgent::urgent_status_data(),
+                request_id,
             };
             if send_ws_response(&tx, response).await {
                 return true;
             }
         }
-        WsRequest::UrgentList => {
+        WsRequest::UrgentList { request_id } => {
             let response = WsResponse::UrgentList {
                 data: urgent::urgent_list_data(),
+                request_id,
             };
             if send_ws_response(&tx, response).await {
                 return true;
             }
         }
-        WsRequest::UrgentClear { id } => {
+        WsRequest::UrgentClear { id, request_id } => {
             let ok = urgent::urgent_clear_id(id);
-            let response = WsResponse::UrgentClearResult { ok };
+            let response = WsResponse::UrgentClearResult { ok, request_id };
             if send_ws_response(&tx, response).await {
                 return true;
             }
         }
-        WsRequest::UrgentClearAll => {
+        WsRequest::UrgentClearAll { request_id } => {
             urgent::urgent_clear_all_data();
-            let response = WsResponse::UrgentClearAllResult { ok: true };
+            let response = WsResponse::UrgentClearAllResult {
+                ok: true,
+                request_id,
+            };
             if send_ws_response(&tx, response).await {
                 return true;
             }
@@ -701,34 +907,46 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::SupportTicketList => {
-            if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+        WsRequest::SupportTicketList => match lts::support_ticket_gate().await {
+            Err(StatusCode::FORBIDDEN) => {
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: "Support tickets require an entitled license.".to_string(),
                     },
                 )
                 .await
                 {
                     return true;
                 }
-            } else {
+            }
+            Err(StatusCode::SERVICE_UNAVAILABLE) => {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "license valid, control service unavailable".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            }
+            _ => {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
                 let control_tx = request_state.private_state.control_tx();
-                if control_tx
-                    .send(
-                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketList {
-                            responder: reply_tx,
-                        },
-                    )
-                    .await
-                    .is_err()
+                if !send_control_command(
+                    &control_tx,
+                    ControlChannelCommand::SupportTicketList {
+                        responder: reply_tx,
+                    },
+                )
+                .await
                 {
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -736,12 +954,15 @@ async fn receive_channel_message(
                         return true;
                     }
                 } else {
-                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
-                        .await;
+                    let result =
+                        tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx).await;
                     match result {
                         Ok(Ok(Ok(tickets))) => {
-                            if send_ws_response(&tx, WsResponse::SupportTicketListResult { tickets })
-                                .await
+                            if send_ws_response(
+                                &tx,
+                                WsResponse::SupportTicketListResult { tickets },
+                            )
+                            .await
                             {
                                 return true;
                             }
@@ -761,36 +982,48 @@ async fn receive_channel_message(
                     }
                 }
             }
-        }
-        WsRequest::SupportTicketGet { ticket_id } => {
-            if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+        },
+        WsRequest::SupportTicketGet { ticket_id } => match lts::support_ticket_gate().await {
+            Err(StatusCode::FORBIDDEN) => {
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: "Support tickets require an entitled license.".to_string(),
                     },
                 )
                 .await
                 {
                     return true;
                 }
-            } else {
+            }
+            Err(StatusCode::SERVICE_UNAVAILABLE) => {
+                if send_ws_response(
+                    &tx,
+                    WsResponse::Error {
+                        message: "license valid, control service unavailable".to_string(),
+                    },
+                )
+                .await
+                {
+                    return true;
+                }
+            }
+            _ => {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
                 let control_tx = request_state.private_state.control_tx();
-                if control_tx
-                    .send(
-                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketGet {
-                            ticket_id,
-                            responder: reply_tx,
-                        },
-                    )
-                    .await
-                    .is_err()
+                if !send_control_command(
+                    &control_tx,
+                    ControlChannelCommand::SupportTicketGet {
+                        ticket_id,
+                        responder: reply_tx,
+                    },
+                )
+                .await
                 {
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -823,7 +1056,7 @@ async fn receive_channel_message(
                     }
                 }
             }
-        }
+        },
         WsRequest::SupportTicketCreate {
             subject,
             priority,
@@ -841,11 +1074,16 @@ async fn receive_channel_message(
                 {
                     return true;
                 }
-            } else if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+            } else if let Err(status) = lts::support_ticket_gate().await {
+                let message = match status {
+                    StatusCode::FORBIDDEN => "Support tickets require an entitled license.",
+                    StatusCode::SERVICE_UNAVAILABLE => "license valid, control service unavailable",
+                    _ => "Support tickets unavailable",
+                };
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: message.to_string(),
                     },
                 )
                 .await
@@ -855,23 +1093,22 @@ async fn receive_channel_message(
             } else {
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
                 let control_tx = request_state.private_state.control_tx();
-                if control_tx
-                    .send(
-                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketCreate {
-                            subject,
-                            priority,
-                            body,
-                            commentor,
-                            responder: reply_tx,
-                        },
-                    )
-                    .await
-                    .is_err()
+                if !send_control_command(
+                    &control_tx,
+                    ControlChannelCommand::SupportTicketCreate {
+                        subject,
+                        priority,
+                        body,
+                        commentor,
+                        responder: reply_tx,
+                    },
+                )
+                .await
                 {
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -879,12 +1116,15 @@ async fn receive_channel_message(
                         return true;
                     }
                 } else {
-                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
-                        .await;
+                    let result =
+                        tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx).await;
                     match result {
                         Ok(Ok(Ok(ticket))) => {
-                            if send_ws_response(&tx, WsResponse::SupportTicketCreateResult { ticket })
-                                .await
+                            if send_ws_response(
+                                &tx,
+                                WsResponse::SupportTicketCreateResult { ticket },
+                            )
+                            .await
                             {
                                 return true;
                             }
@@ -921,11 +1161,16 @@ async fn receive_channel_message(
                 {
                     return true;
                 }
-            } else if let Err(StatusCode::FORBIDDEN) = lts::support_ticket_gate().await {
+            } else if let Err(status) = lts::support_ticket_gate().await {
+                let message = match status {
+                    StatusCode::FORBIDDEN => "Support tickets require an entitled license.",
+                    StatusCode::SERVICE_UNAVAILABLE => "license valid, control service unavailable",
+                    _ => "Support tickets unavailable",
+                };
                 if send_ws_response(
                     &tx,
                     WsResponse::Error {
-                        message: "Support tickets require an Insight subscription".to_string(),
+                        message: message.to_string(),
                     },
                 )
                 .await
@@ -939,23 +1184,22 @@ async fn receive_channel_message(
                     .unwrap_or(0);
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
                 let control_tx = request_state.private_state.control_tx();
-                if control_tx
-                    .send(
-                        crate::lts2_sys::control_channel::ControlChannelCommand::SupportTicketAddComment {
-                            ticket_id,
-                            commentor,
-                            body,
-                            date,
-                            responder: reply_tx,
-                        },
-                    )
-                    .await
-                    .is_err()
+                if !send_control_command(
+                    &control_tx,
+                    ControlChannelCommand::SupportTicketAddComment {
+                        ticket_id,
+                        commentor,
+                        body,
+                        date,
+                        responder: reply_tx,
+                    },
+                )
+                .await
                 {
                     if send_ws_response(
                         &tx,
                         WsResponse::Error {
-                            message: "Insight control channel unavailable".to_string(),
+                            message: "license valid, control service unavailable".to_string(),
                         },
                     )
                     .await
@@ -963,8 +1207,8 @@ async fn receive_channel_message(
                         return true;
                     }
                 } else {
-                    let result = tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx)
-                        .await;
+                    let result =
+                        tokio::time::timeout(std::time::Duration::from_secs(30), reply_rx).await;
                     match result {
                         Ok(Ok(Ok(()))) => {
                             if send_ws_response(
@@ -1036,6 +1280,56 @@ async fn receive_channel_message(
                 return true;
             }
         }
+        WsRequest::LtsCapabilities => match lts::lts_capabilities_data(*request_state.login) {
+            Ok(data) => {
+                let response = WsResponse::LtsCapabilitiesResult { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load license status".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
+        WsRequest::LtsRetryLicenseCheck => {
+            match lts::retry_license_check_data(*request_state.login) {
+                Ok(data) => {
+                    let response = WsResponse::LtsCapabilitiesResult { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to retry license check".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
         WsRequest::LtsStartSignup => {
             let result = lts::lts_trial_start_signup_data().await;
             match result {
@@ -1075,14 +1369,19 @@ async fn receive_channel_message(
                 Err(_) => (false, "Error".to_string()),
             };
             let response = WsResponse::LtsSignUpResult { ok, message };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-            if ok {
+            let close_connection = send_ws_response(&tx, response).await;
+            maybe_schedule_lts_signup_shutdown(ok, close_connection, || {
                 tokio::spawn(async {
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                    std::process::exit(0);
+                    if let Err(err) = crate::program_control::request_graceful_shutdown(
+                        "Insight signup completed",
+                    ) {
+                        tracing::error!("Unable to request graceful lqosd restart: {err}");
+                    }
                 });
+            });
+            if close_connection {
+                return true;
             }
         }
         WsRequest::LtsShaperStatus => match lts::shaper_status_data().await {
@@ -1094,7 +1393,7 @@ async fn receive_channel_message(
             }
             Err(StatusCode::FORBIDDEN) => {
                 let response = WsResponse::Error {
-                    message: "Insight not enabled".to_string(),
+                    message: "This page requires an entitled license.".to_string(),
                 };
                 if send_ws_response(&tx, response).await {
                     return true;
@@ -1119,7 +1418,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1145,7 +1444,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1172,7 +1471,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1199,7 +1498,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1225,7 +1524,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1251,7 +1550,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1279,7 +1578,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1305,7 +1604,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1332,7 +1631,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1358,7 +1657,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1384,7 +1683,7 @@ async fn receive_channel_message(
                 }
                 Err(StatusCode::FORBIDDEN) => {
                     let response = WsResponse::Error {
-                        message: "Insight not enabled".to_string(),
+                        message: "This page requires an entitled license.".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1472,15 +1771,60 @@ async fn receive_channel_message(
                 }
             }
         }
-        WsRequest::UpdateConfig { config: cfg } => {
-            let result = config::update_lqosd_config_data(*request_state.login, cfg).await;
+        WsRequest::UpdateConfig {
+            config: cfg,
+            clear_secrets,
+        } => {
+            let result =
+                config::update_lqosd_config_data(*request_state.login, cfg, clear_secrets).await;
             let (ok, message) = match result {
                 Ok(()) => (true, "Ok".to_string()),
-                Err(StatusCode::FORBIDDEN) => (false, "Unauthorized".to_string()),
-                Err(_) => (false, "Error".to_string()),
+                Err(message) => (false, message),
             };
             let response = WsResponse::UpdateConfigResult { ok, message };
             if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::CreateLocalApiKey { name } => {
+            let response = match local_api_keys::create(*request_state.login, name).await {
+                Ok(key) => WsResponse::CreateLocalApiKeyResult {
+                    ok: true,
+                    message: "API key created".to_string(),
+                    key: Some(key),
+                },
+                Err(message) => WsResponse::CreateLocalApiKeyResult {
+                    ok: false,
+                    message,
+                    key: None,
+                },
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::RevokeLocalApiKey { id } => {
+            let result = local_api_keys::revoke(*request_state.login, id).await;
+            let (ok, message) = match result {
+                Ok(()) => (true, "API key revoked".to_string()),
+                Err(message) => (false, message),
+            };
+            if send_ws_response(&tx, WsResponse::RevokeLocalApiKeyResult { ok, message }).await {
+                return true;
+            }
+        }
+        WsRequest::RemoveLegacyLocalApiKey => {
+            let result = local_api_keys::remove_legacy(*request_state.login).await;
+            let (ok, message) = match result {
+                Ok(()) => (true, "Legacy local API key removed".to_string()),
+                Err(message) => (false, message),
+            };
+            if send_ws_response(
+                &tx,
+                WsResponse::RemoveLegacyLocalApiKeyResult { ok, message },
+            )
+            .await
+            {
                 return true;
             }
         }
@@ -1646,6 +1990,416 @@ async fn receive_channel_message(
                 Err(_) => {
                     let response = WsResponse::Error {
                         message: "Unable to clear tree node override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::GetNodeTopologyOverride { query } => {
+            match node_topology_overrides::get_node_topology_override_data(
+                *request_state.login,
+                query,
+            ) {
+                Ok(data) => {
+                    let response = WsResponse::GetNodeTopologyOverride { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology override request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load topology override state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::GetTopologyManagerState => {
+            let login = *request_state.login;
+            match run_topology_manager_blocking("get_topology_manager_state", move || {
+                topology_manager::get_topology_manager_state(login)
+            })
+            .await
+            {
+                Ok(data) => {
+                    let response = WsResponse::GetTopologyManagerState { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load topology manager state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::GetTopologyProbesState => {
+            match topology_probes::get_topology_probes_state(*request_state.login) {
+                Ok(data) => {
+                    let response = WsResponse::GetTopologyProbesState { data };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to load topology probe state".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerOverride { update } => {
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_override",
+                move || topology_manager::set_topology_manager_override(login, update),
+            )
+            .await;
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerOverrideResult {
+                        ok: true,
+                        message: "Topology move saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology manager update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to save topology move".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearTopologyManagerOverride { clear } => {
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "clear_topology_manager_override",
+                move || topology_manager::clear_topology_manager_override(login, clear),
+            )
+            .await;
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearTopologyManagerOverrideResult {
+                        ok: true,
+                        message: "Topology move cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology manager clear request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear topology move".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerProbePolicy { update } => {
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_probe_policy",
+                move || topology_manager::set_topology_manager_probe_policy(login, update),
+            )
+            .await;
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerProbePolicyResult {
+                        ok: true,
+                        message: "Probe policy updated".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid topology manager probe policy update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to update topology manager probe policy".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerAttachmentRateOverride { update } => {
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_attachment_rate_override",
+                move || {
+                    topology_manager::set_topology_manager_attachment_rate_override(login, update)
+                },
+            )
+            .await;
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerAttachmentRateOverrideResult {
+                        ok: true,
+                        message: "Attachment rate override saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid attachment rate override update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to save attachment rate override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearTopologyManagerAttachmentRateOverride { clear } => {
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "clear_topology_manager_attachment_rate_override",
+                move || {
+                    topology_manager::clear_topology_manager_attachment_rate_override(login, clear)
+                },
+            )
+            .await;
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearTopologyManagerAttachmentRateOverrideResult {
+                        ok: true,
+                        message: "Attachment rate override cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid attachment rate override clear request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear attachment rate override".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::SetTopologyManagerManualAttachmentGroup { update } => {
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "set_topology_manager_manual_attachment_group",
+                move || {
+                    topology_manager::set_topology_manager_manual_attachment_group(login, update)
+                },
+            )
+            .await;
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::SetTopologyManagerManualAttachmentGroupResult {
+                        ok: true,
+                        message: "Manual attachment group saved".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid manual attachment group update".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to save manual attachment group".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+            }
+        }
+        WsRequest::ClearTopologyManagerManualAttachmentGroup { clear } => {
+            let login = *request_state.login;
+            let result = run_topology_manager_mutation_blocking(
+                "clear_topology_manager_manual_attachment_group",
+                move || {
+                    topology_manager::clear_topology_manager_manual_attachment_group(login, clear)
+                },
+            )
+            .await;
+            match result {
+                Ok(data) => {
+                    let response = WsResponse::ClearTopologyManagerManualAttachmentGroupResult {
+                        ok: true,
+                        message: "Manual attachment group cleared".to_string(),
+                        data,
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::FORBIDDEN) => {
+                    let response = WsResponse::Error {
+                        message: "Unauthorized".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(StatusCode::BAD_REQUEST) => {
+                    let response = WsResponse::Error {
+                        message: "Invalid manual attachment group clear request".to_string(),
+                    };
+                    if send_ws_response(&tx, response).await {
+                        return true;
+                    }
+                }
+                Err(_) => {
+                    let response = WsResponse::Error {
+                        message: "Unable to clear manual attachment group".to_string(),
                     };
                     if send_ws_response(&tx, response).await {
                         return true;
@@ -1951,6 +2705,36 @@ async fn send_ws_response(tx: &Sender<Arc<Vec<u8>>>, response: WsResponse) -> bo
     }
 }
 
+fn maybe_schedule_lts_signup_shutdown(
+    signup_ok: bool,
+    close_connection: bool,
+    schedule_shutdown: impl FnOnce(),
+) {
+    if signup_ok && !close_connection {
+        schedule_shutdown();
+    }
+}
+
+async fn send_flow_timeline_response(
+    tx: &Sender<Arc<Vec<u8>>>,
+    label: &str,
+    response: Result<WsResponse, lqos_utils::unix_time::TimeError>,
+) -> bool {
+    match response {
+        Ok(response) => send_ws_response(tx, response).await,
+        Err(err) => {
+            warn!("Unable to build {label} flow timeline: {err}");
+            send_ws_response(
+                tx,
+                WsResponse::Error {
+                    message: format!("Unable to build {label} flow timeline"),
+                },
+            )
+            .await
+        }
+    }
+}
+
 fn decode_ws_request(payload: &[u8]) -> Result<WsRequest, String> {
     let prefix = payload_prefix_hex(payload, 24);
     let hint = payload_hint(payload);
@@ -2001,5 +2785,528 @@ fn payload_hint(payload: &[u8]) -> &'static str {
         b'{' | b'[' => "looks like JSON",
         b'"' => "looks like quoted text",
         _ => "binary",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        can_write_dashboard_themes, decode_ws_request, maybe_schedule_lts_signup_shutdown,
+        run_topology_manager_blocking_with_timeout, run_topology_manager_mutation_blocking,
+        websocket_origin_allowed,
+    };
+    use crate::node_manager::auth::LoginResult;
+    use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
+    use crate::node_manager::ws::messages::WsRequest;
+    use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
+    use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+    use serde_cbor::Value as CborValue;
+    use std::collections::BTreeMap;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
+    use tokio::sync::Semaphore;
+
+    fn text(value: &str) -> CborValue {
+        CborValue::Text(value.to_string())
+    }
+
+    fn integer(value: i128) -> CborValue {
+        CborValue::Integer(value)
+    }
+
+    fn float(value: f64) -> CborValue {
+        CborValue::Float(value)
+    }
+
+    fn array(items: Vec<CborValue>) -> CborValue {
+        CborValue::Array(items)
+    }
+
+    fn map(entries: Vec<(&str, CborValue)>) -> CborValue {
+        let mut out = BTreeMap::new();
+        for (key, value) in entries {
+            out.insert(text(key), value);
+        }
+        CborValue::Map(out)
+    }
+
+    fn device_value(ipv4: CborValue, ipv6: CborValue) -> CborValue {
+        map(vec![
+            ("circuit_id", text("circuit-1")),
+            ("circuit_name", text("Circuit 1")),
+            ("device_id", text("device-1")),
+            ("device_name", text("Device 1")),
+            ("parent_node", text("tower-a")),
+            ("mac", text("")),
+            ("ipv4", ipv4),
+            ("ipv6", ipv6),
+            ("download_min_mbps", float(100.0)),
+            ("upload_min_mbps", float(100.0)),
+            ("download_max_mbps", float(200.0)),
+            ("upload_max_mbps", float(200.0)),
+            ("comment", text("")),
+        ])
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_propagates_status_errors() {
+        let result = run_topology_manager_blocking_with_timeout(
+            "test_status_error",
+            Duration::from_millis(50),
+            Arc::new(Semaphore::new(1)),
+            || Err(StatusCode::BAD_REQUEST),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_returns_success_data() {
+        let result =
+            run_topology_manager_blocking_with_timeout(
+                "test_success",
+                Duration::from_millis(50),
+                Arc::new(Semaphore::new(1)),
+                || {
+                    Ok(crate::node_manager::local_api::topology_manager::TopologyManagerStateData {
+                    writable: true,
+                    source: "test".to_string(),
+                    schema_version: 1,
+                    nodes: Vec::new(),
+                    global_warnings: Vec::new(),
+                })
+                },
+            )
+            .await
+            .expect("topology manager state should be returned");
+
+        assert!(result.writable);
+        assert_eq!(result.source, "test");
+        assert_eq!(result.schema_version, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_maps_panics_to_internal_server_error() {
+        let result = run_topology_manager_blocking_with_timeout(
+            "test_panic",
+            Duration::from_millis(50),
+            Arc::new(Semaphore::new(1)),
+            || panic!("topology manager test panic"),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_blocking_times_out_waiting_for_slot() {
+        let permits = Arc::new(Semaphore::new(1));
+        let held_permit = permits
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("test semaphore is open");
+
+        let result = run_topology_manager_blocking_with_timeout(
+            "test_timeout",
+            Duration::from_millis(5),
+            permits,
+            || panic!("work should not start without a topology manager slot"),
+        )
+        .await;
+
+        drop(held_permit);
+        assert_eq!(result.unwrap_err(), StatusCode::GATEWAY_TIMEOUT);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_mutations_are_serialized() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let first_active = active.clone();
+        let first_max = max_active.clone();
+        let first = tokio::spawn(async move {
+            run_topology_manager_mutation_blocking("test_mutation_one", move || {
+                let now_active = first_active.fetch_add(1, Ordering::SeqCst) + 1;
+                first_max.fetch_max(now_active, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(20));
+                first_active.fetch_sub(1, Ordering::SeqCst);
+                Err(StatusCode::BAD_REQUEST)
+            })
+            .await
+        });
+
+        let second_active = active.clone();
+        let second_max = max_active.clone();
+        let second = tokio::spawn(async move {
+            run_topology_manager_mutation_blocking("test_mutation_two", move || {
+                let now_active = second_active.fetch_add(1, Ordering::SeqCst) + 1;
+                second_max.fetch_max(now_active, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(20));
+                second_active.fetch_sub(1, Ordering::SeqCst);
+                Err(StatusCode::BAD_REQUEST)
+            })
+            .await
+        });
+
+        assert_eq!(first.await.unwrap().unwrap_err(), StatusCode::BAD_REQUEST);
+        assert_eq!(second.await.unwrap().unwrap_err(), StatusCode::BAD_REQUEST);
+        assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn topology_manager_mutation_maps_panics_to_internal_server_error() {
+        let result = run_topology_manager_mutation_blocking("test_mutation_panic", || {
+            panic!("topology manager mutation test panic");
+        })
+        .await;
+
+        assert_eq!(result.unwrap_err(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let recovered = run_topology_manager_mutation_blocking("test_mutation_after_panic", || {
+            Err(StatusCode::BAD_REQUEST)
+        })
+        .await;
+        assert_eq!(recovered.unwrap_err(), StatusCode::BAD_REQUEST);
+    }
+
+    fn create_shaped_device_payload(device: CborValue) -> Vec<u8> {
+        serde_cbor::to_vec(&map(vec![(
+            "CreateShapedDevice",
+            map(vec![("device", device)]),
+        )]))
+        .expect("valid create payload")
+    }
+
+    #[test]
+    fn lts_signup_shutdown_is_scheduled_after_successful_response() {
+        let called = Arc::new(AtomicBool::new(false));
+        let called_by_scheduler = called.clone();
+
+        maybe_schedule_lts_signup_shutdown(true, false, || {
+            called_by_scheduler.store(true, Ordering::SeqCst);
+        });
+
+        assert!(called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn lts_signup_shutdown_is_not_scheduled_when_response_closes_connection() {
+        let called = Arc::new(AtomicBool::new(false));
+        let called_by_scheduler = called.clone();
+
+        maybe_schedule_lts_signup_shutdown(true, true, || {
+            called_by_scheduler.store(true, Ordering::SeqCst);
+        });
+
+        assert!(!called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn lts_signup_shutdown_is_not_scheduled_after_failed_signup() {
+        let called = Arc::new(AtomicBool::new(false));
+        let called_by_scheduler = called.clone();
+
+        maybe_schedule_lts_signup_shutdown(false, false, || {
+            called_by_scheduler.store(true, Ordering::SeqCst);
+        });
+
+        assert!(!called.load(Ordering::SeqCst));
+    }
+
+    fn update_shaped_device_payload(device: CborValue) -> Vec<u8> {
+        serde_cbor::to_vec(&map(vec![(
+            "UpdateShapedDevice",
+            map(vec![
+                ("original_device_id", text("device-1")),
+                ("device", device),
+            ]),
+        )]))
+        .expect("valid update payload")
+    }
+
+    fn encode_response_value(response: &WsResponse) -> CborValue {
+        let payload = encode_ws_message(response).expect("response should encode");
+        serde_cbor::from_slice(payload.as_ref()).expect("response should decode as CBOR value")
+    }
+
+    fn response_request_id(response: &WsResponse, event_name: &str) -> Option<u64> {
+        let CborValue::Map(entries) = encode_response_value(response) else {
+            panic!("response should encode as a CBOR map");
+        };
+        let event_key = text("event");
+        let request_id_key = text("request_id");
+        assert_eq!(entries.get(&event_key), Some(&text(event_name)));
+        match entries.get(&request_id_key) {
+            Some(CborValue::Integer(value)) => {
+                Some(u64::try_from(*value).expect("request_id is u64"))
+            }
+            Some(other) => panic!("unexpected request_id value: {other:?}"),
+            None => None,
+        }
+    }
+
+    fn response_has_request_id(response: &WsResponse) -> bool {
+        let CborValue::Map(entries) = encode_response_value(response) else {
+            panic!("response should encode as a CBOR map");
+        };
+        entries.contains_key(&text("request_id"))
+    }
+
+    fn origin_headers(host: &str, origin: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_str(host).unwrap());
+        if let Some(origin) = origin {
+            headers.insert(header::ORIGIN, HeaderValue::from_str(origin).unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn read_only_websocket_users_cannot_write_dashboard_themes() {
+        assert!(can_write_dashboard_themes(LoginResult::Admin));
+        assert!(!can_write_dashboard_themes(LoginResult::ReadOnly));
+        assert!(!can_write_dashboard_themes(LoginResult::Denied));
+    }
+
+    #[test]
+    fn websocket_origin_allows_same_origin_and_non_browser_clients() {
+        assert!(websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("https://node.example.test:9123")
+        )));
+        assert!(websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            None
+        )));
+    }
+
+    #[test]
+    fn websocket_origin_rejects_cross_origin_and_invalid_origin() {
+        assert!(!websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("https://evil.example.test")
+        )));
+        assert!(!websocket_origin_allowed(&origin_headers(
+            "node.example.test:9123",
+            Some("null")
+        )));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://node.example.test:9123"),
+        );
+        assert!(!websocket_origin_allowed(&headers));
+    }
+
+    #[test]
+    fn decodes_urgent_status_with_request_id() {
+        let payload = serde_cbor::to_vec(&map(vec![(
+            "UrgentStatus",
+            map(vec![("request_id", integer(42))]),
+        )]))
+        .expect("valid urgent status payload");
+
+        let request = decode_ws_request(&payload).expect("urgent status request should decode");
+        match request {
+            WsRequest::UrgentStatus { request_id } => assert_eq!(request_id, Some(42)),
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decodes_urgent_list_without_request_id() {
+        let payload = serde_cbor::to_vec(&map(vec![("UrgentList", map(vec![]))]))
+            .expect("valid urgent list payload");
+
+        let request = decode_ws_request(&payload).expect("urgent list request should decode");
+        match request {
+            WsRequest::UrgentList { request_id } => assert_eq!(request_id, None),
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decodes_urgent_clear_with_request_id() {
+        let payload = serde_cbor::to_vec(&map(vec![(
+            "UrgentClear",
+            map(vec![("id", integer(7)), ("request_id", integer(42))]),
+        )]))
+        .expect("valid urgent clear payload");
+
+        let request = decode_ws_request(&payload).expect("urgent clear request should decode");
+        match request {
+            WsRequest::UrgentClear { id, request_id } => {
+                assert_eq!(id, 7);
+                assert_eq!(request_id, Some(42));
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decodes_urgent_clear_all_without_request_id() {
+        let payload = serde_cbor::to_vec(&map(vec![("UrgentClearAll", map(vec![]))]))
+            .expect("valid urgent clear all payload");
+
+        let request = decode_ws_request(&payload).expect("urgent clear all request should decode");
+        match request {
+            WsRequest::UrgentClearAll { request_id } => assert_eq!(request_id, None),
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn urgent_responses_echo_request_id() {
+        assert_eq!(
+            response_request_id(
+                &WsResponse::UrgentStatus {
+                    data: UrgentStatus {
+                        has_urgent: true,
+                        count: 1,
+                    },
+                    request_id: Some(42),
+                },
+                "UrgentStatus",
+            ),
+            Some(42),
+        );
+        assert_eq!(
+            response_request_id(
+                &WsResponse::UrgentList {
+                    data: UrgentList { items: Vec::new() },
+                    request_id: Some(43),
+                },
+                "UrgentList",
+            ),
+            Some(43),
+        );
+        assert_eq!(
+            response_request_id(
+                &WsResponse::UrgentClearResult {
+                    ok: true,
+                    request_id: Some(44),
+                },
+                "UrgentClearResult",
+            ),
+            Some(44),
+        );
+        assert_eq!(
+            response_request_id(
+                &WsResponse::UrgentClearAllResult {
+                    ok: true,
+                    request_id: Some(45),
+                },
+                "UrgentClearAllResult",
+            ),
+            Some(45),
+        );
+    }
+
+    #[test]
+    fn urgent_responses_omit_missing_request_id() {
+        assert!(!response_has_request_id(&WsResponse::UrgentStatus {
+            data: UrgentStatus {
+                has_urgent: false,
+                count: 0,
+            },
+            request_id: None,
+        }));
+        assert!(!response_has_request_id(&WsResponse::UrgentList {
+            data: UrgentList { items: Vec::new() },
+            request_id: None,
+        }));
+        assert!(!response_has_request_id(&WsResponse::UrgentClearResult {
+            ok: true,
+            request_id: None,
+        }));
+        assert!(!response_has_request_id(
+            &WsResponse::UrgentClearAllResult {
+                ok: true,
+                request_id: None,
+            }
+        ));
+    }
+
+    #[test]
+    fn decodes_create_shaped_device_with_browser_style_ipv4_bytes() {
+        let payload = create_shaped_device_payload(device_value(
+            array(vec![array(vec![
+                array(vec![integer(192), integer(168), integer(1), integer(2)]),
+                integer(32),
+            ])]),
+            array(vec![]),
+        ));
+
+        let request = decode_ws_request(&payload).expect("create request should decode");
+        match request {
+            WsRequest::CreateShapedDevice { device } => {
+                assert_eq!(device.device_id, "device-1");
+                assert_eq!(device.ipv4.len(), 1);
+                assert_eq!(device.ipv4[0].0.octets(), [192, 168, 1, 2]);
+                assert_eq!(device.ipv4[0].1, 32);
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn decodes_update_shaped_device_with_browser_style_ipv6_bytes() {
+        let payload = update_shaped_device_payload(device_value(
+            array(vec![]),
+            array(vec![array(vec![
+                array(vec![
+                    integer(0x20),
+                    integer(0x01),
+                    integer(0x0d),
+                    integer(0xb8),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(0),
+                    integer(1),
+                ]),
+                integer(128),
+            ])]),
+        ));
+
+        let request = decode_ws_request(&payload).expect("update request should decode");
+        match request {
+            WsRequest::UpdateShapedDevice {
+                original_device_id,
+                device,
+            } => {
+                assert_eq!(original_device_id, "device-1");
+                assert_eq!(device.ipv6.len(), 1);
+                assert_eq!(device.ipv6[0].0.to_string(), "2001:db8::1");
+                assert_eq!(device.ipv6[0].1, 128);
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_legacy_string_encoded_ipv4_payloads() {
+        let payload = create_shaped_device_payload(device_value(
+            array(vec![array(vec![text("192.168.1.2"), integer(32)])]),
+            array(vec![]),
+        ));
+
+        let err = decode_ws_request(&payload).expect_err("legacy payload must fail");
+        assert!(err.contains("expected an array of length 4"));
+        assert!(err.contains("192.168.1.2"));
     }
 }

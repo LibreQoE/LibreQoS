@@ -1,11 +1,9 @@
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use lqos_config::{
-    CIRCUIT_ETHERNET_METADATA_FILENAME, CircuitEthernetMetadata, CircuitEthernetMetadataFile,
-    load_config,
+    CircuitEthernetMetadata, CircuitEthernetMetadataFile, EthernetCapTargetKind, load_config,
 };
+use lqos_utils::normalize_circuit_id_key;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 
 const DEFAULT_ETHERNET_CAPS_PAGE_SIZE: usize = 100;
 const MAX_ETHERNET_CAPS_PAGE_SIZE: usize = 250;
@@ -75,13 +73,19 @@ pub struct EthernetCapsPageQuery {
     pub tier: Option<EthernetCapTier>,
 }
 
-/// One Ethernet-limited circuit row for the review page.
+/// One Ethernet-limited circuit or topology-node row for the review page.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct EthernetCapsPageRow {
-    /// Stable circuit identifier used for deep-linking to the circuit page.
+    /// Stable circuit identifier retained for clients that only understand circuit rows.
     pub circuit_id: String,
-    /// Human-facing circuit name.
+    /// Human-facing circuit name retained for clients that only understand circuit rows.
     pub circuit_name: String,
+    /// Whether this row represents a circuit or topology node.
+    pub target_kind: EthernetCapTargetKind,
+    /// Stable target identifier used for deep-linking.
+    pub target_id: String,
+    /// Human-facing target name.
+    pub target_name: String,
     /// Parent node from shaped devices when available.
     pub parent_node: String,
     /// Compact warning badge metadata.
@@ -137,15 +141,15 @@ fn advisory_to_badge(advisory: &CircuitEthernetMetadata) -> Option<EthernetCapBa
 
 fn load_advisory_file() -> Option<CircuitEthernetMetadataFile> {
     let cfg = load_config().ok()?;
-    let path = Path::new(&cfg.lqos_directory).join(CIRCUIT_ETHERNET_METADATA_FILENAME);
+    let path = lqos_config::circuit_ethernet_metadata_path(cfg.as_ref());
     let payload = std::fs::read(path).ok()?;
     serde_json::from_slice(&payload).ok()
 }
 
 fn parent_node_by_circuit_id() -> HashMap<String, String> {
-    let devices = SHAPED_DEVICES.load();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     let mut parent_nodes = HashMap::new();
-    for device in &devices.devices {
+    for device in catalog.iter_devices() {
         let circuit_id = device.circuit_id.trim();
         if circuit_id.is_empty() {
             continue;
@@ -165,6 +169,35 @@ fn sort_rank(tier: &EthernetCapTier) -> u8 {
     }
 }
 
+fn advisory_to_page_row(
+    advisory: &CircuitEthernetMetadata,
+    parent_nodes: &HashMap<String, String>,
+) -> Option<EthernetCapsPageRow> {
+    let badge = advisory_to_badge(advisory)?;
+    let target_id = advisory.target_id_or_circuit_id().to_string();
+    let target_name = advisory.target_name_or_circuit_name().to_string();
+    let parent_node = if advisory.target_kind == EthernetCapTargetKind::Circuit {
+        parent_nodes
+            .get(&advisory.circuit_id)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    Some(EthernetCapsPageRow {
+        circuit_id: advisory.circuit_id.clone(),
+        circuit_name: advisory.circuit_name.clone(),
+        target_kind: advisory.target_kind.clone(),
+        target_id,
+        target_name,
+        parent_node,
+        badge,
+        limiting_device_name: advisory.limiting_device_name.clone(),
+        limiting_interface_name: advisory.limiting_interface_name.clone(),
+    })
+}
+
 /// Returns a compact badge map keyed by circuit ID for Ethernet auto-capped circuits.
 pub(crate) fn ethernet_cap_badge_map() -> HashMap<String, EthernetCapBadge> {
     let mut badges = HashMap::new();
@@ -172,10 +205,13 @@ pub(crate) fn ethernet_cap_badge_map() -> HashMap<String, EthernetCapBadge> {
         return badges;
     };
     for advisory in file.circuits {
+        if advisory.target_kind != EthernetCapTargetKind::Circuit {
+            continue;
+        }
         let Some(badge) = advisory_to_badge(&advisory) else {
             continue;
         };
-        badges.insert(advisory.circuit_id.to_ascii_lowercase(), badge);
+        badges.insert(normalize_circuit_id_key(&advisory.circuit_id), badge);
     }
     badges
 }
@@ -187,7 +223,8 @@ pub(crate) fn ethernet_advisory_for_circuit(
 ) -> Option<CircuitEthernetMetadata> {
     let file = load_advisory_file()?;
     file.circuits.into_iter().find(|entry| {
-        entry.auto_capped
+        entry.target_kind == EthernetCapTargetKind::Circuit
+            && entry.auto_capped
             && entry.circuit_id.eq_ignore_ascii_case(circuit_id)
             && entry
                 .device_ids
@@ -206,31 +243,19 @@ pub fn ethernet_caps_page(query: EthernetCapsPageQuery) -> EthernetCapsPage {
     let mut rows = Vec::new();
     if let Some(file) = load_advisory_file() {
         for advisory in file.circuits {
-            let Some(badge) = advisory_to_badge(&advisory) else {
+            let Some(row) = advisory_to_page_row(&advisory, &parent_nodes) else {
                 continue;
             };
             if let Some(filter_tier) = query.tier.as_ref()
-                && &badge.tier != filter_tier
+                && &row.badge.tier != filter_tier
             {
                 continue;
             }
-            let parent_node = parent_nodes
-                .get(&advisory.circuit_id)
-                .cloned()
-                .unwrap_or_default();
-            let row = EthernetCapsPageRow {
-                circuit_id: advisory.circuit_id,
-                circuit_name: advisory.circuit_name,
-                parent_node,
-                badge,
-                limiting_device_name: advisory.limiting_device_name,
-                limiting_interface_name: advisory.limiting_interface_name,
-            };
             if !search.is_empty() {
                 let limiting_device = row.limiting_device_name.as_deref().unwrap_or("");
                 let limiting_interface = row.limiting_interface_name.as_deref().unwrap_or("");
-                if !row.circuit_id.to_lowercase().contains(&search)
-                    && !row.circuit_name.to_lowercase().contains(&search)
+                if !row.target_id.to_lowercase().contains(&search)
+                    && !row.target_name.to_lowercase().contains(&search)
                     && !row.parent_node.to_lowercase().contains(&search)
                     && !row.badge.tier_label.to_lowercase().contains(&search)
                     && !limiting_device.to_lowercase().contains(&search)
@@ -246,8 +271,8 @@ pub fn ethernet_caps_page(query: EthernetCapsPageQuery) -> EthernetCapsPage {
     rows.sort_by(|left, right| {
         sort_rank(&left.badge.tier)
             .cmp(&sort_rank(&right.badge.tier))
-            .then_with(|| left.circuit_name.cmp(&right.circuit_name))
-            .then_with(|| left.circuit_id.cmp(&right.circuit_id))
+            .then_with(|| left.target_name.cmp(&right.target_name))
+            .then_with(|| left.target_id.cmp(&right.target_id))
     });
 
     let total_rows = rows.len();
@@ -277,7 +302,9 @@ pub fn ethernet_caps_page(query: EthernetCapsPageQuery) -> EthernetCapsPage {
 
 #[cfg(test)]
 mod tests {
-    use super::{EthernetCapTier, sort_rank, tier_for_speed};
+    use super::{EthernetCapTargetKind, EthernetCapTier, advisory_to_page_row, sort_rank, tier_for_speed};
+    use lqos_config::CircuitEthernetMetadata;
+    use std::collections::HashMap;
 
     #[test]
     fn ethernet_cap_tier_classifies_expected_speeds() {
@@ -290,5 +317,31 @@ mod tests {
     fn ethernet_cap_sort_rank_prioritizes_low_speed_tiers() {
         assert!(sort_rank(&EthernetCapTier::TenM) < sort_rank(&EthernetCapTier::HundredM));
         assert!(sort_rank(&EthernetCapTier::HundredM) < sort_rank(&EthernetCapTier::GigPlus));
+    }
+
+    #[test]
+    fn topology_node_advisory_becomes_a_node_page_row() {
+        let advisory = CircuitEthernetMetadata {
+            target_kind: EthernetCapTargetKind::Node,
+            target_id: "uisp:device:ap-1".to_string(),
+            target_name: "AP One".to_string(),
+            circuit_id: "uisp:device:ap-1".to_string(),
+            circuit_name: "AP One".to_string(),
+            negotiated_ethernet_mbps: 100,
+            requested_download_mbps: 500.0,
+            requested_upload_mbps: 200.0,
+            applied_download_mbps: 94.0,
+            applied_upload_mbps: 94.0,
+            auto_capped: true,
+            ..Default::default()
+        };
+
+        let row = advisory_to_page_row(&advisory, &HashMap::new())
+            .expect("auto-capped topology node should appear on the page");
+
+        assert_eq!(row.target_kind, EthernetCapTargetKind::Node);
+        assert_eq!(row.target_id, "uisp:device:ap-1");
+        assert_eq!(row.target_name, "AP One");
+        assert!(row.parent_node.is_empty());
     }
 }

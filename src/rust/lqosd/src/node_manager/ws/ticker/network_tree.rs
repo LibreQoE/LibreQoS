@@ -1,9 +1,11 @@
 use crate::node_manager::ws::messages::WsResponse;
 use crate::node_manager::ws::publish_subscribe::PubSub;
 use crate::node_manager::ws::published_channels::PublishedChannels;
-use lqos_bus::{BusReply, BusRequest, BusResponse, Circuit};
+use lqos_bus::{BusRequest, BusResponse, Circuit};
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
+
+use super::request_internal_bus;
 
 pub async fn network_tree(
     channels: Arc<PubSub>,
@@ -16,21 +18,10 @@ pub async fn network_tree(
         return;
     }
 
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-    let request = BusRequest::GetFullNetworkMap;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("NetworkTree: failed to send request to bus: {:?}", e);
+    let Some(replies) =
+        request_internal_bus("NetworkTree", bus_tx, BusRequest::GetFullNetworkMap).await
+    else {
         return;
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "NetworkTree: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return;
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::NetworkMap(nodes) = reply {
@@ -40,24 +31,13 @@ pub async fn network_tree(
     }
 }
 
-pub async fn all_circuits(
+async fn all_circuits_for_context(
+    context: &'static str,
     bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
 ) -> Vec<Circuit> {
-    let (tx, rx) = tokio::sync::oneshot::channel::<BusReply>();
-    let request = BusRequest::GetAllCircuits;
-    if let Err(e) = bus_tx.send((tx, request)).await {
-        tracing::warn!("AllCircuits: failed to send request to bus: {:?}", e);
+    let Some(replies) = request_internal_bus(context, bus_tx, BusRequest::GetAllCircuits).await
+    else {
         return Vec::new();
-    }
-    let replies = match rx.await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(
-                "AllCircuits: failed to receive throughput from bus: {:?}",
-                e
-            );
-            return Vec::new();
-        }
     };
     for reply in replies.responses.into_iter() {
         if let BusResponse::CircuitData(circuits) = reply {
@@ -65,6 +45,12 @@ pub async fn all_circuits(
         }
     }
     Vec::new()
+}
+
+pub async fn all_circuits(
+    bus_tx: Sender<(tokio::sync::oneshot::Sender<lqos_bus::BusReply>, BusRequest)>,
+) -> Vec<Circuit> {
+    all_circuits_for_context("CircuitWatcherAllCircuits", bus_tx).await
 }
 
 pub async fn all_subscribers(
@@ -78,7 +64,7 @@ pub async fn all_subscribers(
         return;
     }
 
-    let devices = all_circuits(bus_tx).await;
+    let devices = all_circuits_for_context("NetworkTreeClients", bus_tx).await;
     let message = WsResponse::NetworkTreeClients { data: devices };
     channels
         .send(PublishedChannels::NetworkTreeClients, message)

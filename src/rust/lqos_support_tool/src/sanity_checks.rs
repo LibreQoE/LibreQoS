@@ -55,10 +55,8 @@ pub fn run_sanity_checks(echo: bool) -> anyhow::Result<SanityChecks> {
         }
     }
 
-    if any_errors {
-        if echo {
-            error("ERRORS FOUND DURING SANITY CHECK");
-        }
+    if any_errors && echo {
+        error("ERRORS FOUND DURING SANITY CHECK");
     }
 
     Ok(SanityChecks { results })

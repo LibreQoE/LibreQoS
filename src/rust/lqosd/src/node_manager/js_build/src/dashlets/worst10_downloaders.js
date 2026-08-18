@@ -1,4 +1,11 @@
-import {clearDashDiv, simpleRow, simpleRowHtml, theading, TopNTableFromMsgData} from "../helpers/builders";
+import {
+    clearDashDiv,
+    simpleLinkRow,
+    simpleRow,
+    simpleRowTrustedHtml,
+    theading,
+    TopNTableFromMsgData,
+} from "../helpers/builders";
 import {TimedCache} from "../lq_js_common/helpers/timed_cache";
 import {periodNameToSeconds} from "../helpers/time_periods";
 import {formatRetransmit, formatRtt} from "../helpers/scaling";
@@ -94,15 +101,19 @@ export class Worst10Downloaders extends DashletBaseInsight {
                     //console.log(row);
                     let tr = document.createElement("tr");
                     tr.classList.add("small");
-                    tr.appendChild(simpleRowHtml("<a href='circuit.html?circuit=" + row.circuit_hash + "' class='redactable'>" + row.circuit_name + "</a>"));
+                    tr.appendChild(simpleLinkRow(
+                        `circuit.html?circuit=${encodeURIComponent(row.circuit_hash ?? "")}`,
+                        row.circuit_name,
+                        true,
+                    ));
                     tr.appendChild(simpleRow(scaleNumber(toNumber(row.bytes_down, 0) * 1000000, 0)));
                     if (row.rtt !== null) {
-                        tr.appendChild(simpleRowHtml(formatRtt(row.rtt)));
+                        tr.appendChild(simpleRowTrustedHtml(formatRtt(row.rtt)));
                     } else {
                         tr.appendChild(simpleRow("-"));
                 }
                 if (row.rxmit !== null) {
-                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit)));
+                    tr.appendChild(simpleRowTrustedHtml(formatRetransmit(row.rxmit)));
                 } else {
                     tr.appendChild(simpleRow("-"));
                 }

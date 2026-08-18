@@ -1,15 +1,76 @@
 # Optimized version of integrationCommon.py for better performance with large datasets
 # Provides common functionality shared between integrations.
 
-from typing import List, Any, Dict, Set
+from typing import List, Any, Dict, Set, Tuple
 from liblqos_python import allowed_subnets, ignore_subnets, generated_pn_download_mbps, generated_pn_upload_mbps, \
 	circuit_name_use_address, upstream_bandwidth_capacity_download_mbps, upstream_bandwidth_capacity_upload_mbps, \
 	find_ipv6_using_mikrotik, exclude_sites, bandwidth_overhead_factor, committed_bandwidth_multiplier, \
-	exception_cpes, promote_to_root_list, client_bandwidth_multiplier
+	exception_cpes, promote_to_root_list, client_bandwidth_multiplier, \
+	write_compiled_topology_from_python_graph_payload, get_libreqos_directory
 import ipaddress
 import enum
 import json
 import os
+import time
+
+try:
+	from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+	_get_state_dir_native = None
+
+def _state_directory():
+	if _get_state_dir_native is not None:
+		return _get_state_dir_native()
+	base_dir = get_libreqos_directory()
+	if os.path.basename(base_dir.rstrip("/")) == "src":
+		parent = os.path.dirname(base_dir.rstrip("/"))
+		if parent:
+			return os.path.join(parent, "state")
+	return os.path.join(base_dir, "state")
+
+
+def _state_path(category, filename):
+	return os.path.join(_state_directory(), category, filename)
+
+def _normalize_exception_cpes(raw_exception_cpes) -> Tuple[Dict[str, str], List[str]]:
+	normalized = {}
+	errors = []
+	if raw_exception_cpes is None:
+		return normalized, errors
+	if isinstance(raw_exception_cpes, dict):
+		for cpe, parent in raw_exception_cpes.items():
+			cpe = str(cpe).strip()
+			parent = str(parent).strip()
+			if cpe and parent:
+				normalized[cpe] = parent
+		return normalized, errors
+	if not isinstance(raw_exception_cpes, (list, tuple, set)):
+		errors.append(
+			f"exception_cpes ignored: expected dict or list, got {type(raw_exception_cpes).__name__}"
+		)
+		return normalized, errors
+	for entry in raw_exception_cpes:
+		cpe = None
+		parent = None
+		if isinstance(entry, str):
+			if ":" in entry:
+				cpe, parent = entry.split(":", 1)
+			else:
+				errors.append(f"exception_cpes entry ignored: {entry!r} is missing ':'")
+				continue
+		elif isinstance(entry, dict):
+			cpe = entry.get("cpe")
+			parent = entry.get("parent")
+		else:
+			cpe = getattr(entry, "cpe", None)
+			parent = getattr(entry, "parent", None)
+		cpe = str(cpe or "").strip()
+		parent = str(parent or "").strip()
+		if not cpe or not parent:
+			errors.append(f"exception_cpes entry ignored: {entry!r} is missing cpe or parent")
+			continue
+		normalized[cpe] = parent
+	return normalized, errors
 
 def isInAllowedSubnets(inputIP):
 	# Check whether an IP address occurs inside the allowedSubnets list
@@ -182,8 +243,9 @@ class NetworkGraph:
 						parentId="", displayName="Shaper Root")
 		]
 		self.excludeSites = exclude_sites()
-		self.exceptionCPEs = exception_cpes()
 		self.errors: List[str] = []
+		self.exceptionCPEs, exception_cpe_errors = _normalize_exception_cpes(exception_cpes())
+		self.errors.extend(exception_cpe_errors)
 		
 		# Initialize optimization structures
 		self._id_to_index = {"FakeRoot": 0}
@@ -192,15 +254,14 @@ class NetworkGraph:
 		self._cache_valid = False
 		
 		if find_ipv6_using_mikrotik():
-			csv_path = "mikrotikDHCPRouterList.csv"
 			try:
 				from mikrotikFindIPv6 import pullMikrotikIPv6  
-				mikrotik_map = pullMikrotikIPv6(csv_path)
+				mikrotik_map = pullMikrotikIPv6()
 				if isinstance(mikrotik_map, str):
 					mikrotik_map = json.loads(mikrotik_map)
 				self.ipv4ToIPv6 = mikrotik_map
 			except FileNotFoundError:
-				self.errors.append("Mikrotik IPv6 enrichment skipped: missing mikrotikDHCPRouterList.csv")
+				self.errors.append("Mikrotik IPv6 enrichment skipped: missing /etc/libreqos/mikrotik_ipv6.toml")
 				self.ipv4ToIPv6 = {}
 			except json.JSONDecodeError as exc:
 				self.errors.append(f"Mikrotik IPv6 enrichment skipped: unable to parse Mikrotik data ({exc})")
@@ -219,6 +280,13 @@ class NetworkGraph:
 		# If a site is excluded (via excludedSites in lqos.conf)
 		# it won't be added
 		if not node.displayName in self.excludeSites:
+			if node.parentId == "":
+				exception_parent = self.exceptionCPEs.get(node.id)
+				if exception_parent is None:
+					exception_parent = self.exceptionCPEs.get(node.displayName)
+				if exception_parent:
+					node.parentId = exception_parent
+
 			# Add to main list
 			idx = len(self.nodes)
 			self.nodes.append(node)
@@ -377,6 +445,33 @@ class NetworkGraph:
 		
 		self.__reparentById()
 
+	def __liftTopologyChildrenOutOfClients(self) -> None:
+		# Keep exportable topology nodes as siblings of a circuit's generated site,
+		# never as children of the circuit itself. Otherwise nested generated sites
+		# become unreachable from network.json because client nodes are not exported.
+		if not self._cache_valid:
+			self._buildChildrenCache()
+
+		reparent_map = {}
+		for i, node in enumerate(self.nodes):
+			if node.type != NodeType.client:
+				continue
+			new_parent_id = node.parentId
+			if new_parent_id in (None, ""):
+				continue
+			for child_idx in self._children_cache.get(i, []):
+				child = self.nodes[child_idx]
+				if child.type in (NodeType.client, NodeType.clientWithChildren, NodeType.site):
+					reparent_map[child_idx] = new_parent_id
+
+		if not reparent_map:
+			return
+
+		for child_idx, new_parent_id in reparent_map.items():
+			self.nodes[child_idx].parentId = new_parent_id
+
+		self.__reparentById()
+
 	def __findUnconnectedNodes(self) -> List:
 		# Rebuild the cache each time because callers may have adjusted
 		# parentIndex directly as part of repair/testing flows.
@@ -436,6 +531,8 @@ class NetworkGraph:
 		self.__promoteClientsWithChildren()
 		print("PrepareTree: Converting clients with children to sites...")
 		self.__clientsWithChildrenToSites()
+		print("PrepareTree: Lifting topology descendants out of client nodes...")
+		self.__liftTopologyChildrenOutOfClients()
 		print("PrepareTree: Reconnecting unconnected nodes...")
 		self.__reconnectUnconnected()
 		print("PrepareTree: Pruning ignored-only devices and empty circuits...")
@@ -452,6 +549,11 @@ class NetworkGraph:
 
 	def createNetworkJson(self):
 		import json
+		topLevelNode = self.buildNetworkJson()
+		with open('network.json', 'w') as f:
+			json.dump(topLevelNode, f, indent=4)
+
+	def buildNetworkJson(self):
 		topLevelNode = {}
 		self.__visited = []  # Protection against loops - never visit twice
 
@@ -475,9 +577,7 @@ class NetworkGraph:
 						if 'children' in data[node]:
 							inheritBandwidthMaxes(data[node]['children'], data[node]['downloadBandwidthMbps'], data[node]['uploadBandwidthMbps'])
 		inheritBandwidthMaxes(topLevelNode, parentMaxDL=upstream_bandwidth_capacity_download_mbps(), parentMaxUL=upstream_bandwidth_capacity_upload_mbps())
-		
-		with open('network.json', 'w') as f:
-			json.dump(topLevelNode, f, indent=4)
+		return topLevelNode
 
 	def __buildNetworkObject(self, idx):
 		# Private: used to recurse down the network tree while building
@@ -570,17 +670,43 @@ class NetworkGraph:
 		self.__reparentById()
 
 	def createShapedDevices(self):
+		shaped_devices_csv, circuit_anchor_file = self.buildShapedDevicesArtifacts()
+		with open('ShapedDevices.csv', 'w', newline='') as csvfile:
+			csvfile.write(shaped_devices_csv)
+
+		anchor_path = _state_path("topology", "circuit_anchors.json")
+		os.makedirs(os.path.dirname(anchor_path), exist_ok=True)
+		with open(anchor_path, 'w', encoding='utf-8') as anchorfile:
+			json.dump(circuit_anchor_file, anchorfile, indent=2)
+			anchorfile.write('\n')
+
+	def buildShapedDevicesArtifacts(self):
 		import csv
-		# Builds ShapedDevices.csv from the network tree.
+		import io
 		circuits = []
+		circuit_anchors = []
 		
 		if not self._cache_valid:
 			self._buildChildrenCache()
+
+		def nearestRealTopologyParent(idx):
+			parent_idx = self.nodes[idx].parentIndex
+			while parent_idx > 0:
+				parent_node = self.nodes[parent_idx]
+				parent_id = parent_node.networkJsonId or ""
+				if parent_id and not parent_id.startswith("libreqos:generated:graph:"):
+					return parent_node
+				parent_idx = parent_node.parentIndex
+			return None
 		
 		for i, node in enumerate(self.nodes):
 			if node.type == NodeType.client:
-				parent = self.nodes[node.parentIndex].displayName
+				parent_node = nearestRealTopologyParent(i)
+				parent = parent_node.displayName if parent_node is not None else ""
+				parent_id = parent_node.networkJsonId if parent_node is not None else ""
 				if parent == "Shaper Root": parent = ""
+				if parent == "":
+					parent_id = ""
 				
 				if circuit_name_use_address():
 					displayNameToUse = node.address
@@ -594,12 +720,20 @@ class NetworkGraph:
 					"id": node.id,
 					"name": displayNameToUse,
 					"parent": parent,
+					"parent_id": parent_id,
 					"download": node.downloadMbps,
 					"upload": node.uploadMbps,
 					"devices": []
 				}
+				anchor_id = node.networkJsonId
+				if anchor_id:
+					circuit_anchors.append({
+						"circuit_id": node.id,
+						"circuit_name": displayNameToUse,
+						"anchor_node_id": anchor_id,
+						"anchor_node_name": node.displayName if node.displayName else None,
+					})
 				
-				# O(1) lookup of children
 				child_indices = self._children_cache.get(i, [])
 				for child_idx in child_indices:
 					child = self.nodes[child_idx]
@@ -618,82 +752,313 @@ class NetworkGraph:
 				
 				if len(circuit["devices"]) > 0:
 					circuits.append(circuit)
+
+		csv_buffer = io.StringIO()
+		wr = csv.writer(csv_buffer, quoting=csv.QUOTE_ALL)
+		wr.writerow(['Circuit ID', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'Parent Node ID', 'Anchor Node ID', 'MAC',
+					 'IPv4', 'IPv6', 'Download Min', 'Upload Min', 'Download Max', 'Upload Max', 'Comment'])
+		for circuit in circuits:
+			for device in circuit["devices"]:
+				ipv4 = str(device["ipv4"]).replace('[','').replace(']','').replace("'",'')
+				ipv6 = str(device["ipv6"]).replace('[','').replace(']','').replace("'",'')
+				if circuit["upload"] is None: 
+					circuit["upload"] = 0.0
+				if circuit["download"] is None: 
+					circuit["download"] = 0.0
+				row = [
+					circuit["id"],
+					circuit["name"],
+					device["id"],
+					device["name"],
+					circuit["parent"],
+					circuit.get("parent_id", ""),
+					"",
+					device["mac"],
+					ipv4,
+					ipv6,
+					max(1.0, round(float(circuit["download"]*0.98), 2)),
+					max(1.0, round(float(circuit["upload"])*0.98, 2)),
+					max(1.0, round(float(circuit["download"]), 2)),
+					max(1.0, round(float(circuit["upload"]), 2)),
+					""
+				]
+				wr.writerow(row)
 		
-		with open('ShapedDevices.csv', 'w', newline='') as csvfile:
-			wr = csv.writer(csvfile, quoting=csv.QUOTE_ALL)
-			wr.writerow(['Circuit ID', 'Circuit Name', 'Device ID', 'Device Name', 'Parent Node', 'MAC',
-						 'IPv4', 'IPv6', 'Download Min', 'Upload Min', 'Download Max', 'Upload Max', 'Comment'])
-			for circuit in circuits:
-				for device in circuit["devices"]:
-					#Remove brackets and quotes of list so LibreQoS.py can parse it
-					device["ipv4"] = str(device["ipv4"]).replace('[','').replace(']','').replace("'",'')
-					device["ipv6"] = str(device["ipv6"]).replace('[','').replace(']','').replace("'",'')
-					if circuit["upload"] is None: 
-						circuit["upload"] = 0.0
-					if circuit["download"] is None: 
-						circuit["download"] = 0.0
-					row = [
-						circuit["id"],
-						circuit["name"],
-						device["id"],
-						device["name"],
-						circuit["parent"],
-						device["mac"],
-						device["ipv4"],
-						device["ipv6"],
-						int(1),
-						int(1),
-						max(1.0, round(float(circuit["download"]), 2)),
-						max(1.0, round(float(circuit["upload"]), 2)),
-						""
-					]
+		if os.path.isfile('appendToShapedDevices.csv'):
+			with open('appendToShapedDevices.csv', 'r') as f:
+				reader = csv.reader(f)
+				for row in reader:
 					wr.writerow(row)
-			
-			# If we have an "appendToShapedDevices.csv" file, it gets appended to the end of the file.
-			# This is useful for adding devices that are not in the network tree, such as a
-			# "default" device that gets all the traffic that doesn't match any other device.
-			if os.path.isfile('appendToShapedDevices.csv'):
-				with open('appendToShapedDevices.csv', 'r') as f:
-					reader = csv.reader(f)
-					for row in reader:
-						wr.writerow(row)
 
-	def plotNetworkGraph(self, showClients=False):
-		# Requires `pip install graphviz` to function.
-		# You also need to install graphviz on your PC.
-		# In Ubuntu, apt install graphviz will do it.
-		# Plots the network graph to a PDF file, allowing
-		# visual verification that the graph makes sense.
-		# Could potentially be useful in a future
-		# web interface.
-		import importlib.util
-		if (spec := importlib.util.find_spec('graphviz')) is None:
-			return
+		return (
+			csv_buffer.getvalue(),
+			{
+				"schema_version": 1,
+				"source": "python/integration_common",
+				"generated_unix": int(time.time()),
+				"anchors": circuit_anchors,
+			},
+		)
 
-		import graphviz
-		dot = graphviz.Digraph(
-			'network', comment="Network Graph", engine="dot", graph_attr={'rankdir':'LR'})
+	def _isInfrastructureTopologyNode(self, idx):
+		if idx <= 0:
+			return False
+		node = self.nodes[idx]
+		if node.type not in (NodeType.site, NodeType.ap):
+			return False
+		if not node.networkJsonId:
+			return False
+		# Customer-derived generated graph sites are compatibility-only and
+		# must never participate in native topology editing/runtime state.
+		if node.networkJsonId.startswith("libreqos:generated:graph:"):
+			return False
+		return True
 
+	def _buildInfrastructureTopologyContext(self):
 		if not self._cache_valid:
 			self._buildChildrenCache()
 
-		for i, node in enumerate(self.nodes):
-			if ((node.type != NodeType.client and node.type != NodeType.device) or showClients):
-				color = "white"
-				match node.type:
-					case NodeType.root: color = "green"
-					case NodeType.site: color = "red"
-					case NodeType.ap: color = "blue"
-					case NodeType.clientWithChildren: color = "magenta"
-					case NodeType.device: color = "white"
-					case default: color = "grey"
-				dot.node("N" + str(i), node.displayName, color=color)
-				
-				# O(1) lookup of children
-				children = self._children_cache.get(i, [])
-				for child in children:
-					if child != i:
-						if (self.nodes[child].type != NodeType.client and self.nodes[child].type != NodeType.device) or showClients:
-							dot.edge("N" + str(i), "N" + str(child))
-		dot = dot.unflatten(stagger=3)#, fanout=True)
-		dot.render("network")
+		exportable_indices = [
+			idx for idx, _node in enumerate(self.nodes)
+			if self._isInfrastructureTopologyNode(idx)
+		]
+		exportable_set = set(exportable_indices)
+
+		def nearestInfrastructureParentIndex(idx):
+			parent_idx = self.nodes[idx].parentIndex
+			while parent_idx > 0:
+				if parent_idx in exportable_set:
+					return parent_idx
+				parent_idx = self.nodes[parent_idx].parentIndex
+			return None
+
+		resolved_parent_by_idx = {}
+		children_by_parent = {}
+		for idx in exportable_indices:
+			parent_idx = nearestInfrastructureParentIndex(idx)
+			resolved_parent_by_idx[idx] = parent_idx
+			if parent_idx is None:
+				continue
+			children_by_parent.setdefault(parent_idx, []).append(idx)
+
+		descendant_cache = {}
+
+		def topology_descendants(idx):
+			if idx in descendant_cache:
+				return descendant_cache[idx]
+			descendants = set()
+			for child_idx in children_by_parent.get(idx, []):
+				descendants.add(child_idx)
+				descendants.update(topology_descendants(child_idx))
+			descendant_cache[idx] = descendants
+			return descendants
+
+		return {
+			"exportable_indices": exportable_indices,
+			"resolved_parent_by_idx": resolved_parent_by_idx,
+			"children_by_parent": children_by_parent,
+			"topology_descendants": topology_descendants,
+		}
+
+	def _autoAttachmentOption(self):
+		return {
+			"attachment_id": "auto",
+			"attachment_name": "Auto",
+			"attachment_kind": "auto",
+			"attachment_role": "unknown",
+			"rate_source": "unknown",
+			"can_override_rate": False,
+			"has_rate_override": False,
+			"probe_enabled": False,
+			"probeable": False,
+			"health_status": "disabled",
+			"effective_selected": False,
+		}
+
+	def _isGeneratedInfrastructureNode(self, idx):
+		if idx <= 0:
+			return False
+		node_id = self.nodes[idx].networkJsonId or ""
+		return node_id.startswith("libreqos:generated:")
+
+	def _classifyInfrastructureEditPolicy(self, idx, context):
+		parent_idx = context["resolved_parent_by_idx"][idx]
+		node = self.nodes[idx]
+		if parent_idx is None:
+			return "root"
+		if node.networkJsonId.startswith("libreqos:generated:"):
+			return "fixed_parent"
+		candidate_parent_indices = self._boundedAlternativeParentIndices(idx, context)
+		if len(candidate_parent_indices) > 1:
+			return "movable"
+		return "fixed_parent"
+
+	def _boundedAlternativeParentIndices(self, idx, context):
+		parent_idx = context["resolved_parent_by_idx"][idx]
+		if parent_idx is None:
+			return []
+
+		candidate_indices = []
+		seen = set()
+
+		def include(candidate_idx):
+			if candidate_idx is None:
+				return
+			if candidate_idx == idx:
+				return
+			if candidate_idx in seen:
+				return
+			if not self._isInfrastructureTopologyNode(candidate_idx):
+				return
+			if self._isGeneratedInfrastructureNode(candidate_idx):
+				return
+			seen.add(candidate_idx)
+			candidate_indices.append(candidate_idx)
+
+		# Always keep the current resolved parent.
+		include(parent_idx)
+
+		# Conservative bounded-move policy for Python-backed integrations:
+		# allow reparenting only within the current parent's immediate neighborhood.
+		grandparent_idx = context["resolved_parent_by_idx"].get(parent_idx)
+		if grandparent_idx is not None:
+			for sibling_parent_idx in context["children_by_parent"].get(grandparent_idx, []):
+				if sibling_parent_idx == idx:
+					continue
+				include(sibling_parent_idx)
+		else:
+			parent_node = self.nodes[parent_idx]
+			for root_candidate_idx in context["exportable_indices"]:
+				if root_candidate_idx == parent_idx:
+					continue
+				if context["resolved_parent_by_idx"][root_candidate_idx] is not None:
+					continue
+				root_candidate = self.nodes[root_candidate_idx]
+				if root_candidate.type != parent_node.type:
+					continue
+				include(root_candidate_idx)
+
+		return candidate_indices
+
+	def buildNativeTopologyEditorState(self, source: str):
+		# Build the native infrastructure topology consumed by Topology Manager.
+		# This intentionally excludes generated customer graph nodes and preserves
+		# the resolved infrastructure parent chain from the prepared NetworkGraph.
+		context = self._buildInfrastructureTopologyContext()
+		exportable_indices = context["exportable_indices"]
+		resolved_parent_by_idx = context["resolved_parent_by_idx"]
+		topology_descendants = context["topology_descendants"]
+
+		nodes = []
+		for idx in exportable_indices:
+			node = self.nodes[idx]
+			parent_idx = resolved_parent_by_idx[idx]
+			parent_node = self.nodes[parent_idx] if parent_idx is not None else None
+			edit_policy = self._classifyInfrastructureEditPolicy(idx, context)
+			can_move = edit_policy == "movable"
+
+			allowed_parents = []
+			if can_move:
+				for candidate_idx in self._boundedAlternativeParentIndices(idx, context):
+					if candidate_idx in topology_descendants(idx) or candidate_idx == idx:
+						continue
+					candidate = self.nodes[candidate_idx]
+					allowed_parents.append({
+						"parent_node_id": candidate.networkJsonId,
+						"parent_node_name": candidate.displayName,
+						"attachment_options": [self._autoAttachmentOption()],
+						"all_attachments_suppressed": False,
+						"has_probe_unavailable_attachments": False,
+					})
+				allowed_parents.sort(key=lambda entry: (entry["parent_node_name"].lower(), entry["parent_node_id"]))
+
+			nodes.append({
+				"node_id": node.networkJsonId,
+				"node_name": node.displayName,
+				"current_parent_node_id": parent_node.networkJsonId if parent_node is not None else None,
+				"current_parent_node_name": parent_node.displayName if parent_node is not None else None,
+				"current_attachment_id": None,
+				"current_attachment_name": None,
+				"can_move": can_move,
+				"allowed_parents": allowed_parents,
+				"queue_visibility_policy": (
+					"queue_hidden_promote_children"
+					if parent_node is None
+					else "queue_auto"
+					if node.type == NodeType.site
+					else "queue_visible"
+				),
+				"preferred_attachment_id": None,
+				"preferred_attachment_name": None,
+				"effective_attachment_id": None,
+				"effective_attachment_name": None,
+			})
+
+		return {
+			"schema_version": 1,
+			"source": source,
+			"generated_unix": int(time.time()),
+			"nodes": nodes,
+		}
+
+	def buildTopologyParentCandidates(self):
+		# Build a legacy-compatible parent-candidate snapshot for topology editing.
+		# This gives Python-backed integrations the same basic "Start Move" capability
+		# as richer native importers by enumerating legal non-descendant topology parents
+		# for real infrastructure branches only.
+		context = self._buildInfrastructureTopologyContext()
+		exportable_indices = context["exportable_indices"]
+		resolved_parent_by_idx = context["resolved_parent_by_idx"]
+		topology_descendants = context["topology_descendants"]
+
+		nodes = []
+		for idx in exportable_indices:
+			node = self.nodes[idx]
+			parent_idx = resolved_parent_by_idx[idx]
+			edit_policy = self._classifyInfrastructureEditPolicy(idx, context)
+			if edit_policy != "movable":
+				continue
+			parent_node = self.nodes[parent_idx]
+			parent_node_id = parent_node.networkJsonId
+			parent_node_name = parent_node.displayName
+
+			candidate_parents = []
+			for candidate_idx in self._boundedAlternativeParentIndices(idx, context):
+				if candidate_idx in topology_descendants(idx) or candidate_idx == idx:
+					continue
+				candidate = self.nodes[candidate_idx]
+				candidate_parents.append({
+					"node_id": candidate.networkJsonId,
+					"node_name": candidate.displayName,
+				})
+			candidate_parents.sort(key=lambda entry: (entry["node_name"].lower(), entry["node_id"]))
+
+			nodes.append({
+				"node_id": node.networkJsonId,
+				"node_name": node.displayName,
+				"current_parent_node_id": parent_node_id,
+				"current_parent_node_name": parent_node_name,
+				"candidate_parents": candidate_parents,
+			})
+
+		return {
+			"source": "python/integration_common",
+			"nodes": nodes,
+		}
+
+	def materializeCompiledTopology(self, source: str, compileMode: str) -> None:
+		# Materializes compiler-owned topology artifacts without writing integration
+		# network.json or ShapedDevices.csv.
+		compatibility_network_json = json.dumps(self.buildNetworkJson())
+		shaped_devices_csv, circuit_anchor_file = self.buildShapedDevicesArtifacts()
+		parent_candidates_json = json.dumps(self.buildTopologyParentCandidates())
+		native_editor_json = json.dumps(self.buildNativeTopologyEditorState(source))
+		write_compiled_topology_from_python_graph_payload(
+			source,
+			compileMode,
+			compatibility_network_json,
+			shaped_devices_csv,
+			json.dumps(circuit_anchor_file),
+			parent_candidates_json,
+			native_editor_json,
+		)

@@ -8,6 +8,13 @@ names for integration purposes.
 
 You can find the full definitions of each configuration entry in `src/etc/v15`.
 
+## Topology Runtime Note
+
+`topology_runtime_status.json` and `shaping_inputs.json` now carry a stable `shaping_generation`
+that intentionally ignores volatile timestamp fields such as `generated_unix`. Scheduler-side
+shaping refresh decisions should key off that stable generation, not raw artifact mtimes or full
+file bytes, so steady-state topology runtime publication does not trigger unnecessary shaper reloads.
+
 ## Adding Configuration Items
 
 There are two ways to add a configuration:

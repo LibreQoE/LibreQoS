@@ -1,9 +1,8 @@
 //! Provides an Axum layer that applies templates to static HTML
 //! files.
 
-use crate::lts2_sys::shared_types::LtsStatus;
-use crate::node_manager::auth::{FIRST_LOAD, get_username};
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::node_manager::auth::get_username;
+use crate::node_manager::security_headers::apply_node_manager_security_headers;
 use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
 use axum::http::header;
@@ -11,11 +10,9 @@ use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
-use itertools::Itertools;
 use lqos_config::{RttThresholds, load_config};
-use lqos_utils::unix_time::unix_now;
 use std::path::Path;
-use std::sync::atomic::Ordering::Relaxed;
+use std::time::UNIX_EPOCH;
 
 const VERSION_STRING: &str = include_str!("../../../../VERSION_STRING");
 
@@ -73,6 +70,47 @@ const CHAT_LINK_ACTIVE: &str = r#"
 
 static GIT_HASH: &str = env!("GIT_HASH");
 
+fn cobrand_logo_html(config: &lqos_config::Config) -> String {
+    let cobrand_path = Path::new(&config.lqos_directory)
+        .join("bin")
+        .join("static2")
+        .join("cobrand.png");
+    if config.display_cobrand && cobrand_path.exists() {
+        let cache_buster = std::fs::metadata(&cobrand_path)
+            .ok()
+            .map(|metadata| {
+                let modified_nanos = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                    .map(|duration| duration.as_nanos())
+                    .unwrap_or(0);
+                format!("{modified_nanos}-{}", metadata.len())
+            })
+            .unwrap_or_else(|| "0".to_string());
+        format!(
+            r#"<img class="lqos_cobrand_logo" src="cobrand.png?v={cache_buster}" alt="" aria-hidden="true" height="48">"#
+        )
+    } else {
+        String::new()
+    }
+}
+
+fn cobrand_logo_status_html(config: &lqos_config::Config) -> (&'static str, &'static str) {
+    let cobrand_path = Path::new(&config.lqos_directory)
+        .join("bin")
+        .join("static2")
+        .join("cobrand.png");
+    if config.display_cobrand && cobrand_path.exists() {
+        (
+            r#"aria-describedby="cobrandLogoStatus""#,
+            r#"<span id="cobrandLogoStatus" class="visually-hidden">Custom operator cobrand logo displayed next to the LibreQoS logo in the sidebar.</span>"#,
+        )
+    } else {
+        ("", "")
+    }
+}
+
 pub async fn apply_templates(
     jar: CookieJar,
     req: Request<axum::body::Body>,
@@ -103,9 +141,6 @@ pub async fn apply_templates(
     let template_text = template_text.replace("%%USERNAME%%", &username);
 
     let res = next.run(req).await;
-    //let mut lts_script = "<script>window.hasLts = false;</script>";
-    let mut script_has_lts = false;
-    let mut script_has_insight = false;
     let new_version = crate::version_checks::new_version_available();
 
     if apply_template {
@@ -113,59 +148,42 @@ pub async fn apply_templates(
         let mut trial_link;
 
         // Change the LTS part of the template
-        let (lts_status, _) = crate::lts2_sys::get_lts_license_status_async().await;
+        let capabilities = crate::lts2_sys::current_capabilities();
         trial_link = INSIGHT_LINK_OFFER_TRIAL.to_string();
-        let script_has_support_tickets = matches!(
-            lts_status,
-            LtsStatus::AlwaysFree | LtsStatus::FreeTrial | LtsStatus::SelfHosted | LtsStatus::Full
-        );
-        match lts_status {
-            LtsStatus::Invalid | LtsStatus::NotChecked => {}
-            _ => {
-                // Link to it
-                trial_link = INSIGHT_LINK_ACTIVE.to_string();
-                script_has_insight = true;
-                script_has_lts = true;
-            }
+        if capabilities.can_view_insight_ui {
+            trial_link = INSIGHT_LINK_ACTIVE.to_string();
         }
 
         // Title and node_id
         let title = config.node_name.clone();
         let node_id_js = escape_html_attr(&config.node_id);
         let rtt_thresholds: RttThresholds = config.rtt_thresholds.clone().unwrap_or_default();
+        let cobrand_logo = cobrand_logo_html(config.as_ref());
+        let (cobrand_logo_describedby, cobrand_logo_status) =
+            cobrand_logo_status_html(config.as_ref());
 
         // "LTS script" - which is increasingly becoming a misnomer
+        let api_service_available = is_api_available();
         let lts_script = format!(
-            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
-            js_tf(script_has_lts),
-            js_tf(script_has_insight),
-            js_tf(script_has_support_tickets),
+            "<script>window.hasLts = {}; window.hasInsight = {}; window.hasSupportTickets = {}; window.hasChatbot = {}; window.hasApiDocs = {}; window.apiServiceAvailable = {}; window.liveControlAvailable = {}; window.licenseStateLabel = {}; window.licenseAuthorityLabel = {}; window.mappedCircuitLimit = {}; window.nodeId = '{}'; window.rttThresholds = {{greenMs: {}, yellowMs: {}, redMs: {}}};</script>",
+            js_tf(capabilities.can_view_insight_ui),
+            js_tf(capabilities.can_view_insight_ui),
+            js_tf(capabilities.can_use_support_tickets),
+            js_tf(capabilities.can_use_chatbot),
+            js_tf(capabilities.can_use_api_link),
+            js_tf(api_service_available),
+            js_tf(capabilities.control_service_reachable),
+            serde_json::to_string(&capabilities.license_state_label)
+                .unwrap_or_else(|_| "\"Unknown\"".to_string()),
+            serde_json::to_string(&capabilities.authority_label)
+                .unwrap_or_else(|_| "\"Unknown\"".to_string()),
+            serde_json::to_string(&capabilities.mapped_circuit_limit)
+                .unwrap_or_else(|_| "null".to_string()),
             node_id_js,
             rtt_thresholds.green_ms,
             rtt_thresholds.yellow_ms,
             rtt_thresholds.red_ms,
         );
-
-        // First Login
-        let mut show_modal = "false";
-        let mut show_modal_number = "0".to_string();
-        if let Ok(now) = unix_now() {
-            let week_ago = now - (7 * 24 * 60 * 60);
-            let fl = FIRST_LOAD.load(Relaxed);
-            if fl != 0 && fl < week_ago {
-                let sd = SHAPED_DEVICES.load();
-                let num_circuits = sd
-                    .devices
-                    .iter()
-                    .sorted_by(|a, b| a.circuit_hash.cmp(&b.circuit_hash))
-                    .dedup()
-                    .count();
-                if num_circuits > 1_000 && !script_has_insight {
-                    show_modal = "true";
-                    show_modal_number = num_circuits.to_string();
-                }
-            }
-        }
 
         let (mut res_parts, res_body) = res.into_parts();
         let bytes = to_bytes(res_body, 1_000_000)
@@ -179,10 +197,11 @@ pub async fn apply_templates(
             .replace("%%TITLE%%", &title)
             .replace("%%LTS_LINK%%", &trial_link)
             .replace("%%%LTS_SCRIPT%%%", &lts_script)
-            .replace("%%MODAL%%", show_modal)
-            .replace("%%MODAL_NUM%%", &show_modal_number);
-        // Handle API_LINK placeholder (require service + valid Insight)
-        let api_link = if is_api_available() && script_has_insight {
+            .replace("%%COBRAND_LOGO%%", &cobrand_logo)
+            .replace("%%COBRAND_LOGO_DESCRIBEDBY%%", cobrand_logo_describedby)
+            .replace("%%COBRAND_LOGO_STATUS%%", cobrand_logo_status);
+        // Handle API_LINK placeholder using service health and current access policy.
+        let api_link = if api_service_available && capabilities.can_use_api_link {
             API_LINK_ACTIVE
         } else {
             API_LINK_INACTIVE
@@ -238,9 +257,69 @@ pub async fn apply_templates(
         res_parts
             .headers
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        apply_node_manager_security_headers(&mut res_parts.headers);
         let res = Response::from_parts(res_parts, Body::from(byte_string));
         Ok(res)
     } else {
         Ok(res)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cobrand_logo_html, cobrand_logo_status_html};
+    use lqos_config::Config;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const VALID_PNG: &[u8] = &[
+        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H', b'D',
+        b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, b'I', b'D', b'A', b'T', 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, b'I',
+        b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    fn temp_runtime_dir() -> std::path::PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let runtime_dir = std::env::temp_dir().join(format!("lqos-template-test-{unique_suffix}"));
+        fs::create_dir_all(runtime_dir.join("bin/static2")).expect("create runtime static dir");
+        runtime_dir
+    }
+
+    fn test_config(runtime_dir: &std::path::Path, display_cobrand: bool) -> Config {
+        Config {
+            lqos_directory: runtime_dir.display().to_string(),
+            display_cobrand,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cobrand_logo_requires_file_and_flag() {
+        let runtime_dir = temp_runtime_dir();
+        let static_dir = runtime_dir.join("bin/static2");
+        let without_file = test_config(&runtime_dir, true);
+        let disabled = test_config(&runtime_dir, false);
+
+        assert!(cobrand_logo_html(&without_file).is_empty());
+        assert_eq!(cobrand_logo_status_html(&without_file), ("", ""));
+        assert!(cobrand_logo_html(&disabled).is_empty());
+        assert_eq!(cobrand_logo_status_html(&disabled), ("", ""));
+
+        fs::write(static_dir.join("cobrand.png"), VALID_PNG).expect("write cobrand png");
+        let enabled = test_config(&runtime_dir, true);
+        let logo_html = cobrand_logo_html(&enabled);
+        let (describedby, status_html) = cobrand_logo_status_html(&enabled);
+
+        assert!(logo_html.contains(r#"class="lqos_cobrand_logo""#));
+        assert!(logo_html.contains(r#"src="cobrand.png?v="#));
+        assert_eq!(describedby, r#"aria-describedby="cobrandLogoStatus""#);
+        assert!(status_html.contains("Custom operator cobrand logo displayed"));
+
+        let _ = fs::remove_dir_all(runtime_dir);
     }
 }

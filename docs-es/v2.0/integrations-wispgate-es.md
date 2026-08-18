@@ -13,8 +13,8 @@ Use esta integración cuando WISPGate sea su fuente de verdad CRM/NMS.
 ## Notas operativas
 
 - `ShapedDevices.csv` se regenera en cada sincronización.
-- `network.json` depende de su configuración de sobrescritura.
-- Recomendado: mantener `always_overwrite_network_json = true` para alinear topología con WISPGate en cada ciclo.
+- `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
+- Para despliegues guiados por integración, use `topology_import.json` y `network.effective.json`.
 
 ## Referencia completa
 

@@ -10,10 +10,14 @@
 
 ## Base de CPU e IRQ
 
-Configure el governor de CPU en modo rendimiento para bare metal/hipervisor:
+LibreQoS ahora intenta configurar automáticamente el governor de CPU en modo `performance` durante el ajuste de arranque en hosts bare metal e hipervisor.
+
+Este comportamiento está habilitado por defecto mediante `[tuning].set_cpu_governor_performance = true`. Desactívelo solo si su plataforma requiere otra política de governor.
+
+Si necesita verificar manualmente el governor actual:
 
 ```bash
-sudo cpupower frequency-set --governor performance
+cpupower frequency-info | grep 'current policy'
 ```
 
 Confirme que el conteo de colas NIC y la distribución por CPU sean razonables:

@@ -11,6 +11,24 @@
             </div>
         </div>
     </div>
+    <div class="col-12 d-none" id="treeDetailTabsContainer">
+        <ul class="nav nav-tabs lqos-tree-tabs" id="treeDetailTabs" role="tablist" aria-label="Network tree detail views">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tree-overview-tab" data-bs-toggle="tab" data-bs-target="#treeOverviewPane" type="button" role="tab" aria-controls="treeOverviewPane" aria-selected="true">
+                    Overview
+                </button>
+            </li>
+            <li class="nav-item d-none" id="treeStormguardTabItem" role="presentation">
+                <button class="nav-link" id="tree-stormguard-tab" data-bs-toggle="tab" data-bs-target="#treeStormguardPane" type="button" role="tab" aria-controls="treeStormguardPane" aria-selected="false">
+                    <i class="fa fa-bolt" aria-hidden="true"></i> StormGuard
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="col-12">
+        <div class="tab-content" id="treeDetailTabContent">
+            <div class="tab-pane fade show active" id="treeOverviewPane" role="tabpanel" aria-labelledby="tree-overview-tab" tabindex="0">
+                <div class="row g-4 align-items-stretch">
     <div class="col-lg-4">
         <div class="lqos-tree-panel lqos-tree-state-panel">
             <div class="d-flex align-items-center justify-content-between gap-2">
@@ -76,55 +94,132 @@
             <div class="d-flex align-items-center justify-content-between gap-2">
                 <h5 class="mb-0"><i class="fa fa-circle-info"></i> Node Details</h5>
             </div>
-            <div class="lqos-table-wrap">
-                <table class="lqos-table lqos-table-compact">
-                    <tbody>
-                        <tr class="small">
-                            <td class="table-label-cell">Node Type</td>
-                            <td class="table-value-cell" id="nodeSettingsType">-</td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Branch Size</td>
-                            <td class="table-value-cell" id="nodeSettingsBranchSize">-</td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Base Configured Rate</td>
-                            <td class="table-value-cell" id="nodeSettingsBaseConfigured">-</td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Operator Override</td>
-                            <td class="table-value-cell" id="nodeSettingsOverride">None</td>
-                        </tr>
-                        <tr class="small">
-                            <td class="table-label-cell">Effective Now</td>
-                            <td class="table-value-cell" id="nodeSettingsEffectiveNow">-</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            <div id="nodeOverrideDisabledReason"></div>
-            <div class="lqos-tree-editor" id="nodeOverrideEditorSection">
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 lqos-tree-editor-heading">
-                    <h6 class="mb-0"><i class="fa fa-sliders"></i> Operator Override</h6>
-                    <span id="nodeOverrideCompatibilityIndicator" class="lqos-tree-editor-heading-end"></span>
+            <dl class="lqos-tree-detail-grid">
+                <div class="lqos-tree-detail-item lqos-tree-detail-col-start">
+                    <dt class="lqos-tree-detail-label">Base Configured Rate</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsBaseConfigured">-</dd>
                 </div>
-                <div id="nodeOverrideFlash"></div>
-                <div class="lqos-tree-editor-row">
-                    <div class="lqos-tree-editor-field input-group">
-                        <span class="input-group-text" id="nodeOverrideDownloadLabel">Download</span>
-                        <input class="form-control" id="nodeOverrideDownload" type="number" min="0" step="0.01" inputmode="decimal" aria-labelledby="nodeOverrideDownloadLabel">
+                <div class="lqos-tree-detail-item lqos-tree-detail-row-end">
+                    <dt class="lqos-tree-detail-label">Effective Now</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsEffectiveNow">-</dd>
+                </div>
+                <div class="lqos-tree-detail-item lqos-tree-detail-col-start">
+                    <dt class="lqos-tree-detail-label">Rate Override</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsOverride"></dd>
+                </div>
+                <div class="lqos-tree-detail-item lqos-tree-detail-row-end">
+                    <dt class="lqos-tree-detail-label">Limited By</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsLimitedBy">-</dd>
+                </div>
+                <div class="lqos-tree-detail-item lqos-tree-detail-col-start lqos-tree-detail-last-row">
+                    <dt class="lqos-tree-detail-label">Topology Override</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeTopologyOverrideValue"></dd>
+                </div>
+                <div class="lqos-tree-detail-item lqos-tree-detail-row-end lqos-tree-detail-last-row lqos-tree-detail-final-cell">
+                    <dt class="lqos-tree-detail-label">Active Attachment</dt>
+                    <dd class="lqos-tree-detail-body" id="nodeSettingsActiveAttachment">-</dd>
+                </div>
+            </dl>
+            <div class="lqos-tree-inline-overrides">
+                <div id="nodeOverrideDisabledReason"></div>
+                <div id="nodeOverrideEditorSection">
+                    <div id="nodeOverrideFlash"></div>
+                    <div class="lqos-tree-editor-row lqos-tree-editor-row-compact">
+                        <div class="lqos-tree-editor-field input-group">
+                            <span class="input-group-text" id="nodeOverrideDownloadLabel">D</span>
+                            <input class="form-control form-control-sm" id="nodeOverrideDownload" type="number" min="0" step="0.01" inputmode="decimal" aria-labelledby="nodeOverrideDownloadLabel">
+                        </div>
+                        <div class="lqos-tree-editor-field input-group">
+                            <span class="input-group-text" id="nodeOverrideUploadLabel">U</span>
+                            <input class="form-control form-control-sm" id="nodeOverrideUpload" type="number" min="0" step="0.01" inputmode="decimal" aria-labelledby="nodeOverrideUploadLabel">
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 lqos-tree-editor-actions">
+                            <span id="nodeOverrideCompatibilityIndicator" class="small text-body-secondary"></span>
+                            <button class="btn btn-sm btn-primary" id="nodeOverrideSave" type="button">
+                                <i class="fa fa-save"></i> Save
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" id="nodeOverrideClear" type="button">
+                                <i class="fa fa-eraser"></i> Clear
+                            </button>
+                        </div>
                     </div>
-                    <div class="lqos-tree-editor-field input-group">
-                        <span class="input-group-text" id="nodeOverrideUploadLabel">Upload</span>
-                        <input class="form-control" id="nodeOverrideUpload" type="number" min="0" step="0.01" inputmode="decimal" aria-labelledby="nodeOverrideUploadLabel">
+                </div>
+                <div id="nodeTopologyDisabledReason"></div>
+                <div id="nodeTopologyWarnings"></div>
+                <div id="nodeTopologyEditorSection">
+                    <div class="lqos-tree-editor-row lqos-tree-editor-row-compact">
+                        <div class="lqos-tree-editor-field">
+                            <div class="small text-body-secondary">
+                                Topology edits now live in Topology Manager. Use the dedicated topology editor for parent and attachment changes.
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 lqos-tree-editor-actions">
+                            <span id="nodeTopologyStatus" class="small text-body-secondary"></span>
+                            <a class="btn btn-sm btn-outline-primary" id="nodeTopologyOpenManager" href="/topology_manager.html">
+                                <i class="fa fa-diagram-project"></i> Open in Topology
+                            </a>
+                        </div>
                     </div>
-                    <div class="d-flex flex-wrap gap-2 lqos-tree-editor-actions">
-                        <button class="btn btn-primary" id="nodeOverrideSave" type="button">
-                            <i class="fa fa-save"></i> Save
-                        </button>
-                        <button class="btn btn-outline-secondary" id="nodeOverrideClear" type="button">
-                            <i class="fa fa-eraser"></i> Clear
-                        </button>
+                </div>
+            </div>
+        </div>
+    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" id="treeStormguardPane" role="tabpanel" aria-labelledby="tree-stormguard-tab" tabindex="0">
+                <div class="lqos-tree-panel lqos-stormguard-tree-panel">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                        <div>
+                            <h5 class="mb-1"><i class="fa fa-bolt" aria-hidden="true"></i> StormGuard Diagnostics</h5>
+                            <div id="treeStormguardContext" class="small text-body-secondary" aria-live="polite"></div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <span id="treeStormguardRuntimeBadge" class="badge text-bg-secondary">Initializing</span>
+                            <a class="btn btn-sm btn-outline-primary" href="/config_stormguard.html">
+                                <i class="fa fa-gear" aria-hidden="true"></i> Open StormGuard Configuration
+                            </a>
+                        </div>
+                    </div>
+                    <div id="treeStormguardRuntimeMessage" class="alert alert-secondary py-2" role="status"></div>
+                    <div id="treeStormguardManagedContent">
+                        <div class="row g-3 mb-3">
+                            <div class="col-xl-4 col-md-6">
+                                <div class="lqos-stormguard-summary-card">
+                                    <span>Current Limits</span>
+                                    <strong id="treeStormguardLimits">—</strong>
+                                </div>
+                            </div>
+                            <div class="col-xl-4 col-md-6">
+                                <div class="lqos-stormguard-summary-card">
+                                    <span>Configured Bounds</span>
+                                    <strong id="treeStormguardBounds">—</strong>
+                                </div>
+                            </div>
+                            <div class="col-xl-4 col-md-6">
+                                <div class="lqos-stormguard-summary-card">
+                                    <span>Mode and Strategy</span>
+                                    <strong id="treeStormguardMode">—</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <div class="btn-group btn-group-sm" role="group" aria-label="StormGuard graph direction">
+                                <input type="radio" class="btn-check" name="treeStormguardDirection" id="treeStormguardDownload" value="download" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary" for="treeStormguardDownload">Download</label>
+                                <input type="radio" class="btn-check" name="treeStormguardDirection" id="treeStormguardUpload" value="upload" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="treeStormguardUpload">Upload</label>
+                            </div>
+                            <div id="treeStormguardDecision" class="small text-body-secondary"></div>
+                        </div>
+                        <div id="treeStormguardGraph" class="lqos-stormguard-tree-graph" role="img" aria-label="Five minute StormGuard queue, RTT, cooldown, decision, and action history" aria-describedby="treeStormguardGraphSummary"></div>
+                        <p id="treeStormguardGraphSummary" class="small text-body-secondary mt-2 mb-0">No graph history is available yet.</p>
+                        <dl class="lqos-tree-detail-grid mt-3">
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Cooldown</dt><dd id="treeStormguardCooldown" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Decision Reason</dt><dd id="treeStormguardReason" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">RTT Input</dt><dd id="treeStormguardRttSource" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Last Attempt</dt><dd id="treeStormguardOutcome" class="lqos-tree-detail-body">—</dd></div>
+                            <div class="lqos-tree-detail-item"><dt class="lqos-tree-detail-label">Strategy Settings</dt><dd id="treeStormguardSettings" class="lqos-tree-detail-body">—</dd></div>
+                        </dl>
                     </div>
                 </div>
             </div>

@@ -1,11 +1,12 @@
 use axum::body::Body;
 use axum::extract::Path;
-use axum::http::{HeaderMap, Request};
+use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::IntoResponse;
 use lqos_heimdall::n_second_pcap;
 use serde::Serialize;
 use std::net::IpAddr;
 use tower_http::services::ServeFile;
+use tracing::warn;
 
 #[derive(Debug, Serialize, Clone)]
 pub enum RequestAnalysisResult {
@@ -25,12 +26,35 @@ pub fn request_analysis_data(ip: &str) -> RequestAnalysisResult {
     RequestAnalysisResult::Fail
 }
 
-pub async fn pcap_dump(Path(id): Path<usize>, headers: HeaderMap) -> impl IntoResponse {
-    let filename = n_second_pcap(id).expect("Could not determine pcap filename");
+pub async fn pcap_dump(
+    Path(id): Path<usize>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, StatusCode> {
+    let Some(filename) = n_second_pcap(id) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
     let mut req = Request::new(Body::empty());
     *req.headers_mut() = headers;
-    ServeFile::new(filename)
-        .try_call(req)
-        .await
-        .expect("ServeFile call failed")
+    match ServeFile::new(&filename).try_call(req).await {
+        Ok(response) => Ok(response),
+        Err(err) => {
+            warn!("Unable to serve packet capture file {filename}: {err}");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn pcap_dump_returns_not_found_for_missing_session() {
+        let response = pcap_dump(Path(usize::MAX), HeaderMap::new())
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }

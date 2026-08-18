@@ -23,7 +23,7 @@ pub fn find_root_site(
 
         if !sites.iter().any(|s| s.name == root_site_name) {
             error!("Site {root_site_name} (from /etc/lqos.conf) not found in the UISP sites list");
-            return Err(UispIntegrationError::NoRootSite);
+            return Err(UispIntegrationError::NoRootSite(root_site_name));
         } else {
             info!("{root_site_name} found in the sites list.");
         }
@@ -45,7 +45,9 @@ fn handle_multiple_internet_connected_sites(
 
     if candidates.is_empty() {
         error!("Unable to find a root site in the sites/data-links.");
-        return Err(UispIntegrationError::NoRootSite);
+        return Err(UispIntegrationError::NoRootSite(
+            "no Internet-connected UISP sites were found".to_string(),
+        ));
     } else if candidates.len() == 1 {
         info!(
             "Found only one site with an Internet connection: {root_site_name}, using it as root"
@@ -81,7 +83,9 @@ pub fn set_root_site(sites: &mut [UispSite], root_site: &str) -> Result<(), Uisp
         .count();
     if number_of_roots > 1 {
         error!("More than one root present in the tree! That's not going to work. Bailing.");
-        return Err(UispIntegrationError::NoRootSite);
+        return Err(UispIntegrationError::NoRootSite(
+            "more than one root site was tagged".to_string(),
+        ));
     } else {
         info!("Single root tagged in the tree");
     }
@@ -123,7 +127,10 @@ mod test {
         let data_links = vec![];
         let result = find_root_site(&cfg, &mut sites, &data_links);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), UispIntegrationError::NoRootSite);
+        assert_eq!(
+            result.unwrap_err(),
+            UispIntegrationError::NoRootSite("TEST".to_string())
+        );
     }
 
     #[test]

@@ -19,9 +19,9 @@ To test the WISPGate Integration, use
 python3 integrationWISPGate.py
 ```
 
-On the first successful run, it will create a ShapedDevices.csv file and network.json.
-ShapedDevices.csv will be overwritten every time the WISPGate integration is run.
-Recommended: keep `always_overwrite_network_json = true` for integration-driven deployments so topology stays aligned with WISPGate syncs.
+On the first successful run, it creates the WISPGate import and shaping data LibreQoS needs for scheduled refreshes.
+Those files are refreshed every time the WISPGate integration runs.
+Built-in integrations do not write `network.json`; keep that file for DIY/manual deployments.
 
 You have the option to run integrationWISPGate.py automatically on boot and every X minutes (set by the parameter `queue_refresh_interval_mins`), which is highly recommended. This can be enabled by setting ```enable_wispgate = true``` in `/etc/lqos.conf`.
 Once set, run `sudo systemctl restart lqos_scheduler`.

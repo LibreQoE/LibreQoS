@@ -12,9 +12,9 @@ Use esta integración cuando Netzur sea su fuente de verdad CRM/NMS.
 
 ## Notas operativas
 
-- La integración regenera `ShapedDevices.csv`.
-- `network.json` depende de su configuración de sobrescritura.
-- Recomendado: mantener `always_overwrite_network_json = true` para alinear topología con los ciclos de Netzur.
+- La integración refresca los datos importados y de shaping que LibreQoS usa con Netzur.
+- `network.json` queda para despliegues DIY o manuales.
+- Use la WebUI para validar que la importación terminó correctamente.
 
 ## Referencia completa
 

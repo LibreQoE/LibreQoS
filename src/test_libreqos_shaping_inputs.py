@@ -1,0 +1,525 @@
+import csv
+import importlib
+import json
+import os
+import sys
+import tempfile
+import types
+import unittest
+from unittest.mock import patch
+
+_STUBBED_MODULES = ("pythonCheck", "liblqos_python", "deepdiff", "LibreQoS")
+_ORIGINAL_MODULES = {name: sys.modules.get(name) for name in _STUBBED_MODULES}
+LibreQoS = None
+
+
+def install_libreqos_stubs():
+    python_check = types.ModuleType("pythonCheck")
+    python_check.checkPythonVersion = lambda: None
+    sys.modules["pythonCheck"] = python_check
+
+    deepdiff = types.ModuleType("deepdiff")
+    deepdiff.DeepDiff = lambda *_args, **_kwargs: {}
+    sys.modules["deepdiff"] = deepdiff
+
+    lqlib = types.ModuleType("liblqos_python")
+    lqlib.is_lqosd_alive = lambda: True
+    lqlib.clear_ip_mappings = lambda: None
+    lqlib.delete_ip_mapping = lambda *_args, **_kwargs: None
+    lqlib.validate_shaped_devices = lambda: "OK"
+    lqlib.is_libre_already_running = lambda: False
+    lqlib.create_lock_file = lambda: None
+    lqlib.free_lock_file = lambda: None
+    lqlib.add_ip_mapping = lambda *_args, **_kwargs: None
+
+    class DummyBatchedCommands:
+        pass
+
+    class DummyBakery:
+        pass
+
+    lqlib.BatchedCommands = DummyBatchedCommands
+    lqlib.check_config = lambda: None
+    lqlib.sqm = lambda: "cake"
+    lqlib.upstream_bandwidth_capacity_download_mbps = lambda: 1000
+    lqlib.upstream_bandwidth_capacity_upload_mbps = lambda: 1000
+    lqlib.interface_a = lambda: "eth0"
+    lqlib.interface_b = lambda: "eth1"
+    lqlib.enable_actual_shell_commands = lambda: False
+    lqlib.use_bin_packing_to_balance_cpu = lambda: False
+    lqlib.queue_mode = lambda: "shape"
+    lqlib.run_shell_commands_as_sudo = lambda: False
+    lqlib.generated_pn_download_mbps = lambda: 1000
+    lqlib.generated_pn_upload_mbps = lambda: 1000
+    lqlib.queues_available_override = lambda: 0
+    lqlib.on_a_stick = lambda: False
+    lqlib.get_tree_weights = lambda: {}
+    lqlib.get_weights = lambda: {}
+    lqlib.is_network_flat = lambda: False
+    lqlib.get_libreqos_directory = lambda: "/tmp/libreqos"  # nosec B108
+    lqlib.enable_insight_topology = lambda: False
+    lqlib.is_insight_enabled = lambda: False
+    lqlib.scheduler_error = lambda *_args, **_kwargs: None
+    lqlib.xdp_ip_mapping_capacity = lambda: 1024
+    lqlib.overrides_circuit_adjustments_effective = lambda: []
+    lqlib.automatic_import_uisp = lambda: False
+    lqlib.automatic_import_splynx = lambda: False
+    lqlib.automatic_import_powercode = lambda: False
+    lqlib.automatic_import_sonar = lambda: False
+    lqlib.automatic_import_wispgate = lambda: False
+    lqlib.automatic_import_netzur = lambda: False
+    lqlib.automatic_import_visp = lambda: False
+    lqlib.topology_import_ingress_enabled = lambda: False
+    lqlib.calculate_topology_source_generation = lambda: "test-generation"
+    lqlib.validated_runtime_shaping_inputs_path = lambda: None
+    lqlib.calculate_shaping_inputs_generation = lambda _path: "shape-1"
+    lqlib.calculate_effective_network_generation = lambda _path: "effective-1"
+    lqlib.plan_top_level_cpu_bins = lambda *_args, **_kwargs: {}
+    lqlib.plan_class_identities = lambda *_args, **_kwargs: {}
+    lqlib.fast_queues_fq_codel = lambda: False
+    lqlib.shaping_cpu_count = lambda: 16
+    lqlib.Bakery = DummyBakery
+    sys.modules["liblqos_python"] = lqlib
+
+def setUpModule():
+    global LibreQoS
+    for name in _STUBBED_MODULES:
+        sys.modules.pop(name, None)
+    install_libreqos_stubs()
+    LibreQoS = importlib.import_module("LibreQoS")
+
+
+def tearDownModule():
+    for name, module in _ORIGINAL_MODULES.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
+
+
+class TestLibreQoSShapingInputs(unittest.TestCase):
+    def test_flat_planner_item_key_uses_stable_circuit_id(self):
+        circuit = {
+            "circuitID": "circuit-stable",
+            "idForCircuitsWithoutParentNodes": 17,
+        }
+
+        self.assertEqual(
+            LibreQoS.planner_top_level_item_key(circuit, flat_network=True),
+            "flat_circuit:circuit-stable",
+        )
+        self.assertEqual(
+            LibreQoS.planner_top_level_item_key(circuit, flat_network=False),
+            "17",
+        )
+        self.assertEqual(
+            LibreQoS.planner_top_level_item_key(
+                {"circuitID": "0", "idForCircuitsWithoutParentNodes": 17},
+                flat_network=True,
+            ),
+            "flat_circuit:0",
+        )
+
+    def test_flat_binpacking_detection_covers_legacy_and_runtime_topologies(self):
+        runtime_flat_network = {
+            "Generated_PN_1": {
+                "id": "libreqos:generated:flat:bucket:0",
+                "children": {},
+            },
+            "Generated_PN_2": {
+                "id": "libreqos:generated:flat:bucket:1",
+                "children": {},
+            },
+        }
+
+        self.assertTrue(LibreQoS.flat_binpacking_enabled({}, True))
+        self.assertTrue(
+            LibreQoS.flat_binpacking_enabled(runtime_flat_network, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled({"Tower": {}}, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled({"Generated_PN_bad": {}}, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled({"Generated_PN_1": {}}, True)
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled(
+                {"Generated_PN_1": {}, "Generated_PN_3": {}},
+                True,
+            )
+        )
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled(runtime_flat_network, False)
+        )
+        malformed_runtime_network = dict(runtime_flat_network)
+        malformed_runtime_network["Generated_PN_1"] = {
+            "id": "libreqos:generated:flat:bucket:0",
+            "children": {"real-child": {}},
+        }
+        self.assertFalse(
+            LibreQoS.flat_binpacking_enabled(malformed_runtime_network, True)
+        )
+
+    def test_flat_planner_failure_preserves_existing_assignments(self):
+        items = [
+            {"id": "flat_circuit:existing", "weight": 10.0},
+            {"id": "flat_circuit:new", "weight": 5.0},
+        ]
+        previous_assignments = {
+            "flat_circuit:existing": "Generated_PN_2",
+        }
+
+        with patch.object(
+            LibreQoS,
+            "plan_top_level_cpu_bins",
+            side_effect=RuntimeError("planner unavailable"),
+        ):
+            with self.assertWarnsRegex(UserWarning, "preserving prior assignments"):
+                assignments, changed = LibreQoS.plan_flat_generated_parent_assignments(
+                    items,
+                    ["Generated_PN_1", "Generated_PN_2"],
+                    previous_assignments,
+                    {},
+                    1000.0,
+                    1,
+                )
+
+        self.assertEqual(assignments["flat_circuit:existing"], "Generated_PN_2")
+        self.assertEqual(assignments["flat_circuit:new"], "Generated_PN_1")
+        self.assertEqual(changed, [])
+
+    def test_saved_identity_state_is_reused_only_for_flat_binpacking(self):
+        state = {
+            "sites": {"Generated_PN_1": {"class_minor": 3}},
+            "circuits": {"circuit-1": {"class_minor": 4}},
+        }
+
+        self.assertEqual(
+            LibreQoS.reusable_identity_state(state, True),
+            (state["sites"], state["circuits"]),
+        )
+        self.assertEqual(
+            LibreQoS.reusable_identity_state(state, False),
+            ({}, {}),
+        )
+
+    def test_runtime_resolved_circuit_attachment_candidates_ignore_logical_parent(self):
+        candidates = LibreQoS._circuit_attachment_name_candidates(
+            {
+                "ParentNode": "Generated_PN_2",
+                "effectiveParentNodeName": "Generated_PN_2",
+                "logicalParentNode": "Globe",
+                "parentResolvedByShapingInputs": True,
+            }
+        )
+        self.assertEqual(candidates, ["Generated_PN_2"])
+
+    def test_canonical_shaping_parent_ignores_logical_anchor_for_generated_parent(self):
+        circuit = {
+            "ParentNode": "Generated_PN_1",
+            "effectiveParentNodeName": "Generated_PN_1",
+            "ParentNodeID": "uisp:device:glenn-s1",
+            "effectiveParentNodeID": "uisp:device:glenn-s1",
+            "logicalParentNode": "glenn-s1.streamitnet.com",
+            "parentResolutionSource": "topology_anchor",
+        }
+
+        parent_name, parent_id = LibreQoS._normalize_circuit_shaping_parent(circuit)
+
+        self.assertEqual(parent_name, "Generated_PN_1")
+        self.assertEqual(parent_id, "")
+        self.assertEqual(circuit["shapingParentNode"], "Generated_PN_1")
+        self.assertEqual(circuit["shapingParentNodeID"], "")
+        self.assertEqual(circuit["shapingParentKey"], "name:Generated_PN_1")
+
+    def test_canonical_shaping_parent_drops_mismatched_parent_id(self):
+        circuit = {
+            "ParentNode": "Physical_AP",
+            "ParentNodeID": "uisp:device:logical-ap",
+        }
+
+        parent_name, parent_id = LibreQoS._normalize_circuit_shaping_parent(
+            circuit,
+            {"uisp:device:logical-ap": "Logical_AP"},
+        )
+
+        self.assertEqual(parent_name, "Physical_AP")
+        self.assertEqual(parent_id, "")
+        self.assertEqual(circuit["shapingParentKey"], "name:Physical_AP")
+
+    def test_circuit_parent_selection_keeps_name_fallback_when_parent_id_is_present(self):
+        id_backed_circuit = {
+            "circuitID": "circuit-1",
+            "ParentNode": "Globe",
+            "ParentNodeID": "libreqos:legacy-network-json:node:3bc50e457b7f164b",
+        }
+        name_only_circuit = {
+            "circuitID": "circuit-2",
+            "ParentNode": "Globe",
+        }
+        circuits_by_parent_id = {}
+        circuits_by_parent_name = {}
+
+        for circuit in (id_backed_circuit, name_only_circuit):
+            LibreQoS._index_circuit_by_shaping_parent(
+                circuit,
+                {},
+                circuits_by_parent_id,
+                circuits_by_parent_name,
+            )
+
+        self.assertEqual(
+            circuits_by_parent_id["libreqos:legacy-network-json:node:3bc50e457b7f164b"],
+            [id_backed_circuit],
+        )
+        self.assertEqual(circuits_by_parent_name["Globe"], [id_backed_circuit, name_only_circuit])
+        self.assertEqual(
+            LibreQoS._select_circuits_for_parent_node(
+                "Globe",
+                {
+                    "id": "libreqos:legacy-network-json:node:3bc50e457b7f164b",
+                    "name": "Globe",
+                },
+                circuits_by_parent_id,
+                circuits_by_parent_name,
+            ),
+            [id_backed_circuit, name_only_circuit],
+        )
+
+    def test_validate_planned_circuit_attachment_rejects_major_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "Planned circuit class majors do not match"):
+            LibreQoS._validate_planned_circuit_attachment(
+                "Globe",
+                {
+                    "classMajor": "0x1",
+                    "up_classMajor": "0x11",
+                },
+                {
+                    "circuitID": "circuit-1",
+                    "ParentNode": "Generated_PN_4",
+                    "logicalParentNode": "Globe",
+                    "parentResolutionSource": "runtime_fallback",
+                },
+                {
+                    "class_major": 4,
+                    "up_class_major": 20,
+                },
+            )
+
+    def test_shaping_inputs_freshness_requires_active_runtime_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+
+            self.assertFalse(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
+
+    def test_shaping_inputs_freshness_accepts_matching_active_runtime_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=shaping_inputs,
+            ):
+                self.assertTrue(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
+
+    def test_shaping_inputs_freshness_rejects_mismatched_active_runtime_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
+            other_inputs = os.path.join(temp_dir, "other_shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=other_inputs,
+            ):
+                self.assertFalse(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
+
+    def test_shaping_inputs_freshness_rejects_runtime_gate_errors(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaping_inputs = os.path.join(temp_dir, "shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                handle.write("{}\n")
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                side_effect=OSError("bad status"),
+            ):
+                self.assertFalse(LibreQoS._runtime_shaping_inputs_are_validated(shaping_inputs))
+
+    def test_load_subscriber_circuits_accepts_diy_id_alias(self):
+        header = [
+            "Circuit ID",
+            "Circuit Name",
+            "Device ID",
+            "Device Name",
+            "Parent Node",
+            "Parent Node ID",
+            "id",
+            "MAC",
+            "IPv4",
+            "IPv6",
+            "Download Min Mbps",
+            "Upload Min Mbps",
+            "Download Max Mbps",
+            "Upload Max Mbps",
+            "Comment",
+        ]
+        row = [
+            "100",
+            "Subscriber 100",
+            "device-100",
+            "Radio 100",
+            "Tower-A",
+            "uisp:device:tower-a",
+            "uisp:site:site-100",
+            "aa:bb:cc:dd:ee:ff",
+            "100.64.0.10/32",
+            "",
+            "10",
+            "10",
+            "100",
+            "100",
+            "DIY id alias",
+        ]
+
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="", delete=False) as handle:
+            writer = csv.writer(handle)
+            writer.writerow(header)
+            writer.writerow(row)
+            path = handle.name
+
+        try:
+            circuits, _ = LibreQoS.loadSubscriberCircuits(path)
+        finally:
+            os.remove(path)
+
+        self.assertEqual(len(circuits), 1)
+        self.assertEqual(circuits[0]["AnchorNodeID"], "uisp:site:site-100")
+
+    def test_load_subscriber_circuits_for_shaping_requires_runtime_artifacts_for_integration(self):
+        with patch.object(LibreQoS, "_runtime_shaping_inputs_are_validated", return_value=False):
+            with patch.object(LibreQoS, "topology_import_ingress_enabled", return_value=True):
+                with self.assertRaises(LibreQoS.RefreshFailure):
+                    LibreQoS.loadSubscriberCircuitsForShaping("/tmp/ShapedDevices.csv")  # nosec B108
+
+    def test_load_subscriber_circuits_for_shaping_requires_valid_runtime_payload(self):
+        with patch.object(LibreQoS, "_runtime_shaping_inputs_are_validated", return_value=True):
+            with patch.object(
+                LibreQoS,
+                "loadSubscriberCircuitsFromShapingInputs",
+                side_effect=ValueError("bad payload"),
+            ):
+                with self.assertRaises(LibreQoS.RefreshFailure):
+                    LibreQoS.loadSubscriberCircuitsForShaping("/tmp/ShapedDevices.csv")  # nosec B108
+
+    def test_load_subscriber_circuits_for_shaping_consumes_fresh_runtime_payload(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaping_dir = os.path.join(temp_dir, "state", "shaping")
+            os.makedirs(shaping_dir, exist_ok=True)
+            shaping_inputs = os.path.join(shaping_dir, "shaping_inputs.json")
+            with open(shaping_inputs, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "shaping_generation": "shape-1",
+                        "circuits": [
+                            {
+                                "circuit_id": "circuit-1",
+                                "circuit_name": "Circuit 1",
+                                "effective_parent_node_name": "Globe",
+                                "effective_parent_node_id": "libreqos:legacy-network-json:node:1",
+                                "download_min_mbps": 10,
+                                "upload_min_mbps": 10,
+                                "download_max_mbps": 100,
+                                "upload_max_mbps": 100,
+                                "devices": [],
+                            }
+                        ],
+                    },
+                    handle,
+                )
+
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=shaping_inputs,
+            ):
+                with patch.object(
+                    LibreQoS,
+                    "get_shaping_inputs_path",
+                    return_value=shaping_inputs,
+                ):
+                    circuits, missing_parents = LibreQoS.loadSubscriberCircuitsForShaping(
+                        "/tmp/ShapedDevices.csv"  # nosec B108
+                    )
+
+        self.assertEqual(len(circuits), 1)
+        self.assertEqual(circuits[0]["circuitID"], "circuit-1")
+        self.assertEqual(circuits[0]["ParentNode"], "Globe")
+        self.assertEqual(missing_parents, {})
+
+    def test_load_subscriber_circuits_for_shaping_falls_back_to_manual_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            shaped_devices = os.path.join(temp_dir, "ShapedDevices.csv")
+            with open(shaped_devices, "w", encoding="utf-8", newline="") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    [
+                        "Circuit ID",
+                        "Circuit Name",
+                        "Device ID",
+                        "Device Name",
+                        "Parent Node",
+                        "MAC",
+                        "IPv4",
+                        "IPv6",
+                        "Download Min Mbps",
+                        "Upload Min Mbps",
+                        "Download Max Mbps",
+                        "Upload Max Mbps",
+                        "Comment",
+                    ]
+                )
+                writer.writerow(
+                    [
+                        "manual-1",
+                        "Manual 1",
+                        "device-1",
+                        "Radio 1",
+                        "Globe",
+                        "aa:bb:cc:dd:ee:ff",
+                        "192.0.2.10/32",
+                        "",
+                        "10",
+                        "10",
+                        "100",
+                        "100",
+                        "",
+                    ]
+                )
+
+            with patch.object(
+                LibreQoS,
+                "validated_runtime_shaping_inputs_path",
+                return_value=None,
+            ):
+                circuits, missing_parents = LibreQoS.loadSubscriberCircuitsForShaping(
+                    shaped_devices
+                )
+
+        self.assertEqual(len(circuits), 1)
+        self.assertEqual(circuits[0]["circuitID"], "manual-1")
+        self.assertEqual(circuits[0]["ParentNode"], "Globe")
+        self.assertEqual(missing_parents, {})
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -40,7 +40,7 @@ Practical LibreQoS behavior model:
 
 1. Default behavior uses `HTB` + `cake diffserv4` for shaped circuits.
 2. TreeGuard can dynamically switch circuit directions between `cake diffserv4` and `fq_codel` based on low-load/RTT guardrails.
-3. In LibreQoS v2.0, TreeGuard is enabled by default and operators should review its enrollment and guardrails if they want fixed/manual SQM behavior.
+3. Current builds keep TreeGuard enabled by default for circuit SQM management, while runtime link virtualization is disabled by default in favor of static queue policy from `lqos_topology`.
 
 See [TreeGuard](treeguard.md) for configuration and rollout details.
 
@@ -298,7 +298,11 @@ Best use case is asymmetric links where upstream ACK load limits downstream good
 
 `autorate-ingress` can estimate capacity from arriving traffic and is primarily useful on highly variable links (for example some cellular paths). It cannot estimate bottlenecks downstream of where CAKE is attached.
 
-### 5.11 CAKE observability (`tc -s qdisc show`)
+### 5.11 DOCSIS modem headroom
+
+When shaping downstream traffic behind a DOCSIS modem, set the shaper below the modem's actual provisioned downstream rate—usually 85–95% after confirming the real rate with traffic tests. Otherwise, traffic can queue in the modem's downstream buffer (notably on modems with large buffers such as some Puma 6 devices), where LibreQoS and CAKE/fq_codel cannot manage it; latency then rises even though the LibreQoS shaper appears correctly configured. This is the same downstream bottleneck that `autorate-ingress` cannot observe. Keep the queue under CAKE or fq_codel by leaving enough headroom, and adjust the percentage for the modem and service tier rather than treating one value as universal.
+
+### 5.12 CAKE observability (`tc -s qdisc show`)
 
 Useful fields commonly present:
 

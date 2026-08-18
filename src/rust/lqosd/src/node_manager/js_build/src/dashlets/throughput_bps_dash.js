@@ -134,7 +134,7 @@ export class ThroughputBpsDash extends DashletBaseInsight{
 
             const yestValue = document.createElement("span");
             yestValue.classList.add("fw-bold", "text-secondary");
-            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires<br />Insight";
+            yestValue.innerHTML = "<i class=\"fa fa-fw fa-centerline fa-line-chart nav-icon small\"></i> History<br />Requires<br />Entitlement";
 
             yestWrapper.appendChild(yestHeader);
             yestWrapper.appendChild(yestValue);

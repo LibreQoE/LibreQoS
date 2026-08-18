@@ -46,6 +46,9 @@ pub enum RuntimeNodeOperationFailureReason {
     StructuralIneligibleNoPromotableChildren,
     /// The node has only one promotable direct child, so v1 flattening has no deterministic split.
     StructuralIneligibleSinglePromotableChild,
+    /// The node already lives inside a retained runtime shadow branch, so nested virtualization is
+    /// not supported by the v1 runtime mutation model.
+    StructuralIneligibleNestedRuntimeBranch,
 }
 
 /// Snapshot of a Bakery-tracked TreeGuard runtime node operation.
@@ -110,6 +113,36 @@ pub enum ExecutionMode {
     Builder,
     /// Live Update
     LiveUpdate,
+}
+
+/// One HTB class that StormGuard must restore before leaving live mode.
+#[derive(Debug, Clone, Allocative)]
+pub struct StormGuardRestoreAdjustment {
+    /// Network interface containing the class.
+    pub interface_name: String,
+    /// Fully qualified HTB class identifier.
+    pub class_id: TcHandle,
+    /// Planned guaranteed class rate in Mbps.
+    pub planned_rate: u64,
+    /// Planned class ceiling in Mbps.
+    pub planned_ceil: u64,
+}
+
+/// One HTB class rate change in an acknowledged StormGuard adjustment batch.
+#[derive(Debug, Clone, Allocative)]
+pub struct StormGuardClassAdjustment {
+    /// Network interface containing the class.
+    pub interface_name: String,
+    /// Fully qualified HTB class identifier.
+    pub class_id: TcHandle,
+    /// New class ceiling in Mbps.
+    pub new_rate: u64,
+    /// Class ceiling to restore if another command in the batch fails.
+    pub previous_rate: u64,
+    /// Original guaranteed class rate in Mbps.
+    pub planned_rate: u64,
+    /// Original class ceiling in Mbps.
+    pub planned_ceil: u64,
 }
 
 /// List of commands that the Bakery system can handle.
@@ -228,16 +261,71 @@ pub enum BakeryCommands {
         /// Optional per-circuit SQM override: "cake" or "fq_codel"
         sqm_override: Option<String>,
     },
-    /// Change a specific HTB class rate on-the-fly; optionally dry-run.
-    StormGuardAdjustment {
-        /// If true, log the tc command instead of executing it.
+    /// Create or update a runtime-only dynamic circuit overlay entry.
+    ///
+    /// This does not mutate `ShapedDevices.csv`. Overlay circuits are retained across full reloads
+    /// and are applied to the active shaping tree when possible.
+    UpsertDynamicCircuitOverlay {
+        /// Shaped-device-like definition for the dynamic circuit/device.
+        shaped_device: Box<lqos_config::ShapedDevice>,
+        /// Optional synchronous reply channel for immediate acceptance reporting.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<Option<TcHandle>, String>>>,
+    },
+    /// Remove a runtime-only dynamic circuit overlay entry by circuit identifier.
+    ///
+    /// This does not mutate `ShapedDevices.csv`. When the circuit exists in the active shaping
+    /// tree, it is removed live when possible.
+    RemoveDynamicCircuitOverlay {
+        /// Stable circuit identifier to remove.
+        circuit_id: String,
+        /// Optional synchronous reply channel for immediate acceptance reporting.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
+    /// Apply all HTB changes for one StormGuard decision and acknowledge the complete batch.
+    StormGuardAdjustmentBatch {
+        /// Bakery shaping-tree generation used to resolve every class handle.
+        tree_generation: u64,
+        /// If true, log the tc commands instead of executing them.
         dry_run: bool,
-        /// Network interface name (e.g., `eth0`) containing the class.
-        interface_name: String,
-        /// Fully qualified class identifier (e.g., `1:2`).
-        class_id: String,
-        /// New class ceiling rate in Mbps (the handler sets ceil and rate-1).
-        new_rate: u64,
+        /// Complete set of site and dependent-class changes for the decision.
+        adjustments: Vec<StormGuardClassAdjustment>,
+        /// Synchronous completion reply.
+        #[allocative(skip)]
+        reply: ReplySender<Result<(), String>>,
+    },
+    /// Restore planned HTB rates and clear retained StormGuard replay state after success.
+    ResetStormGuardAdjustments {
+        /// Bakery shaping-tree generation used to resolve the supplied class handles.
+        tree_generation: u64,
+        /// Complete set of StormGuard-managed HTB classes to restore.
+        adjustments: Vec<StormGuardRestoreAdjustment>,
+        /// Restore the supplied adjustments when Bakery has no in-process ownership cache.
+        restore_untracked: bool,
+        /// Optional synchronous completion reply.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
+    /// Discard retained StormGuard class ownership after a shaping-tree rebuild.
+    DiscardStormGuardAdjustments {
+        /// Bakery shaping-tree generation whose cached ownership may be discarded.
+        tree_generation: u64,
+        /// Optional synchronous completion reply.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<(), String>>>,
+    },
+    /// Apply a StormGuard circuit SQM update immediately and acknowledge the live result.
+    StormGuardCircuitAdjustment {
+        /// Bakery shaping-tree generation used to resolve this circuit.
+        tree_generation: u64,
+        /// Stable circuit hash in Bakery state.
+        circuit_hash: i64,
+        /// Requested per-circuit SQM override, or `None` to restore the configured default.
+        sqm_override: Option<String>,
+        /// Optional synchronous completion reply.
+        #[allocative(skip)]
+        reply: Option<ReplySender<Result<bool, String>>>,
     },
     /// Runtime TreeGuard request to virtualize or restore a non-top-level site without a full reload.
     TreeGuardSetNodeVirtual {
@@ -700,11 +788,10 @@ impl BakeryCommands {
         let do_sqm;
 
         if execution_mode == ExecutionMode::Builder {
-            // Initial tree build: always create HTB + SQM classes for circuits,
-            // regardless of lazy queue mode. Laziness applies to live updates
-            // (ExecutionMode::LiveUpdate) and pruning, not the first full build.
+            // HTB-lazy keeps the hierarchy for every circuit but defers leaf qdiscs
+            // until activity promotes the circuit through the live-update path.
             do_htb = true;
-            do_sqm = true;
+            do_sqm = !matches!(config.queues.lazy_queues, Some(LazyQueueMode::Htb));
         } else {
             // We're in live update mode
             match config.queues.lazy_queues.as_ref() {
@@ -1262,10 +1349,8 @@ mod tests {
         MQ_CREATED.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
-    #[test]
-    fn add_circuit_qdisc_replace_commands_use_explicit_handles_when_enriched() {
-        let config = Arc::new(Config::default());
-        let builder_commands = BakeryCommands::AddCircuit {
+    fn test_circuit_command() -> BakeryCommands {
+        BakeryCommands::AddCircuit {
             circuit_hash: 42,
             circuit_name: None,
             site_name: None,
@@ -1283,34 +1368,70 @@ mod tests {
             ip_addresses: "192.0.2.42/32".to_string(),
             sqm_override: None,
         }
-        .to_commands(&config, ExecutionMode::Builder)
-        .expect("builder add_circuit should emit commands");
+    }
+
+    #[test]
+    fn add_circuit_qdisc_replace_commands_use_explicit_handles_when_enriched() {
+        let config = Arc::new(Config::default());
+        let circuit = test_circuit_command();
+        let builder_commands = circuit
+            .to_commands(&config, ExecutionMode::Builder)
+            .expect("builder add_circuit should emit commands");
         assert_qdisc_add_replace_commands_use_explicit_handles(&builder_commands);
 
         let mut live_cfg = Config::default();
         live_cfg.queues.lazy_queues = Some(LazyQueueMode::Full);
         let live_config = Arc::new(live_cfg);
-        let live_commands = BakeryCommands::AddCircuit {
-            circuit_hash: 42,
-            circuit_name: None,
-            site_name: None,
-            parent_class_id: crate::TcHandle::from_u32(0x10020),
-            up_parent_class_id: crate::TcHandle::from_u32(0x20020),
-            class_minor: 0x21,
-            download_bandwidth_min: 10.0,
-            upload_bandwidth_min: 10.0,
-            download_bandwidth_max: 100.0,
-            upload_bandwidth_max: 100.0,
-            class_major: 0x1,
-            up_class_major: 0x2,
-            down_qdisc_handle: Some(0x9000),
-            up_qdisc_handle: Some(0x9001),
-            ip_addresses: "192.0.2.42/32".to_string(),
-            sqm_override: None,
-        }
-        .to_commands(&live_config, ExecutionMode::LiveUpdate)
-        .expect("live add_circuit should emit commands");
+        let live_commands = circuit
+            .to_commands(&live_config, ExecutionMode::LiveUpdate)
+            .expect("live add_circuit should emit commands");
         assert_qdisc_add_replace_commands_use_explicit_handles(&live_commands);
+    }
+
+    #[test]
+    fn htb_lazy_builder_defers_leaf_qdiscs_until_activation() {
+        let mut htb_cfg = Config::default();
+        htb_cfg.queues.lazy_queues = Some(LazyQueueMode::Htb);
+        let htb_config = Arc::new(htb_cfg);
+        let circuit = test_circuit_command();
+        let htb_builder_commands = circuit
+            .to_commands(&htb_config, ExecutionMode::Builder)
+            .expect("HTB-lazy builder should emit HTB commands");
+        assert_eq!(
+            htb_builder_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "class"))
+                .count(),
+            2,
+            "HTB-lazy builder should retain both direction classes"
+        );
+        assert_eq!(
+            htb_builder_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "qdisc"))
+                .count(),
+            0,
+            "HTB-lazy builder should defer leaf qdiscs"
+        );
+        let htb_live_commands = circuit
+            .to_commands(&htb_config, ExecutionMode::LiveUpdate)
+            .expect("HTB-lazy activation should emit leaf qdiscs");
+        assert_eq!(
+            htb_live_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "class"))
+                .count(),
+            0,
+            "HTB-lazy activation should reuse the retained HTB classes"
+        );
+        assert_eq!(
+            htb_live_commands
+                .iter()
+                .filter(|cmd| cmd.first().is_some_and(|part| part == "qdisc"))
+                .count(),
+            2,
+            "HTB-lazy activation should create both direction leaf qdiscs"
+        );
     }
 
     #[test]

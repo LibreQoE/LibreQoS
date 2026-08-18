@@ -11,6 +11,12 @@ pub struct HostCounter {
     /// Upload bytes counter (keeps incrementing)
     pub upload_bytes: u64,
 
+    /// Actually transmitted download bytes counter (keeps incrementing)
+    pub actual_download_bytes: u64,
+
+    /// Actually transmitted upload bytes counter (keeps incrementing)
+    pub actual_upload_bytes: u64,
+
     /// Download packets counter (keeps incrementing)
     pub download_packets: u64,
 
@@ -62,6 +68,6 @@ mod test {
 
     #[test]
     fn host_counter_size() {
-        assert_eq!(std::mem::size_of::<HostCounter>(), 112);
+        assert_eq!(std::mem::size_of::<HostCounter>(), 128);
     }
 }

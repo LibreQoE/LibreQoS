@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
 
 use crate::{BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse, BusSession, bus::BusClientError};
+use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
+    time::timeout,
 };
 use tracing::error;
 
@@ -50,6 +52,16 @@ impl LibreqosBusClient {
         })
     }
 
+    /// Creates a new `LibreqosBusClient`, failing if connection setup exceeds
+    /// `request_timeout`.
+    ///
+    /// Side effects: opens a Unix socket connection to the local `lqosd` bus.
+    pub async fn new_with_timeout(request_timeout: Duration) -> Result<Self, BusClientError> {
+        timeout(request_timeout, Self::new())
+            .await
+            .map_err(|_| BusClientError::TimedOut)?
+    }
+
     /// Sends a request to the bus and waits for a response.
     ///
     /// ## Arguments
@@ -91,6 +103,21 @@ impl LibreqosBusClient {
         }
         Ok(response.responses)
     }
+
+    /// Sends a request to the bus and waits for a bounded response.
+    ///
+    /// Side effects: writes the request to the connected Unix socket. If this
+    /// call times out, discard the client because the stream may later receive
+    /// the timed-out reply.
+    pub async fn request_with_timeout(
+        &mut self,
+        requests: Vec<BusRequest>,
+        request_timeout: Duration,
+    ) -> Result<Vec<BusResponse>, BusClientError> {
+        timeout(request_timeout, self.request(requests))
+            .await
+            .map_err(|_| BusClientError::TimedOut)?
+    }
 }
 
 /// Convenient wrapper for accessing the bus, for a single request-response cycle. This
@@ -107,4 +134,20 @@ pub async fn bus_request(requests: Vec<BusRequest>) -> Result<Vec<BusResponse>, 
         return Err(BusClientError::SocketNotFound);
     };
     client.request(requests).await
+}
+
+/// Convenient wrapper for a single bus request with an end-to-end timeout.
+///
+/// Side effects: opens a Unix socket connection, sends the request, and closes
+/// the connection when the client is dropped.
+pub async fn bus_request_with_timeout(
+    requests: Vec<BusRequest>,
+    request_timeout: Duration,
+) -> Result<Vec<BusResponse>, BusClientError> {
+    timeout(request_timeout, async move {
+        let mut client = LibreqosBusClient::new().await?;
+        client.request(requests).await
+    })
+    .await
+    .map_err(|_| BusClientError::TimedOut)?
 }

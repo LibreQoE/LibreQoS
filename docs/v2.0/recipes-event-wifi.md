@@ -16,7 +16,7 @@ Use this pattern for short-lived, high-density event networks where grouping cli
 Example row (one subnet as one shaped circuit):
 
 ```text
-Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
 EVT-24-101,Event Hall A Subnet,EVT-24-101,HallA-Clients,Event_Core,,100.64.101.0/24,,10,10,300,300,Temporary event subnet group
 ```
 

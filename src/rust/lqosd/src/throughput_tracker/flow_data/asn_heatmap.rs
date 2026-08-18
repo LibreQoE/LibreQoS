@@ -1,6 +1,6 @@
 use fxhash::FxHashMap;
 use lqos_utils::{
-    temporal_heatmap::{HeatmapBlocks, TemporalHeatmap},
+    temporal_heatmap::{HeatmapBlocks, TemporalHeatmap, executive_retransmit_percent},
     units::DownUpOrder,
 };
 use once_cell::sync::Lazy;
@@ -54,8 +54,9 @@ impl AsnHeatmapStore {
         for (asn, mut aggregate) in aggregates.drain() {
             let (p50, p90) = p50_p90(&mut aggregate.rtts);
             let retransmit_down =
-                retransmit_percent(aggregate.retransmits.down, aggregate.packets.down);
-            let retransmit_up = retransmit_percent(aggregate.retransmits.up, aggregate.packets.up);
+                executive_retransmit_percent(aggregate.retransmits.down, aggregate.packets.down);
+            let retransmit_up =
+                executive_retransmit_percent(aggregate.retransmits.up, aggregate.packets.up);
             let entry = self.entries.entry(asn).or_insert_with(|| AsnHeatmapEntry {
                 heatmap: TemporalHeatmap::new(),
                 last_updated_cycle: current_cycle,
@@ -126,13 +127,6 @@ fn bytes_to_mbps(bytes: u64) -> f32 {
     (bytes as f64 * 8.0 / 1_000_000.0) as f32
 }
 
-fn retransmit_percent(retransmits: u64, packets: u64) -> Option<f32> {
-    if retransmits == 0 || packets == 0 {
-        return None;
-    }
-    Some((retransmits as f32 / packets as f32) * 100.0)
-}
-
 fn p50_p90(values: &mut [f32]) -> (Option<f32>, Option<f32>) {
     if values.is_empty() {
         return (None, None);
@@ -154,4 +148,67 @@ fn p50_p90(values: &mut [f32]) -> (Option<f32>, Option<f32>) {
     };
 
     (p50, p90)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AsnAggregate, AsnHeatmapStore};
+    use fxhash::FxHashMap;
+    use lqos_utils::units::DownUpOrder;
+
+    #[test]
+    fn asn_heatmaps_suppress_low_confidence_retransmits() {
+        let mut store = AsnHeatmapStore::new();
+        let mut aggregates = FxHashMap::default();
+        aggregates.insert(
+            64512,
+            AsnAggregate {
+                bytes: DownUpOrder {
+                    down: 12_500_000,
+                    up: 0,
+                },
+                packets: DownUpOrder { down: 99, up: 0 },
+                retransmits: DownUpOrder { down: 1, up: 0 },
+                rtts: vec![10.0, 12.0],
+            },
+        );
+
+        store.update(aggregates, 1, true);
+
+        let blocks = store
+            .entries
+            .get(&64512)
+            .expect("ASN heatmap should exist")
+            .heatmap
+            .blocks();
+        assert_eq!(blocks.retransmit_down.last().copied().flatten(), None);
+    }
+
+    #[test]
+    fn asn_heatmaps_keep_qualified_retransmits() {
+        let mut store = AsnHeatmapStore::new();
+        let mut aggregates = FxHashMap::default();
+        aggregates.insert(
+            64513,
+            AsnAggregate {
+                bytes: DownUpOrder {
+                    down: 12_500_000,
+                    up: 0,
+                },
+                packets: DownUpOrder { down: 100, up: 0 },
+                retransmits: DownUpOrder { down: 2, up: 0 },
+                rtts: vec![10.0, 12.0],
+            },
+        );
+
+        store.update(aggregates, 1, true);
+
+        let blocks = store
+            .entries
+            .get(&64513)
+            .expect("ASN heatmap should exist")
+            .heatmap
+            .blocks();
+        assert_eq!(blocks.retransmit_down.last().copied().flatten(), Some(2.0));
+    }
 }

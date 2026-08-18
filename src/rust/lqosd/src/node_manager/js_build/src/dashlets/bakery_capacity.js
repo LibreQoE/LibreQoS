@@ -37,6 +37,9 @@ function bakeryMemoryBadge(preflight) {
     if (preflight.memoryOk) {
         return mkBadge("Memory OK", "bg-success-subtle text-success border border-success-subtle", preflight.message || "");
     }
+    if (preflight.ok) {
+        return mkBadge("Memory Warning", "bg-warning-subtle text-warning border border-warning-subtle", preflight.message || "");
+    }
     return mkBadge("Memory Guard", "bg-danger-subtle text-danger border border-danger-subtle", preflight.message || "");
 }
 

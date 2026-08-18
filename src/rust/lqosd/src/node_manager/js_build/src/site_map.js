@@ -2,6 +2,7 @@ import { colorByQoqScore, colorByRttMs } from "./helpers/color_scales";
 import { isColorBlindMode } from "./helpers/colorblind";
 import { isDarkMode } from "./helpers/dark_mode";
 import { isRedacted } from "./helpers/redact";
+import { effectiveMax } from "./helpers/network_rates.mjs";
 import { scaleNumber, toNumber } from "./lq_js_common/helpers/scaling";
 import { get_ws_client, subscribeWS } from "./pubsub/ws";
 
@@ -276,14 +277,6 @@ function metricColorForMode(mode, metricValue) {
     return colorByRttMs(numeric);
 }
 
-function configuredMaxThroughput(node) {
-    return node?.configured_max_throughput || node?.max_throughput || [0, 0];
-}
-
-function effectiveMaxThroughput(node) {
-    return node?.effective_max_throughput || configuredMaxThroughput(node);
-}
-
 function averageOrNull(sum, count) {
     return count > 0 ? (sum / count) : null;
 }
@@ -338,6 +331,21 @@ function displayParentName(name, parentType) {
     return isRedacted() && String(parentType || "").toLowerCase() === "site"
         ? "[redacted]"
         : name;
+}
+
+function redactableHtml(text) {
+    return `<span class="redactable">${escapeHtml(text ?? "")}</span>`;
+}
+
+function treePageHrefForNodeId(nodeId) {
+    const normalizedId = String(nodeId || "").trim();
+    if (!normalizedId) {
+        return null;
+    }
+    const params = new URLSearchParams();
+    params.set("parent", "0");
+    params.set("nodeId", normalizedId);
+    return `/tree.html?${params.toString()}`;
 }
 
 function findNearestAncestorSiteIndex(indexMap, startIndex) {
@@ -1243,7 +1251,7 @@ class SiteMapPage {
             const qooUp = averageOrNull(value.qooUpSum, value.qooUpCount);
             const rttDownMs = averageOrNull(value.rttDownSum, value.rttDownCount);
             const rttUpMs = averageOrNull(value.rttUpSum, value.rttUpCount);
-            const maxMbps = effectiveMaxThroughput(node);
+            const maxMbps = effectiveMax(node);
             const limitDownMbps = toNumber(maxMbps?.[0], 0);
             const limitUpMbps = toNumber(maxMbps?.[1], 0);
 
@@ -1921,9 +1929,18 @@ class SiteMapPage {
             return;
         }
         this.detailsPanel.style.display = "block";
-        this.detailsTitle.textContent = displayNodeName(props.name, props.nodeType);
+        const detailsTitleText = displayNodeName(props.name, props.nodeType);
+        const treePageHref = treePageHrefForNodeId(props.nodeId);
+        this.detailsTitle.innerHTML = treePageHref
+            ? `<a class="link-body-emphasis text-decoration-none" href="${escapeHtml(treePageHref)}">${redactableHtml(detailsTitleText)}</a>`
+            : redactableHtml(detailsTitleText);
         const parentName = displayParentName(props.parentName, props.parentType);
-        this.detailsSubtitle.textContent = `${String(props.nodeType || "").toUpperCase()}${parentName ? ` · parent ${parentName}` : ""}${props.inheritedCoords ? " · using parent site coordinates" : ""}`;
+        const subtitleBits = [
+            escapeHtml(String(props.nodeType || "").toUpperCase()),
+            parentName ? ` · parent ${redactableHtml(parentName)}` : "",
+            props.inheritedCoords ? " · using parent site coordinates" : "",
+        ];
+        this.detailsSubtitle.innerHTML = subtitleBits.join("");
         const attachedAps = props.nodeType === "site" ? this.attachedApsForSite(props.key) : [];
         if (this.attachedList) {
             if (attachedAps.length === 0) {
@@ -1931,7 +1948,7 @@ class SiteMapPage {
             } else {
                 const preview = attachedAps
                     .slice(0, 6)
-                    .map((node) => `<div class="site-map-list-item">${escapeHtml(displayNodeName(node.name, node.type))}</div>`)
+                    .map((node) => `<div class="site-map-list-item">${redactableHtml(displayNodeName(node.name, node.type))}</div>`)
                     .join("");
                 const more = attachedAps.length > 6
                     ? `<div class="site-map-empty">+${attachedAps.length - 6} more APs attached to this site</div>`
@@ -1984,7 +2001,7 @@ class SiteMapPage {
     renderUnmappedGroup(label, nodes) {
         const items = nodes
             .sort((a, b) => a.name.localeCompare(b.name))
-            .map((node) => `<div class="site-map-list-item">${escapeHtml(displayNodeName(node.name, node.type))}${node.parentName ? `<div class="text-muted small">${escapeHtml(displayParentName(node.parentName, node.parentType))}</div>` : ""}</div>`)
+            .map((node) => `<div class="site-map-list-item">${redactableHtml(displayNodeName(node.name, node.type))}${node.parentName ? `<div class="text-muted small">${redactableHtml(displayParentName(node.parentName, node.parentType))}</div>` : ""}</div>`)
             .join("");
         return `<div class="site-map-list-group"><h6>${escapeHtml(label)}</h6>${items}</div>`;
     }

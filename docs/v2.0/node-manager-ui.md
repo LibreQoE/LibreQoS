@@ -1,6 +1,8 @@
 # LibreQoS WebUI (Node Manager)
 
-This page documents key WebUI (Node Manager) views and operational behavior in the local WebUI (`http://your_shaper_ip:9123`).
+This page documents key WebUI (Node Manager) views and operational behavior in the local WebUI. By default operators use `http://your_shaper_ip:9123`. If optional HTTPS with Caddy is enabled, operators use `https://your-hostname/` or `https://your-management-ip/` instead.
+
+For the full logical-topology versus queue-topology file flow, see [Topology Data Flow](topology-data-flow.md).
 
 ## Core Views
 
@@ -11,7 +13,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Bakery provides dedicated status for queue apply state, qdisc safety/preflight results, circuit live-change progress, and recent Bakery operations.
 - The Bakery and TreeGuard tabs present a high-level pipeline or control-loop summary ahead of the more detailed tables.
 - The Bakery `Pipeline` widget shows queue-control stages, apply state, verification state, and TC interval timing.
-- `Runtime Operations` summarizes TreeGuard/Bakery topology mutations, deferred cleanup work, failures, and subtrees waiting for a full reload.
+- `Runtime Operations` summarizes TreeGuard/Bakery topology mutations, deferred cleanup work, retryable failures, structurally blocked runtime operations, and subtrees waiting for a full reload.
 - `Recent Bakery Events` emphasizes grouped operations, with detailed event history available when deeper troubleshooting is needed.
 - `TreeGuard Activity` emphasizes grouped operations, including SQM change batches, with detailed event history available when deeper troubleshooting is needed.
 - `TreeGuard Control Loop` shows the current observe/evaluate/act state.
@@ -25,14 +27,88 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Hierarchical topology view of nodes/circuits from the shaper perspective.
 - Useful for spotting bottlenecks and parent/child utilization patterns.
 - Tree detail pages show a breadcrumb path, branch counts, and status indicators for the selected node.
-- `Node Details` summarizes the selected node’s type, branch size, configured rates, and effective rate.
+- `Node Details` summarizes the selected node’s configured rates, override state, and effective rate.
 - `Node Snapshot` provides a quick visual summary of throughput and QoO for the selected node.
 - Attached circuits are shown in a dedicated table for the selected node.
+- The attached-circuits table is attachment-aware, not traffic-aware: idle circuits remain visible even when they have no current throughput, with live columns left empty or zeroed until traffic appears.
 - The attached-circuits IP column keeps rows compact by showing one address inline and collapsing additional addresses as `+X`, with the full list still available on hover.
 - Ethernet-limited attached circuits can show inline `10M`, `100M`, or `1G` warning badges beside the `Plan (Mbps)` value; hovering explains the auto-cap and clicking the badge opens the dedicated Ethernet review page.
-- Administrators can save or clear `Operator Override` values where node-level overrides are supported. Read-only users and unsupported nodes continue to display current values without edit controls.
-- Tree-page operator rate edits write operator-owned overrides to `lqos_overrides.json`; they do not rewrite legacy integration bandwidth CSV files.
+- Administrators can save or clear `Rate Override` values where node-level overrides are supported. Read-only users and unsupported nodes continue to display current values without edit controls.
+- Tree-page rate edits save persistent `AdjustSiteSpeed` overrides in `lqos_overrides.json`.
+- On UISP `full` builds, legacy `integrationUISPbandwidths.csv` files are auto-migrated into those operator overrides on the next integration run when no operator rate overrides exist yet; otherwise the CSV is ignored.
 - Tree-page operator rate edits require an administrator session, a stable node ID, and a non-generated node. Generated/integration-synthetic nodes remain read-only in this editor.
+- The tree page keeps `Node Details` as a compact summary grid and places the override editors as compact inline rows directly beneath it.
+- `Limited By` estimates the source of the effective rate. Values can include `Base rate`, `Est. Parent`, `Est. Override`, `Est. Attachment`, `Est. Queue`, or `Est. Mixed`. Hover or focus it to see the download and upload details.
+- The tree page now shows topology override state as read-only summary only. Parent and attachment edits have moved to `Topology`, and the tree details panel links directly into Topology Manager for the selected node.
+- Runtime-selected attachment hops are collapsed out of the main tree hierarchy. When a site is currently using a specific backhaul or radio path, `Node Details` shows that as `Active Attachment` metadata on the site instead of exposing the attachment as its own branch node.
+- Inactive alternate PtP/wired backhaul attachment stubs are also pruned from the runtime tree. `tree.html` shows the effective path only; dormant alternates remain visible in Topology Manager rather than as standalone runtime nodes.
+- For integration-backed topology, `Network Tree Overview`, Tree Overview sankey views, and HTB queue planning all follow the squashed runtime-effective tree from `network.effective.json`. Topology Manager intentionally keeps the fuller canonical/editor topology so transport hops such as backhauls can still be managed there.
+- Integration roots and large aggregation nodes can also be static virtual nodes. In that case `tree.html` still shows the node with the ghost virtual-state indicator, while HTB planning shapes through the nearest non-virtual ancestor/descendant path instead of building a real class for that node.
+- On the synthetic `Root` node, topology override still shows as not applicable rather than as a generic missing-node-ID warning.
+
+#### Static Virtual vs Runtime Virtualized vs Squashed
+
+These are different behaviors and should not be treated as synonyms.
+
+| State | Visible in Topology Manager | Visible in `tree.html` | In physical HTB tree | Controlled by |
+|---|---|---|---|---|
+| Static virtual (`virtual: true`) | Yes | Yes, with ghost state | No | static queue policy / `lqos_topology` |
+| Runtime virtualized (`runtime_virtualized: true`) | No special logical change | Yes, marked as runtime-virtualized | Temporarily flattened at runtime | TreeGuard / Bakery |
+| Squashed / omitted transport hop | Usually yes in Topology Manager | No | No | `lqos_topology` runtime squashing |
+
+Practical meaning:
+
+- Static virtual nodes are part of the logical and monitoring tree, but not the physical queue tree.
+- Runtime virtualized nodes are a live runtime optimization applied after the baseline queue tree exists.
+- Squashed nodes are transport-only queue-useless hops removed from the queue-visible runtime tree entirely.
+
+### Topology Manager
+- Focused branch-reparenting editor for integration-backed topology state, intended primarily for branch/topology nodes rather than end-customer leaves.
+- The page places a full-width hierarchy summary comparison directly under the hero, then uses the main workspace for the focused move preview plus a details panel for legal parents and attachment/radio preferences.
+- The page keeps the hero, hierarchy summary, and details actions intentionally compact so the branch preview, current attachment health, and move controls stay higher on screen without excessive vertical whitespace.
+- The right-hand Details panel now uses a compact branch summary plus a single attachment-focused section, so `Current Attachment Preference`, `Attachment Health`, and the `Edit Attachment Preference` path live together instead of repeating the same branch state across multiple cards.
+- The `Edit Link Path` action is owned by the primary Details-panel action row beside `Start Move`; the `Radio Paths` section itself is read-only summary plus health/attachment data until that edit mode is entered.
+- In the Details panel, the selected branch name links directly to that branch's `tree.html` view when the node has a stable topology ID, so operators can jump from move/edit context back to the runtime tree quickly.
+- For nodes with multiple radio paths, the Details panel now emphasizes attachment decisions before branch moves: attachment cards highlight `Using Now` and `Preferred` state directly, while `Start Move` is visually demoted until the operator is actually rehoming the branch.
+- Default selection prefers nodes with richer branch context, such as saved overrides, movable branch nodes, site-level objects, descendants, and multiple legal parent targets.
+- Search shows live matching suggestions and is biased toward exact or branch-relevant matches so operator queries land on the intended site/branch more reliably than simple alphabetical matching.
+- The page opens in inspect mode. Clicking nodes changes selection and lets the operator navigate upstream/downstream branch context in the preview; it does not change parentage.
+- The current selected node is mirrored into the page URL, so refreshes and shared links reopen Topology Manager on the same node when that node still exists in the current topology state. When the page is opened without a `node_id`, it now defaults to the synthetic `Root` view before falling back to the ranked branch picker.
+- Topology Manager edits the logical network, not the queue tree. Integration roots, backhauls, and other logical-only nodes may remain visible here even when the runtime-effective tree hides or squashes them for queueing.
+- In the Move Preview, deep upstream ancestry is collapsed into a compact stub after the nearest two upstream nodes so long branch chains do not crush the left side of the map. The full breadcrumb remains visible in the hierarchy summary above.
+- While the page is open, Topology Manager lightly auto-refreshes topology-manager state in the background so attachment health and suppression state changes show up without a manual reload. Active move or attachment drafts stay in place unless the selected node itself disappears, and the refresh loop now defers itself while an operator is typing in Details-panel edit fields so the page does not steal focus mid-edit.
+- Parent changes are gated behind an explicit `Start Move` step in the Details panel. In move mode, legal parent targets are highlighted in green and can be chosen from the target cards or by dragging the selected branch onto a highlighted target.
+- For UISP-backed sites, direct inter-site radio links can also surface sibling or alternate upstream sites as legal parent targets when the linked remote radio reaches the root without traversing the local site first.
+- Exported shaping/runtime trees anchor those cross-site moves under the parent-side peer attachment so the moved site stays visible after regeneration.
+- Saved Topology Manager moves and attachment preferences are applied on top of the latest imported topology, so you do not need to wait for another UISP sync before seeing the result.
+- Saving a move, probe policy, manual attachment group, or attachment-rate override triggers an immediate refresh of the live topology used for shaping.
+- While a save is being applied, the main `Save` button briefly shows a spinner and stays disabled.
+- LibreQoS validates a move before making it active. If the change would create an invalid path, create a loop, duplicate a site, or remove a site from the tree, the save is rejected and the previous working topology stays in place.
+- The Hierarchy Summary helps compare the latest imported topology, the currently active topology, and any saved override for the selected branch.
+- Main operator-facing hierarchy chips now prefer display names only. If a label cannot be resolved, the page shows a neutral placeholder instead of a raw internal node ID.
+- Attachment or radio preference edits for the current logical parent do not require move mode; when multiple explicit attachments are available, inspect mode exposes a lighter `Edit Attachment Preference` path in Details.
+- Attachment rows now surface runtime health directly in the page, including `Healthy`, `Suppressed`, `Probe Unavailable`, or `Probe Disabled` state, plus reason text, suppression hold-down timestamps, and per-pair probe enable/disable actions.
+- In `Auto` attachment mode, Topology Manager uses probe results to suppress known-bad links, but it does not disqualify a link only because probing is disabled or unavailable. When multiple eligible links remain, Auto prefers integration-telemetry-backed attachment rates ahead of static fallback rates and then breaks ties by capacity.
+- UISP attachment rows now also classify the feed role, such as `PtP Backhaul`, `PtMP Uplink`, or `Wired Uplink`, so operators can tell a real backhaul path from an access/uplink path without inferring it from raw AP names.
+- The single runtime debug file for topology probes is `topology_attachment_health_state.json`. It now carries the probe pair ID plus attachment name/ID, child and parent node names/IDs, configured local/remote probe IPs, enable/probeable state, recent endpoint reachability, and current suppression/health counters. The Details panel links directly to probe debugging from `Attachment Health`.
+- Attachment Health now also exposes attachment-scoped rate overrides for editable attachments. These overrides are directional (`download` / `upload`), are stored in `topology_overrides.json`, and apply only to the selected `(child node, parent node, attachment)` path instead of behaving like a node-wide `AdjustSiteSpeed`.
+- Dynamic UISP radio-capacity attachments stay read-only in this editor. Static UISP attachments, manual attachment groups, and other non-dynamic attachment sources can expose `Attachment Rate` controls directly in the attachment row.
+- When UISP automatically transport-caps an attachment because the active or known Ethernet ports cannot carry the raw reported radio capacity, Attachment Health shows that cap reason inline so operators can see why a 2G or 2.7G radio exported as a lower effective topology rate.
+- Automatic probe targets for UISP-backed attachments come from the management IPs UISP reports for the two radios/devices in that pair. These topology probe IPs are no longer limited by shaping `allow_subnets`; they are treated as management-plane data rather than customer shaping addresses.
+- Operators can create, edit, or clear manual attachment groups from the Details panel for a legal child/parent pair. Manual groups define explicit parallel attachments, including ordered preference, capacity, management IPs, and probe opt-in, without hand-editing JSON.
+- The focused SVG graph auto-centers and stretches the selected branch context to use more of the available map area while keeping the view bounded to the current path, children, and legal move context instead of rendering the full network at once.
+- Child fanout on the right side of the focused preview is capped and biased toward branch-bearing or movable children; dead-end leaves are deprioritized or hidden when richer branch context is available.
+- When UISP exposes multiple parallel links between the same two sites, Topology Manager groups them under one logical parent target and exposes the concrete radios/devices as explicit attachment preferences.
+- `tree.html` only squashes runtime-selected UISP attachments when the effective attachment role is a true backhaul-style path (`PtP Backhaul` or `Wired Uplink`). PtMP access/uplink APs remain visible in the runtime tree.
+- When a chosen parent exposes only one valid explicit attachment option, the UI auto-saves that override immediately.
+- Saved topology overrides are stored in `topology_overrides.json`.
+
+### Topology Probes
+- Read-only debug page for system-wide topology probe troubleshooting, linked from Topology Manager rather than promoted as a primary sidebar destination.
+- Loads from the single runtime snapshot `topology_attachment_health_state.json`.
+- Defaults to enabled probes only, with filters to switch to all or disabled rows when troubleshooting.
+- Uses the same denser config-panel styling as other operational inventory pages, with a small status summary strip above the probe table.
+- Each row shows child node, parent node, attachment, probe IPs, current runtime health/suppression state, endpoint reachability, and a direct link back into Topology Manager.
 
 ### Site Map
 - Flat operational map of Sites and APs using imported node geodata.
@@ -40,13 +116,14 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - APs can inherit parent site coordinates for display when explicit AP coordinates are missing.
 - Nearby site markers cluster and expand as the operator zooms or selects a cluster.
 - APs without explicit coordinates are represented through their parent site and can be expanded temporarily around the selected site for inspection.
+- When a site or AP is selected and the right-hand details panel opens, the selected node name links directly to that node's `tree.html` page when a stable node ID is available.
 - Visible unclustered sites show labels as the operator zooms in, and the selected site keeps its label visible while it is being inspected.
-- When browser redaction mode is enabled, Site Map replaces displayed site names with `[redacted]` while leaving the underlying topology data unchanged.
+- When redaction mode is enabled, Site Map replaces displayed site names with `[redacted]`.
 - Initial map framing prefers site coordinates for the first view, falling back to AP coordinates when no sites are mapped yet.
 - Site Map uses an Insight-hosted OpenStreetMap raster tile cache.
-- In dark mode, the raster underlay is muted and tinted client-side toward the same cooler blue/cyan palette used by Flow Globe, so roads and geography stay visible without the bright light-theme basemap glare.
+- In dark mode, the map is muted toward the same cooler blue/cyan palette used by Flow Globe, so roads and geography stay visible without the bright light-theme basemap glare.
 - Site Map depends on outbound access to `https://insight.libreqos.com` for initial bbox/bootstrap and raster tile fetches.
-- When tiles are missing from the remote cache, the browser retries automatically for a short period instead of failing immediately, so initial map paint can lag briefly on cold tiles.
+- When tiles are missing from the remote cache, the page retries automatically for a short period instead of failing immediately, so initial map paint can lag briefly on cold tiles.
 
 ### Flow Globe
 - Geographic flow visualization based on endpoint geolocation.
@@ -70,6 +147,7 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - `Devices` shows per-device detail tables and live charts for throughput, retransmits, and latency.
 - `Queue Stats` shows recent live queue history for the circuit, including backlog, delay, queue length, traffic, ECN marks, and drops.
 - Queue Stats charts use synchronized hover so operators can inspect the same second across all queue charts together.
+- `Queue Stats` should continue to show the circuit's live queue telemetry in `flat` mode as well as other topology modes.
 - `Queue Tree` shows the circuit's live upstream queue path, including a path summary and per-node throughput, retransmit, and latency context.
 - `Traffic Flows` is a recent-flow operational table rather than a long-term history view.
 - `Traffic Flows` includes paging and a `Hide Small Flows` filter so large busy circuits remain usable without trying to render every row at once.
@@ -78,9 +156,10 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - `Flow Sankey` emphasizes the hottest recent flows rather than every older retained flow.
 
 ### Ethernet Caps
-- The Ethernet review page is a lightweight operator table of circuits automatically down-rated because detected Ethernet speed was below the requested plan.
+- The Ethernet review page is a lightweight operator table of circuits and topology nodes automatically down-rated because detected Ethernet speed was below the requested rate.
 - It is intentionally not in the main navigation; operators reach it by clicking Ethernet warning badges on the Circuit page or Tree attached-circuits table.
-- The page supports search, tier filtering (`10M`, `100M`, `1G+`), and paging across auto-capped circuits.
+- Circuit rows open the Circuit page, while topology-node rows open the matching Tree node.
+- The page supports search, tier filtering (`10M`, `100M`, `1G+`), and paging across auto-capped targets.
 
 ### CPU Tree / CPU Weights
 - Shows queue/circuit distribution by CPU core.
@@ -92,14 +171,22 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 - Supports paging and filtering.
 - Add, edit, and delete actions save immediately in the dedicated editor.
 
+### Configuration Pages
+- Saved passwords, API tokens, and keys stay hidden when you open an integration page.
+- If a credential is already configured, the field stays blank until you type a replacement. Use `Clear` only when you want to remove the saved value.
+- Leave the field blank to keep the current value. Enter a new value to replace it.
+- `Configuration -> SSL Setup` can install Caddy, switch the WebUI behind HTTPS, and later disable that HTTPS setup if you want to return to direct HTTP on port `9123`.
+
 ### Urgent Issues
-- WebUI can display urgent operational issues generated by backend services.
+- WebUI can display urgent operational issues reported by LibreQoS services.
 - Examples include mapping/license-limit warnings and other high-priority health events.
 - Operators can acknowledge/clear issues in the UI after review.
 - Common codes include `MAPPED_CIRCUIT_LIMIT` and `TC_U16_OVERFLOW` (see [Troubleshooting](troubleshooting.md#urgent-issue-codes-and-first-actions)).
 
 ### Scheduler Status
 - WebUI surfaces scheduler health/readiness.
+- During startup or scheduled refresh work, the left navigation now shows a phase-aware circular progress ring instead of a generic spinner.
+- The scheduler modal includes the current phase label, step position, coarse percent, and any recent output/error text.
 - Use it to quickly verify periodic refresh operation after config/integration changes.
 - If status indicates errors, correlate with:
   - `journalctl -u lqos_scheduler --since "30 minutes ago"`
@@ -108,10 +195,10 @@ This page documents key WebUI (Node Manager) views and operational behavior in t
 ## Privacy / Redaction Mode
 
 - Toggle with the mask icon in the top navigation.
-- Redaction is client-side and stored in browser local storage.
+- Redaction is a display-only setting saved in your browser.
 - Redaction helps hide PII in screenshots/demos.
 - Site Map replaces displayed site names with `[redacted]` while redaction mode is enabled.
-- Redaction does not modify `ShapedDevices.csv`, `network.json`, or any backend data.
+- Redaction does not change your saved data or configuration files.
 
 ## Common Empty-State Behavior
 
@@ -137,4 +224,5 @@ If only Site Map is blank or slow while other pages are healthy, also check mana
 
 - [Components](components.md)
 - [Configuration](configuration.md)
+- [Optional HTTPS With Caddy](https-caddy.md)
 - [Troubleshooting](troubleshooting.md)

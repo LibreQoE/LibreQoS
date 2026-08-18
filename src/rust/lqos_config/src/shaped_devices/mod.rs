@@ -31,13 +31,18 @@ impl Default for ConfigShapedDevices {
 }
 
 impl ConfigShapedDevices {
-    /// The path to the current `ShapedDevices.csv` file, determined
-    /// by acquiring the prefix from the `/etc/lqos.conf` configuration
-    /// file.
-    pub fn path() -> Result<PathBuf, ShapedDevicesError> {
-        let cfg = crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+    fn refresh_derived_fields(devices: &mut [ShapedDevice]) {
+        for device in devices {
+            device.refresh_hashes();
+        }
+    }
+
+    /// Computes the shaped-devices path for one concrete config snapshot.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn path_for_config(cfg: &crate::Config) -> PathBuf {
         let base_path = Path::new(&cfg.lqos_directory);
-        let full_path = if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
+        if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
             let tmp_path = base_path.join("ShapedDevices.insight.csv");
             if tmp_path.exists() {
                 tmp_path
@@ -46,7 +51,15 @@ impl ConfigShapedDevices {
             }
         } else {
             base_path.join("ShapedDevices.csv")
-        };
+        }
+    }
+
+    /// The path to the current `ShapedDevices.csv` file, determined
+    /// by acquiring the prefix from the `/etc/lqos.conf` configuration
+    /// file.
+    pub fn path() -> Result<PathBuf, ShapedDevicesError> {
+        let cfg = crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+        let full_path = Self::path_for_config(cfg.as_ref());
         debug!("ShapedDevices.csv path: {:?}", full_path);
         Ok(full_path)
     }
@@ -119,7 +132,13 @@ impl ConfigShapedDevices {
     /// Loads `ShapedDevices.csv` and constructs a `ConfigShapedDevices`
     /// object containing the resulting data.
     pub fn load() -> Result<Self, ShapedDevicesError> {
-        let final_path = ConfigShapedDevices::path()?;
+        let cfg = crate::load_config().map_err(|_| ShapedDevicesError::ConfigLoadError)?;
+        Self::load_for_config(cfg.as_ref())
+    }
+
+    /// Loads `ShapedDevices.csv` using a caller-supplied config snapshot.
+    pub fn load_for_config(cfg: &crate::Config) -> Result<Self, ShapedDevicesError> {
+        let final_path = ConfigShapedDevices::path_for_config(cfg);
 
         // Load the CSV file as a byte array
         if !final_path.exists() {
@@ -138,12 +157,17 @@ impl ConfigShapedDevices {
             .flexible(true)
             .from_reader(utf8_bytes.as_slice());
 
+        let headers = reader
+            .headers()
+            .map_err(|e| ShapedDevicesError::GenericCsvError(format!("CSV HEADERS: {e:?}")))?
+            .clone();
+
         // Example: StringRecord(["1", "968 Circle St., Gurnee, IL 60031", "1", "Device 1", "", "", "192.168.101.2", "", "25", "5", "10000", "10000", ""])
 
         let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
         for result in reader.records() {
             if let Ok(result) = result {
-                let device = ShapedDevice::from_csv(&result);
+                let device = ShapedDevice::from_csv(&result, Some(&headers));
                 if let Ok(device) = device {
                     devices.push(device);
                 } else {
@@ -199,7 +223,8 @@ impl ConfigShapedDevices {
     }
 
     /// Replace the current shaped devices list with a new one
-    pub fn replace_with_new_data(&mut self, devices: Vec<ShapedDevice>) {
+    pub fn replace_with_new_data(&mut self, mut devices: Vec<ShapedDevice>) {
+        Self::refresh_derived_fields(&mut devices);
         self.devices = devices;
         debug!("{:?}", self.devices);
         let mut new_trie = ConfigShapedDevices::make_trie(&self.devices);
@@ -261,31 +286,27 @@ impl ConfigShapedDevices {
     /// Helper function to search for an XdpIpAddress and return a circuit id and name
     /// if they exist.
     pub fn get_circuit_id_and_name_from_ip(&self, ip: &XdpIpAddress) -> Option<(String, String)> {
+        self.get_device_from_ip(ip)
+            .map(|device| (device.circuit_id.clone(), device.circuit_name.clone()))
+    }
+
+    /// Helper function to search for an XdpIpAddress and return the matching shaped device
+    /// if it exists.
+    pub fn get_device_from_ip(&self, ip: &XdpIpAddress) -> Option<&ShapedDevice> {
         let lookup = match ip.as_ip() {
             IpAddr::V4(ip) => ip.to_ipv6_mapped(),
             IpAddr::V6(ip) => ip,
         };
-        if let Some(c) = self.trie.longest_match(lookup) {
-            let device = &self.devices[*c.1];
-            return Some((device.circuit_id.clone(), device.circuit_name.clone()));
-        }
-
-        None
+        self.trie
+            .longest_match(lookup)
+            .and_then(|candidate| self.devices.get(*candidate.1))
     }
 
     /// Helper function to search for an XdpIpAddress and return a circuit id and name
     /// if they exist.
     pub fn get_circuit_hash_from_ip(&self, ip: &XdpIpAddress) -> Option<i64> {
-        let lookup = match ip.as_ip() {
-            IpAddr::V4(ip) => ip.to_ipv6_mapped(),
-            IpAddr::V6(ip) => ip,
-        };
-        if let Some(c) = self.trie.longest_match(lookup) {
-            let device = &self.devices[*c.1];
-            return Some(device.circuit_hash);
-        }
-
-        None
+        self.get_device_from_ip(ip)
+            .map(|device| device.circuit_hash)
     }
 }
 
@@ -317,6 +338,7 @@ pub enum ShapedDevicesError {
 
 #[cfg(test)]
 mod test {
+    use lqos_utils::hash_to_i64;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use super::*;
@@ -459,6 +481,35 @@ mod test {
         let addr: Ipv4Addr = "1.2.3.4".parse().expect("IP Parse Error");
         let v6 = addr.to_ipv6_mapped();
         assert!(trie.longest_match(v6).is_some());
+    }
+
+    #[test]
+    fn replace_with_new_data_rebuilds_derived_hashes() {
+        let mut config = ConfigShapedDevices::default();
+        config.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: ShapedDevice::parse_ipv4("192.168.1.10"),
+            ..Default::default()
+        }]);
+
+        assert_eq!(config.devices.len(), 1);
+        assert_eq!(config.devices[0].circuit_hash, hash_to_i64("circuit-1"));
+        assert_eq!(config.devices[0].device_hash, hash_to_i64("device-1"));
+        assert_eq!(config.devices[0].parent_hash, hash_to_i64("Parent-A"));
+        let test_ip = "192.168.1.10"
+            .parse()
+            .expect("test IP literal should parse");
+        assert_eq!(
+            config.get_circuit_hash_from_ip(&XdpIpAddress::from_ip(test_ip)),
+            Some(hash_to_i64("circuit-1"))
+        );
+        let matched = config
+            .get_device_from_ip(&XdpIpAddress::from_ip(test_ip))
+            .expect("device should resolve by IP");
+        assert_eq!(matched.device_hash, hash_to_i64("device-1"));
+        assert_eq!(matched.circuit_id, "circuit-1");
     }
 
     #[test]

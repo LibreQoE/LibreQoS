@@ -2,18 +2,28 @@
 
 ## Requirements
 
-The `lqos_api` (Node API service) requires an active LibreQoS Insight subscription.
+Starting with LibreQoS 2.2, the `lqos_api` Node API follows the same mapped-circuit policy as base LibreQoS:
 
-This is separate from base shaping limits:
+- Networks with 1,000 or fewer valid mapped circuits can use the API without an Insight subscription.
+- Networks with more than 1,000 valid mapped circuits require a valid API or Insight entitlement.
+- The count is based on unique configured circuit mappings, not recent traffic. Multiple devices in one circuit count once, and rows without an IP mapping do not count.
+- A valid live license or locally cached signed grant can authorize API access above the free limit.
+
+This is the same population used for the base shaping limit:
 - `ShapedDevices.csv` can contain unlimited entries.
-- Without a valid Insight subscription/license, LibreQoS admits only the first 1000 valid mapped circuits into active shaping state.
-- Higher mapped-circuit counts depend on active Insight licensing.
+- Without a valid entitled license/grant, LibreQoS admits only the first 1,000 valid mapped circuits into active shaping state.
+- Higher mapped-circuit counts depend on an entitled API or Insight license.
+
+API-only access is available through the **Try Insight** link in the WebUI at half the price of full Insight.
 
 ## Source of Truth and Testing
 
 Use Swagger on your node as the complete reference and test surface for your installed build:
 
-- `http://<node-ip>:9122/api-docs`
+- Direct local API port: `http://<node-ip>:9122/api-docs`
+- If optional HTTPS with Caddy is enabled for the WebUI: `https://<hostname-or-node-ip>/api/v1/api-docs`
+
+On systems using managed Caddy HTTPS, leave the API listener on loopback and access it through `/api/v1/`. `LQOS_API_LISTEN` is an advanced override for deployments that intentionally expose the API listener directly; do not set it on managed Caddy systems unless direct API exposure, firewalling, TLS, and operator access controls have been planned together.
 
 Use this page as a capability map. Use Swagger for full endpoint inventory, request/response schemas, and live testing.
 
@@ -54,7 +64,11 @@ sudo systemctl status lqos_api
 Most endpoints require:
 
 - Header: `x-bearer`
-- Value: your Insight license key
+- Value: a named local API key from **License & Services**, the legacy local bearer token, or your Insight/API-only license key
+
+Local API keys authenticate callers; they do not bypass the mapped-circuit licensing limit. Administrators can create up to 16 named keys in **License & Services**. LibreQoS displays each generated key once, stores only its SHA-256 digest and non-secret metadata in `/etc/lqos.conf`, and cannot recover it later. Copy the complete `lqos_api_...` value into the client immediately and treat it like a password.
+
+Named keys do not expire automatically. Revoke keys that are no longer needed; creation and revocation may take up to 30 seconds to reach `lqos_api`. Existing license keys and the older single `local_api.bearer_token` remain compatible. The UI labels the older value as **Legacy local API key** and lets an administrator remove it after clients have moved to named keys.
 
 ## What ISPs Can Do with the API
 
@@ -142,3 +156,5 @@ If integrations are enabled, integration refresh cycles may overwrite direct fil
 - Do not expose the API directly to the public Internet.
 - If remote access is needed, use a reverse proxy with TLS and authentication.
 - Restrict inbound access with firewall allowlists.
+
+If you want the WebUI and API docs on one HTTPS origin, see [Optional HTTPS With Caddy](https-caddy.md).

@@ -46,6 +46,8 @@ pub fn find_queue_dependents(parent_name: &str) -> Result<Vec<WatchingSiteDepend
                 dependents.push(WatchingSiteDependency {
                     name: candidate.clone().name.unwrap_or_default(),
                     class_id: candidate.class_id,
+                    original_min_download_mbps: candidate.download_bandwidth_mbps_min,
+                    original_min_upload_mbps: candidate.upload_bandwidth_mbps_min,
                     original_max_download_mbps: candidate.download_bandwidth_mbps,
                     original_max_upload_mbps: candidate.upload_bandwidth_mbps,
                 });

@@ -13,8 +13,10 @@ Use esta integración cuando VISP sea su fuente de verdad CRM/NMS.
 ## Notas operativas
 
 - `ShapedDevices.csv` se reescribe en cada ejecución.
-- `network.json` se sobrescribe solo cuando está habilitado.
-- Recomendado: mantener `always_overwrite_network_json = true` para despliegues guiados por integración VISP.
+- La importación VISP usa GraphQL y prioriza las consultas bulk rápidas; si faltan suscriptores o servicios, intenta completar la cobertura con consultas adicionales de GraphQL.
+- Cuando VISP IRM tiene pobladas las relaciones de dispositivo upstream, la importación también construye topología de sitio/upstream para esos suscriptores en lugar de quedarse siempre en modo plano.
+- `network.json` sigue siendo una entrada DIY/manual operada por el usuario.
+- Para despliegues guiados por integración, use `topology_import.json` y `network.effective.json`.
 
 ## Referencia completa
 

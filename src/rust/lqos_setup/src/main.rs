@@ -4,21 +4,59 @@ mod config_builder;
 mod interfaces;
 mod ip_range;
 mod preflight;
+mod service_handoff;
+mod setup_actions;
+#[cfg(test)]
+mod test_support;
+mod web;
 mod webusers;
 
+use clap::{Parser, Subcommand};
+use lqos_setup::{bootstrap, hotfix};
 use std::path::Path;
 
 use bandwidth::bandwidth_view;
-use config_builder::CURRENT_CONFIG;
+use config_builder::{CURRENT_CONFIG, existing_config_load_error};
 use cursive::{
     Rect, Vec2, View,
-    view::{Margins, Nameable, Resizable},
+    view::{Margins, Nameable, Resizable, Scrollable},
     views::{Checkbox, Dialog, EditView, FixedLayout, Layer, LinearLayout, OnLayoutView, TextView},
 };
+use lqos_netplan_helper::transaction::{HelperPaths, inspect_with_paths};
 
 const VERSION: &str = include_str!("../../../VERSION_STRING");
-const DEFAULT_NETWORK_JSON: &str = include_str!("../../../network.example.json");
-const DEFAULT_SHAPED_DEVICES: &str = include_str!("../../../ShapedDevices.example.csv");
+#[derive(Parser)]
+#[command(about = "LibreQoS first-run setup")]
+struct Args {
+    #[arg(long)]
+    skip_if_ready: bool,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Launch the interactive Cursive setup UI
+    Tui,
+    /// Launch the setup-only web server
+    Web,
+    /// Print the current setup status
+    Status,
+    /// Print the current Ubuntu 24.04 systemd hotfix status
+    HotfixStatus,
+    /// Install the Ubuntu 24.04 systemd hotfix without prompting for reboot
+    InstallHotfix,
+    /// Exit 0 when runtime services should start, or 1 when setup is still required
+    IsReady,
+    /// Internal helper: print the package postinst action token
+    PostinstAction,
+    /// Internal helper: stop setup and activate runtime services now
+    ActivateRuntime,
+    /// Internal helper: stop runtime and activate the first-run setup service now
+    ActivateSetup,
+    /// Create or refresh and print the current tokenized setup link(s)
+    PrintLink,
+}
 
 fn config_exists() -> bool {
     let config_path = Path::new("/etc/lqos.conf");
@@ -29,19 +67,23 @@ fn can_load_config() -> bool {
     lqos_config::load_config().is_ok()
 }
 
-fn network_json_exists() -> bool {
-    let cfg = lqos_config::load_config().unwrap_or_default();
-    let path = Path::new(&cfg.lqos_directory).join("network.json");
-    path.exists()
-}
+fn run_tui(skip_if_ready: bool) {
+    if skip_if_ready {
+        match bootstrap::runtime_services_should_start() {
+            Ok(true) => {
+                println!("Existing LibreQoS install looks configured; skipping interactive setup.");
+                return;
+            }
+            Ok(false) => {
+                println!("Interactive setup still required.");
+            }
+            Err(err) => {
+                println!("Unable to determine setup readiness: {err}");
+                println!("Interactive setup still required.");
+            }
+        }
+    }
 
-fn shaped_devices_exists() -> bool {
-    let cfg = lqos_config::load_config().unwrap_or_default();
-    let path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
-    path.exists()
-}
-
-fn main() {
     preflight::preflight();
     let mut ui = cursive::default();
     ui.add_global_callback('q', |s| s.quit());
@@ -98,20 +140,10 @@ fn main() {
                             .child(
                                 Checkbox::new()
                                     .with_enabled(false)
-                                    .with_checked(network_json_exists())
-                                    .with_name("njs"),
+                                    .with_checked(bootstrap::first_admin_exists())
+                                    .with_name("admin_exists"),
                             )
-                            .child(TextView::new(" - Network.json exists?")),
-                    )
-                    .child(
-                        LinearLayout::horizontal()
-                            .child(
-                                Checkbox::new()
-                                    .with_enabled(false)
-                                    .with_checked(shaped_devices_exists())
-                                    .with_name("sd"),
-                            )
-                            .child(TextView::new(" - ShapedDevices.csv exists?")),
+                            .child(TextView::new(" - Admin user exists?")),
                     )
                     .child(TextView::new(" "))
                     .child(
@@ -141,153 +173,140 @@ fn main() {
             .button("Interfaces", interfaces::interface_menu)
             .button("Bandwidth", bandwidth_view)
             .button("IP Range", ip_range::ranges)
+            .button("Systemd Hotfix", show_hotfix_dialog)
             .button("Web Users", webusers::webusers_menu)
             .button("SAVE CONFIG", finalize),
     );
     ui.run();
 }
 
-fn finalize(ui: &mut cursive::Cursive) {
-    // If we cannot load the config but a file exists, warn the user and
-    // take a backup before proceeding to create a new config.
-    let config_path = Path::new("/etc/lqos.conf");
-    let load_result = lqos_config::load_config();
-    if load_result.is_err() && config_path.exists() {
-        let backup_path = "/etc/lqos.conf.setupbackup";
-        let backup_result = std::fs::copy(config_path, backup_path);
+fn main() {
+    let args = Args::parse();
 
-        let msg = match backup_result {
-            Ok(_) => format!(
-                "An existing configuration file was found at /etc/lqos.conf,\n\
-but it could not be read or parsed.\n\n\
-A backup has been saved to: {}\n\n\
-Press Continue to create a new configuration using defaults,\n\
-or Cancel to exit and investigate.",
-                backup_path
-            ),
-            Err(e) => format!(
-                "An existing configuration file was found at /etc/lqos.conf,\n\
-but it could not be read or parsed.\n\n\
-Attempted to back it up, but failed: {:?}\n\n\
-Press Continue to create a new configuration using defaults,\n\
-or Cancel to exit and investigate.",
-                e
-            ),
-        };
-
-        ui.add_layer(
-            Dialog::around(TextView::new(msg))
-                .title("Existing Config Unreadable")
-                .button("Continue", |s| {
-                    s.pop_layer();
-                    continue_finalize(s);
-                })
-                .button("Cancel", |s| {
-                    s.pop_layer();
-                }),
-        );
-        return;
-    }
-
-    // Otherwise, proceed to saving normally.
-    continue_finalize(ui);
-}
-
-fn continue_finalize(ui: &mut cursive::Cursive) {
-    let mut event_log = Vec::new();
-
-    // Update/Create the config file.
-    let mut config = if let Ok(config) = lqos_config::load_config() {
-        event_log.push("Loaded existing configuration".to_string());
-        (*config).clone()
-    } else {
-        // If the file exists but couldn't be read, ensure we also log that a
-        // backup was attempted (final safeguard; may already have been done
-        // before showing the warning dialog).
-        if Path::new("/etc/lqos.conf").exists() {
-            let backup_path = "/etc/lqos.conf.setupbackup";
-            match std::fs::copy("/etc/lqos.conf", backup_path) {
-                Ok(_) => event_log.push(format!(
-                    "Existing /etc/lqos.conf could not be loaded. Backup saved to {}.",
-                    backup_path
-                )),
-                Err(e) => event_log.push(format!(
-                    "Existing /etc/lqos.conf could not be loaded. Backup attempt failed: {:?}.",
-                    e
-                )),
+    match args.command {
+        Some(Command::Status) => match bootstrap::render_status_report() {
+            Ok(report) => println!("{report}"),
+            Err(err) => {
+                eprintln!("Unable to render setup status: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::HotfixStatus) => match hotfix::status() {
+            Ok(status) => println!("{}", status.detail),
+            Err(err) => {
+                eprintln!("Unable to determine hotfix status: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::InstallHotfix) => match hotfix::install() {
+            Ok(result) => {
+                println!("{}", result.summary);
+                println!();
+                println!("{}", result.detail);
+            }
+            Err(err) => {
+                eprintln!("Unable to install hotfix: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::IsReady) => match bootstrap::runtime_services_should_start() {
+            Ok(true) => {}
+            Ok(false) => std::process::exit(1),
+            Err(err) => {
+                eprintln!("Unable to determine setup readiness: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::PostinstAction) => match bootstrap::classify_postinst_action() {
+            Ok(action) => println!("{}", action.as_str()),
+            Err(err) => {
+                eprintln!("Unable to determine package postinst action: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::ActivateRuntime) => match service_handoff::activate_runtime_services() {
+            Ok(message) => println!("{message}"),
+            Err(err) => {
+                eprintln!("Unable to activate runtime services: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::ActivateSetup) => match service_handoff::activate_setup_service() {
+            Ok(message) => println!("{message}"),
+            Err(err) => {
+                eprintln!("Unable to activate setup service: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::Web) => {
+            if let Err(err) = web::run() {
+                eprintln!("Unable to run setup web server: {err:#}");
+                std::process::exit(1);
             }
         }
-        event_log.push("Creating new configuration".to_string());
-        lqos_config::Config::default()
-    };
-
-    let new_config = CURRENT_CONFIG.lock();
-    config.node_name = new_config.node_name.clone();
-    config.queues.downlink_bandwidth_mbps = new_config.mbps_to_internet;
-    config.queues.uplink_bandwidth_mbps = new_config.mbps_to_network;
-    config.queues.generated_pn_download_mbps = new_config.mbps_to_internet;
-    config.queues.generated_pn_upload_mbps = new_config.mbps_to_network;
-    match new_config.bridge_mode {
-        config_builder::BridgeMode::Linux => {
-            config.single_interface = None;
-            config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: false,
-                to_internet: new_config.to_internet.clone(),
-                to_network: new_config.to_network.clone(),
-            });
-        }
-        config_builder::BridgeMode::XDP => {
-            config.single_interface = None;
-            config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: true,
-                to_internet: new_config.to_internet.clone(),
-                to_network: new_config.to_network.clone(),
-            });
-        }
-        config_builder::BridgeMode::Single => {
-            config.single_interface = Some(lqos_config::SingleInterfaceConfig {
-                interface: new_config.to_internet.clone(),
-                internet_vlan: new_config.internet_vlan,
-                network_vlan: new_config.network_vlan,
-            });
-            config.bridge = None;
-        }
+        Some(Command::PrintLink) => match bootstrap::current_setup_urls() {
+            Ok(urls) => {
+                if urls.is_empty() {
+                    println!("Setup is already complete. No active setup link.");
+                } else {
+                    println!();
+                    println!("============================================================");
+                    println!("LibreQoS first-run setup is waiting for you.");
+                    println!(
+                        "Click one of the LibreQoS Setup URLs below, or copy it into a web browser on another machine on the same network."
+                    );
+                    println!();
+                    for url in urls {
+                        println!("  {url}");
+                    }
+                    println!("============================================================");
+                    println!();
+                }
+            }
+            Err(err) => {
+                eprintln!("Unable to print setup link: {err:#}");
+                std::process::exit(1);
+            }
+        },
+        Some(Command::Tui) | None => run_tui(args.skip_if_ready),
     }
-    config.ip_ranges.allow_subnets = new_config.allow_subnets.clone();
-    if let Err(e) = lqos_config::update_config(&config) {
-        event_log.push(format!("ERROR: Unable to write configuration: {e:?}"));
-        let msg = format!("ERROR: Unable to write configuration: {e:?}");
+}
+
+pub(crate) fn preview_selected_network_mode(s: &mut cursive::Cursive) {
+    let existing = lqos_config::load_config().ok().map(|cfg| (*cfg).clone());
+    let candidate = setup_actions::build_candidate_config(existing);
+    let inspection = inspect_with_paths(&HelperPaths::default(), &candidate);
+    s.add_layer(
+        Dialog::around(TextView::new(setup_actions::inspection_report(&inspection)).scrollable())
+            .title("Detected Netplan State")
+            .button("OK", |s| {
+                s.pop_layer();
+            })
+            .full_screen(),
+    );
+}
+
+fn finish_setup(
+    ui: &mut cursive::Cursive,
+    config: &lqos_config::Config,
+    mut event_log: Vec<String>,
+) {
+    if let Err(err) = setup_actions::persist_setup_success(config, &mut event_log) {
         ui.add_layer(
-            Dialog::around(TextView::new(msg))
-                .title("Error")
-                .button("OK", |s| {
-                    s.pop_layer();
-                }),
+            Dialog::around(TextView::new(format!(
+                "Configuration was written, but setup state could not be persisted:\n{err:#}\n\nSetup cannot be marked complete until bootstrap_state.json is saved successfully."
+            )))
+            .title("Unable To Persist Setup State")
+            .button("OK", |s| {
+                s.pop_layer();
+            }),
         );
         return;
     }
-    event_log.push("Configuration updated".to_string());
-
-    // Does network.json exist?
-    if !network_json_exists() {
-        let path = Path::new(&config.lqos_directory).join("network.json");
-        std::fs::write(path, DEFAULT_NETWORK_JSON).expect("Unable to write file");
-        event_log.push("Network.json created.".to_string());
-    } else {
-        event_log.push("Network.json already exists - not updated.".to_string());
+    match service_handoff::schedule_runtime_handoff() {
+        Ok(notice) => event_log.push(notice.message),
+        Err(err) => event_log.push(format!("WARNING: {err:#}")),
     }
-
-    // Does ShapedDevices.csv exist?
-    if !shaped_devices_exists() {
-        let path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
-        std::fs::write(path, DEFAULT_SHAPED_DEVICES).expect("Unable to write file");
-        event_log.push("ShapedDevices.csv created.".to_string());
-    } else {
-        event_log.push("ShapedDevices.csv already exists - not updated.".to_string());
-    }
-
-    // Display final report
-    use cursive::views::{Dialog, LinearLayout, TextView};
 
     let report = cursive::With::with(LinearLayout::vertical(), |layout| {
         for line in &event_log {
@@ -300,4 +319,186 @@ fn continue_finalize(ui: &mut cursive::Cursive) {
             .title("Setup Complete")
             .button("OK", |ui| ui.quit()),
     );
+}
+
+fn finalize(ui: &mut cursive::Cursive) {
+    match hotfix::status() {
+        Ok(status) if status.required => {
+            ui.add_layer(
+                Dialog::around(TextView::new(format!(
+                    "{}\n\nInstall the Noble systemd hotfix before completing setup.",
+                    status.detail
+                )))
+                .title("Hotfix Required")
+                .button("Install Hotfix", |s| {
+                    s.pop_layer();
+                    install_hotfix_from_tui(s);
+                })
+                .button("Cancel", |s| {
+                    s.pop_layer();
+                }),
+            );
+            return;
+        }
+        Ok(_) => {}
+        Err(err) => {
+            ui.add_layer(
+                Dialog::around(TextView::new(format!(
+                    "Unable to determine hotfix status:\n{err:#}"
+                )))
+                .title("Hotfix Check Failed")
+                .button("OK", |s| {
+                    s.pop_layer();
+                }),
+            );
+            return;
+        }
+    }
+
+    if let Some(message) = existing_config_load_error() {
+        ui.add_layer(
+            Dialog::around(TextView::new(message))
+                .title("Existing Config Unreadable")
+                .button("OK", |s| {
+                    s.pop_layer();
+                }),
+        );
+        return;
+    }
+
+    // Otherwise, proceed to saving normally.
+    continue_finalize(ui);
+}
+
+fn show_hotfix_dialog(ui: &mut cursive::Cursive) {
+    match hotfix::status() {
+        Ok(status) => {
+            let detail = if status.required {
+                format!(
+                    "{}\n\nThe hotfix is required before setup can complete.",
+                    status.detail
+                )
+            } else {
+                status.detail
+            };
+            let mut dialog = Dialog::around(TextView::new(detail)).title("Systemd Hotfix");
+            if status.required {
+                dialog.add_button("Install Hotfix", |s| {
+                    s.pop_layer();
+                    install_hotfix_from_tui(s);
+                });
+            }
+            dialog.add_button("OK", |s| {
+                s.pop_layer();
+            });
+            ui.add_layer(dialog);
+        }
+        Err(err) => ui.add_layer(
+            Dialog::around(TextView::new(format!(
+                "Unable to determine hotfix status:\n{err:#}"
+            )))
+            .title("Systemd Hotfix")
+            .button("OK", |s| {
+                s.pop_layer();
+            }),
+        ),
+    }
+}
+
+fn install_hotfix_from_tui(ui: &mut cursive::Cursive) {
+    match hotfix::install() {
+        Ok(result) => {
+            ui.add_layer(
+                Dialog::around(TextView::new(format!(
+                    "{}\n\nOpen the details only if you need the installer log.\n\n{}",
+                    result.summary, result.detail
+                )))
+                .title("Hotfix Installed")
+                .button("OK", |s| {
+                    s.pop_layer();
+                }),
+            );
+        }
+        Err(err) => {
+            ui.add_layer(
+                Dialog::around(TextView::new(format!("Unable to install hotfix:\n{err:#}")))
+                    .title("Hotfix Install Failed")
+                    .button("OK", |s| {
+                        s.pop_layer();
+                    }),
+            );
+        }
+    }
+}
+
+fn continue_finalize(ui: &mut cursive::Cursive) {
+    match setup_actions::prepare_commit() {
+        Ok(setup_actions::CommitOutcome::Complete(success)) => {
+            finish_setup(ui, &success.config, success.event_log);
+        }
+        Ok(setup_actions::CommitOutcome::Pending(pending)) => {
+            let operation_id = pending.operation_id.clone();
+            let revert_operation_id = pending.operation_id.clone();
+            ui.add_layer(
+                Dialog::around(TextView::new(pending.prompt))
+                    .title("Confirm Netplan Change")
+                    .button(
+                        "Confirm",
+                        move |s| match setup_actions::confirm_pending_commit(&operation_id) {
+                            Ok(success) => {
+                                s.pop_layer();
+                                finish_setup(s, &success.config, success.event_log);
+                            }
+                            Err(err) => {
+                                s.add_layer(
+                                    Dialog::around(TextView::new(format!(
+                                        "Unable to confirm the pending network change:\n{err:#}"
+                                    )))
+                                    .title("Helper Error")
+                                    .button("OK", |s| {
+                                        s.pop_layer();
+                                    }),
+                                );
+                            }
+                        },
+                    )
+                    .button(
+                        "Revert",
+                        move |s| match setup_actions::revert_pending_commit(&revert_operation_id) {
+                            Ok(message) => {
+                                s.add_layer(
+                                    Dialog::around(TextView::new(message))
+                                        .title("Network Change Reverted")
+                                        .button("OK", |s| {
+                                            s.pop_layer();
+                                            s.pop_layer();
+                                        }),
+                                );
+                            }
+                            Err(err) => {
+                                s.add_layer(
+                                    Dialog::around(TextView::new(format!(
+                                        "Unable to revert the pending network change:\n{err:#}"
+                                    )))
+                                    .title("Helper Error")
+                                    .button("OK", |s| {
+                                        s.pop_layer();
+                                    }),
+                                );
+                            }
+                        },
+                    )
+                    .full_screen(),
+            );
+        }
+        Err(err) => {
+            ui.add_layer(
+                Dialog::around(TextView::new(format!("{err:#}")))
+                    .title("Unable To Save Setup")
+                    .button("OK", |s| {
+                        s.pop_layer();
+                    }),
+            );
+        }
+    }
 }

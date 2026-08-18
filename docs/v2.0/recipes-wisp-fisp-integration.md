@@ -16,7 +16,7 @@ Use this pattern when your operator workflow is already centered on a supported 
 ## Implementation
 
 1. Configure integration credentials/settings in WebUI (`Configuration -> Integrations`).
-2. For integration-driven deployments, keep `always_overwrite_network_json = true`.
+2. For integration-driven deployments, treat `network.json` as DIY/manual-only and let the integration publish `topology_import.json` instead.
 3. Choose the lightest topology strategy that meets requirements.
 
 | Requirement | Suggested strategy |

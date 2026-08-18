@@ -1,4 +1,5 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
+import {redactCell} from "../helpers/redact";
 import {toNumber} from "../lq_js_common/helpers/scaling";
 import {get_ws_client} from "../pubsub/ws";
 import {mkBadge} from "./bakery_shared";
@@ -816,6 +817,9 @@ export class TreeGuardActivityDashlet extends BaseDashlet {
             const reason = formatReason(entry.reason);
             tdReason.textContent = reason.label;
             if (reason.title) tdReason.title = reason.title;
+            if (reason.label) {
+                redactCell(tdReason);
+            }
 
             tr.appendChild(tdTime);
             tr.appendChild(tdEntity);

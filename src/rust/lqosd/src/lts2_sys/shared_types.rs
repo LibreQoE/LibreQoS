@@ -162,24 +162,51 @@ pub struct SiteRtt {
 #[repr(i32)]
 pub enum LtsStatus {
     NotChecked = -1,
-    AlwaysFree = 0,
-    FreeTrial = 1,
-    SelfHosted = 2,
-    ApiOnly = 3,
-    Full = 4,
-    Invalid = 5,
+    Invalid = 0,
+    AlwaysFree = 1,
+    FreeTrial = 2,
+    SelfHosted = 3,
+    ApiOnly = 4,
+    Full = 5,
+    ForeverFreeApi = 6,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LtsStatus;
+
+    #[test]
+    fn forever_free_api_parses_from_license_state_six() {
+        assert_eq!(LtsStatus::from_i32(6), LtsStatus::ForeverFreeApi);
+        assert_eq!(LtsStatus::ForeverFreeApi.label(), "Forever Free API");
+    }
 }
 
 impl LtsStatus {
     pub fn from_i32(value: i32) -> Self {
         match value {
             -1 => LtsStatus::NotChecked,
+            0 => LtsStatus::Invalid,
             1 => LtsStatus::AlwaysFree,
             2 => LtsStatus::FreeTrial,
             3 => LtsStatus::SelfHosted,
             4 => LtsStatus::ApiOnly,
             5 => LtsStatus::Full,
+            6 => LtsStatus::ForeverFreeApi,
             _ => LtsStatus::Invalid,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            LtsStatus::NotChecked => "Not Checked",
+            LtsStatus::Invalid => "Invalid",
+            LtsStatus::AlwaysFree => "Always Free",
+            LtsStatus::FreeTrial => "Free Trial",
+            LtsStatus::SelfHosted => "Self Hosted",
+            LtsStatus::ApiOnly => "Local API",
+            LtsStatus::Full => "Insight",
+            LtsStatus::ForeverFreeApi => "Forever Free API",
         }
     }
 }

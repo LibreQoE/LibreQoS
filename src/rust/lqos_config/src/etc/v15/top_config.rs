@@ -7,12 +7,16 @@ use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sha2::digest::Update;
+use std::path::{Path, PathBuf};
 use toml_edit::DocumentMut;
 use uuid::Uuid;
 
 fn default_true() -> bool {
     true
 }
+
+const MIN_INTERFACE_MTU: u32 = 576;
+const MAX_INTERFACE_MTU: u32 = 9216;
 
 fn default_rtt_green_ms() -> u32 {
     0
@@ -24,6 +28,21 @@ fn default_rtt_yellow_ms() -> u32 {
 
 fn default_rtt_red_ms() -> u32 {
     200
+}
+
+fn default_false() -> bool {
+    false
+}
+
+fn validate_interface_mtu(field_name: &str, mtu: Option<u32>) -> Result<(), String> {
+    if let Some(mtu) = mtu
+        && !(MIN_INTERFACE_MTU..=MAX_INTERFACE_MTU).contains(&mtu)
+    {
+        return Err(format!(
+            "{field_name} must be between {MIN_INTERFACE_MTU} and {MAX_INTERFACE_MTU}"
+        ));
+    }
+    Ok(())
 }
 
 /// RTT color scale thresholds (milliseconds) used by the web UI.
@@ -55,6 +74,48 @@ impl Default for RttThresholds {
     }
 }
 
+/// Optional HTTPS/Caddy settings for the LibreQoS operator UI.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Allocative)]
+pub struct SslConfig {
+    /// Whether LibreQoS should run the WebUI behind a local Caddy proxy.
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+    /// Optional public hostname used for trusted public certificates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_hostname: Option<String>,
+    /// Whether LibreQoS owns and manages the generated Caddy configuration.
+    #[serde(default = "default_false")]
+    pub managed_by_libreqos: bool,
+    /// Previous direct WebUI listen address restored when SSL is disabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_webserver_listen: Option<String>,
+}
+
+/// Normalizes and validates an optional external hostname for HTTPS/Caddy use.
+pub fn normalize_external_hostname(hostname: &str) -> Result<Option<String>, String> {
+    let normalized = hostname.trim().trim_end_matches('.').to_string();
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+    if normalized.contains("://")
+        || normalized.contains('/')
+        || normalized.contains(':')
+        || normalized.chars().any(char::is_whitespace)
+    {
+        return Err(
+            "ssl.external_hostname must be a hostname only, without a scheme, path, or port."
+                .to_string(),
+        );
+    }
+    if normalized.parse::<std::net::IpAddr>().is_ok() {
+        return Err(
+            "ssl.external_hostname must be a DNS hostname. Leave it blank to use the management IP with a local certificate."
+                .to_string(),
+        );
+    }
+    Ok(Some(normalized))
+}
+
 /// Top-level configuration file for LibreQoS.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct Config {
@@ -65,6 +126,10 @@ pub struct Config {
 
     /// Directory in which LibreQoS is installed
     pub lqos_directory: String,
+
+    /// Directory in which LibreQoS stores machine-managed runtime state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_directory: Option<String>,
 
     /// Node ID - uniquely identifies this shaper.
     pub node_id: String,
@@ -103,8 +168,24 @@ pub struct Config {
     /// Long-term stats configuration
     pub long_term_stats: super::long_term_stats::LongTermStats,
 
+    /// Local API authentication configuration.
+    #[serde(default)]
+    pub local_api: super::local_api::LocalApiConfig,
+
     /// IP Range definitions
     pub ip_ranges: super::ip_ranges::IpRanges,
+
+    /// Dynamic circuits configuration.
+    ///
+    /// Optional so older configs without this section still deserialize cleanly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dynamic_circuits: Option<super::dynamic_circuits::DynamicCircuitsConfig>,
+
+    /// RADIUS accounting configuration.
+    ///
+    /// Optional so older configs without this section still deserialize cleanly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius_accounting: Option<super::radius_accounting::RadiusAccountingConfig>,
 
     /// Network flows configuration
     pub flows: Option<super::flows::FlowConfig>,
@@ -112,6 +193,14 @@ pub struct Config {
     /// Integration Common Variables
     #[serde(default)]
     pub integration_common: super::integration_common::IntegrationConfig,
+
+    /// Shared topology compiler settings.
+    #[serde(default)]
+    pub topology: super::topology::TopologyConfig,
+
+    /// Dedicated Mikrotik IPv6 enrichment secrets/config path.
+    #[serde(default)]
+    pub mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config,
 
     /// Splynx Integration configuration. Optional so older configs without this
     /// section still deserialize cleanly.
@@ -149,6 +238,14 @@ pub struct Config {
 
     /// Listen options for the webserver
     pub webserver_listen: Option<String>,
+
+    /// Optional HTTPS/Caddy configuration for the WebUI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssl: Option<SslConfig>,
+
+    /// Controls whether an operator-provided cobrand image should be shown in the WebUI.
+    #[serde(default)]
+    pub display_cobrand: bool,
 
     /// Support for Tornado/Auto-rate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -188,7 +285,7 @@ impl Config {
     pub fn calculate_node_id() -> String {
         if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
             let hash = sha2::Sha256::new().chain(machine_id).finalize();
-            format!("{:x}", hash)
+            crate::hex_encoding::encode_hex_lower(hash)
         } else {
             Uuid::new_v4().to_string()
         }
@@ -202,6 +299,12 @@ impl Config {
                     .to_string(),
             );
         }
+        if let Some(bridge) = &self.bridge {
+            validate_interface_mtu("bridge.mtu", bridge.mtu)?;
+        }
+        if let Some(single_interface) = &self.single_interface {
+            validate_interface_mtu("single_interface.mtu", single_interface.mtu)?;
+        }
         if self.version.trim() != "1.5" {
             return Err(format!(
                 "Configuration file is at version [{}], but this version of lqos only supports version 1.5.0",
@@ -210,6 +313,16 @@ impl Config {
         }
         if self.node_id.is_empty() {
             return Err("Node ID must be set".to_string());
+        }
+        if self
+            .state_directory
+            .as_deref()
+            .is_some_and(|path| path.trim().is_empty())
+        {
+            return Err("state_directory must not be empty when configured".to_string());
+        }
+        if self.mikrotik_ipv6.config_path.trim().is_empty() {
+            return Err("mikrotik_ipv6.config_path must not be empty".to_string());
         }
         if let Some(rtt) = &self.rtt_thresholds {
             if rtt.red_ms == 0 {
@@ -221,6 +334,39 @@ impl Config {
                 );
             }
         }
+        if let Some(ssl) = &self.ssl
+            && let Some(hostname) = ssl.external_hostname.as_deref()
+            && normalize_external_hostname(hostname)?.is_none()
+        {
+            return Err("ssl.external_hostname must not be empty when configured".to_string());
+        }
+        if let Some(multiplier) = self.integration_common.ethernet_port_limit_multiplier
+            && (!multiplier.is_finite() || multiplier <= 0.0 || multiplier > 1.0)
+        {
+            return Err(
+                "integration_common.ethernet_port_limit_multiplier must satisfy 0 < value <= 1"
+                    .to_string(),
+            );
+        }
+        if !self.topology.compile_mode.trim().is_empty()
+            && super::topology::normalize_topology_compile_mode(&self.topology.compile_mode)
+                .is_none()
+        {
+            return Err(
+                "topology.compile_mode must be one of flat, ap_only, ap_site, or full".to_string(),
+            );
+        }
+        let airmax_flexible_frame_download_ratio =
+            self.uisp_integration.airmax_flexible_frame_download_ratio;
+        if !airmax_flexible_frame_download_ratio.is_finite()
+            || airmax_flexible_frame_download_ratio <= 0.0
+            || airmax_flexible_frame_download_ratio >= 1.0
+        {
+            return Err(
+                "uisp_integration.airmax_flexible_frame_download_ratio must satisfy 0 < value < 1"
+                    .to_string(),
+            );
+        }
         // Validate that default_sqm is not empty to prevent incomplete TC commands
         if self.queues.default_sqm.trim().is_empty() {
             return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());
@@ -229,6 +375,12 @@ impl Config {
             stormguard.validate()?;
         }
         self.treeguard.validate()?;
+        if let Some(dynamic_circuits) = &self.dynamic_circuits {
+            dynamic_circuits.validate()?;
+        }
+        if let Some(radius_accounting) = &self.radius_accounting {
+            radius_accounting.validate()?;
+        }
         Ok(())
     }
 
@@ -291,6 +443,7 @@ impl Default for Config {
         Self {
             version: "1.5".to_string(),
             lqos_directory: "/opt/libreqos/src".to_string(),
+            state_directory: Some("/opt/libreqos/state".to_string()),
             node_id: Self::calculate_node_id(),
             node_name: "LibreQoS".to_string(),
             qoo_profile_id: None,
@@ -300,8 +453,13 @@ impl Default for Config {
             single_interface: None,
             queues: super::queues::QueueConfig::default(),
             long_term_stats: super::long_term_stats::LongTermStats::default(),
+            local_api: super::local_api::LocalApiConfig::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
+            dynamic_circuits: None,
+            radius_accounting: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
+            topology: super::topology::TopologyConfig::default(),
+            mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
             visp_integration: Some(super::visp_integration::VispIntegration::default()),
@@ -315,6 +473,8 @@ impl Default for Config {
             flows: None,
             disable_webserver: None,
             webserver_listen: None,
+            ssl: None,
+            display_cobrand: false,
             stormguard: None,
             treeguard: treeguard::TreeguardConfig::default(),
             disable_icmp_ping: Some(false),
@@ -327,6 +487,141 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Returns the resolved state-directory path for machine-managed runtime files.
+    pub fn resolved_state_directory(&self) -> PathBuf {
+        self.state_directory
+            .as_deref()
+            .filter(|path| !path.trim().is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Self::default_state_directory_for(&self.lqos_directory))
+    }
+
+    fn default_state_directory_for(lqos_directory: &str) -> PathBuf {
+        let base = Path::new(lqos_directory);
+        if base
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == "src")
+            && let Some(parent) = base.parent()
+        {
+            return parent.join("state");
+        }
+        base.join("state")
+    }
+
+    /// Returns the configured Mikrotik IPv6 secrets/config path.
+    pub fn resolved_mikrotik_ipv6_config_path(&self) -> PathBuf {
+        PathBuf::from(self.mikrotik_ipv6.config_path.trim())
+    }
+
+    /// Returns the preferred topology-state path for `filename`.
+    pub fn topology_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory()
+            .join("topology")
+            .join(filename)
+    }
+
+    /// Returns the preferred shaping-state path for `filename`.
+    pub fn shaping_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory()
+            .join("shaping")
+            .join(filename)
+    }
+
+    /// Returns the preferred stats-state path for `filename`.
+    pub fn stats_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory().join("stats").join(filename)
+    }
+
+    /// Returns the preferred cache-state path for `filename`.
+    pub fn cache_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory().join("cache").join(filename)
+    }
+
+    /// Returns the preferred debug-state path for `filename`.
+    pub fn debug_state_file_path(&self, filename: &str) -> PathBuf {
+        self.resolved_state_directory().join("debug").join(filename)
+    }
+
+    /// Returns the quarantine directory for stale runtime artifacts.
+    pub fn quarantine_state_directory_path(&self) -> PathBuf {
+        self.resolved_state_directory().join("quarantine")
+    }
+
+    /// Returns the quarantine directory for legacy runtime artifacts encountered during upgrade.
+    pub fn legacy_quarantine_directory_path(&self) -> PathBuf {
+        self.quarantine_state_directory_path().join("legacy")
+    }
+
+    /// Returns the legacy root path for a machine-managed runtime file.
+    pub fn legacy_runtime_file_path(&self, filename: &str) -> PathBuf {
+        Path::new(&self.lqos_directory).join(filename)
+    }
+
+    /// Returns the canonical read path for a topology runtime file.
+    pub fn topology_state_read_path(&self, filename: &str) -> PathBuf {
+        self.topology_state_file_path(filename)
+    }
+
+    /// Returns the canonical read path for a shaping runtime file.
+    pub fn shaping_state_read_path(&self, filename: &str) -> PathBuf {
+        self.shaping_state_file_path(filename)
+    }
+
+    /// Returns the canonical read path for a stats runtime file.
+    pub fn stats_state_read_path(&self, filename: &str) -> PathBuf {
+        self.stats_state_file_path(filename)
+    }
+
+    /// Returns the canonical read path for a cache runtime file.
+    pub fn cache_state_read_path(&self, filename: &str) -> PathBuf {
+        self.cache_state_file_path(filename)
+    }
+
+    /// Returns the explicitly configured shared topology compile mode, when set.
+    pub fn shared_topology_compile_mode(&self) -> Option<&'static str> {
+        super::topology::normalize_topology_compile_mode(&self.topology.compile_mode)
+    }
+
+    /// Returns the topology compile mode that UISP should use during the transition period.
+    pub fn resolved_topology_compile_mode_for_uisp(&self) -> &'static str {
+        self.shared_topology_compile_mode()
+            .filter(|mode| {
+                super::topology::integration_supports_topology_compile_mode("uisp", mode)
+            })
+            .or_else(|| {
+                super::topology::normalize_supported_topology_compile_mode(
+                    "uisp",
+                    &self.uisp_integration.strategy,
+                )
+            })
+            .unwrap_or("full")
+    }
+
+    /// Returns the topology compile mode that Splynx should use during the transition period.
+    pub fn resolved_topology_compile_mode_for_splynx(&self) -> &'static str {
+        self.shared_topology_compile_mode()
+            .filter(|mode| {
+                super::topology::integration_supports_topology_compile_mode("splynx", mode)
+            })
+            .or_else(|| {
+                super::topology::normalize_supported_topology_compile_mode(
+                    "splynx",
+                    &self.splynx_integration.strategy,
+                )
+            })
+            .unwrap_or("ap_site")
+    }
+
+    /// Returns the topology compile mode that Sonar should use.
+    pub fn resolved_topology_compile_mode_for_sonar(&self) -> &'static str {
+        self.shared_topology_compile_mode()
+            .filter(|mode| {
+                super::topology::integration_supports_topology_compile_mode("sonar", mode)
+            })
+            .unwrap_or("full")
+    }
+
     /// Calculate the unterface facing the Internet
     pub fn internet_interface(&self) -> String {
         if let Some(bridge) = &self.bridge {
@@ -366,7 +661,8 @@ impl Config {
 
 #[cfg(test)]
 mod test {
-    use super::{Config, RttThresholds};
+    use super::super::bridge::{BridgeConfig, SingleInterfaceConfig};
+    use super::{Config, RttThresholds, SslConfig, normalize_external_hostname};
 
     fn remove_sections(raw: &str, sections: &[&str]) -> String {
         let mut output = Vec::new();
@@ -390,11 +686,32 @@ mod test {
         output.join("\n")
     }
 
+    fn remove_keys(raw: &str, keys: &[&str]) -> String {
+        raw.lines()
+            .filter(|line| {
+                let trimmed = line.trim_start();
+                !keys
+                    .iter()
+                    .any(|key| trimmed.starts_with(&format!("{key} =")))
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
     fn load_example() {
         let config = Config::load_from_string(include_str!("example.toml"))
             .expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
+    }
+
+    #[test]
+    fn local_api_config_defaults_when_section_is_absent() {
+        let legacy = remove_sections(include_str!("example.toml"), &["local_api"]);
+        let config =
+            Config::load_from_string(&legacy).expect("Cannot read config without local_api");
+
+        assert_eq!(config.local_api, Default::default());
     }
 
     #[test]
@@ -460,6 +777,36 @@ mod test {
     }
 
     #[test]
+    fn sonar_mode_resolution_rejects_ap_site_and_ap_only() {
+        let cfg = Config {
+            topology: crate::etc::v15::TopologyConfig {
+                compile_mode: "ap_site".to_string(),
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        assert_eq!(cfg.resolved_topology_compile_mode_for_sonar(), "full");
+
+        let cfg = Config {
+            topology: crate::etc::v15::TopologyConfig {
+                compile_mode: "ap_only".to_string(),
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        assert_eq!(cfg.resolved_topology_compile_mode_for_sonar(), "full");
+
+        let cfg = Config {
+            topology: crate::etc::v15::TopologyConfig {
+                compile_mode: "flat".to_string(),
+                ..Default::default()
+            },
+            ..Config::default()
+        };
+        assert_eq!(cfg.resolved_topology_compile_mode_for_sonar(), "flat");
+    }
+
+    #[test]
     fn serialize_uses_splynx_keys() {
         let config =
             Config::load_from_string(include_str!("example.toml")).expect("Cannot read example");
@@ -468,6 +815,29 @@ mod test {
         assert!(!serialized.contains("spylnx_integration"));
         assert!(serialized.contains("enable_splynx"));
         assert!(!serialized.contains("enable_spylnx"));
+    }
+
+    #[test]
+    fn tuning_cpu_governor_defaults_to_true_when_missing() {
+        let raw = include_str!("example.toml")
+            .lines()
+            .filter(|line| !line.trim().starts_with("set_cpu_governor_performance"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config = Config::load_from_string(&raw)
+            .expect("Config without tuning governor flag should load");
+        assert!(config.tuning.set_cpu_governor_performance);
+    }
+
+    #[test]
+    fn tuning_cpu_governor_explicit_false_deserializes() {
+        let raw = include_str!("example.toml").replace(
+            "set_cpu_governor_performance = true",
+            "set_cpu_governor_performance = false",
+        );
+        let config =
+            Config::load_from_string(&raw).expect("Config with tuning governor flag should load");
+        assert!(!config.tuning.set_cpu_governor_performance);
     }
 
     #[test]
@@ -505,6 +875,86 @@ mod test {
     }
 
     #[test]
+    fn bridge_mtu_defaults_to_none_when_omitted() {
+        let config =
+            Config::load_from_string(include_str!("example.toml")).expect("example should load");
+        assert_eq!(config.bridge.as_ref().and_then(|bridge| bridge.mtu), None);
+    }
+
+    #[test]
+    fn interface_mtu_values_deserialize() {
+        let bridge_raw = include_str!("example.toml")
+            .replace("to_network = \"eth1\"", "to_network = \"eth1\"\nmtu = 9000");
+        let bridge_config = Config::load_from_string(&bridge_raw).expect("bridge MTU should load");
+        assert_eq!(
+            bridge_config.bridge.as_ref().and_then(|bridge| bridge.mtu),
+            Some(9000)
+        );
+
+        let single_raw = remove_sections(include_str!("example.toml"), &["bridge"])
+            + r#"
+[single_interface]
+interface = "eth0"
+internet_vlan = 2
+network_vlan = 3
+mtu = 1500
+"#;
+        let single_config =
+            Config::load_from_string(&single_raw).expect("single-interface MTU should load");
+        assert_eq!(
+            single_config
+                .single_interface
+                .as_ref()
+                .and_then(|single| single.mtu),
+            Some(1500)
+        );
+    }
+
+    #[test]
+    fn interface_mtu_validation_rejects_out_of_range_values() {
+        let mut bridge_config = Config {
+            bridge: Some(BridgeConfig {
+                mtu: Some(575),
+                ..BridgeConfig::default()
+            }),
+            ..Config::default()
+        };
+        let bridge_error = bridge_config
+            .validate()
+            .expect_err("bridge.mtu below range should fail");
+        assert!(bridge_error.contains("bridge.mtu"));
+
+        bridge_config.bridge.as_mut().expect("bridge").mtu = Some(9217);
+        let bridge_error = bridge_config
+            .validate()
+            .expect_err("bridge.mtu above range should fail");
+        assert!(bridge_error.contains("bridge.mtu"));
+
+        let mut single_config = Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig {
+                mtu: Some(575),
+                ..SingleInterfaceConfig::default()
+            }),
+            ..Config::default()
+        };
+        let single_error = single_config
+            .validate()
+            .expect_err("single_interface.mtu below range should fail");
+        assert!(single_error.contains("single_interface.mtu"));
+
+        single_config
+            .single_interface
+            .as_mut()
+            .expect("single interface")
+            .mtu = Some(9217);
+        let single_error = single_config
+            .validate()
+            .expect_err("single_interface.mtu above range should fail");
+        assert!(single_error.contains("single_interface.mtu"));
+    }
+
+    #[test]
     fn treeguard_defaults_match_default_on_rollout() {
         let cfg = Config::default();
         assert!(cfg.treeguard.enabled);
@@ -513,11 +963,12 @@ mod test {
             cfg.treeguard.cpu.mode,
             crate::etc::v15::treeguard::TreeguardCpuMode::CpuAware
         );
-        assert!(cfg.treeguard.links.enabled);
+        assert!(!cfg.treeguard.links.enabled);
         assert!(cfg.treeguard.links.all_nodes);
-        assert!(cfg.treeguard.links.top_level_auto_virtualize);
+        assert!(!cfg.treeguard.links.top_level_auto_virtualize);
         assert!(cfg.treeguard.circuits.enabled);
         assert!(cfg.treeguard.circuits.all_circuits);
+        assert_eq!(cfg.topology.queue_auto_virtualize_threshold_mbps, 5_001);
     }
 
     #[test]
@@ -528,6 +979,7 @@ mod test {
         assert!(config.treeguard.enabled);
         assert!(!config.treeguard.dry_run);
         assert!(config.treeguard.links.all_nodes);
+        assert!(!config.treeguard.links.enabled);
         assert!(config.treeguard.circuits.all_circuits);
     }
 
@@ -537,6 +989,62 @@ mod test {
         let config = Config::load_from_string(&stripped)
             .expect("Config without stormguard should still deserialize");
         assert!(config.stormguard.is_none());
+    }
+
+    #[test]
+    fn display_cobrand_defaults_false_when_omitted() {
+        let stripped = remove_keys(include_str!("example.toml"), &["display_cobrand"]);
+        let config = Config::load_from_string(&stripped)
+            .expect("Config without display_cobrand should still deserialize");
+        assert!(!config.display_cobrand);
+    }
+
+    #[test]
+    fn ssl_hostname_validation_rejects_scheme_path_whitespace_ip_and_port() {
+        for invalid in [
+            "https://libreqos.example.com",
+            "libreqos.example.com/path",
+            "libreqos example.com",
+            "192.0.2.1",
+            "libreqos.example.com:8443",
+        ] {
+            let error =
+                normalize_external_hostname(invalid).expect_err("invalid hostname should fail");
+            assert!(error.contains("hostname only") || error.contains("DNS hostname"));
+        }
+    }
+
+    #[test]
+    fn ssl_hostname_round_trips_in_config() {
+        let mut config = Config::default();
+        config.ssl = Some(SslConfig {
+            enabled: true,
+            external_hostname: Some("libreqos.example.com".to_string()),
+            managed_by_libreqos: true,
+            previous_webserver_listen: Some("192.0.2.10:9123".to_string()),
+        });
+        config.validate().expect("ssl config should validate");
+
+        let serialized = toml::to_string_pretty(&config).expect("config should serialize");
+        assert!(serialized.contains("[ssl]"));
+        assert!(serialized.contains("external_hostname = \"libreqos.example.com\""));
+        assert!(serialized.contains("previous_webserver_listen = \"192.0.2.10:9123\""));
+
+        let round_trip = Config::load_from_string(&serialized).expect("config should deserialize");
+        assert_eq!(
+            round_trip
+                .ssl
+                .as_ref()
+                .and_then(|ssl| ssl.external_hostname.as_deref()),
+            Some("libreqos.example.com")
+        );
+        assert_eq!(
+            round_trip
+                .ssl
+                .as_ref()
+                .and_then(|ssl| ssl.previous_webserver_listen.as_deref()),
+            Some("192.0.2.10:9123")
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 // Obtain URL parameters
 import {DirectChannel} from "./pubsub/direct_channels";
-import {clearDiv, formatLastSeen, simpleRow, simpleRowHtml, theading} from "./helpers/builders";
+import {clearDiv, formatLastSeen, simpleRow, simpleRowTrustedHtml, theading} from "./helpers/builders";
 import {
     formatRetransmitFraction,
     formatRtt,
@@ -29,10 +29,22 @@ import {CakeDrops} from "./graphs/cake_drops";
 import {QueuingActivityWaveform} from "./graphs/queuing_activity_waveform";
 import {getNodeIdMap, linkToTreeNode} from "./executive_utils";
 import {loadConfig} from "./config/config_helper";
+import {
+    appendRedactableText,
+    setIconText,
+    setPacketCaptureDownloadButton,
+} from "./circuit_packet_capture_dom.mjs";
+import {
+    applyMaxRateDisplay,
+    formatRatePairValue,
+    hasUsableRatePair,
+} from "./circuit_rate_display.mjs";
 
 const params = new Proxy(new URLSearchParams(window.location.search), {
     get: (searchParams, prop) => searchParams.get(prop),
 });
+
+const CIRCUIT_RATE_REFRESH_MS = 30000;
 
 let circuit_id = decodeURI(params.id);
 let plan = null;
@@ -52,12 +64,15 @@ let funnelParents = [];
 let funnelParentSignature = [];
 let funnelInitialized = false;
 let funnelParentNodeName = null;
+let funnelParentNodeId = null;
 let excludeRttToggle = null;
 let excludeRttLastValue = false;
 let excludeRttBusy = false;
 let latestCakeMsg = null;
 let cakeGraphs = null;
+
 let cakeQueueUnavailable = false;
+let queueStatsMode = "live";
 let circuitSqmOverride = "";
 let queuingActivityGraph = null;
 let latestCircuitDevices = [];
@@ -78,6 +93,9 @@ let topAsnPollTimer = null;
 let topAsnRequestInFlight = false;
 let trafficPollTimer = null;
 let trafficRequestInFlight = false;
+let circuitRatePollTimer = null;
+let circuitRateRequestInFlight = false;
+let queuingActivityVisibilityHandler = null;
 const DEFAULT_RTT_THRESHOLDS = { green_ms: 0, yellow_ms: 100, red_ms: 200 };
 let currentRttThresholds = { ...DEFAULT_RTT_THRESHOLDS };
 const wsClient = get_ws_client();
@@ -109,9 +127,7 @@ function ethernetTooltipHtml(advisory) {
 }
 
 function formatPlanSpeedPair(downloadMbps, uploadMbps) {
-    const down = toNumber(downloadMbps, 0).toFixed(1);
-    const up = toNumber(uploadMbps, 0).toFixed(1);
-    return `${down} / ${up} Mbps`;
+    return `${formatRatePairValue({down: downloadMbps, up: uploadMbps})} Mbps`;
 }
 
 function renderEthernetAdvisory(advisory) {
@@ -342,7 +358,6 @@ function updateQueuingActivityCards() {
     const rttEl = document.getElementById("queuingActivityRtt");
     const flowsEl = document.getElementById("queuingActivityFlows");
     const utilizationEl = document.getElementById("queuingActivityUtilization");
-    const ceilingLegendEl = document.getElementById("queuingActivityLegendCeiling");
     if (!throughputEl || !rttEl || !flowsEl || !utilizationEl) {
         return;
     }
@@ -354,9 +369,6 @@ function updateQueuingActivityCards() {
     flowsEl.textContent = String(snapshot.activeFlows);
     utilizationEl.textContent = `${snapshot.utilizationPercent.toFixed(0)}%`;
     utilizationEl.classList.toggle("is-active", snapshot.atCeiling);
-    if (ceilingLegendEl) {
-        ceilingLegendEl.classList.toggle("is-active", snapshot.atCeiling);
-    }
 }
 
 function pushQueuingActivitySample() {
@@ -371,6 +383,10 @@ function pushQueuingActivitySample() {
             down: currentDirectionValue(latestCircuitSummary?.bytes_per_second, "down", 0) * 8,
             up: currentDirectionValue(latestCircuitSummary?.bytes_per_second, "up", 0) * 8,
         },
+        actualThroughputBps: {
+            down: currentDirectionValue(latestCircuitSummary?.actual_bytes_per_second, "down", 0) * 8,
+            up: currentDirectionValue(latestCircuitSummary?.actual_bytes_per_second, "up", 0) * 8,
+        },
         ceilingBps: {
             down: currentDirectionValue(plan, "down", 0) * 1_000_000.0,
             up: currentDirectionValue(plan, "up", 0) * 1_000_000.0,
@@ -383,11 +399,31 @@ function pushQueuingActivitySample() {
     updateQueuingActivityCards();
 }
 
+function queuingActivityDirectionColor(direction = queuingActivityDirection) {
+    const normalized = direction === "up" ? "up" : "down";
+    const fallback = normalized === "up" ? "#32d3bd" : "#4992ff";
+    const paletteIndex = normalized === "up" ? 1 : 0;
+    return window.graphPalette?.[paletteIndex] || fallback;
+}
+
+function updateQueuingActivityLegend() {
+    const legendColor = queuingActivityDirectionColor();
+    const enqueuedLegendEl = document.getElementById("queuingActivityLegendEnqueued");
+    const throughputLegendEl = document.getElementById("queuingActivityLegendThroughput");
+    if (enqueuedLegendEl) {
+        enqueuedLegendEl.style.color = legendColor;
+    }
+    if (throughputLegendEl) {
+        throughputLegendEl.style.color = legendColor;
+    }
+}
+
 function applyQueuingDirection(direction) {
     queuingActivityDirection = direction === "up" ? "up" : "down";
     if (queuingActivityGraph) {
         queuingActivityGraph.setDirection(queuingActivityDirection);
     }
+    updateQueuingActivityLegend();
     updateQueuingActivityCards();
 }
 
@@ -403,8 +439,24 @@ function ensureQueuingActivityGraph() {
         queuingActivityGraph = new QueuingActivityWaveform("queuingActivityGraph");
         queuingActivityGraph.setDirection(queuingActivityDirection);
         queuingActivityGraph.setRttThresholds(currentRttThresholds);
+        updateQueuingActivityRenderingState();
         pushQueuingActivitySample();
     });
+}
+
+function isQueuingTabActive() {
+    return document.getElementById("queuing-tab")?.classList.contains("active") ?? false;
+}
+
+function shouldRenderQueuingActivity() {
+    return isQueuingTabActive() && document.visibilityState === "visible";
+}
+
+function updateQueuingActivityRenderingState() {
+    if (!queuingActivityGraph) {
+        return;
+    }
+    queuingActivityGraph.setRenderingEnabled(shouldRenderQueuingActivity());
 }
 
 function initQueuingActivityControls() {
@@ -519,9 +571,62 @@ function arrayEquals(a, b) {
     return true;
 }
 
+function normalizeNodeName(value) {
+    return (value ?? "")
+        .toString()
+        .trim()
+        .replace(/\s+/g, " ")
+        .toLowerCase();
+}
+
+function resolveCircuitParentNode(payload, circuits) {
+    const backendParent = payload?.parent_node;
+    const backendName = backendParent?.name?.trim?.() || "";
+    if (backendName) {
+        return {
+            id: backendParent?.id || null,
+            name: backendName,
+        };
+    }
+
+    if (!Array.isArray(circuits)) {
+        return null;
+    }
+
+    const firstUsableParent = circuits.find((device) => normalizeNodeName(device?.parent_node).length > 0);
+    const fallbackName = firstUsableParent?.parent_node?.trim() || "";
+    if (!fallbackName) {
+        return null;
+    }
+
+    return {
+        id: null,
+        name: fallbackName,
+    };
+}
+
 function resolveFunnelState(msg, parentNode) {
     const data = msg && msg.data ? msg.data : [];
-    const namedEntry = data.find((node) => node[1] && node[1].name === parentNode);
+    const normalizedParentNodeId = normalizeNodeName(parentNode?.id);
+    const normalizedParentNodeName = normalizeNodeName(parentNode?.name);
+    if (!normalizedParentNodeId && !normalizedParentNodeName) {
+        return null;
+    }
+
+    const namedEntry = data.find((node) => {
+        const details = node[1];
+        if (!details) {
+            return false;
+        }
+        const nodeId = normalizeNodeName(details.id);
+        if (normalizedParentNodeId && nodeId === normalizedParentNodeId) {
+            return true;
+        }
+        if (normalizedParentNodeName && details.name === parentNode?.name) {
+            return true;
+        }
+        return normalizedParentNodeName && normalizeNodeName(details.name) === normalizedParentNodeName;
+    });
     if (!namedEntry) {
         return null;
     }
@@ -790,6 +895,14 @@ function updateCakeTabAvailability(msg) {
     return true;
 }
 
+function renderCakeStatusMessage(html) {
+    const cakeTab = document.getElementById("cake");
+    if (!cakeTab) {
+        return;
+    }
+    cakeTab.innerHTML = html;
+}
+
 function renderCakeGraphShell() {
     const cakeTab = document.getElementById("cake");
     if (!cakeTab || document.getElementById("cakeBacklog")) {
@@ -921,10 +1034,12 @@ function initTabLifecycle(parentNode) {
                 const target = tab.getAttribute("data-bs-target");
                 if (target === "#queuing") {
                     ensureQueuingActivityGraph();
+                    updateQueuingActivityRenderingState();
                     updateQueuingActivityCards();
                     syncCircuitDetailSubscriptions();
                     return;
                 }
+                updateQueuingActivityRenderingState();
                 if (target === "#devs") {
                     ensureDeviceGraphs();
                     syncCircuitDetailSubscriptions();
@@ -965,8 +1080,16 @@ function initTabLifecycle(parentNode) {
         });
     });
 
+    if (!queuingActivityVisibilityHandler) {
+        queuingActivityVisibilityHandler = () => {
+            updateQueuingActivityRenderingState();
+        };
+        document.addEventListener("visibilitychange", queuingActivityVisibilityHandler);
+    }
+
     window.requestAnimationFrame(() => {
         ensureQueuingActivityGraph();
+        updateQueuingActivityRenderingState();
         updateQueuingActivityCards();
         syncCircuitDetailSubscriptions();
     });
@@ -1026,6 +1149,14 @@ function formatDirectionalQueueTypeDisplay(downToken, upToken) {
     return `${downLabel} / ${upLabel}`;
 }
 
+function setQueueTypeDisplayText(label) {
+    const queueTypeEl = document.getElementById("cakeQueueType");
+    if (!queueTypeEl) {
+        return;
+    }
+    queueTypeEl.textContent = label;
+}
+
 function setQueueTypeDisplay(sqmToken) {
     const queueTypeEl = document.getElementById("cakeQueueType");
     if (!queueTypeEl) {
@@ -1035,13 +1166,9 @@ function setQueueTypeDisplay(sqmToken) {
 }
 
 function setQueueTypeDisplayFromKinds(kindDown, kindUp) {
-    const queueTypeEl = document.getElementById("cakeQueueType");
-    if (!queueTypeEl) {
-        return;
-    }
     const down = (kindDown ?? "").toString().trim().toLowerCase();
     const up = (kindUp ?? "").toString().trim().toLowerCase();
-    queueTypeEl.textContent = formatDirectionalQueueTypeDisplay(down, up);
+    setQueueTypeDisplayText(formatDirectionalQueueTypeDisplay(down, up));
 }
 
 function requestCircuitById(onSuccess, onError) {
@@ -1060,6 +1187,72 @@ function requestCircuitById(onSuccess, onError) {
     wsClient.send({ CircuitById: { id: circuit_id } });
 }
 
+function applyCircuitRatePayload(payload) {
+    const circuits = payload.devices || [];
+    const circuit = circuits[0];
+    if (!circuit) {
+        return null;
+    }
+
+    const assignedRate = {
+        down: toNumber(circuit.download_max_mbps, 0),
+        up: toNumber(circuit.upload_max_mbps, 0),
+    };
+    const effectiveRate = hasUsableRatePair(payload.effective_rate_mbps)
+        ? payload.effective_rate_mbps
+        : null;
+    applyMaxRateDisplay(
+        document.getElementById("bwMax"),
+        assignedRate,
+        effectiveRate,
+        initTooltipsWithin,
+    );
+    return {assignedRate, circuit};
+}
+
+function applyCircuitHeaderPayload(payload) {
+    const circuits = payload.devices || [];
+    const rateHeader = applyCircuitRatePayload(payload);
+    if (!rateHeader) {
+        return null;
+    }
+
+    const {assignedRate, circuit} = rateHeader;
+    const advisory = payload.ethernet_advisory || null;
+    const parentNode = resolveCircuitParentNode(payload, circuits);
+    $("#circuitName").text(circuit.circuit_name);
+    $("#circuitName").attr("title", circuit.circuit_name || "");
+    applyParentNodeLink(parentNode?.name || "");
+    $("#bwMin").text(formatPlanSpeedPair(circuit.download_min_mbps, circuit.upload_min_mbps));
+    renderEthernetAdvisory(advisory);
+    return {assignedRate, circuit, parentNode};
+}
+
+function requestCircuitRateRefresh() {
+    if (circuitRateRequestInFlight) {
+        return;
+    }
+    circuitRateRequestInFlight = true;
+    requestCircuitById(
+        (payload) => {
+            circuitRateRequestInFlight = false;
+            const header = applyCircuitRatePayload(payload);
+            if (header) {
+                plan = header.assignedRate;
+            }
+        },
+        () => {
+            circuitRateRequestInFlight = false;
+        },
+    );
+}
+
+function startCircuitRateRefresh() {
+    if (circuitRatePollTimer === null) {
+        circuitRatePollTimer = window.setInterval(requestCircuitRateRefresh, CIRCUIT_RATE_REFRESH_MS);
+    }
+}
+
 function applyCircuitSummary(summary) {
     latestCircuitSummary = summary || null;
     latestCircuitQooScore = toNumber(summary?.qoo_score, NaN);
@@ -1072,16 +1265,16 @@ function applyCircuitSummary(summary) {
     }
     if (speedometer) {
         speedometer.update(
-            currentDirectionValue(summary?.bytes_per_second, "down", 0) * 8,
-            currentDirectionValue(summary?.bytes_per_second, "up", 0) * 8,
+            currentDirectionValue(summary?.actual_bytes_per_second, "down", 0) * 8,
+            currentDirectionValue(summary?.actual_bytes_per_second, "up", 0) * 8,
             currentDirectionValue(plan, "down", 0),
             currentDirectionValue(plan, "up", 0)
         );
     }
     if (totalThroughput) {
         totalThroughput.update(
-            currentDirectionValue(summary?.bytes_per_second, "down", 0) * 8,
-            currentDirectionValue(summary?.bytes_per_second, "up", 0) * 8
+            currentDirectionValue(summary?.actual_bytes_per_second, "down", 0) * 8,
+            currentDirectionValue(summary?.actual_bytes_per_second, "up", 0) * 8
         );
     }
     if (totalRetransmits) {
@@ -1106,8 +1299,8 @@ function applyDeviceLiveData(devices) {
         const throughputGraph = deviceGraphs["throughputGraph_" + device.device_id];
         if (throughputGraph !== undefined) {
             throughputGraph.update(
-                toNumber(device.bytes_per_second?.down, 0) * 8,
-                toNumber(device.bytes_per_second?.up, 0) * 8
+                toNumber(device.actual_bytes_per_second?.down, 0) * 8,
+                toNumber(device.actual_bytes_per_second?.up, 0) * 8
             );
         }
 
@@ -1466,6 +1659,38 @@ let topAsnSortColumn = 'rate';
 let topAsnSortDirection = 'desc';
 let trafficCurrentPage = 1;
 let trafficPageSize = DEFAULT_TRAFFIC_PAGE_SIZE;
+const TOP_ASN_TABLE_COLUMNS = [
+    { group: "attribution" },
+    { group: "attribution" },
+    { group: "rates", numeric: true },
+    { group: "rates", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "flows", numeric: true },
+];
+const TRAFFIC_TABLE_COLUMNS = [
+    { group: "identity" },
+    { group: "rates", numeric: true },
+    { group: "rates", numeric: true },
+    { group: "volume", numeric: true },
+    { group: "volume", numeric: true },
+    { group: "volume", numeric: true },
+    { group: "volume", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "quality", numeric: true },
+    { group: "attribution" },
+    { group: "attribution" },
+    { group: "attribution" },
+    { group: "actions", action: true },
+];
 
 function formatQooScore(score0to100, fallback = "-") {
     if (score0to100 === null || score0to100 === undefined) {
@@ -1516,6 +1741,106 @@ function truncatedTrafficCell(text, cellClass) {
     return td;
 }
 
+function applyCircuitTableCellChrome(cell, columns, startIndex, endIndex) {
+    const descriptor = columns[startIndex];
+    if (!descriptor) {
+        return;
+    }
+
+    const group = String(descriptor.group || "default");
+    cell.classList.add("lqos-circuit-table-cell", `lqos-circuit-colgroup-${group}`);
+    if (descriptor.numeric) {
+        cell.classList.add("lqos-circuit-cell-numeric");
+    }
+    if (descriptor.action) {
+        cell.classList.add("lqos-circuit-cell-action");
+    }
+
+    if (startIndex > 0 && columns[startIndex - 1]?.group !== group) {
+        cell.classList.add("lqos-circuit-col-start");
+    }
+    if (endIndex < columns.length - 1 && columns[endIndex + 1]?.group !== group) {
+        cell.classList.add("lqos-circuit-col-end");
+    }
+
+    cell.dataset.columnStart = String(startIndex);
+    cell.dataset.columnEnd = String(endIndex);
+}
+
+function annotateCircuitDataTable(table, columns) {
+    const headRow = table.tHead?.rows?.[0];
+    if (headRow) {
+        let columnIndex = 0;
+        Array.from(headRow.cells).forEach((cell) => {
+            const span = Math.max(1, Number(cell.colSpan) || 1);
+            const startIndex = columnIndex;
+            const endIndex = Math.min(columns.length - 1, startIndex + span - 1);
+            applyCircuitTableCellChrome(cell, columns, startIndex, endIndex);
+            columnIndex += span;
+        });
+    }
+
+    Array.from(table.tBodies).forEach((tbody) => {
+        Array.from(tbody.rows).forEach((row) => {
+            if (row.cells.length !== columns.length) {
+                return;
+            }
+            Array.from(row.cells).forEach((cell, index) => {
+                applyCircuitTableCellChrome(cell, columns, index, index);
+            });
+        });
+    });
+
+    wireCircuitDataTableHover(table);
+}
+
+function wireCircuitDataTableHover(table) {
+    let activeStart = null;
+    let activeEnd = null;
+
+    const paintRange = (start, end) => {
+        Array.from(table.querySelectorAll("[data-column-start][data-column-end]")).forEach((cell) => {
+            const cellStart = Number.parseInt(cell.dataset.columnStart || "", 10);
+            const cellEnd = Number.parseInt(cell.dataset.columnEnd || "", 10);
+            const shouldHighlight = Number.isFinite(cellStart)
+                && Number.isFinite(cellEnd)
+                && cellStart <= end
+                && cellEnd >= start;
+            cell.classList.toggle("is-column-hover", shouldHighlight);
+        });
+    };
+
+    const clearRange = () => {
+        activeStart = null;
+        activeEnd = null;
+        Array.from(table.querySelectorAll(".is-column-hover")).forEach((cell) => {
+            cell.classList.remove("is-column-hover");
+        });
+    };
+
+    table.addEventListener("pointerover", (event) => {
+        const cell = event.target.closest("th, td");
+        if (!cell || !table.contains(cell)) {
+            return;
+        }
+        const start = Number.parseInt(cell.dataset.columnStart || "", 10);
+        const end = Number.parseInt(cell.dataset.columnEnd || "", 10);
+        if (!Number.isFinite(start) || !Number.isFinite(end)) {
+            return;
+        }
+        if (activeStart === start && activeEnd === end) {
+            return;
+        }
+        activeStart = start;
+        activeEnd = end;
+        paintRange(start, end);
+    });
+
+    table.addEventListener("pointerleave", () => {
+        clearRange();
+    });
+}
+
 function visibleTrafficRows() {
     return Array.isArray(latestTrafficPage?.rows) ? latestTrafficPage.rows : [];
 }
@@ -1559,6 +1884,15 @@ function sortTopAsnRows(rows) {
     rows.sort((a, b) => {
         const asc = topAsnSortDirection === "asc";
         const normalize = (value) => typeof value === "string" ? value.toLowerCase() : value;
+        const totalQoo = (row) => {
+            const scores = [row?.qoo_down, row?.qoo_up]
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value));
+            if (!scores.length) {
+                return asc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+            }
+            return scores.reduce((sum, value) => sum + value, 0);
+        };
         let aVal;
         let bVal;
         switch (topAsnSortColumn) {
@@ -1570,13 +1904,13 @@ function sortTopAsnRows(rows) {
                 aVal = normalize(a.asn_country);
                 bVal = normalize(b.asn_country);
                 break;
-            case "bytes":
-                aVal = a.bytes_sent_down + a.bytes_sent_up;
-                bVal = b.bytes_sent_down + b.bytes_sent_up;
+            case "rtt":
+                aVal = toNumber(a.rtt_down_nanos, 0) + toNumber(a.rtt_up_nanos, 0);
+                bVal = toNumber(b.rtt_down_nanos, 0) + toNumber(b.rtt_up_nanos, 0);
                 break;
-            case "packets":
-                aVal = a.packets_sent_down + a.packets_sent_up;
-                bVal = b.packets_sent_down + b.packets_sent_up;
+            case "qoo":
+                aVal = totalQoo(a);
+                bVal = totalQoo(b);
                 break;
             case "retransmits":
                 aVal = a.retransmit_down_pct + a.retransmit_up_pct;
@@ -1612,7 +1946,7 @@ function renderTopAsnTab() {
     tableWrap.classList.add("lqos-table-wrap");
 
     const table = document.createElement("table");
-    table.classList.add("lqos-table", "lqos-table-tight", "lqos-circuit-traffic-table");
+    table.classList.add("lqos-table", "lqos-table-tight", "lqos-circuit-traffic-table", "lqos-circuit-data-table");
     const thead = document.createElement("thead", "small");
     thead.style.fontSize = "0.8em";
 
@@ -1624,7 +1958,7 @@ function renderTopAsnTab() {
                 topAsnSortDirection = topAsnSortDirection === "asc" ? "desc" : "asc";
             } else {
                 topAsnSortColumn = sortKey;
-                topAsnSortDirection = "desc";
+                topAsnSortDirection = sortKey === "qoo" ? "asc" : "desc";
             }
             renderTopAsnTab();
         };
@@ -1637,8 +1971,8 @@ function renderTopAsnTab() {
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
-    thead.appendChild(createSortableHeader("Total Bytes (d/u)", "bytes", 2));
-    thead.appendChild(createSortableHeader("Total Packets (d/u)", "packets", 2));
+    thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
+    thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("Flows", "flows"));
     table.appendChild(thead);
@@ -1659,14 +1993,14 @@ function renderTopAsnTab() {
 
             row.appendChild(truncatedTrafficCell(rowData.asn_name, "lqos-circuit-traffic-asn-cell"));
             row.appendChild(truncatedTrafficCell(rowData.asn_country, "lqos-circuit-traffic-country-cell"));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.down_bps, plan.down)));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.up_bps, plan.up)));
-            row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_down)));
-            row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_up)));
-            row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_down)));
-            row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_up)));
-            row.appendChild(simpleRowHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
-            row.appendChild(simpleRowHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.down_bps, plan.down)));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.up_bps, plan.up)));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_down_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_up_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_down)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_up)));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
             row.appendChild(simpleRow(scaleNumber(rowData.flow_count)));
 
             tbody.appendChild(row);
@@ -1674,6 +2008,7 @@ function renderTopAsnTab() {
     }
 
     table.appendChild(tbody);
+    annotateCircuitDataTable(table, TOP_ASN_TABLE_COLUMNS);
     tableWrap.appendChild(table);
     clearDiv(target);
     target.appendChild(tableWrap);
@@ -1695,7 +2030,7 @@ function renderTrafficTab() {
     tableWrap.classList.add("lqos-table-wrap");
 
     let table = document.createElement("table");
-    table.classList.add("lqos-table", "lqos-table-tight", "lqos-circuit-traffic-table");
+    table.classList.add("lqos-table", "lqos-table-tight", "lqos-circuit-traffic-table", "lqos-circuit-data-table");
     let thead = document.createElement("thead", "small");
     thead.style.fontSize = "0.8em";
 
@@ -1747,18 +2082,18 @@ function renderTrafficTab() {
             row.style.opacity = toNumber(rowData.opacity, 1);
 
             row.appendChild(truncatedTrafficCell(rowData.protocol_name, "lqos-circuit-traffic-protocol-cell"));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.down_bps, plan.down)));
-            row.appendChild(simpleRowHtml(formatThroughput(rowData.up_bps, plan.up)));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.down_bps, plan.down)));
+            row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.up_bps, plan.up)));
             row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_down)));
             row.appendChild(simpleRow(scaleNumber(rowData.bytes_sent_up)));
             row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_down)));
             row.appendChild(simpleRow(scaleNumber(rowData.packets_sent_up)));
-            row.appendChild(simpleRowHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
-            row.appendChild(simpleRowHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
-            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_down_nanos)));
-            row.appendChild(simpleRowHtml(formatRttNanos(rowData.rtt_up_nanos)));
-            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_down)));
-            row.appendChild(simpleRowHtml(formatQooScore(rowData.qoo_up)));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(rowData.retransmit_up_pct > 0 ? formatRetransmitFraction(rowData.retransmit_up_pct) : "-"));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_down_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_up_nanos)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_down)));
+            row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_up)));
             row.appendChild(truncatedTrafficCell(rowData.asn_name, "lqos-circuit-traffic-asn-cell"));
             row.appendChild(truncatedTrafficCell(rowData.asn_country, "lqos-circuit-traffic-country-cell"));
             row.appendChild(simpleRow(rowData.remote_ip));
@@ -1780,6 +2115,7 @@ function renderTrafficTab() {
     }
 
     table.appendChild(tbody);
+    annotateCircuitDataTable(table, TRAFFIC_TABLE_COLUMNS);
     tableWrap.appendChild(table);
     clearDiv(target);
     target.appendChild(tableWrap);
@@ -1803,14 +2139,14 @@ function fillLiveDevices(devices) {
 
         if (throughputDown !== null) {
             throughputDown.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second?.down, 0) * 8,
+                toNumber(device.actual_bytes_per_second?.down, 0) * 8,
                 toNumber(device.plan?.down, 0)
             );
         }
 
         if (throughputUp !== null) {
             throughputUp.innerHTML = formatThroughput(
-                toNumber(device.bytes_per_second?.up, 0) * 8,
+                toNumber(device.actual_bytes_per_second?.up, 0) * 8,
                 toNumber(device.plan?.up, 0)
             );
         }
@@ -1904,7 +2240,10 @@ function initialDevices(circuits) {
 
         let name = document.createElement("h5");
         name.classList.add("redactable");
-        name.innerHTML = "<i class='fa fa-computer'></i> " + circuit.device_name;
+        const deviceIcon = document.createElement("i");
+        deviceIcon.classList.add("fa", "fa-computer");
+        name.appendChild(deviceIcon);
+        name.appendChild(document.createTextNode(` ${circuit.device_name ?? ""}`));
         d.appendChild(name);
 
         let infoTableWrap = document.createElement("div");
@@ -1924,7 +2263,7 @@ function initialDevices(circuits) {
         td.classList.add("table-value-cell");
         td.classList.add("redactable");
         td.colSpan = 2;
-        td.innerHTML = circuit.mac;
+        td.textContent = circuit.mac ?? "";
         tr.appendChild(td);
         tbody.appendChild(tr);
 
@@ -1937,7 +2276,7 @@ function initialDevices(circuits) {
         td = document.createElement("td");
         td.classList.add("table-value-cell");
         td.colSpan = 2;
-        td.innerHTML = circuit.comment;
+        td.textContent = circuit.comment ?? "";
         tr2.appendChild(td);
         tbody.appendChild(tr2);
 
@@ -2132,7 +2471,8 @@ function initialDevices(circuits) {
 }
 
 function initialFunnel(parentNode) {
-    funnelParentNodeName = parentNode;
+    funnelParentNodeName = parentNode?.name || null;
+    funnelParentNodeId = parentNode?.id || null;
     listenOnce("NetworkTreeLite", (msg) => {
         renderFunnel(resolveFunnelState(msg, parentNode));
         if (funnelSubscription) {
@@ -2144,11 +2484,14 @@ function initialFunnel(parentNode) {
 }
 
 function onTreeEvent(msg) {
-    if (msg.event !== "NetworkTreeLite" || !funnelParentNodeName) {
+    if (msg.event !== "NetworkTreeLite" || (!funnelParentNodeName && !funnelParentNodeId)) {
         return;
     }
 
-    const state = resolveFunnelState(msg, funnelParentNodeName);
+    const state = resolveFunnelState(msg, {
+        id: funnelParentNodeId,
+        name: funnelParentNodeName,
+    });
     const nextParents = state ? state.parentIndexes : [];
     const nextSignature = state ? state.parentSignature : [];
     const shouldRebuild =
@@ -2193,9 +2536,8 @@ function subscribeToCake() {
     
     // Function to show "Queue not loaded" message
     function showNoQueueMessage() {
-        const cakeTab = document.getElementById("cake");
-        if (cakeTab && !hasReceivedData) {
-            cakeTab.innerHTML = '<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The shaper queue for this circuit has not been created yet.</p></div></div>';
+        if (!hasReceivedData) {
+            renderCakeStatusMessage('<div class="row"><div class="col-12 text-center mt-5"><h4>Queue not loaded.</h4><p class="text-muted">The shaper queue for this circuit has not been created yet.</p></div></div>');
         }
     }
     
@@ -2238,7 +2580,7 @@ function wireupAnalysis(circuits) {
     listBtn.id = "CaptureTopBtn";
     listBtn.classList.add("btn", "btn-secondary", "dropdown-toggle", "btn-sm");
     listBtn.setAttribute("data-bs-toggle", "dropdown");
-    listBtn.innerHTML = "<i class='fa fa-search'></i> Packet Capture";
+    setIconText(listBtn, ["fa", "fa-search"], "Packet Capture");
     list.appendChild(listBtn);
 
     let listUl = document.createElement("ul");
@@ -2247,8 +2589,9 @@ function wireupAnalysis(circuits) {
         let entry = document.createElement("li");
         let item = document.createElement("a");
         item.classList.add("dropdown-item");
-        item.innerHTML = "<i class='fa fa-search'></i> Capture packets from <span class='redactable'>" + ip[0] + "</span>";
         let address = ip[0]; // For closure capture
+        setIconText(item, ["fa", "fa-search"], "Capture packets from ");
+        appendRedactableText(item, address);
         item.onclick = () => {
             //console.log("Clicky " + address);
             listenOnce("RequestAnalysisResult", (msg) => {
@@ -2262,13 +2605,13 @@ function wireupAnalysis(circuits) {
                 let sessionId = okData.session_id;
                 let btn = document.getElementById("CaptureTopBtn");
                 btn.disabled = true;
-                btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
+                setIconText(btn, ["fa", "fa-spinner", "fa-spin"], "Capturing Packets (" + counter + ")");
                 let interval = setInterval(() => {
                     counter--;
                     if (counter === -1) {
                         clearInterval(interval);
                         btn.disabled = false;
-                        btn.innerHTML = "<i class='fa fa-download'></i> Download Packet Capture for <span class='redactable'>" + address + "</span>";
+                        setPacketCaptureDownloadButton(btn, address);
                         btn.classList.remove("btn-secondary");
                         btn.classList.add("btn-success");
                         btn.onclick = () => {
@@ -2283,7 +2626,7 @@ function wireupAnalysis(circuits) {
                         }
                         return;
                     }
-                    btn.innerHTML = "<i class='fa fa-spinner fa-spin'></i> Capturing Packets (" + counter + ")";
+                    setIconText(btn, ["fa", "fa-spinner", "fa-spin"], "Capturing Packets (" + counter + ")");
                 }, 1000);
             });
             wsClient.send({ RequestAnalysis: { ip: address } });
@@ -2312,19 +2655,14 @@ function loadInitial() {
     loadRttThresholds();
     requestCircuitById((payload) => {
         const circuits = payload.devices || [];
-        const advisory = payload.ethernet_advisory || null;
-        let circuit = circuits[0];
+        queueStatsMode = payload.queue_stats_mode || "live";
+        const header = applyCircuitHeaderPayload(payload);
+        if (!header) {
+            return;
+        }
+        const {circuit, parentNode, assignedRate} = header;
         circuitConfigDevices = circuits;
-        $("#circuitName").text(circuit.circuit_name);
-        $("#circuitName").attr("title", circuit.circuit_name || "");
-        applyParentNodeLink(circuit.parent_node);
-        $("#bwMax").text(formatPlanSpeedPair(circuit.download_max_mbps, circuit.upload_max_mbps));
-        $("#bwMin").text(formatPlanSpeedPair(circuit.download_min_mbps, circuit.upload_min_mbps));
-        renderEthernetAdvisory(advisory);
-        plan = {
-            down: toNumber(circuit.download_max_mbps, 0),
-            up: toNumber(circuit.upload_max_mbps, 0),
-        };
+        plan = assignedRate;
         latestCircuitDevices = circuits;
         circuitSqmOverride = circuit.sqm_override || "";
         setQueueTypeDisplayFromKinds(latestCakeMsg?.kind_down, latestCakeMsg?.kind_up);
@@ -2333,24 +2671,30 @@ function loadInitial() {
         qooGauge = new QooScoreGauge("qooGauge");
         totalThroughput = new CircuitTotalGraph("throughputGraph", "Total Circuit Throughput");
         totalRetransmits = new CircuitRetransmitGraph("rxmitGraph", "Total Circuit Retransmits");
-        initTabLifecycle(circuit.parent_node);
+        initTabLifecycle(parentNode);
         updateQueuingActivityCards();
 
         connectCircuitSummaryChannel();
         subscribeToCake();
         wireupAnalysis(circuits);
+        startCircuitRateRefresh();
     }, () => {
         alert("Circuit with id " + circuit_id + " not found");
     });
 }
 
 function cleanupCircuitPage() {
+    if (queuingActivityVisibilityHandler) {
+        document.removeEventListener("visibilitychange", queuingActivityVisibilityHandler);
+        queuingActivityVisibilityHandler = null;
+    }
     if (channelLink) {
         wsClient.send({ Private: { StopCircuitWatcher: null } });
         channelLink.close();
         channelLink = null;
     }
     if (cakeChannel) {
+        wsClient.send({ Private: { StopCakeWatcher: null } });
         cakeChannel.close();
         cakeChannel = null;
     }
@@ -2361,10 +2705,14 @@ function cleanupCircuitPage() {
     sankeyPollTimer = clearPollingTimer(sankeyPollTimer);
     topAsnPollTimer = clearPollingTimer(topAsnPollTimer);
     trafficPollTimer = clearPollingTimer(trafficPollTimer);
+    circuitRatePollTimer = clearPollingTimer(circuitRatePollTimer);
     if (funnelSubscription) {
         funnelSubscription.dispose();
         funnelSubscription = null;
     }
+    funnelInitialized = false;
+    funnelParentNodeName = null;
+    funnelParentNodeId = null;
     if (queuingActivityGraph) {
         queuingActivityGraph.dispose();
         queuingActivityGraph = null;

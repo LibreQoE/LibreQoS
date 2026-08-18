@@ -3,16 +3,17 @@
         <div class="lqos-config-panel-header">
             <div>
                 <h5 class="lqos-config-panel-title"><i class="fa fa-ethernet me-2"></i>Ethernet Caps</h5>
-                <div class="lqos-config-panel-subtitle">Circuits automatically down-rated because detected Ethernet speed was below the requested plan.</div>
+                <div class="lqos-config-panel-subtitle">Circuits and topology nodes automatically down-rated because detected Ethernet speed was below the requested rate.</div>
             </div>
             <div id="ethernetCapsSummary" class="small text-body-secondary"></div>
         </div>
 
         <div class="lqos-config-section">
+            <div id="ethernetCapsError" class="alert alert-warning small" role="alert" aria-live="assertive" hidden></div>
             <div class="row g-2 align-items-end mb-3">
                 <div class="col-12 col-lg-5">
                     <label class="form-label small text-body-secondary" for="ethernetCapsSearch">Search</label>
-                    <input id="ethernetCapsSearch" class="form-control" type="text" placeholder="Search circuits, parents, device names…">
+                    <input id="ethernetCapsSearch" class="form-control" type="text" placeholder="Search targets, parents, device names…">
                 </div>
                 <div class="col-6 col-lg-2">
                     <label class="form-label small text-body-secondary" for="ethernetCapsTier">Ethernet</label>
@@ -32,11 +33,11 @@
                     </select>
                 </div>
                 <div class="col-12 col-lg-3 d-flex justify-content-lg-end gap-2">
-                    <button id="ethernetCapsPrev" type="button" class="btn btn-outline-primary">
-                        <i class="fa fa-arrow-left"></i>
+                    <button id="ethernetCapsPrev" type="button" class="btn btn-outline-primary" aria-label="Previous page">
+                        <i class="fa fa-arrow-left" aria-hidden="true"></i>
                     </button>
-                    <button id="ethernetCapsNext" type="button" class="btn btn-outline-primary">
-                        <i class="fa fa-arrow-right"></i>
+                    <button id="ethernetCapsNext" type="button" class="btn btn-outline-primary" aria-label="Next page">
+                        <i class="fa fa-arrow-right" aria-hidden="true"></i>
                     </button>
                 </div>
             </div>

@@ -1,13 +1,16 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use lqos_bakery::BakeryCommands;
-use lqos_config::{ConfigShapedDevices, ShapedDevice};
+use lqos_config::ShapedDevice;
 use lqos_overrides::{OverrideFile, OverrideLayer, OverrideStore};
-use lqos_queue_tracker::QUEUE_STRUCTURE;
 use lqos_utils::hash_to_i64;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::{Duration, Instant};
+use tracing::warn;
 
+#[derive(Debug)]
 pub enum CircuitFallbackOutcome {
     Applied { persisted: bool },
+    AppliedUnpersisted { error: String },
     Cleared { persisted: bool },
     DryRun { action: String },
     Skipped { reason: String },
@@ -23,6 +26,31 @@ pub struct SiteOverrideUpdate {
 pub struct PersistedCircuitFallback {
     pub sqm_override: String,
     pub devices: Vec<ShapedDevice>,
+}
+
+/// Waits asynchronously for an acknowledged Bakery operation.
+///
+/// Side effects: yields to the Tokio runtime while polling the synchronous reply channel.
+pub(crate) async fn wait_for_bakery_reply<T>(
+    reply_receiver: std::sync::mpsc::Receiver<Result<T, String>>,
+    operation: &str,
+) -> Result<T> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match reply_receiver.try_recv() {
+            Ok(Ok(value)) => return Ok(value),
+            Ok(Err(error)) => return Err(anyhow!(error)),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                return Err(anyhow!("Bakery closed the {operation} reply channel"));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() >= deadline => {
+                return Err(anyhow!("timed out waiting for Bakery to {operation}"));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+    }
 }
 
 pub fn apply_site_override_updates(updates: &[SiteOverrideUpdate]) -> Result<bool> {
@@ -64,11 +92,19 @@ pub fn apply_site_override_updates(updates: &[SiteOverrideUpdate]) -> Result<boo
     Ok(true)
 }
 
-pub fn apply_circuit_fallback(
+/// Removes every adaptive override owned by StormGuard.
+///
+/// Side effects: replaces the persisted StormGuard override layer with an empty layer.
+pub fn clear_stormguard_override_layer() -> Result<()> {
+    OverrideStore::save_layer(OverrideLayer::Stormguard, &OverrideFile::default())
+}
+
+pub async fn apply_circuit_fallback(
     circuit_id: &str,
     sqm_override: &str,
     persist: bool,
     dry_run: bool,
+    tree_generation: u64,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
 ) -> Result<CircuitFallbackOutcome> {
     let devices = load_devices_for_circuit(circuit_id)?;
@@ -88,18 +124,58 @@ pub fn apply_circuit_fallback(
         });
     }
 
+    let reply_receiver = apply_circuit_sqm_override_live(
+        circuit_id,
+        Some(sqm_override),
+        tree_generation,
+        bakery_sender.clone(),
+    )?;
+    if !wait_for_bakery_reply(reply_receiver, "apply StormGuard circuit fallback").await? {
+        return Ok(CircuitFallbackOutcome::Skipped {
+            reason: "Circuit is absent from Bakery state.".to_string(),
+        });
+    }
     let persisted = if persist {
-        set_devices_sqm_override(&devices, sqm_override)?
+        match set_devices_sqm_override(&devices, sqm_override) {
+            Ok(persisted) => persisted,
+            Err(persistence_error) => {
+                let rollback = apply_circuit_sqm_override_live(
+                    circuit_id,
+                    None,
+                    tree_generation,
+                    bakery_sender,
+                );
+                let rollback = match rollback {
+                    Ok(rollback_receiver) => wait_for_bakery_reply(
+                        rollback_receiver,
+                        "roll back unpersisted StormGuard circuit fallback",
+                    )
+                    .await
+                    .map(|_| ()),
+                    Err(error) => Err(error),
+                };
+                if let Err(rollback_error) = rollback {
+                    let error = format!(
+                        "StormGuard could not persist or roll back circuit fallback for {circuit_id}; retaining in-memory ownership: persistence={persistence_error}; rollback={rollback_error}"
+                    );
+                    warn!("{error}");
+                    return Ok(CircuitFallbackOutcome::AppliedUnpersisted { error });
+                }
+                return Err(persistence_error).context(
+                    "failed to persist StormGuard circuit fallback; live change was rolled back",
+                );
+            }
+        }
     } else {
         false
     };
-    apply_circuit_sqm_override_live(circuit_id, &devices, Some(sqm_override), bakery_sender)?;
     Ok(CircuitFallbackOutcome::Applied { persisted })
 }
 
-pub fn clear_circuit_fallback(
+pub async fn clear_circuit_fallback(
     circuit_id: &str,
     dry_run: bool,
+    tree_generation: u64,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
 ) -> Result<CircuitFallbackOutcome> {
     let fallback = load_persisted_circuit_fallbacks()?
@@ -129,14 +205,21 @@ pub fn clear_circuit_fallback(
         .iter()
         .map(|d| d.device_id.clone())
         .collect();
+    let reply_receiver =
+        apply_circuit_sqm_override_live(circuit_id, None, tree_generation, bakery_sender)?;
+    if !wait_for_bakery_reply(reply_receiver, "clear StormGuard circuit fallback").await? {
+        let persisted = clear_device_overrides(&device_ids)?;
+        return Ok(CircuitFallbackOutcome::Skipped {
+            reason: format!("Circuit is absent from Bakery state; persisted={persisted}"),
+        });
+    }
     let persisted = clear_device_overrides(&device_ids)?;
-    apply_circuit_sqm_override_live(circuit_id, &fallback.devices, None, bakery_sender)?;
     Ok(CircuitFallbackOutcome::Cleared { persisted })
 }
 
 pub fn load_persisted_circuit_fallbacks() -> Result<HashMap<String, PersistedCircuitFallback>> {
     let overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    let current_devices = ConfigShapedDevices::load()?.devices;
+    let current_devices = lqos_network_devices::load_shaped_devices()?.devices;
     Ok(group_circuit_fallbacks(&overrides, &current_devices))
 }
 
@@ -159,7 +242,7 @@ fn current_site_override(
 }
 
 fn load_devices_for_circuit(circuit_id: &str) -> Result<Vec<ShapedDevice>> {
-    let shaped_devices = ConfigShapedDevices::load()?;
+    let shaped_devices = lqos_network_devices::load_shaped_devices()?;
     Ok(shaped_devices
         .devices
         .into_iter()
@@ -169,6 +252,12 @@ fn load_devices_for_circuit(circuit_id: &str) -> Result<Vec<ShapedDevice>> {
 
 fn conflicting_sqm_owner(devices: &[ShapedDevice]) -> Result<Option<String>> {
     let device_ids: HashSet<&str> = devices.iter().map(|d| d.device_id.as_str()).collect();
+    let source_devices = lqos_network_devices::load_source_shaped_devices()?.devices;
+    if has_source_sqm_override(&device_ids, &source_devices) {
+        return Ok(Some(
+            "The circuit already has a source-configured SQM override.".to_string(),
+        ));
+    }
 
     let operator = OverrideStore::load_layer(OverrideLayer::Operator)?;
     if has_sqm_override_for_device_ids(&operator, &device_ids) {
@@ -185,6 +274,16 @@ fn conflicting_sqm_owner(devices: &[ShapedDevice]) -> Result<Option<String>> {
     }
 
     Ok(None)
+}
+
+fn has_source_sqm_override(device_ids: &HashSet<&str>, source_devices: &[ShapedDevice]) -> bool {
+    source_devices.iter().any(|device| {
+        device_ids.contains(device.device_id.as_str())
+            && device
+                .sqm_override
+                .as_deref()
+                .is_some_and(|token| !token.trim().is_empty())
+    })
 }
 
 fn has_sqm_override_for_device_ids(overrides: &OverrideFile, device_ids: &HashSet<&str>) -> bool {
@@ -253,89 +352,19 @@ fn clear_device_overrides(device_ids: &[String]) -> Result<bool> {
 
 fn apply_circuit_sqm_override_live(
     circuit_id: &str,
-    devices: &[ShapedDevice],
     sqm_override: Option<&str>,
+    tree_generation: u64,
     bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
-) -> Result<()> {
-    let snapshot = QUEUE_STRUCTURE.load();
-    let Some(queues) = snapshot.maybe_queues.as_ref() else {
-        return Err(anyhow!("queueingStructure.json not loaded"));
-    };
-
-    let mut stack = Vec::new();
-    for queue in queues.iter() {
-        stack.push(queue);
-    }
-
-    let mut found = None;
-    while let Some(node) = stack.pop() {
-        if node.circuit_id.as_deref() == Some(circuit_id) && node.device_id.is_none() {
-            found = Some(node);
-            break;
-        }
-
-        for child in node.children.iter() {
-            stack.push(child);
-        }
-        for circuit in node.circuits.iter() {
-            stack.push(circuit);
-        }
-        for device in node.devices.iter() {
-            stack.push(device);
-        }
-    }
-
-    let Some(node) = found else {
-        return Err(anyhow!(
-            "circuit not found in queue structure: {circuit_id}"
-        ));
-    };
-
-    let class_minor = u16::try_from(node.class_minor)
-        .map_err(|_| anyhow!("class_minor too large: {}", node.class_minor))?;
-    let class_major = u16::try_from(node.class_major)
-        .map_err(|_| anyhow!("class_major too large: {}", node.class_major))?;
-    let up_class_major = u16::try_from(node.up_class_major)
-        .map_err(|_| anyhow!("up_class_major too large: {}", node.up_class_major))?;
-
-    bakery_sender.send(BakeryCommands::AddCircuit {
+) -> Result<std::sync::mpsc::Receiver<Result<bool, String>>> {
+    let (reply, reply_receiver) = std::sync::mpsc::channel();
+    bakery_sender.send(BakeryCommands::StormGuardCircuitAdjustment {
+        tree_generation,
         circuit_hash: hash_to_i64(circuit_id),
-        circuit_name: node
-            .circuit_name
-            .clone()
-            .or_else(|| Some(circuit_id.to_string())),
-        site_name: node.parent_node.clone(),
-        parent_class_id: node.parent_class_id,
-        up_parent_class_id: node.up_parent_class_id,
-        class_minor,
-        download_bandwidth_min: node.download_bandwidth_mbps_min as f32,
-        upload_bandwidth_min: node.upload_bandwidth_mbps_min as f32,
-        download_bandwidth_max: node.download_bandwidth_mbps as f32,
-        upload_bandwidth_max: node.upload_bandwidth_mbps as f32,
-        class_major,
-        up_class_major,
-        down_qdisc_handle: None,
-        up_qdisc_handle: None,
-        ip_addresses: ip_list(devices),
-        sqm_override: sqm_override.map(|value| value.to_string()),
+        sqm_override: sqm_override.map(str::to_string),
+        reply: Some(reply),
     })?;
 
-    Ok(())
-}
-
-fn ip_list(devices: &[ShapedDevice]) -> String {
-    let mut ips = Vec::new();
-    for dev in devices {
-        for (ip, prefix) in dev.ipv4.iter() {
-            ips.push(format!("{ip}/{prefix}"));
-        }
-        for (ip, prefix) in dev.ipv6.iter() {
-            ips.push(format!("{ip}/{prefix}"));
-        }
-    }
-    ips.sort();
-    ips.dedup();
-    ips.join(",")
+    Ok(reply_receiver)
 }
 
 fn group_circuit_fallbacks(
@@ -512,5 +541,16 @@ mod tests {
             1
         );
         assert!(!grouped.contains_key("c2"));
+    }
+
+    #[test]
+    fn source_sqm_change_is_visible_while_effective_device_has_stormguard_token() {
+        let mut effective = sample_device("dev1", "c1");
+        effective.sqm_override = Some("cake".to_string());
+        let mut source = sample_device("dev1", "c1");
+        source.sqm_override = Some("fq_codel".to_string());
+        let device_ids = HashSet::from([effective.device_id.as_str()]);
+
+        assert!(has_source_sqm_override(&device_ids, &[source]));
     }
 }

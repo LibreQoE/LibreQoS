@@ -1,0 +1,12 @@
+pppoe-rate Cleartext-Password := "pppoe-rate-password"
+    Framed-IP-Address := 100.64.0.2,
+    Framed-IP-Netmask := 255.255.255.255,
+    Mikrotik-Rate-Limit := "25M/10M"
+
+pppoe-known Cleartext-Password := "pppoe-known-password"
+    Framed-IP-Address := 100.64.0.2,
+    Framed-IP-Netmask := 255.255.255.255
+
+pppoe-unknown Cleartext-Password := "pppoe-unknown-password"
+    Framed-IP-Address := 100.64.0.2,
+    Framed-IP-Netmask := 255.255.255.255

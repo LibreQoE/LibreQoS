@@ -9,7 +9,7 @@ export function defaultTreeguardConfig() {
             cpu_low_pct: 55,
         },
         links: {
-            enabled: true,
+            enabled: false,
             all_nodes: true,
             nodes: [],
             idle_util_pct: 2.0,
@@ -19,7 +19,7 @@ export function defaultTreeguardConfig() {
             min_state_dwell_minutes: 30,
             max_link_changes_per_hour: 4,
             reload_cooldown_minutes: 10,
-            top_level_auto_virtualize: true,
+            top_level_auto_virtualize: false,
             top_level_safe_util_pct: 85.0,
         },
         circuits: {

@@ -1,7 +1,6 @@
 use crate::node_manager::local_api::network_tree_lite::{
     NetworkTreeLiteNode, network_tree_lite_data,
 };
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
 use crate::system_stats::{CPU_USAGE, NUM_CPUS};
 use lqos_config::{ShapingCpuDetection, detect_shaping_cpus, load_config};
 use serde::Serialize;
@@ -168,9 +167,7 @@ pub struct CircuitsQuery {
 
 fn queuing_structure_path() -> Option<PathBuf> {
     let cfg = lqos_config::load_config().ok()?;
-    let mut p = PathBuf::from(cfg.lqos_directory.clone());
-    p.push("queuingStructure.json");
-    Some(p)
+    Some(cfg.shaping_state_read_path("queuingStructure.json"))
 }
 
 fn parse_hex_u32(s: &str) -> Option<u32> {
@@ -560,10 +557,10 @@ fn derive_runtime_node_placements(
 }
 
 fn direct_circuit_counts_by_node() -> HashMap<String, u32> {
-    let shaped = SHAPED_DEVICES.load();
+    let catalog = lqos_network_devices::shaped_devices_catalog();
     let mut circuits_by_node: HashMap<String, BTreeSet<i64>> = HashMap::new();
 
-    for device in &shaped.devices {
+    for device in catalog.iter_devices() {
         let node_name = device.parent_node.trim();
         if node_name.is_empty() {
             continue;

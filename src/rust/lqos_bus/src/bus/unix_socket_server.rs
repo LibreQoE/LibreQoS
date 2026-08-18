@@ -5,24 +5,247 @@ use crate::{
     BUS_SOCKET_PATH, BusReply, BusRequest, BusResponse,
     bus::client::{MAGIC_NUMBER, MAGIC_RESPONSE},
 };
-use std::{ffi::CString, fs::remove_file};
+use std::{
+    collections::BTreeMap,
+    ffi::CString,
+    fmt::Write,
+    fs::remove_file,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixListener,
+    sync::{OwnedSemaphorePermit, Semaphore},
+    task::spawn_blocking,
+    time::timeout,
 };
 use tracing::{debug, error, info, warn};
 
 use super::BUS_SOCKET_DIRECTORY;
 use super::protocol::{decode_session_cbor, encode_reply_cbor, read_frame, write_frame};
 
+const BUS_HANDLER_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_CONCURRENT_BUS_HANDLERS: usize = 16;
+
+#[derive(Clone)]
+struct BusHandlerLimiter {
+    permits: std::sync::Arc<Semaphore>,
+    limit: usize,
+}
+
+impl BusHandlerLimiter {
+    fn new(limit: usize) -> Self {
+        Self {
+            permits: std::sync::Arc::new(Semaphore::new(limit)),
+            limit,
+        }
+    }
+
+    fn try_acquire(&self) -> Option<OwnedSemaphorePermit> {
+        self.permits.clone().try_acquire_owned().ok()
+    }
+
+    fn active_handlers(&self) -> usize {
+        self.limit.saturating_sub(self.permits.available_permits())
+    }
+}
+
 fn dropped_reply_response_count(reply: &BusReply) -> usize {
     reply.responses.len()
 }
 
+fn timeout_reply(request_count: usize) -> BusReply {
+    BusReply {
+        responses: (0..request_count)
+            .map(|_| BusResponse::Fail("Bus request handler timed out".to_string()))
+            .collect(),
+    }
+}
+
+fn busy_reply(request_count: usize) -> BusReply {
+    BusReply {
+        responses: (0..request_count)
+            .map(|_| BusResponse::Fail("Bus request handler busy".to_string()))
+            .collect(),
+    }
+}
+
+fn request_kind_summary(request_kinds: &[&'static str]) -> String {
+    if request_kinds.is_empty() {
+        return "<none>".to_string();
+    }
+
+    let mut counts = BTreeMap::new();
+    for kind in request_kinds {
+        *counts.entry(*kind).or_insert(0usize) += 1;
+    }
+
+    let mut summary = String::new();
+    for (idx, (kind, count)) in counts.into_iter().enumerate() {
+        if idx > 0 {
+            summary.push_str(", ");
+        }
+        let _ = write!(summary, "{kind}={count}");
+    }
+    summary
+}
+
+async fn handle_requests_with_deadline(
+    handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>),
+    requests: Vec<BusRequest>,
+    request_source: &'static str,
+    limiter: &BusHandlerLimiter,
+) -> BusReply {
+    handle_requests_with_limiter_for_duration(
+        handle_bus_requests,
+        requests,
+        request_source,
+        BUS_HANDLER_TIMEOUT,
+        limiter,
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn handle_requests_with_deadline_for_duration(
+    handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>),
+    requests: Vec<BusRequest>,
+    request_source: &'static str,
+    timeout_duration: Duration,
+) -> BusReply {
+    let limiter = BusHandlerLimiter::new(MAX_CONCURRENT_BUS_HANDLERS);
+    handle_requests_with_limiter_for_duration(
+        handle_bus_requests,
+        requests,
+        request_source,
+        timeout_duration,
+        &limiter,
+    )
+    .await
+}
+
+async fn handle_requests_with_limiter_for_duration(
+    handle_bus_requests: fn(&[BusRequest], &mut Vec<BusResponse>),
+    requests: Vec<BusRequest>,
+    request_source: &'static str,
+    timeout_duration: Duration,
+    limiter: &BusHandlerLimiter,
+) -> BusReply {
+    let request_count = requests.len();
+    let request_kinds = requests.iter().map(BusRequest::kind).collect::<Vec<_>>();
+    debug!(
+        source = request_source,
+        request_count,
+        request_kinds = %request_kind_summary(&request_kinds),
+        "Handling bus request"
+    );
+    let can_fail_fast = requests.iter().all(BusRequest::can_fail_fast_on_timeout);
+    let Some(permit) = limiter.try_acquire() else {
+        warn!(
+            source = request_source,
+            request_count,
+            request_kinds = %request_kind_summary(&request_kinds),
+            active_handlers = limiter.active_handlers(),
+            handler_limit = limiter.limit,
+            "Bus request handler capacity exhausted"
+        );
+        return busy_reply(request_count);
+    };
+    let start = Instant::now();
+    let mut handler = spawn_blocking(move || {
+        let _permit = permit;
+        let mut response = BusReply {
+            responses: Vec::with_capacity(request_count),
+        };
+        handle_bus_requests(&requests, &mut response.responses);
+        response
+    });
+
+    if can_fail_fast {
+        return match timeout(timeout_duration, handler).await {
+            Ok(result) => handle_bus_result(
+                result,
+                request_source,
+                request_count,
+                &request_kinds,
+                "Bus request handler task failed",
+            ),
+            Err(_) => {
+                warn!(
+                    source = request_source,
+                    request_count,
+                    request_kinds = %request_kind_summary(&request_kinds),
+                    elapsed_ms = start.elapsed().as_millis(),
+                    timeout_ms = timeout_duration.as_millis(),
+                    "Bus request handler timed out"
+                );
+                timeout_reply(request_count)
+            }
+        };
+    }
+
+    tokio::select! {
+        result = &mut handler => {
+            handle_bus_result(
+                result,
+                request_source,
+                request_count,
+                &request_kinds,
+                "Side-effecting bus request handler task failed",
+            )
+        }
+        _ = tokio::time::sleep(timeout_duration) => {
+            warn!(
+                source = request_source,
+                request_count,
+                request_kinds = %request_kind_summary(&request_kinds),
+                elapsed_ms = start.elapsed().as_millis(),
+                timeout_ms = timeout_duration.as_millis(),
+                "Side-effecting bus request handler exceeded deadline; waiting for completion"
+            );
+            handle_bus_result(
+                handler.await,
+                request_source,
+                request_count,
+                &request_kinds,
+                "Side-effecting bus request handler task failed after deadline",
+            )
+        }
+    }
+}
+
+fn handle_bus_result(
+    result: Result<BusReply, tokio::task::JoinError>,
+    request_source: &'static str,
+    request_count: usize,
+    request_kinds: &[&'static str],
+    failure_message: &'static str,
+) -> BusReply {
+    match result {
+        Ok(response) => response,
+        Err(err) => {
+            warn!(
+                source = request_source,
+                request_count,
+                request_kinds = %request_kind_summary(request_kinds),
+                error = %err,
+                "{failure_message}"
+            );
+            BusReply {
+                responses: (0..request_count)
+                    .map(|_| BusResponse::Fail("Bus request handler failed".to_string()))
+                    .collect(),
+            }
+        }
+    }
+}
+
 /// Implements a Tokio-friendly server using Unix Sockets and the bus protocol.
 /// Requests are handled and then forwarded to the handler.
-pub struct UnixSocketServer {}
+pub struct UnixSocketServer {
+    handler_limiter: BusHandlerLimiter,
+}
 
 impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
@@ -31,7 +254,9 @@ impl UnixSocketServer {
         Self::delete_local_socket()?;
         Self::check_directory()?;
         Self::path_permissions()?;
-        Ok(Self {})
+        Ok(Self {
+            handler_limiter: BusHandlerLimiter::new(MAX_CONCURRENT_BUS_HANDLERS),
+        })
     }
 
     /// We can't guaranty that Drop will be called on a process exit
@@ -113,8 +338,12 @@ impl UnixSocketServer {
               ret = bus_rx.recv() => {
                 // We received a channel-based message
                 if let Some((reply_channel, msg)) = ret {
-                  let mut response = BusReply { responses: Vec::with_capacity(8) };
-                  handle_bus_requests(&[msg], &mut response.responses);
+                  let response = handle_requests_with_deadline(
+                      handle_bus_requests,
+                      vec![msg],
+                      "internal_channel",
+                      &self.handler_limiter,
+                  ).await;
                   if let Err(reply) = reply_channel.send(response) {
                       warn!(
                           dropped_response_count = dropped_reply_response_count(&reply),
@@ -132,6 +361,7 @@ impl UnixSocketServer {
                     }
                     return Err(UnixSocketServerError::ListenFail);
                 };
+                let handler_limiter = self.handler_limiter.clone();
                 tokio::spawn(async move {
                     // Listen for the magic number
                     let mut magic_buf = [0; 4];
@@ -179,11 +409,14 @@ impl UnixSocketServer {
                             warn!("Invalid data on local socket");
                             break;
                         };
-                        debug!("Received request: {:?}", request);
-
                         // Handle the request and build the response
-                        let mut response = BusReply { responses: Vec::with_capacity(8) };
-                        handle_bus_requests(&request.requests, &mut response.responses);
+                        let response = handle_requests_with_deadline(
+                            handle_bus_requests,
+                            request.requests,
+                            "unix_socket",
+                            &handler_limiter,
+                        )
+                        .await;
 
                         // Encode the response
                         let Ok(encoded_response) = encode_reply_cbor(&response) else {
@@ -236,8 +469,59 @@ pub enum UnixSocketServerError {
 
 #[cfg(test)]
 mod tests {
-    use super::dropped_reply_response_count;
-    use crate::{BusReply, BusResponse};
+    use super::{
+        BusHandlerLimiter, MAX_CONCURRENT_BUS_HANDLERS, dropped_reply_response_count,
+        handle_requests_with_deadline_for_duration, handle_requests_with_limiter_for_duration,
+        request_kind_summary,
+    };
+    use crate::{BusReply, BusRequest, BusResponse};
+    use std::sync::{
+        Barrier, OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
+
+    static TIMEOUT_HANDLER_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
+    static BURST_HANDLER_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
+    static BURST_ACTIVE_HANDLERS: AtomicUsize = AtomicUsize::new(0);
+    static BURST_MAX_ACTIVE_HANDLERS: AtomicUsize = AtomicUsize::new(0);
+
+    fn timeout_handler_started() -> &'static Barrier {
+        static BARRIER: OnceLock<Barrier> = OnceLock::new();
+        BARRIER.get_or_init(|| Barrier::new(2))
+    }
+
+    fn timeout_handler_release() -> &'static Barrier {
+        static BARRIER: OnceLock<Barrier> = OnceLock::new();
+        BARRIER.get_or_init(|| Barrier::new(2))
+    }
+
+    fn burst_handlers_started() -> &'static Barrier {
+        static BARRIER: OnceLock<Barrier> = OnceLock::new();
+        BARRIER.get_or_init(|| Barrier::new(MAX_CONCURRENT_BUS_HANDLERS + 1))
+    }
+
+    fn burst_handlers_release() -> &'static Barrier {
+        static BARRIER: OnceLock<Barrier> = OnceLock::new();
+        BARRIER.get_or_init(|| Barrier::new(MAX_CONCURRENT_BUS_HANDLERS + 1))
+    }
+
+    fn coordinated_timeout_handler(_requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+        TIMEOUT_HANDLER_INVOCATIONS.fetch_add(1, Ordering::SeqCst);
+        timeout_handler_started().wait();
+        timeout_handler_release().wait();
+        responses.push(BusResponse::Ack);
+    }
+
+    fn coordinated_burst_handler(_requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+        BURST_HANDLER_INVOCATIONS.fetch_add(1, Ordering::SeqCst);
+        let active = BURST_ACTIVE_HANDLERS.fetch_add(1, Ordering::SeqCst) + 1;
+        BURST_MAX_ACTIVE_HANDLERS.fetch_max(active, Ordering::SeqCst);
+        burst_handlers_started().wait();
+        burst_handlers_release().wait();
+        BURST_ACTIVE_HANDLERS.fetch_sub(1, Ordering::SeqCst);
+        responses.push(BusResponse::Ack);
+    }
 
     #[test]
     fn dropped_reply_summary_only_counts_responses() {
@@ -246,5 +530,226 @@ mod tests {
         };
 
         assert_eq!(dropped_reply_response_count(&reply), 3);
+    }
+
+    #[test]
+    fn request_kind_summary_counts_by_request_type() {
+        assert_eq!(
+            request_kind_summary(&["Ping", "GetNetworkMap", "Ping"]),
+            "GetNetworkMap=1, Ping=2"
+        );
+    }
+
+    #[tokio::test]
+    async fn request_handler_success_returns_handler_responses_in_order() {
+        fn success_handler(requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+            for request in requests {
+                responses.push(BusResponse::Fail(format!("handled {}", request.kind())));
+            }
+        }
+
+        let response = handle_requests_with_deadline_for_duration(
+            success_handler,
+            vec![BusRequest::Ping, BusRequest::GetCurrentThroughput],
+            "test",
+            Duration::from_millis(50),
+        )
+        .await;
+
+        assert_eq!(
+            response.responses,
+            vec![
+                BusResponse::Fail("handled Ping".to_string()),
+                BusResponse::Fail("handled GetCurrentThroughput".to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn request_handler_timeout_returns_failure_per_request() {
+        fn slow_handler(_requests: &[BusRequest], _responses: &mut Vec<BusResponse>) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let response = handle_requests_with_deadline_for_duration(
+            slow_handler,
+            vec![BusRequest::Ping, BusRequest::GetCurrentThroughput],
+            "test",
+            Duration::from_millis(5),
+        )
+        .await;
+
+        assert_eq!(
+            response.responses,
+            vec![
+                BusResponse::Fail("Bus request handler timed out".to_string()),
+                BusResponse::Fail("Bus request handler timed out".to_string()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn timed_out_handler_retains_capacity_until_it_finishes() {
+        fn fast_handler(_requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+            responses.push(BusResponse::Ack);
+        }
+
+        TIMEOUT_HANDLER_INVOCATIONS.store(0, Ordering::SeqCst);
+        let limiter = BusHandlerLimiter::new(1);
+        let timed_limiter = limiter.clone();
+        let timed_handler = tokio::spawn(async move {
+            handle_requests_with_limiter_for_duration(
+                coordinated_timeout_handler,
+                vec![BusRequest::Ping],
+                "test",
+                Duration::from_millis(10),
+                &timed_limiter,
+            )
+            .await
+        });
+        tokio::task::spawn_blocking(|| timeout_handler_started().wait())
+            .await
+            .expect("test coordinator should join");
+        let timed_out = timed_handler.await.expect("timed handler should join");
+        assert_eq!(
+            timed_out.responses,
+            vec![BusResponse::Fail(
+                "Bus request handler timed out".to_string()
+            )]
+        );
+
+        let rejected = handle_requests_with_limiter_for_duration(
+            fast_handler,
+            vec![BusRequest::Ping],
+            "test",
+            Duration::from_millis(5),
+            &limiter,
+        )
+        .await;
+        assert_eq!(
+            rejected.responses,
+            vec![BusResponse::Fail("Bus request handler busy".to_string())]
+        );
+        assert_eq!(TIMEOUT_HANDLER_INVOCATIONS.load(Ordering::SeqCst), 1);
+
+        tokio::task::spawn_blocking(|| timeout_handler_release().wait())
+            .await
+            .expect("test coordinator should join");
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while limiter.active_handlers() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("timed-out handler should eventually release capacity");
+        let recovered = handle_requests_with_limiter_for_duration(
+            fast_handler,
+            vec![BusRequest::Ping],
+            "test",
+            Duration::from_millis(20),
+            &limiter,
+        )
+        .await;
+        assert_eq!(recovered.responses, vec![BusResponse::Ack]);
+    }
+
+    #[tokio::test]
+    async fn bus_handler_limiter_caps_running_handlers_at_configured_limit() {
+        BURST_HANDLER_INVOCATIONS.store(0, Ordering::SeqCst);
+        BURST_ACTIVE_HANDLERS.store(0, Ordering::SeqCst);
+        BURST_MAX_ACTIVE_HANDLERS.store(0, Ordering::SeqCst);
+        let limiter = BusHandlerLimiter::new(MAX_CONCURRENT_BUS_HANDLERS);
+        let mut handlers = Vec::with_capacity(MAX_CONCURRENT_BUS_HANDLERS);
+        for _ in 0..MAX_CONCURRENT_BUS_HANDLERS {
+            let handler_limiter = limiter.clone();
+            handlers.push(tokio::spawn(async move {
+                handle_requests_with_limiter_for_duration(
+                    coordinated_burst_handler,
+                    vec![BusRequest::Ping],
+                    "test",
+                    Duration::from_secs(5),
+                    &handler_limiter,
+                )
+                .await
+            }));
+        }
+
+        tokio::task::spawn_blocking(|| burst_handlers_started().wait())
+            .await
+            .expect("test coordinator should join");
+        assert_eq!(limiter.active_handlers(), MAX_CONCURRENT_BUS_HANDLERS);
+        assert_eq!(
+            BURST_HANDLER_INVOCATIONS.load(Ordering::SeqCst),
+            MAX_CONCURRENT_BUS_HANDLERS
+        );
+
+        let rejected = handle_requests_with_limiter_for_duration(
+            coordinated_burst_handler,
+            vec![BusRequest::Ping],
+            "test",
+            Duration::from_millis(10),
+            &limiter,
+        )
+        .await;
+        assert_eq!(
+            rejected.responses,
+            vec![BusResponse::Fail("Bus request handler busy".to_string())]
+        );
+        assert_eq!(
+            BURST_HANDLER_INVOCATIONS.load(Ordering::SeqCst),
+            MAX_CONCURRENT_BUS_HANDLERS
+        );
+
+        tokio::task::spawn_blocking(|| burst_handlers_release().wait())
+            .await
+            .expect("test coordinator should join");
+        for handler in handlers {
+            let response = handler.await.expect("burst handler should join");
+            assert_eq!(response.responses, vec![BusResponse::Ack]);
+        }
+        assert_eq!(limiter.active_handlers(), 0);
+        assert_eq!(BURST_ACTIVE_HANDLERS.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            BURST_MAX_ACTIVE_HANDLERS.load(Ordering::SeqCst),
+            MAX_CONCURRENT_BUS_HANDLERS
+        );
+    }
+
+    #[tokio::test]
+    async fn side_effecting_request_waits_for_handler_after_deadline() {
+        fn slow_mutating_handler(_requests: &[BusRequest], responses: &mut Vec<BusResponse>) {
+            std::thread::sleep(Duration::from_millis(20));
+            responses.push(BusResponse::Ack);
+        }
+
+        let response = handle_requests_with_deadline_for_duration(
+            slow_mutating_handler,
+            vec![BusRequest::ClearHotCache],
+            "test",
+            Duration::from_millis(5),
+        )
+        .await;
+
+        assert_eq!(response.responses, vec![BusResponse::Ack]);
+    }
+
+    #[tokio::test]
+    async fn request_handler_panic_returns_failure_per_request() {
+        fn panic_handler(_requests: &[BusRequest], _responses: &mut Vec<BusResponse>) {
+            panic!("bus handler test panic");
+        }
+
+        let response = handle_requests_with_deadline_for_duration(
+            panic_handler,
+            vec![BusRequest::Ping],
+            "test",
+            Duration::from_millis(50),
+        )
+        .await;
+
+        assert_eq!(
+            response.responses,
+            vec![BusResponse::Fail("Bus request handler failed".to_string())]
+        );
     }
 }

@@ -1,4 +1,4 @@
-import {clearDashDiv, simpleRow, simpleRowHtml, theading} from "../helpers/builders";
+import {clearDashDiv, simpleRow, simpleRowTrustedHtml, theading} from "../helpers/builders";
 import {scaleNumber, toNumber} from "../lq_js_common/helpers/scaling";
 import {formatRtt} from "../helpers/scaling";
 import {TrimToFit} from "../lq_js_common/helpers/text_utils";
@@ -202,27 +202,27 @@ export class Top10FlowsBytes extends DashletBaseInsight {
                 tr.classList.add("small");
                 tr.appendChild(simpleRow(row.circuit_name || "", true));
                 tr.appendChild(simpleRow(row.protocol));
-                tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_down)));
-                tr.appendChild(simpleRowHtml(scaleNumber(row.bytes_up)));
+                tr.appendChild(simpleRowTrustedHtml(scaleNumber(row.bytes_down)));
+                tr.appendChild(simpleRowTrustedHtml(scaleNumber(row.bytes_up)));
                 if (row.rtt_down === null) {
-                    tr.appendChild(simpleRowHtml("-"));
+                    tr.appendChild(simpleRowTrustedHtml("-"));
                 } else {
-                    tr.appendChild(simpleRowHtml(formatRtt(row.rtt_down)));
+                    tr.appendChild(simpleRowTrustedHtml(formatRtt(row.rtt_down)));
                 }
                 if (row.rtt_up === null) {
-                    tr.appendChild(simpleRowHtml("-"));
+                    tr.appendChild(simpleRowTrustedHtml("-"));
                 } else {
-                    tr.appendChild(simpleRowHtml(formatRtt(row.rtt_up)));
+                    tr.appendChild(simpleRowTrustedHtml(formatRtt(row.rtt_up)));
                 }
                 if (row.rxmit_down === null) {
-                    tr.appendChild(simpleRowHtml("-"));
+                    tr.appendChild(simpleRowTrustedHtml("-"));
                 } else {
-                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit_down)));
+                    tr.appendChild(simpleRowTrustedHtml(formatRetransmit(row.rxmit_down)));
                 }
                 if (row.rxmit_up === null) {
-                    tr.appendChild(simpleRowHtml("-"));
+                    tr.appendChild(simpleRowTrustedHtml("-"));
                 } else {
-                    tr.appendChild(simpleRowHtml(formatRetransmit(row.rxmit_up)));
+                    tr.appendChild(simpleRowTrustedHtml(formatRetransmit(row.rxmit_up)));
                 }
                 const asnCell = document.createElement("td");
                 asnCell.classList.add("lqos-asn-cell");

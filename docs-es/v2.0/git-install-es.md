@@ -20,15 +20,16 @@ Al especificar `libreqos` al final, Git asegurará que el nombre del directorio 
 Es necesario instalar ciertos paquetes mediante `apt`:
 
 ```shell
-sudo apt-get install -y python3-pip clang mold esbuild gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
+sudo apt-get install -y python3-pip python3-venv clang mold esbuild gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
 ```
 
 Posteriormente, debe instalar algunas dependencias de Python:
 
 ```shell
 cd /opt/libreqos
-PIP_BREAK_SYSTEM_PACKAGES=1 pip install -r requirements.txt
-sudo PIP_BREAK_SYSTEM_PACKAGES=1 pip install -r requirements.txt
+sudo python3 -m venv /opt/libreqos/venv
+sudo /opt/libreqos/venv/bin/python -m pip install --upgrade pip
+sudo /opt/libreqos/venv/bin/python -m pip install --upgrade -r requirements.txt
 ```
 
 ## Instalar el entorno de desarrollo de Rust
@@ -94,3 +95,5 @@ sudo systemctl start lqosd lqos_scheduler
 ```
 
 Ahora puede abrir un navegador web en `http://a.b.c.d:9123` (reemplace `a.b.c.d` con la dirección IP de administración de su servidor de shaping) y disfrutar de una vista en tiempo real de su red.
+
+Si quiere que los operadores usen HTTPS en su lugar, inicie sesión y abra `Configuration -> SSL Setup`. Vea [HTTPS opcional con Caddy](https-caddy-es.md).

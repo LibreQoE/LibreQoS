@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "Missing required dependency: node (used only for built-in node_manager contract tests, no node_modules required)." >&2
+  exit 1
+fi
+
+echo "[test-node-manager] Running frontend contract tests..."
+node --test \
+  "${SCRIPT_DIR}/src/helpers/builders.test.mjs" \
+  "${SCRIPT_DIR}/src/circuit_rate_display.test.mjs" \
+  "${SCRIPT_DIR}/src/circuit_packet_capture_dom.test.mjs" \
+  "${SCRIPT_DIR}/src/tree_limit_reason.test.mjs" \
+  "${SCRIPT_DIR}/src/tree_stormguard.test.mjs" \
+  "${SCRIPT_DIR}/src/tree_detail_tabs.test.mjs" \
+  "${SCRIPT_DIR}/src/config/shaped_device_identity.test.mjs" \
+  "${SCRIPT_DIR}/src/config/shaped_device_wire.test.mjs" \
+  "${SCRIPT_DIR}/src/config_radius_accounting_contract.test.mjs" \
+  "${SCRIPT_DIR}/src/config/config_interface_mtu.test.mjs" \
+  "${SCRIPT_DIR}/src/config/local_api_token.test.mjs" \
+  "${SCRIPT_DIR}/src/config/network_mode_storage.test.mjs" \
+  "${SCRIPT_DIR}/src/config/ssl_redirect.test.mjs" \
+  "${SCRIPT_DIR}/src/dashlets/world_map_assets.test.mjs" \
+  "${SCRIPT_DIR}/src/dashlets/world_map_dashlet_state.test.mjs" \
+  "${SCRIPT_DIR}/src/dashlets/world_map_model.test.mjs" \
+  "${SCRIPT_DIR}/src/pubsub/ws.test.mjs"
+
+echo "[test-node-manager] Building bundles..."
+"${SCRIPT_DIR}/esbuild.sh"
+
+echo "[test-node-manager] Verifying node_manager build contract..."
+"${SCRIPT_DIR}/test-build-contract.sh"

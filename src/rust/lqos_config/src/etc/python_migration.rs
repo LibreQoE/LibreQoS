@@ -77,8 +77,6 @@ pub struct PythonMigration {
     pub influx_dbtoken: String,
     #[serde(rename = "circuitNameUseAddress")]
     pub circuit_name_use_address: bool,
-    #[serde(rename = "overwriteNetworkJSONalways")]
-    pub overwrite_network_jsonalways: bool,
     #[serde(rename = "ignoreSubnets")]
     pub ignore_subnets: Vec<String>,
     #[serde(rename = "allowedSubnets")]

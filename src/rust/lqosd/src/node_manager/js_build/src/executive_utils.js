@@ -1,16 +1,9 @@
+import {listenOnceMatchingWithTimeout} from "./pubsub/listeners";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
 const DEFAULT_EXECUTIVE_REFRESH_MS = 5000;
 let executiveRequestCounter = 0;
-
-const listenOnce = (eventName, handler) => {
-    const wrapped = (msg) => {
-        wsClient.off(eventName, wrapped);
-        handler(msg);
-    };
-    wsClient.on(eventName, wrapped);
-};
 
 function normalizeEntityKinds(entityKinds) {
     return [...new Set((entityKinds || []).map((kind) => String(kind)))].sort();
@@ -178,7 +171,7 @@ export function getNodeIdMap() {
             siteIdMap = map;
             resolve(map);
         };
-        listenOnce("NetworkTreeLite", (msg) => {
+        listenOnceMatchingWithTimeout(wsClient, "NetworkTreeLite", 5000, () => true, (msg) => {
             const data = msg && msg.data ? msg.data : [];
             const map = new Map();
             (data || []).forEach((entry) => {
@@ -190,11 +183,10 @@ export function getNodeIdMap() {
                 }
             });
             resolveOnce(map);
+        }, () => {
+            resolveOnce(new Map());
         });
         wsClient.send({ NetworkTreeLite: {} });
-        setTimeout(() => {
-            resolveOnce(new Map());
-        }, 5000);
     });
     return siteIdMapPromise;
 }

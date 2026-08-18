@@ -4,7 +4,7 @@ import csv
 import io
 import json
 import chardet
-from LibreQoS import refreshShapers, refreshShapersUpdateOnly
+from LibreQoS import RefreshFailure, ValidationFailure, refreshShapers, refreshShapersUpdateOnly
 import subprocess
 import sys
 import tempfile
@@ -12,20 +12,135 @@ from io import StringIO
 from liblqos_python import automatic_import_uisp, automatic_import_splynx, queue_refresh_interval_mins, \
     automatic_import_powercode, automatic_import_sonar, influx_db_enabled, get_libreqos_directory, \
     blackboard_finish, blackboard_submit, automatic_import_wispgate, enable_insight_topology, insight_topology_role, \
-    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive, scheduler_error, \
-    overrides_persistent_devices_materialized, overrides_circuit_adjustments_materialized, \
-    overrides_network_adjustments_materialized, \
-    scheduler_output, wait_for_bus_ready
+    automatic_import_netzur, automatic_import_visp, calculate_shaping_runtime_hash, efficiency_core_ids, scheduler_alive as _scheduler_alive_native, scheduler_error as _scheduler_error_native, \
+    calculate_topology_source_generation, calculate_shaping_inputs_generation, calculate_effective_network_generation, topology_import_ingress_enabled, \
+    scheduler_progress as _scheduler_progress_native, overrides_network_adjustments_materialized, \
+    overrides_materialized, \
+    scheduler_output as _scheduler_output_native, wait_for_bus_ready
 
 from apscheduler.schedulers.background import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 import os.path
 import os
 
+try:
+    from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
+except Exception:
+    _get_state_dir_native = None
+
 ads = BlockingScheduler(executors={'default': ThreadPoolExecutor(1)})
 shaping_runtime_hash = 0
 INTEGRATION_FAILURE_PREVIEW_LINES = 30
 INTEGRATION_FAILURE_PREVIEW_CHARS = 4000
+TOPOLOGY_RUNTIME_REFRESH_SECONDS = 3
+TOPOLOGY_RUNTIME_REFRESH_PHASE_WARN_SECONDS = 1.0
+STARTUP_TOPOLOGY_RUNTIME_MAX_WAIT_SECONDS = 120
+PARTIAL_TOPOLOGY_RUNTIME_MAX_WAIT_SECONDS = 120
+SCHEDULER_STARTUP_STEP_COUNT = 5
+SCHEDULER_REFRESH_STEP_COUNT = 4
+OVERRIDE_SECTION_READ_ATTEMPTS = 5
+OVERRIDE_SECTION_READ_RETRY_SECONDS = 0.25
+OVERRIDE_LOCK_ERROR_MARKERS = (
+    "lqos_overrides_locked",
+    "overrides files are locked by another process",
+    "locked by another process",
+)
+scheduler_status_bus_enabled = True
+startup_topology_runtime_pending = False
+startup_topology_runtime_generation = None
+startup_topology_runtime_started_monotonic = None
+startup_topology_runtime_last_report_state = None
+partial_topology_runtime_pending = False
+partial_topology_runtime_generation = None
+partial_topology_runtime_started_monotonic = None
+partial_topology_runtime_last_report_state = None
+last_integration_failure_message = ""
+
+
+class RequiredOverrideReadError(RuntimeError):
+    """Raised when scheduler reloads cannot safely materialize operator overrides."""
+
+
+def mark_shaping_runtime_hash_applied(applied_hash):
+    """
+    Record the runtime payload that a completed shaper refresh targeted.
+
+    If topology runtime publishes a newer payload while refreshShapers() is
+    running, the next topology tick must still see that newer payload as
+    unapplied and run another refresh.
+    """
+    global shaping_runtime_hash
+    shaping_runtime_hash = applied_hash
+
+
+def configure_scheduler_stdio():
+    """
+    Enable line-buffered scheduler logs when running under systemd.
+
+    Side effects: reconfigures `sys.stdout` and `sys.stderr` when the active
+    stream supports `reconfigure()`. This keeps periodic scheduler messages from
+    sitting in Python's block buffer for hours before journald sees them.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not callable(reconfigure):
+            continue
+        try:
+            reconfigure(line_buffering=True, write_through=True)
+        except Exception as exc:
+            print(
+                f"Warning: unable to enable line-buffered scheduler {stream_name}: {exc}",
+                file=sys.stderr,
+            )
+
+
+def get_state_directory():
+    if _get_state_dir_native is not None:
+        return _get_state_dir_native()
+    base_dir = get_libreqos_directory()
+    if os.path.basename(base_dir.rstrip("/")) == "src":
+        parent = os.path.dirname(base_dir.rstrip("/"))
+        if parent:
+            return os.path.join(parent, "state")
+    return os.path.join(base_dir, "state")
+
+
+def get_state_path(category: str, filename: str) -> str:
+    return os.path.join(get_state_directory(), category, filename)
+
+
+def get_runtime_state_path(category: str, filename: str) -> str:
+    return get_state_path(category, filename)
+
+
+def set_scheduler_status_bus_enabled(enabled: bool):
+    global scheduler_status_bus_enabled
+    scheduler_status_bus_enabled = bool(enabled)
+
+
+def scheduler_alive():
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_alive_native()
+
+
+def scheduler_error(message: str):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_error_native(message)
+
+
+def scheduler_output(message: str):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_output_native(message)
+
+
+def scheduler_progress(active: bool, phase: str, phase_label: str, step_index: int, step_count: int, percent: int):
+    if not scheduler_status_bus_enabled:
+        return False
+    return _scheduler_progress_native(active, phase, phase_label, step_index, step_count, percent)
 
 
 def clear_scheduler_error():
@@ -36,6 +151,100 @@ def clear_scheduler_error():
 def clear_scheduler_output():
     """Clear the scheduler output shown in the Web UI."""
     scheduler_output("")
+
+
+def remember_integration_failure(message: str):
+    global last_integration_failure_message
+    last_integration_failure_message = str(message or "").strip()
+
+
+def clear_integration_failure():
+    global last_integration_failure_message
+    last_integration_failure_message = ""
+
+
+def clear_scheduler_error_unless_integration_failed():
+    if not last_integration_failure_message:
+        clear_scheduler_error()
+
+
+def publish_ready_progress(active: bool, phase: str, phase_label: str, step_index: int, step_count: int, *, percent=None):
+    publish_scheduler_progress(
+        active,
+        phase,
+        phase_label,
+        step_index,
+        step_count,
+        percent=percent,
+    )
+    if last_integration_failure_message:
+        scheduler_error(
+            "Scheduler ready using last-known-good topology; latest integration import failed.\n"
+            + last_integration_failure_message
+        )
+
+
+def _scheduler_progress_percent(step_index: int, step_count: int, *, active: bool) -> int:
+    if step_count <= 0:
+        return 0
+    bounded_step = max(1, min(int(step_index), int(step_count)))
+    completed_steps = bounded_step - 1 if active else bounded_step
+    return max(0, min(100, int(round((completed_steps / step_count) * 100))))
+
+
+def publish_scheduler_progress(active: bool, phase: str, phase_label: str, step_index: int, step_count: int, *, percent=None):
+    try:
+        resolved_percent = _scheduler_progress_percent(step_index, step_count, active=active) if percent is None else int(percent)
+        resolved_percent = max(0, min(100, resolved_percent))
+        scheduler_progress(
+            bool(active),
+            str(phase),
+            str(phase_label),
+            int(step_index),
+            int(step_count),
+            resolved_percent,
+        )
+    except Exception as e:
+        print(f"Failed to publish scheduler progress: {e}")
+
+
+def report_scheduler_runtime_failure(context: str, exc: Exception, *, startup: bool = False):
+    message = f"{context}: {exc}"
+    print(message)
+    scheduler_error(message)
+    scheduler_output(message)
+    if startup:
+        publish_scheduler_progress(
+            False,
+            "degraded",
+            "Scheduler running with topology/runtime error",
+            SCHEDULER_STARTUP_STEP_COUNT,
+            SCHEDULER_STARTUP_STEP_COUNT,
+            percent=100,
+        )
+
+
+def report_scheduler_validation_failure(
+    context: str,
+    exc: Exception,
+    *,
+    startup: bool = False,
+    step_count: int = SCHEDULER_REFRESH_STEP_COUNT,
+):
+    message = f"{context}: {exc}"
+    print(message)
+    scheduler_error(message)
+    scheduler_output(message)
+    publish_scheduler_progress(
+        False,
+        "validation_failed",
+        "Scheduler validation failed",
+        step_count,
+        step_count,
+        percent=100,
+    )
+    if startup:
+        return
 
 
 def _integration_output_lines(output):
@@ -89,6 +298,7 @@ def _write_integration_output_artifact(label, output):
 def _publish_integration_result(label, result):
     output = ((result.stdout or "") + (result.stderr or "")).replace("\r\n", "\n").strip()
     if result.returncode == 0:
+        clear_integration_failure()
         line_count = len(_integration_output_lines(output))
         summary = (
             f"{label} completed successfully."
@@ -111,6 +321,7 @@ def _publish_integration_result(label, result):
     if artifact is not None:
         message += f"\nFull output saved to {artifact}"
     print(message)
+    remember_integration_failure(message)
     scheduler_error(message)
 
 
@@ -232,11 +443,29 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
     except Exception as e:
         err = f"Failed to invoke integration {label or (module_name + '.' + func_name)}: {e}"
         print(err)
+        remember_integration_failure(err)
         scheduler_error(err)
 
-def importFromCRM():
+def importFromCRM(
+    *,
+    integration_phase="running_integration",
+    integration_label="Running integration sync",
+    integration_step=2,
+    progress_step_count=SCHEDULER_STARTUP_STEP_COUNT,
+    overrides_phase="applying_overrides",
+    overrides_label="Applying overrides",
+    overrides_step=3,
+):
+    clear_integration_failure()
     clear_scheduler_error()
     clear_scheduler_output()
+    publish_scheduler_progress(
+        True,
+        integration_phase,
+        integration_label,
+        integration_step,
+        progress_step_count,
+    )
     # CRM Hooks
     if automatic_import_uisp():
         try:
@@ -253,6 +482,7 @@ def importFromCRM():
         except Exception as e:
             error_msg = f"Failed to run UISP integration: {str(e)}"
             print(error_msg)
+            remember_integration_failure(error_msg)
             scheduler_error(error_msg)
     elif automatic_import_splynx():
         run_python_integration("integrationSplynx", "importFromSplynx", label="Splynx")
@@ -278,10 +508,28 @@ def importFromCRM():
             scheduler_error(msg)
     # Handle lqos_overrides
     try:
+        publish_scheduler_progress(
+            True,
+            overrides_phase,
+            overrides_label,
+            overrides_step,
+            progress_step_count,
+        )
         apply_lqos_overrides()
     except Exception as e:
-        scheduler_error(f"Failed to apply lqos_overrides: {e}")
-        print(f"Failed to apply lqos_overrides: {e}")
+        message = f"Failed to apply lqos_overrides; preserving last-known-good topology: {e}"
+        scheduler_error(message)
+        scheduler_output(message)
+        publish_scheduler_progress(
+            False,
+            "degraded",
+            "Scheduler blocked by override failure",
+            overrides_step,
+            progress_step_count,
+            percent=100,
+        )
+        print(message)
+        raise
 
 
 # --------------- Overrides Handling ---------------
@@ -292,6 +540,8 @@ SHAPED_DEVICES_HEADER = [
     "Device ID",
     "Device Name",
     "Parent Node",
+    "Parent Node ID",
+    "Anchor Node ID",
     "MAC",
     "IPv4",
     "IPv6",
@@ -306,6 +556,66 @@ SHAPED_DEVICES_HEADER_WITH_SQM = [
     *SHAPED_DEVICES_HEADER,
     "sqm",
 ]
+
+
+def normalize_shaped_devices_header(header_value):
+    return ''.join(ch for ch in str(header_value).lower() if ch.isalnum())
+
+
+def shaped_devices_header_index_map(header):
+    legacy = {
+        'circuit_id': 0,
+        'circuit_name': 1,
+        'device_id': 2,
+        'device_name': 3,
+        'parent_node': 4,
+        'mac': 5,
+        'ipv4': 6,
+        'ipv6': 7,
+        'download_min': 8,
+        'upload_min': 9,
+        'download_max': 10,
+        'upload_max': 11,
+        'comment': 12,
+        'sqm': 13,
+    }
+    aliases = {
+        'circuit_id': {'circuitid', 'circuit_id'},
+        'circuit_name': {'circuitname', 'circuit_name'},
+        'device_id': {'deviceid', 'device_id'},
+        'device_name': {'devicename', 'device_name'},
+        'parent_node': {'parentnode', 'parent_node'},
+        'parent_node_id': {'parentnodeid', 'parent_node_id'},
+        'anchor_node_id': {'anchornodeid', 'anchor_node_id', 'id'},
+        'mac': {'mac'},
+        'ipv4': {'ipv4'},
+        'ipv6': {'ipv6'},
+        'download_min': {'downloadminmbps', 'downloadmin', 'download_min_mbps'},
+        'upload_min': {'uploadminmbps', 'uploadmin', 'upload_min_mbps'},
+        'download_max': {'downloadmaxmbps', 'downloadmax', 'download_max_mbps'},
+        'upload_max': {'uploadmaxmbps', 'uploadmax', 'upload_max_mbps'},
+        'comment': {'comment'},
+        'sqm': {'sqm'},
+    }
+    layout = dict(legacy)
+    layout['parent_node_id'] = None
+    layout['anchor_node_id'] = None
+    for idx, name in enumerate(header or []):
+        normalized = normalize_shaped_devices_header(name)
+        for field, names in aliases.items():
+            if normalized in names:
+                layout[field] = idx
+                break
+    return layout
+
+
+def set_row_value_by_header(row, header_map, field, value):
+    index = header_map.get(field)
+    if index is None:
+        return
+    while len(row) <= index:
+        row.append('')
+    row[index] = value
 
 
 def shaped_devices_csv_path() -> str:
@@ -352,31 +662,34 @@ def read_shaped_devices_csv(path: str):
         return header, data_rows
 
 
-def override_devices_to_rows(devices, include_sqm=False):
+def override_devices_to_rows(devices, header, include_sqm=False):
     """Convert override device dicts to CSV rows, preserving the existing CSV shape by default."""
     rows = []
+    header_map = shaped_devices_header_index_map(header)
+    row_len = max(len(header), len(SHAPED_DEVICES_HEADER_WITH_SQM if include_sqm else SHAPED_DEVICES_HEADER))
     for d in devices:
         ipv4s = d.get('ipv4s', [])
         ipv6s = d.get('ipv6s', [])
         sqm = d.get('sqm', '') or d.get('sqm_override', '')
         sqm = sqm or ""
-        row = [
-            d.get('circuitID', ''),
-            d.get('circuitName', ''),
-            d.get('deviceID', ''),
-            d.get('deviceName', ''),
-            d.get('ParentNode', ''),
-            d.get('mac', ''),
-            ','.join(ipv4s),
-            ','.join(ipv6s),
-            str(d.get('minDownload', '')),
-            str(d.get('minUpload', '')),
-            str(d.get('maxDownload', '')),
-            str(d.get('maxUpload', '')),
-            d.get('comment', ''),
-        ]
+        row = [''] * row_len
+        set_row_value_by_header(row, header_map, 'circuit_id', d.get('circuitID', ''))
+        set_row_value_by_header(row, header_map, 'circuit_name', d.get('circuitName', ''))
+        set_row_value_by_header(row, header_map, 'device_id', d.get('deviceID', ''))
+        set_row_value_by_header(row, header_map, 'device_name', d.get('deviceName', ''))
+        set_row_value_by_header(row, header_map, 'parent_node', d.get('ParentNode', ''))
+        set_row_value_by_header(row, header_map, 'parent_node_id', d.get('ParentNodeID', ''))
+        set_row_value_by_header(row, header_map, 'anchor_node_id', d.get('AnchorNodeID', ''))
+        set_row_value_by_header(row, header_map, 'mac', d.get('mac', ''))
+        set_row_value_by_header(row, header_map, 'ipv4', ','.join(ipv4s))
+        set_row_value_by_header(row, header_map, 'ipv6', ','.join(ipv6s))
+        set_row_value_by_header(row, header_map, 'download_min', str(d.get('minDownload', '')))
+        set_row_value_by_header(row, header_map, 'upload_min', str(d.get('minUpload', '')))
+        set_row_value_by_header(row, header_map, 'download_max', str(d.get('maxDownload', '')))
+        set_row_value_by_header(row, header_map, 'upload_max', str(d.get('maxUpload', '')))
+        set_row_value_by_header(row, header_map, 'comment', d.get('comment', ''))
         if include_sqm:
-            row.append(str(sqm))
+            set_row_value_by_header(row, header_map, 'sqm', str(sqm))
         rows.append(row)
     return rows
 
@@ -410,7 +723,9 @@ def write_shaped_devices_csv(path: str, header, rows):
 
 
 def header_has_sqm(header):
-    return len(header) > 13 and header[13].strip().lower() == "sqm"
+    return shaped_devices_header_index_map(header).get('sqm') is not None and any(
+        normalize_shaped_devices_header(value) == 'sqm' for value in (header or [])
+    )
 
 
 def operator_requires_sqm_column(devices, adjustments):
@@ -423,114 +738,126 @@ def operator_requires_sqm_column(devices, adjustments):
 
 
 def apply_lqos_overrides():
-    """Load ShapedDevices.csv, apply persistent devices and circuit adjustments, and save back."""
-    path = shaped_devices_csv_path()
-    header, rows = read_shaped_devices_csv(path)
+    """Apply overrides to source topology files without mutating integration-owned shaping CSV."""
+    materialized = read_required_override_section(
+        "materialized overrides",
+        overrides_materialized,
+    )
+    persistent_devices = materialized.get("persistent_devices", [])
+    circuit_adjustments = materialized.get("circuit_adjustments", [])
+    network_adjustments = materialized.get("network_adjustments", [])
 
-    # 1) Persistent devices: replace by device_id or append
-    try:
-        extra = overrides_persistent_devices_materialized()
-    except Exception as e:
-        # Persistent device overrides are optional. Keep the scheduler healthy
-        # and continue applying the rest of the override sources if this loader
-        # is unavailable or temporarily broken.
-        print(f"Skipping persistent device overrides: {e}")
-        extra = []
+    if not topology_import_ingress_enabled():
+        path = shaped_devices_csv_path()
+        header, rows = read_shaped_devices_csv(path)
 
-    # 2) Circuit adjustments: speed changes, removals, reparenting
-    try:
-        adjustments = overrides_circuit_adjustments_materialized()
-    except Exception as e:
-        print(f"Failed to read circuit adjustments: {e}")
-        adjustments = []
+        # 1) Persistent devices: replace by device_id or append
+        extra = persistent_devices
 
-    need_sqm_column = header_has_sqm(header) or operator_requires_sqm_column(extra, adjustments)
-    if need_sqm_column and not header_has_sqm(header):
-        header = list(header) + ["sqm"]
-        for row in rows:
-            if len(row) < len(header):
-                row.extend([""] * (len(header) - len(row)))
+        # 2) Circuit adjustments: speed changes, removals, reparenting
+        adjustments = circuit_adjustments
 
-    override_rows = override_devices_to_rows(extra or [], include_sqm=need_sqm_column)
-    merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
+        need_sqm_column = header_has_sqm(header) or operator_requires_sqm_column(extra, adjustments)
+        if need_sqm_column and not header_has_sqm(header):
+            header = list(header) + ["sqm"]
+            for row in rows:
+                if len(row) < len(header):
+                    row.extend([""] * (len(header) - len(row)))
 
-    def set_if_some(value_opt, current_str):
-        if value_opt is None:
-            return current_str
-        try:
-            return str(float(value_opt))
-        except Exception:
-            return current_str
+        override_rows = override_devices_to_rows(extra or [], header, include_sqm=need_sqm_column)
+        merged_rows, changed = merge_rows_replace_by_device_id(rows, override_rows)
+        header_map = shaped_devices_header_index_map(header)
 
-    def set_row_value(row, index, value):
-        while len(row) <= index:
-            row.append('')
-        row[index] = value
+        def set_if_some(value_opt, current_str):
+            if value_opt is None:
+                return current_str
+            try:
+                return str(float(value_opt))
+            except Exception:
+                return current_str
 
-    if adjustments:
-        for adj in adjustments:
-            t = adj.get('type')
-            if t == 'circuit_adjust_speed':
-                cid = adj.get('circuit_id', '')
-                for r in merged_rows:
-                    if len(r) >= 12 and r[0] == cid:
-                        r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
-                        r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
-                        r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
-                        r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
-                        changed = True
-            elif t == 'device_adjust_speed':
-                did = adj.get('device_id', '')
-                for r in merged_rows:
-                    if len(r) >= 12 and r[2] == did:
-                        r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
-                        r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
-                        r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
-                        r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
-                        changed = True
-            elif t == 'device_adjust_sqm':
-                if not need_sqm_column:
-                    continue
-                did = adj.get('device_id', '')
-                sqm_override = (adj.get('sqm_override') or '').strip()
-                for r in merged_rows:
-                    if len(r) >= 3 and r[2] == did:
-                        current_sqm = r[13] if len(r) > 13 else ''
-                        if current_sqm != sqm_override:
-                            set_row_value(r, 13, sqm_override)
+        def set_row_value(row, index, value):
+            while len(row) <= index:
+                row.append('')
+            row[index] = value
+
+        if adjustments:
+            for adj in adjustments:
+                t = adj.get('type')
+                if t == 'circuit_adjust_speed':
+                    cid = adj.get('circuit_id', '')
+                    for r in merged_rows:
+                        if len(r) >= 12 and r[0] == cid:
+                            r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
+                            r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
+                            r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
+                            r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
                             changed = True
-            elif t == 'remove_circuit':
-                cid = adj.get('circuit_id', '')
-                before = len(merged_rows)
-                merged_rows = [r for r in merged_rows if len(r) < 1 or r[0] != cid]
-                if len(merged_rows) != before:
-                    changed = True
-            elif t == 'remove_device':
-                did = adj.get('device_id', '')
-                before = len(merged_rows)
-                merged_rows = [r for r in merged_rows if len(r) < 3 or r[2] != did]
-                if len(merged_rows) != before:
-                    changed = True
-            elif t == 'reparent_circuit':
-                cid = adj.get('circuit_id', '')
-                parent_node = adj.get('parent_node', '')
-                for r in merged_rows:
-                    if len(r) >= 5 and r[0] == cid:
-                        r[4] = parent_node
+                elif t == 'device_adjust_speed':
+                    did = adj.get('device_id', '')
+                    for r in merged_rows:
+                        if len(r) >= 12 and r[2] == did:
+                            r[8] = set_if_some(adj.get('min_download_bandwidth'), r[8] if len(r) > 8 else '')
+                            r[10] = set_if_some(adj.get('max_download_bandwidth'), r[10] if len(r) > 10 else '')
+                            r[9] = set_if_some(adj.get('min_upload_bandwidth'), r[9] if len(r) > 9 else '')
+                            r[11] = set_if_some(adj.get('max_upload_bandwidth'), r[11] if len(r) > 11 else '')
+                            changed = True
+                elif t == 'device_adjust_sqm':
+                    if not need_sqm_column:
+                        continue
+                    did = adj.get('device_id', '')
+                    sqm_override = (adj.get('sqm_override') or '').strip()
+                    for r in merged_rows:
+                        if len(r) >= 3 and r[2] == did:
+                            current_sqm = r[13] if len(r) > 13 else ''
+                            if current_sqm != sqm_override:
+                                set_row_value(r, 13, sqm_override)
+                                changed = True
+                elif t == 'remove_circuit':
+                    cid = adj.get('circuit_id', '')
+                    before = len(merged_rows)
+                    merged_rows = [r for r in merged_rows if len(r) < 1 or r[0] != cid]
+                    if len(merged_rows) != before:
                         changed = True
+                elif t == 'remove_device':
+                    did = adj.get('device_id', '')
+                    before = len(merged_rows)
+                    merged_rows = [r for r in merged_rows if len(r) < 3 or r[2] != did]
+                    if len(merged_rows) != before:
+                        changed = True
+                elif t == 'reparent_circuit':
+                    cid = adj.get('circuit_id', '')
+                    parent_node = adj.get('parent_node', '')
+                    for r in merged_rows:
+                        circuit_id_idx = header_map.get('circuit_id', 0)
+                        if len(r) > circuit_id_idx and r[circuit_id_idx] == cid:
+                            set_row_value_by_header(r, header_map, 'parent_node', parent_node)
+                            set_row_value_by_header(r, header_map, 'parent_node_id', '')
+                            changed = True
 
-    if changed:
-        final_header = header if header else (SHAPED_DEVICES_HEADER_WITH_SQM if need_sqm_column else SHAPED_DEVICES_HEADER)
-        write_shaped_devices_csv(path, final_header, merged_rows)
-        print("Updated ShapedDevices.csv with overrides")
+        if changed:
+            final_header = header if header else (SHAPED_DEVICES_HEADER_WITH_SQM if need_sqm_column else SHAPED_DEVICES_HEADER)
+            write_shaped_devices_csv(path, final_header, merged_rows)
+            print("Updated ShapedDevices.csv with overrides")
 
-    # 3) Load, adjust, and optionally save network.json
-    nj_path = network_json_path()
-    network = load_network_json(nj_path)
-    net_changed = apply_network_adjustments(network)
-    if net_changed:
-        write_network_json(nj_path, network)
-        print("Updated network.json with overrides")
+    # 3) Load, adjust, and optionally save topology compatibility state
+    adjustments = network_adjustments
+    canonical_path = topology_canonical_state_path()
+    canonical_state = load_topology_canonical_state(canonical_path)
+    if topology_import_ingress_enabled():
+        if canonical_state and apply_network_adjustments_to_canonical_state(canonical_state, adjustments):
+            write_topology_canonical_state(canonical_path, canonical_state)
+            print("Updated topology_canonical_state.json with overrides")
+    else:
+        nj_path = network_json_path()
+        network = load_network_json(nj_path)
+        net_changed = apply_network_adjustments(network, adjustments)
+        if net_changed:
+            write_network_json(nj_path, network)
+            print("Updated network.json with overrides")
+        if canonical_state and apply_network_adjustments_to_canonical_state(canonical_state, adjustments):
+            write_topology_canonical_state(canonical_path, canonical_state)
+            print("Updated topology_canonical_state.json with overrides")
 
 
 # --------------- Network JSON handling ---------------
@@ -554,7 +881,56 @@ def load_network_json(path: str):
             return {}
 
 
-def apply_network_adjustments(network: dict) -> bool:
+def topology_canonical_state_path() -> str:
+    return get_runtime_state_path("topology", "topology_canonical_state.json")
+
+
+def load_topology_canonical_state(path: str):
+    if not os.path.isfile(path):
+        return None
+    with open(path, 'r', encoding='utf-8') as f:
+        try:
+            return json.loads(f.read())
+        except Exception:
+            return None
+
+
+def write_topology_canonical_state(path: str, canonical_state: dict):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(json.dumps(canonical_state, indent=4))
+
+
+def _format_attempt_count(attempts: int) -> str:
+    if attempts == 1:
+        return "1 attempt"
+    return f"{attempts} attempts"
+
+
+def _is_override_lock_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return any(marker in message for marker in OVERRIDE_LOCK_ERROR_MARKERS)
+
+
+def read_required_override_section(section_name: str, reader):
+    attempts = max(1, int(OVERRIDE_SECTION_READ_ATTEMPTS))
+    last_error = None
+    for attempt_index in range(attempts):
+        try:
+            return reader()
+        except Exception as exc:
+            last_error = exc
+            if not _is_override_lock_error(exc):
+                raise
+            if attempt_index + 1 < attempts:
+                time.sleep(OVERRIDE_SECTION_READ_RETRY_SECONDS)
+
+    raise RequiredOverrideReadError(
+        f"failed to read {section_name} after {_format_attempt_count(attempts)}: {last_error}"
+    ) from last_error
+
+
+def apply_network_adjustments(network: dict, adjustments=None) -> bool:
     """Apply network adjustments from overrides to the network JSON structure.
 
     Currently supports: adjust_site_speed (preferring node_id, with legacy
@@ -569,11 +945,11 @@ def apply_network_adjustments(network: dict) -> bool:
     source of truth.
     Returns True if any changes were applied.
     """
-    try:
-        adjustments = overrides_network_adjustments_materialized()
-    except Exception as e:
-        print(f"Failed to read network adjustments: {e}")
-        return False
+    if adjustments is None:
+        adjustments = read_required_override_section(
+            "network adjustments",
+            overrides_network_adjustments_materialized,
+        )
 
     if not adjustments:
         return False
@@ -657,6 +1033,73 @@ def apply_network_adjustments(network: dict) -> bool:
     return net_changed
 
 
+def apply_network_adjustments_to_canonical_state(canonical_state: dict, adjustments) -> bool:
+    if not isinstance(canonical_state, dict):
+        return False
+
+    compatibility_network = canonical_state.get('compatibility_network_json')
+    nodes = canonical_state.get('nodes')
+    if not isinstance(compatibility_network, dict) or not isinstance(nodes, list):
+        return False
+
+    compatibility_changed = apply_network_adjustments(compatibility_network, adjustments)
+
+    def normalize_bandwidth_value(value):
+        numeric = float(value)
+        if numeric.is_integer():
+            return int(numeric)
+        return numeric
+
+    nodes_changed = False
+    for adj in adjustments:
+        adj_type = adj.get('type')
+        if adj_type == 'adjust_site_speed':
+            target_node_id = adj.get('node_id', None)
+            target_name = adj.get('site_name', '')
+            download = adj.get('download_bandwidth_mbps', None)
+            upload = adj.get('upload_bandwidth_mbps', None)
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                matches_target = False
+                if target_node_id:
+                    matches_target = node.get('node_id') == target_node_id
+                elif target_name:
+                    matches_target = node.get('node_name') == target_name
+                if not matches_target:
+                    continue
+                rate_input = node.get('rate_input')
+                if not isinstance(rate_input, dict):
+                    rate_input = {}
+                    node['rate_input'] = rate_input
+                if download is not None:
+                    normalized_download = normalize_bandwidth_value(download)
+                    rate_input['intrinsic_download_mbps'] = normalized_download
+                    rate_input['legacy_imported_download_mbps'] = normalized_download
+                    nodes_changed = True
+                if upload is not None:
+                    normalized_upload = normalize_bandwidth_value(upload)
+                    rate_input['intrinsic_upload_mbps'] = normalized_upload
+                    rate_input['legacy_imported_upload_mbps'] = normalized_upload
+                    nodes_changed = True
+                if download is not None or upload is not None:
+                    rate_input['source'] = 'operator_override'
+        elif adj_type == 'set_node_virtual':
+            target_name = adj.get('node_name', '')
+            virtual_val = adj.get('virtual', None)
+            if not target_name or virtual_val is None:
+                continue
+            normalized_virtual = bool(virtual_val)
+            for node in nodes:
+                if not isinstance(node, dict) or node.get('node_name') != target_name:
+                    continue
+                if bool(node.get('is_virtual', False)) != normalized_virtual:
+                    node['is_virtual'] = normalized_virtual
+                    nodes_changed = True
+
+    return compatibility_changed or nodes_changed
+
+
 def write_network_json(path: str, network: dict):
     with open(path, 'w', encoding='utf-8') as f:
         f.write(json.dumps(network, indent=4))
@@ -664,20 +1107,704 @@ def write_network_json(path: str, network: dict):
 
 def importAndShapeFullReload():
     importFromCRM()
+    publish_scheduler_progress(True, "starting_topology_runtime", "Starting topology runtime", 4, SCHEDULER_STARTUP_STEP_COUNT)
+    if not ensure_topology_runtime_process(wait_for_outputs=True):
+        ready, detail, generation = topology_runtime_readiness_detail()
+        if not ready and _topology_runtime_not_ready_is_transient(detail):
+            _begin_startup_topology_runtime_wait(generation)
+            return False
+        report_topology_runtime_not_ready(
+            "Scheduler startup shaping refresh deferred",
+            phase_label="Scheduler waiting for topology runtime",
+            step_index=4,
+            step_count=SCHEDULER_STARTUP_STEP_COUNT,
+        )
+        return False
+    publish_scheduler_progress(True, "initial_shaping_reload", "Refreshing shaper state", 5, SCHEDULER_STARTUP_STEP_COUNT)
+    refresh_target_hash = calculate_shaping_runtime_hash()
     if not enable_insight_topology():
-        refreshShapers()
+        try:
+            refreshShapers()
+        except Exception as e:
+            if _defer_stale_shaping_inputs_failure(e, startup=True):
+                return False
+            raise
+    mark_shaping_runtime_hash_applied(refresh_target_hash)
+    if shaping_runtime_hash != 0:
+        set_scheduler_status_bus_enabled(True)
+        return True
+    return False
 
 
 def importAndShapePartialReload():
-    global shaping_runtime_hash
-
-    importFromCRM()
+    importFromCRM(
+        integration_phase="partial_integration",
+        integration_label="Running scheduled integration refresh",
+        integration_step=1,
+        progress_step_count=SCHEDULER_REFRESH_STEP_COUNT,
+        overrides_phase="partial_overrides",
+        overrides_label="Applying scheduled overrides",
+        overrides_step=2,
+    )
+    publish_scheduler_progress(True, "partial_topology_runtime", "Refreshing topology runtime", 3, SCHEDULER_REFRESH_STEP_COUNT)
+    if not ensure_topology_runtime_process(wait_for_outputs=True):
+        ready, detail, generation = topology_runtime_readiness_detail()
+        if not ready and _topology_runtime_not_ready_is_transient(detail):
+            _begin_partial_topology_runtime_wait(generation)
+            return
+        report_topology_runtime_not_ready(
+            "Scheduled shaping refresh deferred",
+            phase_label="Scheduler waiting for topology runtime",
+            step_index=3,
+            step_count=SCHEDULER_REFRESH_STEP_COUNT,
+        )
+        return
     # Rebuild when runtime shaping inputs change, including effective adaptive
     # circuit overrides that do not belong in source-of-truth files.
+    publish_scheduler_progress(True, "partial_runtime_hash", "Checking shaping inputs", 4, SCHEDULER_REFRESH_STEP_COUNT)
     new_hash = calculate_shaping_runtime_hash()
     if new_hash != shaping_runtime_hash:
+        publish_scheduler_progress(True, "partial_reload", "Applying incremental shaper refresh", 4, SCHEDULER_REFRESH_STEP_COUNT)
+        try:
+            refreshShapers()
+        except ValidationFailure as e:
+            report_scheduler_validation_failure("Scheduled shaping refresh blocked by validation", e)
+            return
+        except Exception as e:
+            if _defer_stale_shaping_inputs_failure(e, startup=False):
+                return
+            report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
+            return
+        mark_shaping_runtime_hash_applied(new_hash)
+        if shaping_runtime_hash != 0:
+            set_scheduler_status_bus_enabled(True)
+    publish_ready_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
+
+
+def topology_runtime_status_path():
+    return get_runtime_state_path("topology", "topology_runtime_status.json")
+
+
+def _load_topology_runtime_status():
+    path = topology_runtime_status_path()
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        print(f"Failed to read topology runtime status from {path}: {e}")
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def current_topology_source_generation():
+    try:
+        generation = calculate_topology_source_generation()
+    except Exception as e:
+        print(f"Failed to compute topology source generation: {e}")
+        return None
+    if generation is None:
+        return None
+    generation = str(generation).strip()
+    return generation or None
+
+
+def topology_runtime_readiness_detail():
+    current_generation = current_topology_source_generation()
+    if not current_generation:
+        return (
+            False,
+            "Topology runtime source generation is unavailable for current inputs.",
+            None,
+        )
+
+    status = _load_topology_runtime_status()
+    if not isinstance(status, dict):
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    status_generation = str(status.get("source_generation") or "").strip()
+    if status_generation != current_generation:
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    if not bool(status.get("ready")):
+        error = status.get("error")
+        if isinstance(error, str) and error.strip():
+            return (
+                False,
+                f"Topology runtime failed for the current source generation: {error.strip()}",
+                current_generation,
+            )
+        return (
+            False,
+            "Topology runtime is still building outputs for the current source generation.",
+            current_generation,
+        )
+
+    shaping_generation = str(status.get("shaping_generation") or "").strip()
+    if not shaping_generation:
+        return (
+            False,
+            "Topology runtime has not published shaping inputs for the current source generation.",
+            current_generation,
+        )
+
+    shaping_inputs_path = str(status.get("shaping_inputs_path") or "").strip()
+    if not shaping_inputs_path:
+        return (
+            False,
+            "Topology runtime did not publish a shaping inputs path for the current source generation.",
+            current_generation,
+        )
+    if not os.path.isfile(shaping_inputs_path):
+        return (
+            False,
+            f"Topology runtime shaping inputs are not available at {shaping_inputs_path}.",
+            current_generation,
+        )
+
+    effective_generation = str(status.get("effective_generation") or "").strip()
+    effective_network_path = str(status.get("effective_network_path") or "").strip()
+    if not effective_network_path:
+        return (
+            False,
+            "Topology runtime did not publish an effective network path for the current source generation.",
+            current_generation,
+        )
+    if not os.path.isfile(effective_network_path):
+        return (
+            False,
+            f"Topology runtime effective network is not available at {effective_network_path}.",
+            current_generation,
+        )
+    if not effective_generation:
+        return (
+            False,
+            "Topology runtime did not publish an effective network generation for the current source generation.",
+            current_generation,
+        )
+    try:
+        computed_effective_generation = calculate_effective_network_generation(effective_network_path)
+    except Exception as e:
+        return (
+            False,
+            f"Topology runtime effective network generation could not be verified: {e}",
+            current_generation,
+        )
+    if computed_effective_generation is None:
+        return (
+            False,
+            "Topology runtime effective network generation could not be verified.",
+            current_generation,
+        )
+    if str(computed_effective_generation).strip() != effective_generation:
+        return (
+            False,
+            "Topology runtime effective network does not match the published runtime generation.",
+            current_generation,
+        )
+
+    try:
+        computed_shaping_generation = calculate_shaping_inputs_generation(shaping_inputs_path)
+    except Exception as e:
+        return (
+            False,
+            f"Topology runtime shaping inputs generation could not be verified: {e}",
+            current_generation,
+        )
+    if computed_shaping_generation is None:
+        return (
+            False,
+            "Topology runtime shaping inputs generation could not be verified.",
+            current_generation,
+        )
+    if str(computed_shaping_generation).strip() != shaping_generation:
+        return (
+            False,
+            "Topology runtime shaping inputs do not match the published runtime generation.",
+            current_generation,
+        )
+
+    return (True, "", current_generation)
+
+
+def report_topology_runtime_not_ready(
+    context: str,
+    *,
+    phase_label: str,
+    step_index: int,
+    step_count: int,
+):
+    ready, detail, generation = topology_runtime_readiness_detail()
+    if ready:
+        return
+    message = f"{context}: {detail}"
+    if generation:
+        message += f" Generation {generation[:12]}."
+    print(message)
+    if _topology_runtime_not_ready_is_transient(detail):
+        clear_scheduler_error_unless_integration_failed()
+        scheduler_output(message)
+        publish_scheduler_progress(
+            False,
+            "waiting_for_topology_runtime",
+            phase_label,
+            step_index,
+            step_count,
+        )
+        return
+    scheduler_error(message)
+    scheduler_output(message)
+    publish_scheduler_progress(
+        False,
+        "degraded",
+        phase_label,
+        step_count,
+        step_count,
+        percent=100,
+    )
+
+
+def _reset_startup_topology_runtime_wait():
+    global startup_topology_runtime_pending
+    global startup_topology_runtime_generation
+    global startup_topology_runtime_started_monotonic
+    global startup_topology_runtime_last_report_state
+
+    startup_topology_runtime_pending = False
+    startup_topology_runtime_generation = None
+    startup_topology_runtime_started_monotonic = None
+    startup_topology_runtime_last_report_state = None
+
+
+def _reset_partial_topology_runtime_wait():
+    global partial_topology_runtime_pending
+    global partial_topology_runtime_generation
+    global partial_topology_runtime_started_monotonic
+    global partial_topology_runtime_last_report_state
+
+    partial_topology_runtime_pending = False
+    partial_topology_runtime_generation = None
+    partial_topology_runtime_started_monotonic = None
+    partial_topology_runtime_last_report_state = None
+
+
+def _topology_runtime_not_ready_is_transient(detail: str) -> bool:
+    detail_text = str(detail or "").strip()
+    if detail_text.startswith("Topology runtime failed for the current source generation:"):
+        return False
+    return True
+
+
+def _is_transient_stale_shaping_inputs_failure(exc: Exception) -> bool:
+    if not isinstance(exc, RefreshFailure):
+        return False
+    detail = str(exc or "").strip()
+    return detail.startswith("Missing or stale shaping_inputs.json.")
+
+
+def _defer_stale_shaping_inputs_failure(exc: Exception, *, startup: bool) -> bool:
+    if not _is_transient_stale_shaping_inputs_failure(exc):
+        return False
+
+    ready, detail, generation = topology_runtime_readiness_detail()
+    if detail and not _topology_runtime_not_ready_is_transient(detail):
+        return False
+
+    clear_scheduler_error_unless_integration_failed()
+    if startup:
+        _begin_startup_topology_runtime_wait(generation if not ready else current_topology_source_generation())
+    else:
+        _begin_partial_topology_runtime_wait(generation if not ready else current_topology_source_generation())
+    return True
+
+
+def _publish_startup_topology_runtime_wait(generation: str | None):
+    global startup_topology_runtime_last_report_state
+
+    generation_token = str(generation or "").strip() or "unknown"
+    state = ("waiting", generation_token)
+    if startup_topology_runtime_last_report_state == state:
+        return
+    startup_topology_runtime_last_report_state = state
+    if generation_token != "unknown":
+        print(
+            "Scheduler startup waiting for topology runtime outputs for "
+            f"generation {generation_token[:12]}."
+        )
+    else:
+        print("Scheduler startup waiting for topology runtime outputs.")
+    publish_scheduler_progress(
+        True,
+        "waiting_for_topology_runtime",
+        "Waiting for topology runtime",
+        4,
+        SCHEDULER_STARTUP_STEP_COUNT,
+        percent=80,
+    )
+
+
+def _begin_startup_topology_runtime_wait(generation: str | None):
+    global startup_topology_runtime_pending
+    global startup_topology_runtime_generation
+    global startup_topology_runtime_started_monotonic
+    global startup_topology_runtime_last_report_state
+
+    generation_token = str(generation or "").strip() or None
+    now = time.monotonic()
+    if (
+        not startup_topology_runtime_pending
+        or startup_topology_runtime_generation != generation_token
+    ):
+        startup_topology_runtime_pending = True
+        startup_topology_runtime_generation = generation_token
+        startup_topology_runtime_started_monotonic = now
+        startup_topology_runtime_last_report_state = None
+    _publish_startup_topology_runtime_wait(generation_token)
+
+
+def _publish_partial_topology_runtime_wait(generation: str | None):
+    global partial_topology_runtime_last_report_state
+
+    generation_token = str(generation or "").strip() or "unknown"
+    state = ("waiting", generation_token)
+    if partial_topology_runtime_last_report_state == state:
+        return
+    partial_topology_runtime_last_report_state = state
+    if generation_token != "unknown":
+        print(
+            "Scheduled shaping refresh waiting for topology runtime outputs for "
+            f"generation {generation_token[:12]}."
+        )
+    else:
+        print("Scheduled shaping refresh waiting for topology runtime outputs.")
+    publish_scheduler_progress(
+        True,
+        "waiting_for_topology_runtime",
+        "Waiting for topology runtime",
+        3,
+        SCHEDULER_REFRESH_STEP_COUNT,
+        percent=75,
+    )
+
+
+def _begin_partial_topology_runtime_wait(generation: str | None):
+    global partial_topology_runtime_pending
+    global partial_topology_runtime_generation
+    global partial_topology_runtime_started_monotonic
+    global partial_topology_runtime_last_report_state
+
+    generation_token = str(generation or "").strip() or None
+    now = time.monotonic()
+    if (
+        not partial_topology_runtime_pending
+        or partial_topology_runtime_generation != generation_token
+    ):
+        partial_topology_runtime_pending = True
+        partial_topology_runtime_generation = generation_token
+        partial_topology_runtime_started_monotonic = now
+        partial_topology_runtime_last_report_state = None
+    _publish_partial_topology_runtime_wait(generation_token)
+
+
+def _continue_startup_topology_runtime_wait():
+    global shaping_runtime_hash
+    global startup_topology_runtime_generation
+    global startup_topology_runtime_started_monotonic
+    global startup_topology_runtime_last_report_state
+
+    ready, detail, generation = topology_runtime_readiness_detail()
+    generation_token = str(generation or "").strip() or None
+    now = time.monotonic()
+
+    if generation_token != startup_topology_runtime_generation:
+        startup_topology_runtime_generation = generation_token
+        startup_topology_runtime_started_monotonic = now
+        startup_topology_runtime_last_report_state = None
+
+    if ready:
+        publish_scheduler_progress(
+            True,
+            "initial_shaping_reload",
+            "Refreshing shaper state",
+            5,
+            SCHEDULER_STARTUP_STEP_COUNT,
+        )
+        try:
+            refresh_target_hash = calculate_shaping_runtime_hash()
+            if not enable_insight_topology():
+                refreshShapers()
+            mark_shaping_runtime_hash_applied(refresh_target_hash)
+        except ValidationFailure as e:
+            _reset_startup_topology_runtime_wait()
+            report_scheduler_validation_failure(
+                "Scheduler startup shaping refresh blocked by validation",
+                e,
+                startup=True,
+                step_count=SCHEDULER_STARTUP_STEP_COUNT,
+            )
+            shaping_runtime_hash = 0
+            return
+        except Exception as e:
+            if _defer_stale_shaping_inputs_failure(e, startup=True):
+                return
+            _reset_startup_topology_runtime_wait()
+            report_scheduler_runtime_failure(
+                "Scheduler startup shaping refresh failed",
+                e,
+                startup=True,
+            )
+            shaping_runtime_hash = 0
+            return
+
+        _reset_startup_topology_runtime_wait()
+        if shaping_runtime_hash != 0:
+            clear_scheduler_error_unless_integration_failed()
+            publish_ready_progress(
+                False,
+                "ready",
+                "Scheduler ready",
+                SCHEDULER_STARTUP_STEP_COUNT,
+                SCHEDULER_STARTUP_STEP_COUNT,
+                percent=100,
+            )
+            return
+
+        report_scheduler_runtime_failure(
+            "Scheduler startup shaping refresh failed",
+            RuntimeError("Shaping runtime hash was not published after startup refresh."),
+            startup=True,
+        )
+        return
+
+    started = startup_topology_runtime_started_monotonic
+    if started is None:
+        startup_topology_runtime_started_monotonic = now
+        started = now
+    elapsed = max(0.0, now - started)
+
+    if (
+        _topology_runtime_not_ready_is_transient(detail)
+        and elapsed < STARTUP_TOPOLOGY_RUNTIME_MAX_WAIT_SECONDS
+    ):
+        _publish_startup_topology_runtime_wait(generation_token)
+        return
+
+    state = ("degraded", str(detail or "").strip(), generation_token or "")
+    if startup_topology_runtime_last_report_state == state:
+        return
+    startup_topology_runtime_last_report_state = state
+    report_topology_runtime_not_ready(
+        "Scheduler startup shaping refresh deferred",
+        phase_label="Scheduler waiting for topology runtime",
+        step_index=4,
+        step_count=SCHEDULER_STARTUP_STEP_COUNT,
+    )
+
+
+def _continue_partial_topology_runtime_wait():
+    global partial_topology_runtime_generation
+    global partial_topology_runtime_started_monotonic
+    global partial_topology_runtime_last_report_state
+
+    ready, detail, generation = topology_runtime_readiness_detail()
+    generation_token = str(generation or "").strip() or None
+    now = time.monotonic()
+
+    if generation_token != partial_topology_runtime_generation:
+        partial_topology_runtime_generation = generation_token
+        partial_topology_runtime_started_monotonic = now
+        partial_topology_runtime_last_report_state = None
+
+    if ready:
+        publish_scheduler_progress(
+            True,
+            "partial_runtime_hash",
+            "Checking shaping inputs",
+            4,
+            SCHEDULER_REFRESH_STEP_COUNT,
+        )
+        new_hash = calculate_shaping_runtime_hash()
+        if new_hash == 0:
+            _reset_partial_topology_runtime_wait()
+            report_scheduler_runtime_failure(
+                "Scheduled shaping refresh failed",
+                RuntimeError(
+                    "Shaping runtime hash was not published after topology runtime became ready."
+                ),
+            )
+            return
+        if new_hash != shaping_runtime_hash:
+            publish_scheduler_progress(
+                True,
+                "partial_reload",
+                "Applying incremental shaper refresh",
+                4,
+                SCHEDULER_REFRESH_STEP_COUNT,
+            )
+            try:
+                refreshShapers()
+            except ValidationFailure as e:
+                _reset_partial_topology_runtime_wait()
+                report_scheduler_validation_failure(
+                    "Scheduled shaping refresh blocked by validation",
+                    e,
+                )
+                return
+            except Exception as e:
+                if _defer_stale_shaping_inputs_failure(e, startup=False):
+                    return
+                _reset_partial_topology_runtime_wait()
+                report_scheduler_runtime_failure("Scheduled shaping refresh failed", e)
+                return
+            mark_shaping_runtime_hash_applied(new_hash)
+            if shaping_runtime_hash == 0:
+                _reset_partial_topology_runtime_wait()
+                report_scheduler_runtime_failure(
+                    "Scheduled shaping refresh failed",
+                    RuntimeError(
+                        "Shaping runtime hash was not published after scheduled refresh."
+                    ),
+                )
+                return
+        _reset_partial_topology_runtime_wait()
+        clear_scheduler_error_unless_integration_failed()
+        publish_ready_progress(
+            False,
+            "ready",
+            "Scheduler ready",
+            SCHEDULER_REFRESH_STEP_COUNT,
+            SCHEDULER_REFRESH_STEP_COUNT,
+            percent=100,
+        )
+        return
+
+    started = partial_topology_runtime_started_monotonic
+    if started is None:
+        partial_topology_runtime_started_monotonic = now
+        started = now
+    elapsed = max(0.0, now - started)
+
+    if (
+        _topology_runtime_not_ready_is_transient(detail)
+        and elapsed < PARTIAL_TOPOLOGY_RUNTIME_MAX_WAIT_SECONDS
+    ):
+        _publish_partial_topology_runtime_wait(generation_token)
+        return
+
+    state = ("degraded", str(detail or "").strip(), generation_token or "")
+    if partial_topology_runtime_last_report_state == state:
+        return
+    partial_topology_runtime_last_report_state = state
+    report_topology_runtime_not_ready(
+        "Scheduled shaping refresh deferred",
+        phase_label="Scheduler waiting for topology runtime",
+        step_index=3,
+        step_count=SCHEDULER_REFRESH_STEP_COUNT,
+    )
+
+
+def wait_for_topology_runtime_ready(timeout_seconds=8.0):
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        ready, _, _ = topology_runtime_readiness_detail()
+        if ready:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def ensure_topology_runtime_process(wait_for_outputs=False):
+    if wait_for_outputs:
+        return wait_for_topology_runtime_ready()
+    return True
+
+
+def _record_slow_topology_runtime_refresh_phase(phase: str, started: float, slow_phases: list[str]):
+    elapsed = time.monotonic() - started
+    if elapsed >= TOPOLOGY_RUNTIME_REFRESH_PHASE_WARN_SECONDS:
+        slow_phases.append(f"{phase} {elapsed:.1f}s")
+    return elapsed
+
+
+def topology_runtime_refresh_tick():
+    if startup_topology_runtime_pending:
+        _continue_startup_topology_runtime_wait()
+        return
+
+    if partial_topology_runtime_pending:
+        _continue_partial_topology_runtime_wait()
+        return
+
+    if shaping_runtime_hash == 0:
+        return
+
+    tick_started = time.monotonic()
+    slow_phases = []
+    phase_started = time.monotonic()
+    ensure_topology_runtime_process()
+    _record_slow_topology_runtime_refresh_phase("ensure_runtime_process", phase_started, slow_phases)
+
+    phase_started = time.monotonic()
+    ready, _, _ = topology_runtime_readiness_detail()
+    _record_slow_topology_runtime_refresh_phase("readiness_detail", phase_started, slow_phases)
+    if not ready:
+        return
+
+    phase_started = time.monotonic()
+    new_hash = calculate_shaping_runtime_hash()
+    _record_slow_topology_runtime_refresh_phase("calculate_shaping_runtime_hash", phase_started, slow_phases)
+    if new_hash == 0 or new_hash == shaping_runtime_hash:
+        return
+
+    refresh_started = time.monotonic()
+    try:
         refreshShapers()
-        shaping_runtime_hash = calculate_shaping_runtime_hash()
+    except ValidationFailure as e:
+        elapsed = time.monotonic() - refresh_started
+        phase_summary = f"; slow phases: {', '.join(slow_phases)}" if slow_phases else ""
+        print(
+            f"Topology runtime refresh for shaping runtime hash {new_hash} "
+            f"(previous {shaping_runtime_hash}) blocked by validation after {elapsed:.1f}s{phase_summary}"
+        )
+        report_scheduler_validation_failure("Topology runtime refresh blocked by validation", e)
+        return
+    except Exception as e:
+        elapsed = time.monotonic() - refresh_started
+        phase_summary = f"; slow phases: {', '.join(slow_phases)}" if slow_phases else ""
+        print(
+            f"Topology runtime refresh for shaping runtime hash {new_hash} "
+            f"(previous {shaping_runtime_hash}) failed after {elapsed:.1f}s{phase_summary}"
+        )
+        if _defer_stale_shaping_inputs_failure(e, startup=False):
+            return
+        report_scheduler_runtime_failure("Topology runtime refresh failed", e)
+        return
+    refresh_elapsed = _record_slow_topology_runtime_refresh_phase("refreshShapers", refresh_started, slow_phases)
+    mark_shaping_runtime_hash_applied(new_hash)
+    if shaping_runtime_hash == 0:
+        report_scheduler_runtime_failure(
+            "Topology runtime refresh failed",
+            RuntimeError("Shaping runtime hash was not published after topology runtime refresh."),
+        )
+        return
+    clear_scheduler_error_unless_integration_failed()
+    total_elapsed = time.monotonic() - tick_started
+    if slow_phases:
+        print(
+            f"Topology runtime refresh applied shaping runtime hash {new_hash} "
+            f"in {total_elapsed:.1f}s (refreshShapers {refresh_elapsed:.1f}s); "
+            f"slow phases: {', '.join(slow_phases)}"
+        )
+    publish_ready_progress(False, "ready", "Scheduler ready", SCHEDULER_REFRESH_STEP_COUNT, SCHEDULER_REFRESH_STEP_COUNT, percent=100)
 
 
 def not_dead_yet():
@@ -689,23 +1816,50 @@ def ensure_bus_ready():
     """Wait briefly for lqosd to finish binding the local bus socket."""
     wait_for_bus_ready(5000)
 
+def run_scheduler_main():
+    global shaping_runtime_hash
+
+    set_scheduler_status_bus_enabled(False)
+    ensure_bus_ready()
+    set_scheduler_status_bus_enabled(True)
+    scheduler_alive()
+    publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
+    try:
+        startup_ready = importAndShapeFullReload()
+        if startup_ready:
+            publish_ready_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
+    except ValidationFailure as e:
+        report_scheduler_validation_failure(
+            "Scheduler startup shaping refresh blocked by validation",
+            e,
+            startup=True,
+            step_count=SCHEDULER_STARTUP_STEP_COUNT,
+        )
+    except Exception as e:
+        report_scheduler_runtime_failure("Scheduler startup shaping refresh failed", e, startup=True)
+        import traceback
+        traceback.print_exc()
+        shaping_runtime_hash = 0
+
+    print("Starting scheduler with jobs:")
+    print(f"- not_dead_yet every 1 minute")
+    refresh_interval = queue_refresh_interval_mins()
+    print(f"- topology_runtime_refresh_tick every {TOPOLOGY_RUNTIME_REFRESH_SECONDS} seconds")
+    print(f"- importAndShapePartialReload every {refresh_interval} minutes")
+
+    not_dead_yet()
+    ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
+    ads.add_job(topology_runtime_refresh_tick, 'interval', seconds=TOPOLOGY_RUNTIME_REFRESH_SECONDS, max_instances=1)
+    ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
+
+    print("Scheduler starting...")
+    ads.start()
+
+
 if __name__ == '__main__':
     try:
-        ensure_bus_ready()
-        importAndShapeFullReload()
-        shaping_runtime_hash = calculate_shaping_runtime_hash()
-
-        print("Starting scheduler with jobs:")
-        print(f"- not_dead_yet every 1 minute")
-        refresh_interval = queue_refresh_interval_mins()
-        print(f"- importAndShapePartialReload every {refresh_interval} minutes")
-        
-        not_dead_yet()
-        ads.add_job(not_dead_yet, 'interval', minutes=1, max_instances=1)
-        ads.add_job(importAndShapePartialReload, 'interval', minutes=refresh_interval, max_instances=1)
-
-        print("Scheduler starting...")
-        ads.start()
+        configure_scheduler_stdio()
+        run_scheduler_main()
     except Exception as e:
         print(f"Error starting scheduler: {e}")
         import traceback

@@ -9,8 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "[dev_build] Building JS bundles..."
 pushd "$SCRIPT_DIR/src/node_manager/js_build" >/dev/null
-./esbuild.sh
-./test-build-contract.sh
+./test-node-manager.sh
 popd >/dev/null
 
 echo "[dev_build] Copying static HTML/CSS assets to bin/static2..."

@@ -1,14 +1,36 @@
 use crate::node_manager::auth::LoginResult;
-use crate::shaped_devices_tracker::SHAPED_DEVICES;
+use crate::node_manager::local_api::network_mode::NetworkModeInspection;
+use crate::node_manager::runtime_onboarding::RuntimeOnboardingState;
+use crate::shaping_runtime::ShapingRuntimeStatus;
+use axum::Extension;
+use axum::body::Bytes;
 use axum::http::StatusCode;
+use axum::http::header;
 use default_net::get_interfaces;
-use lqos_bus::{BusRequest, bus_request};
-use lqos_config::{Config, ConfigShapedDevices, ShapedDevice, UserRole, WebUser, WebUsers};
+use lqos_config::{
+    Config, ConfigShapedDevices, NetworkJson, ShapedDevice, UserRole, WebUser, WebUsers,
+};
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::Arc;
+use std::io::{Cursor, ErrorKind, Write};
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const COBRAND_FILE_NAME: &str = "cobrand.png";
+const COBRAND_DISPLAY_HEIGHT_PX: u64 = 48;
+const COBRAND_MAX_DISPLAY_WIDTH_PX: u64 = 176;
+const COBRAND_MAX_DECODE_BYTES: usize = 64 * 1024 * 1024;
+const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CobrandUploadValidationError {
+    UnsupportedMediaType,
+    InvalidPng,
+    TooLarge,
+    TooWideForSidebar,
+}
 
 type TopologySourceIntegration = (&'static str, fn(&Config) -> bool);
 
@@ -39,17 +61,453 @@ const TOPOLOGY_SOURCE_INTEGRATIONS: [TopologySourceIntegration; 7] = [
     }),
 ];
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct UispSecretState {
+    #[serde(default)]
+    pub token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SplynxSecretState {
+    #[serde(default)]
+    pub api_key: bool,
+    #[serde(default)]
+    pub api_secret: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct VispSecretState {
+    #[serde(default)]
+    pub client_secret: bool,
+    #[serde(default)]
+    pub password: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SonarSecretState {
+    #[serde(default)]
+    pub sonar_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct NetzurSecretState {
+    #[serde(default)]
+    pub api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct PowercodeSecretState {
+    #[serde(default)]
+    pub powercode_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct LocalApiSecretState {
+    #[serde(default)]
+    pub bearer_token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ConfigSecretState {
+    #[serde(default)]
+    pub uisp_integration: UispSecretState,
+    #[serde(default)]
+    pub splynx_integration: SplynxSecretState,
+    #[serde(default)]
+    pub visp_integration: VispSecretState,
+    #[serde(default)]
+    pub sonar_integration: SonarSecretState,
+    #[serde(default)]
+    pub netzur_integration: NetzurSecretState,
+    #[serde(default)]
+    pub powercode_integration: PowercodeSecretState,
+    #[serde(default)]
+    pub local_api: LocalApiSecretState,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct UispSecretClearRequest {
+    #[serde(default)]
+    pub token: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SplynxSecretClearRequest {
+    #[serde(default)]
+    pub api_key: bool,
+    #[serde(default)]
+    pub api_secret: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct VispSecretClearRequest {
+    #[serde(default)]
+    pub client_secret: bool,
+    #[serde(default)]
+    pub password: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct SonarSecretClearRequest {
+    #[serde(default)]
+    pub sonar_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct NetzurSecretClearRequest {
+    #[serde(default)]
+    pub api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct PowercodeSecretClearRequest {
+    #[serde(default)]
+    pub powercode_api_key: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct ConfigSecretClearRequest {
+    #[serde(default)]
+    pub uisp_integration: UispSecretClearRequest,
+    #[serde(default)]
+    pub splynx_integration: SplynxSecretClearRequest,
+    #[serde(default)]
+    pub visp_integration: VispSecretClearRequest,
+    #[serde(default)]
+    pub sonar_integration: SonarSecretClearRequest,
+    #[serde(default)]
+    pub netzur_integration: NetzurSecretClearRequest,
+    #[serde(default)]
+    pub powercode_integration: PowercodeSecretClearRequest,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ConfigView {
+    pub config: Config,
+    #[serde(default)]
+    pub secret_state: ConfigSecretState,
+    #[serde(default)]
+    pub shaping_status: ShapingRuntimeStatus,
+    #[serde(default)]
+    pub network_mode_inspection: NetworkModeInspection,
+    #[serde(default)]
+    pub runtime_onboarding: RuntimeOnboardingState,
+}
+
 pub fn admin_check_data(login: LoginResult) -> bool {
     matches!(login, LoginResult::Admin)
 }
 
-pub fn get_config_data(login: LoginResult) -> Result<Config, StatusCode> {
+fn has_secret(value: &str) -> bool {
+    !value.trim().is_empty()
+}
+
+fn redact_string_secret(value: &mut String) -> bool {
+    let configured = has_secret(value);
+    value.clear();
+    configured
+}
+
+fn redact_optional_string_secret(value: &mut Option<String>) -> bool {
+    let configured = value.as_deref().is_some_and(has_secret);
+    *value = None;
+    configured
+}
+
+fn redact_config_secrets(config: &mut Config) -> ConfigSecretState {
+    let mut secret_state = ConfigSecretState::default();
+
+    secret_state.uisp_integration.token = redact_string_secret(&mut config.uisp_integration.token);
+    secret_state.splynx_integration.api_key =
+        redact_string_secret(&mut config.splynx_integration.api_key);
+    secret_state.splynx_integration.api_secret =
+        redact_string_secret(&mut config.splynx_integration.api_secret);
+    secret_state.sonar_integration.sonar_api_key =
+        redact_string_secret(&mut config.sonar_integration.sonar_api_key);
+    secret_state.powercode_integration.powercode_api_key =
+        redact_string_secret(&mut config.powercode_integration.powercode_api_key);
+    secret_state.local_api.bearer_token =
+        redact_optional_string_secret(&mut config.local_api.bearer_token);
+    for key in &mut config.local_api.keys {
+        key.token_sha256.clear();
+    }
+
+    if let Some(netzur) = config.netzur_integration.as_mut() {
+        secret_state.netzur_integration.api_key = redact_string_secret(&mut netzur.api_key);
+    }
+
+    if let Some(visp) = config.visp_integration.as_mut() {
+        secret_state.visp_integration.client_secret = redact_string_secret(&mut visp.client_secret);
+        secret_state.visp_integration.password = redact_string_secret(&mut visp.password);
+    }
+
+    secret_state
+}
+
+fn merge_string_secret(incoming: &mut String, existing: &str, clear: bool) {
+    if clear {
+        incoming.clear();
+    } else if incoming.trim().is_empty() {
+        *incoming = existing.to_string();
+    }
+}
+
+fn apply_secret_updates(
+    existing: &Config,
+    incoming: &mut Config,
+    clear_secrets: &ConfigSecretClearRequest,
+) {
+    merge_string_secret(
+        &mut incoming.uisp_integration.token,
+        &existing.uisp_integration.token,
+        clear_secrets.uisp_integration.token,
+    );
+    merge_string_secret(
+        &mut incoming.splynx_integration.api_key,
+        &existing.splynx_integration.api_key,
+        clear_secrets.splynx_integration.api_key,
+    );
+    merge_string_secret(
+        &mut incoming.splynx_integration.api_secret,
+        &existing.splynx_integration.api_secret,
+        clear_secrets.splynx_integration.api_secret,
+    );
+    merge_string_secret(
+        &mut incoming.sonar_integration.sonar_api_key,
+        &existing.sonar_integration.sonar_api_key,
+        clear_secrets.sonar_integration.sonar_api_key,
+    );
+    merge_string_secret(
+        &mut incoming.powercode_integration.powercode_api_key,
+        &existing.powercode_integration.powercode_api_key,
+        clear_secrets.powercode_integration.powercode_api_key,
+    );
+    // Local API credentials are authoritative server state and may only be
+    // changed by dedicated key-management requests.
+    incoming.local_api = existing.local_api.clone();
+
+    match (
+        existing.netzur_integration.as_ref(),
+        incoming.netzur_integration.as_mut(),
+    ) {
+        (Some(existing_netzur), Some(incoming_netzur)) => {
+            merge_string_secret(
+                &mut incoming_netzur.api_key,
+                &existing_netzur.api_key,
+                clear_secrets.netzur_integration.api_key,
+            );
+        }
+        (Some(existing_netzur), None) => {
+            incoming.netzur_integration = Some(existing_netzur.clone());
+            if let Some(incoming_netzur) = incoming.netzur_integration.as_mut() {
+                merge_string_secret(
+                    &mut incoming_netzur.api_key,
+                    &existing_netzur.api_key,
+                    clear_secrets.netzur_integration.api_key,
+                );
+            }
+        }
+        (None, Some(incoming_netzur)) => {
+            if clear_secrets.netzur_integration.api_key {
+                incoming_netzur.api_key.clear();
+            }
+        }
+        (None, None) => {}
+    }
+
+    match (
+        existing.visp_integration.as_ref(),
+        incoming.visp_integration.as_mut(),
+    ) {
+        (Some(existing_visp), Some(incoming_visp)) => {
+            merge_string_secret(
+                &mut incoming_visp.client_secret,
+                &existing_visp.client_secret,
+                clear_secrets.visp_integration.client_secret,
+            );
+            merge_string_secret(
+                &mut incoming_visp.password,
+                &existing_visp.password,
+                clear_secrets.visp_integration.password,
+            );
+        }
+        (Some(existing_visp), None) => {
+            incoming.visp_integration = Some(existing_visp.clone());
+            if let Some(incoming_visp) = incoming.visp_integration.as_mut() {
+                merge_string_secret(
+                    &mut incoming_visp.client_secret,
+                    &existing_visp.client_secret,
+                    clear_secrets.visp_integration.client_secret,
+                );
+                merge_string_secret(
+                    &mut incoming_visp.password,
+                    &existing_visp.password,
+                    clear_secrets.visp_integration.password,
+                );
+            }
+        }
+        (None, Some(incoming_visp)) => {
+            if clear_secrets.visp_integration.client_secret {
+                incoming_visp.client_secret.clear();
+            }
+            if clear_secrets.visp_integration.password {
+                incoming_visp.password.clear();
+            }
+        }
+        (None, None) => {}
+    }
+}
+
+pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
     }
     lqos_config::load_config()
-        .map(|config| (*config).clone())
+        .map(|config| {
+            let mut config = (*config).clone();
+            let secret_state = redact_config_secrets(&mut config);
+            ConfigView {
+                shaping_status: crate::shaping_runtime::get_status(),
+                network_mode_inspection:
+                    crate::node_manager::local_api::network_mode::inspect_network_mode(&config),
+                runtime_onboarding:
+                    crate::node_manager::runtime_onboarding::runtime_onboarding_state(),
+                config,
+                secret_state,
+            }
+        })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn cobrand_path(config: &Config) -> PathBuf {
+    Path::new(&config.lqos_directory)
+        .join("bin")
+        .join("static2")
+        .join(COBRAND_FILE_NAME)
+}
+
+fn validate_cobrand_upload(
+    content_type: Option<&str>,
+    body: &[u8],
+) -> Result<(), CobrandUploadValidationError> {
+    if content_type != Some("image/png") {
+        return Err(CobrandUploadValidationError::UnsupportedMediaType);
+    }
+    inspect_png(body)?;
+    Ok(())
+}
+
+fn inspect_png(body: &[u8]) -> Result<(u32, u32), CobrandUploadValidationError> {
+    if body.len() < PNG_SIGNATURE.len() || &body[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
+        return Err(CobrandUploadValidationError::InvalidPng);
+    }
+
+    let decoder = png::Decoder::new(Cursor::new(body));
+    let Ok(mut reader) = decoder.read_info() else {
+        return Err(CobrandUploadValidationError::InvalidPng);
+    };
+    let info = reader.info();
+    let (width, height) = (info.width, info.height);
+    let output_buffer_size = reader.output_buffer_size();
+    if output_buffer_size > COBRAND_MAX_DECODE_BYTES {
+        return Err(CobrandUploadValidationError::TooLarge);
+    }
+    if rendered_cobrand_width_exceeds_sidebar(width, height) {
+        return Err(CobrandUploadValidationError::TooWideForSidebar);
+    }
+    let mut output = vec![0; output_buffer_size];
+    reader
+        .next_frame(&mut output)
+        .map_err(|_| CobrandUploadValidationError::InvalidPng)?;
+    Ok((width, height))
+}
+
+fn rendered_cobrand_width_exceeds_sidebar(width: u32, height: u32) -> bool {
+    u64::from(width) * COBRAND_DISPLAY_HEIGHT_PX > u64::from(height) * COBRAND_MAX_DISPLAY_WIDTH_PX
+}
+
+fn persist_cobrand_png(body: &[u8]) -> Result<(), StatusCode> {
+    let config = lqos_config::load_config().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let target_path = cobrand_path(config.as_ref());
+    let Some(parent_dir) = target_path.parent() else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+    std::fs::create_dir_all(parent_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let temp_root = parent_dir.parent().unwrap_or(parent_dir).join(".tmp");
+    std::fs::create_dir_all(&temp_root).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut temp_path = None;
+    for attempt in 0..32 {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let candidate = temp_root.join(format!(
+            "cobrand-upload-{}-{unique_suffix}-{attempt}.png",
+            std::process::id()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(mut file) => {
+                if file.write_all(body).is_err() {
+                    let _ = std::fs::remove_file(&candidate);
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+                temp_path = Some(candidate);
+                break;
+            }
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    }
+    let Some(temp_path) = temp_path else {
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    };
+    std::fs::rename(&temp_path, &target_path).map_err(|_| {
+        let _ = std::fs::remove_file(&temp_path);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(())
+}
+
+pub async fn upload_cobrand(
+    Extension(login): Extension<LoginResult>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    if login != LoginResult::Admin {
+        return Err((StatusCode::FORBIDDEN, "Administrator access is required."));
+    }
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim);
+    validate_cobrand_upload(content_type, &body).map_err(|error| match error {
+        CobrandUploadValidationError::UnsupportedMediaType => (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "Cobrand uploads must use Content-Type image/png.",
+        ),
+        CobrandUploadValidationError::InvalidPng => {
+            (StatusCode::BAD_REQUEST, "Uploaded file is not a valid PNG.")
+        }
+        CobrandUploadValidationError::TooLarge => (
+            StatusCode::BAD_REQUEST,
+            "Cobrand image is too large to validate safely.",
+        ),
+        CobrandUploadValidationError::TooWideForSidebar => (
+            StatusCode::BAD_REQUEST,
+            "Cobrand image is too wide for the sidebar at 48px tall. Keep the rendered width at or below 176px.",
+        ),
+    })?;
+    persist_cobrand_png(&body).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unable to save cobrand.png.",
+        )
+    })?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub fn list_nics_data(login: LoginResult) -> Result<Vec<(String, String, String)>, StatusCode> {
@@ -89,10 +547,10 @@ pub fn list_nics_data(login: LoginResult) -> Result<Vec<(String, String, String)
 
 pub fn network_json_data() -> Value {
     if let Ok(config) = lqos_config::load_config() {
-        let path = std::path::Path::new(&config.lqos_directory).join("network.json");
-        if path.exists() {
-            let raw = std::fs::read_to_string(path).expect("Unable to read network json");
-            let json: Value = serde_json::from_str(&raw).expect("Unable to read network json");
+        let path = NetworkJson::path_for_config(config.as_ref());
+        if let Ok(raw) = std::fs::read_to_string(path)
+            && let Ok(json) = serde_json::from_str(&raw)
+        {
             return json;
         }
     }
@@ -101,7 +559,7 @@ pub fn network_json_data() -> Value {
 }
 
 pub fn all_shaped_devices_data() -> Vec<ShapedDevice> {
-    SHAPED_DEVICES.load().devices.clone()
+    lqos_network_devices::shaped_devices_catalog().clone_all_devices()
 }
 
 /// Returns the enabled integration names that act as the source of truth for
@@ -345,22 +803,29 @@ fn persist_shaped_devices(mut devices: Vec<ShapedDevice>) -> Result<(), String> 
     copied
         .write_csv("ShapedDevices.csv")
         .map_err(|e| format!("Unable to write ShapedDevices.csv: {e}"))?;
-    SHAPED_DEVICES.store(Arc::new(copied));
+    lqos_network_devices::apply_shaped_devices_snapshot(
+        "node_manager:persist_shaped_devices",
+        copied,
+        lqos_network_devices::ShapedDevicesSnapshotProvenance::ExternalSnapshot,
+    )
+    .map_err(|e| format!("Unable to publish ShapedDevices.csv snapshot: {e}"))?;
 
     Ok(())
 }
 
 pub async fn update_lqosd_config_data(
     login: LoginResult,
-    config: Config,
-) -> Result<(), StatusCode> {
+    mut config: Config,
+    clear_secrets: ConfigSecretClearRequest,
+) -> Result<(), String> {
     if login != LoginResult::Admin {
-        return Err(StatusCode::FORBIDDEN);
+        return Err("Unauthorized".to_string());
     }
-    bus_request(vec![BusRequest::UpdateLqosdConfig(Box::new(config))])
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(())
+    let _guard = super::local_api_keys::lock_config_update().await;
+    let existing =
+        lqos_config::load_config().map_err(|_| "Unable to load the current config".to_string())?;
+    apply_secret_updates(existing.as_ref(), &mut config, &clear_secrets);
+    super::local_api_keys::persist_config(config).await
 }
 
 /// Persists both `network.json` and `ShapedDevices.csv` for administrative
@@ -379,6 +844,8 @@ pub fn update_network_and_devices_data(
     ensure_topology_editor_unlocked()?;
     persist_network_json(&network_json)?;
     persist_shaped_devices(shaped_devices)?;
+    lqos_network_devices::request_reload_network_json("node_manager:update_network_and_devices")
+        .map_err(|e| format!("Unable to reload network.json: {e}"))?;
 
     Ok(())
 }
@@ -398,6 +865,8 @@ pub fn update_network_json_only_data(
     ensure_topology_editor_unlocked()?;
 
     persist_network_json(&network_json)?;
+    lqos_network_devices::request_reload_network_json("node_manager:update_network_json_only")
+        .map_err(|e| format!("Unable to reload network.json: {e}"))?;
 
     Ok(())
 }
@@ -412,10 +881,8 @@ pub fn get_shaped_device_data(
         return Err(StatusCode::FORBIDDEN);
     }
     let wanted = device_id.trim();
-    Ok(SHAPED_DEVICES
-        .load()
-        .devices
-        .iter()
+    Ok(lqos_network_devices::shaped_devices_catalog()
+        .iter_devices()
         .find(|device| device.device_id == wanted)
         .cloned())
 }
@@ -432,7 +899,7 @@ pub fn create_shaped_device_data(
         return Err("Unauthorized".to_string());
     }
     ensure_topology_editor_unlocked()?;
-    let mut devices = SHAPED_DEVICES.load().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     devices.push(device.clone());
     persist_shaped_devices(devices)?;
     let created = get_shaped_device_data(login, device.device_id.clone())
@@ -455,7 +922,7 @@ pub fn update_shaped_device_data(
         return Err("Unauthorized".to_string());
     }
     ensure_topology_editor_unlocked()?;
-    let mut devices = SHAPED_DEVICES.load().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     let wanted = original_device_id.trim();
     let Some(index) = devices.iter().position(|row| row.device_id == wanted) else {
         return Err("Not found".to_string());
@@ -479,7 +946,7 @@ pub fn delete_shaped_device_data(login: LoginResult, device_id: String) -> Resul
     }
     ensure_topology_editor_unlocked()?;
     let wanted = device_id.trim();
-    let mut devices = SHAPED_DEVICES.load().devices.clone();
+    let mut devices = lqos_network_devices::shaped_devices_catalog().clone_all_devices();
     let before = devices.len();
     devices.retain(|device| device.device_id != wanted);
     if devices.len() == before {
@@ -578,8 +1045,112 @@ pub struct UserRequest {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_network_json;
+    use super::{
+        CobrandUploadValidationError, ConfigSecretClearRequest, apply_secret_updates, cobrand_path,
+        persist_cobrand_png, redact_config_secrets, upload_cobrand, validate_cobrand_upload,
+        validate_network_json,
+    };
+    use crate::node_manager::auth::LoginResult;
+    use crate::test_support::runtime_config_test_lock;
+    use axum::Extension;
+    use axum::body::Bytes;
+    use axum::http::HeaderMap;
+    use lqos_config::{Config, LocalApiKeyConfig};
     use serde_json::json;
+    use std::ffi::OsString;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use uuid::Uuid;
+    const VALID_PNG: &[u8] = &[
+        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, b'I', b'H', b'D',
+        b'R', 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, b'I', b'D', b'A', b'T', 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, b'I',
+        b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    fn encode_test_png(width: u32, height: u32) -> Vec<u8> {
+        let mut png_bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png_bytes, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().expect("write png header");
+            let pixel_count = usize::try_from(width)
+                .expect("width fits usize")
+                .saturating_mul(usize::try_from(height).expect("height fits usize"));
+            let data = vec![0u8; pixel_count.saturating_mul(4)];
+            writer.write_image_data(&data).expect("write png bytes");
+        }
+        png_bytes
+    }
+
+    fn cobrand_test_runtime_dir() -> PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lqosd-cobrand-test-{unique_suffix}"))
+    }
+
+    fn write_cobrand_test_config(runtime_dir: &std::path::Path) -> PathBuf {
+        fs::create_dir_all(runtime_dir).expect("create runtime dir");
+        let config_path = runtime_dir.join("lqos.conf");
+        let runtime_dir_string = runtime_dir.display().to_string();
+        let state_dir_string = runtime_dir.join("state").display().to_string();
+        let raw = include_str!("../../../../lqos_config/src/etc/v15/example.toml")
+            .replace("/opt/libreqos/src", &runtime_dir_string)
+            .replace("/opt/libreqos/state", &state_dir_string)
+            .replace("node_id = \"0000-0000-0000\"", "node_id = \"node\"");
+        fs::write(&config_path, raw).expect("write config");
+        config_path
+    }
+
+    struct CobrandTestContext {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        old_lqos_config: Option<OsString>,
+        old_lqos_directory: Option<OsString>,
+        runtime_dir: PathBuf,
+    }
+
+    impl CobrandTestContext {
+        fn new() -> Self {
+            let guard = runtime_config_test_lock()
+                .lock()
+                .expect("cobrand test lock should not be poisoned");
+            let runtime_dir = cobrand_test_runtime_dir();
+            let config_path = write_cobrand_test_config(&runtime_dir);
+            let old_lqos_config = std::env::var_os("LQOS_CONFIG");
+            let old_lqos_directory = std::env::var_os("LQOS_DIRECTORY");
+            unsafe {
+                std::env::set_var("LQOS_CONFIG", &config_path);
+                std::env::set_var("LQOS_DIRECTORY", &runtime_dir);
+            }
+            lqos_config::clear_cached_config();
+            Self {
+                _guard: guard,
+                old_lqos_config,
+                old_lqos_directory,
+                runtime_dir,
+            }
+        }
+    }
+
+    impl Drop for CobrandTestContext {
+        fn drop(&mut self) {
+            match &self.old_lqos_config {
+                Some(value) => unsafe { std::env::set_var("LQOS_CONFIG", value) },
+                None => unsafe { std::env::remove_var("LQOS_CONFIG") },
+            }
+            match &self.old_lqos_directory {
+                Some(value) => unsafe { std::env::set_var("LQOS_DIRECTORY", value) },
+                None => unsafe { std::env::remove_var("LQOS_DIRECTORY") },
+            }
+            lqos_config::clear_cached_config();
+            let _ = fs::remove_dir_all(&self.runtime_dir);
+        }
+    }
 
     #[test]
     fn accepts_unique_node_names() {
@@ -630,5 +1201,305 @@ mod tests {
 
         let err = validate_network_json(&network).expect_err("duplicate names must fail");
         assert!(err.contains("Duplicate"));
+    }
+
+    #[test]
+    fn redacts_secret_fields_and_marks_presence() {
+        let mut config = Config::default();
+        config.local_api.bearer_token = Some("local-api-token".to_string());
+        config.local_api.keys.push(LocalApiKeyConfig {
+            id: Uuid::from_u128(1).hyphenated().to_string(),
+            name: "Monitoring".to_string(),
+            token_sha256: "a".repeat(64),
+            created_at_unix: 1,
+        });
+        config.uisp_integration.token = "uisp-token".to_string();
+        config.splynx_integration.api_key = "splynx-key".to_string();
+        config.splynx_integration.api_secret = "splynx-secret".to_string();
+        config.sonar_integration.sonar_api_key = "sonar-key".to_string();
+        config.powercode_integration.powercode_api_key = "powercode-key".to_string();
+        if let Some(visp) = config.visp_integration.as_mut() {
+            visp.client_secret = "visp-secret".to_string();
+            visp.password = "visp-password".to_string();
+        }
+        config.netzur_integration = Some(Default::default());
+        config
+            .netzur_integration
+            .as_mut()
+            .expect("netzur_integration should exist")
+            .api_key = "netzur-key".to_string();
+
+        let secret_state = redact_config_secrets(&mut config);
+
+        assert!(secret_state.uisp_integration.token);
+        assert!(secret_state.splynx_integration.api_key);
+        assert!(secret_state.splynx_integration.api_secret);
+        assert!(secret_state.visp_integration.client_secret);
+        assert!(secret_state.visp_integration.password);
+        assert!(secret_state.sonar_integration.sonar_api_key);
+        assert!(secret_state.netzur_integration.api_key);
+        assert!(secret_state.powercode_integration.powercode_api_key);
+        assert!(secret_state.local_api.bearer_token);
+        assert!(config.uisp_integration.token.is_empty());
+        assert!(config.splynx_integration.api_key.is_empty());
+        assert!(config.splynx_integration.api_secret.is_empty());
+        assert!(config.sonar_integration.sonar_api_key.is_empty());
+        assert!(config.powercode_integration.powercode_api_key.is_empty());
+        assert!(config.local_api.bearer_token.is_none());
+        assert_eq!(config.local_api.keys[0].name, "Monitoring");
+        assert!(config.local_api.keys[0].token_sha256.is_empty());
+        assert!(
+            config
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .client_secret
+                .is_empty()
+        );
+        assert!(
+            config
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .password
+                .is_empty()
+        );
+        assert!(
+            config
+                .netzur_integration
+                .as_ref()
+                .expect("netzur_integration should exist")
+                .api_key
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn applies_secret_updates_with_preserve_replace_and_clear() {
+        let mut existing = Config::default();
+        existing.local_api.bearer_token = Some("old-local-api-token".to_string());
+        existing.uisp_integration.token = "old-uisp".to_string();
+        existing.splynx_integration.api_key = "old-key".to_string();
+        existing.splynx_integration.api_secret = "old-secret".to_string();
+        existing.sonar_integration.sonar_api_key = "old-sonar".to_string();
+        existing.powercode_integration.powercode_api_key = "old-powercode".to_string();
+        if let Some(visp) = existing.visp_integration.as_mut() {
+            visp.client_secret = "old-visp-secret".to_string();
+            visp.password = "old-visp-password".to_string();
+        }
+        existing.netzur_integration = Some(Default::default());
+        existing
+            .netzur_integration
+            .as_mut()
+            .expect("netzur_integration should exist")
+            .api_key = "old-netzur".to_string();
+
+        let mut incoming = existing.clone();
+        incoming.local_api.bearer_token = None;
+        incoming.uisp_integration.token.clear();
+        incoming.splynx_integration.api_key = "new-key".to_string();
+        incoming.splynx_integration.api_secret.clear();
+        incoming.sonar_integration.sonar_api_key.clear();
+        incoming.powercode_integration.powercode_api_key.clear();
+        if let Some(visp) = incoming.visp_integration.as_mut() {
+            visp.client_secret.clear();
+            visp.password = "new-visp-password".to_string();
+        }
+        incoming
+            .netzur_integration
+            .as_mut()
+            .expect("netzur_integration should exist")
+            .api_key
+            .clear();
+
+        let mut clear_secrets = ConfigSecretClearRequest::default();
+        clear_secrets.splynx_integration.api_secret = true;
+        clear_secrets.sonar_integration.sonar_api_key = true;
+        clear_secrets.netzur_integration.api_key = true;
+
+        apply_secret_updates(&existing, &mut incoming, &clear_secrets);
+
+        assert_eq!(incoming.uisp_integration.token, "old-uisp");
+        assert_eq!(incoming.splynx_integration.api_key, "new-key");
+        assert!(incoming.splynx_integration.api_secret.is_empty());
+        assert!(incoming.sonar_integration.sonar_api_key.is_empty());
+        assert_eq!(
+            incoming
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .client_secret,
+            "old-visp-secret"
+        );
+        assert_eq!(
+            incoming
+                .visp_integration
+                .as_ref()
+                .expect("visp_integration should exist")
+                .password,
+            "new-visp-password"
+        );
+        assert!(
+            incoming
+                .netzur_integration
+                .as_ref()
+                .expect("netzur_integration should exist")
+                .api_key
+                .is_empty()
+        );
+        assert_eq!(
+            incoming.powercode_integration.powercode_api_key,
+            "old-powercode"
+        );
+        assert_eq!(incoming.local_api, existing.local_api);
+    }
+
+    #[test]
+    fn normal_config_updates_preserve_local_api_credentials() {
+        let mut existing = Config::default();
+        existing.local_api.bearer_token = Some("stored-token".to_string());
+        existing.local_api.keys.push(LocalApiKeyConfig {
+            id: Uuid::from_u128(1).hyphenated().to_string(),
+            name: "Automation".to_string(),
+            token_sha256: "b".repeat(64),
+            created_at_unix: 10,
+        });
+
+        let mut preserved = existing.clone();
+        preserved.local_api.bearer_token = None;
+        apply_secret_updates(
+            &existing,
+            &mut preserved,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(
+            preserved.local_api.bearer_token.as_deref(),
+            Some("stored-token")
+        );
+        assert_eq!(preserved.local_api.keys, existing.local_api.keys);
+
+        let mut replaced = existing.clone();
+        replaced.local_api.bearer_token = Some("replacement-token".to_string());
+        apply_secret_updates(
+            &existing,
+            &mut replaced,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(
+            replaced.local_api.bearer_token.as_deref(),
+            Some("stored-token")
+        );
+
+        let mut cleared = existing.clone();
+        cleared.local_api.bearer_token = None;
+        apply_secret_updates(
+            &existing,
+            &mut cleared,
+            &ConfigSecretClearRequest::default(),
+        );
+        assert_eq!(cleared.local_api, existing.local_api);
+    }
+
+    #[test]
+    fn validate_cobrand_upload_requires_exact_png_content_type() {
+        let body = VALID_PNG.to_vec();
+        assert_eq!(
+            validate_cobrand_upload(Some("image/jpeg"), &body),
+            Err(CobrandUploadValidationError::UnsupportedMediaType)
+        );
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), b"not-a-png"),
+            Err(CobrandUploadValidationError::InvalidPng)
+        );
+        let truncated_png = &VALID_PNG[..VALID_PNG.len() - 8];
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), truncated_png),
+            Err(CobrandUploadValidationError::InvalidPng)
+        );
+        assert_eq!(validate_cobrand_upload(Some("image/png"), &body), Ok(()));
+    }
+
+    #[test]
+    fn validate_cobrand_upload_rejects_pngs_too_wide_for_sidebar() {
+        let too_wide = encode_test_png(177, 48);
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &too_wide),
+            Err(CobrandUploadValidationError::TooWideForSidebar)
+        );
+    }
+
+    #[test]
+    fn validate_cobrand_upload_rejects_pngs_with_huge_dimensions() {
+        let too_large = encode_test_png(4097, 4096);
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &too_large),
+            Err(CobrandUploadValidationError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn validate_cobrand_upload_accepts_boundary_dimensions() {
+        let max_width = encode_test_png(176, 48);
+        let max_height = encode_test_png(1, 4096);
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &max_width),
+            Ok(())
+        );
+        assert_eq!(
+            validate_cobrand_upload(Some("image/png"), &max_height),
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
+    async fn upload_cobrand_requires_admin() {
+        let result = upload_cobrand(
+            Extension(LoginResult::ReadOnly),
+            HeaderMap::new(),
+            Bytes::from_static(VALID_PNG),
+        )
+        .await;
+
+        assert_eq!(
+            result,
+            Err((
+                axum::http::StatusCode::FORBIDDEN,
+                "Administrator access is required.",
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn upload_cobrand_accepts_admin_png_and_persists_file() {
+        let _context = CobrandTestContext::new();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("image/png"),
+        );
+        let result = upload_cobrand(
+            Extension(LoginResult::Admin),
+            headers,
+            Bytes::from_static(VALID_PNG),
+        )
+        .await;
+
+        assert_eq!(result, Ok(axum::http::StatusCode::NO_CONTENT));
+        let config = lqos_config::load_config().expect("load config");
+        let path = cobrand_path(config.as_ref());
+        assert_eq!(fs::read(path).expect("read cobrand"), VALID_PNG);
+    }
+
+    #[test]
+    fn persist_cobrand_png_writes_runtime_static_file() {
+        let _context = CobrandTestContext::new();
+
+        let png_body = VALID_PNG.to_vec();
+        persist_cobrand_png(&png_body).expect("write cobrand");
+
+        let config = lqos_config::load_config().expect("load config");
+        let path = cobrand_path(config.as_ref());
+        assert_eq!(fs::read(path).expect("read cobrand"), png_body);
     }
 }

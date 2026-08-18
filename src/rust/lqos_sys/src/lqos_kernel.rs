@@ -11,7 +11,10 @@ use libbpf_sys::{
     libbpf_set_strict_mode,
 };
 use lqos_utils::XdpIpAddress;
-use nix::libc::{close, geteuid, if_nametoindex};
+use nix::{
+    errno::Errno,
+    libc::{close, geteuid, if_nametoindex},
+};
 use std::{
     ffi::{CString, c_void},
     fs,
@@ -31,6 +34,13 @@ pub(crate) mod bpf {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
+#[derive(Clone, Copy)]
+struct PinnedMapAbiSpec {
+    path: &'static str,
+    expected_key_size: u32,
+    expected_value_size: u32,
+}
+
 /// Returns the value set in the C XDP system's MAX_TRACKED_IPS
 /// constant.
 pub fn max_tracked_ips() -> usize {
@@ -42,27 +52,7 @@ fn pinned_map_max_entries(path: &str) -> Result<Option<u32>> {
         return Ok(None);
     }
 
-    let path_c = CString::new(path)?;
-    let fd = unsafe { bpf_obj_get(path_c.as_ptr()) };
-    if fd < 0 {
-        warn!("Unable to open pinned BPF map '{path}' for capacity check (fd={fd})");
-        return Ok(None);
-    }
-
-    let mut info = MaybeUninit::<bpf_map_info>::zeroed();
-    let mut len: u32 = std::mem::size_of::<bpf_map_info>() as u32;
-    let err = unsafe { bpf_obj_get_info_by_fd(fd, info.as_mut_ptr() as *mut c_void, &mut len) };
-    unsafe {
-        close(fd);
-    }
-    if err != 0 {
-        return Err(Error::msg(format!(
-            "Unable to query pinned BPF map '{path}' capacity (err={err})."
-        )));
-    }
-
-    let info = unsafe { info.assume_init() };
-    Ok(Some(info.max_entries))
+    Ok(pinned_map_info(path)?.map(|info| info.max_entries))
 }
 
 /// Returns the currently available IP-mapping capacity.
@@ -77,6 +67,170 @@ pub fn ip_mapping_capacity() -> usize {
             warn!("Unable to determine live IP-mapping capacity: {e:?}");
             max_tracked_ips()
         }
+    }
+}
+
+fn ip_mapping_pinned_map_abi_specs() -> [PinnedMapAbiSpec; 3] {
+    let expected_key_size = std::mem::size_of::<crate::ip_mapping::IpHashKey>() as u32;
+    let expected_value_size = std::mem::size_of::<crate::ip_mapping::IpHashData>() as u32;
+    [
+        PinnedMapAbiSpec {
+            path: "/sys/fs/bpf/map_ip_to_cpu_and_tc",
+            expected_key_size,
+            expected_value_size,
+        },
+        PinnedMapAbiSpec {
+            path: "/sys/fs/bpf/ip_to_cpu_and_tc_hotcache",
+            expected_key_size: std::mem::size_of::<XdpIpAddress>() as u32,
+            expected_value_size,
+        },
+        PinnedMapAbiSpec {
+            path: "/sys/fs/bpf/ip_mapping_epoch",
+            expected_key_size: std::mem::size_of::<u32>() as u32,
+            expected_value_size: std::mem::size_of::<u32>() as u32,
+        },
+    ]
+}
+
+fn pinned_map_info(path: &str) -> Result<Option<bpf_map_info>> {
+    let path_c = CString::new(path)?;
+    let fd = unsafe { bpf_obj_get(path_c.as_ptr()) };
+    if fd < 0 {
+        return Ok(None);
+    }
+
+    let mut info = MaybeUninit::<bpf_map_info>::zeroed();
+    let mut len: u32 = std::mem::size_of::<bpf_map_info>() as u32;
+    let err = unsafe { bpf_obj_get_info_by_fd(fd, info.as_mut_ptr() as *mut c_void, &mut len) };
+    unsafe {
+        close(fd);
+    }
+    if err != 0 {
+        return Err(Error::msg(format!(
+            "Unable to query pinned BPF map '{path}' info (err={err})."
+        )));
+    }
+    let info = unsafe { info.assume_init() };
+    Ok(Some(info))
+}
+
+fn pinned_map_key_value_sizes(path: &str) -> Result<Option<(u32, u32)>> {
+    Ok(pinned_map_info(path)?.map(|info| (info.key_size, info.value_size)))
+}
+
+fn ip_mapping_subsystem_ready_with<F>(mut map_sizes: F) -> Result<bool>
+where
+    F: FnMut(&str) -> Result<Option<(u32, u32)>>,
+{
+    for spec in ip_mapping_pinned_map_abi_specs() {
+        let Some((key_size, value_size)) = map_sizes(spec.path)? else {
+            return Ok(false);
+        };
+        if key_size != spec.expected_key_size || value_size != spec.expected_value_size {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Returns whether the pinned maps required for XDP IP mapping updates are ready.
+///
+/// This function has side effects: it opens the relevant pinned BPF maps and
+/// queries their ABI metadata. It returns `Ok(false)` for maps that are not yet
+/// pinned or have an incompatible ABI, and `Err` for unexpected inspection
+/// failures.
+pub fn ip_mapping_subsystem_ready() -> Result<bool> {
+    ip_mapping_subsystem_ready_with(pinned_map_key_value_sizes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn ip_mapping_ready_requires_all_expected_maps() {
+        let specs = ip_mapping_pinned_map_abi_specs();
+        let sizes: HashMap<&str, (u32, u32)> = specs
+            .iter()
+            .map(|spec| {
+                (
+                    spec.path,
+                    (spec.expected_key_size, spec.expected_value_size),
+                )
+            })
+            .collect();
+
+        let ready = ip_mapping_subsystem_ready_with(|path| Ok(sizes.get(path).copied()))
+            .expect("readiness check should succeed");
+
+        assert!(ready);
+    }
+
+    #[test]
+    fn ip_mapping_ready_is_false_when_a_map_is_missing() {
+        let ready = ip_mapping_subsystem_ready_with(|path| {
+            if path == "/sys/fs/bpf/ip_mapping_epoch" {
+                Ok(None)
+            } else {
+                let spec = ip_mapping_pinned_map_abi_specs()
+                    .into_iter()
+                    .find(|spec| spec.path == path)
+                    .expect("test path should be part of IP mapping ABI specs");
+                Ok(Some((spec.expected_key_size, spec.expected_value_size)))
+            }
+        })
+        .expect("missing map should not be an inspection error");
+
+        assert!(!ready);
+    }
+
+    #[test]
+    fn ip_mapping_ready_is_false_when_a_map_abi_differs() {
+        let ready = ip_mapping_subsystem_ready_with(|path| {
+            let spec = ip_mapping_pinned_map_abi_specs()
+                .into_iter()
+                .find(|spec| spec.path == path)
+                .expect("test path should be part of IP mapping ABI specs");
+            let value_size = if path == "/sys/fs/bpf/map_ip_to_cpu_and_tc" {
+                spec.expected_value_size + 1
+            } else {
+                spec.expected_value_size
+            };
+            Ok(Some((spec.expected_key_size, value_size)))
+        })
+        .expect("ABI mismatch should not be an inspection error");
+
+        assert!(!ready);
+    }
+
+    #[test]
+    fn ip_mapping_ready_returns_inspection_error() {
+        let err = ip_mapping_subsystem_ready_with(|path| {
+            if path == "/sys/fs/bpf/map_ip_to_cpu_and_tc" {
+                Err(Error::msg("map info failed"))
+            } else {
+                Ok(None)
+            }
+        })
+        .expect_err("inspection errors should be returned to the caller");
+
+        assert!(err.to_string().contains("map info failed"));
+    }
+
+    #[test]
+    fn kernel_load_error_includes_raw_errno_and_code() {
+        for (raw, errno, code) in [(-11, 11, "EAGAIN"), (-16, 16, "EBUSY")] {
+            let error = format_kernel_load_error(raw);
+
+            assert!(error.contains(&format!("raw={raw}")));
+            assert!(error.contains(&format!("errno={errno}")));
+            assert!(error.contains(&format!("code={code}")));
+        }
+
+        let error = format_kernel_load_error(i32::MIN);
+        assert!(error.contains("raw=-2147483648"));
+        assert!(error.contains("errno=2147483648"));
     }
 }
 
@@ -99,25 +253,10 @@ fn remove_incompatible_pinned_map(
         return Ok(());
     }
 
-    let path_c = CString::new(path)?;
-    let fd = unsafe { bpf_obj_get(path_c.as_ptr()) };
-    if fd < 0 {
-        warn!("Unable to open pinned BPF map '{path}' for ABI check (fd={fd})");
+    let Some(info) = pinned_map_info(path)? else {
+        warn!("Unable to open pinned BPF map '{path}' for ABI check");
         return Ok(());
-    }
-
-    let mut info = MaybeUninit::<bpf_map_info>::zeroed();
-    let mut len: u32 = std::mem::size_of::<bpf_map_info>() as u32;
-    let err = unsafe { bpf_obj_get_info_by_fd(fd, info.as_mut_ptr() as *mut c_void, &mut len) };
-    unsafe {
-        close(fd);
-    }
-    if err != 0 {
-        return Err(Error::msg(format!(
-            "Unable to query pinned BPF map '{path}' info (err={err})."
-        )));
-    }
-    let info = unsafe { info.assume_init() };
+    };
 
     if info.key_size != expected_key_size || info.value_size != expected_value_size {
         warn!(
@@ -135,22 +274,17 @@ fn remove_incompatible_pinned_map(
 }
 
 fn ensure_ip_mapping_maps_abi() -> Result<()> {
-    let expected_key_size = std::mem::size_of::<crate::ip_mapping::IpHashKey>() as u32;
-    let expected_value_size = std::mem::size_of::<crate::ip_mapping::IpHashData>() as u32;
+    for spec in ip_mapping_pinned_map_abi_specs() {
+        remove_incompatible_pinned_map(
+            spec.path,
+            spec.expected_key_size,
+            spec.expected_value_size,
+        )?;
+    }
     remove_incompatible_pinned_map(
-        "/sys/fs/bpf/map_ip_to_cpu_and_tc",
-        expected_key_size,
-        expected_value_size,
-    )?;
-    remove_incompatible_pinned_map(
-        "/sys/fs/bpf/ip_to_cpu_and_tc_hotcache",
-        std::mem::size_of::<XdpIpAddress>() as u32,
-        expected_value_size,
-    )?;
-    remove_incompatible_pinned_map(
-        "/sys/fs/bpf/ip_mapping_epoch",
+        "/sys/fs/bpf/tc_classify_control",
         std::mem::size_of::<u32>() as u32,
-        std::mem::size_of::<u32>() as u32,
+        std::mem::size_of::<crate::tc_classify_control::TcClassifyControl>() as u32,
     )?;
     remove_incompatible_pinned_map(
         "/sys/fs/bpf/map_traffic",
@@ -266,13 +400,24 @@ unsafe fn open_kernel() -> Result<*mut bpf::lqos_kern> {
 }
 
 unsafe fn load_kernel(skeleton: *mut bpf::lqos_kern) -> Result<()> {
-    let error = unsafe { bpf::lqos_kern_load(skeleton) };
-    if error != 0 {
-        let error = format!("Unable to load the XDP/TC kernel ({error})");
-        Err(Error::msg(error))
+    let raw_error = unsafe { bpf::lqos_kern_load(skeleton) };
+    if raw_error != 0 {
+        Err(Error::msg(format_kernel_load_error(raw_error)))
     } else {
         Ok(())
     }
+}
+
+fn format_kernel_load_error(raw_error: i32) -> String {
+    let errno_number = raw_error.unsigned_abs();
+    let errno_code = if let Ok(errno) = i32::try_from(errno_number) {
+        format!("{:?}", Errno::from_raw(errno))
+    } else {
+        "unknown".to_string()
+    };
+    format!(
+        "Unable to load the XDP/TC kernel (raw={raw_error}, errno={errno_number}, code={errno_code})"
+    )
 }
 
 #[derive(PartialEq, Eq)]
@@ -282,12 +427,38 @@ pub enum InterfaceDirection {
     OnAStick(u16, u16, u32),
 }
 
+fn warn_if_tx_segmentation_offloads_enabled() {
+    let Ok(config) = lqos_config::load_config() else {
+        warn!(
+            "Unable to load config before attaching xmit kprobe; TX rates may be measured incorrectly if GSO/TSO offloads remain enabled."
+        );
+        return;
+    };
+    let disabled_offloads = &config.tuning.disable_offload;
+    let gso_disabled = disabled_offloads.iter().any(|feature| feature == "gso");
+    let tso_disabled = disabled_offloads.iter().any(|feature| feature == "tso");
+    if !gso_disabled || !tso_disabled {
+        warn!(
+            "Attaching xmit kprobe while TX segmentation offloads are not fully disabled (gso_disabled={}, tso_disabled={}); actual transmission rates may be measured incorrectly.",
+            gso_disabled, tso_disabled
+        );
+    }
+}
+
+pub(crate) struct AttachedPrograms {
+    pub(crate) skeleton: *mut lqos_kern,
+    pub(crate) kprobe_link: *mut bpf::bpf_link,
+}
+
 pub fn attach_xdp_and_tc_to_interface(
     interface_name: &str,
+    to_internet_ifindex: i32,
+    to_isp_ifindex: i32,
+    attach_xmit_kprobe: bool,
     direction: InterfaceDirection,
     heimdall_event_handler: bpf::ring_buffer_sample_fn,
     flowbee_event_handler: bpf::ring_buffer_sample_fn,
-) -> Result<*mut lqos_kern> {
+) -> Result<AttachedPrograms> {
     check_root()?;
     // If ABI changes were made to pinned maps, ensure we do not silently reuse
     // incompatible versions that truncate struct values.
@@ -303,17 +474,29 @@ pub fn attach_xdp_and_tc_to_interface(
             InterfaceDirection::IspNetwork => 2,
             InterfaceDirection::OnAStick(..) => 3,
         };
+        (*(*skeleton).data).to_internet_ifindex = to_internet_ifindex;
+        (*(*skeleton).data).to_isp_ifindex = to_isp_ifindex;
         if let InterfaceDirection::OnAStick(internet, isp, stick_offset) = direction {
             (*(*skeleton).bss).internet_vlan = internet.to_be();
             (*(*skeleton).bss).isp_vlan = isp.to_be();
             (*(*skeleton).bss).stick_offset = stick_offset;
         }
-        // Ensure no lingering XDP programs before loading/attaching
-        let _ = unload_xdp_from_interface(interface_name);
+        // Load before detaching so a verifier/load failure leaves the previous XDP state intact.
         load_kernel(skeleton)?;
+        crate::initialize_tc_classify_bypass()?;
         let prog_fd = bpf::bpf_program__fd((*skeleton).progs.xdp_prog);
         attach_xdp_best_available(interface_index, prog_fd, interface_name)?;
         skeleton
+    };
+    let kprobe_link = if attach_xmit_kprobe {
+        warn_if_tx_segmentation_offloads_enabled();
+        let link = unsafe { bpf::attach_xmit_kprobe(skeleton) };
+        if link.is_null() {
+            return Err(Error::msg("Unable to attach kprobe to dev_hard_start_xmit"));
+        }
+        link
+    } else {
+        std::ptr::null_mut()
     };
 
     // Configure CPU Maps
@@ -477,7 +660,10 @@ pub fn attach_xdp_and_tc_to_interface(
         }
     }
 
-    Ok(skeleton)
+    Ok(AttachedPrograms {
+        skeleton,
+        kprobe_link,
+    })
 }
 
 /// Safety: Direct calls to C functions

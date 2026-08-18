@@ -1,23 +1,25 @@
-use crate::lts2_sys::get_lts_license_status;
-use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks, LtsStatus};
-use crate::shaped_devices_tracker::{NETWORK_JSON, SHAPED_DEVICES};
+use crate::lts2_sys::shared_types::{CircuitCakeDrops, CircuitCakeMarks};
 use crate::system_stats::SystemStats;
-use crate::throughput_tracker::flow_data::ALL_FLOWS;
-use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
+use crate::throughput_tracker::flow_data::{FlowbeeEffectiveDirection, live_active_flow_count};
+use crate::throughput_tracker::throughput_entry::ThroughputEntry;
 use crate::throughput_tracker::{
     CIRCUIT_RTT_BUFFERS, Lts2Circuit, Lts2Device, RawNetJs, THROUGHPUT_TRACKER, min_max_median_rtt,
-    min_max_median_tcp_retransmits,
+    min_max_median_tcp_retransmits, resolve_flow_device,
 };
 use csv::ReaderBuilder;
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_config::{ShapedDevice, load_config};
+use lqos_config::{ShapedDevice, TopologyCanonicalStateFile, load_config};
+use lqos_queue_tracker::queue_stats_stale;
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, TOTAL_QUEUE_STATS};
+use lqos_topology_compile::TopologyImportFile;
+use lqos_utils::XdpIpAddress;
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::DownUpOrder;
 use lqos_utils::unix_time::unix_now;
 use std::fs::read_to_string;
+use std::io::Write;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI64;
 use tracing::debug;
 use tracing::log::warn;
@@ -27,14 +29,105 @@ fn scale_u64_by_f64(value: u64, scale: f64) -> u64 {
     (value as f64 * scale) as u64
 }
 
+fn insight_topology_debug_path(config: &lqos_config::Config) -> PathBuf {
+    config.debug_state_file_path("network.insight.debug.json")
+}
+
+fn write_insight_topology_debug_snapshot(
+    config: &lqos_config::Config,
+    raw_json: &str,
+) -> anyhow::Result<()> {
+    let path = insight_topology_debug_path(config);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temp_path = path.with_extension("tmp");
+    let mut file = std::fs::File::create(&temp_path)?;
+    file.write_all(raw_json.as_bytes())?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    std::fs::rename(temp_path, path)?;
+    Ok(())
+}
+
+fn load_insight_logical_network_json() -> anyhow::Result<String> {
+    let config = load_config()?;
+    let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config.as_ref())?;
+    let raw_json = serde_json::to_string_pretty(&canonical.insight_topology_network_json())?;
+    if let Err(err) = write_insight_topology_debug_snapshot(config.as_ref(), &raw_json) {
+        warn!("Unable to write Insight topology debug snapshot. {err:?}");
+    }
+    Ok(raw_json)
+}
+
 /// Temporary conversion function for LTS/Insight compatibility
-/// TODO: Remove when LTS/Insight support fractional rates
 fn rate_for_submission(rate_mbps: f32) -> u32 {
+    if rate_mbps.is_nan() {
+        warn!("LTS2 bandwidth value {rate_mbps} is not finite; clamping to 1 Mbps");
+        return 1;
+    }
+    if rate_mbps.is_infinite() {
+        if rate_mbps.is_sign_positive() {
+            warn!("LTS2 bandwidth value {rate_mbps} exceeds u32::MAX; clamping to u32::MAX");
+            return u32::MAX;
+        }
+        warn!("LTS2 bandwidth value {rate_mbps} is not finite; clamping to 1 Mbps");
+        return 1;
+    }
+
     if rate_mbps < 1.0 {
         1 // Round up small fractional rates to 1 Mbps for now
+    } else if rate_mbps >= u32::MAX as f32 {
+        warn!("LTS2 bandwidth value {rate_mbps} exceeds u32::MAX; clamping to u32::MAX");
+        u32::MAX
     } else {
         rate_mbps.round() as u32 // Round to nearest integer
     }
+}
+
+fn clamp_lts2_u64_to_u32(field: &str, value: u64) -> u32 {
+    match u32::try_from(value) {
+        Ok(value) => value,
+        Err(_) => {
+            warn!("LTS2 {field} value {value} exceeds u32::MAX; clamping to u32::MAX");
+            u32::MAX
+        }
+    }
+}
+
+fn clamp_lts2_u64_to_i32(field: &str, value: u64) -> i32 {
+    match i32::try_from(value) {
+        Ok(value) => value,
+        Err(_) => {
+            warn!("LTS2 {field} value {value} exceeds i32::MAX; clamping to i32::MAX");
+            i32::MAX
+        }
+    }
+}
+
+fn lts2_rtt_millis_from_nanos(field: &str, nanos: u64) -> f32 {
+    let millis = nanos as f64 / 1_000_000.0;
+    if !millis.is_finite() || millis > f64::from(f32::MAX) {
+        warn!("LTS2 {field} RTT value {nanos} ns exceeds f32::MAX ms; clamping to f32::MAX");
+        f32::MAX
+    } else {
+        millis as f32
+    }
+}
+
+fn queue_metrics_available(config: &lqos_config::Config) -> bool {
+    !config.queues.queue_mode.is_observe() && !queue_stats_stale()
+}
+
+fn resolved_circuit_hash_for_submission(
+    catalog: &lqos_network_devices::NetworkDevicesCatalog,
+    ip: &XdpIpAddress,
+    entry: &ThroughputEntry,
+) -> Option<i64> {
+    entry.circuit_hash.or_else(|| {
+        resolve_flow_device(catalog, ip, entry.device_hash, entry.circuit_hash)
+            .map(|device| device.circuit_hash)
+    })
 }
 
 pub(crate) fn submit_throughput_stats(
@@ -46,6 +139,7 @@ pub(crate) fn submit_throughput_stats(
     let Ok(config) = load_config() else {
         return;
     };
+    let queue_metrics_available = queue_metrics_available(config.as_ref());
 
     // Bail out if we don't have gather stats or a license key
     if !config.long_term_stats.gather_stats {
@@ -63,13 +157,7 @@ pub(crate) fn submit_throughput_stats(
         return;
     }
 
-    // Bail out if the license doesn't indicate that we're allowed to submit stats
-    let (license_status, _days_remaining) = get_lts_license_status();
-    let can_submit = !matches!(
-        license_status,
-        LtsStatus::NotChecked | LtsStatus::ApiOnly | LtsStatus::Invalid
-    );
-    if !can_submit {
+    if !crate::lts2_sys::can_submit_long_term_stats() {
         return;
     }
 
@@ -90,18 +178,16 @@ pub(crate) fn submit_throughput_stats(
         THROUGHPUT_TRACKER.icmp_packets_per_second.get_down(),
         THROUGHPUT_TRACKER.icmp_packets_per_second.get_up(),
     );
-    let bits_per_second = THROUGHPUT_TRACKER.bits_per_second();
+    let bits_per_second = THROUGHPUT_TRACKER.actual_bits_per_second();
 
     // Check that the stats haven't gone wonky and don't submit obviously bad data.
-    if let Ok(config) = load_config() {
-        if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
-        }
-        if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
-            debug!("Spike detected - not submitting LTS");
-            return; // Do not submit these stats
-        }
+    if bits_per_second.down > (config.queues.downlink_bandwidth_mbps * 1_000_000) {
+        debug!("Spike detected - not submitting LTS");
+        return; // Do not submit these stats
+    }
+    if bits_per_second.up > (config.queues.uplink_bandwidth_mbps * 1_000_000) {
+        debug!("Spike detected - not submitting LTS");
+        return; // Do not submit these stats
     }
 
     /////////////////////////////////////////////////////////////////
@@ -112,11 +198,11 @@ pub(crate) fn submit_throughput_stats(
             tracing::info!("Sending topology to Insight");
             // Send the topology tree
             {
-                let filename = Path::new(&config.lqos_directory).join("network.json");
-                if let Ok(raw_string) = read_to_string(filename) {
-                    match serde_json::from_str::<RawNetJs>(&raw_string) {
+                match load_insight_logical_network_json() {
+                    Err(err) => warn!("Unable to load Insight logical topology JSON. {err:?}"),
+                    Ok(raw_string) => match serde_json::from_str::<RawNetJs>(&raw_string) {
                         Err(e) => {
-                            warn!("Unable to parse network.json. {e:?}");
+                            warn!("Unable to parse Insight logical topology JSON. {e:?}")
                         }
                         Ok(json) => {
                             let lts2_format: Vec<_> =
@@ -127,9 +213,7 @@ pub(crate) fn submit_throughput_stats(
                                 warn!("Error sending message to Insight. {e:?}");
                             }
                         }
-                    }
-                } else {
-                    warn!("Unable to read network.json");
+                    },
                 }
             }
 
@@ -202,8 +286,10 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Send top-level throughput stats to LTS2
-        let bytes = THROUGHPUT_TRACKER.bytes_per_second.as_down_up();
-        let shaped_bytes = THROUGHPUT_TRACKER.shaped_bytes_per_second.as_down_up();
+        let bytes = THROUGHPUT_TRACKER.actual_bytes_per_second.as_down_up();
+        let shaped_bytes = THROUGHPUT_TRACKER
+            .shaped_actual_bytes_per_second
+            .as_down_up();
         let mut min_rtt = None;
         let mut max_rtt = None;
         let mut median_rtt = None;
@@ -232,16 +318,32 @@ pub(crate) fn submit_throughput_stats(
             median_rtt,
             tcp_retransmits_down: tcp_retransmits.down,
             tcp_retransmits_up: tcp_retransmits.up,
-            cake_marks_down: TOTAL_QUEUE_STATS.marks.get_down() as i32,
-            cake_marks_up: TOTAL_QUEUE_STATS.marks.get_up() as i32,
-            cake_drops_down: TOTAL_QUEUE_STATS.drops.get_down() as i32,
-            cake_drops_up: TOTAL_QUEUE_STATS.drops.get_up() as i32,
+            cake_marks_down: if queue_metrics_available {
+                clamp_lts2_u64_to_i32("total cake_marks_down", TOTAL_QUEUE_STATS.marks.get_down())
+            } else {
+                0
+            },
+            cake_marks_up: if queue_metrics_available {
+                clamp_lts2_u64_to_i32("total cake_marks_up", TOTAL_QUEUE_STATS.marks.get_up())
+            } else {
+                0
+            },
+            cake_drops_down: if queue_metrics_available {
+                clamp_lts2_u64_to_i32("total cake_drops_down", TOTAL_QUEUE_STATS.drops.get_down())
+            } else {
+                0
+            },
+            cake_drops_up: if queue_metrics_available {
+                clamp_lts2_u64_to_i32("total cake_drops_up", TOTAL_QUEUE_STATS.drops.get_up())
+            } else {
+                0
+            },
         })
         .is_err()
         {
             warn!("Error sending message to LTS2.");
         }
-        if let Err(e) = crate::lts2_sys::flow_count(now, ALL_FLOWS.lock().flow_data.len() as u64) {
+        if let Err(e) = crate::lts2_sys::flow_count(now, live_active_flow_count()) {
             debug!("Error sending message to LTS2. {e:?}");
         }
 
@@ -259,51 +361,52 @@ pub(crate) fn submit_throughput_stats(
         let mut circuit_throughput: FxHashMap<i64, CircuitThroughputTemp> = FxHashMap::default();
         let mut circuit_retransmits: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
 
-        let shaped_devices = SHAPED_DEVICES.load();
+        let catalog = lqos_network_devices::network_devices_catalog();
         const CRAZY_LIMIT: u64 = 8; // 8x the max bandwidth
-        let plan_lookup: FxHashMap<i64, (u64, u64)> = shaped_devices
-            .devices
-            .iter()
-            // Bandwidth: mbps * 1_000_000 to bytes
-            .map(|d| {
-                (
-                    d.circuit_hash,
-                    (
-                        d.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
-                        d.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT,
-                    ),
-                )
-            })
-            .collect();
+        let mut plan_lookup: FxHashMap<i64, (u64, u64)> = FxHashMap::default();
+        for device in catalog.iter_all_devices() {
+            let entry = plan_lookup.entry(device.circuit_hash).or_insert((0, 0));
+            entry.0 = entry
+                .0
+                .max(device.download_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+            entry.1 = entry
+                .1
+                .max(device.upload_max_mbps.round() as u64 * 1_000_000 * CRAZY_LIMIT);
+        }
 
         THROUGHPUT_TRACKER
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| h.circuit_id.is_some() && h.bytes_per_second.not_zero())
-            .for_each(|(_k, h)| {
+            .filter_map(|(ip, h)| {
+                let circuit_hash = resolved_circuit_hash_for_submission(&catalog, ip, h)?;
+                h.actual_bytes_per_second
+                    .not_zero()
+                    .then_some((circuit_hash, h))
+            })
+            .for_each(|(circuit_hash, h)| {
                 let mut crazy = false;
-                if let Some((dl, ul)) = plan_lookup.get(&h.circuit_hash.unwrap_or(0))
-                    && (h.bytes_per_second.down > *dl || h.bytes_per_second.up > *ul)
+                if let Some((dl, ul)) = plan_lookup.get(&circuit_hash)
+                    && (h.actual_bytes_per_second.down > *dl || h.actual_bytes_per_second.up > *ul)
                 {
-                    crazy_values.insert(h.circuit_hash.unwrap_or(0));
+                    crazy_values.insert(circuit_hash);
                     crazy = true;
                 }
 
                 if crazy {
                     return;
                 }
-                if let Some(c) = circuit_throughput.get_mut(&h.circuit_hash.unwrap_or(0)) {
-                    c.bytes += h.bytes_per_second;
+                if let Some(c) = circuit_throughput.get_mut(&circuit_hash) {
+                    c.bytes += h.actual_bytes_per_second;
                     c.packets += h.packets_per_second;
                     c.tcp_packets += h.tcp_packets;
                     c.udp_packets += h.udp_packets;
                     c.icmp_packets += h.icmp_packets;
                 } else {
                     circuit_throughput.insert(
-                        h.circuit_hash.unwrap_or(0),
+                        circuit_hash,
                         CircuitThroughputTemp {
-                            bytes: h.bytes_per_second,
+                            bytes: h.actual_bytes_per_second,
                             packets: h.packets_per_second,
                             tcp_packets: h.tcp_packets,
                             udp_packets: h.udp_packets,
@@ -317,16 +420,16 @@ pub(crate) fn submit_throughput_stats(
             .raw_data
             .lock()
             .iter()
-            .filter(|(_k, h)| {
-                h.circuit_id.is_some()
-                    && h.tcp_retransmits.not_zero()
-                    && !crazy_values.contains(&h.circuit_hash.unwrap_or(0))
+            .filter_map(|(ip, h)| {
+                let circuit_hash = resolved_circuit_hash_for_submission(&catalog, ip, h)?;
+                (h.tcp_retransmits.not_zero() && !crazy_values.contains(&circuit_hash))
+                    .then_some((circuit_hash, h))
             })
-            .for_each(|(_k, h)| {
-                if let Some(c) = circuit_retransmits.get_mut(&h.circuit_hash.unwrap_or(0)) {
+            .for_each(|(circuit_hash, h)| {
+                if let Some(c) = circuit_retransmits.get_mut(&circuit_hash) {
                     *c += h.tcp_retransmits;
                 } else {
-                    circuit_retransmits.insert(h.circuit_hash.unwrap_or(0), h.tcp_retransmits);
+                    circuit_retransmits.insert(circuit_hash, h.tcp_retransmits);
                 }
             });
 
@@ -357,8 +460,8 @@ pub(crate) fn submit_throughput_stats(
             .map(|(k, v)| crate::lts2_sys::shared_types::CircuitRetransmits {
                 timestamp: now,
                 circuit_hash: k,
-                tcp_retransmits_down: v.down as u32,
-                tcp_retransmits_up: v.up as u32,
+                tcp_retransmits_down: clamp_lts2_u64_to_u32("circuit tcp_retransmits_down", v.down),
+                tcp_retransmits_up: clamp_lts2_u64_to_u32("circuit tcp_retransmits_up", v.up),
             })
             .collect::<Vec<_>>();
         if crate::lts2_sys::circuit_retransmits(&circuit_retransmits_batch).is_err() {
@@ -387,7 +490,7 @@ pub(crate) fn submit_throughput_stats(
                 Some(crate::lts2_sys::shared_types::CircuitRtt {
                     timestamp: now,
                     circuit_hash: *circuit_hash,
-                    median_rtt: (median_nanos as f64 / 1_000_000.0) as f32,
+                    median_rtt: lts2_rtt_millis_from_nanos("circuit median", median_nanos),
                 })
             })
             .collect::<Vec<_>>();
@@ -398,24 +501,38 @@ pub(crate) fn submit_throughput_stats(
         // Per host CAKE stats
         let mut cake_drops: Vec<CircuitCakeDrops> = Vec::new();
         let mut cake_marks: Vec<CircuitCakeMarks> = Vec::new();
-        ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
-            if drops.not_zero() {
-                cake_drops.push(CircuitCakeDrops {
-                    timestamp: now,
-                    circuit_hash,
-                    cake_drops_down: drops.get_down() as u32,
-                    cake_drops_up: drops.get_up() as u32,
-                });
-            }
-            if marks.not_zero() {
-                cake_marks.push(CircuitCakeMarks {
-                    timestamp: now,
-                    circuit_hash,
-                    cake_marks_down: marks.get_down() as u32,
-                    cake_marks_up: marks.get_up() as u32,
-                });
-            }
-        });
+        if queue_metrics_available {
+            ALL_QUEUE_SUMMARY.iterate_queues(|circuit_hash, drops, marks| {
+                if drops.not_zero() {
+                    cake_drops.push(CircuitCakeDrops {
+                        timestamp: now,
+                        circuit_hash,
+                        cake_drops_down: clamp_lts2_u64_to_u32(
+                            "circuit cake_drops_down",
+                            drops.get_down(),
+                        ),
+                        cake_drops_up: clamp_lts2_u64_to_u32(
+                            "circuit cake_drops_up",
+                            drops.get_up(),
+                        ),
+                    });
+                }
+                if marks.not_zero() {
+                    cake_marks.push(CircuitCakeMarks {
+                        timestamp: now,
+                        circuit_hash,
+                        cake_marks_down: clamp_lts2_u64_to_u32(
+                            "circuit cake_marks_down",
+                            marks.get_down(),
+                        ),
+                        cake_marks_up: clamp_lts2_u64_to_u32(
+                            "circuit cake_marks_up",
+                            marks.get_up(),
+                        ),
+                    });
+                }
+            });
+        }
         if !cake_drops.is_empty() && crate::lts2_sys::circuit_cake_drops(&cake_drops).is_err() {
             warn!("Error sending message to LTS2.");
         }
@@ -424,10 +541,9 @@ pub(crate) fn submit_throughput_stats(
         }
 
         // Network tree stats
-        let tree = {
-            let reader = NETWORK_JSON.read();
-            reader.get_nodes_when_ready().clone()
-        };
+        let tree = lqos_network_devices::with_network_json_read(|net_json| {
+            net_json.get_nodes_when_ready().clone()
+        });
         let mut site_throughput: Vec<crate::lts2_sys::shared_types::SiteThroughput> = Vec::new();
         let mut site_retransmits: Vec<crate::lts2_sys::shared_types::SiteRetransmits> = Vec::new();
         let mut site_rtt: Vec<crate::lts2_sys::shared_types::SiteRtt> = Vec::new();
@@ -455,24 +571,42 @@ pub(crate) fn submit_throughput_stats(
                 site_retransmits.push(crate::lts2_sys::shared_types::SiteRetransmits {
                     timestamp: now,
                     site_hash,
-                    tcp_retransmits_down: node.current_tcp_retransmits.down as u32,
-                    tcp_retransmits_up: node.current_tcp_retransmits.up as u32,
+                    tcp_retransmits_down: clamp_lts2_u64_to_u32(
+                        "site tcp_retransmits_down",
+                        node.current_tcp_retransmits.down,
+                    ),
+                    tcp_retransmits_up: clamp_lts2_u64_to_u32(
+                        "site tcp_retransmits_up",
+                        node.current_tcp_retransmits.up,
+                    ),
                 });
             }
-            if node.current_drops.not_zero() {
+            if queue_metrics_available && node.current_drops.not_zero() {
                 site_cake_drops.push(crate::lts2_sys::shared_types::SiteCakeDrops {
                     timestamp: now,
                     site_hash,
-                    cake_drops_down: node.current_drops.get_down() as u32,
-                    cake_drops_up: node.current_drops.get_up() as u32,
+                    cake_drops_down: clamp_lts2_u64_to_u32(
+                        "site cake_drops_down",
+                        node.current_drops.get_down(),
+                    ),
+                    cake_drops_up: clamp_lts2_u64_to_u32(
+                        "site cake_drops_up",
+                        node.current_drops.get_up(),
+                    ),
                 });
             }
-            if node.current_marks.not_zero() {
+            if queue_metrics_available && node.current_marks.not_zero() {
                 site_cake_marks.push(crate::lts2_sys::shared_types::SiteCakeMarks {
                     timestamp: now,
                     site_hash,
-                    cake_marks_down: node.current_marks.get_down() as u32,
-                    cake_marks_up: node.current_marks.get_up() as u32,
+                    cake_marks_down: clamp_lts2_u64_to_u32(
+                        "site cake_marks_down",
+                        node.current_marks.get_down(),
+                    ),
+                    cake_marks_up: clamp_lts2_u64_to_u32(
+                        "site cake_marks_up",
+                        node.current_marks.get_up(),
+                    ),
                 });
             }
             let download = node
@@ -494,7 +628,7 @@ pub(crate) fn submit_throughput_stats(
                 site_rtt.push(crate::lts2_sys::shared_types::SiteRtt {
                     timestamp: now,
                     site_hash,
-                    median_rtt: (median_nanos as f64 / 1_000_000.0) as f32,
+                    median_rtt: lts2_rtt_millis_from_nanos("site median", median_nanos),
                 });
             }
         });
@@ -511,12 +645,14 @@ pub(crate) fn submit_throughput_stats(
         if !site_rtt.is_empty() && crate::lts2_sys::site_rtt(&site_rtt).is_err() {
             warn!("Error sending message to LTS2.");
         }
-        if !site_cake_drops.is_empty()
+        if queue_metrics_available
+            && !site_cake_drops.is_empty()
             && crate::lts2_sys::site_cake_drops(&site_cake_drops).is_err()
         {
             warn!("Error sending message to LTS2.");
         }
-        if !site_cake_marks.is_empty()
+        if queue_metrics_available
+            && !site_cake_marks.is_empty()
             && crate::lts2_sys::site_cake_marks(&site_cake_marks).is_err()
         {
             warn!("Error sending message to LTS2.");
@@ -553,18 +689,45 @@ fn ip6_to_bytes(ip: (Ipv6Addr, u32)) -> ([u8; 16], u8) {
     (bytes, ip.1 as u8)
 }
 
-/// Calculates a hash of the combination of network.json and shaped devices.
-/// This uses the NON-INSIGHT version, always - this is deliberate. If Insight
-/// is updating, but integrations are changing the original, we want to use
-/// the original.
+/// Calculates a hash of the combination of the Insight logical topology tree and shaped devices.
+///
+/// This intentionally uses the Insight-only logical topology export rather than any
+/// runtime-effective topology or local compatibility tree.
 fn combined_devices_network_hash() -> anyhow::Result<i64> {
     let cfg = load_config()?;
-    let nj_path = Path::new(&cfg.lqos_directory).join("network.json");
-    let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
 
-    let nj_as_string = read_to_string(nj_path)?;
-    let sd_as_string = read_to_string(sd_path)?;
-    let combined = format!("{}\n{}", nj_as_string, sd_as_string);
+    let nj_as_string = load_insight_logical_network_json()?;
+    let sd_as_string = if integration_ingress_enabled(cfg.as_ref()) {
+        let topology_import = TopologyImportFile::load(cfg.as_ref())?
+            .ok_or_else(|| anyhow::anyhow!("topology_import.json does not exist"))?;
+        serde_json::to_string(
+            &topology_import
+                .into_imported_bundle()
+                .shaped_devices
+                .devices,
+        )?
+    } else {
+        let sd_path = std::path::Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
+        read_to_string(sd_path)?
+    };
+    let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
+    let mut dynamic_devices: Vec<ShapedDevice> = dynamic_snapshot
+        .iter()
+        .map(|circuit| circuit.shaped.clone())
+        .collect();
+    dynamic_devices.sort_by(|a, b| {
+        (
+            a.circuit_id.trim().to_ascii_lowercase(),
+            a.device_id.trim().to_ascii_lowercase(),
+        )
+            .cmp(&(
+                b.circuit_id.trim().to_ascii_lowercase(),
+                b.device_id.trim().to_ascii_lowercase(),
+            ))
+    });
+    let dynamic_as_string = serde_json::to_string(&dynamic_devices)?;
+
+    let combined = format!("{}\n{}\n{}", nj_as_string, sd_as_string, dynamic_as_string);
     let hash = hash_to_i64(&combined);
 
     Ok(hash)
@@ -584,6 +747,21 @@ static LTS2_HASH: AtomicI64 = AtomicI64::new(0);
 /// transmission to Insight
 fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
     let cfg = load_config()?;
+    let dynamic_snapshot = lqos_network_devices::dynamic_circuits_snapshot();
+    if integration_ingress_enabled(cfg.as_ref()) {
+        let topology_import = TopologyImportFile::load(cfg.as_ref())?
+            .ok_or_else(|| anyhow::anyhow!("topology_import.json does not exist"))?;
+        let mut devices = topology_import
+            .into_imported_bundle()
+            .shaped_devices
+            .devices;
+        devices.extend(
+            dynamic_snapshot
+                .iter()
+                .map(|circuit| circuit.shaped.clone()),
+        );
+        return Ok(devices);
+    }
     let sd_path = Path::new(&cfg.lqos_directory).join("ShapedDevices.csv");
     if !sd_path.exists() {
         anyhow::bail!("ShapedDevices.csv does not exist");
@@ -592,22 +770,41 @@ fn load_local_shaped_devices() -> anyhow::Result<Vec<ShapedDevice>> {
         .comment(Some(b'#'))
         .trim(csv::Trim::All)
         .from_path(sd_path)?;
+    let headers = reader.headers()?.clone();
     let mut devices = Vec::new(); // Note that this used to be supported_customers, but we're going to let it grow organically
 
     for result in reader.records() {
         if let Ok(result) = result {
-            let device = ShapedDevice::from_csv(&result)?;
+            let device = ShapedDevice::from_csv(&result, Some(&headers))?;
             devices.push(device);
         } else {
             anyhow::bail!("Error reading ShapedDevices.csv");
         }
     }
+    devices.extend(
+        dynamic_snapshot
+            .iter()
+            .map(|circuit| circuit.shaped.clone()),
+    );
     Ok(devices)
+}
+
+fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
+    lqos_config::integration_ingress_enabled(config)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::throughput_tracker::throughput_entry::ThroughputEntry;
+    use lqos_bus::TcHandle;
+    use lqos_config::{ConfigShapedDevices, QueueMode, ShapedDevice};
+    use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
+    use lqos_utils::XdpIpAddress;
+    use lqos_utils::qoo::QoqScores;
+    use lqos_utils::units::DownUpOrder;
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
 
     #[test]
     fn test_rate_for_submission_small_rates() {
@@ -644,6 +841,14 @@ mod tests {
     }
 
     #[test]
+    fn test_rate_for_submission_clamps_non_finite_and_huge_rates() {
+        assert_eq!(rate_for_submission(f32::NAN), 1);
+        assert_eq!(rate_for_submission(f32::INFINITY), u32::MAX);
+        assert_eq!(rate_for_submission(f32::NEG_INFINITY), 1);
+        assert_eq!(rate_for_submission(u32::MAX as f32), u32::MAX);
+    }
+
+    #[test]
     fn test_rate_for_submission_prevents_zero() {
         // Should never return 0, even for very small inputs
         assert_eq!(rate_for_submission(0.01), 1);
@@ -656,5 +861,94 @@ mod tests {
         assert_eq!(rate_for_submission(5.0), 5);
         assert_eq!(rate_for_submission(10.0), 10);
         assert_eq!(rate_for_submission(100.0), 100);
+    }
+
+    #[test]
+    fn lts2_u64_to_u32_clamps_protocol_limited_fields() {
+        assert_eq!(clamp_lts2_u64_to_u32("test", u64::from(u32::MAX)), u32::MAX);
+        assert_eq!(
+            clamp_lts2_u64_to_u32("test", u64::from(u32::MAX) + 1),
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn lts2_u64_to_i32_clamps_protocol_limited_fields() {
+        assert_eq!(
+            clamp_lts2_u64_to_i32("test", u64::try_from(i32::MAX).unwrap()),
+            i32::MAX
+        );
+        assert_eq!(
+            clamp_lts2_u64_to_i32("test", u64::try_from(i32::MAX).unwrap() + 1),
+            i32::MAX
+        );
+    }
+
+    #[test]
+    fn lts2_rtt_millis_keeps_large_values_finite() {
+        assert_eq!(lts2_rtt_millis_from_nanos("test", 1_500_000), 1.5);
+        let millis = lts2_rtt_millis_from_nanos("test", u64::MAX);
+        assert!(millis.is_finite());
+        assert!(millis > 1.0e13);
+    }
+
+    #[test]
+    fn queue_metrics_disabled_in_observe_mode() {
+        let mut config = lqos_config::Config::default();
+        config.queues.set_queue_mode(QueueMode::Observe);
+        assert!(!queue_metrics_available(&config));
+    }
+
+    #[test]
+    fn resolved_circuit_hash_falls_back_to_ip_lookup() {
+        let mut shaped = ConfigShapedDevices::default();
+        shaped.replace_with_new_data(vec![ShapedDevice {
+            circuit_id: "circuit-1".to_string(),
+            circuit_name: "Circuit Alpha".to_string(),
+            device_id: "device-1".to_string(),
+            parent_node: "Parent-A".to_string(),
+            ipv4: vec![(Ipv4Addr::new(192, 168, 1, 10), 32)],
+            circuit_hash: hash_to_i64("circuit-1"),
+            device_hash: hash_to_i64("device-1"),
+            ..Default::default()
+        }]);
+        let shaped_catalog = ShapedDevicesCatalog::from_shaped_devices(Arc::new(shaped));
+        let catalog = NetworkDevicesCatalog::from_snapshots(shaped_catalog, Arc::new(Vec::new()));
+        let ip = XdpIpAddress::from_ip("192.168.1.10".parse().expect("test IP should parse"));
+        let entry = ThroughputEntry {
+            circuit_id: Some("circuit-1".to_string()),
+            circuit_hash: None,
+            device_hash: None,
+            network_json_parents: None,
+            first_cycle: 0,
+            most_recent_cycle: 0,
+            bytes: DownUpOrder::zeroed(),
+            actual_bytes: DownUpOrder::zeroed(),
+            packets: DownUpOrder::zeroed(),
+            tcp_packets: DownUpOrder::zeroed(),
+            udp_packets: DownUpOrder::zeroed(),
+            icmp_packets: DownUpOrder::zeroed(),
+            prev_bytes: DownUpOrder::zeroed(),
+            prev_actual_bytes: DownUpOrder::zeroed(),
+            prev_packets: DownUpOrder::zeroed(),
+            prev_tcp_packets: DownUpOrder::zeroed(),
+            prev_udp_packets: DownUpOrder::zeroed(),
+            prev_icmp_packets: DownUpOrder::zeroed(),
+            bytes_per_second: DownUpOrder::zeroed(),
+            actual_bytes_per_second: DownUpOrder::zeroed(),
+            packets_per_second: DownUpOrder::zeroed(),
+            tc_handle: TcHandle::from_u32(0),
+            rtt_buffer: Default::default(),
+            recent_rtt_data: [crate::throughput_tracker::flow_data::RttData::from_nanos(0); 60],
+            last_fresh_rtt_data_cycle: 0,
+            last_seen: 0,
+            tcp_retransmits: DownUpOrder::zeroed(),
+            tcp_retransmit_packets: DownUpOrder::zeroed(),
+            qoq: QoqScores::default(),
+        };
+
+        let circuit_hash = resolved_circuit_hash_for_submission(&catalog, &ip, &entry);
+
+        assert_eq!(circuit_hash, Some(hash_to_i64("circuit-1")));
     }
 }
