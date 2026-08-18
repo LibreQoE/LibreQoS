@@ -4,7 +4,7 @@ use crate::node_manager::{WarningLevel, add_global_warning};
 use anyhow::Result;
 use lqos_config::Config;
 use lqos_sys::interface_name_to_index;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 fn check_queues(interface: &str) -> Result<()> {
     let path = format!("/sys/class/net/{interface}/queues/");
@@ -174,8 +174,55 @@ fn check_bridge_status(config: &Config, interfaces: &[IpLinkInterface]) -> Resul
     Ok(())
 }
 
+/// Determine whether the host clocksource is healthy for packet-level timing.
+///
+/// When the kernel selects a slower clocksource, per-packet reads in the XDP/TC
+/// hot path and userspace timing reads can become far more expensive, driving
+/// high CPU usage at peak traffic.
+///
+/// Returns a warning message when an expensive x86 fallback clocksource is
+/// active. Returns `None` for the TSC and paravirtual clocksources.
+fn clocksource_warning(current: &str) -> Option<String> {
+    let current = current.trim();
+    if !matches!(current, "hpet" | "acpi_pm") {
+        return None;
+    }
+    Some(format!(
+        "Active clocksource is '{current}' instead of 'tsc'. A slower clocksource can make packet-level and userspace timing expensive and cause high CPU at peak. See the Troubleshooting guide: 'High CPU usage at peak traffic (unstable TSC clocksource)'."
+    ))
+}
+
+/// Reads the active clocksource from sysfs and, when it is an expensive x86
+/// fallback, records a node_manager global warning and a log line.
+///
+/// Side effects: reads `/sys/devices/system/clocksource/clocksource0/`, and on
+/// a problem emits a `warn!` log line and a global warning. This is
+/// intentionally non-fatal: shaping startup continues either way.
+fn check_clocksource() {
+    // The TSC is an x86 clocksource; other architectures name their stable
+    // counter differently and never expose a usable "tsc".
+    if !matches!(std::env::consts::ARCH, "x86" | "x86_64") {
+        return;
+    }
+
+    let base = Path::new("/sys/devices/system/clocksource/clocksource0");
+    let current_path = base.join("current_clocksource");
+    let Ok(current) = std::fs::read_to_string(&current_path) else {
+        debug!("Unable to read {current_path:?}; skipping clocksource check");
+        return;
+    };
+    let Some(warning) = clocksource_warning(&current) else {
+        return;
+    };
+    warn!("{warning}");
+    add_global_warning(WarningLevel::Warning, warning);
+}
+
 /// Runs a series of preflight checks to ensure that the configuration is sane
 pub fn preflight_checks() -> Result<()> {
+    // Warn (but do not block) if the host clocksource is unhealthy.
+    check_clocksource();
+
     // Are we able to load the configuration?
     let config = lqos_config::load_config().map_err(|_| {
         error!("Failed to load configuration file - /etc/lqos.conf");
@@ -225,4 +272,31 @@ pub fn preflight_checks() -> Result<()> {
     info!("Sanity checks passed");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn healthy_tsc_clocksource_produces_no_warning() {
+        assert_eq!(clocksource_warning("tsc\n"), None);
+    }
+
+    #[test]
+    fn demoted_tsc_clocksource_produces_warning() {
+        let warning = clocksource_warning("hpet\n").unwrap();
+        assert!(warning.contains("'hpet'"));
+        assert!(warning.contains("tsc"));
+    }
+
+    #[test]
+    fn acpi_pm_clocksource_produces_warning() {
+        assert!(clocksource_warning("acpi_pm\n").is_some());
+    }
+
+    #[test]
+    fn paravirtual_clocksource_produces_no_warning() {
+        assert_eq!(clocksource_warning("kvm-clock\n"), None);
+    }
 }

@@ -141,6 +141,23 @@ sudo systemctl edit lqosd
 
 Set `LQOSD_MEMORY_WATCHDOG_DISABLED=1` only when you are actively watching memory pressure through another tool.
 
+### High CPU usage at peak traffic (unstable TSC clocksource)
+
+If the CPU pegs at 100% during peak hours and throughput/latency suffer, the Linux kernel may have marked the CPU's TSC as an unstable clocksource and fallen back to a slower one (usually HPET). LibreQoS operators have observed this on some AMD Ryzen hosts with CPU C-states enabled, sometimes only after a reboot.
+
+LibreQoS warns at startup when HPET or the ACPI PM timer is active. If you see this lqosd warning, check the clocksource directly:
+
+```bash
+cat /sys/devices/system/clocksource/clocksource0/current_clocksource
+```
+
+If the output is `hpet` or `acpi_pm` on a physical LibreQoS host, fix it by either:
+
+- adding `tsc=reliable` (or `tsc=nowatchdog`) to the kernel command line in `/etc/default/grub` (`GRUB_CMDLINE_LINUX_DEFAULT`) and running `sudo update-grub`, then rebooting, or
+- disabling CPU C-states in the BIOS/UEFI.
+
+On hosts where the stability watchdog demotes the TSC, adding only `clocksource=tsc` does not prevent the demotion.
+
 ### Advanced lqosd debug
 
 At the command-line, run:
