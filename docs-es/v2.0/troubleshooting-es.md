@@ -109,6 +109,23 @@ journalctl -u lqosd --since "10 minutes ago"
 
 Si el log muestra `LibreQoS failed to attach the XDP/TC kernel` o `Unable to load the XDP/TC kernel`, trate el arranque de `lqosd` como fallido. La WebUI y el bus local no arrancan hasta que el programa del kernel se cargue y se adjunte correctamente. El error de carga incluye el valor de retorno bruto, el número errno y el código errno, por ejemplo `raw=-11, errno=11, code=EAGAIN`. Revise si hay un programa XDP existente, un hook TC ocupado, falta de soporte del driver o mapas BPF fijados obsoletos antes de reiniciar `lqosd`.
 
+### Uso de CPU elevado en horas pico (clocksource TSC inestable)
+
+Si la CPU se satura al 100% durante las horas pico y el throughput/latencia se degradan, el kernel de Linux puede haber marcado el TSC de la CPU como un clocksource inestable y haber vuelto a uno más lento (normalmente HPET). Los operadores de LibreQoS han observado este comportamiento en algunos hosts AMD Ryzen con los estados C de la CPU habilitados, a veces solo después de reiniciar.
+
+LibreQoS advierte al arrancar cuando HPET o el temporizador PM de ACPI está activo. Si ve esta advertencia de lqosd, compruebe el clocksource directamente:
+
+```bash
+cat /sys/devices/system/clocksource/clocksource0/current_clocksource
+```
+
+Si la salida es `hpet` o `acpi_pm` en un host físico de LibreQoS, soluciónelo de una de estas formas:
+
+- añadiendo `tsc=reliable` (o `tsc=nowatchdog`) a la línea de comandos del kernel en `/etc/default/grub` (`GRUB_CMDLINE_LINUX_DEFAULT`) y ejecutando `sudo update-grub`, y luego reiniciando, o
+- deshabilitando los estados C de la CPU en el BIOS/UEFI.
+
+En los hosts donde el watchdog de estabilidad degrada el TSC, añadir únicamente `clocksource=tsc` no evita esa degradación.
+
 ### Depuración avanzada de lqosd
 
 ```bash
