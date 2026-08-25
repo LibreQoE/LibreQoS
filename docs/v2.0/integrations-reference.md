@@ -186,7 +186,7 @@ Use additional `[[router]]` blocks for additional routers. `port`, `use_ssl`, an
 Run a manual import with:
 
 ```bash
-python3 integrationNetzur.py
+python3 mikrotikFindIPv6.py
 ```
 
 The integration regenerates `ShapedDevices.csv` for its legacy DIY-style path, but built-in integrations no longer write `network.json`. Keep DIY `network.json` operator-owned.
