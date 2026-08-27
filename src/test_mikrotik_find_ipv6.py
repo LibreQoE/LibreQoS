@@ -16,8 +16,19 @@ from mikrotikFindIPv6 import _build_ipv4_to_ipv6_map, _mac_from_dhcpv6_duid
 
 
 class MikrotikFindIPv6Tests(unittest.TestCase):
-	def test_pull_mikrotik_ipv6_fetches_resources_and_returns_json(self):
-		resources = {
+	def _run_pull_with_stubbed_router(self, verbose):
+		class Resource:
+			def __init__(self, entries):
+				self.entries = entries
+
+			def get(self):
+				return self.entries
+
+		class Api:
+			def get_resource(self, name):
+				return Resource(self.resources[name])
+
+		Api.resources = {
 			"/ip/arp": [
 				{"mac-address": "AA:BB:CC:DD:EE:FF", "address": "192.0.2.30"},
 			],
@@ -29,17 +40,6 @@ class MikrotikFindIPv6Tests(unittest.TestCase):
 				{"mac-address": "00:11:22:33:44:55", "address": "2001:db8::99"},
 			],
 		}
-
-		class Resource:
-			def __init__(self, entries):
-				self.entries = entries
-
-			def get(self):
-				return self.entries
-
-		class Api:
-			def get_resource(self, name):
-				return Resource(resources[name])
 
 		class Pool:
 			def __init__(self, *args, **kwargs):
@@ -62,7 +62,7 @@ class MikrotikFindIPv6Tests(unittest.TestCase):
 		stderr = io.StringIO()
 		try:
 			with contextlib.redirect_stderr(stderr):
-				result = json.loads(mikrotikFindIPv6.pullMikrotikIPv6())
+				result = json.loads(mikrotikFindIPv6.pullMikrotikIPv6(verbose=verbose))
 		finally:
 			if original_pool is None:
 				delattr(mikrotikFindIPv6.routeros_api, "RouterOsApiPool")
@@ -70,8 +70,31 @@ class MikrotikFindIPv6Tests(unittest.TestCase):
 				mikrotikFindIPv6.routeros_api.RouterOsApiPool = original_pool
 			mikrotikFindIPv6._load_router_list = original_load_router_list
 
+		return result, stderr.getvalue()
+
+	def test_pull_mikrotik_ipv6_fetches_resources_and_returns_json(self):
+		result, stderr = self._run_pull_with_stubbed_router(verbose=False)
+
 		self.assertEqual(result, {"192.0.2.30": "2001:db8:30::/56"})
-		self.assertIn("Failed to find associated IPv4 for 2001:db8::99", stderr.getvalue())
+		self.assertIn("Failed to find associated IPv4 for 2001:db8::99", stderr)
+		self.assertNotIn("[edge]", stderr)
+
+	def test_verbose_pull_logs_per_router_diagnostics(self):
+		result, stderr = self._run_pull_with_stubbed_router(verbose=True)
+
+		self.assertEqual(result, {"192.0.2.30": "2001:db8:30::/56"})
+		self.assertIn("Router 'edge' (198.51.100.1:8728", stderr)
+		self.assertIn("  /ip/arp: 1 entries", stderr)
+		self.assertIn("  /ip/dhcp-server/lease: 0 entries", stderr)
+		self.assertIn("  /ipv6/dhcp-server/binding: 1 entries", stderr)
+		self.assertIn("  /ipv6/neighbor: 1 entries", stderr)
+		self.assertIn("  192.0.2.30 -> 2001:db8:30::/56", stderr)
+		self.assertIn("Router 'edge' contributed 1 IPv4 -> IPv6 mapping(s)", stderr)
+
+	def test_verbose_pull_tags_warnings_with_router_name(self):
+		_, stderr = self._run_pull_with_stubbed_router(verbose=True)
+
+		self.assertIn("[edge] Failed to find associated IPv4 for 2001:db8::99", stderr)
 
 	def test_dhcpv6_duid_ll_extracts_mac(self):
 		self.assertEqual(_mac_from_dhcpv6_duid("00030001AABBCCDDEEFF"), "AABBCCDDEEFF")

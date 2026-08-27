@@ -179,7 +179,13 @@ def _record_client_address_binding(client_address_to_ipv6, client_address, addre
 	elif canonical_address != current.canonical_address:
 		client_address_to_ipv6[client_address] = current._replace(ambiguous=True)
 
-def _build_ipv4_to_ipv6_map(arp_entries, dhcp4_entries, dhcp6_bindings, neighbor6_entries):
+def _warn(message, log_context=None):
+	if log_context:
+		print('[' + log_context + '] ' + message, file=sys.stderr)
+	else:
+		print(message, file=sys.stderr)
+
+def _build_ipv4_to_ipv6_map(arp_entries, dhcp4_entries, dhcp6_bindings, neighbor6_entries, log_context=None):
 	ipv4_to_ipv6 = {}
 	mac_to_ipv4 = {}
 	mac_to_ipv6 = {}
@@ -207,7 +213,7 @@ def _build_ipv4_to_ipv6_map(arp_entries, dhcp4_entries, dhcp6_bindings, neighbor
 		neighbor_address = _canonical_ip_text(address)
 		mapped_ipv6_record = client_address_to_ipv6.get(neighbor_address)
 		if mapped_ipv6_record is not None and mapped_ipv6_record.ambiguous:
-			print('Skipped ambiguous DHCPv6 client-address entries for ' + neighbor_address, file=sys.stderr)
+			_warn('Skipped ambiguous DHCPv6 client-address entries for ' + neighbor_address, log_context)
 			_record_ipv6_for_mac(mac_to_ipv6, normalized_mac, address, source_priority=SourcePriority.NEIGHBOR)
 		elif mapped_ipv6_record is not None:
 			_record_ipv6_for_mac(mac_to_ipv6, normalized_mac, mapped_ipv6_record.address, source_priority=SourcePriority.DHCP)
@@ -216,53 +222,77 @@ def _build_ipv4_to_ipv6_map(arp_entries, dhcp4_entries, dhcp6_bindings, neighbor
 
 	for mac, ipv6_record in mac_to_ipv6.items():
 		if ipv6_record.ambiguous:
-			print('Skipped ambiguous IPv6 entries for MAC ' + mac, file=sys.stderr)
+			_warn('Skipped ambiguous IPv6 entries for MAC ' + mac, log_context)
 			continue
 		ipv6 = ipv6_record.address
 		try:
 			ipv4_record = mac_to_ipv4[mac]
 			if ipv4_record.ambiguous:
-				print('Skipped ambiguous IPv4 entries for MAC ' + mac, file=sys.stderr)
+				_warn('Skipped ambiguous IPv4 entries for MAC ' + mac, log_context)
 				continue
 			ipv4 = ipv4_record.address
 			ipv4_to_ipv6[ipv4] = ipv6
 		except KeyError:
-			print('Failed to find associated IPv4 for ' + ipv6, file=sys.stderr)
+			_warn('Failed to find associated IPv4 for ' + ipv6, log_context)
 
 	return ipv4_to_ipv6
 
-def pullMikrotikIPv6(configPath=None):
+def _pull_router_ipv6_map(router, verbose=False):
+	IP = router['host']
+	inputUsername = router['username']
+	inputPassword = router['password']
+	apiPort = int(router.get('port', 8728))
+	use_ssl = bool(router.get('use_ssl', False))
+	plaintext_login = bool(router.get('plaintext_login', True))
+	router_name = _entry_value(router, 'name') or IP
+	connection = routeros_api.RouterOsApiPool(IP, username=inputUsername, password=inputPassword, port=apiPort, use_ssl=use_ssl, ssl_verify=False, ssl_verify_hostname=False, plaintext_login=plaintext_login)
+	api = connection.get_api()
+	list_arp4 = api.get_resource('/ip/arp')
+	arp_entries = list_arp4.get()
+	list_dhcp4 = api.get_resource('/ip/dhcp-server/lease')
+	dhcp4_entries = list_dhcp4.get()
+	list_binding6 = api.get_resource('/ipv6/dhcp-server/binding')
+	dhcp6_bindings = list_binding6.get()
+	list_neighbor6 = api.get_resource('/ipv6/neighbor')
+	neighbor6_entries = list_neighbor6.get()
+	if verbose:
+		print("Router '{}' ({}:{}, use_ssl={}, plaintext_login={})".format(router_name, IP, apiPort, use_ssl, plaintext_login), file=sys.stderr)
+	ipv4_to_ipv6 = _build_ipv4_to_ipv6_map(
+		arp_entries,
+		dhcp4_entries,
+		dhcp6_bindings,
+		neighbor6_entries,
+		log_context=str(router_name) if verbose else None,
+	)
+	if verbose:
+		print('  /ip/arp: {} entries'.format(len(arp_entries)), file=sys.stderr)
+		print('  /ip/dhcp-server/lease: {} entries'.format(len(dhcp4_entries)), file=sys.stderr)
+		print('  /ipv6/dhcp-server/binding: {} entries'.format(len(dhcp6_bindings)), file=sys.stderr)
+		print('  /ipv6/neighbor: {} entries'.format(len(neighbor6_entries)), file=sys.stderr)
+		for ipv4, ipv6 in sorted(ipv4_to_ipv6.items()):
+			print('  {} -> {}'.format(ipv4, ipv6), file=sys.stderr)
+		print("Router '{}' contributed {} IPv4 -> IPv6 mapping(s)".format(router_name, len(ipv4_to_ipv6)), file=sys.stderr)
+	return ipv4_to_ipv6
+
+def pullMikrotikIPv6(configPath=None, verbose=False):
 	ipv4ToIPv6 = {}
 	routerList = _load_router_list(configPath)
 	for router in routerList:
-		IP = router['host']
-		inputUsername = router['username']
-		inputPassword = router['password']
-		apiPort = int(router.get('port', 8728))
-		use_ssl = bool(router.get('use_ssl', False))
-		plaintext_login = bool(router.get('plaintext_login', True))
-		connection = routeros_api.RouterOsApiPool(IP, username=inputUsername, password=inputPassword, port=apiPort, use_ssl=use_ssl, ssl_verify=False, ssl_verify_hostname=False, plaintext_login=plaintext_login)
-		api = connection.get_api()
-		list_arp4 = api.get_resource('/ip/arp')
-		arp_entries = list_arp4.get()
-		list_dhcp4 = api.get_resource('/ip/dhcp-server/lease')
-		dhcp4_entries = list_dhcp4.get()
-		list_binding6 = api.get_resource('/ipv6/dhcp-server/binding')
-		dhcp6_bindings = list_binding6.get()
-		list_neighbor6 = api.get_resource('/ipv6/neighbor')
-		neighbor6_entries = list_neighbor6.get()
-		ipv4ToIPv6.update(_build_ipv4_to_ipv6_map(arp_entries, dhcp4_entries, dhcp6_bindings, neighbor6_entries))
-	
+		ipv4ToIPv6.update(_pull_router_ipv6_map(router, verbose=verbose))
+
 	return json.dumps(ipv4ToIPv6)
 
 if __name__ == '__main__':
 	# If the first argument is a string, it's treated as a legacy CSV path override.
-	if len(sys.argv) > 1 and sys.argv[1] == '--show-config':
+	args = sys.argv[1:]
+	verbose = '--verbose' in args or '-v' in args
+	args = [arg for arg in args if arg not in ('--verbose', '-v')]
+	if args and args[0] == '--show-config':
 		print("Configured secrets file: " + mikrotik_ipv6_config_path())
-	elif len(sys.argv) > 1:
-		configPath = sys.argv[1]
-		print(pullMikrotikIPv6(configPath))
+	elif args:
+		configPath = args[0]
+		print(pullMikrotikIPv6(configPath, verbose=verbose))
 	else:
-		print(pullMikrotikIPv6())
+		print(pullMikrotikIPv6(verbose=verbose))
 
 	#print(pullMikrotikIPv6())
