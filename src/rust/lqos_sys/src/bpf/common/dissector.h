@@ -181,6 +181,7 @@ static __always_inline bool dissector_find_l3_offset(
             }
             struct vlan_hdr *vlan = (struct vlan_hdr *)(dissector->start + offset);
             dissector->current_vlan = vlan->h_vlan_TCI;
+            __u16 vlan_tci = bpf_ntohs(dissector->current_vlan);
             eth_type = bpf_ntohs(vlan->h_vlan_encapsulated_proto);
             offset += sizeof(struct vlan_hdr);
             // VLAN Redirection is requested, so lookup a detination and
@@ -190,19 +191,22 @@ static __always_inline bool dissector_find_l3_offset(
 #ifdef VERBOSE
                 bpf_debug("Searching for redirect %u:%u",
                           dissector->ctx->ingress_ifindex,
-                          bpf_ntohs(dissector->current_vlan));
+                          vlan_tci);
 #endif
                 __u32 key = (dissector->ctx->ingress_ifindex << 16) |
-                            bpf_ntohs(dissector->current_vlan);
+                            (vlan_tci & 0x0FFF);
                 struct bifrost_vlan *vlan_info = NULL;
                 vlan_info = bpf_map_lookup_elem(&bifrost_vlan_map, &key);
                 if (vlan_info)
                 {
+                    vlan_tci = bpf_ntohs(dissector->current_vlan);
 #ifdef VERBOSE
                     bpf_debug("Redirect to VLAN %u",
                               bpf_htons(vlan_info->redirect_to));
 #endif
-                    vlan->h_vlan_TCI = bpf_htons(vlan_info->redirect_to);
+                    vlan->h_vlan_TCI = bpf_htons(
+                        (vlan_tci & 0xF000) |
+                        (vlan_info->redirect_to & 0x0FFF));
                 }
             }
         }
