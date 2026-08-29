@@ -800,6 +800,16 @@ impl BusRequest {
         }
     }
 
+    /// Returns true when the request may only be issued by a root Unix-socket peer.
+    pub fn requires_root(&self) -> bool {
+        matches!(
+            self,
+            Self::ReloadLibreQoS
+                | Self::UpdateLqosdConfig(_)
+                | Self::UpdateLqosdConfigPreserveApiCredentials(_)
+        )
+    }
+
     /// Returns true when a timed-out request can fail fast without hiding daemon-side mutation.
     pub fn can_fail_fast_on_timeout(&self) -> bool {
         matches!(
@@ -921,6 +931,30 @@ mod tests {
             .kind(),
             "TopFlows"
         );
+    }
+
+    #[test]
+    fn privileged_control_requests_require_root() {
+        assert!(BusRequest::ReloadLibreQoS.requires_root());
+
+        let config = Box::new(lqos_config::Config::default());
+        assert!(BusRequest::UpdateLqosdConfig(config.clone()).requires_root());
+        assert!(BusRequest::UpdateLqosdConfigPreserveApiCredentials(config).requires_root());
+    }
+
+    #[test]
+    fn lqtop_queries_do_not_require_root() {
+        let requests = [
+            BusRequest::GetCurrentThroughput,
+            BusRequest::GetTopNDownloaders { start: 0, end: 100 },
+            BusRequest::TopFlows {
+                flow_type: TopFlowType::Bytes,
+                n: 100,
+            },
+            BusRequest::RttHistogram,
+        ];
+
+        assert!(requests.iter().all(|request| !request.requires_root()));
     }
 
     #[test]
