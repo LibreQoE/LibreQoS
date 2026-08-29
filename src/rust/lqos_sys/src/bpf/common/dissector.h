@@ -41,8 +41,7 @@ struct dissector_t
     __u16 l3offset;
     // Ethernet packet type once found (0 until then)
     __u16 eth_type;
-    // Current VLAN tag. If there are multiple tags, it will be
-    // the INNER tag.
+    // Outer VLAN ID, without priority or drop-eligible bits.
     __be16 current_vlan;
     __u16 src_port;
     __u16 dst_port;
@@ -79,6 +78,12 @@ struct pppoe_proto
 #define PPPOE_SES_HLEN 8
 #define PPP_IP 0x21
 #define PPP_IPV6 0x57
+#define LQOS_VLAN_VID_MASK 0x0FFF
+
+static __always_inline __be16 lqos_vlan_vid(__be16 vlan_tci)
+{
+    return bpf_htons(bpf_ntohs(vlan_tci) & LQOS_VLAN_VID_MASK);
+}
 
 // Representation of an MPLS label
 struct mpls_label
@@ -180,7 +185,10 @@ static __always_inline bool dissector_find_l3_offset(
                 return false;
             }
             struct vlan_hdr *vlan = (struct vlan_hdr *)(dissector->start + offset);
-            dissector->current_vlan = vlan->h_vlan_TCI;
+            __be16 vlan_tci = vlan->h_vlan_TCI;
+            if (offset == sizeof(struct ethhdr)) {
+                dissector->current_vlan = lqos_vlan_vid(vlan_tci);
+            }
             eth_type = bpf_ntohs(vlan->h_vlan_encapsulated_proto);
             offset += sizeof(struct vlan_hdr);
             // VLAN Redirection is requested, so lookup a detination and
@@ -190,10 +198,10 @@ static __always_inline bool dissector_find_l3_offset(
 #ifdef VERBOSE
                 bpf_debug("Searching for redirect %u:%u",
                           dissector->ctx->ingress_ifindex,
-                          bpf_ntohs(dissector->current_vlan));
+                          bpf_ntohs(vlan_tci));
 #endif
                 __u32 key = (dissector->ctx->ingress_ifindex << 16) |
-                            bpf_ntohs(dissector->current_vlan);
+                            bpf_ntohs(vlan_tci);
                 struct bifrost_vlan *vlan_info = NULL;
                 vlan_info = bpf_map_lookup_elem(&bifrost_vlan_map, &key);
                 if (vlan_info)
