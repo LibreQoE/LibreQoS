@@ -165,6 +165,14 @@ fn normalize_port_label(port: &str) -> Option<String> {
     }
 }
 
+fn default_network_interface(interfaces: &[InterfaceOption], internet: &str) -> String {
+    interfaces
+        .iter()
+        .find(|iface| iface.name != internet)
+        .map(|iface| iface.name.clone())
+        .unwrap_or_else(|| internet.to_string())
+}
+
 fn build_interface_list(
     interfaces: &[InterfaceOption],
     group: &mut RadioGroup<String>,
@@ -189,14 +197,14 @@ fn build_layout() -> LinearLayout {
         BridgeMode::Linux | BridgeMode::XDP => {
             let interfaces = get_interface_options().expect("Failed to get interfaces");
 
-            // If the configuration has empty interface fields, set them to the first available interface
+            // If the configuration has empty interface fields, set them to distinct defaults
             {
                 let mut config = CURRENT_CONFIG.lock();
                 if config.to_internet.is_empty() && !interfaces.is_empty() {
                     config.to_internet = interfaces[0].name.clone();
                 }
                 if config.to_network.is_empty() && !interfaces.is_empty() {
-                    config.to_network = interfaces[0].name.clone();
+                    config.to_network = default_network_interface(&interfaces, &config.to_internet);
                 }
             }
 
@@ -328,4 +336,31 @@ pub fn interface_menu(s: &mut Cursive) {
             })
             .full_screen(),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InterfaceOption, default_network_interface};
+
+    fn options(names: &[&str]) -> Vec<InterfaceOption> {
+        names
+            .iter()
+            .map(|name| InterfaceOption {
+                name: name.to_string(),
+                label: name.to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn network_default_differs_from_internet() {
+        let interfaces = options(&["eth0", "eth1"]);
+        assert_eq!(default_network_interface(&interfaces, "eth0"), "eth1");
+    }
+
+    #[test]
+    fn network_default_falls_back_to_internet_when_only_one_interface() {
+        let interfaces = options(&["eth0"]);
+        assert_eq!(default_network_interface(&interfaces, "eth0"), "eth0");
+    }
 }
