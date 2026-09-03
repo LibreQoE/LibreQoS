@@ -227,6 +227,20 @@ def ensure_parent_dir(path):
         os.makedirs(parent, exist_ok=True)
 
 
+def atomic_write_text(path, text):
+    # Write to a sibling temp file and atomically replace the target, so an
+    # interrupted write (crash, VM snapshot) can never leave a truncated file.
+    # The file is fsync'd, but the directory rename is not; on power loss the
+    # worst case is the previous complete file.
+    ensure_parent_dir(path)
+    temp_path = path + ".tmp"
+    with open(temp_path, 'w') as file:
+        file.write(text)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(temp_path, path)
+
+
 def get_network_json_path():
     base_dir = get_libreqos_directory()
     effective_path = get_runtime_state_path("topology", "network.effective.json")
@@ -641,13 +655,7 @@ def save_planner_state(state, state_path=None, planner_module=None):
         planner_module.save_state(state_path, state)
         return
 
-    parent = os.path.dirname(state_path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    temp_path = state_path + ".tmp"
-    with open(temp_path, "w") as outfile:
-        json.dump(state, outfile, indent=2, sort_keys=True)
-    os.replace(temp_path, state_path)
+    atomic_write_text(state_path, json.dumps(state, indent=2, sort_keys=True))
 
 
 def sanitize_planner_state(state):
@@ -927,19 +935,22 @@ def shellReturn(command):
 
 def checkIfFirstRunSinceBoot():
     last_run_path = get_last_run_path()
+    lastRun = None
     if os.path.isfile(last_run_path):
-        with open(last_run_path, 'r') as file:
-            lastRun = datetime.strptime(file.read(), "%d-%b-%Y (%H:%M:%S.%f)")
+        try:
+            with open(last_run_path, 'r') as file:
+                lastRun = datetime.strptime(file.read(), "%d-%b-%Y (%H:%M:%S.%f)")
+        except (ValueError, OSError) as err:
+            # Torn/empty/corrupt lastRun.txt (e.g. interrupted write). Treat as
+            # first-run-since-boot rather than killing the whole scheduler run.
+            logging.warning("lastRun.txt at '%s' is unreadable (%s); assuming first run since boot.", last_run_path, err)
+    if lastRun is not None:
         systemRunningSince = datetime.fromtimestamp(psutil.boot_time())
-        if systemRunningSince > lastRun:
-            print("First time run since system boot.")
-            return True
-        else:
+        if systemRunningSince <= lastRun:
             print("Not first time run since system boot.")
             return False
-    else:
-        print("First time run since system boot.")
-        return True
+    print("First time run since system boot.")
+    return True
 
 def clearPriorSettings(interfaceA, interfaceB):
     if enable_actual_shell_commands():
@@ -2872,10 +2883,8 @@ def refreshShapers():
         queuingStructure['generatedPNs'] = generatedPNs
         queuingStructure['logical_to_physical_node'] = logical_to_physical_node
         queuingStructure['virtual_nodes'] = virtual_nodes
-        queuing_structure_path = get_state_path("shaping", "queuingStructure.json")
-        ensure_parent_dir(queuing_structure_path)
-        with open(queuing_structure_path, 'w') as infile:
-            json.dump(queuingStructure, infile, indent=4)
+        queuing_structure_path = get_queuing_structure_path()
+        atomic_write_text(queuing_structure_path, json.dumps(queuingStructure, indent=4))
 
 
         # Record start time of actual filter reload
@@ -3009,22 +3018,15 @@ def refreshShapers():
             shutil.copyfile(shapedDevicesFile, last_loaded_path)
 
         # Save for stats
-        stats_by_circuit_path = get_state_path("stats", "statsByCircuit.json")
-        ensure_parent_dir(stats_by_circuit_path)
-        with open(stats_by_circuit_path, 'w') as f:
-            f.write(json.dumps(subscriberCircuits, indent=4))
-        stats_by_parent_node_path = get_state_path("stats", "statsByParentNode.json")
-        ensure_parent_dir(stats_by_parent_node_path)
-        with open(stats_by_parent_node_path, 'w') as f:
-            f.write(json.dumps(parentNodes, indent=4))
+        stats_by_circuit_path = get_stats_by_circuit_path()
+        atomic_write_text(stats_by_circuit_path, json.dumps(subscriberCircuits, indent=4))
+        stats_by_parent_node_path = get_stats_by_parent_node_path()
+        atomic_write_text(stats_by_parent_node_path, json.dumps(parentNodes, indent=4))
 
 
         # Record time this run completed at
-        # filename = os.path.join(_here, 'lastRun.txt')
-        last_run_path = get_state_path("stats", "lastRun.txt")
-        ensure_parent_dir(last_run_path)
-        with open(last_run_path, 'w') as file:
-            file.write(datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)"))
+        last_run_path = get_last_run_path()
+        atomic_write_text(last_run_path, datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)"))
 
 
         # Report reload time
