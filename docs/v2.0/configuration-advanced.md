@@ -39,6 +39,17 @@ In the ```[bridge]``` section, change `to_internet` and `to_network` to match yo
 
 In the `[bridge]` section of the lqos.conf file, you can enable or disable the XDP Bridge with the setting `use_xdp_bridge`. The default value is `false` - because the default setup assumes a [Linux Bridge](prereq.md). If you chose to use the XDP Bridge during that pre-requisites setup, please set `use_xdp_bridge = true` instead.
 
+For an XDP deployment using bonded links, set `to_internet` and/or `to_network` to the bond master names, not the member interface names. The bonds must already be configured in Netplan, expose multiple RX/TX queues, and use a bonding mode supported by native XDP. For example:
+
+```toml
+[bridge]
+use_xdp_bridge = true
+to_internet = "bond-wan"
+to_network = "bond-lan"
+```
+
+See [Configure Shaping Bridge](bridge.md#xdp-bridge-with-8023ad-bonds) for the Netplan example and compatibility checks.
+
 - Set downlink_bandwidth_mbps and uplink_bandwidth_mbps to match the bandwidth in Mbps of your network's upstream / WAN internet connection. The same can be done for generated_pn_download_mbps and generated_pn_upload_mbps.
 - to_internet would be the interface facing your edge router and the broader internet
 - to_network would be the interface facing your core router (or bridged internal network if your network is bridged)

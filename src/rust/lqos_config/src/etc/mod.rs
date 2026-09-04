@@ -25,8 +25,8 @@ pub use v15::{
     RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
     RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
     TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
-    TreeguardLinksConfig, TreeguardQooConfig, Tunables, normalize_external_hostname,
-    validate_rate_profile_mbps,
+    TreeguardLinksConfig, TreeguardQooConfig, Tunables, native_xdp_bond_issue,
+    normalize_external_hostname, validate_rate_profile_mbps,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
