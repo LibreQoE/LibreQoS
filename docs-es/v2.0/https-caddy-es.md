@@ -21,7 +21,11 @@ LibreQoS ofrece dos opciones simples:
 - LibreQoS mueve el listener de la WebUI a `127.0.0.1:9123`.
 - Caddy publica la WebUI y la documentación de la API por HTTPS.
 - En modo Caddy gestionado, las solicitudes de API se envían a `127.0.0.1:9122`, de modo que la API queda detrás del mismo origen HTTPS que la WebUI.
-- Swagger pasa a `/api/v1/api-docs` en el mismo origen HTTPS de la WebUI.
+- Swagger pasa a `/api-docs/` en el mismo origen HTTPS de la WebUI.
+
+La documentación de la API es pública; las solicitudes a la API siguen requiriendo una clave de API. Los enlaces existentes a `/api/v1/api-docs` redirigen a `/api-docs/`.
+
+Tras actualizar una instalación que ya usa HTTPS, vuelva a aplicar los ajustes en `Configuration -> SSL Setup` para actualizar las rutas de Caddy. Esto regenera `/etc/caddy/Caddyfile`, reemplaza las modificaciones manuales y reinicia Caddy, la WebUI y el servicio de API.
 
 ## Overrides del listener de la API
 

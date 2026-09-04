@@ -547,7 +547,7 @@ fn render_managed_caddyfile(plan: &SslRuntimePlan) -> String {
     format!(
         "\
 {{\n    admin off\n}}\n\n\
-{site_address} {{{tls_block}\n    encode zstd gzip\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {api_upstream}\n    }}\n    reverse_proxy {web_upstream}\n}}\n",
+{site_address} {{{tls_block}\n    encode zstd gzip\n    @apidocs path /api-docs /api-docs/*\n    handle @apidocs {{\n        reverse_proxy {api_upstream}\n    }}\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {api_upstream}\n    }}\n    reverse_proxy {web_upstream}\n}}\n",
         site_address = plan.caddy_site_address,
         tls_block = tls_block,
         api_upstream = API_UPSTREAM,
@@ -644,7 +644,7 @@ mod tests {
         let plan = build_runtime_plan(Some("libreqos.example.com".to_string()), None);
         let caddyfile = render_managed_caddyfile(&plan);
         let expected = format!(
-            "{{\n    admin off\n}}\n\nlibreqos.example.com {{\n    encode zstd gzip\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {API_UPSTREAM}\n    }}\n    reverse_proxy {WEB_UPSTREAM}\n}}\n"
+            "{{\n    admin off\n}}\n\nlibreqos.example.com {{\n    encode zstd gzip\n    @apidocs path /api-docs /api-docs/*\n    handle @apidocs {{\n        reverse_proxy {API_UPSTREAM}\n    }}\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {API_UPSTREAM}\n    }}\n    reverse_proxy {WEB_UPSTREAM}\n}}\n"
         );
         assert_eq!(caddyfile, expected);
     }
