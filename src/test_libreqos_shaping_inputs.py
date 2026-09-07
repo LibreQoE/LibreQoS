@@ -1,4 +1,5 @@
 import csv
+import datetime
 import importlib
 import json
 import os
@@ -519,6 +520,86 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
         self.assertEqual(circuits[0]["circuitID"], "manual-1")
         self.assertEqual(circuits[0]["ParentNode"], "Globe")
         self.assertEqual(missing_parents, {})
+
+
+class TestFirstRunSinceBoot(unittest.TestCase):
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()  # nosec B108
+        self.addCleanup(temp_dir.cleanup)
+        self.last_run_path = os.path.join(temp_dir.name, "lastRun.txt")
+        patcher = patch.object(
+            LibreQoS, "get_last_run_path", return_value=self.last_run_path
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_missing_file_is_first_run(self):
+        self.assertTrue(LibreQoS.checkIfFirstRunSinceBoot())
+
+    def test_empty_file_is_first_run(self):
+        # Regression: a torn write (e.g. interrupted VM snapshot) used to crash
+        # the scheduler with ValueError from strptime.
+        with open(self.last_run_path, "w", encoding="utf-8"):
+            pass
+        with self.assertLogs(level="WARNING"):
+            self.assertTrue(LibreQoS.checkIfFirstRunSinceBoot())
+
+    def test_garbage_file_is_first_run(self):
+        with open(self.last_run_path, "w", encoding="utf-8") as handle:
+            handle.write("\x00partial wr")
+        self.assertTrue(LibreQoS.checkIfFirstRunSinceBoot())
+
+    def test_unreadable_file_is_first_run(self):
+        with open(self.last_run_path, "w", encoding="utf-8"):
+            pass
+        with patch("builtins.open", side_effect=PermissionError(13, "denied")):
+            self.assertTrue(LibreQoS.checkIfFirstRunSinceBoot())
+
+    def test_recent_run_is_not_first_run(self):
+        with open(self.last_run_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                datetime.datetime.now().strftime("%d-%b-%Y (%H:%M:%S.%f)")
+            )
+        self.assertFalse(LibreQoS.checkIfFirstRunSinceBoot())
+
+    def test_run_before_boot_is_first_run(self):
+        old = datetime.datetime.now() - datetime.timedelta(days=3650)
+        with open(self.last_run_path, "w", encoding="utf-8") as handle:
+            handle.write(old.strftime("%d-%b-%Y (%H:%M:%S.%f)"))
+        self.assertTrue(LibreQoS.checkIfFirstRunSinceBoot())
+
+
+class TestAtomicWriteText(unittest.TestCase):
+    def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()  # nosec B108
+        self.addCleanup(temp_dir.cleanup)
+        self.temp_dir = temp_dir.name
+
+    def test_atomic_write_creates_parents_and_content(self):
+        path = os.path.join(self.temp_dir, "a", "b", "state.txt")
+        LibreQoS.atomic_write_text(path, "hello")
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "hello")
+        self.assertFalse(os.path.exists(path + ".tmp"))
+
+    def test_atomic_write_replaces_existing_content(self):
+        path = os.path.join(self.temp_dir, "state.txt")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("old")
+        LibreQoS.atomic_write_text(path, "new")
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "new")
+        self.assertFalse(os.path.exists(path + ".tmp"))
+
+    def test_atomic_write_failure_preserves_existing_content(self):
+        path = os.path.join(self.temp_dir, "state.txt")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("old")
+        with patch("os.replace", side_effect=OSError(5, "replace failed")):
+            with self.assertRaises(OSError):
+                LibreQoS.atomic_write_text(path, "new")
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "old")
 
 
 if __name__ == "__main__":
