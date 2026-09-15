@@ -569,37 +569,53 @@ class TestFirstRunSinceBoot(unittest.TestCase):
         self.assertTrue(LibreQoS.checkIfFirstRunSinceBoot())
 
 
-class TestAtomicWriteText(unittest.TestCase):
+class TestValidateNetworkJsonTornWrite(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()  # nosec B108
         self.addCleanup(temp_dir.cleanup)
         self.temp_dir = temp_dir.name
+        self.network_path = os.path.join(self.temp_dir, "network.json")
+        self.devices_path = os.path.join(self.temp_dir, "ShapedDevices.csv")
+        with open(self.devices_path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,"
+                "IPv4,IPv6,Download Min,Upload Min,Download Max,Upload Max,Comment\n"
+                "circuit-1,Circuit 1,dev-1,Device 1,Parent,00:00:00:00:00:00,"
+                "192.168.1.2,,10,10,100,100,\n"
+            )
 
-    def test_atomic_write_creates_parents_and_content(self):
-        path = os.path.join(self.temp_dir, "a", "b", "state.txt")
-        LibreQoS.atomic_write_text(path, "hello")
-        with open(path, encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "hello")
-        self.assertFalse(os.path.exists(path + ".tmp"))
+    def _validate(self):
+        with patch.object(
+            LibreQoS, "get_network_json_path", return_value=self.network_path
+        ), patch.object(
+            LibreQoS, "get_shaped_devices_path", return_value=self.devices_path
+        ):
+            return LibreQoS.validateNetworkAndDevices()
 
-    def test_atomic_write_replaces_existing_content(self):
-        path = os.path.join(self.temp_dir, "state.txt")
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("old")
-        LibreQoS.atomic_write_text(path, "new")
-        with open(path, encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "new")
-        self.assertFalse(os.path.exists(path + ".tmp"))
+    def test_undecodable_network_json_fails_validation_without_raising(self):
+        with open(self.network_path, "wb") as handle:
+            handle.write(b"\x80\x81\x82 torn network")
+        with self.assertWarnsRegex(UserWarning, "unreadable or invalid"):
+            self.assertFalse(self._validate())
 
-    def test_atomic_write_failure_preserves_existing_content(self):
-        path = os.path.join(self.temp_dir, "state.txt")
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("old")
-        with patch("os.replace", side_effect=OSError(5, "replace failed")):
-            with self.assertRaises(OSError):
-                LibreQoS.atomic_write_text(path, "new")
-        with open(path, encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "old")
+    def test_truncated_network_json_fails_validation_without_raising(self):
+        with open(self.network_path, "wb") as handle:
+            handle.write(b'{"Root": ')
+        with self.assertWarnsRegex(UserWarning, "unreadable or invalid"):
+            self.assertFalse(self._validate())
+
+    def test_network_json_read_error_fails_validation_without_raising(self):
+        with open(self.network_path, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+        with patch.object(LibreQoS.json, "load", side_effect=PermissionError(13, "denied")):
+            with self.assertWarnsRegex(UserWarning, "unreadable or invalid"):
+                self.assertFalse(self._validate())
+
+    def test_non_object_network_json_fails_validation_without_raising(self):
+        with open(self.network_path, "w", encoding="utf-8") as handle:
+            handle.write("null")
+        with self.assertWarnsRegex(UserWarning, "not a node object"):
+            self.assertFalse(self._validate())
 
 
 if __name__ == "__main__":
