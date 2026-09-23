@@ -37,8 +37,9 @@ version, and SHA-256 together when changing an image. Debian publishes SHA-512
 digests in `SHA512SUMS`, so the Debian image pins a SHA-512 value instead.
 
 The harness builds the LibreQoS runtime bundle on the host and copies it into
-the guest. Keep the host glibc at or below the guest's: a host newer than the
-guest produces a bundle the guest cannot start.
+the guest. The host must produce binaries whose glibc symbol versions the guest
+provides; a host far newer than the guest can produce a bundle the guest cannot
+start.
 
 ## Run
 
