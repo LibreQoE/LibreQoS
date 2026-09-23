@@ -17,11 +17,9 @@ By specifying `libreqos` at the end, git will ensure the folder name is lowercas
 
 ## Install Dependencies from apt and pip
 
-You need to have a few packages from `apt` installed:
-
-```shell
-sudo apt-get install -y python3-pip python3-venv clang mold esbuild gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
-```
+The build scripts install the required packages from `apt`. Use
+`./build_rust.sh` on Ubuntu 24.04 and `./build_rust_debian.sh` on Debian 13 or
+later.
 
 Then you need to install some Python dependencies:
 

@@ -17,11 +17,9 @@ Al especificar `libreqos` al final, Git asegurará que el nombre del directorio 
 
 ## Instalar dependencias con apt y pip
 
-Es necesario instalar ciertos paquetes mediante `apt`:
-
-```shell
-sudo apt-get install -y python3-pip python3-venv clang mold esbuild gcc gcc-multilib llvm libelf-dev git nano graphviz curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev
-```
+Los scripts de compilación instalan los paquetes necesarios con `apt`. Use
+`./build_rust.sh` en Ubuntu 24.04 y `./build_rust_debian.sh` en Debian 13 o
+posterior.
 
 Posteriormente, debe instalar algunas dependencias de Python:
 
