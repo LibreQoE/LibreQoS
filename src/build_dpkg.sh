@@ -110,7 +110,7 @@ Recommends: $APT_RECOMMENDS
 EOF
 popd > /dev/null || exit
 
-# Build the Rust programs (before the control file, we need to LDD lqosd).
+# Build the Rust programs.
 # Keep package artifacts on the full release profile; build_rust.sh --fast is
 # intentionally a local-iteration-only shortcut.
 pushd rust > /dev/null || exit

@@ -84,7 +84,7 @@ and covered by the disposable RADIUS VM harness.
 
 - `build_rust_debian.sh` and `build_pkg_debian.sh` were not executed on a Debian host end-to-end. The harness builds the runtime bundle on the Ubuntu host; the Debian package list and PATH fixes were validated against trixie package data and the Debian guest.
 - Repo bug found while testing, outside this branch's scope: `maybe_migrate_uisp_capacity_defaults` writes a `[uisp_integration]` table without the required `enable_uisp` field, so any config lacking that section fails to parse after migration. The harness fixture was updated to the current schema; the migration itself needs its own issue and fix.
-- Follow-ups recorded for separate changes: a shell test file plus `bash -n` CI gate for the new scripts, and deduplicating `set_libreqos_operator_permissions` between `build_rust.sh` and the package postinst.
+- Follow-ups recorded for separate changes: a shell test file plus `bash -n` CI gate for the new scripts, deduplicating `set_libreqos_operator_permissions` between `build_rust.sh` and the package postinst, and consolidating the harness MAC literals into `lib/common.sh`.
 
 ## Validation checklist
 
