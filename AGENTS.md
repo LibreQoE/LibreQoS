@@ -67,7 +67,10 @@ third_party/libbpf-sys      Vendored libbpf-sys tree used by the Rust side.
 ## Helper Scripts
 
 src/build_rust.sh           Builds the Rust side in release mode, installs binaries/artifacts into `src/bin`, updates `liblqos_python.so`, and may restart services
+src/build_rust_debian.sh    Debian front-end for `src/build_rust.sh` (Debian 13 and later)
 src/build_dpkg.sh           Builds LibreQoS and assembles a `.deb` package
+src/build_pkg_debian.sh     Debian front-end for `src/build_dpkg.sh` (Debian 13 and later)
+src/build_prereqs.sh        Shared distro-aware build prerequisite helper used by the build scripts
 src/rust/lqosd/dev_build.sh Builds node_manager JS bundles and copies static assets into `src/bin/static2` for local UI iteration
 src/lqosd/src/node_manager/js_build/esbuild.sh  Builds all JavaScript and puts the web system in the right place (must run from that directory)
 src/rust/lqosd/src/node_manager/js_build/test-build-contract.sh  Verifies the node_manager page/build/vendor contract before bundling
@@ -162,6 +165,8 @@ Canonical shared Codex skills for this repo live in `.codex-repo/skills/`.
 
 - If a task touches `src/build_rust.sh`, `src/build_dpkg.sh`, `src/rust/lqosd/copy_files.sh`, shipped service files, packaged templates/assets, or anything that must exist on installed LibreQoS systems, use the `libreqos-packaging-release` repo skill if installed.
 - Any change to `src/build_rust.sh` or `src/build_dpkg.sh` MUST be reflected in the other where applicable. They should stay in sync on shared build/package assumptions.
+- `src/build_rust.sh` and `src/build_dpkg.sh` are the source of truth for their flows. The `*_debian` front-ends only select the Debian prerequisite set and delegate; keep them thin.
+- Shared build prerequisite and dependency assumptions belong in `src/build_prereqs.sh` so the Ubuntu and Debian paths cannot drift.
 - `src/build_dpkg.sh` is part of the functional source of truth for shipped LibreQoS installs. If a change adds, renames, moves, or newly requires files at runtime, packaging time, or install time, update `src/build_dpkg.sh` in the same change.
 - Never assume a new file is "obvious enough" to be picked up automatically by packaging. Verify that `src/build_dpkg.sh` explicitly includes every new file or directory required for the feature to work in an installed `.deb`.
 - When a change affects packaged assets, treat "is `src/build_dpkg.sh` still accurate?" as a mandatory review check before finishing.
