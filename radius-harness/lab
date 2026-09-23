@@ -164,6 +164,10 @@ assert_package_control() {
 cmd_check_package() {
     local package_path=${1:-} install=${2:-} lqos_ip simulate_output
     require_host_tools
+    if [[ $package_path == --* ]]; then
+        install=$package_path
+        package_path=""
+    fi
     if [[ -n $install && $install != "--install" ]]; then
         die "unknown check-package option '$install'; expected --install"
     fi

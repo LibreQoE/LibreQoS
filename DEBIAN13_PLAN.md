@@ -76,13 +76,13 @@ and covered by the disposable RADIUS VM harness.
 - `bash -n` passes for every touched script.
 - Debian 13 VM run (generic image, kernel `6.12.107+deb13-amd64`): all three RADIUS lifecycle cases passed, including dynamic-circuit create, Interim-Update retention, and removal.
 - The guest-OS assertion, the BPF map-pinning assertion, and `lab check-package` (`.deb` dependency resolution) all passed on Debian 13.
+- The built `.deb` installs on Debian 13 (`lab check-package --install`): the postinst rebuilt the Python 3.13 venv, installed the systemd units, and activated `lqosd`, `lqos_scheduler`, and `lqos_api` (all active).
 - The Debian prerequisite package set resolves on trixie, and `/usr/sbin` is absent from the default non-root PATH, confirming the `bpftool` PATH fix.
 - Ubuntu 24.04 regression run: the same three lifecycle cases passed with the shared harness changes, and lease resolution ignored two generations of stale leases.
 
 ## Known gaps
 
 - `build_rust_debian.sh` and `build_pkg_debian.sh` were not executed on a Debian host end-to-end. The harness builds the runtime bundle on the Ubuntu host; the Debian package list and PATH fixes were validated against trixie package data and the Debian guest.
-- The `.deb` postinst was not exercised on Debian; `lab check-package` simulates dependency resolution only.
 - Repo bug found while testing, outside this branch's scope: `maybe_migrate_uisp_capacity_defaults` writes a `[uisp_integration]` table without the required `enable_uisp` field, so any config lacking that section fails to parse after migration. The harness fixture was updated to the current schema; the migration itself still needs a fix.
 
 ## Validation checklist
