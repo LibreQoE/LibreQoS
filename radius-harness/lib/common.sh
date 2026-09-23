@@ -133,8 +133,8 @@ assert_guest_os() {
     [[ $actual == "$expected" ]] || die "LibreQoS guest is '$actual', expected '$expected'"
 }
 
-lab_ssh() { local host=$1; shift; ssh -i "$RUN_DIR/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$RUN_DIR/known_hosts" -o StrictHostKeyChecking=accept-new "lab@$host" "$@"; }
-lab_scp() { local source=$1 host=$2 destination=$3; scp -i "$RUN_DIR/id_ed25519" -o IdentitiesOnly=yes -p -o BatchMode=yes -o UserKnownHostsFile="$RUN_DIR/known_hosts" -o StrictHostKeyChecking=accept-new -r "$source" "lab@$host:$destination"; }
+lab_ssh() { local host=$1; shift; ssh -i "$RUN_DIR/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o UserKnownHostsFile="$RUN_DIR/known_hosts" -o StrictHostKeyChecking=accept-new "lab@$host" "$@"; }
+lab_scp() { local source=$1 host=$2 destination=$3; scp -i "$RUN_DIR/id_ed25519" -o IdentitiesOnly=yes -p -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o UserKnownHostsFile="$RUN_DIR/known_hosts" -o StrictHostKeyChecking=accept-new -r "$source" "lab@$host:$destination"; }
 
 safe_remove() {
     local path=$1

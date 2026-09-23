@@ -24,9 +24,9 @@ of those names.
 
 Run from a LibreQoS checkout on a host with libvirt/KVM and OVMF/edk2 UEFI
 firmware. Install `virsh`, `virt-install`, `qemu-img`, `cloud-localds` (from
-`cloud-image-utils`), `curl`, `unzip`, `rsync`, `sshpass`, and a Rust toolchain.
-The invoking account must be allowed to manage the configured libvirt URI
-(default: `qemu:///system`).
+`cloud-image-utils`), `curl`, `unzip`, `rsync`, `sshpass`, `dpkg-deb` (from
+`dpkg`, for `check-package`), and a Rust toolchain. The invoking account must
+be allowed to manage the configured libvirt URI (default: `qemu:///system`).
 
 The harness discovers common OVMF locations. If your distribution stores its
 firmware elsewhere, set `OVMF_CODE_PATH` and `OVMF_VARS_PATH` in the environment
@@ -89,7 +89,7 @@ templates before running it.
 ./radius-harness/lab status     Show domains and management addresses.
 ./radius-harness/lab configure  Install fixtures and start services.
 ./radius-harness/lab test       Run the lifecycle assertions.
-./radius-harness/lab check-package  Check .deb dependencies; add --install to install it.
+./radius-harness/lab check-package  Check .deb dependencies; --install installs it (replaces the harness runtime).
 ./radius-harness/lab down       Remove VMs, networks, overlays, and secrets.
 ./radius-harness/lab purge      Also remove cached images and runtime artifacts.
 ./radius-harness/lab console    Open the RouterOS serial console.

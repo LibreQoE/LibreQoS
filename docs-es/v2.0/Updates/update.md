@@ -26,7 +26,7 @@ Esto eliminará los mapas eBPF antiguos y cargará la última versión de LibreQ
 1. Cambie a su directorio `LibreQoS`(e.g. `cd /opt/LibreQoS`)
 2.Actualización desde Git: `git pull`
 3. ```git switch develop```
-4. Recompile: `./build_rust.sh` (en Debian 13 o posterior, `./build_rust_debian.sh`)
+4. Recompila: `./build_rust.sh` (en Debian 13 o posterior, `./build_rust_debian.sh`)
 5. `sudo rust/remove_pinned_maps.sh`
 
 Ejecute los siguientes comandos para recargar los servicios de LibreQoS.

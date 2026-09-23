@@ -21,7 +21,7 @@ This project contains a number of projects arranged in a workspace. The projects
 
 The build scripts install the required packages with `apt`: run
 `./build_rust.sh` on Ubuntu 24.04 and `./build_rust_debian.sh` on Debian 13 or
-later. See `src/build_prereqs.sh` for the package lists.
+later. See `../build_prereqs.sh` for the package lists.
 
 ## Helper Scripts
 

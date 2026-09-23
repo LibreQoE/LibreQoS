@@ -31,7 +31,7 @@ EOF
 }
 
 require_host_tools() {
-    for tool in virsh virt-install qemu-img cloud-localds curl unzip sha256sum sha512sum rsync ssh scp dpkg-deb; do require_command "$tool"; done
+    for tool in virsh virt-install qemu-img cloud-localds curl unzip sha256sum sha512sum rsync ssh scp; do require_command "$tool"; done
 }
 
 ensure_ssh_key() {
@@ -69,15 +69,20 @@ verify_checksum() {
     printf '%s  %s\n' "$checksum" "$file" | "$tool" --check --status || die "checksum did not match for $(basename "$file")"
 }
 
-download_routeros() {
-    [[ -n ${ROUTEROS_CHR_SHA256:-} ]] || die "set ROUTEROS_CHR_SHA256 in lab.env before downloading RouterOS"
-    if [[ ! -f $ROUTER_ARCHIVE ]]; then
-        note "downloading RouterOS CHR $ROUTEROS_VERSION"
-        curl --fail --location --output "$ROUTER_ARCHIVE.partial" "$ROUTEROS_CHR_URL"
-        verify_checksum "$ROUTER_ARCHIVE.partial" "$ROUTEROS_CHR_SHA256" sha256sum
-        mv "$ROUTER_ARCHIVE.partial" "$ROUTER_ARCHIVE"
+download_verified() {
+    local url=$1 target=$2 checksum=$3 tool=$4 label=$5
+    [[ -n $checksum ]] || die "no checksum configured for $label"
+    if [[ ! -f $target ]]; then
+        note "downloading $label"
+        curl --fail --location --output "$target.partial" "$url"
+        verify_checksum "$target.partial" "$checksum" "$tool"
+        mv "$target.partial" "$target"
     fi
-    verify_checksum "$ROUTER_ARCHIVE" "$ROUTEROS_CHR_SHA256" sha256sum
+    verify_checksum "$target" "$checksum" "$tool"
+}
+
+download_routeros() {
+    download_verified "$ROUTEROS_CHR_URL" "$ROUTER_ARCHIVE" "${ROUTEROS_CHR_SHA256:-}" sha256sum "RouterOS CHR $ROUTEROS_VERSION"
     if [[ ! -f $ROUTER_BASE ]]; then
         unzip -p "$ROUTER_ARCHIVE" >"$IMAGE_DIR/chr-$ROUTEROS_VERSION.img"
         qemu-img convert -f raw -O qcow2 "$IMAGE_DIR/chr-$ROUTEROS_VERSION.img" "$ROUTER_BASE"
@@ -86,14 +91,7 @@ download_routeros() {
 }
 
 download_guest_image() {
-    [[ -n $GUEST_IMAGE_CHECKSUM ]] || die "no checksum configured for guest image $(basename "$GUEST_IMAGE_URL")"
-    if [[ ! -f $GUEST_BASE ]]; then
-        note "downloading $GUEST_OS guest image $(basename "$GUEST_IMAGE_URL")"
-        curl --fail --location --output "$GUEST_BASE.partial" "$GUEST_IMAGE_URL"
-        verify_checksum "$GUEST_BASE.partial" "$GUEST_IMAGE_CHECKSUM" "$GUEST_IMAGE_CHECKSUM_TOOL"
-        mv "$GUEST_BASE.partial" "$GUEST_BASE"
-    fi
-    verify_checksum "$GUEST_BASE" "$GUEST_IMAGE_CHECKSUM" "$GUEST_IMAGE_CHECKSUM_TOOL"
+    download_verified "$GUEST_IMAGE_URL" "$GUEST_BASE" "$GUEST_IMAGE_CHECKSUM" "$GUEST_IMAGE_CHECKSUM_TOOL" "$GUEST_OS guest image"
 }
 
 build_runtime_bundle() {
@@ -162,19 +160,30 @@ assert_package_control() {
 }
 
 cmd_check_package() {
-    local package_path=${1:-} install=${2:-} lqos_ip simulate_output
+    local package_path="" install="" lqos_ip simulate_output arg
     require_host_tools
-    if [[ $package_path == --* ]]; then
-        install=$package_path
-        package_path=""
-    fi
-    if [[ -n $install && $install != "--install" ]]; then
-        die "unknown check-package option '$install'; expected --install"
+    require_command dpkg-deb
+    for arg in "$@"; do
+        case "$arg" in
+            --install)
+                install=$arg
+                ;;
+            --*)
+                die "unknown check-package option '$arg'; expected --install"
+                ;;
+            *)
+                [[ -z $package_path ]] || die "unexpected extra argument '$arg'"
+                package_path=$arg
+                ;;
+        esac
+    done
+    if [[ -n $package_path && ! -f $package_path ]]; then
+        die "package not found: $package_path"
     fi
     if [[ -z $package_path ]]; then
         package_path=$(ls -1t "$REPO_ROOT"/src/dist/libreqos_*_amd64.deb 2>/dev/null | head -n 1) || true
+        [[ -n $package_path ]] || die "no LibreQoS package found; build one with src/build_pkg_debian.sh or pass a path"
     fi
-    [[ -n $package_path && -f $package_path ]] || die "no LibreQoS package found; build one with src/build_pkg_debian.sh or pass a path"
     assert_package_control "$package_path"
     domain_exists "$LQOS_DOMAIN" || die "the lab is not running; use ./radius-harness/lab up first"
     lqos_ip=$(wait_for_guest_ready 52:54:00:10:00:10)
@@ -191,7 +200,9 @@ cmd_check_package() {
         lab_ssh "$lqos_ip" 'sudo systemctl stop radius-lqosd.service 2>/dev/null || true'
         lab_ssh "$lqos_ip" "sudo apt-get install -y '/tmp/$(basename "$package_path")'" || die "package installation failed in the $GUEST_OS guest"
         lab_ssh "$lqos_ip" 'sudo dpkg -s libreqos >/dev/null && sudo test -e /etc/systemd/system/lqosd.service && sudo test -x /opt/libreqos/venv/bin/python' || die "installed package is missing expected files"
-        lab_ssh "$lqos_ip" '! ldd /opt/libreqos/src/bin/lqosd | grep -q "not found"' || die "installed lqosd has missing shared libraries"
+        lab_ssh "$lqos_ip" 'sudo systemctl is-enabled --quiet lqosd lqos_scheduler lqos_api && sudo systemctl is-active --quiet lqosd lqos_scheduler lqos_api' || die "installed services are not enabled and active"
+        lab_ssh "$lqos_ip" '! ldd /opt/libreqos/src/bin/lqosd /opt/libreqos/src/liblqos_python.so | grep -q "not found"' || die "installed binaries have missing shared libraries"
+        lab_ssh "$lqos_ip" 'sudo env PYTHONPATH=/opt/libreqos/src /opt/libreqos/venv/bin/python -c "import liblqos_python"' || die "installed Python extension does not import"
         note "package installed and postinst completed"
     fi
     note "package dependency resolution passed"
@@ -199,4 +210,4 @@ cmd_check_package() {
 cmd_down() { for domain in "$CLIENT_DOMAIN" "$RADIUS_DOMAIN" "$ROUTER_DOMAIN" "$LQOS_DOMAIN"; do destroy_domain "$domain"; done; for network in "$TRANSIT_NETWORK" "$ACCESS_NETWORK" "$CONTROL_NETWORK"; do destroy_network "$network"; done; [[ -d $RUN_DIR ]] && safe_remove "$RUN_DIR"; note "disposable lab resources removed"; }
 cmd_purge() { cmd_down; [[ -d $IMAGE_DIR ]] && safe_remove "$IMAGE_DIR"; [[ -d $RUNTIME_DIR ]] && safe_remove "$RUNTIME_DIR"; note "cached bases and runtime artifacts removed"; }
 
-case ${1:-} in init) cmd_init ;; up) cmd_up ;; status) cmd_status ;; configure) cmd_configure ;; test) cmd_test ;; check-package) cmd_check_package "${2:-}" "${3:-}" ;; down) cmd_down ;; purge) cmd_purge ;; console) cmd_console ;; *) usage; exit 2 ;; esac
+case ${1:-} in init) cmd_init ;; up) cmd_up ;; status) cmd_status ;; configure) cmd_configure ;; test) cmd_test ;; check-package) cmd_check_package "${@:2}" ;; down) cmd_down ;; purge) cmd_purge ;; console) cmd_console ;; *) usage; exit 2 ;; esac

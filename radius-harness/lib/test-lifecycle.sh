@@ -49,8 +49,8 @@ run_pppoe_case() {
     die "the $name dynamic circuit remained after RADIUS Stop"
 }
 
-client_ip=$(wait_for_management_ip 52:54:00:30:00:10)
-lqos_ip=$(wait_for_management_ip 52:54:00:10:00:10)
+client_ip=$(wait_for_guest_ready 52:54:00:30:00:10)
+lqos_ip=$(wait_for_guest_ready 52:54:00:10:00:10)
 trap 'lab_ssh "$client_ip" "sudo poff radius-lab || true" >/dev/null 2>&1 || true' EXIT
 run_pppoe_case 'packet-rate fallback identity' pppoe-rate pppoe-rate-password any 10 25
 run_pppoe_case 'known username ShapedDevices identity' pppoe-known pppoe-known-password radius-known-circuit 60 20

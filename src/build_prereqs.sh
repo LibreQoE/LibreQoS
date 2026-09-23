@@ -68,26 +68,29 @@ lqos_distro_build_extras() {
 }
 
 # Installs the build prerequisites for the current or overridden distribution.
+# Set LQOS_SKIP_PREREQS=1 to skip the package installation.
 # Side effects: refreshes apt package lists, installs packages, and prepends
 # /usr/sbin to PATH so the build can find bpftool on Debian.
 lqos_install_build_prerequisites() {
     local distro extras
+
+    # Debian installs bpftool in /usr/sbin, which is not on the default
+    # non-root PATH there, and lqos_sys invokes bpftool by name during the
+    # build. Apply this even when the install is skipped.
+    export PATH="/usr/sbin:$PATH"
+
     if [ "${LQOS_SKIP_PREREQS:-0}" = "1" ]; then
         echo "Skipping build prerequisite installation (LQOS_SKIP_PREREQS=1)"
         return 0
     fi
     distro=$(lqos_detect_distro)
 
-    # Debian installs bpftool in /usr/sbin, which is not on the default
-    # non-root PATH there, and lqos_sys invokes bpftool by name during the
-    # build.
-    export PATH="/usr/sbin:$PATH"
-
     if ! extras=$(lqos_distro_build_extras "$distro"); then
         echo "Unsupported distribution '$distro' for automatic prerequisite install."
         echo "Install these packages with your distribution's package manager:"
         printf '%s\n' "${LQOS_COMMON_BUILD_PACKAGES[@]}" | sed 's/^/  /'
         echo "Also install bpftool (required to build lqos_sys) and, optionally, perf."
+        echo "Or install them yourself and re-run with LQOS_SKIP_PREREQS=1."
         return 1
     fi
 
