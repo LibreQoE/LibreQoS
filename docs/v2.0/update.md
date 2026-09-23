@@ -91,8 +91,8 @@ If checks fail, go directly to [Troubleshooting](troubleshooting.md) before furt
 1. Change to your LibreQoS directory (e.g. `cd /opt/libreqos`)
 2. Update from Git: `git pull`
 3. ```git switch develop```
-5. Recompile: `./build_rust.sh` (use `./build_rust_debian.sh` on Debian 13 or later)
-6. `sudo rust/remove_pinned_maps.sh`
+4. Recompile: `./build_rust.sh` (use `./build_rust_debian.sh` on Debian 13 or later)
+5. `sudo rust/remove_pinned_maps.sh`
 
 ### Ubuntu 24.04 hotfix for Git installs
 

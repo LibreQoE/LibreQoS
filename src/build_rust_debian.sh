@@ -3,8 +3,7 @@
 #
 # This is the Debian front-end for build_rust.sh. It selects the Debian
 # prerequisite package set (bpftool and linux-perf replace the Ubuntu
-# linux-tools-* packages) and runs the shared build implementation, so the
-# Ubuntu and Debian paths cannot drift apart.
+# linux-tools-* packages) and runs the shared build implementation.
 #
 # Usage matches build_rust.sh: ./build_rust_debian.sh [--fast]
 

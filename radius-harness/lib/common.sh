@@ -39,7 +39,7 @@ ensure_lab_stopped() {
 }
 
 # Prints the guest OS recorded for this lab: LAB_GUEST_OS, the images/guest-os
-# marker written by init, or the ubuntu default.
+# marker written by init and up, or the ubuntu default.
 resolve_guest_os() {
     local guest_os=${LAB_GUEST_OS:-}
     if [[ -z $guest_os && -f $IMAGE_DIR/guest-os ]]; then
@@ -48,13 +48,27 @@ resolve_guest_os() {
     printf '%s\n' "${guest_os:-ubuntu}"
 }
 
+# Prints "image_url|checksum|checksum_tool|os_variant|os_release" for a guest
+# OS. Returns non-zero for unknown guest operating systems.
+guest_os_facts() {
+    case "$1" in
+        ubuntu)
+            printf '%s|%s|%s|%s|%s\n' "$UBUNTU_IMAGE_URL" "$UBUNTU_IMAGE_SHA256" sha256sum ubuntu24.04 'ubuntu 24.04'
+            ;;
+        debian)
+            printf '%s|%s|%s|%s|%s\n' "$DEBIAN_IMAGE_URL" "$DEBIAN_IMAGE_SHA512" sha512sum debian13 'debian 13'
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 # Prints the /etc/os-release "ID VERSION_ID" string expected for a guest OS.
 guest_expected_os_release() {
-    case "$1" in
-        ubuntu) printf 'ubuntu 24.04\n' ;;
-        debian) printf 'debian 13\n' ;;
-        *) return 1 ;;
-    esac
+    local facts
+    facts=$(guest_os_facts "$1") || return 1
+    printf '%s\n' "${facts##*|}"
 }
 
 management_ip() {
@@ -97,11 +111,11 @@ wait_for_ssh() {
 
 wait_for_cloud_init() {
     local host=$1 output
-    if output=$(lab_ssh "$host" 'sudo cloud-init status --wait --long' 2>&1); then
+    if output=$(lab_ssh "$host" 'sudo timeout 900 cloud-init status --wait --long' 2>&1); then
         return 0
     fi
     printf '%s\n' "$output"
-    die "cloud-init did not complete successfully on $host"
+    die "cloud-init did not finish successfully on $host"
 }
 
 wait_for_guest_ready() {

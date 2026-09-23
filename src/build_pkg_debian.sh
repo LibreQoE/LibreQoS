@@ -4,8 +4,7 @@
 #
 # This is the Debian front-end for build_dpkg.sh. It installs the Debian build
 # prerequisites (which include bpftool, needed by the lqos_sys build) and then
-# runs the shared packaging implementation, so the Ubuntu and Debian packages
-# cannot drift apart.
+# runs the shared packaging implementation.
 #
 # Run build_rust_debian.sh first if you also want the local src/bin install.
 #

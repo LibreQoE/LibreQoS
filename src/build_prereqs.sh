@@ -92,14 +92,15 @@ lqos_install_build_prerequisites() {
     sudo apt-get install -y "${LQOS_COMMON_BUILD_PACKAGES[@]}" || return 1
 
     # Kernel tools packages track the running kernel and can be unavailable on
-    # custom or HWE kernels. Keep them best-effort so their absence cannot
-    # abort the common install.
-    # shellcheck disable=SC2086
-    if ! sudo apt-get install -y $extras; then
-        echo "Warning: failed to install: $extras"
-        echo "Install the distribution equivalents of bpftool (required by lqos_sys) and perf manually if the build fails."
-    fi
+    # custom or HWE kernels. Install each independently so a missing
+    # kernel-pinned package cannot block the rest.
+    while IFS= read -r package; do
+        if ! sudo apt-get install -y "$package"; then
+            echo "Warning: failed to install: $package"
+        fi
+    done <<<"$extras"
     if ! command -v bpftool >/dev/null 2>&1; then
         echo "Warning: bpftool was not found; lqos_sys cannot build without it."
+        echo "Install the distribution package that provides bpftool."
     fi
 }

@@ -6,23 +6,8 @@ source "$LAB_ROOT/lib/common.sh"
 source "$LAB_ROOT/lab.env"
 
 GUEST_OS=$(resolve_guest_os)
-case "$GUEST_OS" in
-    ubuntu)
-        GUEST_IMAGE_URL=$UBUNTU_IMAGE_URL
-        GUEST_IMAGE_CHECKSUM=$UBUNTU_IMAGE_SHA256
-        GUEST_IMAGE_CHECKSUM_TOOL=sha256sum
-        DEFAULT_GUEST_OS_VARIANT=ubuntu24.04
-        ;;
-    debian)
-        GUEST_IMAGE_URL=$DEBIAN_IMAGE_URL
-        GUEST_IMAGE_CHECKSUM=$DEBIAN_IMAGE_SHA512
-        GUEST_IMAGE_CHECKSUM_TOOL=sha512sum
-        DEFAULT_GUEST_OS_VARIANT=debian13
-        ;;
-    *)
-        die "unsupported LAB_GUEST_OS '$GUEST_OS'; expected ubuntu or debian"
-        ;;
-esac
+GUEST_FACTS=$(guest_os_facts "$GUEST_OS") || die "unsupported LAB_GUEST_OS '$GUEST_OS'; expected ubuntu or debian"
+IFS='|' read -r GUEST_IMAGE_URL GUEST_IMAGE_CHECKSUM GUEST_IMAGE_CHECKSUM_TOOL DEFAULT_GUEST_OS_VARIANT _ <<<"$GUEST_FACTS"
 GUEST_OS_VARIANT=${LAB_OS_VARIANT:-$DEFAULT_GUEST_OS_VARIANT}
 
 readonly GUEST_OS GUEST_IMAGE_URL GUEST_IMAGE_CHECKSUM GUEST_IMAGE_CHECKSUM_TOOL GUEST_OS_VARIANT
@@ -46,7 +31,7 @@ EOF
 }
 
 require_host_tools() {
-    for tool in virsh virt-install qemu-img cloud-localds curl unzip sha256sum sha512sum rsync ssh scp; do require_command "$tool"; done
+    for tool in virsh virt-install qemu-img cloud-localds curl unzip sha256sum sha512sum rsync ssh scp dpkg-deb; do require_command "$tool"; done
 }
 
 ensure_ssh_key() {
@@ -148,9 +133,11 @@ create_domains() {
 }
 
 destroy_domain() { local name=$1; if domain_exists "$name"; then virsh_lab destroy "$name" >/dev/null 2>&1 || true; virsh_lab undefine "$name" --nvram >/dev/null 2>&1 || virsh_lab undefine "$name"; fi; }
-cmd_init() { require_host_tools; mkdir -p "$IMAGE_DIR" "$RUN_DIR"; printf '%s\n' "$GUEST_OS" >"$IMAGE_DIR/guest-os"; download_guest_image; download_routeros; build_runtime_bundle; note "lab bases and runtime bundle are ready"; }
+record_guest_os() { printf '%s\n' "$GUEST_OS" >"$IMAGE_DIR/guest-os"; }
+cmd_init() { require_host_tools; mkdir -p "$IMAGE_DIR" "$RUN_DIR"; record_guest_os; download_guest_image; download_routeros; build_runtime_bundle; note "lab bases and runtime bundle are ready"; }
 cmd_up() {
     require_host_tools; resolve_ovmf; [[ -f $GUEST_BASE && -f $ROUTER_BASE && -x $RUNTIME_DIR/bin/lqosd ]] || die "run ./radius-harness/lab init first"; ensure_lab_stopped
+    record_guest_os
     trap 'status=$?; trap - ERR; note "lab creation failed; removing partial resources"; cmd_down || true; exit "$status"' ERR
     safe_remove "$RUN_DIR"; mkdir -p "$RUN_DIR"; ensure_ssh_key
     for guest in lqos radius client; do cp "$LAB_ROOT/templates/$guest-network.yaml" "$RUN_DIR/$guest-network.yaml"; done
@@ -158,17 +145,33 @@ cmd_up() {
     create_network "$CONTROL_NETWORK" "$LAB_ROOT/templates/network-control.xml"; create_network "$ACCESS_NETWORK" "$LAB_ROOT/templates/network-access.xml"; create_network "$TRANSIT_NETWORK" "$LAB_ROOT/templates/network-transit.xml"; create_domains
     trap - ERR; note "VMs created. Use ./radius-harness/lab console once to set RouterOS admin password, then run ./radius-harness/lab configure."
 }
-cmd_status() { for item in "$LQOS_DOMAIN 52:54:00:10:00:10" "$RADIUS_DOMAIN 52:54:00:20:00:10" "$CLIENT_DOMAIN 52:54:00:30:00:10" "$ROUTER_DOMAIN 52:54:00:40:00:10"; do set -- $item; printf '%-20s %s\n' "$1" "$(management_ip "$2" || true)"; done; }
+cmd_status() { for item in "$LQOS_DOMAIN 52:54:00:10:00:10" "$RADIUS_DOMAIN 52:54:00:20:00:10" "$CLIENT_DOMAIN 52:54:00:30:00:10" "$ROUTER_DOMAIN 52:54:00:40:00:10"; do set -- $item; printf '%-20s %s\n' "$1" "$(management_ip "$2")"; done; }
 cmd_console() { domain_exists "$ROUTER_DOMAIN" || die "RouterOS domain is not running; use ./radius-harness/lab up first"; virsh_lab console "$ROUTER_DOMAIN"; }
 cmd_configure() { "$LAB_ROOT/lib/configure.sh"; }
 cmd_test() { "$LAB_ROOT/lib/test-lifecycle.sh"; }
+assert_package_control() {
+    local package_path=$1 depends recommends expected
+    depends=$(dpkg-deb -f "$package_path" Depends)
+    recommends=$(dpkg-deb -f "$package_path" Recommends)
+    for expected in libelf1t64 libssl3t64 zlib1g; do
+        [[ $depends == *"$expected"* ]] || die "package Depends is missing $expected"
+    done
+    for expected in netplan.io ethtool; do
+        [[ $recommends == *"$expected"* ]] || die "package Recommends is missing $expected"
+    done
+}
+
 cmd_check_package() {
-    local package_path=${1:-} lqos_ip simulate_output
+    local package_path=${1:-} install=${2:-} lqos_ip simulate_output
     require_host_tools
+    if [[ -n $install && $install != "--install" ]]; then
+        die "unknown check-package option '$install'; expected --install"
+    fi
     if [[ -z $package_path ]]; then
         package_path=$(ls -1t "$REPO_ROOT"/src/dist/libreqos_*_amd64.deb 2>/dev/null | head -n 1) || true
     fi
     [[ -n $package_path && -f $package_path ]] || die "no LibreQoS package found; build one with src/build_pkg_debian.sh or pass a path"
+    assert_package_control "$package_path"
     domain_exists "$LQOS_DOMAIN" || die "the lab is not running; use ./radius-harness/lab up first"
     lqos_ip=$(wait_for_guest_ready 52:54:00:10:00:10)
     note "verifying the LibreQoS guest operating system"
@@ -179,9 +182,17 @@ cmd_check_package() {
         printf '%s\n' "$simulate_output"
         die "package check failed in the $GUEST_OS guest"
     fi
+    if [[ $install == "--install" ]]; then
+        note "installing the package inside the $GUEST_OS guest"
+        lab_ssh "$lqos_ip" 'sudo systemctl stop radius-lqosd.service 2>/dev/null || true'
+        lab_ssh "$lqos_ip" "sudo apt-get install -y '/tmp/$(basename "$package_path")'" || die "package installation failed in the $GUEST_OS guest"
+        lab_ssh "$lqos_ip" 'sudo dpkg -s libreqos >/dev/null && sudo test -e /etc/systemd/system/lqosd.service && sudo test -x /opt/libreqos/venv/bin/python' || die "installed package is missing expected files"
+        lab_ssh "$lqos_ip" '! ldd /opt/libreqos/src/bin/lqosd | grep -q "not found"' || die "installed lqosd has missing shared libraries"
+        note "package installed and postinst completed"
+    fi
     note "package dependency resolution passed"
 }
 cmd_down() { for domain in "$CLIENT_DOMAIN" "$RADIUS_DOMAIN" "$ROUTER_DOMAIN" "$LQOS_DOMAIN"; do destroy_domain "$domain"; done; for network in "$TRANSIT_NETWORK" "$ACCESS_NETWORK" "$CONTROL_NETWORK"; do destroy_network "$network"; done; [[ -d $RUN_DIR ]] && safe_remove "$RUN_DIR"; note "disposable lab resources removed"; }
 cmd_purge() { cmd_down; [[ -d $IMAGE_DIR ]] && safe_remove "$IMAGE_DIR"; [[ -d $RUNTIME_DIR ]] && safe_remove "$RUNTIME_DIR"; note "cached bases and runtime artifacts removed"; }
 
-case ${1:-} in init) cmd_init ;; up) cmd_up ;; status) cmd_status ;; configure) cmd_configure ;; test) cmd_test ;; check-package) cmd_check_package "${2:-}" ;; down) cmd_down ;; purge) cmd_purge ;; console) cmd_console ;; *) usage; exit 2 ;; esac
+case ${1:-} in init) cmd_init ;; up) cmd_up ;; status) cmd_status ;; configure) cmd_configure ;; test) cmd_test ;; check-package) cmd_check_package "${2:-}" "${3:-}" ;; down) cmd_down ;; purge) cmd_purge ;; console) cmd_console ;; *) usage; exit 2 ;; esac

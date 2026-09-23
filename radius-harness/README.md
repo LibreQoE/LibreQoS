@@ -33,7 +33,7 @@ firmware elsewhere, set `OVMF_CODE_PATH` and `OVMF_VARS_PATH` in the environment
 before `up`.
 
 The pinned image hashes are in [lab.env](lab.env). Review and update the URL,
-version, and SHA-256 together when changing an image. Debian publishes SHA-512
+version, and checksum together when changing an image. Debian publishes SHA-512
 digests in `SHA512SUMS`, so the Debian image pins a SHA-512 value instead.
 
 The harness builds the LibreQoS runtime bundle on the host and copies it into
@@ -89,7 +89,7 @@ templates before running it.
 ./radius-harness/lab status     Show domains and management addresses.
 ./radius-harness/lab configure  Install fixtures and start services.
 ./radius-harness/lab test       Run the lifecycle assertions.
-./radius-harness/lab check-package  Check .deb dependency resolution in the guest.
+./radius-harness/lab check-package  Check .deb dependencies; add --install to install it.
 ./radius-harness/lab down       Remove VMs, networks, overlays, and secrets.
 ./radius-harness/lab purge      Also remove cached images and runtime artifacts.
 ./radius-harness/lab console    Open the RouterOS serial console.
