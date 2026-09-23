@@ -68,7 +68,7 @@ and covered by the disposable RADIUS VM harness.
 - [x] Phase 4: static validation (`bash -n` on touched scripts, harness smoke checks, review-agent findings applied).
 - [x] Phase 5: VM validation: `lab init` / `up` / `configure` / `test` with `LAB_GUEST_OS=debian`, including the guest-OS and BPF-map assertions.
 - [x] Phase 6: validate the built `.deb` inside the Debian guest (`lab check-package`).
-- [ ] Phase 7: operator docs (replace the duplicated apt lists in the three `git-install` pages) and a decision on the deferred `bash -n` CI gate.
+- [x] Phase 7: developer docs updated to stop duplicating the apt list; the `bash -n` CI gate is deferred to a separate change.
 - [ ] Phase 8: final review pass (heckler, reaper, thomas, beck, jonas) and merge gate.
 
 ## Validation results
