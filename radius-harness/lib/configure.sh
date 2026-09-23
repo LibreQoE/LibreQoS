@@ -18,6 +18,18 @@ router_ip=$(wait_for_management_ip 52:54:00:40:00:10)
 note "waiting for SSH on LibreQoS, FreeRADIUS, and PPPoE client guests"
 wait_for_ssh "$lqos_ip"; wait_for_ssh "$radius_ip"; wait_for_ssh "$client_ip"
 
+note "waiting for cloud-init to finish on the lab guests"
+wait_for_cloud_init "$lqos_ip"; wait_for_cloud_init "$radius_ip"; wait_for_cloud_init "$client_ip"
+
+note "verifying the LibreQoS guest operating system"
+case ${GUEST_OS:-ubuntu} in
+    ubuntu) expected_os_release='ubuntu 24.04' ;;
+    debian) expected_os_release='debian 13' ;;
+    *) die "unsupported GUEST_OS '${GUEST_OS:-}'" ;;
+esac
+actual_os_release=$(lab_ssh "$lqos_ip" '. /etc/os-release && printf "%s %s" "$ID" "$VERSION_ID"')
+[[ $actual_os_release == "$expected_os_release" ]] || die "LibreQoS guest is '$actual_os_release', expected '$expected_os_release'"
+
 note "rendering isolated lab configuration"
 install -d -m 0700 "$RUN_DIR/config"
 umask 077
@@ -48,6 +60,8 @@ note "starting lqosd before building the LibreQoS fixture state"
 lab_ssh "$lqos_ip" 'sudo systemctl stop radius-lqosd.service 2>/dev/null || true; sudo systemd-run --unit=radius-lqosd --collect --setenv=RUST_LOG=debug /opt/libreqos/src/bin/lqosd; sleep 1; sudo systemctl is-active --quiet radius-lqosd.service'
 note "building the LibreQoS fixture state inside the lab"
 lab_ssh "$lqos_ip" 'cd /opt/libreqos/src && sudo env PYTHONPATH=/opt/libreqos/src python3 LibreQoS.py'
+note "verifying BPF map pinning"
+lab_ssh "$lqos_ip" 'sudo test -e /sys/fs/bpf/map_ip_to_cpu_and_tc' || die "lqosd did not pin /sys/fs/bpf/map_ip_to_cpu_and_tc"
 
 note "uploading RouterOS PPPoE and RADIUS configuration"
 export SSHPASS=$ROUTEROS_ADMIN_PASSWORD

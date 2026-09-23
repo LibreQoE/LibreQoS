@@ -37,7 +37,8 @@ version, and SHA-256 together when changing an image. Debian publishes SHA-512
 digests in `SHA512SUMS`, so the Debian image pins a SHA-512 value instead.
 
 The harness builds the LibreQoS runtime bundle on the host and copies it into
-the guest, so the host toolchain must produce binaries the guest can run.
+the guest. Keep the host glibc at or below the guest's: a host newer than the
+guest produces a bundle the guest cannot start.
 
 ## Run
 
@@ -62,8 +63,11 @@ and `lqos_python` on the host. The guest receives only the resulting runtime
 bundle, not the Rust build tree.
 
 To run the Linux guests on Debian 13 instead of Ubuntu, set
-`LAB_GUEST_OS=debian` before `init`. If the host osinfo database does not know
-`debian13`, set `LAB_OS_VARIANT=debian12` (or `generic`) as well.
+`LAB_GUEST_OS=debian` before `init`; later commands reuse the recorded choice.
+The Debian pin uses the generic image rather than genericcloud because the
+cloud kernel disables PPP, which the PPPoE client needs. If the host osinfo
+database does not know `debian13`, set `LAB_OS_VARIANT=debian12` (or `generic`)
+before `up` as well.
 
 The test covers three cases:
 
@@ -84,6 +88,7 @@ templates before running it.
 ./radius-harness/lab status     Show domains and management addresses.
 ./radius-harness/lab configure  Install fixtures and start services.
 ./radius-harness/lab test       Run the lifecycle assertions.
+./radius-harness/lab check-package  Check .deb dependency resolution in the guest.
 ./radius-harness/lab down       Remove VMs, networks, overlays, and secrets.
 ./radius-harness/lab purge      Also remove cached images and runtime artifacts.
 ./radius-harness/lab console    Open the RouterOS serial console.

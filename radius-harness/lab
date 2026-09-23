@@ -5,18 +5,22 @@ LAB_ROOT=$(cd -- "$(dirname -- "$0")" && pwd)
 source "$LAB_ROOT/lib/common.sh"
 source "$LAB_ROOT/lab.env"
 
-GUEST_OS=${LAB_GUEST_OS:-ubuntu}
+GUEST_OS=${LAB_GUEST_OS:-}
+if [[ -z $GUEST_OS && -f $IMAGE_DIR/guest-os ]]; then
+    GUEST_OS=$(<"$IMAGE_DIR/guest-os")
+fi
+GUEST_OS=${GUEST_OS:-ubuntu}
 case "$GUEST_OS" in
     ubuntu)
         GUEST_IMAGE_URL=$UBUNTU_IMAGE_URL
-        GUEST_IMAGE_SHA256=$UBUNTU_IMAGE_SHA256
-        GUEST_IMAGE_SHA512=
+        GUEST_IMAGE_CHECKSUM=$UBUNTU_IMAGE_SHA256
+        GUEST_IMAGE_CHECKSUM_TOOL=sha256sum
         DEFAULT_GUEST_OS_VARIANT=ubuntu24.04
         ;;
     debian)
         GUEST_IMAGE_URL=$DEBIAN_IMAGE_URL
-        GUEST_IMAGE_SHA256=
-        GUEST_IMAGE_SHA512=$DEBIAN_IMAGE_SHA512
+        GUEST_IMAGE_CHECKSUM=$DEBIAN_IMAGE_SHA512
+        GUEST_IMAGE_CHECKSUM_TOOL=sha512sum
         DEFAULT_GUEST_OS_VARIANT=debian13
         ;;
     *)
@@ -25,7 +29,8 @@ case "$GUEST_OS" in
 esac
 GUEST_OS_VARIANT=${LAB_OS_VARIANT:-$DEFAULT_GUEST_OS_VARIANT}
 
-readonly GUEST_OS GUEST_IMAGE_URL GUEST_IMAGE_SHA256 GUEST_IMAGE_SHA512 GUEST_OS_VARIANT
+readonly GUEST_OS GUEST_IMAGE_URL GUEST_IMAGE_CHECKSUM GUEST_IMAGE_CHECKSUM_TOOL GUEST_OS_VARIANT
+export GUEST_OS
 readonly GUEST_BASE="$IMAGE_DIR/$(basename "$GUEST_IMAGE_URL")"
 readonly ROUTER_ARCHIVE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.img.zip"
 readonly ROUTER_BASE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.qcow2"
@@ -37,7 +42,7 @@ usage() {
     cat <<'EOF'
 Usage: ./radius-harness/lab <command>
 
-Commands: init up status configure test down purge console
+Commands: init up status configure test check-package down purge console
 
 Environment:
   LAB_GUEST_OS    Guest OS for the Linux VMs: ubuntu (default) or debian.
@@ -79,15 +84,20 @@ resolve_ovmf() {
     die "OVMF firmware was not found; install OVMF/edk2 or set OVMF_CODE_PATH and OVMF_VARS_PATH"
 }
 
+verify_checksum() {
+    local file=$1 checksum=$2 tool=$3
+    printf '%s  %s\n' "$checksum" "$file" | "$tool" --check --status || die "checksum did not match for $(basename "$file")"
+}
+
 download_routeros() {
     [[ -n ${ROUTEROS_CHR_SHA256:-} ]] || die "set ROUTEROS_CHR_SHA256 in lab.env before downloading RouterOS"
     if [[ ! -f $ROUTER_ARCHIVE ]]; then
         note "downloading RouterOS CHR $ROUTEROS_VERSION"
         curl --fail --location --output "$ROUTER_ARCHIVE.partial" "$ROUTEROS_CHR_URL"
-        printf '%s  %s\n' "$ROUTEROS_CHR_SHA256" "$ROUTER_ARCHIVE.partial" | sha256sum --check --status || die "RouterOS archive checksum did not match"
+        verify_checksum "$ROUTER_ARCHIVE.partial" "$ROUTEROS_CHR_SHA256" sha256sum
         mv "$ROUTER_ARCHIVE.partial" "$ROUTER_ARCHIVE"
     fi
-    printf '%s  %s\n' "$ROUTEROS_CHR_SHA256" "$ROUTER_ARCHIVE" | sha256sum --check --status || die "cached RouterOS archive checksum did not match"
+    verify_checksum "$ROUTER_ARCHIVE" "$ROUTEROS_CHR_SHA256" sha256sum
     if [[ ! -f $ROUTER_BASE ]]; then
         unzip -p "$ROUTER_ARCHIVE" >"$IMAGE_DIR/chr-$ROUTEROS_VERSION.img"
         qemu-img convert -f raw -O qcow2 "$IMAGE_DIR/chr-$ROUTEROS_VERSION.img" "$ROUTER_BASE"
@@ -95,25 +105,15 @@ download_routeros() {
     fi
 }
 
-verify_guest_image() {
-    local file=$1
-    if [[ -n $GUEST_IMAGE_SHA256 ]]; then
-        printf '%s  %s\n' "$GUEST_IMAGE_SHA256" "$file" | sha256sum --check --status || die "guest image checksum did not match"
-    elif [[ -n $GUEST_IMAGE_SHA512 ]]; then
-        printf '%s  %s\n' "$GUEST_IMAGE_SHA512" "$file" | sha512sum --check --status || die "guest image checksum did not match"
-    else
-        die "no checksum configured for guest image $(basename "$GUEST_IMAGE_URL")"
-    fi
-}
-
 download_guest_image() {
+    [[ -n $GUEST_IMAGE_CHECKSUM ]] || die "no checksum configured for guest image $(basename "$GUEST_IMAGE_URL")"
     if [[ ! -f $GUEST_BASE ]]; then
         note "downloading $GUEST_OS guest image $(basename "$GUEST_IMAGE_URL")"
         curl --fail --location --output "$GUEST_BASE.partial" "$GUEST_IMAGE_URL"
-        verify_guest_image "$GUEST_BASE.partial"
+        verify_checksum "$GUEST_BASE.partial" "$GUEST_IMAGE_CHECKSUM" "$GUEST_IMAGE_CHECKSUM_TOOL"
         mv "$GUEST_BASE.partial" "$GUEST_BASE"
     fi
-    verify_guest_image "$GUEST_BASE"
+    verify_checksum "$GUEST_BASE" "$GUEST_IMAGE_CHECKSUM" "$GUEST_IMAGE_CHECKSUM_TOOL"
 }
 
 build_runtime_bundle() {
@@ -153,7 +153,7 @@ create_domains() {
 }
 
 destroy_domain() { local name=$1; if domain_exists "$name"; then virsh_lab destroy "$name" >/dev/null 2>&1 || true; virsh_lab undefine "$name" --nvram >/dev/null 2>&1 || virsh_lab undefine "$name"; fi; }
-cmd_init() { require_host_tools; mkdir -p "$IMAGE_DIR" "$RUN_DIR"; download_guest_image; download_routeros; build_runtime_bundle; note "lab bases and runtime bundle are ready"; }
+cmd_init() { require_host_tools; mkdir -p "$IMAGE_DIR" "$RUN_DIR"; printf '%s\n' "$GUEST_OS" >"$IMAGE_DIR/guest-os"; download_guest_image; download_routeros; build_runtime_bundle; note "lab bases and runtime bundle are ready"; }
 cmd_up() {
     require_host_tools; resolve_ovmf; [[ -f $GUEST_BASE && -f $ROUTER_BASE && -x $RUNTIME_DIR/bin/lqosd ]] || die "run ./radius-harness/lab init first"; ensure_lab_stopped
     trap 'status=$?; trap - ERR; note "lab creation failed; removing partial resources"; cmd_down || true; exit "$status"' ERR
@@ -167,7 +167,25 @@ cmd_status() { for item in "$LQOS_DOMAIN 52:54:00:10:00:10" "$RADIUS_DOMAIN 52:5
 cmd_console() { domain_exists "$ROUTER_DOMAIN" || die "RouterOS domain is not running; use ./radius-harness/lab up first"; virsh_lab console "$ROUTER_DOMAIN"; }
 cmd_configure() { "$LAB_ROOT/lib/configure.sh"; }
 cmd_test() { "$LAB_ROOT/lib/test-lifecycle.sh"; }
+cmd_check_package() {
+    local package_path=${1:-} lqos_ip simulate_output
+    require_host_tools
+    if [[ -z $package_path ]]; then
+        package_path=$(ls -1t "$REPO_ROOT"/src/dist/libreqos_*_amd64.deb 2>/dev/null | head -n 1)
+    fi
+    [[ -n $package_path && -f $package_path ]] || die "no LibreQoS package found; build one with src/build_pkg_debian.sh or pass a path"
+    domain_exists "$LQOS_DOMAIN" || die "the lab is not running; use ./radius-harness/lab up first"
+    lqos_ip=$(wait_for_management_ip 52:54:00:10:00:10)
+    wait_for_ssh "$lqos_ip"
+    note "checking package dependency resolution inside the $GUEST_OS guest"
+    lab_scp "$package_path" "$lqos_ip" /tmp/
+    if ! simulate_output=$(lab_ssh "$lqos_ip" "sudo apt-get install --simulate '/tmp/$(basename "$package_path")' 2>&1"); then
+        printf '%s\n' "$simulate_output"
+        die "package dependency resolution failed in the $GUEST_OS guest"
+    fi
+    note "package dependency resolution passed"
+}
 cmd_down() { for domain in "$CLIENT_DOMAIN" "$RADIUS_DOMAIN" "$ROUTER_DOMAIN" "$LQOS_DOMAIN"; do destroy_domain "$domain"; done; for network in "$TRANSIT_NETWORK" "$ACCESS_NETWORK" "$CONTROL_NETWORK"; do destroy_network "$network"; done; [[ -d $RUN_DIR ]] && safe_remove "$RUN_DIR"; note "disposable lab resources removed"; }
 cmd_purge() { cmd_down; [[ -d $IMAGE_DIR ]] && safe_remove "$IMAGE_DIR"; [[ -d $RUNTIME_DIR ]] && safe_remove "$RUNTIME_DIR"; note "cached bases and runtime artifacts removed"; }
 
-case ${1:-} in init) cmd_init ;; up) cmd_up ;; status) cmd_status ;; configure) cmd_configure ;; test) cmd_test ;; down) cmd_down ;; purge) cmd_purge ;; console) cmd_console ;; *) usage; exit 2 ;; esac
+case ${1:-} in init) cmd_init ;; up) cmd_up ;; status) cmd_status ;; configure) cmd_configure ;; test) cmd_test ;; check-package) cmd_check_package "${2:-}" ;; down) cmd_down ;; purge) cmd_purge ;; console) cmd_console ;; *) usage; exit 2 ;; esac

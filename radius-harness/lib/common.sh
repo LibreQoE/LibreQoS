@@ -27,16 +27,36 @@ network_exists() { virsh_lab net-info "$1" >/dev/null 2>&1; }
 
 ensure_lab_stopped() {
     for domain in "$LQOS_DOMAIN" "$ROUTER_DOMAIN" "$RADIUS_DOMAIN" "$CLIENT_DOMAIN"; do
-        domain_exists "$domain" && die "lab domain already exists: $domain (run ./radius-harness/lab down first)"
+        if domain_exists "$domain"; then
+            die "lab domain already exists: $domain (run ./radius-harness/lab down first)"
+        fi
     done
     for network in "$CONTROL_NETWORK" "$ACCESS_NETWORK" "$TRANSIT_NETWORK"; do
-        network_exists "$network" && die "lab network already exists: $network (inspect and remove it before starting this lab)"
+        if network_exists "$network"; then
+            die "lab network already exists: $network (inspect and remove it before starting this lab)"
+        fi
     done
 }
 
 management_ip() {
-    local mac=$1
-    virsh_lab net-dhcp-leases "$MANAGEMENT_NETWORK" | awk -v wanted_mac="$mac" 'tolower($0) ~ tolower(wanted_mac) { expires = $1 " " $2; if (expires > latest) { latest = expires; split($5, address, "/"); ip = address[1] } } END { print ip }'
+    local mac=$1 now line expires epoch ip best_ip= best_expires=0
+    now=$(date +%s)
+    while IFS= read -r line; do
+        if [[ ${line,,} != *"${mac,,}"* ]]; then
+            continue
+        fi
+        expires=$(awk '{ print $1 " " $2 }' <<<"$line")
+        epoch=$(date -d "$expires" +%s 2>/dev/null) || continue
+        if [[ $epoch -le $now ]]; then
+            continue
+        fi
+        ip=$(awk '{ print $5 }' <<<"$line")
+        if [[ $epoch -gt $best_expires ]]; then
+            best_expires=$epoch
+            best_ip=${ip%%/*}
+        fi
+    done < <(virsh_lab net-dhcp-leases "$MANAGEMENT_NETWORK")
+    [[ -n $best_ip ]] && printf '%s\n' "$best_ip"
 }
 
 wait_for_management_ip() {
@@ -56,6 +76,21 @@ wait_for_ssh() {
         sleep 2
     done
     die "timed out waiting for SSH on $host"
+}
+
+wait_for_cloud_init() {
+    local host=$1 output status
+    if output=$(lab_ssh "$host" 'sudo cloud-init status --wait' 2>&1); then
+        return 0
+    else
+        status=$?
+    fi
+    # Exit code 2 means cloud-init is disabled, which is not a failure here.
+    if [ "$status" -eq 2 ]; then
+        return 0
+    fi
+    printf '%s\n' "$output"
+    die "cloud-init did not complete successfully on $host"
 }
 
 lab_ssh() { local host=$1; shift; ssh -i "$RUN_DIR/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$RUN_DIR/known_hosts" -o StrictHostKeyChecking=accept-new "lab@$host" "$@"; }
