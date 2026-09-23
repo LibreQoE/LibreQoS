@@ -38,20 +38,22 @@ and covered by the disposable RADIUS VM harness.
 
 | Problem | Fix |
 | --- | --- |
-| `linux-tools-common` and `linux-tools-$(uname -r)` do not exist in Debian, and `apt install` aborts the whole transaction when a name is unknown | Debian list installs `bpftool` (required by `lqos_sys/build.rs`) and `linux-perf` |
-| `make` and `pkg-config` are hard requirements of the vendored libbpf build and are not in the Ubuntu list | Add them to both distro lists |
-| `apt install` without `-y` in a scripted path | Use `apt-get install -y` |
+| `linux-tools-common` and `linux-tools-$(uname -r)` do not exist in Debian, and `apt install` aborts the whole transaction when a name is unknown | Debian list installs `bpftool` (required by `lqos_sys/build.rs`) and `linux-perf`; the kernel tools are installed best-effort so an unavailable `linux-tools-<kernel>` cannot abort the common set |
+| Debian installs `bpftool` in `/usr/sbin`, which is not on the non-root PATH there, and `lqos_sys` invokes `bpftool` by name | Prepend `/usr/sbin` to PATH in the prerequisite helper |
+| `make` is a hard requirement of the vendored libbpf build and is not in the Ubuntu list | Add it to both distro lists (`pkg-config` was already present) |
+| `apt install` without `-y` in a scripted path, and no `apt-get update` before a fresh-host install | Use `apt-get update` plus `apt-get install -y` |
 
 ### Packaging
 
 | Problem | Fix |
 | --- | --- |
-| `lqosd` links `libelf.so.1`, `libssl.so.3`, `libzstd.so.1`, `libz.so.1`; a minimal Debian install may lack `libelf1t64` | Add `libelf1t64, libssl3t64, libzstd1, zlib1g` to `Depends` |
-| `lqos_setup` network apply requires netplan; Ubuntu ships it, Debian does not | `Recommends: netplan.io, ethtool` |
+| `lqosd` directly needs `libelf.so.1`, `libssl.so.3`/`libcrypto.so.3`, and `libz.so.1`; a minimal Debian install may lack `libelf1t64` | Add `libelf1t64, libssl3t64, zlib1g` to `Depends` (`libzstd1` arrives through `libelf1t64`) |
+| `lqos_setup` network apply requires netplan; Ubuntu ships it, Debian does not | `Recommends: netplan.io, ethtool`; `lqosd` also uses `ethtool` for offload and coalescing tuning, with non-fatal failures |
 
-### Verified fine (no changes needed)
+### Checked against Debian 13 package and kernel data (no changes needed)
 
 - Debian 13 kernel (cloud and generic): `CONFIG_DEBUG_INFO_BTF=y` for CO-RE, BPF/JIT/XDP/TC-BPF, `sch_cake=m`, veth/bridge/VLAN/virtio-net.
+- The cloud kernel flavour disables `CONFIG_PPP`, so the harness pins the generic image; the generic kernel ships `CONFIG_PPP=m` and `CONFIG_PPPOE=m` for the PPPoE client.
 - FreeRADIUS 3.2.7 still uses `/etc/freeradius/3.0`, so harness paths are unchanged.
 - `liblqos_python.so` is PyO3 `abi3-py310` and loads under Debian's Python 3.13; no removed-stdlib usage in `src/*.py`.
 - The Ubuntu systemd hotfix is inert on Debian (`is_supported_os` guard) and does not block the package postinst.
@@ -59,14 +61,28 @@ and covered by the disposable RADIUS VM harness.
 
 ## Phases
 
-- [ ] Phase 0: branch and this plan.
-- [ ] Phase 1: shared prerequisite helper and `build_rust_debian.sh`.
-- [ ] Phase 2: `build_dpkg.sh` dependency fixes and `build_pkg_debian.sh`.
-- [ ] Phase 3: harness Debian guest support (`lab.env`, `lab`, `user-data.yaml`, README).
-- [ ] Phase 4: static validation (`bash -n` on touched scripts, harness smoke checks).
-- [ ] Phase 5: VM validation: `lab init` / `up` / `configure` / `test` with `LAB_GUEST_OS=debian`.
-- [ ] Phase 6 (stretch): install a `build_pkg_debian.sh` artifact inside the Debian guest and re-run the lifecycle test.
-- [ ] Phase 7: operator docs and review agents (heckler, reaper, thomas, beck, jonas).
+- [x] Phase 0: branch and this plan.
+- [x] Phase 1: shared prerequisite helper and `build_rust_debian.sh`.
+- [x] Phase 2: `build_dpkg.sh` dependency fixes and `build_pkg_debian.sh`.
+- [x] Phase 3: harness Debian guest support (`lab.env`, `lab`, `user-data.yaml`, README).
+- [x] Phase 4: static validation (`bash -n` on touched scripts, harness smoke checks, review-agent findings applied).
+- [x] Phase 5: VM validation: `lab init` / `up` / `configure` / `test` with `LAB_GUEST_OS=debian`, including the guest-OS and BPF-map assertions.
+- [x] Phase 6: validate the built `.deb` inside the Debian guest (`lab check-package`).
+- [ ] Phase 7: operator docs (replace the duplicated apt lists in the three `git-install` pages) and a decision on the deferred `bash -n` CI gate.
+- [ ] Phase 8: final review pass (heckler, reaper, thomas, beck, jonas) and merge gate.
+
+## Validation results
+
+- `bash -n` passes for every touched script.
+- Debian 13 VM run (generic image, kernel `6.12.107+deb13-amd64`): all three RADIUS lifecycle cases passed, including dynamic-circuit create, Interim-Update retention, and removal.
+- The guest-OS assertion, the BPF map-pinning assertion, and `lab check-package` (`.deb` dependency resolution) all passed on Debian 13.
+- The Debian prerequisite package set resolves on trixie, and `/usr/sbin` is absent from the default non-root PATH, confirming the `bpftool` PATH fix.
+- The default Ubuntu harness path was not re-run in this session.
+
+## Known gaps
+
+- `build_rust_debian.sh` and `build_pkg_debian.sh` were not executed on a Debian host end-to-end. The harness builds the runtime bundle on the Ubuntu host; the Debian package list and PATH fixes were validated against trixie package data and the Debian guest.
+- Repo bug found while testing, outside this branch's scope: `maybe_migrate_uisp_capacity_defaults` writes a `[uisp_integration]` table without the required `enable_uisp` field, so any config lacking that section fails to parse after migration. The harness fixture was updated to the current schema; the migration itself still needs a fix.
 
 ## Validation checklist
 
@@ -82,3 +98,9 @@ and covered by the disposable RADIUS VM harness.
 - Host `osinfo-db` may not know `debian13`; the `LAB_OS_VARIANT` override covers that.
 - The RouterOS console password step is interactive; the VM run needs an operator at `lab console` once.
 - Whether to declare Debian 13 supported in operator-facing docs is a product decision. This branch proves the technical path first.
+
+## Accepted review decisions
+
+- `netplan.io` stays in `Recommends` rather than `Depends`: runtime shaping does not need it, the setup flow does, and default apt installs recommends. Debian 13's cloud image ships it.
+- The `.deb` keeps the time64 dependency names (`libelf1t64`, `libssl3t64`). That matches the supported Ubuntu 24.04+ and Debian 13 targets; older releases are out of scope.
+- The build scripts keep assuming `sudo`, matching `build_rust.sh` and `update_api.sh`. Minimal installs without `sudo` are out of scope for this branch.
