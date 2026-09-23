@@ -12,7 +12,14 @@ PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
 PKGVERSION="${PACKAGE}_${VERSION}"
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-APT_DEPENDENCIES="python3-pip, python3-venv, nano, curl, ca-certificates"
+# Runtime shared libraries linked by the shipped binaries: lqosd links libelf,
+# libssl, libzstd, and zlib. Ubuntu 24.04+ and Debian 13 both use the time64
+# package names.
+APT_DEPENDENCIES="python3-pip, python3-venv, nano, curl, ca-certificates, libelf1t64, libssl3t64, libzstd1, zlib1g"
+# netplan.io is preinstalled on Ubuntu but not on Debian, and the setup flow
+# uses it to apply interface changes. ethtool supplies setup TUI interface
+# labels.
+APT_RECOMMENDS="netplan.io, ethtool"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src
 LQOS_STATE_DIR=$DPKG_DIR/opt/libreqos/state
@@ -98,6 +105,7 @@ Architecture: amd64
 Maintainer: Herbert Wolverson <herberticus@gmail.com>
 Description: CAKE-based traffic shaping for ISPs
 Depends: $APT_DEPENDENCIES
+Recommends: $APT_RECOMMENDS
 EOF
 popd > /dev/null || exit
 
