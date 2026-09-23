@@ -72,6 +72,10 @@ lqos_distro_build_extras() {
 # /usr/sbin to PATH so the build can find bpftool on Debian.
 lqos_install_build_prerequisites() {
     local distro extras
+    if [ "${LQOS_SKIP_PREREQS:-0}" = "1" ]; then
+        echo "Skipping build prerequisite installation (LQOS_SKIP_PREREQS=1)"
+        return 0
+    fi
     distro=$(lqos_detect_distro)
 
     # Debian installs bpftool in /usr/sbin, which is not on the default
@@ -100,7 +104,10 @@ lqos_install_build_prerequisites() {
         fi
     done <<<"$extras"
     if ! command -v bpftool >/dev/null 2>&1; then
-        echo "Warning: bpftool was not found; lqos_sys cannot build without it."
-        echo "Install the distribution package that provides bpftool."
+        echo "bpftool was not found; trying the standalone package."
+        sudo apt-get install -y bpftool || true
+    fi
+    if ! command -v bpftool >/dev/null 2>&1; then
+        echo "Warning: bpftool is still missing; lqos_sys cannot build without it."
     fi
 }

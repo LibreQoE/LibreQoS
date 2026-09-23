@@ -77,7 +77,7 @@ and covered by the disposable RADIUS VM harness.
 - Debian 13 VM run (generic image, kernel `6.12.107+deb13-amd64`): all three RADIUS lifecycle cases passed, including dynamic-circuit create, Interim-Update retention, and removal.
 - The guest-OS assertion, the BPF map-pinning assertion, and `lab check-package` (`.deb` dependency resolution) all passed on Debian 13.
 - The Debian prerequisite package set resolves on trixie, and `/usr/sbin` is absent from the default non-root PATH, confirming the `bpftool` PATH fix.
-- The default Ubuntu harness path was not re-run in this session.
+- Ubuntu 24.04 regression run: the same three lifecycle cases passed with the shared harness changes, and lease resolution ignored two generations of stale leases.
 
 ## Known gaps
 
@@ -92,7 +92,7 @@ and covered by the disposable RADIUS VM harness.
 - The harness image pin verifies against Debian's `SHA512SUMS`.
 - The Debian guest reaches the same three RADIUS lifecycle assertions as Ubuntu.
 - `lqosd` starts on the Debian guest and pins maps under `/sys/fs/bpf`.
-- The default Ubuntu harness path is unchanged (`LAB_GUEST_OS=ubuntu`).
+- The default Ubuntu harness path passes the same lifecycle test with the shared changes (`LAB_GUEST_OS=ubuntu`).
 
 ## Risks and open questions
 
@@ -106,4 +106,5 @@ and covered by the disposable RADIUS VM harness.
 - The `.deb` keeps the time64 dependency names (`libelf1t64`, `libssl3t64`). That matches the supported Ubuntu 24.04+ and Debian 13 targets; older releases are out of scope.
 - `libzstd1` stays out of `Depends`: `lqosd` reaches it through `libelf1t64`, which declares it. Generating `Depends` with `dpkg-shlibdeps` is the follow-up that would catch future direct libraries.
 - The build scripts keep assuming `sudo`, matching `build_rust.sh` and `update_api.sh`. Minimal installs without `sudo` are out of scope for this branch.
-- `management_ip` can still pick a previous lab's *unexpired* lease before the new guest requests DHCP. The documented flow includes a console step between `up` and `configure`, so this is recorded rather than reworked.
+- `management_ip` can still pick a previous lab's *unexpired* lease before the new guest requests DHCP, and it ignores leases libvirt reports as unlimited. The documented flow includes a console step between `up` and `configure`, so these are recorded rather than reworked.
+- Developer docs reference `build_rust_debian.sh`; operator-facing requirements pages still state Ubuntu 24.04 as the supported OS until that product decision is made.

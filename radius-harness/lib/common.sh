@@ -114,13 +114,13 @@ wait_for_cloud_init() {
     if output=$(lab_ssh "$host" 'sudo timeout 900 cloud-init status --wait --long' 2>&1); then
         return 0
     fi
-    printf '%s\n' "$output"
+    printf '%s\n' "$output" >&2
     die "cloud-init did not finish successfully on $host"
 }
 
 wait_for_guest_ready() {
     local mac=$1 ip
-    ip=$(wait_for_management_ip "$mac")
+    ip=$(wait_for_management_ip "$mac") || return 1
     wait_for_ssh "$ip"
     wait_for_cloud_init "$ip"
     printf '%s\n' "$ip"
@@ -129,7 +129,7 @@ wait_for_guest_ready() {
 assert_guest_os() {
     local host=$1 guest_os=$2 expected actual
     expected=$(guest_expected_os_release "$guest_os") || die "unsupported GUEST_OS '$guest_os'"
-    actual=$(lab_ssh "$host" '. /etc/os-release && printf "%s %s" "$ID" "$VERSION_ID"')
+    actual=$(lab_ssh "$host" '. /etc/os-release && printf "%s %s" "$ID" "$VERSION_ID"') || die "failed to read /etc/os-release on $host"
     [[ $actual == "$expected" ]] || die "LibreQoS guest is '$actual', expected '$expected'"
 }
 
