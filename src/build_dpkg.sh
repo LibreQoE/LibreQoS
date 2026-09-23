@@ -12,13 +12,14 @@ PACKAGE=libreqos
 VERSION=$(cat ./VERSION_STRING).$BUILD_DATE
 PKGVERSION="${PACKAGE}_${VERSION}"
 DPKG_DIR=dist/$PKGVERSION-1_amd64
-# Runtime shared libraries linked by the shipped binaries: lqosd links libelf,
-# libssl, libzstd, and zlib. Ubuntu 24.04+ and Debian 13 both use the time64
-# package names.
-APT_DEPENDENCIES="python3-pip, python3-venv, nano, curl, ca-certificates, libelf1t64, libssl3t64, libzstd1, zlib1g"
+# Runtime shared libraries linked directly by the shipped binaries: lqosd
+# needs libelf, libssl/libcrypto, and zlib (libzstd arrives through libelf).
+# Ubuntu 24.04+ and Debian 13 both use the time64 package names.
+APT_DEPENDENCIES="python3-pip, python3-venv, nano, curl, ca-certificates, libelf1t64, libssl3t64, zlib1g"
 # netplan.io is preinstalled on Ubuntu but not on Debian, and the setup flow
-# uses it to apply interface changes. ethtool supplies setup TUI interface
-# labels.
+# uses it to apply interface changes. lqosd uses ethtool for offload and
+# coalescing tuning, and the setup TUI uses it for interface labels; tuning
+# failures are non-fatal.
 APT_RECOMMENDS="netplan.io, ethtool"
 DEBIAN_DIR=$DPKG_DIR/DEBIAN
 LQOS_DIR=$DPKG_DIR/opt/libreqos/src

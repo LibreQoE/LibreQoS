@@ -5,17 +5,40 @@
 # package flows. This helper centralizes the per-distribution package list so
 # the Ubuntu and Debian paths cannot drift apart.
 
+# Build packages shared by every supported distribution.
+LQOS_COMMON_BUILD_PACKAGES=(
+    python3-pip python3-venv clang gcc gcc-multilib llvm libelf-dev git nano
+    curl screen pkg-config make libbpf-dev libssl-dev
+)
+
 # Prints the distribution id used to select build packages.
-# LQOS_DISTRO overrides /etc/os-release, which is useful on derivatives and in
-# tests.
+# LQOS_DISTRO overrides /etc/os-release, and ID_LIKE covers derivatives such as
+# Linux Mint and Pop!_OS.
 lqos_detect_distro() {
+    local id id_like
     if [ -n "${LQOS_DISTRO:-}" ]; then
         printf '%s\n' "${LQOS_DISTRO,,}"
         return 0
     fi
     if [ -r /etc/os-release ]; then
-        local id
         id=$(awk -F= '$1 == "ID" { gsub(/"/, "", $2); print $2 }' /etc/os-release)
+        case "$id" in
+            ubuntu|debian)
+                printf '%s\n' "$id"
+                return 0
+                ;;
+        esac
+        id_like=$(awk -F= '$1 == "ID_LIKE" { gsub(/"/, "", $2); print $2 }' /etc/os-release)
+        case " $id_like " in
+            *" ubuntu "*)
+                printf 'ubuntu\n'
+                return 0
+                ;;
+            *" debian "*)
+                printf 'debian\n'
+                return 0
+                ;;
+        esac
         if [ -n "$id" ]; then
             printf '%s\n' "${id,,}"
             return 0
@@ -24,23 +47,24 @@ lqos_detect_distro() {
     printf 'unknown\n'
 }
 
-# Prints the build prerequisite packages for a distribution id.
+# Prints the packages shared by all supported distributions.
+lqos_common_build_packages() {
+    printf '%s\n' "${LQOS_COMMON_BUILD_PACKAGES[@]}"
+}
+
+# Prints the distribution-specific build packages.
 # Returns non-zero for distributions without a known package set.
-lqos_build_packages() {
+lqos_distro_build_extras() {
     case "$1" in
         ubuntu)
             # linux-tools-common and linux-tools-<kernel> provide bpftool and
             # perf on Ubuntu.
-            printf '%s\n' python3-pip python3-venv clang gcc gcc-multilib llvm \
-                libelf-dev git nano curl screen pkg-config make \
-                linux-tools-common "linux-tools-$(uname -r)" libbpf-dev libssl-dev
+            printf '%s\n' linux-tools-common "linux-tools-$(uname -r)"
             ;;
         debian)
             # Debian ships bpftool and perf as standalone packages instead of
             # the Ubuntu linux-tools-* names.
-            printf '%s\n' python3-pip python3-venv clang gcc gcc-multilib llvm \
-                libelf-dev git nano curl screen pkg-config make \
-                bpftool linux-perf libbpf-dev libssl-dev
+            printf '%s\n' bpftool linux-perf
             ;;
         *)
             return 1
@@ -48,16 +72,46 @@ lqos_build_packages() {
     esac
 }
 
-# Installs the build prerequisites for the current or overridden distribution.
-lqos_install_build_prerequisites() {
-    local distro packages
-    distro=$(lqos_detect_distro)
-    if ! packages=$(lqos_build_packages "$distro"); then
-        echo "Unsupported distribution '$distro' for automatic prerequisite install."
-        echo "Install the LibreQoS build prerequisites manually: clang, llvm, bpftool, make, pkg-config, libelf-dev, libssl-dev."
-        return 0
+# Prints the full build prerequisite package list for a distribution.
+lqos_build_packages() {
+    local extras
+    if ! extras=$(lqos_distro_build_extras "$1"); then
+        return 1
     fi
+    lqos_common_build_packages
+    printf '%s\n' "$extras"
+}
+
+# Installs the build prerequisites for the current or overridden distribution.
+# Side effects: refreshes apt package lists, installs packages, and prepends
+# /usr/sbin to PATH so the build can find bpftool on Debian.
+lqos_install_build_prerequisites() {
+    local distro extras
+    distro=$(lqos_detect_distro)
+
+    # Debian installs bpftool in /usr/sbin, which is not on the default
+    # non-root PATH there, and lqos_sys invokes bpftool by name during the
+    # build.
+    export PATH="/usr/sbin:$PATH"
+
+    if ! extras=$(lqos_distro_build_extras "$distro"); then
+        echo "Unsupported distribution '$distro' for automatic prerequisite install."
+        echo "Install these packages with your distribution's package manager:"
+        lqos_common_build_packages | sed 's/^/  /'
+        echo "Also install bpftool (required to build lqos_sys) and, optionally, perf."
+        return 1
+    fi
+
     echo "Installing LibreQoS build prerequisites for $distro"
+    sudo apt-get update || echo "Warning: apt-get update failed; continuing with cached package lists"
+    sudo apt-get install -y "${LQOS_COMMON_BUILD_PACKAGES[@]}" || return 1
+
+    # Kernel tools packages track the running kernel and can be unavailable on
+    # custom or HWE kernels. Keep them best-effort so their absence cannot
+    # abort the common install.
     # shellcheck disable=SC2086
-    sudo apt-get install -y $packages
+    if ! sudo apt-get install -y $extras; then
+        echo "Warning: failed to install: $extras"
+        echo "Install the distribution equivalents of bpftool (required by lqos_sys) and perf manually if the build fails."
+    fi
 }
