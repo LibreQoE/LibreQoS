@@ -38,25 +38,42 @@ ensure_lab_stopped() {
     done
 }
 
+# Prints the guest OS recorded for this lab: LAB_GUEST_OS, the images/guest-os
+# marker written by init, or the ubuntu default.
+resolve_guest_os() {
+    local guest_os=${LAB_GUEST_OS:-}
+    if [[ -z $guest_os && -f $IMAGE_DIR/guest-os ]]; then
+        guest_os=$(<"$IMAGE_DIR/guest-os")
+    fi
+    printf '%s\n' "${guest_os:-ubuntu}"
+}
+
+# Prints the /etc/os-release "ID VERSION_ID" string expected for a guest OS.
+guest_expected_os_release() {
+    case "$1" in
+        ubuntu) printf 'ubuntu 24.04\n' ;;
+        debian) printf 'debian 13\n' ;;
+        *) return 1 ;;
+    esac
+}
+
 management_ip() {
-    local mac=$1 now line expires epoch ip best_ip= best_expires=0
+    local mac=$1 now line day time mac_field proto ip_field rest best_ip= best_expires=0 epoch
     now=$(date +%s)
     while IFS= read -r line; do
-        if [[ ${line,,} != *"${mac,,}"* ]]; then
+        read -r day time mac_field proto ip_field rest <<<"$line" || continue
+        [[ ${mac_field,,} == "${mac,,}" ]] || continue
+        [[ ${proto,,} == "ipv4" ]] || continue
+        epoch=$(date -d "$day $time" +%s 2>/dev/null) || continue
+        if (( epoch <= now )); then
             continue
         fi
-        expires=$(awk '{ print $1 " " $2 }' <<<"$line")
-        epoch=$(date -d "$expires" +%s 2>/dev/null) || continue
-        if [[ $epoch -le $now ]]; then
-            continue
-        fi
-        ip=$(awk '{ print $5 }' <<<"$line")
-        if [[ $epoch -gt $best_expires ]]; then
+        if (( epoch > best_expires )); then
             best_expires=$epoch
-            best_ip=${ip%%/*}
+            best_ip=${ip_field%%/*}
         fi
     done < <(virsh_lab net-dhcp-leases "$MANAGEMENT_NETWORK")
-    [[ -n $best_ip ]] && printf '%s\n' "$best_ip"
+    printf '%s\n' "$best_ip"
 }
 
 wait_for_management_ip() {
@@ -79,18 +96,27 @@ wait_for_ssh() {
 }
 
 wait_for_cloud_init() {
-    local host=$1 output status
-    if output=$(lab_ssh "$host" 'sudo cloud-init status --wait' 2>&1); then
-        return 0
-    else
-        status=$?
-    fi
-    # Exit code 2 means cloud-init is disabled, which is not a failure here.
-    if [ "$status" -eq 2 ]; then
+    local host=$1 output
+    if output=$(lab_ssh "$host" 'sudo cloud-init status --wait --long' 2>&1); then
         return 0
     fi
     printf '%s\n' "$output"
     die "cloud-init did not complete successfully on $host"
+}
+
+wait_for_guest_ready() {
+    local mac=$1 ip
+    ip=$(wait_for_management_ip "$mac")
+    wait_for_ssh "$ip"
+    wait_for_cloud_init "$ip"
+    printf '%s\n' "$ip"
+}
+
+assert_guest_os() {
+    local host=$1 guest_os=$2 expected actual
+    expected=$(guest_expected_os_release "$guest_os") || die "unsupported GUEST_OS '$guest_os'"
+    actual=$(lab_ssh "$host" '. /etc/os-release && printf "%s %s" "$ID" "$VERSION_ID"')
+    [[ $actual == "$expected" ]] || die "LibreQoS guest is '$actual', expected '$expected'"
 }
 
 lab_ssh() { local host=$1; shift; ssh -i "$RUN_DIR/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o UserKnownHostsFile="$RUN_DIR/known_hosts" -o StrictHostKeyChecking=accept-new "lab@$host" "$@"; }

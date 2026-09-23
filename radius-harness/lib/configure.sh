@@ -10,25 +10,14 @@ require_command sshpass
 require_lab_secret RADIUS_SHARED_SECRET
 require_lab_secret ROUTEROS_ADMIN_PASSWORD
 
-note "discovering guest management addresses"
-lqos_ip=$(wait_for_management_ip 52:54:00:10:00:10)
-radius_ip=$(wait_for_management_ip 52:54:00:20:00:10)
-client_ip=$(wait_for_management_ip 52:54:00:30:00:10)
+note "waiting for the LibreQoS, FreeRADIUS, and PPPoE client guests"
+lqos_ip=$(wait_for_guest_ready 52:54:00:10:00:10)
+radius_ip=$(wait_for_guest_ready 52:54:00:20:00:10)
+client_ip=$(wait_for_guest_ready 52:54:00:30:00:10)
 router_ip=$(wait_for_management_ip 52:54:00:40:00:10)
-note "waiting for SSH on LibreQoS, FreeRADIUS, and PPPoE client guests"
-wait_for_ssh "$lqos_ip"; wait_for_ssh "$radius_ip"; wait_for_ssh "$client_ip"
-
-note "waiting for cloud-init to finish on the lab guests"
-wait_for_cloud_init "$lqos_ip"; wait_for_cloud_init "$radius_ip"; wait_for_cloud_init "$client_ip"
 
 note "verifying the LibreQoS guest operating system"
-case ${GUEST_OS:-ubuntu} in
-    ubuntu) expected_os_release='ubuntu 24.04' ;;
-    debian) expected_os_release='debian 13' ;;
-    *) die "unsupported GUEST_OS '${GUEST_OS:-}'" ;;
-esac
-actual_os_release=$(lab_ssh "$lqos_ip" '. /etc/os-release && printf "%s %s" "$ID" "$VERSION_ID"')
-[[ $actual_os_release == "$expected_os_release" ]] || die "LibreQoS guest is '$actual_os_release', expected '$expected_os_release'"
+assert_guest_os "$lqos_ip" "$(resolve_guest_os)"
 
 note "rendering isolated lab configuration"
 install -d -m 0700 "$RUN_DIR/config"

@@ -5,11 +5,7 @@ LAB_ROOT=$(cd -- "$(dirname -- "$0")" && pwd)
 source "$LAB_ROOT/lib/common.sh"
 source "$LAB_ROOT/lab.env"
 
-GUEST_OS=${LAB_GUEST_OS:-}
-if [[ -z $GUEST_OS && -f $IMAGE_DIR/guest-os ]]; then
-    GUEST_OS=$(<"$IMAGE_DIR/guest-os")
-fi
-GUEST_OS=${GUEST_OS:-ubuntu}
+GUEST_OS=$(resolve_guest_os)
 case "$GUEST_OS" in
     ubuntu)
         GUEST_IMAGE_URL=$UBUNTU_IMAGE_URL
@@ -30,7 +26,6 @@ esac
 GUEST_OS_VARIANT=${LAB_OS_VARIANT:-$DEFAULT_GUEST_OS_VARIANT}
 
 readonly GUEST_OS GUEST_IMAGE_URL GUEST_IMAGE_CHECKSUM GUEST_IMAGE_CHECKSUM_TOOL GUEST_OS_VARIANT
-export GUEST_OS
 readonly GUEST_BASE="$IMAGE_DIR/$(basename "$GUEST_IMAGE_URL")"
 readonly ROUTER_ARCHIVE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.img.zip"
 readonly ROUTER_BASE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.qcow2"
@@ -171,17 +166,18 @@ cmd_check_package() {
     local package_path=${1:-} lqos_ip simulate_output
     require_host_tools
     if [[ -z $package_path ]]; then
-        package_path=$(ls -1t "$REPO_ROOT"/src/dist/libreqos_*_amd64.deb 2>/dev/null | head -n 1)
+        package_path=$(ls -1t "$REPO_ROOT"/src/dist/libreqos_*_amd64.deb 2>/dev/null | head -n 1) || true
     fi
     [[ -n $package_path && -f $package_path ]] || die "no LibreQoS package found; build one with src/build_pkg_debian.sh or pass a path"
     domain_exists "$LQOS_DOMAIN" || die "the lab is not running; use ./radius-harness/lab up first"
-    lqos_ip=$(wait_for_management_ip 52:54:00:10:00:10)
-    wait_for_ssh "$lqos_ip"
+    lqos_ip=$(wait_for_guest_ready 52:54:00:10:00:10)
+    note "verifying the LibreQoS guest operating system"
+    assert_guest_os "$lqos_ip" "$GUEST_OS"
     note "checking package dependency resolution inside the $GUEST_OS guest"
     lab_scp "$package_path" "$lqos_ip" /tmp/
     if ! simulate_output=$(lab_ssh "$lqos_ip" "sudo apt-get install --simulate '/tmp/$(basename "$package_path")' 2>&1"); then
         printf '%s\n' "$simulate_output"
-        die "package dependency resolution failed in the $GUEST_OS guest"
+        die "package check failed in the $GUEST_OS guest"
     fi
     note "package dependency resolution passed"
 }

@@ -28,7 +28,7 @@ VENV_PYTHON="/opt/libreqos/venv/bin/python"
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=build_prereqs.sh
 source "$SCRIPT_DIR/build_prereqs.sh"
-lqos_install_build_prerequisites
+lqos_install_build_prerequisites || exit 1
 
 if ! rustup -V &> /dev/null
 then

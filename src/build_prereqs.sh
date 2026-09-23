@@ -47,11 +47,6 @@ lqos_detect_distro() {
     printf 'unknown\n'
 }
 
-# Prints the packages shared by all supported distributions.
-lqos_common_build_packages() {
-    printf '%s\n' "${LQOS_COMMON_BUILD_PACKAGES[@]}"
-}
-
 # Prints the distribution-specific build packages.
 # Returns non-zero for distributions without a known package set.
 lqos_distro_build_extras() {
@@ -72,16 +67,6 @@ lqos_distro_build_extras() {
     esac
 }
 
-# Prints the full build prerequisite package list for a distribution.
-lqos_build_packages() {
-    local extras
-    if ! extras=$(lqos_distro_build_extras "$1"); then
-        return 1
-    fi
-    lqos_common_build_packages
-    printf '%s\n' "$extras"
-}
-
 # Installs the build prerequisites for the current or overridden distribution.
 # Side effects: refreshes apt package lists, installs packages, and prepends
 # /usr/sbin to PATH so the build can find bpftool on Debian.
@@ -97,7 +82,7 @@ lqos_install_build_prerequisites() {
     if ! extras=$(lqos_distro_build_extras "$distro"); then
         echo "Unsupported distribution '$distro' for automatic prerequisite install."
         echo "Install these packages with your distribution's package manager:"
-        lqos_common_build_packages | sed 's/^/  /'
+        printf '%s\n' "${LQOS_COMMON_BUILD_PACKAGES[@]}" | sed 's/^/  /'
         echo "Also install bpftool (required to build lqos_sys) and, optionally, perf."
         return 1
     fi
@@ -113,5 +98,8 @@ lqos_install_build_prerequisites() {
     if ! sudo apt-get install -y $extras; then
         echo "Warning: failed to install: $extras"
         echo "Install the distribution equivalents of bpftool (required by lqos_sys) and perf manually if the build fails."
+    fi
+    if ! command -v bpftool >/dev/null 2>&1; then
+        echo "Warning: bpftool was not found; lqos_sys cannot build without it."
     fi
 }
