@@ -5,7 +5,28 @@ LAB_ROOT=$(cd -- "$(dirname -- "$0")" && pwd)
 source "$LAB_ROOT/lib/common.sh"
 source "$LAB_ROOT/lab.env"
 
-readonly UBUNTU_BASE="$IMAGE_DIR/$(basename "$UBUNTU_IMAGE_URL")"
+GUEST_OS=${LAB_GUEST_OS:-ubuntu}
+case "$GUEST_OS" in
+    ubuntu)
+        GUEST_IMAGE_URL=$UBUNTU_IMAGE_URL
+        GUEST_IMAGE_SHA256=$UBUNTU_IMAGE_SHA256
+        GUEST_IMAGE_SHA512=
+        DEFAULT_GUEST_OS_VARIANT=ubuntu24.04
+        ;;
+    debian)
+        GUEST_IMAGE_URL=$DEBIAN_IMAGE_URL
+        GUEST_IMAGE_SHA256=
+        GUEST_IMAGE_SHA512=$DEBIAN_IMAGE_SHA512
+        DEFAULT_GUEST_OS_VARIANT=debian13
+        ;;
+    *)
+        die "unsupported LAB_GUEST_OS '$GUEST_OS'; expected ubuntu or debian"
+        ;;
+esac
+GUEST_OS_VARIANT=${LAB_OS_VARIANT:-$DEFAULT_GUEST_OS_VARIANT}
+
+readonly GUEST_OS GUEST_IMAGE_URL GUEST_IMAGE_SHA256 GUEST_IMAGE_SHA512 GUEST_OS_VARIANT
+readonly GUEST_BASE="$IMAGE_DIR/$(basename "$GUEST_IMAGE_URL")"
 readonly ROUTER_ARCHIVE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.img.zip"
 readonly ROUTER_BASE="$IMAGE_DIR/chr-$ROUTEROS_VERSION.qcow2"
 readonly SSH_KEY="$RUN_DIR/id_ed25519"
@@ -17,11 +38,15 @@ usage() {
 Usage: ./radius-harness/lab <command>
 
 Commands: init up status configure test down purge console
+
+Environment:
+  LAB_GUEST_OS    Guest OS for the Linux VMs: ubuntu (default) or debian.
+  LAB_OS_VARIANT  Override the virt-install --os-variant value.
 EOF
 }
 
 require_host_tools() {
-    for tool in virsh virt-install qemu-img cloud-localds curl unzip sha256sum rsync ssh scp; do require_command "$tool"; done
+    for tool in virsh virt-install qemu-img cloud-localds curl unzip sha256sum sha512sum rsync ssh scp; do require_command "$tool"; done
 }
 
 ensure_ssh_key() {
@@ -70,15 +95,25 @@ download_routeros() {
     fi
 }
 
-download_ubuntu() {
-    [[ -n ${UBUNTU_IMAGE_SHA256:-} ]] || die "set UBUNTU_IMAGE_SHA256 in lab.env before downloading Ubuntu"
-    if [[ ! -f $UBUNTU_BASE ]]; then
-        note "downloading Ubuntu 24.04 cloud image"
-        curl --fail --location --output "$UBUNTU_BASE.partial" "$UBUNTU_IMAGE_URL"
-        printf '%s  %s\n' "$UBUNTU_IMAGE_SHA256" "$UBUNTU_BASE.partial" | sha256sum --check --status || die "Ubuntu image checksum did not match"
-        mv "$UBUNTU_BASE.partial" "$UBUNTU_BASE"
+verify_guest_image() {
+    local file=$1
+    if [[ -n $GUEST_IMAGE_SHA256 ]]; then
+        printf '%s  %s\n' "$GUEST_IMAGE_SHA256" "$file" | sha256sum --check --status || die "guest image checksum did not match"
+    elif [[ -n $GUEST_IMAGE_SHA512 ]]; then
+        printf '%s  %s\n' "$GUEST_IMAGE_SHA512" "$file" | sha512sum --check --status || die "guest image checksum did not match"
+    else
+        die "no checksum configured for guest image $(basename "$GUEST_IMAGE_URL")"
     fi
-    printf '%s  %s\n' "$UBUNTU_IMAGE_SHA256" "$UBUNTU_BASE" | sha256sum --check --status || die "cached Ubuntu image checksum did not match"
+}
+
+download_guest_image() {
+    if [[ ! -f $GUEST_BASE ]]; then
+        note "downloading $GUEST_OS guest image $(basename "$GUEST_IMAGE_URL")"
+        curl --fail --location --output "$GUEST_BASE.partial" "$GUEST_IMAGE_URL"
+        verify_guest_image "$GUEST_BASE.partial"
+        mv "$GUEST_BASE.partial" "$GUEST_BASE"
+    fi
+    verify_guest_image "$GUEST_BASE"
 }
 
 build_runtime_bundle() {
@@ -105,11 +140,11 @@ render_cloud_init() {
 install_linux_domain() {
     local name=$1 memory=$2 vcpus=$3 network_args=$4
     install -m 0644 "$OVMF_VARS" "$RUN_DIR/$name-vars.fd"
-    virt-install --connect "$LIBVIRT_URI" --name "$name" --memory "$memory" --vcpus "$vcpus" --import --boot "loader=$OVMF_CODE,loader.type=pflash,loader.readonly=yes,loader.secure=no,nvram=$RUN_DIR/$name-vars.fd" --disk "path=$RUN_DIR/$name.qcow2,format=qcow2,bus=virtio" --disk "path=$RUN_DIR/$name-seed.iso,device=cdrom" --os-variant ubuntu24.04 --graphics vnc,listen=127.0.0.1 --noautoconsole $network_args
+    virt-install --connect "$LIBVIRT_URI" --name "$name" --memory "$memory" --vcpus "$vcpus" --import --boot "loader=$OVMF_CODE,loader.type=pflash,loader.readonly=yes,loader.secure=no,nvram=$RUN_DIR/$name-vars.fd" --disk "path=$RUN_DIR/$name.qcow2,format=qcow2,bus=virtio" --disk "path=$RUN_DIR/$name-seed.iso,device=cdrom" --os-variant "$GUEST_OS_VARIANT" --graphics vnc,listen=127.0.0.1 --noautoconsole $network_args
 }
 
 create_domains() {
-    create_overlay "$LQOS_DOMAIN" "$UBUNTU_BASE" 8G; create_overlay "$RADIUS_DOMAIN" "$UBUNTU_BASE" 8G; create_overlay "$CLIENT_DOMAIN" "$UBUNTU_BASE" 8G; create_overlay "$ROUTER_DOMAIN" "$ROUTER_BASE"
+    create_overlay "$LQOS_DOMAIN" "$GUEST_BASE" 8G; create_overlay "$RADIUS_DOMAIN" "$GUEST_BASE" 8G; create_overlay "$CLIENT_DOMAIN" "$GUEST_BASE" 8G; create_overlay "$ROUTER_DOMAIN" "$ROUTER_BASE"
     install_linux_domain "$LQOS_DOMAIN" 4096 2 "--network network=$MANAGEMENT_NETWORK,model=virtio,mac=52:54:00:10:00:10 --network network=$CONTROL_NETWORK,model=virtio,mac=52:54:00:10:00:11 --network network=$TRANSIT_NETWORK,model=virtio,mac=52:54:00:10:00:12"
     install_linux_domain "$RADIUS_DOMAIN" 512 1 "--network network=$MANAGEMENT_NETWORK,model=virtio,mac=52:54:00:20:00:10 --network network=$CONTROL_NETWORK,model=virtio,mac=52:54:00:20:00:11"
     install_linux_domain "$CLIENT_DOMAIN" 512 1 "--network network=$MANAGEMENT_NETWORK,model=virtio,mac=52:54:00:30:00:10 --network network=$ACCESS_NETWORK,model=virtio,mac=02:00:00:00:00:42"
@@ -118,9 +153,9 @@ create_domains() {
 }
 
 destroy_domain() { local name=$1; if domain_exists "$name"; then virsh_lab destroy "$name" >/dev/null 2>&1 || true; virsh_lab undefine "$name" --nvram >/dev/null 2>&1 || virsh_lab undefine "$name"; fi; }
-cmd_init() { require_host_tools; mkdir -p "$IMAGE_DIR" "$RUN_DIR"; download_ubuntu; download_routeros; build_runtime_bundle; note "lab bases and runtime bundle are ready"; }
+cmd_init() { require_host_tools; mkdir -p "$IMAGE_DIR" "$RUN_DIR"; download_guest_image; download_routeros; build_runtime_bundle; note "lab bases and runtime bundle are ready"; }
 cmd_up() {
-    require_host_tools; resolve_ovmf; [[ -f $UBUNTU_BASE && -f $ROUTER_BASE && -x $RUNTIME_DIR/bin/lqosd ]] || die "run ./radius-harness/lab init first"; ensure_lab_stopped
+    require_host_tools; resolve_ovmf; [[ -f $GUEST_BASE && -f $ROUTER_BASE && -x $RUNTIME_DIR/bin/lqosd ]] || die "run ./radius-harness/lab init first"; ensure_lab_stopped
     trap 'status=$?; trap - ERR; note "lab creation failed; removing partial resources"; cmd_down || true; exit "$status"' ERR
     safe_remove "$RUN_DIR"; mkdir -p "$RUN_DIR"; ensure_ssh_key
     for guest in lqos radius client; do cp "$LAB_ROOT/templates/$guest-network.yaml" "$RUN_DIR/$guest-network.yaml"; done

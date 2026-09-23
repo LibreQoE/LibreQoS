@@ -5,6 +5,10 @@ end: a RouterOS CHR NAS authenticates a PPPoE client with FreeRADIUS, sends
 accounting to a root-run LibreQoS guest, and the test verifies dynamic-circuit
 creation, profile selection, Interim-Update, and removal on disconnect.
 
+The Linux guests default to Ubuntu 24.04. Set `LAB_GUEST_OS=debian` to run them
+on Debian 13 instead; the guest image and its checksum are pinned in
+[lab.env](lab.env).
+
 It creates `radius-*` libvirt domains and networks, sparse qcow2 overlays, and
 temporary `vbr-r*` host-side bridge interfaces for its isolated networks.
 `./radius-harness/lab down` removes them with the overlays and VMs. `purge`
@@ -29,7 +33,11 @@ firmware elsewhere, set `OVMF_CODE_PATH` and `OVMF_VARS_PATH` in the environment
 before `up`.
 
 The pinned image hashes are in [lab.env](lab.env). Review and update the URL,
-version, and SHA-256 together when changing an image.
+version, and SHA-256 together when changing an image. Debian publishes SHA-512
+digests in `SHA512SUMS`, so the Debian image pins a SHA-512 value instead.
+
+The harness builds the LibreQoS runtime bundle on the host and copies it into
+the guest, so the host toolchain must produce binaries the guest can run.
 
 ## Run
 
@@ -49,9 +57,13 @@ export RADIUS_SHARED_SECRET='a-lab-radius-secret'
 ./radius-harness/lab down
 ```
 
-`init` downloads the pinned Ubuntu and RouterOS bases once and builds `lqosd`
+`init` downloads the pinned guest and RouterOS bases once and builds `lqosd`
 and `lqos_python` on the host. The guest receives only the resulting runtime
 bundle, not the Rust build tree.
+
+To run the Linux guests on Debian 13 instead of Ubuntu, set
+`LAB_GUEST_OS=debian` before `init`. If the host osinfo database does not know
+`debian13`, set `LAB_OS_VARIANT=debian12` (or `generic`) as well.
 
 The test covers three cases:
 
