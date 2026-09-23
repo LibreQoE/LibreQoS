@@ -1,6 +1,6 @@
 # Debian 13 Support Plan
 
-Status: in progress (branch `debian13_support`)
+Status: complete on branch `debian13_support` (awaiting merge)
 
 ## Goal
 
@@ -15,7 +15,7 @@ and covered by the disposable RADIUS VM harness.
 3. `src/build_pkg_debian.sh` — Debian front-end for `build_dpkg.sh`.
 4. `src/build_dpkg.sh` — runtime dependency fixes for Debian minimal installs.
 5. `radius-harness` — `LAB_GUEST_OS=debian` guest support with a pinned trixie image.
-6. Documentation updates (contributor docs now; operator docs after the VM run passes).
+6. Documentation updates (developer docs updated; operator-facing support statements remain a product decision).
 
 ## Design decisions
 
@@ -69,7 +69,7 @@ and covered by the disposable RADIUS VM harness.
 - [x] Phase 5: VM validation: `lab init` / `up` / `configure` / `test` with `LAB_GUEST_OS=debian`, including the guest-OS and BPF-map assertions.
 - [x] Phase 6: validate the built `.deb` inside the Debian guest (`lab check-package`).
 - [x] Phase 7: developer docs updated to stop duplicating the apt list; the `bash -n` CI gate is deferred to a separate change.
-- [ ] Phase 8: final review pass (heckler, reaper, thomas, beck, jonas) and merge gate.
+- [x] Phase 8: final review pass (heckler, reaper, thomas, beck, jonas) and merge gate.
 
 ## Validation results
 
@@ -82,6 +82,7 @@ and covered by the disposable RADIUS VM harness.
 ## Known gaps
 
 - `build_rust_debian.sh` and `build_pkg_debian.sh` were not executed on a Debian host end-to-end. The harness builds the runtime bundle on the Ubuntu host; the Debian package list and PATH fixes were validated against trixie package data and the Debian guest.
+- The `.deb` postinst was not exercised on Debian; `lab check-package` simulates dependency resolution only.
 - Repo bug found while testing, outside this branch's scope: `maybe_migrate_uisp_capacity_defaults` writes a `[uisp_integration]` table without the required `enable_uisp` field, so any config lacking that section fails to parse after migration. The harness fixture was updated to the current schema; the migration itself still needs a fix.
 
 ## Validation checklist
@@ -103,4 +104,6 @@ and covered by the disposable RADIUS VM harness.
 
 - `netplan.io` stays in `Recommends` rather than `Depends`: runtime shaping does not need it, the setup flow does, and default apt installs recommends. Debian 13's cloud image ships it.
 - The `.deb` keeps the time64 dependency names (`libelf1t64`, `libssl3t64`). That matches the supported Ubuntu 24.04+ and Debian 13 targets; older releases are out of scope.
+- `libzstd1` stays out of `Depends`: `lqosd` reaches it through `libelf1t64`, which declares it. Generating `Depends` with `dpkg-shlibdeps` is the follow-up that would catch future direct libraries.
 - The build scripts keep assuming `sudo`, matching `build_rust.sh` and `update_api.sh`. Minimal installs without `sudo` are out of scope for this branch.
+- `management_ip` can still pick a previous lab's *unexpired* lease before the new guest requests DHCP. The documented flow includes a console step between `up` and `configure`, so this is recorded rather than reworked.

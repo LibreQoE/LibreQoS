@@ -44,7 +44,10 @@ Después, ejecute lo siguiente:
 
 ```shell
 cd /opt/libreqos/src/
+# Ubuntu 24.04:
 ./build_rust.sh
+# Debian 13 o posterior:
+./build_rust_debian.sh
 ```
 
 Este proceso tomará algo de tiempo la primera vez, pero colocará todos los componentes en las ubicaciones correspondientes.

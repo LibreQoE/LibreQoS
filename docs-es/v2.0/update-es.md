@@ -91,7 +91,7 @@ Si algo falla, vaya a [Solución de problemas](troubleshooting-es.md) antes de o
 1. Cambia a tu directorio `LibreQoS` (por ejemplo `cd /opt/LibreQoS`)
 2. Actualiza desde Git: `git pull`
 3. ```git switch develop```
-4. Recompila: `./build-rust.sh`
+4. Recompila: `./build_rust.sh` (en Debian 13 o posterior, `./build_rust_debian.sh`)
 5. `sudo rust/remove_pinned_maps.sh`
 
 ### Hotfix de Ubuntu 24.04 para instalaciones desde Git

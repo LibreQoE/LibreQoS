@@ -146,7 +146,7 @@ sudo dpkg --configure -a
 sudo systemctl restart lqosd lqos_scheduler
 ```
 
-Las instalaciones basadas en git deben usar `./build_rust.sh` después de actualizar. Ese script reconstruye el entorno virtual antes de actualizar los archivos de servicio o reiniciar servicios. Si systemd informa `status=203/EXEC` en `/opt/libreqos/venv/bin/python`, o una falla en la comprobación previa del scheduler, reconstruya el entorno virtual con el comando anterior y reinicie `lqos_scheduler`.
+Las instalaciones basadas en git deben usar `./build_rust.sh` después de actualizar (en Debian 13 o posterior, use `./build_rust_debian.sh`). Ese script reconstruye el entorno virtual antes de actualizar los archivos de servicio o reiniciar servicios. Si systemd informa `status=203/EXEC` en `/opt/libreqos/venv/bin/python`, o una falla en la comprobación previa del scheduler, reconstruya el entorno virtual con el comando anterior y reinicie `lqos_scheduler`.
 
 Las instalaciones antiguas anteriores al entorno virtual pueden mostrar `ModuleNotFoundError` y recomendar comandos de `pip` del sistema. No repare instalaciones actuales con `pip` del sistema ni con `--break-system-packages`; esos paquetes no los usa el servicio `lqos_scheduler` respaldado por el entorno virtual. Actualice a un paquete que cree `/opt/libreqos/venv` y use el comando de reparación anterior.
 

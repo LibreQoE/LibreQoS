@@ -45,7 +45,10 @@ Once that's done, please run:
 
 ```shell
 cd /opt/libreqos/src/
+# Ubuntu 24.04:
 ./build_rust.sh
+# Debian 13 or later:
+./build_rust_debian.sh
 ```
 
 This will take a while the first time, but it puts everything in the right place.

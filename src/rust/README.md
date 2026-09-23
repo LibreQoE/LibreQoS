@@ -17,15 +17,11 @@ This project contains a number of projects arranged in a workspace. The projects
 * `xdp_iphash_to_cpu_cmdline` - An almost-compatible command that acts like the tool of the same name from the previous verion.
 * `xdp_pping` - Port of the previous release's `xdp_pping` tool, for compatibility. Will eventually not be needed.
 
-## Required Ubuntu packages
+## Required packages
 
-* `clang`
-* `linux-tools-common` (for `bpftool`)
-* `libbpf-dev`
-* `gcc-multilib`
-* `llvm`
-* `pkg-config`
-* `linux-tools-5.15.0-56-generic` (the common version doesn't work?)
+The build scripts install the required packages with `apt`: run
+`./build_rust.sh` on Ubuntu 24.04 and `./build_rust_debian.sh` on Debian 13 or
+later. See `src/build_prereqs.sh` for the package lists.
 
 ## Helper Scripts
 

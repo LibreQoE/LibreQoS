@@ -262,7 +262,7 @@ sudo dpkg --configure -a
 sudo systemctl restart lqosd lqos_scheduler
 ```
 
-Git-based installs should use `./build_rust.sh` after pulling updates. It rebuilds the virtual environment before refreshing service files or restarting services. If systemd reports `status=203/EXEC` on `/opt/libreqos/venv/bin/python`, or a failed scheduler pre-start check, rebuild the virtual environment with the command above and restart `lqos_scheduler`.
+Git-based installs should use `./build_rust.sh` after pulling updates (on Debian 13 or later, use `./build_rust_debian.sh`). It rebuilds the virtual environment before refreshing service files or restarting services. If systemd reports `status=203/EXEC` on `/opt/libreqos/venv/bin/python`, or a failed scheduler pre-start check, rebuild the virtual environment with the command above and restart `lqos_scheduler`.
 
 For manual shaping tests, use the same interpreter as the service:
 
