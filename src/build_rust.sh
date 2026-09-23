@@ -25,7 +25,10 @@ done
 VENV_PYTHON="/opt/libreqos/venv/bin/python"
 
 # Check Pre-Requisites
-sudo apt install python3-pip python3-venv clang gcc gcc-multilib llvm libelf-dev git nano curl screen llvm pkg-config linux-tools-common linux-tools-`uname -r` libbpf-dev libssl-dev curl
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=build_prereqs.sh
+source "$SCRIPT_DIR/build_prereqs.sh"
+lqos_install_build_prerequisites
 
 if ! rustup -V &> /dev/null
 then
