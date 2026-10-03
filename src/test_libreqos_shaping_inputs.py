@@ -522,6 +522,164 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
         self.assertEqual(missing_parents, {})
 
 
+class TestFindBandwidthMins(unittest.TestCase):
+    def test_sibling_minimums_do_not_accumulate(self):
+        def build_network(child_order):
+            children = {
+                "Crew": {
+                    "downloadBandwidthMbps": 100,
+                    "uploadBandwidthMbps": 100,
+                    "downloadBandwidthMbpsMin": 20,
+                    "uploadBandwidthMbpsMin": 20,
+                },
+                "Guest": {
+                    "downloadBandwidthMbps": 178,
+                    "uploadBandwidthMbps": 88,
+                    "downloadBandwidthMbpsMin": 60,
+                    "uploadBandwidthMbpsMin": 20,
+                },
+                "Infra": {
+                    "downloadBandwidthMbps": 82,
+                    "uploadBandwidthMbps": 30,
+                    "downloadBandwidthMbpsMin": 1,
+                    "uploadBandwidthMbpsMin": 1,
+                },
+                "MGMT": {
+                    "downloadBandwidthMbps": 30,
+                    "uploadBandwidthMbps": 15,
+                    "downloadBandwidthMbpsMin": 10,
+                    "uploadBandwidthMbpsMin": 4,
+                },
+            }
+            return {
+                "Site": {
+                    "downloadBandwidthMbps": 189,
+                    "uploadBandwidthMbps": 69,
+                    "downloadBandwidthMbpsMin": 120,
+                    "uploadBandwidthMbpsMin": 60,
+                    "children": {name: children[name] for name in child_order},
+                }
+            }
+
+        circuits = [
+            {"ParentNode": "Crew", "minDownload": 10, "minUpload": 10},
+            {"ParentNode": "Crew", "minDownload": 10, "minUpload": 10},
+            {"ParentNode": "Guest", "minDownload": 60, "minUpload": 20},
+            {"ParentNode": "Infra", "minDownload": 1, "minUpload": 1},
+            {"ParentNode": "MGMT", "minDownload": 10, "minUpload": 4},
+        ]
+
+        for child_order in (
+            ["Crew", "Guest", "Infra", "MGMT"],
+            ["MGMT", "Infra", "Guest", "Crew"],
+        ):
+            network = build_network(child_order)
+            totals = LibreQoS.findBandwidthMins(network, circuits)
+
+            self.assertEqual(totals, (91, 45))
+            self.assertEqual(network["Site"]["downloadBandwidthMbpsMin"], 120)
+            self.assertEqual(network["Site"]["uploadBandwidthMbpsMin"], 60)
+            generated = {
+                name: (
+                    node["downloadBandwidthMbpsMin"],
+                    node["uploadBandwidthMbpsMin"],
+                )
+                for name, node in network["Site"]["children"].items()
+            }
+            self.assertEqual(
+                generated,
+                {
+                    "Crew": (20, 20),
+                    "Guest": (60, 20),
+                    "Infra": (1, 1),
+                    "MGMT": (10, 4),
+                },
+            )
+
+    def test_child_minimums_roll_up_once(self):
+        network = {
+            "Site": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 100,
+                "downloadBandwidthMbpsMin": 0,
+                "uploadBandwidthMbpsMin": 0,
+                "children": {
+                    "Tower": {
+                        "downloadBandwidthMbps": 50,
+                        "uploadBandwidthMbps": 50,
+                        "downloadBandwidthMbpsMin": 0,
+                        "uploadBandwidthMbpsMin": 0,
+                        "children": {
+                            "AP-1": {
+                                "downloadBandwidthMbps": 25,
+                                "uploadBandwidthMbps": 25,
+                                "downloadBandwidthMbpsMin": 0,
+                                "uploadBandwidthMbpsMin": 0,
+                            },
+                            "AP-2": {
+                                "downloadBandwidthMbps": 25,
+                                "uploadBandwidthMbps": 25,
+                                "downloadBandwidthMbpsMin": 0,
+                                "uploadBandwidthMbpsMin": 0,
+                            },
+                        },
+                    },
+                    "Tower-2": {
+                        "downloadBandwidthMbps": 40,
+                        "uploadBandwidthMbps": 40,
+                        "downloadBandwidthMbpsMin": 0,
+                        "uploadBandwidthMbpsMin": 0,
+                    },
+                },
+            },
+        }
+        circuits = [
+            {"ParentNode": "Tower", "minDownload": 4, "minUpload": 1},
+            {"ParentNode": "AP-1", "minDownload": 10, "minUpload": 2},
+            {"ParentNode": "AP-2", "minDownload": 5, "minUpload": 1},
+            {"ParentNode": "Tower-2", "minDownload": 7, "minUpload": 3},
+        ]
+
+        totals = LibreQoS.findBandwidthMins(network, circuits)
+
+        self.assertEqual(totals, (26, 7))
+        self.assertEqual(network["Site"]["downloadBandwidthMbpsMin"], 26)
+        self.assertEqual(network["Site"]["uploadBandwidthMbpsMin"], 7)
+        self.assertEqual(
+            network["Site"]["children"]["Tower"]["downloadBandwidthMbpsMin"], 19
+        )
+        self.assertEqual(
+            network["Site"]["children"]["Tower-2"]["downloadBandwidthMbpsMin"], 7
+        )
+        self.assertEqual(
+            network["Site"]["children"]["Tower"]["children"]["AP-1"][
+                "downloadBandwidthMbpsMin"
+            ],
+            10,
+        )
+        self.assertEqual(
+            network["Site"]["children"]["Tower"]["children"]["AP-2"][
+                "downloadBandwidthMbpsMin"
+            ],
+            5,
+        )
+
+    def test_missing_minimum_keys_use_download_minimum(self):
+        network = {
+            "Leaf": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 50,
+            }
+        }
+        circuits = [{"ParentNode": "Leaf", "minDownload": 150, "minUpload": 40}]
+
+        totals = LibreQoS.findBandwidthMins(network, circuits)
+
+        self.assertEqual(totals, (150, 40))
+        self.assertEqual(network["Leaf"]["downloadBandwidthMbpsMin"], 150)
+        self.assertEqual(network["Leaf"]["uploadBandwidthMbpsMin"], 50)
+
+
 class TestFirstRunSinceBoot(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()  # nosec B108

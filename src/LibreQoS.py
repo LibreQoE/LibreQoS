@@ -1456,6 +1456,39 @@ def apply_effective_runtime_circuit_overrides(subscriberCircuits):
 
     return overlay_count
 
+
+def findBandwidthMins(data, subscriberCircuits):
+    """Raise each node's minimum bandwidth to cover its own circuits and children.
+
+    Mutates ``data`` in place. Returns the summed minimums of all circuits and
+    child nodes in the tree so callers can propagate them to a parent node.
+    """
+    totalDownload = 0
+    totalUpload = 0
+    for elem in data:
+        minDownload = 0
+        minUpload = 0
+        for circuit in subscriberCircuits:
+            if elem == circuit['ParentNode']:
+                minDownload += circuit['minDownload']
+                minUpload += circuit['minUpload']
+        if 'children' in data[elem]:
+            minDL, minUL = findBandwidthMins(data[elem]['children'], subscriberCircuits)
+            minDownload += minDL
+            minUpload += minUL
+        if 'downloadBandwidthMbpsMin' in data[elem]:
+            data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbpsMin'], minDownload)
+        else:
+            data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minDownload)
+        if 'uploadBandwidthMbpsMin' in data[elem]:
+            data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbpsMin'], minUpload)
+        else:
+            data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbps'], minUpload)
+        totalDownload += minDownload
+        totalUpload += minUpload
+    return totalDownload, totalUpload
+
+
 def refreshShapers():
 
     # Starting
@@ -1832,31 +1865,8 @@ def refreshShapers():
                         genPNcounter = 0
         print("Generated parent nodes created")
 
-        # Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's hierarchy
-        def findBandwidthMins(data, depth):
-            tabs = '   ' * depth
-            minDownload = 0
-            minUpload = 0
-            for elem in data:
-                for circuit in subscriberCircuits:
-                    if elem == circuit['ParentNode']:
-                        minDownload += circuit['minDownload']
-                        minUpload += circuit['minUpload']
-                if 'children' in data[elem]:
-                    minDL, minUL = findBandwidthMins(data[elem]['children'], depth+1)
-                    minDownload += minDL
-                    minUpload += minUL
-                if 'downloadBandwidthMbpsMin' in data[elem]:
-                    data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbpsMin'], minDownload)
-                else:
-                    data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minUpload)
-                if 'uploadBandwidthMbpsMin' in data[elem]:
-                    data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbpsMin'], minUpload)
-                else:
-                    data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbps'], minUpload)
-            return minDownload, minUpload
         logging.info("Finding the bandwidth minimums for each node")
-        minDownload, minUpload = findBandwidthMins(network, 0)
+        findBandwidthMins(network, subscriberCircuits)
         logging.info("Found the bandwidth minimums for each node")
 
         # Child nodes inherit bandwidth maximums of parents. We apply this here to avoid bugs when compression is applied with flattenA().
