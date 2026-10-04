@@ -5,6 +5,7 @@ import io
 import json
 import chardet
 from LibreQoS import RefreshFailure, ValidationFailure, refreshShapers, refreshShapersUpdateOnly
+from atomic_io import atomic_write_text
 import subprocess
 import sys
 import tempfile
@@ -716,10 +717,11 @@ def merge_rows_replace_by_device_id(existing_rows, override_rows):
 
 
 def write_shaped_devices_csv(path: str, header, rows):
-    with open(path, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-        writer.writerows(rows)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    writer.writerows(rows)
+    atomic_write_text(path, buffer.getvalue())
 
 
 def header_has_sqm(header):
@@ -896,9 +898,7 @@ def load_topology_canonical_state(path: str):
 
 
 def write_topology_canonical_state(path: str, canonical_state: dict):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write(json.dumps(canonical_state, indent=4))
+    atomic_write_text(path, json.dumps(canonical_state, indent=4))
 
 
 def _format_attempt_count(attempts: int) -> str:
@@ -1101,8 +1101,7 @@ def apply_network_adjustments_to_canonical_state(canonical_state: dict, adjustme
 
 
 def write_network_json(path: str, network: dict):
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write(json.dumps(network, indent=4))
+    atomic_write_text(path, json.dumps(network, indent=4))
 
 
 def importAndShapeFullReload():

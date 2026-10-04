@@ -20,6 +20,7 @@ ETC_DIR=$DPKG_DIR/etc
 ETC_LIBREQOS_DIR=$DPKG_DIR/etc/libreqos
 MOTD_DIR=$DPKG_DIR/etc/update-motd.d
 LQOS_FILES=(
+  atomic_io.py
   csvToNetworkJSON.py
   configMigrator.py
   integrationCommon.py
