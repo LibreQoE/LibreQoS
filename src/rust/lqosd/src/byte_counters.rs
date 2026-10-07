@@ -15,7 +15,7 @@
 use fxhash::FxHashMap;
 use lqos_bus::{ByteCountersSnapshot, CircuitByteCounters, NodeByteCounters};
 use lqos_config::NetworkJson;
-use lqos_network_devices::NetworkDevicesCatalog;
+use lqos_network_devices::{NetworkDevicesCatalog, ParentNodeLookup};
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -64,10 +64,20 @@ fn apply_deltas(
 ) {
     for (circuit_hash, bytes) in deltas {
         let counter = counters.entry(circuit_hash).or_default();
-        if counter.descriptor.is_none() {
-            counter.descriptor = describe(circuit_hash);
-        }
+        ensure_descriptor(counter, circuit_hash, &describe);
         counter.bytes.checked_add(bytes);
+    }
+}
+
+/// Captures a counter's identity on first sight or when it could not be
+/// resolved previously.
+fn ensure_descriptor(
+    counter: &mut CircuitCounter,
+    circuit_hash: i64,
+    describe: &impl Fn(i64) -> Option<CircuitDescriptor>,
+) {
+    if counter.descriptor.is_none() {
+        counter.descriptor = describe(circuit_hash);
     }
 }
 
@@ -87,32 +97,40 @@ fn fill_missing_descriptors() {
     let catalog = lqos_network_devices::network_devices_catalog();
     let mut counters = CIRCUIT_BYTES.write();
     for (circuit_hash, counter) in counters.iter_mut() {
-        if counter.descriptor.is_none() {
-            counter.descriptor = describe_circuit(&catalog, *circuit_hash);
-        }
+        ensure_descriptor(counter, *circuit_hash, &|circuit_hash| {
+            describe_circuit(&catalog, circuit_hash)
+        });
     }
 }
 
 /// Resolves one circuit's identity fields from the combined device catalog.
+///
+/// The runtime effective parent wins when one is published, so accounting
+/// follows the same tree as the rest of the runtime.
 fn describe_circuit(
     catalog: &NetworkDevicesCatalog,
     circuit_hash: i64,
 ) -> Option<CircuitDescriptor> {
     let device = catalog.device_by_hashes(None, Some(circuit_hash))?;
+    let (parent_node, parent_node_id) =
+        match crate::shaped_devices_tracker::effective_parent_for_circuit(&device.circuit_id) {
+            Some(parent) => (parent.name, parent.id),
+            None => (device.parent_node.clone(), device.parent_node_id.clone()),
+        };
     Some(CircuitDescriptor {
         circuit_id: device.circuit_id.clone(),
         circuit_name: device.circuit_name.clone(),
-        parent_node: device.parent_node.clone(),
-        parent_node_id: device.parent_node_id.clone(),
+        parent_node,
+        parent_node_id,
     })
 }
 
 /// Builds a cumulative byte counter snapshot for the bus.
 ///
 /// Side effects: acquires the counter lock and the runtime network tree read
-/// lock. Descriptors are resolved before the tree lock is taken so the lock
-/// order stays `CIRCUIT_BYTES` then `NETWORK_JSON`, matching the tracker's
-/// `NETWORK_JSON` write followed by `CIRCUIT_BYTES` write.
+/// lock. Descriptors are resolved and the counter lock is released before the
+/// tree lock is taken, so the two locks are never held at the same time and
+/// cannot invert the tracker's `NETWORK_JSON` then `CIRCUIT_BYTES` order.
 pub(crate) fn snapshot() -> ByteCountersSnapshot {
     if !is_enabled() {
         return ByteCountersSnapshot {
@@ -160,13 +178,16 @@ fn rollup(tree: &NetworkJson, counters: &[CircuitCounter]) -> ByteCountersSnapsh
             node_by_id.entry(id).or_insert(index);
         }
     }
+    let parent_lookup = ParentNodeLookup::from_nodes(&tree.nodes);
 
     let mut circuit_rows = Vec::new();
     for counter in counters {
         let Some(descriptor) = counter.descriptor.as_ref() else {
             continue;
         };
-        if let Some(parent_index) = resolve_parent_node(descriptor, &node_by_id, &node_by_name) {
+        if let Some(parent_index) =
+            resolve_parent_index(&parent_lookup, descriptor, &node_by_id, &node_by_name)
+        {
             let parent_node = &tree.nodes[parent_index];
             if parent_node.parents.is_empty() {
                 // The root node carries no parent list, so add its own traffic.
@@ -208,17 +229,23 @@ fn rollup(tree: &NetworkJson, counters: &[CircuitCounter]) -> ByteCountersSnapsh
     }
 }
 
-/// Resolves a circuit's parent node, preferring the stable node identifier.
-fn resolve_parent_node(
+/// Resolves a circuit's parent node with the canonical id, name, and alias
+/// precedence used by the rest of the runtime.
+fn resolve_parent_index(
+    parent_lookup: &ParentNodeLookup<'_>,
     descriptor: &CircuitDescriptor,
     node_by_id: &FxHashMap<&str, usize>,
     node_by_name: &FxHashMap<&str, usize>,
 ) -> Option<usize> {
-    descriptor
-        .parent_node_id
+    let parent = parent_lookup.resolve(
+        &descriptor.parent_node,
+        descriptor.parent_node_id.as_deref(),
+    )?;
+    parent
+        .id
         .as_deref()
         .and_then(|id| node_by_id.get(id).copied())
-        .or_else(|| node_by_name.get(descriptor.parent_node.as_str()).copied())
+        .or_else(|| node_by_name.get(parent.name.as_str()).copied())
 }
 
 #[cfg(test)]
@@ -372,6 +399,21 @@ mod tests {
         assert_eq!(snapshot.nodes[0].bytes, DownUpOrder::new(5, 5));
         assert_eq!(snapshot.nodes[3].bytes, DownUpOrder::new(0, 0));
         assert_eq!(snapshot.nodes[4].bytes, DownUpOrder::new(5, 5));
+    }
+
+    #[test]
+    fn rollup_resolves_parent_aliases() {
+        let mut tree = test_tree();
+        tree.nodes[2].active_attachment_name = Some("Site A1 Alias".to_string());
+        let counters = vec![counter(
+            descriptor("circuit-1", "Site A1 Alias"),
+            DownUpOrder::new(4, 2),
+        )];
+        let snapshot = rollup(&tree, &counters);
+
+        assert_eq!(snapshot.nodes[0].bytes, DownUpOrder::new(4, 2));
+        assert_eq!(snapshot.nodes[1].bytes, DownUpOrder::new(4, 2));
+        assert_eq!(snapshot.nodes[2].bytes, DownUpOrder::new(4, 2));
     }
 
     #[test]
