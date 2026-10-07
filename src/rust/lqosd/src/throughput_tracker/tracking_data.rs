@@ -1170,8 +1170,8 @@ impl ThroughputTracker {
                     if let Some(rtt_median) = rtt_median
                         && let Some(tracker) = raw_data.get_mut(local_ip)
                     {
-                        // Shift left
-                        for i in 1..60 {
+                        // Shift right (oldest falls off the end)
+                        for i in (1..60).rev() {
                             tracker.recent_rtt_data[i] = tracker.recent_rtt_data[i - 1];
                         }
                         tracker.recent_rtt_data[0] = rtt_median;
