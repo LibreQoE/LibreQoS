@@ -771,8 +771,9 @@ impl ThroughputTracker {
                 }
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self_cycle;
-                    let actual_bytes_delta =
-                        entry.actual_bytes.checked_sub_or_zero(entry.prev_actual_bytes);
+                    let actual_bytes_delta = entry
+                        .actual_bytes
+                        .checked_sub_or_zero(entry.prev_actual_bytes);
                     // Call to Bakery Update for existing traffic
                     if let Some(circuit_hash) = entry.circuit_hash {
                         changed_circuits.insert(circuit_hash);
@@ -935,6 +936,8 @@ impl ThroughputTracker {
                 raw_data.insert(*xdp_ip, entry);
             }
         });
+
+        drop(raw_data);
 
         if byte_counters_enabled {
             crate::byte_counters::add_batch(byte_counter_deltas, &catalog);

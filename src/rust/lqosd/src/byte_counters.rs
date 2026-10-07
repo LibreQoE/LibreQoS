@@ -45,7 +45,9 @@ pub(crate) fn is_enabled() -> bool {
 ///
 /// New circuits capture their identity from `catalog` on first sight.
 ///
-/// Side effects: mutates the shared cumulative counter map.
+/// Side effects: mutates the shared cumulative counter map. Callers may
+/// already hold the network tree write lock, so this function must never
+/// acquire a network tree lock.
 pub(crate) fn add_batch(deltas: FxHashMap<i64, DownUpOrder<u64>>, catalog: &NetworkDevicesCatalog) {
     if deltas.is_empty() {
         return;
@@ -81,32 +83,28 @@ fn ensure_descriptor(
     }
 }
 
-/// Fills descriptors for counters that could not resolve identity when they
-/// were first recorded, for example because the catalog snapshot was stale.
+/// Refreshes descriptors for circuits that still resolve in the device
+/// catalog, so live circuits follow renames and re-parenting. Circuits that no
+/// longer resolve keep their last-known descriptor and continue contributing
+/// to their last known parent.
 ///
 /// Side effects: mutates the shared cumulative counter map.
-fn fill_missing_descriptors() {
-    if CIRCUIT_BYTES
-        .read()
-        .values()
-        .all(|counter| counter.descriptor.is_some())
-    {
-        return;
-    }
-
+fn refresh_descriptors() {
     let catalog = lqos_network_devices::network_devices_catalog();
     let mut counters = CIRCUIT_BYTES.write();
     for (circuit_hash, counter) in counters.iter_mut() {
-        ensure_descriptor(counter, *circuit_hash, &|circuit_hash| {
-            describe_circuit(&catalog, circuit_hash)
-        });
+        if let Some(descriptor) = describe_circuit(&catalog, *circuit_hash) {
+            counter.descriptor = Some(descriptor);
+        }
     }
 }
 
 /// Resolves one circuit's identity fields from the combined device catalog.
 ///
 /// The runtime effective parent wins when one is published, so accounting
-/// follows the same tree as the rest of the runtime.
+/// follows the same tree as the rest of the runtime. This function must never
+/// acquire a network tree lock, because callers may already hold the tree
+/// write lock.
 fn describe_circuit(
     catalog: &NetworkDevicesCatalog,
     circuit_hash: i64,
@@ -128,7 +126,7 @@ fn describe_circuit(
 /// Builds a cumulative byte counter snapshot for the bus.
 ///
 /// Side effects: acquires the counter lock and the runtime network tree read
-/// lock. Descriptors are resolved and the counter lock is released before the
+/// lock. Descriptors are refreshed and the counter lock is released before the
 /// tree lock is taken, so the two locks are never held at the same time and
 /// cannot invert the tracker's `NETWORK_JSON` then `CIRCUIT_BYTES` order.
 pub(crate) fn snapshot() -> ByteCountersSnapshot {
@@ -140,7 +138,7 @@ pub(crate) fn snapshot() -> ByteCountersSnapshot {
         };
     }
 
-    fill_missing_descriptors();
+    refresh_descriptors();
 
     let counters: Vec<CircuitCounter> = CIRCUIT_BYTES.read().values().cloned().collect();
 
@@ -330,6 +328,28 @@ mod tests {
 
         let counter = counters.get(&7).expect("counter should exist");
         assert_eq!(counter.bytes, DownUpOrder::new(110, 45));
+        assert_eq!(
+            counter.descriptor.as_ref().map(|d| d.circuit_id.as_str()),
+            Some("circuit-7")
+        );
+    }
+
+    #[test]
+    fn apply_deltas_fills_descriptor_when_first_lookup_missed() {
+        let mut counters = FxHashMap::default();
+        apply_deltas(
+            &mut counters,
+            FxHashMap::from_iter([(7, DownUpOrder::new(1, 0))]),
+            |_| None,
+        );
+        apply_deltas(
+            &mut counters,
+            FxHashMap::from_iter([(7, DownUpOrder::new(2, 0))]),
+            |_| Some(descriptor("circuit-7", "Site A")),
+        );
+
+        let counter = counters.get(&7).expect("counter should exist");
+        assert_eq!(counter.bytes, DownUpOrder::new(3, 0));
         assert_eq!(
             counter.descriptor.as_ref().map(|d| d.circuit_id.as_str()),
             Some("circuit-7")
