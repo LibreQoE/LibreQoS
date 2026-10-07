@@ -121,8 +121,11 @@ Representative endpoints:
 - `GET /search`
 - `GET /current_throughput`
 - `GET /queue_stats_total`
+- `GET /byte_counters`
 - `GET /warnings`
 - `GET /urgent`, `GET /urgent/status`
+
+`GET /byte_counters` returns cumulative per-node and per-circuit byte counters when `[byte_counters] enabled = true` is set in `/etc/lqos.conf`. Values are cumulative since `lqosd` started, include descendant traffic for nodes, and reset when `lqosd` restarts. See [Advanced Configuration](configuration-advanced.md).
 
 ### 5) Control and Reload Operations
 

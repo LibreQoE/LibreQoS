@@ -64,6 +64,23 @@ netflow_version = 5
 do_not_track_subnets = ["192.168.0.0/16"]
 ```
 
+#### Byte counters (optional)
+
+LibreQoS can keep cumulative byte counters per circuit and per network node for data-usage accounting, and expose them through `lqos_api`. The feature is disabled by default. To enable it, add the following section to `/etc/lqos.conf` and restart `lqosd`:
+
+```toml
+[byte_counters]
+enabled = true
+```
+
+- Counters accumulate the traffic measured by the one-second throughput tracker.
+- Values are actual transmitted bytes, not bytes dropped by shaping.
+- Values are cumulative since `lqosd` started and reset when `lqosd` restarts.
+- Node values include traffic from all descendant nodes.
+- Only circuits with recorded traffic are listed.
+
+With the counters enabled, `GET /byte_counters` on the Node API returns the current values. See [LibreQoS Node API](api.md).
+
 #### On-a-stick mode queue mapping (single interface)
 
 When running on-a-stick mode, LibreQoS splits available TX queues in half:
