@@ -723,6 +723,16 @@ mod test {
     }
 
     #[test]
+    fn byte_counters_config_defaults_when_section_is_absent() {
+        let legacy = remove_sections(include_str!("example.toml"), &["byte_counters"]);
+        let config =
+            Config::load_from_string(&legacy).expect("Cannot read config without byte_counters");
+
+        assert_eq!(config.byte_counters, Default::default());
+        assert!(!config.byte_counters.enabled);
+    }
+
+    #[test]
     fn load_example_legacy_spylnx() {
         let legacy = include_str!("example.toml")
             .replace("[splynx_integration]", "[spylnx_integration]")

@@ -23,7 +23,7 @@ mod tests {
     use super::ByteCountersConfig;
 
     #[test]
-    fn absent_section_defaults_to_disabled() {
+    fn empty_section_defaults_to_disabled() {
         let config: ByteCountersConfig =
             toml::from_str("").expect("empty byte_counters section should parse");
         assert!(!config.enabled);

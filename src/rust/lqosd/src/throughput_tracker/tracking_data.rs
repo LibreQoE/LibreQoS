@@ -771,20 +771,12 @@ impl ThroughputTracker {
                 }
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self_cycle;
-                    let actual_bytes_delta = DownUpOrder::new(
-                        entry
-                            .actual_bytes
-                            .down
-                            .saturating_sub(entry.prev_actual_bytes.down),
-                        entry
-                            .actual_bytes
-                            .up
-                            .saturating_sub(entry.prev_actual_bytes.up),
-                    );
+                    let actual_bytes_delta =
+                        entry.actual_bytes.checked_sub_or_zero(entry.prev_actual_bytes);
                     // Call to Bakery Update for existing traffic
                     if let Some(circuit_hash) = entry.circuit_hash {
                         changed_circuits.insert(circuit_hash);
-                        if byte_counters_enabled {
+                        if byte_counters_enabled && actual_bytes_delta.not_zero() {
                             byte_counter_deltas
                                 .entry(circuit_hash)
                                 .or_default()
@@ -945,7 +937,7 @@ impl ThroughputTracker {
         });
 
         if byte_counters_enabled {
-            crate::byte_counters::add_batch(byte_counter_deltas);
+            crate::byte_counters::add_batch(byte_counter_deltas, &catalog);
         }
 
         if !observations.is_empty() {

@@ -73,11 +73,11 @@ LibreQoS can keep cumulative byte counters per circuit and per network node for 
 enabled = true
 ```
 
-- Counters accumulate the traffic measured by the one-second throughput tracker.
 - Values are actual transmitted bytes, not bytes dropped by shaping.
-- Values are cumulative since `lqosd` started and reset when `lqosd` restarts.
+- Values accumulate while `lqosd` runs and reset when `lqosd` restarts.
 - Node values include traffic from all descendant nodes.
 - Only circuits with recorded traffic are listed.
+- Circuits removed from `ShapedDevices.csv` keep contributing their accumulated bytes to their last known parent while `lqosd` runs.
 
 With the counters enabled, `GET /byte_counters` on the Node API returns the current values. See [LibreQoS Node API](api.md).
 

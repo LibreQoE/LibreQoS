@@ -71,11 +71,11 @@ LibreQoS puede mantener contadores de bytes acumulados por circuito y por nodo d
 enabled = true
 ```
 
-- Los contadores acumulan el tráfico medido por el rastreador de throughput de un segundo.
 - Los valores son bytes realmente transmitidos, no bytes descartados por el shaping.
-- Los valores son acumulados desde que `lqosd` inició y se reinician cuando `lqosd` se reinicia.
+- Los valores se acumulan mientras `lqosd` se ejecuta y se reinician cuando `lqosd` se reinicia.
 - Los valores de un nodo incluyen el tráfico de todos sus nodos descendientes.
 - Solo se listan los circuitos con tráfico registrado.
+- Los circuitos eliminados de `ShapedDevices.csv` siguen aportando sus bytes acumulados a su último nodo principal conocido mientras `lqosd` se ejecuta.
 
 Con los contadores habilitados, `GET /byte_counters` en la API del nodo devuelve los valores actuales. Consulte [API del nodo LibreQoS](api-es.md).
 
