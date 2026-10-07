@@ -5,16 +5,16 @@
 //! module. Counters are cumulative since `lqosd` started and are not
 //! persisted across restarts.
 //!
-//! Only per-circuit totals and their last-known identity are stored. Node
-//! totals are derived when a snapshot is requested by walking each circuit's
-//! parent node through the runtime network tree, so node totals include
-//! descendants. Circuit identity is captured when a counter first receives
-//! traffic, so circuits removed from configuration keep contributing their
-//! accumulated bytes to their last known parent while `lqosd` runs.
+//! Only per-circuit totals and their identity are stored. Node totals are
+//! derived when a snapshot is requested by walking each circuit's parent node
+//! through the runtime network tree, so node totals include descendants.
+//! Configured circuits follow the current device catalog, and circuits removed
+//! from configuration keep their last known identity, so their accumulated
+//! bytes continue to contribute to their last known parent while `lqosd` runs.
 
 use fxhash::FxHashMap;
 use lqos_bus::{ByteCountersSnapshot, CircuitByteCounters, NodeByteCounters};
-use lqos_config::NetworkJson;
+use lqos_config::{NetworkJson, ShapedDevice};
 use lqos_network_devices::{NetworkDevicesCatalog, ParentNodeLookup};
 use lqos_utils::units::DownUpOrder;
 use once_cell::sync::Lazy;
@@ -58,7 +58,7 @@ pub(crate) fn add_batch(deltas: FxHashMap<i64, DownUpOrder<u64>>, catalog: &Netw
 }
 
 /// Merges per-circuit deltas into a cumulative counter map, capturing identity
-/// through `describe` when a circuit is first seen.
+/// through `describe` when a circuit is first seen or has none captured yet.
 fn apply_deltas(
     counters: &mut FxHashMap<i64, CircuitCounter>,
     deltas: FxHashMap<i64, DownUpOrder<u64>>,
@@ -88,39 +88,57 @@ fn ensure_descriptor(
 /// longer resolve keep their last-known descriptor and continue contributing
 /// to their last known parent.
 ///
+/// The catalog is indexed once per refresh so circuits missing from
+/// `ShapedDevices.csv` cannot trigger per-circuit fallback scans.
+///
 /// Side effects: mutates the shared cumulative counter map.
 fn refresh_descriptors() {
     let catalog = lqos_network_devices::network_devices_catalog();
+    let mut devices_by_circuit_hash: FxHashMap<i64, &ShapedDevice> = FxHashMap::default();
+    for device in catalog.iter_all_devices() {
+        devices_by_circuit_hash
+            .entry(device.circuit_hash)
+            .or_insert(device);
+    }
+
     let mut counters = CIRCUIT_BYTES.write();
     for (circuit_hash, counter) in counters.iter_mut() {
-        if let Some(descriptor) = describe_circuit(&catalog, *circuit_hash) {
-            counter.descriptor = Some(descriptor);
+        if let Some(device) = devices_by_circuit_hash.get(circuit_hash) {
+            counter.descriptor = Some(describe_device(device));
         }
     }
 }
 
 /// Resolves one circuit's identity fields from the combined device catalog.
 ///
-/// The runtime effective parent wins when one is published, so accounting
-/// follows the same tree as the rest of the runtime. This function must never
-/// acquire a network tree lock, because callers may already hold the tree
-/// write lock.
+/// This function must never acquire a network tree lock, because callers may
+/// already hold the tree write lock.
 fn describe_circuit(
     catalog: &NetworkDevicesCatalog,
     circuit_hash: i64,
 ) -> Option<CircuitDescriptor> {
     let device = catalog.device_by_hashes(None, Some(circuit_hash))?;
+    Some(describe_device(device))
+}
+
+/// Builds identity fields for one device.
+///
+/// The runtime effective parent wins when one is published, so accounting
+/// follows the same tree as the rest of the runtime. This function must never
+/// acquire a network tree lock, because callers may already hold the tree
+/// write lock.
+fn describe_device(device: &ShapedDevice) -> CircuitDescriptor {
     let (parent_node, parent_node_id) =
         match crate::shaped_devices_tracker::effective_parent_for_circuit(&device.circuit_id) {
             Some(parent) => (parent.name, parent.id),
             None => (device.parent_node.clone(), device.parent_node_id.clone()),
         };
-    Some(CircuitDescriptor {
+    CircuitDescriptor {
         circuit_id: device.circuit_id.clone(),
         circuit_name: device.circuit_name.clone(),
         parent_node,
         parent_node_id,
-    })
+    }
 }
 
 /// Builds a cumulative byte counter snapshot for the bus.
