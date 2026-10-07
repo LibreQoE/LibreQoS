@@ -29,14 +29,14 @@ pub use ip_stats::{
 };
 mod tc_handle;
 pub use bus::response::{
-    AsnHeatmapData, AsnListEntry, BakeryStatsSnapshot, CircuitCapacityRow, CircuitCount,
-    CircuitHeatmapData, CircuitRollup, CountryListEntry, DeviceCounts, ExecutiveSummaryHeader,
-    FlowMapPoint, FlowTimelineEntry, InsightLicenseSummary, LtsCapabilitiesSummary, NodeCapacity,
-    OverrideMutationResult, ProtocolListEntry, QooData, QueueStatsTotal, RetransmitSummary,
-    SchedulerDetails, SearchResultEntry, SiteHeatmapData, StormguardDebugDirection,
-    StormguardDebugEntry, StormguardRuntimeSettings, StormguardRuntimeStatus,
-    TreeGuardRuntimeNodeBranchSnapshot, TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue,
-    WarningLevel,
+    AsnHeatmapData, AsnListEntry, BakeryStatsSnapshot, ByteCountersSnapshot, CircuitByteCounters,
+    CircuitCapacityRow, CircuitCount, CircuitHeatmapData, CircuitRollup, CountryListEntry,
+    DeviceCounts, ExecutiveSummaryHeader, FlowMapPoint, FlowTimelineEntry, InsightLicenseSummary,
+    LtsCapabilitiesSummary, NodeByteCounters, NodeCapacity, OverrideMutationResult,
+    ProtocolListEntry, QooData, QueueStatsTotal, RetransmitSummary, SchedulerDetails,
+    SearchResultEntry, SiteHeatmapData, StormguardDebugDirection, StormguardDebugEntry,
+    StormguardRuntimeSettings, StormguardRuntimeStatus, TreeGuardRuntimeNodeBranchSnapshot,
+    TreeGuardRuntimeNodeOperationSnapshot, UrgentIssue, WarningLevel,
 };
 pub use bus::{
     BUS_SOCKET_PATH, BakeryCapacityReportInterface, BlackboardSystem, BusClientError, BusReply,

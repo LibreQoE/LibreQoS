@@ -633,6 +633,9 @@ pub enum BusRequest {
     /// Retrieve queue marks/drops totals
     GetQueueStatsTotal,
 
+    /// Retrieve cumulative byte counters for nodes and circuits.
+    GetByteCounters,
+
     /// Retrieve current top-level QoO history.
     GetQoo,
 
@@ -783,6 +786,7 @@ impl BusRequest {
             Self::GetProtocolFlowTimeline { .. } => "GetProtocolFlowTimeline",
             Self::GetSchedulerDetails => "GetSchedulerDetails",
             Self::GetQueueStatsTotal => "GetQueueStatsTotal",
+            Self::GetByteCounters => "GetByteCounters",
             Self::GetCircuitCapacity => "GetCircuitCapacity",
             Self::GetTreeCapacity => "GetTreeCapacity",
             Self::GetRetransmitSummary => "GetRetransmitSummary",
@@ -862,6 +866,7 @@ impl BusRequest {
                 | Self::GetProtocolFlowTimeline { .. }
                 | Self::GetSchedulerDetails
                 | Self::GetQueueStatsTotal
+                | Self::GetByteCounters
                 | Self::GetCircuitCapacity
                 | Self::GetTreeCapacity
                 | Self::GetRetransmitSummary
