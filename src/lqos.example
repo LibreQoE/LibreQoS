@@ -70,6 +70,10 @@ netflow_enabled = false
 # netflow_version = 9
 do_not_track_subnets = [ "192.168.66.0/24" ]
 
+[byte_counters]
+# Optional cumulative byte counters for nodes and circuits, exposed by lqos_api.
+enabled = false
+
 [integration_common]
 circuit_name_as_address = false
 queue_refresh_interval_mins = 30

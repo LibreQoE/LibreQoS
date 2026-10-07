@@ -277,6 +277,13 @@ pub struct Config {
     /// Enable per-ASN TemporalHeatmap collection.
     #[serde(default = "default_true")]
     pub enable_asn_heatmaps: bool,
+
+    /// Optional cumulative byte counters for nodes and circuits.
+    ///
+    /// The section is optional so older configuration files keep working
+    /// unchanged; counters are disabled when it is absent.
+    #[serde(default)]
+    pub byte_counters: super::byte_counters::ByteCountersConfig,
 }
 
 impl Config {
@@ -482,6 +489,7 @@ impl Default for Config {
             enable_circuit_heatmaps: true,
             enable_site_heatmaps: true,
             enable_asn_heatmaps: true,
+            byte_counters: super::byte_counters::ByteCountersConfig::default(),
         }
     }
 }
