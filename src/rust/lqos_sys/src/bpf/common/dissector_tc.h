@@ -31,7 +31,7 @@ struct tc_dissector_t
     struct in6_addr src_ip;
     // Destination IP, encoded by `ip_hash.h` functions.
     struct in6_addr dst_ip;
-    // Current VLAN detected.
+    // Outer VLAN ID, without priority or drop-eligible bits.
     // TODO: This can probably be removed since the packet dissector
     // now finds this.
     __be16 current_vlan;
@@ -53,7 +53,7 @@ static __always_inline bool tc_dissector_new(
     dissector->end = (void *)(long)ctx->data_end;
     dissector->ethernet_header = (struct ethhdr *)NULL;
     dissector->l3offset = 0;
-    dissector->current_vlan = bpf_htons(ctx->vlan_tci);
+    dissector->current_vlan = lqos_vlan_vid(bpf_htons(ctx->vlan_tci));
 
     // Check that there's room for an ethernet header
     if SKB_OVERFLOW (dissector->start, dissector->end, ethhdr)
@@ -110,8 +110,9 @@ static __always_inline bool tc_dissector_find_l3_offset(
             //bpf_debug("TC Found VLAN");
             struct vlan_hdr *vlan = (struct vlan_hdr *)
                 (dissector->start + offset);
-            // Calculated from the SKB
-            //dissector->current_vlan = vlan->h_vlan_TCI;
+            if (dissector->current_vlan == 0 && offset == sizeof(struct ethhdr)) {
+                dissector->current_vlan = lqos_vlan_vid(vlan->h_vlan_TCI);
+            }
             eth_type = bpf_ntohs(vlan->h_vlan_encapsulated_proto);
             offset += sizeof(struct vlan_hdr);
         }
