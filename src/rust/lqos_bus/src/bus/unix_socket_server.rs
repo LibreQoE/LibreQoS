@@ -7,9 +7,10 @@ use crate::{
 };
 use std::{
     collections::BTreeMap,
-    ffi::CString,
     fmt::Write,
     fs::remove_file,
+    os::unix::fs::PermissionsExt,
+    path::Path,
     time::{Duration, Instant},
 };
 use thiserror::Error;
@@ -27,6 +28,10 @@ use super::protocol::{decode_session_cbor, encode_reply_cbor, read_frame, write_
 
 const BUS_HANDLER_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CONCURRENT_BUS_HANDLERS: usize = 16;
+const BUS_DIRECTORY_MODE: u32 = 0o755;
+const BUS_SOCKET_MODE: u32 = 0o666;
+const ROOT_UID: u32 = 0;
+const PERMISSION_DENIED_MESSAGE: &str = "Permission denied: request requires root";
 
 #[derive(Clone)]
 struct BusHandlerLimiter {
@@ -69,6 +74,32 @@ fn busy_reply(request_count: usize) -> BusReply {
             .map(|_| BusResponse::Fail("Bus request handler busy".to_string()))
             .collect(),
     }
+}
+
+fn permission_denied_reply(request_count: usize) -> BusReply {
+    BusReply {
+        responses: (0..request_count)
+            .map(|_| BusResponse::Fail(PERMISSION_DENIED_MESSAGE.to_string()))
+            .collect(),
+    }
+}
+
+fn authorize_unix_requests(peer_uid: u32, requests: &[BusRequest]) -> Result<(), BusReply> {
+    if peer_uid == ROOT_UID || requests.iter().all(|request| !request.requires_root()) {
+        return Ok(());
+    }
+
+    Err(permission_denied_reply(requests.len()))
+}
+
+fn set_path_mode(path: &Path, mode: u32) -> Result<(), UnixSocketServerError> {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).map_err(|source| {
+        UnixSocketServerError::SetPermissions {
+            path: path.display().to_string(),
+            mode,
+            source,
+        }
+    })
 }
 
 fn request_kind_summary(request_kinds: &[&'static str]) -> String {
@@ -251,9 +282,9 @@ impl UnixSocketServer {
     /// Creates a new `UnixSocketServer`. Will delete any pre-existing
     /// socket file.
     pub fn new() -> Result<Self, UnixSocketServerError> {
-        Self::delete_local_socket()?;
         Self::check_directory()?;
-        Self::path_permissions()?;
+        set_path_mode(Path::new(BUS_SOCKET_DIRECTORY), BUS_DIRECTORY_MODE)?;
+        Self::delete_local_socket()?;
         Ok(Self {
             handler_limiter: BusHandlerLimiter::new(MAX_CONCURRENT_BUS_HANDLERS),
         })
@@ -281,20 +312,6 @@ impl UnixSocketServer {
         }
     }
 
-    fn path_permissions() -> Result<(), UnixSocketServerError> {
-        let unix_path = CString::new(BUS_SOCKET_DIRECTORY);
-        let Ok(unix_path) = unix_path else {
-            if unix_path.is_err() {
-                error!("Unable to create C-compatible path string. This should never happen.");
-            }
-            return Err(UnixSocketServerError::CString);
-        };
-        unsafe {
-            nix::libc::chmod(unix_path.as_ptr(), 777);
-        }
-        Ok(())
-    }
-
     fn delete_local_socket() -> Result<(), UnixSocketServerError> {
         let socket_path = std::path::Path::new(BUS_SOCKET_PATH);
         if socket_path.exists() {
@@ -304,11 +321,6 @@ impl UnixSocketServer {
                 return Err(UnixSocketServerError::RmDirFail);
             }
         }
-        Ok(())
-    }
-
-    fn make_socket_public() -> Result<(), UnixSocketServerError> {
-        let _ = lqos_utils::run_success!("/bin/chmod", "-R", "a+rwx", BUS_SOCKET_DIRECTORY);
         Ok(())
     }
 
@@ -331,7 +343,7 @@ impl UnixSocketServer {
             }
             return Err(UnixSocketServerError::BindFail);
         };
-        Self::make_socket_public()?;
+        set_path_mode(Path::new(BUS_SOCKET_PATH), BUS_SOCKET_MODE)?;
         info!("Listening on: {}", BUS_SOCKET_PATH);
         loop {
             tokio::select!(
@@ -360,6 +372,13 @@ impl UnixSocketServer {
                       error!("{:?}", ret);
                     }
                     return Err(UnixSocketServerError::ListenFail);
+                };
+                let peer_uid = match socket.peer_cred() {
+                    Ok(credentials) => credentials.uid(),
+                    Err(error) => {
+                        warn!(%error, "Unable to read credentials for local bus client");
+                        continue;
+                    }
                 };
                 let handler_limiter = self.handler_limiter.clone();
                 tokio::spawn(async move {
@@ -410,13 +429,25 @@ impl UnixSocketServer {
                             break;
                         };
                         // Handle the request and build the response
-                        let response = handle_requests_with_deadline(
-                            handle_bus_requests,
-                            request.requests,
-                            "unix_socket",
-                            &handler_limiter,
-                        )
-                        .await;
+                        let response = match authorize_unix_requests(peer_uid, &request.requests) {
+                            Ok(()) => {
+                                handle_requests_with_deadline(
+                                    handle_bus_requests,
+                                    request.requests,
+                                    "unix_socket",
+                                    &handler_limiter,
+                                )
+                                .await
+                            }
+                            Err(response) => {
+                                warn!(
+                                    peer_uid,
+                                    request_count = request.requests.len(),
+                                    "Denied privileged local bus request"
+                                );
+                                response
+                            }
+                        };
 
                         // Encode the response
                         let Ok(encoded_response) = encode_reply_cbor(&response) else {
@@ -455,8 +486,13 @@ impl Drop for UnixSocketServer {
 pub enum UnixSocketServerError {
     #[error("Unable to create directory")]
     MkDirFail,
-    #[error("Unable to create C-Compatible String")]
-    CString,
+    #[error("Unable to set mode {mode:o} on {path}: {source}")]
+    SetPermissions {
+        path: String,
+        mode: u32,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("Unable to remove directory")]
     RmDirFail,
     #[error("Cannot bind unix socket")]
@@ -470,9 +506,10 @@ pub enum UnixSocketServerError {
 #[cfg(test)]
 mod tests {
     use super::{
-        BusHandlerLimiter, MAX_CONCURRENT_BUS_HANDLERS, dropped_reply_response_count,
+        BUS_DIRECTORY_MODE, BUS_SOCKET_MODE, BusHandlerLimiter, MAX_CONCURRENT_BUS_HANDLERS,
+        PERMISSION_DENIED_MESSAGE, authorize_unix_requests, dropped_reply_response_count,
         handle_requests_with_deadline_for_duration, handle_requests_with_limiter_for_duration,
-        request_kind_summary,
+        request_kind_summary, set_path_mode,
     };
     use crate::{BusReply, BusRequest, BusResponse};
     use std::sync::{
@@ -480,6 +517,7 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
     use std::time::Duration;
+    use std::{os::unix::fs::PermissionsExt, os::unix::net::UnixListener};
 
     static TIMEOUT_HANDLER_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
     static BURST_HANDLER_INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
@@ -538,6 +576,79 @@ mod tests {
             request_kind_summary(&["Ping", "GetNetworkMap", "Ping"]),
             "GetNetworkMap=1, Ping=2"
         );
+    }
+
+    #[test]
+    fn root_may_issue_privileged_requests() {
+        assert!(authorize_unix_requests(0, &[BusRequest::ReloadLibreQoS]).is_ok());
+    }
+
+    #[test]
+    fn non_root_privileged_batch_is_denied_atomically() {
+        let response = authorize_unix_requests(
+            1000,
+            &[BusRequest::GetCurrentThroughput, BusRequest::ReloadLibreQoS],
+        )
+        .expect_err("a mixed batch containing a privileged request must be denied");
+
+        assert_eq!(
+            response.responses,
+            vec![
+                BusResponse::Fail(PERMISSION_DENIED_MESSAGE.to_string()),
+                BusResponse::Fail(PERMISSION_DENIED_MESSAGE.to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn non_root_lqtop_queries_are_allowed() {
+        let requests = [
+            BusRequest::GetCurrentThroughput,
+            BusRequest::GetTopNDownloaders { start: 0, end: 100 },
+            BusRequest::TopFlows {
+                flow_type: crate::TopFlowType::Bytes,
+                n: 100,
+            },
+            BusRequest::RttHistogram,
+        ];
+
+        assert!(authorize_unix_requests(1000, &requests).is_ok());
+    }
+
+    #[test]
+    fn runtime_path_modes_are_explicit() {
+        let unique_suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after the Unix epoch")
+            .as_nanos();
+        let test_dir = std::env::temp_dir().join(format!(
+            "lqos-bus-permissions-test-{}-{unique_suffix}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&test_dir).expect("temporary directory should be created");
+        let socket_path = test_dir.join("bus");
+        let listener = UnixListener::bind(&socket_path).expect("test socket should be bound");
+
+        set_path_mode(&test_dir, BUS_DIRECTORY_MODE).expect("directory mode should be applied");
+        set_path_mode(&socket_path, BUS_SOCKET_MODE).expect("socket mode should be applied");
+
+        let directory_mode = std::fs::metadata(&test_dir)
+            .expect("directory metadata should be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+        let socket_mode = std::fs::metadata(&socket_path)
+            .expect("socket metadata should be readable")
+            .permissions()
+            .mode()
+            & 0o777;
+
+        assert_eq!(directory_mode, BUS_DIRECTORY_MODE);
+        assert_eq!(socket_mode, BUS_SOCKET_MODE);
+
+        drop(listener);
+        std::fs::remove_file(socket_path).expect("test socket should be removed");
+        std::fs::remove_dir(test_dir).expect("temporary directory should be removed");
     }
 
     #[tokio::test]
