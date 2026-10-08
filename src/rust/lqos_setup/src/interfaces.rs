@@ -12,6 +12,59 @@ use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 pub struct InterfaceOption {
     pub name: String,
     pub label: String,
+    pub role: InterfaceRole,
+}
+
+impl InterfaceOption {
+    pub(crate) fn supports_mode(&self, mode: BridgeMode) -> bool {
+        self.role.supports_mode(mode)
+    }
+
+    pub(crate) fn is_bond(&self) -> bool {
+        matches!(self.role, InterfaceRole::BondMaster { .. })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum InterfaceRole {
+    Missing,
+    Physical,
+    BondMaster { native_xdp_issue: Option<String> },
+    BondMember { master: String },
+}
+
+impl InterfaceRole {
+    fn supports_mode(&self, mode: BridgeMode) -> bool {
+        match self {
+            Self::Missing => false,
+            Self::Physical => true,
+            Self::BondMaster { native_xdp_issue } => {
+                mode == BridgeMode::XDP && native_xdp_issue.is_none()
+            }
+            Self::BondMember { .. } => false,
+        }
+    }
+
+    fn ensure_mode(&self, interface: &str, mode: BridgeMode) -> anyhow::Result<()> {
+        match self {
+            Self::Missing => Err(anyhow::anyhow!(
+                "Interface {interface} is not present on this system."
+            )),
+            Self::Physical => Ok(()),
+            Self::BondMaster { .. } if mode != BridgeMode::XDP => Err(anyhow::anyhow!(
+                "Bond master {interface} is supported only in XDP bridge mode."
+            )),
+            Self::BondMaster {
+                native_xdp_issue: Some(issue),
+            } => Err(anyhow::anyhow!("Bond master {interface}: {issue}")),
+            Self::BondMaster {
+                native_xdp_issue: None,
+            } => Ok(()),
+            Self::BondMember { master } => Err(anyhow::anyhow!(
+                "Interface {interface} is a member of bond {master}; select the bond master instead."
+            )),
+        }
+    }
 }
 
 pub fn get_interfaces() -> anyhow::Result<Vec<String>> {
@@ -30,11 +83,61 @@ pub fn get_interface_options() -> anyhow::Result<Vec<InterfaceOption>> {
     interfaces.dedup();
     Ok(interfaces
         .into_iter()
-        .map(|name| InterfaceOption {
-            label: interface_label(&name),
-            name,
+        .map(|name| {
+            let role = interface_role(&name);
+            InterfaceOption {
+                label: interface_label(&name, &role),
+                name,
+                role,
+            }
         })
         .collect())
+}
+
+pub(crate) fn ensure_interface_supports_mode(
+    interface: &str,
+    mode: BridgeMode,
+) -> anyhow::Result<()> {
+    interface_role(interface).ensure_mode(interface, mode)
+}
+
+fn interface_role(interface: &str) -> InterfaceRole {
+    interface_role_at(Path::new("/sys/class/net"), interface)
+}
+
+fn interface_role_at(sys_class_net: &Path, interface: &str) -> InterfaceRole {
+    let interface_path = sys_class_net.join(interface);
+    if !interface_path.exists() {
+        return InterfaceRole::Missing;
+    }
+    if interface_path.join("bonding").is_dir() {
+        return InterfaceRole::BondMaster {
+            native_xdp_issue: bond_native_xdp_issue(&interface_path),
+        };
+    }
+
+    let master_path = interface_path.join("master");
+    if let Ok(target) = std::fs::read_link(master_path)
+        && let Some(master) = target.file_name().and_then(|name| name.to_str())
+        && sys_class_net.join(master).join("bonding").is_dir()
+    {
+        return InterfaceRole::BondMember {
+            master: master.to_string(),
+        };
+    }
+
+    InterfaceRole::Physical
+}
+
+fn bond_native_xdp_issue(interface_path: &Path) -> Option<String> {
+    let bonding_path = interface_path.join("bonding");
+    let mode = std::fs::read_to_string(bonding_path.join("mode"))
+        .ok()
+        .and_then(|value| value.split_whitespace().next().map(ToOwned::to_owned));
+    let transmit_hash_policy = std::fs::read_to_string(bonding_path.join("xmit_hash_policy"))
+        .ok()
+        .and_then(|value| value.split_whitespace().next().map(ToOwned::to_owned));
+    lqos_config::native_xdp_bond_issue(mode.as_deref(), transmit_hash_policy.as_deref())
 }
 
 pub(crate) fn interface_supports_lqos(interface: &str) -> anyhow::Result<()> {
@@ -78,12 +181,12 @@ pub(crate) fn interface_supports_lqos(interface: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn interface_label(interface: &str) -> String {
+fn interface_label(interface: &str, role: &InterfaceRole) -> String {
     let mut parts = vec![interface.to_string()];
     if let Some(speed) = interface_speed_label(interface) {
         parts.push(speed);
     }
-    if let Some(kind) = interface_kind_label(interface) {
+    if let Some(kind) = interface_kind_label(interface, role) {
         parts.push(kind);
     }
     parts.join(" - ")
@@ -112,7 +215,11 @@ fn interface_speed_label(interface: &str) -> Option<String> {
     Some(label)
 }
 
-fn interface_kind_label(interface: &str) -> Option<String> {
+fn interface_kind_label(interface: &str, role: &InterfaceRole) -> Option<String> {
+    if matches!(role, InterfaceRole::BondMaster { .. }) {
+        return Some("bond".to_string());
+    }
+
     if let Some(port) = interface_port_label(interface) {
         return Some(port);
     }
@@ -187,7 +294,11 @@ fn build_layout() -> LinearLayout {
     let bridge_mode = CURRENT_CONFIG.lock().bridge_mode;
     match bridge_mode {
         BridgeMode::Linux | BridgeMode::XDP => {
-            let interfaces = get_interface_options().expect("Failed to get interfaces");
+            let interfaces = get_interface_options()
+                .expect("Failed to get interfaces")
+                .into_iter()
+                .filter(|interface| interface.supports_mode(bridge_mode))
+                .collect::<Vec<_>>();
 
             // If the configuration has empty interface fields, set them to the first available interface
             {
@@ -241,7 +352,11 @@ fn build_layout() -> LinearLayout {
                 .child(network_layout)
         }
         BridgeMode::Single => {
-            let interfaces = get_interface_options().expect("Failed to get interfaces");
+            let interfaces = get_interface_options()
+                .expect("Failed to get interfaces")
+                .into_iter()
+                .filter(|interface| interface.supports_mode(bridge_mode))
+                .collect::<Vec<_>>();
 
             // If the configuration has empty interface field, set it to the first available interface
             {
@@ -328,4 +443,135 @@ pub fn interface_menu(s: &mut Cursive) {
             })
             .full_screen(),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{InterfaceOption, InterfaceRole, interface_role_at};
+    use crate::config_builder::BridgeMode;
+    use std::path::PathBuf;
+
+    fn test_sys_class_net(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "libreqos-setup-interfaces-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create fake sysfs root");
+        root
+    }
+
+    #[test]
+    fn bond_masters_are_only_offered_for_xdp_bridge_mode() {
+        let bond = InterfaceOption {
+            name: "bond0".to_string(),
+            label: "bond0 - bond".to_string(),
+            role: InterfaceRole::BondMaster {
+                native_xdp_issue: None,
+            },
+        };
+
+        assert!(bond.supports_mode(BridgeMode::XDP));
+        assert!(!bond.supports_mode(BridgeMode::Linux));
+        assert!(!bond.supports_mode(BridgeMode::Single));
+    }
+
+    #[test]
+    fn physical_interfaces_remain_available_in_all_modes() {
+        let interface = InterfaceOption {
+            name: "enp1s0".to_string(),
+            label: "enp1s0 - 10G".to_string(),
+            role: InterfaceRole::Physical,
+        };
+
+        assert!(interface.supports_mode(BridgeMode::XDP));
+        assert!(interface.supports_mode(BridgeMode::Linux));
+        assert!(interface.supports_mode(BridgeMode::Single));
+    }
+
+    #[test]
+    fn bond_members_are_never_offered_as_shaping_interfaces() {
+        let member = InterfaceOption {
+            name: "enp1s0".to_string(),
+            label: "enp1s0 - 10G".to_string(),
+            role: InterfaceRole::BondMember {
+                master: "bond0".to_string(),
+            },
+        };
+
+        assert!(!member.supports_mode(BridgeMode::XDP));
+        assert!(!member.supports_mode(BridgeMode::Linux));
+        assert!(!member.supports_mode(BridgeMode::Single));
+        let error = member
+            .role
+            .ensure_mode(&member.name, BridgeMode::XDP)
+            .unwrap_err();
+        assert!(error.to_string().contains("select the bond master"));
+    }
+
+    #[test]
+    fn incompatible_bond_modes_are_rejected_for_xdp() {
+        let bond = InterfaceRole::BondMaster {
+            native_xdp_issue: Some(
+                "bond mode balance-alb does not support native XDP.".to_string(),
+            ),
+        };
+
+        let error = bond.ensure_mode("bond0", BridgeMode::XDP).unwrap_err();
+        assert!(error.to_string().contains("balance-alb"));
+    }
+
+    #[test]
+    fn missing_interfaces_are_rejected() {
+        let root = test_sys_class_net("missing-interface");
+        let role = interface_role_at(&root, "not-present");
+
+        assert_eq!(role, InterfaceRole::Missing);
+        assert!(!role.supports_mode(BridgeMode::XDP));
+        assert!(
+            role.ensure_mode("not-present", BridgeMode::XDP)
+                .unwrap_err()
+                .to_string()
+                .contains("not present")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn live_bond_mode_and_membership_are_read_from_sysfs() {
+        let root = test_sys_class_net("bond-role");
+        let bonding = root.join("bond0/bonding");
+        std::fs::create_dir_all(&bonding).expect("create fake bond sysfs");
+        std::fs::write(bonding.join("mode"), "802.3ad 4\n").expect("write bond mode");
+        std::fs::write(bonding.join("xmit_hash_policy"), "layer3+4 1\n")
+            .expect("write bond hash policy");
+        std::fs::create_dir_all(root.join("enp1s0")).expect("create fake member sysfs");
+        std::os::unix::fs::symlink(root.join("bond0"), root.join("enp1s0/master"))
+            .expect("link fake bond master");
+
+        assert_eq!(
+            interface_role_at(&root, "bond0"),
+            InterfaceRole::BondMaster {
+                native_xdp_issue: None,
+            }
+        );
+        assert_eq!(
+            interface_role_at(&root, "enp1s0"),
+            InterfaceRole::BondMember {
+                master: "bond0".to_string(),
+            }
+        );
+
+        std::fs::write(bonding.join("mode"), "balance-alb 6\n").expect("replace bond mode");
+        let InterfaceRole::BondMaster {
+            native_xdp_issue: Some(issue),
+        } = interface_role_at(&root, "bond0")
+        else {
+            panic!("expected incompatible bond master");
+        };
+        assert!(issue.contains("balance-alb"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }

@@ -109,7 +109,7 @@ Such vendors often stock servers capable of 10 Gbps throughput, for around $500 
 * One management network interface completely separate from the traffic shaping interfaces. Usually this would be the Ethernet interface built in to the motherboard.
 * A Dedicated Network Interface Card for Two Shaping Interfaces
 
-> **⚠️ Bonded Interfaces**: LibreQoS does not support the use of bonded interfaces. This is a limitation of XDP.
+> **Bonded interfaces:** The XDP bridge can use a bond master when the running kernel and every member NIC driver support native XDP. Linux documents native XDP support for `balance-rr`, `active-backup`, `balance-xor`, and `802.3ad`; the `vlan+srcmac` transmit hash policy is not supported. Select the bond master in LibreQoS, not its member interfaces. See the [Linux bonding XDP documentation](https://docs.kernel.org/networking/bonding.html#what-bonding-modes-support-native-xdp).
 
 Officially supported Network Interface Cards for the two shaping interfaces are listed below:
 

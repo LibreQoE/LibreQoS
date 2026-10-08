@@ -37,6 +37,17 @@ En la sección ```[bridge]```, cambie `to_internet` y `to_network` para que coin
 
 En la sección `[bridge]` del archivo lqos.conf, puede habilitar o deshabilitar el puente XDP con la opción `use_xdp_bridge`. El valor predeterminado es `false` - ya que la configuración por defecto asume un [Puente Linux](prereq-es.md). Si eligió usar el puente XDP durante la configuración de requisitos previos, establezca `use_xdp_bridge = true`.
 
+Para un despliegue XDP con enlaces agregados, configure `to_internet` y/o `to_network` con los nombres de las interfaces maestras de los bonds, no con los nombres de sus interfaces miembro. Los bonds deben estar configurados previamente en Netplan, exponer varias colas RX/TX y usar un modo de bonding compatible con XDP nativo. Por ejemplo:
+
+```toml
+[bridge]
+use_xdp_bridge = true
+to_internet = "bond-wan"
+to_network = "bond-lan"
+```
+
+Consulte [Configurar el Puente de Regulación](bridge-es.md#puente-xdp-con-bonds-8023ad) para ver el ejemplo de Netplan y las comprobaciones de compatibilidad.
+
 - Configure downlink_bandwidth_mbps y uplink_bandwidth_mbps para que coincidan con el ancho de banda en Mbps de la conexión WAN/Upstream de su red. Lo mismo puede hacerse para generated_pn_download_mbps y generated_pn_upload_mbps.
 - to_internet es la interfaz que apunta hacia su router de borde (edge router) y el internet.
 - to_network es la interfaz que apunta hacia su router interno (core router) (o la red interna puenteada, si su red está configurada de esa manera).

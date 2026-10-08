@@ -12,11 +12,11 @@ The regular Linux bridge is recommended for most installations. The Linux Bridge
 Below are the instructions to configure Netplan, whether using the Linux Bridge or Bifrost XDP bridge:
 
 ```{note}
-The Network Mode page in the LibreQoS web UI now inspects the current Netplan files, offers eligible non-management interfaces in dropdowns, stages managed `libreqos.yaml` changes for Linux bridge and single-interface modes, applies them with a timed LibreQoS rollback window, and lets you confirm or revert the pending change. You can also restore the previous managed backup from that page. XDP bridge mode remains a manual Netplan workflow.
+The Network Mode page in the LibreQoS web UI inspects the current Netplan files and offers eligible non-management interfaces. Linux bridge and single-interface modes can stage and apply managed `libreqos.yaml` changes with a timed rollback window. XDP mode saves only `lqos.conf`; it never generates or applies Netplan.
 ```
 
 ```{note}
-Current first-run setup only offers Linux Bridge and Single Interface for new installs. If LibreQoS detects an existing XDP deployment, setup preserves that legacy XDP mode and warns before you migrate away from it.
+First-run setup offers Linux Bridge, XDP Bridge, and Single Interface. When using XDP with a bond, configure the bond in Netplan first and select the bond master in LibreQoS. Do not select an individual bond member.
 ```
 
 ```{note}
@@ -99,3 +99,51 @@ sudo netplan apply
 ```
 
 To use the XDP bridge, please be sure to set `use_xdp_bridge` to `true` in lqos.conf in the [Configuration](configuration.md) section.
+
+### XDP bridge with 802.3ad bonds
+
+The Linux bonding driver supports native XDP on `802.3ad` bond masters when every member driver also supports native XDP. Configure LACP on the connected switch ports and define the bonds in Netplan before selecting them in LibreQoS. The following example uses one two-port bond on each side of the shaper:
+
+```yaml
+network:
+    ethernets:
+        enp1s0:
+            dhcp4: false
+            dhcp6: false
+        enp2s0:
+            dhcp4: false
+            dhcp6: false
+        enp3s0:
+            dhcp4: false
+            dhcp6: false
+        enp4s0:
+            dhcp4: false
+            dhcp6: false
+    bonds:
+        bond-wan:
+            interfaces: [enp1s0, enp2s0]
+            parameters:
+                mode: 802.3ad
+        bond-lan:
+            interfaces: [enp3s0, enp4s0]
+            parameters:
+                mode: 802.3ad
+    version: 2
+```
+
+Then select `bond-wan` as the Internet-facing interface and `bond-lan` as the LAN-facing interface. The equivalent `lqos.conf` section is:
+
+```toml
+[bridge]
+use_xdp_bridge = true
+to_internet = "bond-wan"
+to_network = "bond-lan"
+```
+
+Do not select `enp1s0` through `enp4s0` in LibreQoS. They are bond members; XDP must attach to the bond masters. Confirm that each bond exposes multiple RX/TX queues and that `lqosd` attaches in native driver mode before carrying production traffic. The Linux kernel documentation lists the [bonding modes that support native XDP](https://docs.kernel.org/networking/bonding.html#what-bonding-modes-support-native-xdp).
+
+After changing an existing node to use the bond masters, restart `lqosd` so it attaches XDP to the newly selected interfaces:
+
+```shell
+sudo systemctl restart lqosd
+```

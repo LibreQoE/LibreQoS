@@ -4,11 +4,10 @@ use cursive::{
     views::{Dialog, LinearLayout, RadioGroup, TextView},
 };
 
-use crate::config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_xdp};
+use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 
 pub fn bridge_mode(s: &mut Cursive) {
     let current_mode = CURRENT_CONFIG.lock().bridge_mode;
-    let show_legacy_xdp = existing_config_uses_xdp() || current_mode == BridgeMode::XDP;
 
     // create the group and buttons
     let mut group = RadioGroup::new().on_change(|_s, mode| {
@@ -20,12 +19,10 @@ pub fn bridge_mode(s: &mut Cursive) {
         BridgeMode::Linux,
         "Linux Bridge (2 interfaces) - LibreQoS will inspect and stage the managed Netplan change",
     );
-    let mut xdp_btn = show_legacy_xdp.then(|| {
-        group.button(
-            BridgeMode::XDP,
-            "Legacy XDP Bridge (existing installs only - keep only if you already run it)",
-        )
-    });
+    let mut xdp_btn = group.button(
+        BridgeMode::XDP,
+        "XDP Bridge (2 interfaces; supported bond masters allowed)",
+    );
     let mut single_btn = group.button(BridgeMode::Single, "Single Interface (1 interface)");
 
     // mark the one we want as selected
@@ -33,10 +30,8 @@ pub fn bridge_mode(s: &mut Cursive) {
         BridgeMode::Single => {
             single_btn.select();
         }
-        BridgeMode::XDP if show_legacy_xdp => {
-            if let Some(button) = xdp_btn.as_mut() {
-                button.select();
-            }
+        BridgeMode::XDP => {
+            xdp_btn.select();
         }
         _ => {
             linux_btn.select();
@@ -46,13 +41,11 @@ pub fn bridge_mode(s: &mut Cursive) {
     // now add them (in any order) to your layout
     let mut layout = LinearLayout::vertical()
         .child(TextView::new("Select the bridge mode you want to use:"))
-        .child(linux_btn);
-    if let Some(button) = xdp_btn {
-        layout.add_child(TextView::new(
-            "Legacy XDP mode was detected on this install. New installs should use Linux Bridge; leave XDP selected only if you intend to keep the existing XDP deployment.",
+        .child(linux_btn)
+        .child(xdp_btn)
+        .child(TextView::new(
+            "XDP supports bond masters in native-XDP modes. Configure bonds in Netplan first and select the master, not a member.",
         ));
-        layout.add_child(button);
-    }
     layout.add_child(single_btn);
 
     s.add_layer(

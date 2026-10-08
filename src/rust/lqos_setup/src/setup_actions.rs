@@ -1,6 +1,9 @@
 //! Shared setup commit/apply helpers used by both Cursive and the setup WebUI.
 
-use crate::config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_load_error};
+use crate::{
+    config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_load_error},
+    interfaces,
+};
 use anyhow::{Context, Result, bail};
 use lqos_netplan_helper::protocol::{ApplyMode, ApplyRequest};
 use lqos_netplan_helper::transaction::{
@@ -119,6 +122,21 @@ pub(crate) fn inspection_report(inspection: &lqos_netplan_helper::NetworkModeIns
     report
 }
 
+fn validate_candidate_interfaces(config: &lqos_config::Config) -> Result<()> {
+    if let Some(bridge) = &config.bridge {
+        let mode = if bridge.use_xdp_bridge {
+            BridgeMode::XDP
+        } else {
+            BridgeMode::Linux
+        };
+        interfaces::ensure_interface_supports_mode(&bridge.to_internet, mode)?;
+        interfaces::ensure_interface_supports_mode(&bridge.to_network, mode)?;
+    } else if let Some(single) = &config.single_interface {
+        interfaces::ensure_interface_supports_mode(&single.interface, BridgeMode::Single)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn prepare_commit() -> Result<CommitOutcome> {
     if !lqos_setup::bootstrap::first_admin_exists() {
         bail!("Setup requires at least one admin user before configuration can be committed.");
@@ -127,11 +145,12 @@ pub(crate) fn prepare_commit() -> Result<CommitOutcome> {
     let mut event_log = Vec::new();
     let existing_config = load_existing_or_default(&mut event_log)?;
     let config = build_candidate_config(Some(existing_config));
+    validate_candidate_interfaces(&config)?;
     let using_helper = !matches!(CURRENT_CONFIG.lock().bridge_mode, BridgeMode::XDP);
 
     if !using_helper {
         lqos_config::update_config(&config)?;
-        event_log.push("Configuration updated.".to_string());
+        event_log.push("XDP configuration updated. Netplan was not changed.".to_string());
         return Ok(CommitOutcome::Complete(Box::new(CommitSuccess {
             config,
             event_log,
@@ -280,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn build_candidate_config_preserves_existing_mtu_for_same_mode() {
+    fn build_candidate_config_preserves_mtu_and_xdp_bond_names() {
         let previous_builder = {
             let mut builder = CURRENT_CONFIG.lock();
             let previous = builder.clone();
@@ -302,6 +321,19 @@ mod tests {
             candidate.bridge.as_ref().and_then(|bridge| bridge.mtu),
             Some(9000)
         );
+
+        {
+            let mut builder = CURRENT_CONFIG.lock();
+            builder.bridge_mode = BridgeMode::XDP;
+            builder.to_internet = "bond-wan".to_string();
+            builder.to_network = "bond-lan".to_string();
+        }
+
+        let candidate = build_candidate_config(Some(lqos_config::Config::default()));
+        let bridge = candidate.bridge.expect("XDP bridge config");
+        assert!(bridge.use_xdp_bridge);
+        assert_eq!(bridge.to_internet, "bond-wan");
+        assert_eq!(bridge.to_network, "bond-lan");
 
         *CURRENT_CONFIG.lock() = previous_builder;
     }

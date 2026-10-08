@@ -109,6 +109,8 @@ Estos proveedores suelen ofrecer servidores capaces de manejar un rendimiento de
 * Una interfaz de red de administración completamente separada de las interfaces de regulamiento de tráfico. Usualmente esta sería la interfaz Ethernet integrada en la placa base.
 * Una Tarjeta de Red Dedicada para Dos Interfaces de Regulamiento
 
+> **Interfaces enlazadas:** El puente XDP puede usar una interfaz maestra de bond cuando el kernel en ejecución y los controladores de todas las NIC miembro admiten XDP nativo. Linux documenta soporte para XDP nativo con `balance-rr`, `active-backup`, `balance-xor` y `802.3ad`; la política de hash de transmisión `vlan+srcmac` no es compatible. Seleccione la interfaz maestra del bond en LibreQoS, no sus interfaces miembro. Consulte la [documentación de Linux sobre bonding y XDP](https://docs.kernel.org/networking/bonding.html#what-bonding-modes-support-native-xdp).
+
 Las Tarjetas de Red oficialmente soportadas para las dos interfaces de regulamiento se enumeran a continuación:
 
 | Controlador NIC         | Velocidad de Puerto       | Modelos Sugeridos                                                                        | Problemas Conocidos                                                                                  |

@@ -1,7 +1,7 @@
 //! Minimal setup-only web server for first-run LibreQoS configuration.
 
 use crate::{
-    config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_xdp},
+    config_builder::{BridgeMode, CURRENT_CONFIG},
     interfaces, service_handoff,
     setup_actions::{self, CommitOutcome},
 };
@@ -263,7 +263,6 @@ fn render_setup_page(
         BridgeMode::XDP => "xdp",
         BridgeMode::Linux => "linux",
     };
-    let persisted_xdp = existing_config_uses_xdp();
 
     let mut html = page_shell("LibreQoS Setup");
     html.push_str("<main class=\"setup-shell\">");
@@ -298,16 +297,6 @@ fn render_setup_page(
         yes_no(snapshot.hotfix_required)
     ));
     html.push_str("</ul></section>");
-
-    if persisted_xdp {
-        html.push_str("<section class=\"card\"><h2>Legacy XDP Mode Detected</h2>");
-        if config.bridge_mode == BridgeMode::XDP {
-            html.push_str("<p class=\"notice\">This system already uses legacy XDP bridge mode. LibreQoS no longer recommends XDP for new installs, but this page will preserve it if you leave the mode unchanged.</p>");
-        } else {
-            html.push_str("<p class=\"notice\">This system previously used legacy XDP bridge mode. Saving with Linux Bridge or Single Interface will migrate the node away from XDP.</p>");
-        }
-        html.push_str("<p class=\"muted\">Use Linux Bridge for long-term maintenance unless you intentionally need to keep the existing XDP deployment.</p></section>");
-    }
 
     if snapshot.hotfix_required {
         html.push_str("<section class=\"card\"><h2>Ubuntu 24.04 Hotfix Required</h2>");
@@ -359,45 +348,53 @@ fn render_setup_page(
             "<option value=\"linux\"{}>Linux Bridge</option>",
             selected(mode_label == "linux")
         ));
-        if persisted_xdp {
-            html.push_str(&format!(
-                "<option value=\"xdp\"{}>Legacy XDP Bridge (existing installs only)</option>",
-                selected(mode_label == "xdp")
-            ));
-        }
+        html.push_str(&format!(
+            "<option value=\"xdp\"{}>XDP Bridge</option>",
+            selected(mode_label == "xdp")
+        ));
         html.push_str(&format!(
             "<option value=\"single\"{}>Single Interface</option>",
             selected(mode_label == "single")
         ));
         html.push_str("</select></label>");
         html.push_str("<div class=\"mode-section\" data-mode-section=\"bridge\">");
-        html.push_str("<p class=\"muted\">Linux Bridge is recommended for most installs. Select the WAN-facing and subscriber-facing interfaces below. Existing XDP installs use the same interface pair if you choose to preserve XDP.</p>");
+        html.push_str("<p class=\"muted\">Linux Bridge is recommended for most installs. XDP also supports bond masters in native-XDP modes. Configure bonds in Netplan first and select the master, not a member.</p>");
         html.push_str("<label>To Internet<select name=\"to_internet\">");
-        for iface in &interface_options {
+        for iface in interface_options.iter().filter(|iface| {
+            iface.supports_mode(BridgeMode::Linux) || iface.supports_mode(BridgeMode::XDP)
+        }) {
             html.push_str(&format!(
-                "<option value=\"{}\"{}>{}</option>",
+                "<option value=\"{}\"{}{}>{}</option>",
                 escape_html(&iface.name),
                 selected(config.to_internet == iface.name),
+                xdp_only_option(iface.is_bond()),
                 escape_html(&iface.label)
             ));
         }
         html.push_str("</select></label>");
         html.push_str("<label>To Network<select name=\"to_network\">");
-        for iface in &interface_options {
+        for iface in interface_options.iter().filter(|iface| {
+            iface.supports_mode(BridgeMode::Linux) || iface.supports_mode(BridgeMode::XDP)
+        }) {
             html.push_str(&format!(
-                "<option value=\"{}\"{}>{}</option>",
+                "<option value=\"{}\"{}{}>{}</option>",
                 escape_html(&iface.name),
                 selected(config.to_network == iface.name),
+                xdp_only_option(iface.is_bond()),
                 escape_html(&iface.label)
             ));
         }
         html.push_str("</select></label>");
         html.push_str("<p id=\"interfaceValidationMessage\" class=\"validation-message\" hidden>Internet and network interfaces must be different.</p>");
+        html.push_str("<p id=\"modeSelectionMessage\" class=\"muted\" role=\"status\" aria-live=\"polite\" hidden></p>");
         html.push_str("</div>");
         html.push_str("<div class=\"mode-section\" data-mode-section=\"single\">");
         html.push_str("<p class=\"muted\">Use this when a single interface carries both internet and subscriber traffic with optional VLAN tags.</p>");
         html.push_str("<label>Interface<select name=\"single_interface\">");
-        for iface in &interface_options {
+        for iface in interface_options
+            .iter()
+            .filter(|iface| iface.supports_mode(BridgeMode::Single))
+        {
             html.push_str(&format!(
                 "<option value=\"{}\"{}>{}</option>",
                 escape_html(&iface.name),
@@ -465,8 +462,7 @@ fn apply_form_to_current_config(form: &SaveForm) -> Result<()> {
     config.mbps_to_internet = downlink;
     config.mbps_to_network = uplink;
     config.allow_subnets = allow_subnets;
-    let allow_legacy_xdp = config.bridge_mode == BridgeMode::XDP || existing_config_uses_xdp();
-    match resolve_requested_bridge_mode(&form.bridge_mode, allow_legacy_xdp)? {
+    match resolve_requested_bridge_mode(&form.bridge_mode)? {
         "single" => {
             config.bridge_mode = BridgeMode::Single;
             let interface = form
@@ -490,11 +486,12 @@ fn apply_form_to_current_config(form: &SaveForm) -> Result<()> {
             if form.to_internet.trim() == to_network {
                 bail!("Internet and network interfaces must be different.");
             }
-            config.bridge_mode = if form.bridge_mode == "xdp" {
+            let bridge_mode = if form.bridge_mode == "xdp" {
                 BridgeMode::XDP
             } else {
                 BridgeMode::Linux
             };
+            config.bridge_mode = bridge_mode;
             config.to_internet = form.to_internet.trim().to_string();
             config.to_network = to_network.to_string();
             config.internet_vlan = 0;
@@ -532,10 +529,9 @@ fn ssl_request_value(
         .then(|| external_hostname.unwrap_or("").trim().to_string())
 }
 
-fn resolve_requested_bridge_mode(requested_mode: &str, allow_legacy_xdp: bool) -> Result<&str> {
+fn resolve_requested_bridge_mode(requested_mode: &str) -> Result<&str> {
     match requested_mode {
-        "single" | "linux" => Ok(requested_mode),
-        "xdp" if allow_legacy_xdp => Ok("xdp"),
+        "single" | "linux" | "xdp" => Ok(requested_mode),
         _ => bail!("Unsupported bridge mode."),
     }
 }
@@ -767,7 +763,8 @@ fn base_css() -> &'static str {
 
 fn base_js() -> &'static str {
     "function bridgeSectionForMode(mode){return mode==='single'?'single':'bridge';}\
-    function syncModeSections(){const mode=document.querySelector('select[name=\"bridge_mode\"]')?.value||'linux';const visibleSection=bridgeSectionForMode(mode);document.querySelectorAll('.mode-section').forEach((section)=>{section.hidden=section.dataset.modeSection!==visibleSection;});updateCoreSetupValidation();}\
+    function syncXdpOnlyOptions(mode){const replacements=[];document.querySelectorAll('option[data-xdp-only=\"true\"]').forEach((option)=>{const available=mode==='xdp';option.disabled=!available;option.hidden=!available;});document.querySelectorAll('select[name=\"to_internet\"],select[name=\"to_network\"]').forEach((select)=>{if(select.selectedOptions[0]?.disabled){const previous=select.value;const fallback=Array.from(select.options).find((option)=>!option.disabled);if(fallback){select.value=fallback.value;replacements.push(previous+' changed to '+fallback.value);}}});const status=document.getElementById('modeSelectionMessage');if(status){status.textContent=replacements.length?replacements.join('. ')+'. Bond masters require XDP mode.':'';status.hidden=replacements.length===0;}}\
+    function syncModeSections(){const mode=document.querySelector('select[name=\"bridge_mode\"]')?.value||'linux';const visibleSection=bridgeSectionForMode(mode);document.querySelectorAll('.mode-section').forEach((section)=>{section.hidden=section.dataset.modeSection!==visibleSection;});syncXdpOnlyOptions(mode);updateCoreSetupValidation();}\
     function showBusy(message){const overlay=document.getElementById('busyOverlay');const target=document.getElementById('busyMessage');if(target&&message){target.textContent=message;}if(overlay){overlay.hidden=false;}}\
     function hideBusy(){const overlay=document.getElementById('busyOverlay');if(overlay){overlay.hidden=true;}}\
     function setSubmitDisabled(form,disabled){const button=form?.querySelector('button[type=\"submit\"]');if(button){button.disabled=!!disabled;}}\
@@ -805,19 +802,23 @@ fn selected(value: bool) -> &'static str {
     if value { " selected" } else { "" }
 }
 
+fn xdp_only_option(value: bool) -> &'static str {
+    if value { " data-xdp-only=\"true\"" } else { "" }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{render_pending_page, resolve_requested_bridge_mode, runtime_access_url};
     use lqos_config::{Config, SslConfig};
 
     #[test]
-    fn xdp_mode_is_preserved_for_existing_xdp_config() {
-        assert_eq!(resolve_requested_bridge_mode("xdp", true).unwrap(), "xdp");
+    fn xdp_mode_is_available_during_first_run() {
+        assert_eq!(resolve_requested_bridge_mode("xdp").unwrap(), "xdp");
     }
 
     #[test]
-    fn xdp_mode_is_not_available_for_new_installs() {
-        let error = resolve_requested_bridge_mode("xdp", false).unwrap_err();
+    fn unknown_bridge_mode_is_rejected() {
+        let error = resolve_requested_bridge_mode("sandwich").unwrap_err();
         assert!(error.to_string().contains("Unsupported bridge mode"));
     }
 
