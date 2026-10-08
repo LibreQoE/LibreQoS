@@ -102,6 +102,10 @@ collation_period_seconds = 10
 license_key = "(data)"
 uisp_reporting_interval_seconds = 300
 
+[byte_counters]
+# Optional cumulative byte counters for nodes and circuits, exposed by lqos_api.
+enabled = false
+
 [local_api]
 bearer_token = ""
 

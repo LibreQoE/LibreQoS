@@ -121,8 +121,11 @@ Endpoints representativos:
 - `GET /search`
 - `GET /current_throughput`
 - `GET /queue_stats_total`
+- `GET /byte_counters`
 - `GET /warnings`
 - `GET /urgent`, `GET /urgent/status`
+
+`GET /byte_counters` devuelve contadores de bytes acumulados por nodo y por circuito cuando `[byte_counters] enabled = true` está configurado en `/etc/lqos.conf`. Los valores se acumulan desde que `lqosd` inició, incluyen el tráfico de los nodos descendientes y se reinician cuando `lqosd` se reinicia. Consulte [Configuración avanzada](configuration-advanced-es.md).
 
 ### 5) Operaciones de control y reload
 

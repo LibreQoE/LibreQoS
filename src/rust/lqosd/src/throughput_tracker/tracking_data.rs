@@ -661,6 +661,9 @@ impl ThroughputTracker {
 
         let mut changed_circuits = HashSet::new();
 
+        let byte_counters_enabled = crate::byte_counters::is_enabled();
+        let mut byte_counter_deltas: FxHashMap<i64, DownUpOrder<u64>> = FxHashMap::default();
+
         let self_cycle = self.cycle.load(std::sync::atomic::Ordering::Relaxed);
         let catalog = lqos_network_devices::network_devices_catalog();
         let mut raw_data = self.raw_data.lock();
@@ -768,9 +771,18 @@ impl ThroughputTracker {
                 }
                 if entry.packets != entry.prev_packets {
                     entry.most_recent_cycle = self_cycle;
+                    let actual_bytes_delta = entry
+                        .actual_bytes
+                        .checked_sub_or_zero(entry.prev_actual_bytes);
                     // Call to Bakery Update for existing traffic
                     if let Some(circuit_hash) = entry.circuit_hash {
                         changed_circuits.insert(circuit_hash);
+                        if byte_counters_enabled && actual_bytes_delta.not_zero() {
+                            byte_counter_deltas
+                                .entry(circuit_hash)
+                                .or_default()
+                                .checked_add(actual_bytes_delta);
+                        }
                     }
 
                     record_dynamic_observation(
@@ -795,16 +807,7 @@ impl ThroughputTracker {
                     if let Some(parents) = &entry.network_json_parents {
                         net_json_calc.add_throughput_cycle(
                             parents,
-                            (
-                                entry
-                                    .actual_bytes
-                                    .down
-                                    .saturating_sub(entry.prev_actual_bytes.down),
-                                entry
-                                    .actual_bytes
-                                    .up
-                                    .saturating_sub(entry.prev_actual_bytes.up),
-                            ),
+                            (actual_bytes_delta.down, actual_bytes_delta.up),
                             (
                                 entry.packets.down.saturating_sub(entry.prev_packets.down),
                                 entry.packets.up.saturating_sub(entry.prev_packets.up),
@@ -933,6 +936,12 @@ impl ThroughputTracker {
                 raw_data.insert(*xdp_ip, entry);
             }
         });
+
+        drop(raw_data);
+
+        if byte_counters_enabled {
+            crate::byte_counters::add_batch(byte_counter_deltas, &catalog);
+        }
 
         if !observations.is_empty() {
             lqos_network_devices::report_observations(&observations);

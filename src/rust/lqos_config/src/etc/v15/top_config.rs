@@ -277,6 +277,13 @@ pub struct Config {
     /// Enable per-ASN TemporalHeatmap collection.
     #[serde(default = "default_true")]
     pub enable_asn_heatmaps: bool,
+
+    /// Optional cumulative byte counters for nodes and circuits.
+    ///
+    /// The section is optional so older configuration files keep working
+    /// unchanged; counters are disabled when it is absent.
+    #[serde(default)]
+    pub byte_counters: super::byte_counters::ByteCountersConfig,
 }
 
 impl Config {
@@ -482,6 +489,7 @@ impl Default for Config {
             enable_circuit_heatmaps: true,
             enable_site_heatmaps: true,
             enable_asn_heatmaps: true,
+            byte_counters: super::byte_counters::ByteCountersConfig::default(),
         }
     }
 }
@@ -712,6 +720,16 @@ mod test {
             Config::load_from_string(&legacy).expect("Cannot read config without local_api");
 
         assert_eq!(config.local_api, Default::default());
+    }
+
+    #[test]
+    fn byte_counters_config_defaults_when_section_is_absent() {
+        let legacy = remove_sections(include_str!("example.toml"), &["byte_counters"]);
+        let config =
+            Config::load_from_string(&legacy).expect("Cannot read config without byte_counters");
+
+        assert_eq!(config.byte_counters, Default::default());
+        assert!(!config.byte_counters.enabled);
     }
 
     #[test]

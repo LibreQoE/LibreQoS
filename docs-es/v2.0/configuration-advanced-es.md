@@ -62,6 +62,23 @@ netflow_version = 5
 do_not_track_subnets = ["192.168.0.0/16"]
 ```
 
+### Contadores de bytes (opcional)
+
+LibreQoS puede mantener contadores de bytes acumulados por circuito y por nodo de red para la contabilidad de uso de datos, y exponerlos a través de `lqos_api`. La función está deshabilitada por defecto. Para habilitarla, agregue la siguiente sección a `/etc/lqos.conf` y reinicie `lqosd`:
+
+```toml
+[byte_counters]
+enabled = true
+```
+
+- Los valores son bytes realmente transmitidos, no bytes descartados por el shaping.
+- Los valores se acumulan mientras `lqosd` se ejecuta y se reinician cuando `lqosd` se reinicia.
+- Los valores de un nodo incluyen el tráfico de todos sus nodos descendientes.
+- Solo se listan los circuitos con tráfico registrado.
+- Los circuitos eliminados de `ShapedDevices.csv` siguen aportando sus bytes acumulados a su último nodo padre conocido mientras `lqosd` se ejecuta.
+
+Con los contadores habilitados, `GET /byte_counters` en la API del nodo devuelve los valores actuales. Consulte [API del nodo LibreQoS](api-es.md).
+
 ### Contabilidad RADIUS (opcional)
 
 LibreQoS acepta una sección opcional `[radius_accounting]` para definir clientes NAS de confianza. Cuando está habilitada, `lqosd` inicia un servicio de contabilidad RADIUS, verifica paquetes de los clientes configurados, envía paquetes Accounting-Response para solicitudes aceptadas y mantiene el estado de sesión decodificado en memoria. Cuando `radius_accounting.dynamic_circuit_application.enabled` y la opción global `dynamic_circuits.enabled` están habilitadas, las sesiones Start e Interim-Update aptas se envían a la ruta de circuitos dinámicos.
