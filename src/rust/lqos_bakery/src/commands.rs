@@ -937,7 +937,6 @@ impl BakeryCommands {
 
         if !config.queues.queue_mode.is_observe()
             && do_sqm
-            && !config.on_a_stick_mode()
             && !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"))
         {
             let mut sqm_command = vec![
@@ -1052,7 +1051,7 @@ impl BakeryCommands {
             let prune_up =
                 !matches!(up_override_opt.as_deref(), Some(s) if s.eq_ignore_ascii_case("none"));
 
-            if prune_up && !config.on_a_stick_mode() {
+            if prune_up {
                 result.push(vec![
                     "qdisc".to_string(),
                     "del".to_string(),
@@ -1386,6 +1385,49 @@ mod tests {
             .to_commands(&live_config, ExecutionMode::LiveUpdate)
             .expect("live add_circuit should emit commands");
         assert_qdisc_add_replace_commands_use_explicit_handles(&live_commands);
+    }
+
+    #[test]
+    fn on_a_stick_add_and_prune_include_upload_sqm() {
+        let config = Arc::new(Config {
+            bridge: None,
+            single_interface: Some(SingleInterfaceConfig::default()),
+            ..Config::default()
+        });
+        let interface = config.internet_interface();
+        let mut circuit = test_circuit_command();
+        // Stick mode never allocates an upload handle; the leaf is addressed by parent.
+        if let BakeryCommands::AddCircuit {
+            up_qdisc_handle, ..
+        } = &mut circuit
+        {
+            *up_qdisc_handle = None;
+        }
+        let is_upload_leaf = |cmd: &[String], verb: &str| {
+            cmd.len() >= 6
+                && cmd[0] == "qdisc"
+                && cmd[1] == verb
+                && cmd[2] == "dev"
+                && cmd[3] == interface
+                && cmd[4] == "parent"
+                && cmd[5] == "0x2:0x21"
+        };
+
+        let add = circuit
+            .to_commands(&config, ExecutionMode::Builder)
+            .expect("stick add_circuit should emit commands");
+        assert!(
+            add.iter().any(|cmd| is_upload_leaf(cmd, "replace")),
+            "stick mode should attach an SQM leaf to the upload class: {add:?}"
+        );
+
+        let prune = circuit
+            .to_prune(&config, true)
+            .expect("forced prune should emit commands");
+        assert!(
+            prune.iter().any(|cmd| is_upload_leaf(cmd, "del")),
+            "stick mode should prune the upload SQM leaf: {prune:?}"
+        );
     }
 
     #[test]
