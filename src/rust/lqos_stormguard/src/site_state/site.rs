@@ -694,7 +694,18 @@ impl SiteState {
             RecommendationAction::Decrease => config.decrease_multiplier,
             RecommendationAction::DecreaseFast => config.decrease_fast_multiplier,
         };
-        let target = u64::max(4, (queue_mbps as f64 * multiplier).round() as u64);
-        (target != queue_mbps && target >= min_mbps && target <= max_mbps).then_some(target)
+        // A step past a bound stops at the bound. Rejecting it instead left the queue short of
+        // its max for good: 28 * 1.15 = 32 > 30, so a 30 Mbps queue cut to 28 never came back.
+        let target =
+            u64::max(4, (queue_mbps as f64 * multiplier).round() as u64).clamp(min_mbps, max_mbps);
+        let toward_target = match action {
+            RecommendationAction::IncreaseFast | RecommendationAction::Increase => {
+                target > queue_mbps
+            }
+            RecommendationAction::Decrease | RecommendationAction::DecreaseFast => {
+                target < queue_mbps
+            }
+        };
+        toward_target.then_some(target)
     }
 }
