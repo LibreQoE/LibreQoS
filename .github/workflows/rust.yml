@@ -3,7 +3,17 @@ name: Rust
 on: [push]
 
 jobs:
+  changes:
+    uses: ./.github/workflows/detect-changes.yml
+    with:
+      group: rust
+
+  # The Rust build and audit only run when the Rust workspace or its build
+  # scripts changed. Skipped jobs report success; if change detection fails,
+  # they run anyway.
   build:
+    needs: changes
+    if: needs.changes.result != 'success' || needs.changes.outputs.matched == 'true'
     runs-on: [ lq_run ]
     
     steps:
@@ -41,6 +51,8 @@ jobs:
         path: src/dist/libreqos_${{ env.VERSION }}.-1_amd64.deb
   
   audit:
+    needs: changes
+    if: needs.changes.result != 'success' || needs.changes.outputs.matched == 'true'
     runs-on: ubuntu-latest
 
     steps:
