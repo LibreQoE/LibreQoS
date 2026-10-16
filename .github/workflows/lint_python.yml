@@ -1,7 +1,17 @@
 name: lint_python
 on: [pull_request, push]
 jobs:
+  changes:
+    uses: ./.github/workflows/detect-changes.yml
+    with:
+      group: python
+
+  # Python checks only run when Python sources or dependencies changed.
+  # Skipped jobs report success, so required status checks stay compatible;
+  # if change detection fails, the checks run anyway.
   lint_python:
+    needs: changes
+    if: needs.changes.result != 'success' || needs.changes.outputs.matched == 'true'
     runs-on: lq_run
     steps:
       - uses: actions/checkout@v4
