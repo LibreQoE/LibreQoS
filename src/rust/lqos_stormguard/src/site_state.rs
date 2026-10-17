@@ -65,6 +65,25 @@ fn successful_application_outcome(dry_run: bool) -> &'static str {
     if dry_run { "dry_run" } else { "applied" }
 }
 
+/// The RTT sample that may move the delay baseline this tick.
+///
+/// Under delay_probe_active the effective RTT blends the active ping with passive RTT, and a
+/// passive-only sample (before the first ping lands after a restart, or while the ping fails)
+/// is on a different scale: passive RTT can read ~1 ms where the ping reads ~45 ms. Seeding
+/// or pulling the baseline with such a sample makes every later blended sample look like
+/// bloat until the baseline climbs back at baseline_alpha_up. So that strategy only feeds the
+/// baseline samples that include a ping; with no baseline yet, no delay-based cut is made.
+fn baseline_sample(
+    strategy: lqos_config::StormguardStrategy,
+    effective_ms: f64,
+    active_ms: Option<f64>,
+) -> Option<f64> {
+    match strategy {
+        lqos_config::StormguardStrategy::DelayProbeActive if active_ms.is_none() => None,
+        _ => Some(effective_ms),
+    }
+}
+
 fn active_rtt_source(
     passive_rtt: Option<f64>,
     active_rtt: Option<f64>,
@@ -645,7 +664,8 @@ impl SiteStateTracker {
             let updated = site.passive_rtt_updated_this_tick() || active_updated;
             if updated && let Some(effective) = effective {
                 site.round_trip_time.add(effective);
-                site.rtt_sample_for_baseline_ms = Some(effective);
+                site.rtt_sample_for_baseline_ms =
+                    baseline_sample(config.strategy, effective, active);
             }
         }
     }
@@ -1796,6 +1816,17 @@ mod tests {
                     RecommendationAction::DecreaseFast | RecommendationAction::Decrease
                 )
         }));
+    }
+
+    #[test]
+    fn active_baseline_ignores_passive_only_samples() {
+        use StormguardStrategy::*;
+        assert_eq!(baseline_sample(DelayProbeActive, 1.0, None), None);
+        assert_eq!(
+            baseline_sample(DelayProbeActive, 33.0, Some(45.0)),
+            Some(33.0)
+        );
+        assert_eq!(baseline_sample(DelayProbe, 1.0, None), Some(1.0));
     }
 
     #[test]
