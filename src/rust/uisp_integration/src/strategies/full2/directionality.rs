@@ -83,10 +83,18 @@ pub(crate) fn classify_ap_station(
     let meta_b = meta_by_id.get(id_b)?;
 
     // Highest confidence: the station references its AP by device ID.
-    if meta_a.ap_device_id.as_deref() == Some(id_b) {
+    // UISP (devices?withInterfaces=true) also fills `attributes.apDevice` on the AP end of
+    // PtP/bridge links, pointing back at the station, so the reference is only trusted when
+    // the referencing device is not itself an AP by role or wirelessMode.
+    let refs_as_station = |m: &DeviceLinkMeta| {
+        m.ap_device_id.is_some()
+            && role_kind(m.role.as_deref()) != Some(RadioRole::Ap)
+            && wireless_mode_kind(m.wireless_mode.as_deref()) != Some(RadioRole::Ap)
+    };
+    if refs_as_station(meta_a) && meta_a.ap_device_id.as_deref() == Some(id_b) {
         return Some(LinkOrientation::BIsAp);
     }
-    if meta_b.ap_device_id.as_deref() == Some(id_a) {
+    if refs_as_station(meta_b) && meta_b.ap_device_id.as_deref() == Some(id_a) {
         return Some(LinkOrientation::AIsAp);
     }
 
@@ -210,6 +218,24 @@ mod tests {
         let (cap_ab, cap_ba) = directed_caps_mbps(&meta, &caps, &cfg, "ap", "sta").unwrap();
         assert_eq!(cap_ab, 180);
         assert_eq!(cap_ba, 50);
+    }
+
+    #[test]
+    fn mutual_ap_device_references_do_not_flip_orientation() {
+        // UISP devices?withInterfaces=true reports apDevice on both ends of 1:1 PtP links.
+        let ap = mk_raw_device("ap", Some("ap"), Some("ap-ptp"), Some("sta"));
+        let sta = mk_raw_device("sta", Some("station"), Some("sta-ptp"), Some("ap"));
+        let meta = build_device_link_meta_map(&[ap, sta]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("ap", 193, 61), ("sta", 193, 61)]);
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "ap", "sta"),
+            Some((193, 61))
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "sta", "ap"),
+            Some((61, 193))
+        );
     }
 
     #[test]
