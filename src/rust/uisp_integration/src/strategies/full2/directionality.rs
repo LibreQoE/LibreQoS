@@ -82,11 +82,47 @@ pub(crate) fn classify_ap_station(
     let meta_a = meta_by_id.get(id_a)?;
     let meta_b = meta_by_id.get(id_b)?;
 
-    // Highest confidence: the station references its AP by device ID.
-    if meta_a.ap_device_id.as_deref() == Some(id_b) {
+    // UISP (devices?withInterfaces=true) also fills `attributes.apDevice` on the AP
+    // end of PtP/bridge links, pointing back at the station, so a mutual reference
+    // is not evidence of orientation on its own. Use the reference only when one
+    // end is positively labelled: trust a positively-labelled AP end, or a
+    // positively-labelled station end (the other end is then the AP). If both are
+    // AP, both are station, or neither is labelled, decline instead of making the
+    // answer depend on argument order.
+    let a_refs_b = meta_a.ap_device_id.as_deref() == Some(id_b);
+    let b_refs_a = meta_b.ap_device_id.as_deref() == Some(id_a);
+    let a_is_ap = role_kind(meta_a.role.as_deref()) == Some(RadioRole::Ap)
+        || wireless_mode_kind(meta_a.wireless_mode.as_deref()) == Some(RadioRole::Ap);
+    let b_is_ap = role_kind(meta_b.role.as_deref()) == Some(RadioRole::Ap)
+        || wireless_mode_kind(meta_b.wireless_mode.as_deref()) == Some(RadioRole::Ap);
+    let a_is_station = role_kind(meta_a.role.as_deref()) == Some(RadioRole::Station)
+        || wireless_mode_kind(meta_a.wireless_mode.as_deref()) == Some(RadioRole::Station);
+    let b_is_station = role_kind(meta_b.role.as_deref()) == Some(RadioRole::Station)
+        || wireless_mode_kind(meta_b.wireless_mode.as_deref()) == Some(RadioRole::Station);
+    if a_refs_b && b_refs_a {
+        if a_is_ap && !b_is_ap {
+            return Some(LinkOrientation::AIsAp);
+        }
+        if b_is_ap && !a_is_ap {
+            return Some(LinkOrientation::BIsAp);
+        }
+        if a_is_ap && b_is_ap {
+            return None;
+        }
+        if a_is_station && !b_is_station {
+            return Some(LinkOrientation::BIsAp);
+        }
+        if b_is_station && !a_is_station {
+            return Some(LinkOrientation::AIsAp);
+        }
+        return None;
+    }
+    // A one-way reference keeps the historical behavior: the referencing end is
+    // the station unless it is itself positively an AP.
+    if a_refs_b && !a_is_ap {
         return Some(LinkOrientation::BIsAp);
     }
-    if meta_b.ap_device_id.as_deref() == Some(id_a) {
+    if b_refs_a && !b_is_ap {
         return Some(LinkOrientation::AIsAp);
     }
 
@@ -250,5 +286,165 @@ mod tests {
         let caps = caps_map(&[("a", 100, 100), ("b", 100, 100)]);
 
         assert!(directed_caps_mbps(&meta, &caps, &cfg, "a", "b").is_none());
+    }
+
+    #[test]
+    fn mutual_ap_device_references_do_not_flip_orientation() {
+        // UISP devices?withInterfaces=true reports apDevice on both ends of 1:1
+        // PtP links; the labelled AP end must decide the orientation for both
+        // argument orders.
+        let ap = mk_raw_device("ap", Some("ap"), Some("ap-ptp"), Some("sta"));
+        let sta = mk_raw_device("sta", Some("station"), Some("sta-ptp"), Some("ap"));
+        let meta = build_device_link_meta_map(&[ap, sta]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("ap", 193, 61), ("sta", 193, 61)]);
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "ap", "sta"),
+            Some((193, 61))
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "sta", "ap"),
+            Some((61, 193))
+        );
+    }
+
+    #[test]
+    fn mutual_references_without_labels_are_order_independent() {
+        // Both ends reference each other but neither has usable role/wireless
+        // metadata. Decline in both argument orders instead of picking a side.
+        let a = mk_raw_device("a", None, None, Some("b"));
+        let b = mk_raw_device("b", None, None, Some("a"));
+        let meta = build_device_link_meta_map(&[a, b]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("a", 193, 61), ("b", 193, 61)]);
+        assert!(classify_ap_station(&meta, "a", "b").is_none());
+        assert!(classify_ap_station(&meta, "b", "a").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "a", "b").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "b", "a").is_none());
+    }
+
+    #[test]
+    fn mutual_references_with_a_labelled_station_still_resolve() {
+        // The AP end may have no role/wireless metadata; a positively-labelled
+        // station end is enough to identify the other end as the AP.
+        let ap = mk_raw_device("ap", None, None, Some("sta"));
+        let sta = mk_raw_device("sta", Some("station"), Some("sta-ptp"), Some("ap"));
+        let meta = build_device_link_meta_map(&[ap, sta]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("ap", 193, 61), ("sta", 193, 61)]);
+        assert_eq!(
+            classify_ap_station(&meta, "ap", "sta"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "sta", "ap"),
+            Some(LinkOrientation::BIsAp)
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "ap", "sta"),
+            Some((193, 61))
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "sta", "ap"),
+            Some((61, 193))
+        );
+    }
+
+    #[test]
+    fn both_ap_ends_are_ambiguous() {
+        let ap1 = mk_raw_device("ap1", Some("ap"), Some("ap-ptp"), Some("ap2"));
+        let ap2 = mk_raw_device("ap2", Some("ap"), Some("ap-ptp"), Some("ap1"));
+        let meta = build_device_link_meta_map(&[ap1, ap2]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("ap1", 193, 61), ("ap2", 193, 61)]);
+        assert!(classify_ap_station(&meta, "ap1", "ap2").is_none());
+        assert!(classify_ap_station(&meta, "ap2", "ap1").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "ap1", "ap2").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "ap2", "ap1").is_none());
+    }
+
+    #[test]
+    fn one_way_ap_device_from_an_ap_uses_role_fallback() {
+        let ap = mk_raw_device("ap", Some("ap"), Some("ap-ptp"), Some("sta"));
+        let sta = mk_raw_device("sta", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[ap, sta]);
+        assert_eq!(
+            classify_ap_station(&meta, "ap", "sta"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "sta", "ap"),
+            Some(LinkOrientation::BIsAp)
+        );
+    }
+
+    #[test]
+    fn mixed_role_and_wireless_uses_wireless_when_both_roles_are_station() {
+        // Pre-existing fallback policy: when both explicit roles say station, the
+        // wirelessMode pair decides. This is not a role-first precedence test.
+        let a = mk_raw_device("a", Some("station"), Some("ap-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        assert_eq!(
+            classify_ap_station(&meta, "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+    }
+
+    #[test]
+    fn mutual_references_with_both_ends_station_are_ambiguous() {
+        let a = mk_raw_device("a", Some("station"), Some("sta-ptp"), Some("b"));
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), Some("a"));
+        let meta = build_device_link_meta_map(&[a, b]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("a", 193, 61), ("b", 193, 61)]);
+        assert!(classify_ap_station(&meta, "a", "b").is_none());
+        assert!(classify_ap_station(&meta, "b", "a").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "a", "b").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "b", "a").is_none());
+    }
+
+    #[test]
+    fn mutual_conflicting_labels_still_orient_by_the_ap_label() {
+        // A positive AP label (wirelessMode here) wins even when the role says
+        // station; the pair is still order-independent.
+        let a = mk_raw_device("a", Some("station"), Some("ap-ptp"), Some("b"));
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), Some("a"));
+        let meta = build_device_link_meta_map(&[a, b]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("a", 193, 61), ("b", 193, 61)]);
+        assert_eq!(
+            classify_ap_station(&meta, "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "b", "a"),
+            Some(LinkOrientation::BIsAp)
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "a", "b"),
+            Some((193, 61))
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "b", "a"),
+            Some((61, 193))
+        );
+    }
+
+    #[test]
+    fn role_pair_wins_over_conflicting_wireless_labels() {
+        // No apDevice: the explicit role pair (ap,station) wins over the
+        // conflicting wireless pair (sta,ap); this is the role-first policy.
+        let a = mk_raw_device("a", Some("ap"), Some("sta-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("ap-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        assert_eq!(
+            classify_ap_station(&meta, "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "b", "a"),
+            Some(LinkOrientation::BIsAp)
+        );
     }
 }
