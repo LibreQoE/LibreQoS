@@ -370,7 +370,9 @@ static __always_inline void snoop(struct dissector_t *dissector)
         {
             if (hdr + 1 > dissector->end)
             {
+                #ifdef VERBOSE
                 bpf_debug("UDP header past end");
+                #endif
                 return;
             }
             dissector->src_port = hdr->source;
@@ -384,7 +386,9 @@ static __always_inline void snoop(struct dissector_t *dissector)
         {
             if ((char *)hdr + sizeof(struct icmphdr) > dissector->end)
             {
+                #ifdef VERBOSE
                 bpf_debug("ICMP header past end");
+                #endif
                 return;
             }
             dissector->ip_protocol = 1;

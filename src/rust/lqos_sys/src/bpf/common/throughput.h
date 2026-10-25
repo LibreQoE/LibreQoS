@@ -134,7 +134,9 @@ static __always_inline void track_traffic(
             }
         }
         if (bpf_map_update_elem(&map_traffic, key, new_host, BPF_NOEXIST) != 0) {
+            #ifdef VERBOSE
             bpf_debug("Failed to insert flow");
+            #endif
         }
     }
 }
