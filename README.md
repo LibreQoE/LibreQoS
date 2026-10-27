@@ -2,7 +2,7 @@
   <a href="https://libreqos.io/"><img src="https://github.com/user-attachments/assets/a3675b5a-d109-4e9c-9511-ece7fe6825c1" width="500" alt="LibreQoS"/></a>
 </p>
 
-# LibreQoS v2.0
+# LibreQoS v2.2
 
 LibreQoS is a self-hosted traffic management and network operations platform for Internet Service Providers and enterprise networks. It improves subscriber experience by reducing latency under load while giving operators a local, topology-aware view of network health, subscriber behavior, queue conditions, and traffic patterns.
 
