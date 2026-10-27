@@ -226,6 +226,19 @@ mod tests {
     }
 
     #[test]
+    fn device_by_hashes_falls_back_to_dynamic_circuit() {
+        let mut dynamic = device(42);
+        dynamic.circuit_id = "dyn-circuit".to_string();
+
+        let catalog = catalog(vec![], vec![dynamic]);
+        let resolved = catalog
+            .device_by_hashes(None, Some(42))
+            .expect("dynamic circuit should resolve by circuit hash");
+
+        assert_eq!(resolved.circuit_id, "dyn-circuit");
+    }
+
+    #[test]
     fn mapped_circuit_count_ignores_unmapped_rows_and_counts_ipv6() {
         let mut unmapped = device(20);
         unmapped.ipv4.clear();

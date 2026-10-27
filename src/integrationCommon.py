@@ -13,6 +13,8 @@ import json
 import os
 import time
 
+from atomic_io import atomic_write_text
+
 try:
 	from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
 except Exception:
@@ -548,10 +550,8 @@ class NetworkGraph:
 		return self.nodes[index].type == NodeType.ap or self.nodes[index].type == NodeType.site or self.nodes[index].type == NodeType.clientWithChildren
 
 	def createNetworkJson(self):
-		import json
 		topLevelNode = self.buildNetworkJson()
-		with open('network.json', 'w') as f:
-			json.dump(topLevelNode, f, indent=4)
+		atomic_write_text('network.json', json.dumps(topLevelNode, indent=4))
 
 	def buildNetworkJson(self):
 		topLevelNode = {}
@@ -671,14 +671,10 @@ class NetworkGraph:
 
 	def createShapedDevices(self):
 		shaped_devices_csv, circuit_anchor_file = self.buildShapedDevicesArtifacts()
-		with open('ShapedDevices.csv', 'w', newline='') as csvfile:
-			csvfile.write(shaped_devices_csv)
+		atomic_write_text('ShapedDevices.csv', shaped_devices_csv)
 
 		anchor_path = _state_path("topology", "circuit_anchors.json")
-		os.makedirs(os.path.dirname(anchor_path), exist_ok=True)
-		with open(anchor_path, 'w', encoding='utf-8') as anchorfile:
-			json.dump(circuit_anchor_file, anchorfile, indent=2)
-			anchorfile.write('\n')
+		atomic_write_text(anchor_path, json.dumps(circuit_anchor_file, indent=2) + '\n')
 
 	def buildShapedDevicesArtifacts(self):
 		import csv

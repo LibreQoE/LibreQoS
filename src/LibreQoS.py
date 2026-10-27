@@ -17,10 +17,10 @@ import warnings
 import psutil
 import argparse
 import logging
-import shutil
 import time
 from deepdiff import DeepDiff
 
+from atomic_io import atomic_copy, atomic_write_text
 from virtual_tree_nodes import (
     build_logical_to_physical_node_map,
     build_physical_network,
@@ -219,26 +219,6 @@ def get_state_path(category, filename):
 
 def get_runtime_state_path(category, filename):
     return get_state_path(category, filename)
-
-
-def ensure_parent_dir(path):
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-
-
-def atomic_write_text(path, text):
-    # Write to a sibling temp file and atomically replace the target, so an
-    # interrupted write (crash, VM snapshot) can never leave a truncated file.
-    # The file is fsync'd, but the directory rename is not; on power loss the
-    # worst case is the previous complete file.
-    ensure_parent_dir(path)
-    temp_path = path + ".tmp"
-    with open(temp_path, 'w') as file:
-        file.write(text)
-        file.flush()
-        os.fsync(file.fileno())
-    os.replace(temp_path, path)
 
 
 def get_network_json_path():
@@ -1036,10 +1016,13 @@ def validateNetworkAndDevices():
             warnings.warn(f"network.json is missing: {network_json_path}", stacklevel=2)
         networkValidatedOrNot = False
     else:
-        with open(network_json_path) as file:
-            try:
+        try:
+            with open(network_json_path) as file:
                 data = json.load(file) # put JSON-data to a variable
-                if data != {}:
+                if not isinstance(data, dict):
+                    warnings.warn(f"network.json at '{network_json_path}' is not a node object", stacklevel=2)
+                    networkValidatedOrNot = False
+                elif data != {}:
                     #Traverse
                     observedNodes = set()
                     duplicateNodes = set()
@@ -1061,9 +1044,9 @@ def validateNetworkAndDevices():
                     if len(observedNodes) < 1:
                         warnings.warn("network.json had 0 valid nodes. Only {} is accepted for that scenario.", stacklevel=2)
                         networkValidatedOrNot = False
-            except json.decoder.JSONDecodeError:
-                warnings.warn("network.json is an invalid JSON file", stacklevel=2) # in case json is invalid
-                networkValidatedOrNot = False
+        except (json.decoder.JSONDecodeError, UnicodeDecodeError, OSError) as err:
+            warnings.warn(f"network.json at '{network_json_path}' is unreadable or invalid: {err}", stacklevel=2)
+            networkValidatedOrNot = False
     if integration_ingress:
         if devicesValidatedOrNot == True:
             print("integration shaping ingress passed validation")
@@ -1456,6 +1439,39 @@ def apply_effective_runtime_circuit_overrides(subscriberCircuits):
 
     return overlay_count
 
+
+def findBandwidthMins(data, subscriberCircuits):
+    """Raise each node's minimum bandwidth to cover its own circuits and children.
+
+    Mutates ``data`` in place. Returns the summed minimums of all circuits and
+    child nodes in the tree so callers can propagate them to a parent node.
+    """
+    totalDownload = 0
+    totalUpload = 0
+    for elem in data:
+        minDownload = 0
+        minUpload = 0
+        for circuit in subscriberCircuits:
+            if elem == circuit['ParentNode']:
+                minDownload += circuit['minDownload']
+                minUpload += circuit['minUpload']
+        if 'children' in data[elem]:
+            minDL, minUL = findBandwidthMins(data[elem]['children'], subscriberCircuits)
+            minDownload += minDL
+            minUpload += minUL
+        if 'downloadBandwidthMbpsMin' in data[elem]:
+            data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbpsMin'], minDownload)
+        else:
+            data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minDownload)
+        if 'uploadBandwidthMbpsMin' in data[elem]:
+            data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbpsMin'], minUpload)
+        else:
+            data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbps'], minUpload)
+        totalDownload += minDownload
+        totalUpload += minUpload
+    return totalDownload, totalUpload
+
+
 def refreshShapers():
 
     # Starting
@@ -1491,11 +1507,9 @@ def refreshShapers():
     if (validateNetworkAndDevices() == True):
         if os.path.isfile(shapedDevicesFile):
             last_good_csv_path = get_state_path("shaping", "lastGoodConfig.csv")
-            ensure_parent_dir(last_good_csv_path)
-            shutil.copyfile(shapedDevicesFile, last_good_csv_path)
+            atomic_copy(shapedDevicesFile, last_good_csv_path)
         last_good_json_path = get_state_path("shaping", "lastGoodConfig.json")
-        ensure_parent_dir(last_good_json_path)
-        shutil.copyfile(networkJSONfile, last_good_json_path)
+        atomic_copy(networkJSONfile, last_good_json_path)
         if os.path.isfile(shapedDevicesFile):
             print("Backed up good config as lastGoodConfig.csv and lastGoodConfig.json")
         else:
@@ -1832,31 +1846,8 @@ def refreshShapers():
                         genPNcounter = 0
         print("Generated parent nodes created")
 
-        # Find the bandwidth minimums for each node by combining mimimums of devices lower in that node's hierarchy
-        def findBandwidthMins(data, depth):
-            tabs = '   ' * depth
-            minDownload = 0
-            minUpload = 0
-            for elem in data:
-                for circuit in subscriberCircuits:
-                    if elem == circuit['ParentNode']:
-                        minDownload += circuit['minDownload']
-                        minUpload += circuit['minUpload']
-                if 'children' in data[elem]:
-                    minDL, minUL = findBandwidthMins(data[elem]['children'], depth+1)
-                    minDownload += minDL
-                    minUpload += minUL
-                if 'downloadBandwidthMbpsMin' in data[elem]:
-                    data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbpsMin'], minDownload)
-                else:
-                    data[elem]['downloadBandwidthMbpsMin'] = max(data[elem]['downloadBandwidthMbps'], minUpload)
-                if 'uploadBandwidthMbpsMin' in data[elem]:
-                    data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbpsMin'], minUpload)
-                else:
-                    data[elem]['uploadBandwidthMbpsMin'] = max(data[elem]['uploadBandwidthMbps'], minUpload)
-            return minDownload, minUpload
         logging.info("Finding the bandwidth minimums for each node")
-        minDownload, minUpload = findBandwidthMins(network, 0)
+        findBandwidthMins(network, subscriberCircuits)
         logging.info("Found the bandwidth minimums for each node")
 
         # Child nodes inherit bandwidth maximums of parents. We apply this here to avoid bugs when compression is applied with flattenA().
@@ -2936,11 +2927,11 @@ def refreshShapers():
         if observe_mode:
             linuxTCcommands = []
         linux_tc_path = get_linux_tc_path()
-        ensure_parent_dir(linux_tc_path)
-        with open(linux_tc_path, 'w') as f:
-            for command in linuxTCcommands:
-                logging.info(command)
-                f.write(f"{command}\n")
+        linux_tc_commands = []
+        for command in linuxTCcommands:
+            logging.info(command)
+            linux_tc_commands.append(f"{command}\n")
+        atomic_write_text(linux_tc_path, "".join(linux_tc_commands))
         # if logging.DEBUG <= logging.root.level:
         # 	# Do not --force in debug mode, so we can see any errors
         # 	shell("/sbin/tc -b linux_tc.txt")
@@ -3014,8 +3005,7 @@ def refreshShapers():
         # snapshot there instead of failing the whole scheduler refresh.
         if os.path.isfile(shapedDevicesFile):
             last_loaded_path = get_state_path("shaping", "ShapedDevices.lastLoaded.csv")
-            ensure_parent_dir(last_loaded_path)
-            shutil.copyfile(shapedDevicesFile, last_loaded_path)
+            atomic_copy(shapedDevicesFile, last_loaded_path)
 
         # Save for stats
         stats_by_circuit_path = get_stats_by_circuit_path()

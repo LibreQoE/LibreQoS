@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
+mod byte_counters;
 mod dynamic_circuits;
 mod file_lock;
 mod ip_mapping;
@@ -216,6 +217,7 @@ fn main() -> Result<()> {
 
     // Load config
     let config = lqos_config::load_config()?;
+    byte_counters::set_enabled(config.byte_counters.enabled);
     let web_config = config.clone();
     let radius_accounting_config = config.radius_accounting.clone();
     shaping_runtime::mark_starting("LibreQoS is starting shaping services.");
@@ -1209,6 +1211,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let totals = queue_stats_total_data();
                 BusResponse::QueueStatsTotal(totals)
             }
+            BusRequest::GetByteCounters => BusResponse::ByteCounters(byte_counters::snapshot()),
             BusRequest::GetQoo => {
                 let data = node_manager::local_api::executive::qoo_global();
                 BusResponse::Qoo(Some(data))

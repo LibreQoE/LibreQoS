@@ -5,6 +5,7 @@ pub use top_config::Config;
 pub use top_config::RttThresholds;
 pub use top_config::{SslConfig, normalize_external_hostname};
 mod bridge;
+mod byte_counters;
 mod dynamic_circuits;
 mod flows;
 pub mod influxdb;

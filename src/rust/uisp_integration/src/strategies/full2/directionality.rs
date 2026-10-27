@@ -1,7 +1,112 @@
-use crate::uisp_types::UispDevice;
+use crate::uisp_types::{UispDevice, UispSite};
 use lqos_config::Config;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uisp::Device;
+
+#[derive(Debug, Clone)]
+struct SiteTopology {
+    parent_id: Option<String>,
+}
+
+/// The UISP site assignment is the orientation signal we trust first.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LinkTopology {
+    site_by_id: HashMap<String, SiteTopology>,
+    site_id_by_device_id: HashMap<String, String>,
+}
+
+impl LinkTopology {
+    pub(crate) fn from_uisp_data(sites: &[UispSite], devices: &[UispDevice]) -> Self {
+        let site_by_id = sites
+            .iter()
+            .map(|site| {
+                (
+                    site.id.clone(),
+                    SiteTopology {
+                        parent_id: site.uisp_parent_id.clone(),
+                    },
+                )
+            })
+            .collect();
+        let site_id_by_device_id = devices
+            .iter()
+            .filter(|device| !device.site_id.is_empty())
+            .map(|device| (device.id.clone(), device.site_id.clone()))
+            .collect();
+        Self {
+            site_by_id,
+            site_id_by_device_id,
+        }
+    }
+
+    /// Topology-first orientation: only the upstream/parent site wins.
+    /// Peer and same-site links return None so the label-based fallback
+    /// (#1184) decides. Invalid data with both ancestry directions true also
+    /// returns None, independent of argument order.
+    fn orientation(&self, id_a: &str, id_b: &str) -> TopologyDecision {
+        let Some(site_a) = self.site_id_by_device_id.get(id_a) else {
+            return TopologyDecision::Fallback;
+        };
+        let Some(site_b) = self.site_id_by_device_id.get(id_b) else {
+            return TopologyDecision::Fallback;
+        };
+        if site_a == site_b {
+            return TopologyDecision::Fallback;
+        }
+        match (
+            self.is_ancestor(site_a, site_b),
+            self.is_ancestor(site_b, site_a),
+        ) {
+            (true, false) => TopologyDecision::Resolved(LinkOrientation::AIsAp),
+            (false, true) => TopologyDecision::Resolved(LinkOrientation::BIsAp),
+            // Both directions true is invalid UISP data; declining keeps the
+            // answer independent of argument order.
+            (true, true) => TopologyDecision::Invalid,
+            (false, false) => TopologyDecision::Fallback,
+        }
+    }
+
+    fn is_ancestor(&self, ancestor: &str, descendant: &str) -> bool {
+        let mut current = descendant;
+        let mut seen = HashSet::new();
+        loop {
+            if !seen.insert(current.to_string()) {
+                return false;
+            }
+            let Some(site) = self.site_by_id.get(current) else {
+                return false;
+            };
+            let Some(parent) = site.parent_id.as_deref() else {
+                return false;
+            };
+            if parent == ancestor {
+                return true;
+            }
+            current = parent;
+        }
+    }
+
+    #[cfg(test)]
+    fn from_test_sites(sites: &[(&str, Option<&str>)], device_sites: &[(&str, &str)]) -> Self {
+        Self {
+            site_by_id: sites
+                .iter()
+                .map(|(id, parent_id)| {
+                    (
+                        (*id).to_string(),
+                        SiteTopology {
+                            parent_id: parent_id.map(str::to_string),
+                        },
+                    )
+                })
+                .collect(),
+            site_id_by_device_id: device_sites
+                .iter()
+                .map(|(device, site)| ((*device).to_string(), (*site).to_string()))
+                .collect(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct DeviceLinkMeta {
@@ -14,6 +119,15 @@ pub(crate) struct DeviceLinkMeta {
 pub(crate) enum LinkOrientation {
     AIsAp,
     BIsAp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TopologyDecision {
+    Resolved(LinkOrientation),
+    /// No topology answer; let the #1184 label classifier decide.
+    Fallback,
+    /// Invalid/ambiguous topology; decline rather than fall through to labels.
+    Invalid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,14 +193,67 @@ pub(crate) fn classify_ap_station(
     id_a: &str,
     id_b: &str,
 ) -> Option<LinkOrientation> {
+    classify_ap_station_with_topology(meta_by_id, None, id_a, id_b)
+}
+
+pub(crate) fn classify_ap_station_with_topology(
+    meta_by_id: &HashMap<String, DeviceLinkMeta>,
+    topology: Option<&LinkTopology>,
+    id_a: &str,
+    id_b: &str,
+) -> Option<LinkOrientation> {
+    if let Some(topology) = topology {
+        match topology.orientation(id_a, id_b) {
+            TopologyDecision::Resolved(orientation) => return Some(orientation),
+            TopologyDecision::Invalid => return None,
+            TopologyDecision::Fallback => {}
+        }
+    }
+
     let meta_a = meta_by_id.get(id_a)?;
     let meta_b = meta_by_id.get(id_b)?;
 
-    // Highest confidence: the station references its AP by device ID.
-    if meta_a.ap_device_id.as_deref() == Some(id_b) {
+    // UISP (devices?withInterfaces=true) also fills `attributes.apDevice` on the AP
+    // end of PtP/bridge links, pointing back at the station, so a mutual reference
+    // is not evidence of orientation on its own. Use the reference only when one
+    // end is positively labelled: trust a positively-labelled AP end, or a
+    // positively-labelled station end (the other end is then the AP). If both are
+    // AP, both are station, or neither is labelled, decline instead of making the
+    // answer depend on argument order.
+    let a_refs_b = meta_a.ap_device_id.as_deref() == Some(id_b);
+    let b_refs_a = meta_b.ap_device_id.as_deref() == Some(id_a);
+    let a_is_ap = role_kind(meta_a.role.as_deref()) == Some(RadioRole::Ap)
+        || wireless_mode_kind(meta_a.wireless_mode.as_deref()) == Some(RadioRole::Ap);
+    let b_is_ap = role_kind(meta_b.role.as_deref()) == Some(RadioRole::Ap)
+        || wireless_mode_kind(meta_b.wireless_mode.as_deref()) == Some(RadioRole::Ap);
+    let a_is_station = role_kind(meta_a.role.as_deref()) == Some(RadioRole::Station)
+        || wireless_mode_kind(meta_a.wireless_mode.as_deref()) == Some(RadioRole::Station);
+    let b_is_station = role_kind(meta_b.role.as_deref()) == Some(RadioRole::Station)
+        || wireless_mode_kind(meta_b.wireless_mode.as_deref()) == Some(RadioRole::Station);
+    if a_refs_b && b_refs_a {
+        if a_is_ap && !b_is_ap {
+            return Some(LinkOrientation::AIsAp);
+        }
+        if b_is_ap && !a_is_ap {
+            return Some(LinkOrientation::BIsAp);
+        }
+        if a_is_ap && b_is_ap {
+            return None;
+        }
+        if a_is_station && !b_is_station {
+            return Some(LinkOrientation::BIsAp);
+        }
+        if b_is_station && !a_is_station {
+            return Some(LinkOrientation::AIsAp);
+        }
+        return None;
+    }
+    // A one-way reference keeps the historical behavior: the referencing end is
+    // the station unless it is itself positively an AP.
+    if a_refs_b && !a_is_ap {
         return Some(LinkOrientation::BIsAp);
     }
-    if meta_b.ap_device_id.as_deref() == Some(id_a) {
+    if b_refs_a && !b_is_ap {
         return Some(LinkOrientation::AIsAp);
     }
 
@@ -118,7 +285,18 @@ pub(crate) fn directed_caps_mbps(
     id_a: &str,
     id_b: &str,
 ) -> Option<(u64, u64)> {
-    let orientation = classify_ap_station(meta_by_id, id_a, id_b)?;
+    directed_caps_mbps_with_topology(meta_by_id, None, caps_by_id, config, id_a, id_b)
+}
+
+pub(crate) fn directed_caps_mbps_with_topology(
+    meta_by_id: &HashMap<String, DeviceLinkMeta>,
+    topology: Option<&LinkTopology>,
+    caps_by_id: &HashMap<String, (u64, u64)>,
+    config: &Config,
+    id_a: &str,
+    id_b: &str,
+) -> Option<(u64, u64)> {
+    let orientation = classify_ap_station_with_topology(meta_by_id, topology, id_a, id_b)?;
 
     let (a_down, a_up) = caps_by_id.get(id_a).copied().unwrap_or((
         config.queues.generated_pn_download_mbps,
@@ -250,5 +428,282 @@ mod tests {
         let caps = caps_map(&[("a", 100, 100), ("b", 100, 100)]);
 
         assert!(directed_caps_mbps(&meta, &caps, &cfg, "a", "b").is_none());
+    }
+
+    #[test]
+    fn mutual_ap_device_references_do_not_flip_orientation() {
+        // UISP devices?withInterfaces=true reports apDevice on both ends of 1:1
+        // PtP links; the labelled AP end must decide the orientation for both
+        // argument orders.
+        let ap = mk_raw_device("ap", Some("ap"), Some("ap-ptp"), Some("sta"));
+        let sta = mk_raw_device("sta", Some("station"), Some("sta-ptp"), Some("ap"));
+        let meta = build_device_link_meta_map(&[ap, sta]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("ap", 193, 61), ("sta", 193, 61)]);
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "ap", "sta"),
+            Some((193, 61))
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "sta", "ap"),
+            Some((61, 193))
+        );
+    }
+
+    #[test]
+    fn mutual_references_without_labels_are_order_independent() {
+        // Both ends reference each other but neither has usable role/wireless
+        // metadata. Decline in both argument orders instead of picking a side.
+        let a = mk_raw_device("a", None, None, Some("b"));
+        let b = mk_raw_device("b", None, None, Some("a"));
+        let meta = build_device_link_meta_map(&[a, b]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("a", 193, 61), ("b", 193, 61)]);
+        assert!(classify_ap_station(&meta, "a", "b").is_none());
+        assert!(classify_ap_station(&meta, "b", "a").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "a", "b").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "b", "a").is_none());
+    }
+
+    #[test]
+    fn mutual_references_with_a_labelled_station_still_resolve() {
+        // The AP end may have no role/wireless metadata; a positively-labelled
+        // station end is enough to identify the other end as the AP.
+        let ap = mk_raw_device("ap", None, None, Some("sta"));
+        let sta = mk_raw_device("sta", Some("station"), Some("sta-ptp"), Some("ap"));
+        let meta = build_device_link_meta_map(&[ap, sta]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("ap", 193, 61), ("sta", 193, 61)]);
+        assert_eq!(
+            classify_ap_station(&meta, "ap", "sta"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "sta", "ap"),
+            Some(LinkOrientation::BIsAp)
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "ap", "sta"),
+            Some((193, 61))
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "sta", "ap"),
+            Some((61, 193))
+        );
+    }
+
+    #[test]
+    fn both_ap_ends_are_ambiguous() {
+        let ap1 = mk_raw_device("ap1", Some("ap"), Some("ap-ptp"), Some("ap2"));
+        let ap2 = mk_raw_device("ap2", Some("ap"), Some("ap-ptp"), Some("ap1"));
+        let meta = build_device_link_meta_map(&[ap1, ap2]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("ap1", 193, 61), ("ap2", 193, 61)]);
+        assert!(classify_ap_station(&meta, "ap1", "ap2").is_none());
+        assert!(classify_ap_station(&meta, "ap2", "ap1").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "ap1", "ap2").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "ap2", "ap1").is_none());
+    }
+
+    #[test]
+    fn one_way_ap_device_from_an_ap_uses_role_fallback() {
+        let ap = mk_raw_device("ap", Some("ap"), Some("ap-ptp"), Some("sta"));
+        let sta = mk_raw_device("sta", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[ap, sta]);
+        assert_eq!(
+            classify_ap_station(&meta, "ap", "sta"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "sta", "ap"),
+            Some(LinkOrientation::BIsAp)
+        );
+    }
+
+    #[test]
+    fn mixed_role_and_wireless_uses_wireless_when_both_roles_are_station() {
+        // Pre-existing fallback policy: when both explicit roles say station, the
+        // wirelessMode pair decides. This is not a role-first precedence test.
+        let a = mk_raw_device("a", Some("station"), Some("ap-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        assert_eq!(
+            classify_ap_station(&meta, "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+    }
+
+    #[test]
+    fn mutual_references_with_both_ends_station_are_ambiguous() {
+        let a = mk_raw_device("a", Some("station"), Some("sta-ptp"), Some("b"));
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), Some("a"));
+        let meta = build_device_link_meta_map(&[a, b]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("a", 193, 61), ("b", 193, 61)]);
+        assert!(classify_ap_station(&meta, "a", "b").is_none());
+        assert!(classify_ap_station(&meta, "b", "a").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "a", "b").is_none());
+        assert!(directed_caps_mbps(&meta, &caps, &cfg, "b", "a").is_none());
+    }
+
+    #[test]
+    fn mutual_conflicting_labels_still_orient_by_the_ap_label() {
+        // A positive AP label (wirelessMode here) wins even when the role says
+        // station; the pair is still order-independent.
+        let a = mk_raw_device("a", Some("station"), Some("ap-ptp"), Some("b"));
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), Some("a"));
+        let meta = build_device_link_meta_map(&[a, b]);
+        let cfg = Config::default();
+        let caps = caps_map(&[("a", 193, 61), ("b", 193, 61)]);
+        assert_eq!(
+            classify_ap_station(&meta, "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "b", "a"),
+            Some(LinkOrientation::BIsAp)
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "a", "b"),
+            Some((193, 61))
+        );
+        assert_eq!(
+            directed_caps_mbps(&meta, &caps, &cfg, "b", "a"),
+            Some((61, 193))
+        );
+    }
+
+    #[test]
+    fn role_pair_wins_over_conflicting_wireless_labels() {
+        // No apDevice: the explicit role pair (ap,station) wins over the
+        // conflicting wireless pair (sta,ap); this is the role-first policy.
+        let a = mk_raw_device("a", Some("ap"), Some("sta-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("ap-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        assert_eq!(
+            classify_ap_station(&meta, "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station(&meta, "b", "a"),
+            Some(LinkOrientation::BIsAp)
+        );
+    }
+
+    #[test]
+    fn upstream_site_wins_over_conflicting_labels() {
+        // The parent/upstream site is the AP even when its device is labelled
+        // station and the child device is labelled AP. Asymmetric capacities
+        // prove that the selected end's capacity tuple is used.
+        let a = mk_raw_device("a", Some("ap"), Some("ap-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        let topology = LinkTopology::from_test_sites(
+            &[("parent", None), ("child", Some("parent"))],
+            &[("a", "child"), ("b", "parent")],
+        );
+        let cfg = Config::default();
+        let caps = caps_map(&[("a", 50, 20), ("b", 193, 61)]);
+
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "a", "b"),
+            Some(LinkOrientation::BIsAp)
+        );
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "b", "a"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            directed_caps_mbps_with_topology(&meta, Some(&topology), &caps, &cfg, "a", "b"),
+            Some((20, 50))
+        );
+        assert_eq!(
+            directed_caps_mbps_with_topology(&meta, Some(&topology), &caps, &cfg, "b", "a"),
+            Some((50, 20))
+        );
+    }
+
+    #[test]
+    fn peer_sites_fall_back_to_labels() {
+        // Neither site is upstream. Site assignment alone must not orient the
+        // link; the #1184 label classifier decides.
+        let a = mk_raw_device("a", Some("ap"), Some("ap-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        let topology = LinkTopology::from_test_sites(
+            &[("north-site", None), ("south-site", None)],
+            &[("a", "north-site"), ("b", "south-site")],
+        );
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "b", "a"),
+            Some(LinkOrientation::BIsAp)
+        );
+    }
+
+    #[test]
+    fn same_site_assignment_falls_back_to_labels() {
+        let a = mk_raw_device("a", Some("ap"), Some("ap-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        let topology = LinkTopology::from_test_sites(
+            &[("same-site", None)],
+            &[("a", "same-site"), ("b", "same-site")],
+        );
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+    }
+
+    #[test]
+    fn ap_south_of_station_resolves_by_labels() {
+        // Regression for the removed geographic rule: the southern peer is the
+        // AP here, and labels must resolve it in both argument orders.
+        let station = mk_raw_device("station", Some("station"), Some("sta-ptp"), None);
+        let ap = mk_raw_device("ap", Some("ap"), Some("ap-ptp"), None);
+        let meta = build_device_link_meta_map(&[station, ap]);
+        let topology = LinkTopology::from_test_sites(
+            &[("north-site", None), ("south-site", None)],
+            &[("station", "north-site"), ("ap", "south-site")],
+        );
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "station", "ap"),
+            Some(LinkOrientation::BIsAp)
+        );
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "ap", "station"),
+            Some(LinkOrientation::AIsAp)
+        );
+    }
+
+    #[test]
+    fn missing_device_site_assignment_falls_back_to_labels() {
+        let a = mk_raw_device("a", Some("ap"), Some("ap-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        let topology = LinkTopology::from_test_sites(&[("a-site", None)], &[("a", "a-site")]);
+        assert_eq!(
+            classify_ap_station_with_topology(&meta, Some(&topology), "a", "b"),
+            Some(LinkOrientation::AIsAp)
+        );
+    }
+
+    #[test]
+    fn parent_cycle_returns_none_both_orders() {
+        // Invalid UISP data: both sites point at each other. Topology must
+        // decline rather than let argument order choose a winner.
+        let a = mk_raw_device("a", Some("ap"), Some("ap-ptp"), None);
+        let b = mk_raw_device("b", Some("station"), Some("sta-ptp"), None);
+        let meta = build_device_link_meta_map(&[a, b]);
+        let topology = LinkTopology::from_test_sites(
+            &[("a-site", Some("b-site")), ("b-site", Some("a-site"))],
+            &[("a", "a-site"), ("b", "b-site")],
+        );
+        assert!(classify_ap_station_with_topology(&meta, Some(&topology), "a", "b").is_none());
+        assert!(classify_ap_station_with_topology(&meta, Some(&topology), "b", "a").is_none());
     }
 }

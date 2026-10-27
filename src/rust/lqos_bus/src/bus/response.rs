@@ -538,6 +538,43 @@ pub struct QueueStatsTotal {
     pub drops: DownUpOrder<u64>,
 }
 
+/// Cumulative byte counter for one network node.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct NodeByteCounters {
+    /// Optional stable node identifier from `network.json` metadata.
+    pub node_id: Option<String>,
+    /// Node name as it appears in `network.json`.
+    pub name: String,
+    /// Cumulative bytes (down/up) since `lqosd` started tracking.
+    ///
+    /// Node totals include traffic from descendant nodes.
+    pub bytes: DownUpOrder<u64>,
+}
+
+/// Cumulative byte counter for one circuit.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct CircuitByteCounters {
+    /// Circuit ID from `ShapedDevices.csv` or a dynamic circuit.
+    pub circuit_id: String,
+    /// Circuit name from `ShapedDevices.csv` or a dynamic circuit.
+    pub circuit_name: String,
+    /// Effective parent node for this circuit.
+    pub parent_node: String,
+    /// Cumulative bytes (down/up) since `lqosd` started tracking.
+    pub bytes: DownUpOrder<u64>,
+}
+
+/// Cumulative byte counters for network nodes and circuits.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct ByteCountersSnapshot {
+    /// Whether byte counters are enabled in configuration.
+    pub enabled: bool,
+    /// Cumulative counters for every node in the runtime network tree.
+    pub nodes: Vec<NodeByteCounters>,
+    /// Cumulative counters for circuits with recorded traffic.
+    pub circuits: Vec<CircuitByteCounters>,
+}
+
 /// Circuit capacity utilization row
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct CircuitCapacityRow {
@@ -866,6 +903,9 @@ pub enum BusResponse {
 
     /// Queue stats totals (marks/drops)
     QueueStatsTotal(QueueStatsTotal),
+
+    /// Cumulative byte counters for nodes and circuits.
+    ByteCounters(ByteCountersSnapshot),
 
     /// Current QoO data.
     Qoo(Option<QooData>),

@@ -9,7 +9,8 @@ use crate::ethernet_advisory::apply_ethernet_rate_cap;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full2::directionality::{
-    build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
+    LinkTopology, build_device_capacity_map, build_device_link_meta_map,
+    directed_caps_mbps_with_topology,
 };
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
@@ -1018,6 +1019,9 @@ fn add_device_links_to_graph(
 ) {
     let meta_by_id = build_device_link_meta_map(&uisp_data.devices_raw);
     let caps_by_id = build_device_capacity_map(&uisp_data.devices);
+    // Build once per import: the site assignment is the primary orientation
+    // signal; labels remain the fallback for east/west and missing topology.
+    let topology = LinkTopology::from_uisp_data(&uisp_data.sites, &uisp_data.devices);
 
     for link in uisp_data.data_links_raw.iter() {
         let Some(from_device) = &link.from.device else {
@@ -1054,9 +1058,14 @@ fn add_device_links_to_graph(
 
         let id_a = from_device.identification.id.as_str();
         let id_b = to_device.identification.id.as_str();
-        let (cap_ab, cap_ba) = if let Some((cap_ab, cap_ba)) =
-            directed_caps_mbps(&meta_by_id, &caps_by_id, config, id_a, id_b)
-        {
+        let (cap_ab, cap_ba) = if let Some((cap_ab, cap_ba)) = directed_caps_mbps_with_topology(
+            &meta_by_id,
+            Some(&topology),
+            &caps_by_id,
+            config,
+            id_a,
+            id_b,
+        ) {
             (cap_ab, cap_ba)
         } else {
             warn!(

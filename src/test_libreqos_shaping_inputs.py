@@ -522,6 +522,164 @@ class TestLibreQoSShapingInputs(unittest.TestCase):
         self.assertEqual(missing_parents, {})
 
 
+class TestFindBandwidthMins(unittest.TestCase):
+    def test_sibling_minimums_do_not_accumulate(self):
+        def build_network(child_order):
+            children = {
+                "Crew": {
+                    "downloadBandwidthMbps": 100,
+                    "uploadBandwidthMbps": 100,
+                    "downloadBandwidthMbpsMin": 20,
+                    "uploadBandwidthMbpsMin": 20,
+                },
+                "Guest": {
+                    "downloadBandwidthMbps": 178,
+                    "uploadBandwidthMbps": 88,
+                    "downloadBandwidthMbpsMin": 60,
+                    "uploadBandwidthMbpsMin": 20,
+                },
+                "Infra": {
+                    "downloadBandwidthMbps": 82,
+                    "uploadBandwidthMbps": 30,
+                    "downloadBandwidthMbpsMin": 1,
+                    "uploadBandwidthMbpsMin": 1,
+                },
+                "MGMT": {
+                    "downloadBandwidthMbps": 30,
+                    "uploadBandwidthMbps": 15,
+                    "downloadBandwidthMbpsMin": 10,
+                    "uploadBandwidthMbpsMin": 4,
+                },
+            }
+            return {
+                "Site": {
+                    "downloadBandwidthMbps": 189,
+                    "uploadBandwidthMbps": 69,
+                    "downloadBandwidthMbpsMin": 120,
+                    "uploadBandwidthMbpsMin": 60,
+                    "children": {name: children[name] for name in child_order},
+                }
+            }
+
+        circuits = [
+            {"ParentNode": "Crew", "minDownload": 10, "minUpload": 10},
+            {"ParentNode": "Crew", "minDownload": 10, "minUpload": 10},
+            {"ParentNode": "Guest", "minDownload": 60, "minUpload": 20},
+            {"ParentNode": "Infra", "minDownload": 1, "minUpload": 1},
+            {"ParentNode": "MGMT", "minDownload": 10, "minUpload": 4},
+        ]
+
+        for child_order in (
+            ["Crew", "Guest", "Infra", "MGMT"],
+            ["MGMT", "Infra", "Guest", "Crew"],
+        ):
+            network = build_network(child_order)
+            totals = LibreQoS.findBandwidthMins(network, circuits)
+
+            self.assertEqual(totals, (91, 45))
+            self.assertEqual(network["Site"]["downloadBandwidthMbpsMin"], 120)
+            self.assertEqual(network["Site"]["uploadBandwidthMbpsMin"], 60)
+            generated = {
+                name: (
+                    node["downloadBandwidthMbpsMin"],
+                    node["uploadBandwidthMbpsMin"],
+                )
+                for name, node in network["Site"]["children"].items()
+            }
+            self.assertEqual(
+                generated,
+                {
+                    "Crew": (20, 20),
+                    "Guest": (60, 20),
+                    "Infra": (1, 1),
+                    "MGMT": (10, 4),
+                },
+            )
+
+    def test_child_minimums_roll_up_once(self):
+        network = {
+            "Site": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 100,
+                "downloadBandwidthMbpsMin": 0,
+                "uploadBandwidthMbpsMin": 0,
+                "children": {
+                    "Tower": {
+                        "downloadBandwidthMbps": 50,
+                        "uploadBandwidthMbps": 50,
+                        "downloadBandwidthMbpsMin": 0,
+                        "uploadBandwidthMbpsMin": 0,
+                        "children": {
+                            "AP-1": {
+                                "downloadBandwidthMbps": 25,
+                                "uploadBandwidthMbps": 25,
+                                "downloadBandwidthMbpsMin": 0,
+                                "uploadBandwidthMbpsMin": 0,
+                            },
+                            "AP-2": {
+                                "downloadBandwidthMbps": 25,
+                                "uploadBandwidthMbps": 25,
+                                "downloadBandwidthMbpsMin": 0,
+                                "uploadBandwidthMbpsMin": 0,
+                            },
+                        },
+                    },
+                    "Tower-2": {
+                        "downloadBandwidthMbps": 40,
+                        "uploadBandwidthMbps": 40,
+                        "downloadBandwidthMbpsMin": 0,
+                        "uploadBandwidthMbpsMin": 0,
+                    },
+                },
+            },
+        }
+        circuits = [
+            {"ParentNode": "Tower", "minDownload": 4, "minUpload": 1},
+            {"ParentNode": "AP-1", "minDownload": 10, "minUpload": 2},
+            {"ParentNode": "AP-2", "minDownload": 5, "minUpload": 1},
+            {"ParentNode": "Tower-2", "minDownload": 7, "minUpload": 3},
+        ]
+
+        totals = LibreQoS.findBandwidthMins(network, circuits)
+
+        self.assertEqual(totals, (26, 7))
+        self.assertEqual(network["Site"]["downloadBandwidthMbpsMin"], 26)
+        self.assertEqual(network["Site"]["uploadBandwidthMbpsMin"], 7)
+        self.assertEqual(
+            network["Site"]["children"]["Tower"]["downloadBandwidthMbpsMin"], 19
+        )
+        self.assertEqual(
+            network["Site"]["children"]["Tower-2"]["downloadBandwidthMbpsMin"], 7
+        )
+        self.assertEqual(
+            network["Site"]["children"]["Tower"]["children"]["AP-1"][
+                "downloadBandwidthMbpsMin"
+            ],
+            10,
+        )
+        self.assertEqual(
+            network["Site"]["children"]["Tower"]["children"]["AP-2"][
+                "downloadBandwidthMbpsMin"
+            ],
+            5,
+        )
+
+    def test_missing_minimum_keys_use_download_minimum(self):
+        network = {
+            "Leaf": {
+                "downloadBandwidthMbps": 100,
+                "uploadBandwidthMbps": 50,
+            }
+        }
+        circuits = [{"ParentNode": "Leaf", "minDownload": 150, "minUpload": 40}]
+
+        totals = LibreQoS.findBandwidthMins(network, circuits)
+
+        self.assertEqual(totals, (150, 40))
+        self.assertEqual(network["Leaf"]["downloadBandwidthMbpsMin"], 150)
+        self.assertEqual(network["Leaf"]["uploadBandwidthMbpsMin"], 50)
+
+
 class TestFirstRunSinceBoot(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()  # nosec B108
@@ -569,37 +727,53 @@ class TestFirstRunSinceBoot(unittest.TestCase):
         self.assertTrue(LibreQoS.checkIfFirstRunSinceBoot())
 
 
-class TestAtomicWriteText(unittest.TestCase):
+class TestValidateNetworkJsonTornWrite(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()  # nosec B108
         self.addCleanup(temp_dir.cleanup)
         self.temp_dir = temp_dir.name
+        self.network_path = os.path.join(self.temp_dir, "network.json")
+        self.devices_path = os.path.join(self.temp_dir, "ShapedDevices.csv")
+        with open(self.devices_path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,"
+                "IPv4,IPv6,Download Min,Upload Min,Download Max,Upload Max,Comment\n"
+                "circuit-1,Circuit 1,dev-1,Device 1,Parent,00:00:00:00:00:00,"
+                "192.168.1.2,,10,10,100,100,\n"
+            )
 
-    def test_atomic_write_creates_parents_and_content(self):
-        path = os.path.join(self.temp_dir, "a", "b", "state.txt")
-        LibreQoS.atomic_write_text(path, "hello")
-        with open(path, encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "hello")
-        self.assertFalse(os.path.exists(path + ".tmp"))
+    def _validate(self):
+        with patch.object(
+            LibreQoS, "get_network_json_path", return_value=self.network_path
+        ), patch.object(
+            LibreQoS, "get_shaped_devices_path", return_value=self.devices_path
+        ):
+            return LibreQoS.validateNetworkAndDevices()
 
-    def test_atomic_write_replaces_existing_content(self):
-        path = os.path.join(self.temp_dir, "state.txt")
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("old")
-        LibreQoS.atomic_write_text(path, "new")
-        with open(path, encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "new")
-        self.assertFalse(os.path.exists(path + ".tmp"))
+    def test_undecodable_network_json_fails_validation_without_raising(self):
+        with open(self.network_path, "wb") as handle:
+            handle.write(b"\x80\x81\x82 torn network")
+        with self.assertWarnsRegex(UserWarning, "unreadable or invalid"):
+            self.assertFalse(self._validate())
 
-    def test_atomic_write_failure_preserves_existing_content(self):
-        path = os.path.join(self.temp_dir, "state.txt")
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("old")
-        with patch("os.replace", side_effect=OSError(5, "replace failed")):
-            with self.assertRaises(OSError):
-                LibreQoS.atomic_write_text(path, "new")
-        with open(path, encoding="utf-8") as handle:
-            self.assertEqual(handle.read(), "old")
+    def test_truncated_network_json_fails_validation_without_raising(self):
+        with open(self.network_path, "wb") as handle:
+            handle.write(b'{"Root": ')
+        with self.assertWarnsRegex(UserWarning, "unreadable or invalid"):
+            self.assertFalse(self._validate())
+
+    def test_network_json_read_error_fails_validation_without_raising(self):
+        with open(self.network_path, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+        with patch.object(LibreQoS.json, "load", side_effect=PermissionError(13, "denied")):
+            with self.assertWarnsRegex(UserWarning, "unreadable or invalid"):
+                self.assertFalse(self._validate())
+
+    def test_non_object_network_json_fails_validation_without_raising(self):
+        with open(self.network_path, "w", encoding="utf-8") as handle:
+            handle.write("null")
+        with self.assertWarnsRegex(UserWarning, "not a node object"):
+            self.assertFalse(self._validate())
 
 
 if __name__ == "__main__":
