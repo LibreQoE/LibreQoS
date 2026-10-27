@@ -1,5 +1,4 @@
 //! Manages the `/etc/lqos.conf` file.
-use crate::{load_config, update_config};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
 use thiserror::Error;
@@ -92,9 +91,6 @@ pub struct Tunables {
 /// Defines the BiFrost XDP bridge accelerator parameters
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BridgeConfig {
-    /// Should the XDP bridge be enabled?
-    pub use_xdp_bridge: bool,
-
     /// A list of interface mappings.
     pub interface_mapping: Vec<BridgeInterface>,
 
@@ -219,27 +215,6 @@ impl EtcLqos {
             return Err(EtcLqosError::WriteFail);
         }
         Ok(())
-    }
-}
-
-/// Run this if you've received the OK from the licensing server, and been
-/// sent a license key. This appends a [long_term_stats] section to your
-/// config file - ONLY if one doesn't already exist.
-#[allow(dead_code)]
-pub fn enable_long_term_stats(license_key: String) {
-    let Ok(config) = load_config() else { return };
-    let mut new_config = (*config).clone();
-    new_config.long_term_stats.gather_stats = true;
-    new_config.long_term_stats.license_key = Some(license_key);
-    new_config.long_term_stats.collation_period_seconds = 60;
-    if config.uisp_integration.enable_uisp {
-        new_config.long_term_stats.uisp_reporting_interval_seconds = Some(300);
-    }
-    match update_config(&new_config) {
-        Ok(_) => info!("Long-term stats enabled"),
-        Err(e) => {
-            error!("Unable to update configuration: {e:?}");
-        }
     }
 }
 

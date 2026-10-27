@@ -81,6 +81,10 @@ pub struct TreeAttachedCircuitsPage {
 struct SelectedNodeMatcher {
     node_name: String,
     node_id: Option<String>,
+    /// The selected node IS a circuit-type tree node (the T1 tree
+    /// carries one per circuit): the panel should show that circuit
+    /// itself, not circuits parented under it.
+    is_circuit_node: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -112,6 +116,7 @@ fn build_selected_node_matcher(query: &TreeAttachedCircuitsQuery) -> Option<Sele
             return Some(SelectedNodeMatcher {
                 node_name: node.name.clone(),
                 node_id: node.id.clone(),
+                is_circuit_node: node.node_type.as_deref() == Some("circuit"),
             });
         }
 
@@ -144,6 +149,7 @@ fn build_selected_node_matcher(query: &TreeAttachedCircuitsQuery) -> Option<Sele
                 Some(SelectedNodeMatcher {
                     node_name: node.name.clone(),
                     node_id: node.id.clone(),
+                    is_circuit_node: node.node_type.as_deref() == Some("circuit"),
                 })
             } else {
                 None
@@ -187,6 +193,27 @@ fn circuit_parent_matches_selected_node(
     !trimmed_name.is_empty() && trimmed_name == matcher.node_name
 }
 
+/// Circuit-node tree fallback (driver demo finding 2026-09-08): the
+/// T1 tree carries a circuit-type node per circuit whose immediate
+/// parent IS the circuit's tree parent — even when NAME resolution
+/// misses (artifact-id node names vs legacy CSV names). Returns the
+/// human CSV parent name for display + the resolved parent id for
+/// matching.
+fn circuit_node_tree_parent(
+    circuit_id: &str,
+    human_parent_name: &str,
+) -> Option<(String, Option<String>)> {
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let circuit_node = nodes.iter().find(|node| {
+            node.node_type.as_deref() == Some("circuit")
+                && (node.name == circuit_id || node.id.as_deref() == Some(circuit_id))
+        })?;
+        let parent = nodes.get(circuit_node.immediate_parent?)?;
+        Some((human_parent_name.to_string(), parent.id.clone()))
+    })
+}
+
 fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Option<String>)> {
     if let Some(runtime_parent) = effective_parent_for_circuit(&device.circuit_id) {
         return Some((runtime_parent.name, runtime_parent.id));
@@ -200,10 +227,16 @@ fn effective_or_canonical_parent(device: &ShapedDevice) -> Option<(String, Optio
     .or_else(|| {
         let trimmed = device.parent_node.trim();
         if trimmed.is_empty() {
-            None
-        } else {
-            Some((trimmed.to_string(), device.parent_node_id.clone()))
+            return circuit_node_tree_parent(&device.circuit_id, "");
         }
+        if device.parent_node_id.is_some() {
+            return Some((trimmed.to_string(), device.parent_node_id.clone()));
+        }
+        // Name known, id unknown: the tree fallback supplies the id
+        // (matching), keeping the human CSV name for display; if even
+        // the tree lacks the circuit node, degrade to name-only.
+        circuit_node_tree_parent(&device.circuit_id, trimmed)
+            .or_else(|| Some((trimmed.to_string(), None)))
     })
 }
 
@@ -220,7 +253,15 @@ fn aggregate_attached_circuit_rows<'a>(
         let Some((parent_name, parent_id)) = effective_or_canonical_parent(device) else {
             continue;
         };
-        if !circuit_parent_matches_selected_node(matcher, &parent_name, parent_id.as_deref()) {
+        // Driver demo finding (2026-09-08): a CIRCUIT-type tree node
+        // represents the circuit itself — show it even though no
+        // circuit is *parented under* it.
+        let circuit_itself = matcher.is_circuit_node
+            && (matcher.node_id.as_deref() == Some(device.circuit_id.as_str())
+                || matcher.node_name == device.circuit_id);
+        if !circuit_itself
+            && !circuit_parent_matches_selected_node(matcher, &parent_name, parent_id.as_deref())
+        {
             continue;
         }
 
@@ -432,6 +473,7 @@ mod tests {
         let matcher = SelectedNodeMatcher {
             node_name: "Parent A".to_string(),
             node_id: Some("node-a".to_string()),
+            is_circuit_node: false,
         };
         let shaped_devices = ConfigShapedDevices {
             devices: vec![
@@ -482,5 +524,45 @@ mod tests {
         assert_eq!(rows[0].parent_node, "Parent A");
         assert_eq!(rows[0].device_names.len(), 2);
         assert_eq!(rows[0].ip_addrs.len(), 2);
+    }
+
+    /// Driver demo finding (2026-09-08): a CIRCUIT-type tree node
+    /// represents the circuit itself — the panel shows it even though
+    /// no circuit is parented UNDER that node.
+    #[test]
+    fn circuit_node_matcher_shows_the_circuit_itself() {
+        let matcher = SelectedNodeMatcher {
+            node_name: "circuit-1".to_string(),
+            node_id: Some("circuit-1".to_string()),
+            is_circuit_node: true,
+        };
+        let shaped_devices = ConfigShapedDevices {
+            devices: vec![
+                sample_device(
+                    "circuit-1",
+                    "Circuit One",
+                    "device-1",
+                    "Device One",
+                    "Parent A",
+                    Some("node-a"),
+                    &["100.64.0.1"],
+                ),
+                sample_device(
+                    "circuit-2",
+                    "Circuit Two",
+                    "device-3",
+                    "Device Three",
+                    "Elsewhere",
+                    Some("node-b"),
+                    &["100.64.0.3"],
+                ),
+            ],
+            ..ConfigShapedDevices::default()
+        };
+
+        let rows = aggregate_attached_circuit_rows(&matcher, shaped_devices.devices.iter());
+        assert_eq!(rows.len(), 1, "the circuit node shows its own circuit only");
+        assert_eq!(rows[0].circuit_id, "circuit-1");
+        assert!(rows[0].device_names.contains("Device One"));
     }
 }

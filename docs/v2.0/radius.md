@@ -1,5 +1,7 @@
 # RADIUS accounting and dynamic circuits
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 LibreQoS can receive RADIUS Accounting packets from a broadband network gateway
 (BNG), NAS, PPPoE concentrator, or DHCP-RADIUS system and create dynamic
 circuits for active subscribers. It is useful when subscribers receive an IP

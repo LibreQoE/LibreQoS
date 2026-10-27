@@ -3,6 +3,7 @@ import {ThroughputPpsDash} from "./throughput_pps_dash";
 import {ShapedUnshapedDash} from "./shaped_unshaped_dash";
 import {TrackedFlowsCount} from "./tracked_flow_count_dash";
 import {ThroughputRingDash} from "./throughput_ring_dash";
+import {LiveTrafficPulseDash} from "./live_traffic_pulse_dash";
 import {RttHistoDash} from "./rtt_histo_dash";
 import {Top10Downloaders} from "./top10_downloaders";
 import {Worst10Downloaders} from "./worst10_downloaders";
@@ -27,19 +28,6 @@ import {LtsShaperStatus} from "./ltsShaperStatus";
 import {LtsLast24Hours} from "./ltsLast24Hours";
 import {TcpRetransmitsDash} from "./total_retransmits";
 import {StormguardStatusDashlet} from "./stormguard_status";
-import {BakeryStatusDashlet} from "./bakery_status";
-import {BakeryStatusSummaryDashlet} from "./bakery_status_summary";
-import {BakeryApplySummaryDashlet} from "./bakery_apply_summary";
-import {BakeryCapacityDashlet} from "./bakery_capacity";
-import {BakeryActivityDashlet} from "./bakery_activity";
-import {BakeryPipelineDashlet} from "./bakery_pipeline";
-import {BakeryChangeMixDashlet} from "./bakery_change_mix";
-import {TreeGuardStatusDashlet} from "./treeguard_status";
-import {TreeGuardActivityDashlet} from "./treeguard_activity";
-import {TreeguardControlsDashlet} from "./treeguard_controls";
-import {TreeGuardControlLoopDashlet} from "./treeguard_control_loop";
-import {TreeGuardStateMixDashlet} from "./treeguard_state_mix";
-import {TreeGuardDecisionImpactDashlet} from "./treeguard_decision_impact";
 import {Top10UploadersVisual} from "./top10_uploads_graphic";
 import {Top10Uploaders} from "./top10_uploaders";
 import {StormguardSummaryDashlet} from "./stormguard_summary";
@@ -54,6 +42,7 @@ import {ShaperChildrenUp} from "./children_sankey_up";
 import {ShaperWorldMapDown} from "./world_map_down";
 import {ShaperWorldMapUp} from "./world_map_up";
 import {ExecutiveSnapshotDashlet} from "./executive_snapshot";
+import {QueueDynamicsDashlet} from "./queue_dynamics_dash";
 import {ExecutiveHelpersDashlet} from "./executive_helpers";
 import {
     ExecutiveDownloadHeatmapDashlet,
@@ -69,6 +58,7 @@ export const DashletMenu = [
     { name: "Mapped/Unmapped Traffic", tag: "shapedUnshaped", size: 3, category: "Shaped" },
     { name: "Tracked Flows Counter", tag: "trackedFlowsCount", size: 3, category: "Flows" },
     { name: "Last 5 Minutes Throughput", tag: "throughputRing", size: 6, category: "Throughput" },
+    { name: "Live Traffic Pulse", tag: "throughputRing30", size: 12, category: "Executive" },
     { name: "Round-Trip Time Histogram", tag: "rttHistogram", size: 6, category: "RTT" },
     { name: "Top 10 Downloaders", tag: "top10downloaders", size: 6, category: "Top 10" },
     { name: "Top 10 Downloaders (Visual)", tag: "top10downloadersV", size: 6, category: "Top 10" },
@@ -99,19 +89,6 @@ export const DashletMenu = [
     { name: "StormGuard Sites", tag: "stormguardSiteList", size: 4, category: "Queue Management" },
     { name: "StormGuard Site Detail", tag: "stormguardSiteDetail", size: 8, category: "Queue Management" },
     { name: "StormGuard Recent Activity", tag: "stormguardRecentActivity", size: 12, category: "Queue Management" },
-    { name: "Bakery Circuit Activity", tag: "bakeryStatus", size: 6, category: "Queue Management" },
-    { name: "Bakery Status", tag: "bakeryStatusSummary", size: 4, category: "Bakery" },
-    { name: "Bakery Apply Summary", tag: "bakeryApplySummary", size: 4, category: "Bakery" },
-    { name: "Bakery Pipeline", tag: "bakeryPipeline", size: 4, category: "Bakery" },
-    { name: "Bakery Runtime Operations", tag: "bakeryChangeMix", size: 4, category: "Bakery" },
-    { name: "Bakery Capacity / Safety", tag: "bakeryCapacity", size: 4, category: "Bakery" },
-    { name: "Bakery Recent Activity", tag: "bakeryActivity", size: 12, category: "Bakery" },
-    { name: "TreeGuard Controls", tag: "treeguardControls", size: 6, category: "TreeGuard" },
-    { name: "TreeGuard Status", tag: "treeguardStatus", size: 6, category: "TreeGuard" },
-    { name: "TreeGuard Control Loop", tag: "treeguardControlLoop", size: 4, category: "TreeGuard" },
-    { name: "TreeGuard State Mix", tag: "treeguardStateMix", size: 4, category: "TreeGuard" },
-    { name: "TreeGuard Decision Impact", tag: "treeguardDecisionImpact", size: 4, category: "TreeGuard" },
-    { name: "TreeGuard Activity", tag: "treeguardActivity", size: 12, category: "TreeGuard" },
     // Traffic Overview (Insight-like)
     { name: "Shaper Top ASN (Download)", tag: "shaperTopAsnDown", size: 6, category: "Traffic" },
     { name: "Shaper Top ASN (Upload)", tag: "shaperTopAsnUp", size: 6, category: "Traffic" },
@@ -120,12 +97,13 @@ export const DashletMenu = [
     { name: "Shaper World Map (Download)", tag: "shaperWorldMapDown", size: 6, category: "Traffic" },
     { name: "Shaper World Map (Upload)", tag: "shaperWorldMapUp", size: 6, category: "Traffic" },
     { name: "Network Snapshot", tag: "executiveSnapshot", size: 12, category: "Executive" },
+    { name: "Queue Dynamics", tag: "queueDynamics", size: 12, category: "Executive" },
     { name: "Executive Helper Links", tag: "executiveHelpers", size: 12, category: "Executive" },
     { name: "Global Heatmap", tag: "executiveGlobalHeatmap", size: 12, category: "Executive" },
     { name: "Median RTT Heatmap", tag: "executiveHeatmapRtt", size: 6, category: "Executive" },
     { name: "TCP Retransmits Heatmap", tag: "executiveHeatmapRetrans", size: 6, category: "Executive" },
-    { name: "Utilization Heatmap", tag: "executiveHeatmapDownload", size: 6, category: "Executive" },
-    { name: "QoO Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
+    { name: "Circuit Utilization Heatmap", tag: "executiveHeatmapDownload", size: 6, category: "Executive" },
+    { name: "Site / AP Utilization Heatmap", tag: "executiveHeatmapUpload", size: 6, category: "Executive" },
 ];
 
 export function widgetFactory(widgetName, count) {
@@ -136,6 +114,7 @@ export function widgetFactory(widgetName, count) {
         case "shapedUnshaped":  widget = new ShapedUnshapedDash(count); break;
         case "trackedFlowsCount": widget = new TrackedFlowsCount(count); break;
         case "throughputRing":  widget = new ThroughputRingDash(count); break;
+        case "throughputRing30": widget = new LiveTrafficPulseDash(count); break;
         case "rttHistogram":    widget = new RttHistoDash(count); break;
         case "rttHistogram3D":    widget = new RttHisto3dDash(count); break;
         case "top10downloaders":widget = new Top10Downloaders(count); break;
@@ -166,19 +145,6 @@ export function widgetFactory(widgetName, count) {
         case "stormguardSiteList": widget = new StormguardSiteListDashlet(count); break;
         case "stormguardSiteDetail": widget = new StormguardSiteDetailDashlet(count); break;
         case "stormguardRecentActivity": widget = new StormguardRecentActivityDashlet(count); break;
-        case "bakeryStatus"     : widget = new BakeryStatusDashlet(count); break;
-        case "bakeryStatusSummary": widget = new BakeryStatusSummaryDashlet(count); break;
-        case "bakeryApplySummary": widget = new BakeryApplySummaryDashlet(count); break;
-        case "bakeryPipeline": widget = new BakeryPipelineDashlet(count); break;
-        case "bakeryChangeMix": widget = new BakeryChangeMixDashlet(count); break;
-        case "bakeryCapacity": widget = new BakeryCapacityDashlet(count); break;
-        case "bakeryActivity": widget = new BakeryActivityDashlet(count); break;
-        case "treeguardControls": widget = new TreeguardControlsDashlet(count); break;
-        case "treeguardStatus"  : widget = new TreeGuardStatusDashlet(count); break;
-        case "treeguardControlLoop": widget = new TreeGuardControlLoopDashlet(count); break;
-        case "treeguardStateMix": widget = new TreeGuardStateMixDashlet(count); break;
-        case "treeguardDecisionImpact": widget = new TreeGuardDecisionImpactDashlet(count); break;
-        case "treeguardActivity": widget = new TreeGuardActivityDashlet(count); break;
         // Traffic Overview
         case "shaperTopAsnDown"  : widget = new ShaperTopAsnDownload(count); break;
         case "shaperTopAsnUp"    : widget = new ShaperTopAsnUpload(count); break;
@@ -187,6 +153,7 @@ export function widgetFactory(widgetName, count) {
         case "shaperWorldMapDown": widget = new ShaperWorldMapDown(count); break;
         case "shaperWorldMapUp"  : widget = new ShaperWorldMapUp(count); break;
         case "executiveSnapshot": widget = new ExecutiveSnapshotDashlet(count); break;
+        case "queueDynamics": widget = new QueueDynamicsDashlet(count); break;
         case "executiveHelpers": widget = new ExecutiveHelpersDashlet(count); break;
         case "executiveGlobalHeatmap": widget = new ExecutiveGlobalHeatmapDashlet(count); break;
         case "executiveHeatmapRtt": widget = new ExecutiveRttHeatmapDashlet(count); break;

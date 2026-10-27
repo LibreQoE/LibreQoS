@@ -16,7 +16,7 @@ fn interface_name_to_index(interface_name: &str) -> anyhow::Result<u32> {
 
 pub fn interfaces_exist(results: &mut Vec<SanityCheck>) {
     if let Ok(cfg) = load_config() {
-        if cfg.on_a_stick_mode() {
+        if cfg.single_interface.is_some() {
             if interface_name_to_index(&cfg.internet_interface()).is_ok() {
                 results.push(SanityCheck {
                     name: "Single Interface Exists".to_string(),

@@ -1379,17 +1379,25 @@ async fn shaper_snapshot_streaming(
     request_id: u64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
-    // Mirror node_manager ticker throughput: send compact tuple data.
-    // Note: field names are historical; values are bits per second.
-    {
-        let bits_per_second =
-            crate::throughput_tracker::THROUGHPUT_TRACKER.actual_bits_per_second();
-        let shaped_bits_per_second =
-            crate::throughput_tracker::THROUGHPUT_TRACKER.shaped_actual_bits_per_second();
-        let packets_per_second = crate::throughput_tracker::THROUGHPUT_TRACKER
-            .packets_per_second
-            .as_down_up();
+ // 3b: the fourth K3-orphan — this live responder read the KERNEL
+    // globals, which a bridge box never feeds, so the gateway timed out. On a
+    // bridge box read the actor snapshot (the same source the batch path uses);
+    // the kernel path is the inactive fallback. Field names are historical;
+    // values are bits per second, and the headline is the DELIVERED (shaped)
+    // rate per the display semantics.
+    let (bits_per_second, shaped_bits_per_second, packets_per_second) =
+        if crate::bridge_analytics::is_active() {
+            crate::bridge_analytics::live_shaper_rates(&crate::bridge_analytics::snapshot())
+        } else {
+            (
+                THROUGHPUT_TRACKER.actual_bits_per_second(),
+                THROUGHPUT_TRACKER.shaped_actual_bits_per_second(),
+                THROUGHPUT_TRACKER.packets_per_second.as_down_up(),
+            )
+        };
 
+    // Mirror node_manager ticker throughput: send compact tuple data.
+    {
         let message = messages::WsMessage::StreamingShaper {
             request_id,
             bytes_down: bits_per_second.down,
@@ -1457,6 +1465,9 @@ fn streaming_circuit_flow_snapshots(
         now_nanos.saturating_sub(STREAMING_CIRCUIT_FLOW_WINDOW.as_nanos() as u64);
     let mut flows_out = Vec::new();
 
+    // `.65` KERNEL-ONLY RESIDUE (flagged, not changed): the LTS2 streaming-
+    // circuit flow list stays on the kernel active-flow snapshot — no bridge
+    // dispatch (out of ASN scope; see `for_each_active_flow_for_circuit`).
     for_each_active_flow_for_circuit(circuit_hash, five_minutes_ago, |flow| {
         let rtt_ms = (
             flow.rtt_nanos.down as f32 / 1_000_000.0,
@@ -1540,8 +1551,30 @@ async fn circuit_snapshot_streaming(
     let mut aggregates: std::collections::HashMap<i64, DeviceTrafficAggregate> =
         std::collections::HashMap::new();
 
-    // Walk raw throughput data and fold into devices of this circuit
-    {
+ // 3b: the fifth orphan-class repoint — on a bridge box the
+    // per-circuit live view folds the ACTOR's per-IP rows (the DELIVERED
+    // shaped series per ruling 2); the kernel raw table is the inactive
+    // fallback and is never written post-K3 (the gateway `circuit_live`
+    // responder previously timed out/returned nothing on a bridge box).
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        for (device_hash, rates) in crate::bridge_analytics::circuit_device_delivered_rates(
+            &snapshot.by_ip,
+            &catalog,
+            circuit_hash,
+        ) {
+            aggregates.insert(
+                device_hash,
+                DeviceTrafficAggregate {
+                    bps_bytes: rates.bytes,
+                    tcp_packets: rates.tcp_packets,
+                    tcp_retries: rates.tcp_retries,
+                    rtts: rates.rtts,
+                },
+            );
+        }
+    } else {
+        // Walk raw throughput data and fold into devices of this circuit
         let raw_cycle = THROUGHPUT_TRACKER
             .cycle
             .load(std::sync::atomic::Ordering::Relaxed);

@@ -20,13 +20,23 @@ import {DevicePingHistogram} from "./graphs/device_ping_graph";
 import {WindowedLatencyHistogram} from "./graphs/windowed_latency_histogram";
 import {FlowsSankey, getRenderableSankeyFlowCount} from "./graphs/flow_sankey";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
+import {
+    actionsEnabledForHealth,
+    isAdminRole,
+    isSuspendedOverride,
+    outcomeForGeneration,
+    setActionPending,
+    setActionSettled,
+    validateRateInputs,
+} from "./circuit_admin_actions.mjs";
+import {sendWsRequest} from "./config/config_helper";
 import {CakeBacklog} from "./graphs/cake_backlog";
 import {CakeDelays} from "./graphs/cake_delays";
 import {CakeQueueLength} from "./graphs/cake_queue_length";
 import {CakeTraffic} from "./graphs/cake_traffic";
 import {CakeMarks} from "./graphs/cake_marks";
 import {CakeDrops} from "./graphs/cake_drops";
-import {QueuingActivityWaveform} from "./graphs/queuing_activity_waveform";
+import {QueuingActivityWaveform} from "./graphs/queuing_activity_uplot";
 import {getNodeIdMap, linkToTreeNode} from "./executive_utils";
 import {loadConfig} from "./config/config_helper";
 import {
@@ -75,6 +85,7 @@ let cakeQueueUnavailable = false;
 let queueStatsMode = "live";
 let circuitSqmOverride = "";
 let queuingActivityGraph = null;
+let queuingActivityLegendThemeObserver = null;
 let latestCircuitDevices = [];
 let circuitConfigDevices = [];
 let latestCircuitSummary = null;
@@ -82,7 +93,6 @@ let latestCircuitQooScore = null;
 let latestSankeyFlowMsg = { flows: [] };
 let latestTopAsnData = { total_asns: 0, rows: [] };
 let latestTrafficPage = null;
-let queuingActivityDirection = "down";
 let deviceGraphSpecs = [];
 let deviceGraphsInitialized = false;
 let devicePollTimer = null;
@@ -236,12 +246,12 @@ function initTooltipsWithin(rootEl = document) {
     });
 }
 
-function applyParentNodeLink(parentNodeName) {
+function applyParentNodeLink(parentNode) {
     const parentNodeEl = document.getElementById("parentNode");
     if (!parentNodeEl) {
         return;
     }
-
+    const parentNodeName = parentNode?.name || "";
     parentNodeEl.textContent = parentNodeName || "";
 
     if (!parentNodeName) {
@@ -252,6 +262,19 @@ function applyParentNodeLink(parentNodeName) {
     }
 
     parentNodeEl.style.pointerEvents = "";
+    // Prefer the backend-resolved tree locator: the tree's node names
+    // can differ from the CSV parent name (artifact-id nodes), and the
+    // locator (tree index + node id) always lands on the right node.
+    if (parentNode.tree_index !== null && parentNode.tree_index !== undefined) {
+        const params = new URLSearchParams();
+        params.set("parent", String(parentNode.tree_index));
+        if (parentNode.id) {
+            params.set("nodeId", parentNode.id);
+        }
+        parentNodeEl.href = `tree.html?${params.toString()}`;
+        parentNodeEl.title = `Open ${parentNodeName} in Tree`;
+        return;
+    }
     getNodeIdMap().then((nodeIdLookup) => {
         const href = linkToTreeNode(parentNodeName, nodeIdLookup);
         if (!href) {
@@ -280,10 +303,24 @@ function formatBitsPerSecondLabel(bitsPerSecond) {
     return `${scaleNumber(bitsPerSecond, 1)}bps`;
 }
 
-function currentCircuitRttP50Ms(direction) {
-    const directional = direction === "up" ? "up" : "down";
-    const nanos = toNumber(latestCircuitSummary?.rtt_current_p50_nanos?.[directional], 0);
-    if (!(nanos > 0)) {
+// §lqos-74t.47: the two rings ARE the legs — subscriber (near) and internet
+// (far); full(est.) = subscriber + internet. Honest null on a None leg.
+function currentCircuitRttLegMs(leg) {
+    const summary = latestCircuitSummary;
+    if (!summary) {
+        return null;
+    }
+    const key = leg === "subscriber"
+        ? "subscriber_rtt_nanos"
+        : leg === "internet"
+            ? "internet_rtt_nanos"
+            : "full_rtt_nanos";
+    const raw = summary[key];
+    if (raw === null || raw === undefined) {
+        return null;
+    }
+    const nanos = toNumber(raw, NaN);
+    if (!Number.isFinite(nanos) || nanos <= 0) {
         return null;
     }
     return nanos / 1_000_000.0;
@@ -327,48 +364,70 @@ function loadRttThresholds() {
     );
 }
 
-function currentActiveFlowCount() {
-    return toNumber(latestCircuitSummary?.active_flow_count, 0);
-}
-
 function currentDirectionValue(pair, direction, fallback = 0) {
     return toNumber(pair?.[direction], fallback);
 }
 
 function currentQueuingActivitySnapshot() {
-    const throughputBps = currentDirectionValue(latestCircuitSummary?.bytes_per_second, queuingActivityDirection, 0) * 8;
-    const ceilingMbps = currentDirectionValue(plan, queuingActivityDirection, 0);
-    const ceilingBps = ceilingMbps * 1_000_000.0;
-    const atCeiling = ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95);
-    const utilizationPercent = ceilingBps > 0
-        ? Math.max(0, Math.min(999, (throughputBps / ceilingBps) * 100))
-        : 0;
+ // 3b: customer-facing "Throughput" = the DELIVERED (shaped)
+    // rate; "Enqueued" = the pre-shaping ingress DEMAND — both labeled, and
+    // §`lqos-74t.46` (#1159): BOTH directions at once (no toggle). Flows is a
+    // circuit-level scalar, NOT per-direction.
+    const directionSnapshot = (direction) => {
+        const throughputBps = currentDirectionValue(latestCircuitSummary?.bytes_per_second, direction, 0) * 8;
+        const enqueuedBps = currentDirectionValue(latestCircuitSummary?.actual_bytes_per_second, direction, 0) * 8;
+        const ceilingMbps = currentDirectionValue(plan, direction, 0);
+        const ceilingBps = ceilingMbps * 1_000_000.0;
+        const utilizationPercent = ceilingBps > 0
+            ? Math.max(0, Math.min(999, (throughputBps / ceilingBps) * 100))
+            : 0;
+        return {
+            throughputBps,
+            enqueuedBps,
+            ceilingBps,
+            utilizationPercent,
+            atCeiling: ceilingBps > 0 && throughputBps >= (ceilingBps * 0.95),
+        };
+    };
     return {
-        throughputBps,
-        ceilingBps,
-        rttP50Ms: currentCircuitRttP50Ms(queuingActivityDirection),
-        activeFlows: currentActiveFlowCount(),
-        utilizationPercent,
-        atCeiling,
+        down: directionSnapshot("down"),
+        up: directionSnapshot("up"),
     };
 }
 
 function updateQueuingActivityCards() {
-    const throughputEl = document.getElementById("queuingActivityThroughput");
-    const rttEl = document.getElementById("queuingActivityRtt");
-    const flowsEl = document.getElementById("queuingActivityFlows");
-    const utilizationEl = document.getElementById("queuingActivityUtilization");
-    if (!throughputEl || !rttEl || !flowsEl || !utilizationEl) {
-        return;
-    }
-
     const snapshot = currentQueuingActivitySnapshot();
-    throughputEl.textContent = formatBitsPerSecondLabel(snapshot.throughputBps);
-    rttEl.textContent = formatCircuitRttLabel(snapshot.rttP50Ms);
-    rttEl.style.color = snapshot.rttP50Ms !== null ? colorByRttMs(snapshot.rttP50Ms, currentRttThresholds) : "";
-    flowsEl.textContent = String(snapshot.activeFlows);
-    utilizationEl.textContent = `${snapshot.utilizationPercent.toFixed(0)}%`;
-    utilizationEl.classList.toggle("is-active", snapshot.atCeiling);
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = text;
+        }
+    };
+    const setActive = (id, active) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.toggle("is-active", active);
+        }
+    };
+    const setRtt = (id, rttP50Ms) => {
+        const el = document.getElementById(id);
+        if (!el) {
+            return;
+        }
+        el.textContent = formatCircuitRttLabel(rttP50Ms);
+        el.style.color = rttP50Ms !== null ? colorByRttMs(rttP50Ms, currentRttThresholds) : "";
+    };
+    setText("queuingActivityThroughput", formatBitsPerSecondLabel(snapshot.down.throughputBps));
+    setText("queuingActivityThroughputUp", formatBitsPerSecondLabel(snapshot.up.throughputBps));
+    setText("queuingActivityEnqueued", formatBitsPerSecondLabel(snapshot.down.enqueuedBps));
+    setText("queuingActivityEnqueuedUp", formatBitsPerSecondLabel(snapshot.up.enqueuedBps));
+    setRtt("queuingActivityRtt", currentCircuitRttLegMs("subscriber"));
+    setRtt("queuingActivityRttUp", currentCircuitRttLegMs("internet"));
+    setRtt("queuingActivityRttFull", currentCircuitRttLegMs("full"));
+    setText("queuingActivityUtilization", `${snapshot.down.utilizationPercent.toFixed(0)}%`);
+    setText("queuingActivityUtilizationUp", `${snapshot.up.utilizationPercent.toFixed(0)}%`);
+    setActive("queuingActivityUtilization", snapshot.down.atCeiling);
+    setActive("queuingActivityUtilizationUp", snapshot.up.atCeiling);
 }
 
 function pushQueuingActivitySample() {
@@ -392,39 +451,52 @@ function pushQueuingActivitySample() {
             up: currentDirectionValue(plan, "up", 0) * 1_000_000.0,
         },
         rttP50Ms: {
-            down: currentCircuitRttP50Ms("down"),
-            up: currentCircuitRttP50Ms("up"),
+            subscriber: currentCircuitRttLegMs("subscriber"),
+            internet: currentCircuitRttLegMs("internet"),
+            full: currentCircuitRttLegMs("full"),
         },
     });
     updateQueuingActivityCards();
 }
 
-function queuingActivityDirectionColor(direction = queuingActivityDirection) {
+function queuingActivityDirectionColor(direction = "down") {
     const normalized = direction === "up" ? "up" : "down";
     const fallback = normalized === "up" ? "#32d3bd" : "#4992ff";
     const paletteIndex = normalized === "up" ? 1 : 0;
     return window.graphPalette?.[paletteIndex] || fallback;
 }
 
+// §`lqos-74t.46` (#1159): the legend shows BOTH directions (two dots per entry;
+// no toggle). The ceiling pair stays neutral (a reference line, not a series).
 function updateQueuingActivityLegend() {
-    const legendColor = queuingActivityDirectionColor();
-    const enqueuedLegendEl = document.getElementById("queuingActivityLegendEnqueued");
-    const throughputLegendEl = document.getElementById("queuingActivityLegendThroughput");
-    if (enqueuedLegendEl) {
-        enqueuedLegendEl.style.color = legendColor;
-    }
-    if (throughputLegendEl) {
-        throughputLegendEl.style.color = legendColor;
-    }
-}
-
-function applyQueuingDirection(direction) {
-    queuingActivityDirection = direction === "up" ? "up" : "down";
-    if (queuingActivityGraph) {
-        queuingActivityGraph.setDirection(queuingActivityDirection);
-    }
-    updateQueuingActivityLegend();
-    updateQueuingActivityCards();
+    const colorDot = (id, color) => {
+        const el = document.getElementById(id);
+        if (!el) {
+            return;
+        }
+        el.style.color = color;
+        // Dots whose CSS fixes a background (`is-qoo`) need it set explicitly.
+        if (el.classList.contains("is-qoo")) {
+            el.style.background = color;
+            el.style.boxShadow = "none";
+        }
+    };
+    const downColor = queuingActivityDirectionColor("down");
+    const upColor = queuingActivityDirectionColor("up");
+    // §lqos-74t.47: align the RTT (leg) dots to the chart's ACTUAL series colours
+    // (theme-aware); fall back to palette[0]/[1] + the dark rttLine before the
+    // graph exists.
+    const legColors = queuingActivityGraph?.legendColors?.() || {
+        subscriber: downColor,
+        internet: upColor,
+        full: "#b7a5ff",
+    };
+    colorDot("queuingActivityLegendEnqueuedDown", downColor);
+    colorDot("queuingActivityLegendEnqueuedUp", upColor);
+    colorDot("queuingActivityLegendThroughputDown", downColor);
+    colorDot("queuingActivityLegendThroughputUp", upColor);
+    colorDot("queuingActivityLegendRttDown", legColors.subscriber);
+    colorDot("queuingActivityLegendRttUp", legColors.internet);
 }
 
 function ensureQueuingActivityGraph() {
@@ -437,8 +509,10 @@ function ensureQueuingActivityGraph() {
             return;
         }
         queuingActivityGraph = new QueuingActivityWaveform("queuingActivityGraph");
-        queuingActivityGraph.setDirection(queuingActivityDirection);
         queuingActivityGraph.setRttThresholds(currentRttThresholds);
+        // §lqos-74t.47: now that the graph exists, refresh the leg legend dots
+        // from its theme-aware `legendColors()` (the init call predates it).
+        updateQueuingActivityLegend();
         updateQueuingActivityRenderingState();
         pushQueuingActivitySample();
     });
@@ -460,23 +534,21 @@ function updateQueuingActivityRenderingState() {
 }
 
 function initQueuingActivityControls() {
-    const downloadToggle = document.getElementById("queuingDirectionDown");
-    const uploadToggle = document.getElementById("queuingDirectionUp");
-    if (downloadToggle) {
-        downloadToggle.addEventListener("change", () => {
-            if (downloadToggle.checked) {
-                applyQueuingDirection("down");
-            }
+    // §`lqos-74t.46` (#1159): no direction toggle — both directions are always
+    // shown. Seed the legend + cards.
+    updateQueuingActivityLegend();
+    updateQueuingActivityCards();
+    // §lqos-74t.47: the leg legend dots are theme-aware; refresh them on a
+    // theme toggle (queuingActivityGraph.legendColors()).
+    if (!queuingActivityLegendThemeObserver) {
+        queuingActivityLegendThemeObserver = new MutationObserver(() => {
+            updateQueuingActivityLegend();
+        });
+        queuingActivityLegendThemeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["data-bs-theme"],
         });
     }
-    if (uploadToggle) {
-        uploadToggle.addEventListener("change", () => {
-            if (uploadToggle.checked) {
-                applyQueuingDirection("up");
-            }
-        });
-    }
-    applyQueuingDirection("down");
 }
 
 function isTrafficTabActive() {
@@ -586,6 +658,7 @@ function resolveCircuitParentNode(payload, circuits) {
         return {
             id: backendParent?.id || null,
             name: backendName,
+            tree_index: backendParent?.tree_index ?? null,
         };
     }
 
@@ -638,7 +711,7 @@ function resolveFunnelState(msg, parentNode) {
         if (!node) {
             return `${parent}:missing`;
         }
-        return `${parent}:${node.name}:${node.is_virtual === true ? "virtual" : "physical"}`;
+        return `${parent}:${node.name}`;
     });
 
     return {
@@ -793,14 +866,6 @@ function renderFunnel(state) {
 
         const badges = document.createElement("div");
         badges.classList.add("lqos-funnel-node-badges");
-
-        const typeBadge = document.createElement("span");
-        typeBadge.classList.add("lqos-funnel-node-type");
-        if (node.is_virtual === true) {
-            typeBadge.classList.add("is-virtual");
-        }
-        typeBadge.textContent = node.is_virtual === true ? "Virtual" : "Physical";
-        badges.appendChild(typeBadge);
 
         const stepBadge = document.createElement("span");
         stepBadge.classList.add("lqos-funnel-node-step");
@@ -1222,7 +1287,7 @@ function applyCircuitHeaderPayload(payload) {
     const parentNode = resolveCircuitParentNode(payload, circuits);
     $("#circuitName").text(circuit.circuit_name);
     $("#circuitName").attr("title", circuit.circuit_name || "");
-    applyParentNodeLink(parentNode?.name || "");
+    applyParentNodeLink(parentNode);
     $("#bwMin").text(formatPlanSpeedPair(circuit.download_min_mbps, circuit.upload_min_mbps));
     renderEthernetAdvisory(advisory);
     return {assignedRate, circuit, parentNode};
@@ -1264,17 +1329,20 @@ function applyCircuitSummary(summary) {
         excludeRttToggle.checked = excludeRttLastValue;
     }
     if (speedometer) {
+ // 3b display semantics: customer-facing throughput = the
+        // DELIVERED (shaped, `bytes_per_second`) rate — the ingress demand is a
+        // separate labeled overlay, never the headline.
         speedometer.update(
-            currentDirectionValue(summary?.actual_bytes_per_second, "down", 0) * 8,
-            currentDirectionValue(summary?.actual_bytes_per_second, "up", 0) * 8,
+            currentDirectionValue(summary?.bytes_per_second, "down", 0) * 8,
+            currentDirectionValue(summary?.bytes_per_second, "up", 0) * 8,
             currentDirectionValue(plan, "down", 0),
             currentDirectionValue(plan, "up", 0)
         );
     }
     if (totalThroughput) {
         totalThroughput.update(
-            currentDirectionValue(summary?.actual_bytes_per_second, "down", 0) * 8,
-            currentDirectionValue(summary?.actual_bytes_per_second, "up", 0) * 8
+            currentDirectionValue(summary?.bytes_per_second, "down", 0) * 8,
+            currentDirectionValue(summary?.bytes_per_second, "up", 0) * 8
         );
     }
     if (totalRetransmits) {
@@ -1299,8 +1367,8 @@ function applyDeviceLiveData(devices) {
         const throughputGraph = deviceGraphs["throughputGraph_" + device.device_id];
         if (throughputGraph !== undefined) {
             throughputGraph.update(
-                toNumber(device.actual_bytes_per_second?.down, 0) * 8,
-                toNumber(device.actual_bytes_per_second?.up, 0) * 8
+                toNumber(device.bytes_per_second?.down, 0) * 8,
+                toNumber(device.bytes_per_second?.up, 0) * 8
             );
         }
 
@@ -1905,8 +1973,8 @@ function sortTopAsnRows(rows) {
                 bVal = normalize(b.asn_country);
                 break;
             case "rtt":
-                aVal = toNumber(a.rtt_down_nanos, 0) + toNumber(a.rtt_up_nanos, 0);
-                bVal = toNumber(b.rtt_down_nanos, 0) + toNumber(b.rtt_up_nanos, 0);
+                aVal = toNumber(a.full_rtt_nanos, 0);
+                bVal = toNumber(b.full_rtt_nanos, 0);
                 break;
             case "qoo":
                 aVal = totalQoo(a);
@@ -1971,7 +2039,8 @@ function renderTopAsnTab() {
     thead.appendChild(createSortableHeader("ASN", "asn"));
     thead.appendChild(createSortableHeader("Country", "country"));
     thead.appendChild(createSortableHeader("Current Rate (d/u)", "rate", 2));
-    thead.appendChild(createSortableHeader("RTT (d/u)", "rtt", 2));
+    // §lqos-74t.47: D=Subscriber leg, U=Internet leg; Full(est.) = D+U.
+    thead.appendChild(createSortableHeader("RTT Access / Internet / Full (est.)", "rtt", 3));
     thead.appendChild(createSortableHeader("QoO (d/u)", "qoo", 2));
     thead.appendChild(createSortableHeader("TCP rxmit (d/u)", "retransmits", 2));
     thead.appendChild(createSortableHeader("Flows", "flows"));
@@ -1997,6 +2066,8 @@ function renderTopAsnTab() {
             row.appendChild(simpleRowTrustedHtml(formatThroughput(rowData.up_bps, plan.up)));
             row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_down_nanos)));
             row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.rtt_up_nanos)));
+            // §lqos-74t.47: Full(est.) = subscriber + internet; honest "-" on a None leg.
+            row.appendChild(simpleRowTrustedHtml(formatRttNanos(rowData.full_rtt_nanos)));
             row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_down)));
             row.appendChild(simpleRowTrustedHtml(formatQooScore(rowData.qoo_up)));
             row.appendChild(simpleRowTrustedHtml(rowData.retransmit_down_pct > 0 ? formatRetransmitFraction(rowData.retransmit_down_pct) : "-"));
@@ -2139,14 +2210,14 @@ function fillLiveDevices(devices) {
 
         if (throughputDown !== null) {
             throughputDown.innerHTML = formatThroughput(
-                toNumber(device.actual_bytes_per_second?.down, 0) * 8,
+                toNumber(device.bytes_per_second?.down, 0) * 8,
                 toNumber(device.plan?.down, 0)
             );
         }
 
         if (throughputUp !== null) {
             throughputUp.innerHTML = formatThroughput(
-                toNumber(device.actual_bytes_per_second?.up, 0) * 8,
+                toNumber(device.bytes_per_second?.up, 0) * 8,
                 toNumber(device.plan?.up, 0)
             );
         }
@@ -2647,6 +2718,303 @@ function download(dataurl, filename) {
     link.click();
 }
 
+// ---------------------------------------------------------------------------
+// E3 — admin actions (rate edit, remove) + the bridge publish lifecycle.
+// Affordances render for Admin sessions only (window.USER_ROLE from the
+// template); the backend re-checks the role on every write. The lifecycle
+// follows the broker's own publish records (BridgePublishStatus): saves
+// settle ✓/✗ honestly, rejects are never retried, bridge-down disables the
+// bar (F-E3).
+// ---------------------------------------------------------------------------
+
+const ADMIN_POLL_INTERVAL_MS = 1000;
+const ADMIN_POLL_TIMEOUT_MS = 90000;
+
+let adminBar = null;
+let adminPollTimer = null;
+let overrideSpeedsState = null;
+
+function adminButtons() {
+    if (!adminBar) {
+        return [];
+    }
+    return Array.from(adminBar.querySelectorAll("button"));
+}
+
+function fetchPublishStatus(onComplete, onError) {
+    sendWsRequest(
+        "BridgePublishStatus",
+        { BridgePublishStatus: {} },
+        (msg) => onComplete(msg?.data ?? []),
+        onError,
+    );
+}
+
+function refreshAdminHealthGate() {
+    sendWsRequest(
+        "BridgeHealthStatus",
+        { BridgeHealthStatus: {} },
+        (msg) => {
+            const verdict = msg?.data?.verdict ?? null;
+            const enabled = actionsEnabledForHealth(verdict);
+            adminButtons().forEach((button) => {
+                button.disabled = !enabled;
+                button.title = enabled
+                    ? ""
+                    : "Bridge is not reachable — actions are disabled";
+            });
+        },
+        () => { /* no supervisor data: leave buttons as-is */ },
+    );
+}
+
+function stopAdminPoll() {
+    if (adminPollTimer !== null) {
+        window.clearInterval(adminPollTimer);
+        adminPollTimer = null;
+    }
+}
+
+function startOutcomePoll(generation, onApplied) {
+    stopAdminPoll();
+    const startedAt = Date.now();
+    adminPollTimer = window.setInterval(() => {
+        fetchPublishStatus((records) => {
+            // F-NA: correlate by the MINTED generation (the ws response
+            // carries it) — never by new-generation-key diffing, which
+            // is blind to return-to-base dispatches (revert-to-plan
+            // lands on a generation the ring already retains). A null
+            // outcome just means the publisher has not reached the
+            // minted generation yet (the mint can land a round later
+            // than a pre-write-loaded publish round) — keep polling.
+            const outcome = outcomeForGeneration(records, generation);
+            if (!outcome) {
+                if (Date.now() - startedAt > ADMIN_POLL_TIMEOUT_MS) {
+                    stopAdminPoll();
+                    // Watchdog: no ack from the broker within the window.
+                    // Honest terminal text; never retried from the UI.
+                    setActionSettled(adminBar, { status: "rejected", reason: "NO_ACK_FROM_BRIDGE" });
+                }
+                return;
+            }
+            if (outcome.status === "pending") {
+                setActionSettled(adminBar, outcome);
+                return; // keep polling until it settles
+            }
+            stopAdminPoll();
+            const verdict = setActionSettled(adminBar, outcome);
+            refreshAdminHealthGate();
+            if (verdict === "applied") {
+                requestCircuitRateRefresh();
+                if (onApplied) {
+                    onApplied();
+                }
+            }
+        }, () => { /* transient ws hiccup: keep polling */ });
+    }, ADMIN_POLL_INTERVAL_MS);
+}
+
+/// Runs one admin action: the save dispatches, the ws response carries
+/// the minted post-write generation, and the publish lifecycle is
+/// followed for THAT generation to a settled outcome.
+function dispatchAdminAction(saveFn, onApplied) {
+    saveFn((generation) => {
+        setActionPending(adminBar, "Applying to bridge…");
+        startOutcomePoll(generation, onApplied);
+    }, (message) => {
+        // Save rejected locally (validation/authz/persistence).
+        setActionSettled(adminBar, { status: "rejected", reason: message || "SAVE_FAILED" });
+    });
+}
+
+function makeAdminButton(iconClasses, label, buttonClass, onClick) {
+    const button = document.createElement("button");
+    button.classList.add("btn", "btn-sm", buttonClass, "me-2");
+    const icon = document.createElement("i");
+    icon.classList.add(...iconClasses, "me-1");
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(label));
+    button.addEventListener("click", onClick);
+    return button;
+}
+
+function circuitOverrideBadge() {
+    return document.getElementById("circuitOverrideBadge");
+}
+
+/// Display pin (a), cheap slice: when an operator override exists the
+/// header carries an honest marker (SUSPENDED for the 0.01 floor,
+/// "overridden" otherwise) — the base plan stays visible in the
+/// Min/Max slots and the programmed (effective) rates update from the
+/// bridge once applied.
+function renderOverrideBadge(speeds) {
+    const badge = circuitOverrideBadge();
+    if (!badge) {
+        return;
+    }
+    badge.textContent = "";
+    if (!speeds) {
+        badge.classList.add("d-none");
+        return;
+    }
+    badge.classList.remove("d-none");
+    if (isSuspendedOverride(speeds)) {
+        badge.classList.add("text-bg-danger");
+        badge.title = "This circuit is SUSPENDED — shaped to a trickle (0.01 Mbps floor). Resume restores the plan.";
+        badge.appendChild(document.createTextNode("SUSPENDED"));
+    } else {
+        badge.classList.add("text-bg-warning");
+        const rates = [
+            speeds.min_download_bandwidth,
+            speeds.max_download_bandwidth,
+            speeds.min_upload_bandwidth,
+            speeds.max_upload_bandwidth,
+        ].map((value) => (value === null || value === undefined ? "plan" : value)).join("/");
+        badge.title = `Operator override active (${rates} Mbps dl-min/dl-max/ul-min/ul-max). Revert to plan clears it.`;
+        badge.appendChild(document.createTextNode("OVERRIDDEN"));
+    }
+}
+
+function refreshCircuitOverrideState() {
+    sendWsRequest(
+        "GetCircuitSpeedOverrideResult",
+        { GetCircuitSpeedOverride: { circuit_id } },
+        (msg) => {
+            if (msg && msg.circuit_id === circuit_id) {
+                overrideSpeedsState = msg.data ?? null;
+                renderOverrideBadge(overrideSpeedsState);
+            }
+        },
+        () => { /* transient: state stays as-is */ },
+    );
+}
+
+function dispatchSpeedOverride(speeds, onApplied) {
+    dispatchAdminAction((onSaved, onSaveError) => {
+        sendWsRequest(
+            "SetCircuitSpeedOverrideResult",
+            { SetCircuitSpeedOverride: { circuit_id, speeds } },
+            (msg) => {
+                if (msg && msg.ok) {
+                    if (msg.changed === false) {
+                        // No-op dispatch: the stored override already
+                        // equaled the request — no file write, no new
+                        // generation. Settle immediately; polling would
+                        // run to the watchdog and false-NO_ACK.
+                        stopAdminPoll();
+                        setActionSettled(adminBar, { status: "noop" });
+                        refreshAdminHealthGate();
+                        refreshCircuitOverrideState();
+                    } else if (msg.generation) {
+                        // F-NA: the response carries the MINTED post-write
+                        // generation — the poll follows THIS generation.
+                        onSaved(msg.generation);
+                    } else {
+                        // A real write whose mint failed: no correlation
+                        // key exists. Honest terminal state rather than a
+                        // guess (the bridge may still apply it; the badge
+                        // refresh on next load shows the truth).
+                        onSaveError("NO_GENERATION_MINTED");
+                    }
+                } else {
+                    onSaveError(msg?.message ?? "OVERRIDE_REJECTED");
+                }
+            },
+            (message) => onSaveError(message?.message ?? "OVERRIDE_FAILED"),
+        );
+    }, onApplied);
+}
+
+function openRateModal() {
+    const fields = document.getElementById("circuitRateFields");
+    const errorBox = document.getElementById("circuitRateError");
+    clearDiv(fields);
+    errorBox.classList.add("d-none");
+    // Prefill from the operator override when one exists; otherwise
+    // the circuit's base plan (first device row).
+    const base = circuitConfigDevices?.[0] ?? {};
+    const speeds = overrideSpeedsState ?? {
+        min_download_bandwidth: base.download_min_mbps,
+        max_download_bandwidth: base.download_max_mbps,
+        min_upload_bandwidth: base.upload_min_mbps,
+        max_upload_bandwidth: base.upload_max_mbps,
+    };
+    const note = document.createElement("div");
+    note.classList.add("text-muted", "small", "mb-2");
+    note.textContent = overrideSpeedsState
+        ? "An operator override is active for this circuit. Saving replaces it; Revert to plan clears it. The override applies to the whole circuit and survives integration regeneration."
+        : "Saving writes an operator override for the whole circuit (base plan data is never rewritten). Clear it with Revert to plan.";
+    fields.appendChild(note);
+    [
+        ["min_download_bandwidth", "Down Min"],
+        ["max_download_bandwidth", "Down Max"],
+        ["min_upload_bandwidth", "Up Min"],
+        ["max_upload_bandwidth", "Up Max"],
+    ].forEach(([key, label]) => {
+        const row = document.createElement("div");
+        row.classList.add("mb-2");
+        const inputLabel = document.createElement("label");
+        inputLabel.classList.add("form-label", "mb-0", "small");
+        inputLabel.textContent = label + " (Mbps)";
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = "any";
+        input.min = "0.01";
+        input.classList.add("form-control", "form-control-sm");
+        input.dataset.field = key;
+        const value = speeds[key];
+        input.value = value === null || value === undefined ? "" : String(value);
+        row.appendChild(inputLabel);
+        row.appendChild(input);
+        fields.appendChild(row);
+    });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("circuitRateModal")).show();
+}
+
+function saveRateModal() {
+    const errorBox = document.getElementById("circuitRateError");
+    const rates = {};
+    document.querySelectorAll("#circuitRateFields input[data-field]").forEach((input) => {
+        rates[input.dataset.field] = input.value === "" ? null : Number(input.value);
+    });
+    const errors = validateRateInputs({
+        download_min_mbps: rates.min_download_bandwidth,
+        upload_min_mbps: rates.min_upload_bandwidth,
+        download_max_mbps: rates.max_download_bandwidth,
+        upload_max_mbps: rates.max_upload_bandwidth,
+    });
+    if (errors.length > 0) {
+        errorBox.textContent = errors[0];
+        errorBox.classList.remove("d-none");
+        return;
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("circuitRateModal")).hide();
+    dispatchSpeedOverride(rates, null);
+    refreshCircuitOverrideState();
+}
+
+function revertRateOverride() {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("circuitRateModal")).hide();
+    dispatchSpeedOverride(null, null);
+    refreshCircuitOverrideState();
+}
+
+function initAdminActions() {
+    const root = document.getElementById("circuitAdminActions");
+    if (!root || !isAdminRole(window.USER_ROLE)) {
+        return; // read-only sessions get no affordances (backend still re-checks)
+    }
+    clearDiv(root);
+    adminBar = document.createElement("div");
+    adminBar.classList.add("d-flex", "align-items-center", "flex-wrap");
+    adminBar.appendChild(makeAdminButton(["fa", "fa-pencil"], "Edit Rates", "btn-outline-primary", openRateModal));
+    root.appendChild(adminBar);
+    document.getElementById("circuitRateSave").addEventListener("click", saveRateModal);
+    document.getElementById("circuitRateRevert").addEventListener("click", revertRateOverride);
+    refreshAdminHealthGate();
+    refreshCircuitOverrideState();
+}
+
 function loadInitial() {
     initTooltipsWithin(document);
     initExcludeRttToggle();
@@ -2678,6 +3046,7 @@ function loadInitial() {
         subscribeToCake();
         wireupAnalysis(circuits);
         startCircuitRateRefresh();
+        initAdminActions();
     }, () => {
         alert("Circuit with id " + circuit_id + " not found");
     });
@@ -2706,6 +3075,7 @@ function cleanupCircuitPage() {
     topAsnPollTimer = clearPollingTimer(topAsnPollTimer);
     trafficPollTimer = clearPollingTimer(trafficPollTimer);
     circuitRatePollTimer = clearPollingTimer(circuitRatePollTimer);
+    stopAdminPoll();
     if (funnelSubscription) {
         funnelSubscription.dispose();
         funnelSubscription = null;

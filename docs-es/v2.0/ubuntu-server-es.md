@@ -12,7 +12,7 @@ Por el momento, solo se admite Ubuntu Server 24.04. Asegúrate de no utilizar ot
 
 <img width="1292" alt="03 version" src="https://github.com/user-attachments/assets/4917e389-5aa7-4636-a0f3-ba826b107d0b" />
 
-Para las interfaces de red, desactiva completamente las interfaces utilizadas. Después, asigna una dirección IP estática a la interfaz de administración (100.99.0.4 es solo un ejemplo).
+Para las interfaces de red, desactiva completamente las interfaces utilizadas. Después, asigna una dirección IP estática a la interfaz de administración (192.0.2.4 es solo un ejemplo).
 <img width="1293" alt="04 net int" src="https://github.com/user-attachments/assets/6d9b10a6-ea4e-45cf-a993-b21342c86772" />
 
 <img width="1351" alt="05 no proxy" src="https://github.com/user-attachments/assets/f86ace56-d1b2-4cd0-88b4-5af1267153ea" /> 

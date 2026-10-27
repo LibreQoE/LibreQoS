@@ -1,0 +1,402 @@
+<style>
+    .cpu-workers-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .cpu-workers-stat {
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+        background: color-mix(in srgb, var(--lqos-surface-2) 86%, transparent);
+        padding: 0.85rem 0.9rem;
+    }
+
+    .cpu-workers-stat-label {
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+        margin-bottom: 0.28rem;
+    }
+
+    .cpu-workers-stat-value {
+        font-size: 1.25rem;
+        line-height: 1.15;
+        font-weight: 700;
+        word-break: break-word;
+    }
+
+    .cpu-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr));
+        gap: 0.4rem;
+    }
+
+    .cpu-detail-layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 0.95fr) minmax(440px, 1.05fr);
+        gap: 1rem;
+        align-items: stretch;
+        height: calc(100vh - 18rem);
+        min-height: 32rem;
+    }
+
+    .cpu-summary-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 1.1rem;
+        margin-bottom: 0.85rem;
+        color: var(--bs-secondary-color);
+        font-size: 0.9rem;
+    }
+
+    .cpu-summary-line strong {
+        color: var(--bs-body-color);
+        font-size: 1.02rem;
+    }
+
+    .cpu-summary-line span + span::before {
+        content: "·";
+        margin-right: 0.65rem;
+        color: var(--bs-secondary-color);
+    }
+
+    .cpu-detail-pane {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        padding: 0;
+    }
+
+    .cpu-detail-selected {
+        border-left: 1px solid var(--lqos-border);
+        padding-left: 1.1rem;
+        min-height: 0;
+    }
+
+    .cpu-detail-selected {
+        position: sticky;
+        top: 1rem;
+    }
+
+    .cpu-detail-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.65rem;
+    }
+
+    .cpu-detail-facts {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+        gap: 0.35rem 1rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .cpu-detail-fact-label {
+        display: block;
+        color: var(--bs-secondary-color);
+        font-size: 0.7rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .cpu-detail-facts strong {
+        font-size: 0.98rem;
+    }
+
+    .cpu-selected-meter {
+        margin-bottom: 0.8rem;
+    }
+
+    .cpu-selected-workload {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+    }
+
+    @media (max-width: 1199.98px) {
+        .cpu-detail-layout {
+            grid-template-columns: 1fr;
+            height: auto;
+            min-height: 0;
+        }
+        .cpu-detail-selected {
+            border-left: 0;
+            padding-left: 0;
+            border-top: 1px solid var(--lqos-border);
+            padding-top: 1rem;
+        }
+        .cpu-meter-list {
+            max-height: 26rem;
+        }
+        .cpu-selected-workload {
+            max-height: 18rem;
+        }
+    }
+
+    .cpu-meter-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        padding-right: 0.25rem;
+        scrollbar-gutter: stable;
+    }
+
+    .cpu-meter-row {
+        width: 100%;
+        text-align: left;
+        color: inherit;
+        border: 1px solid color-mix(in srgb, var(--lqos-border) 82%, transparent);
+        border-radius: var(--lqos-radius-md);
+        padding: 0.45rem 0.6rem;
+        background: color-mix(in srgb, var(--lqos-surface-2) 78%, transparent);
+    }
+
+    .cpu-meter-row.is-selected {
+        border-color: color-mix(in srgb, var(--bs-primary) 55%, var(--lqos-border) 45%);
+        background: color-mix(in srgb, var(--bs-primary) 14%, var(--lqos-surface-2) 86%);
+    }
+
+    .cpu-meter-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 0.82rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .cpu-meter-value {
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+    }
+
+    .cpu-meter-track {
+        height: 0.55rem;
+        border-radius: 999px;
+        overflow: hidden;
+        background: color-mix(in srgb, var(--lqos-border) 58%, transparent);
+    }
+
+    .cpu-meter-bar {
+        height: 100%;
+        border-radius: inherit;
+        transition: width 0.2s ease;
+    }
+
+    .cpu-meter-bar-success {
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.82), rgba(52, 211, 153, 0.98));
+    }
+
+    .cpu-meter-bar-warning {
+        background: linear-gradient(90deg, rgba(245, 158, 11, 0.85), rgba(251, 191, 36, 0.98));
+    }
+
+    .cpu-meter-bar-danger {
+        background: linear-gradient(90deg, rgba(239, 68, 68, 0.88), rgba(248, 113, 113, 0.98));
+    }
+
+    .cpu-meter-bar-secondary {
+        background: linear-gradient(90deg, rgba(148, 163, 184, 0.72), rgba(148, 163, 184, 0.95));
+    }
+
+    .cpu-row-highlight > td {
+        background: color-mix(in srgb, rgba(13, 202, 240, 0.20) 75%, transparent);
+    }
+
+    .cpu-cell {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 3.1rem;
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+        padding: 0.35rem 0.45rem;
+        background: color-mix(in srgb, var(--bs-secondary) 10%, transparent);
+    }
+
+    .cpu-cell-unknown {
+        background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--bs-secondary) 22%, transparent), color-mix(in srgb, var(--bs-secondary) 22%, transparent) 4px, transparent 4px, transparent 8px);
+    }
+
+    .cpu-cell-id {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: var(--bs-secondary-color);
+        white-space: nowrap;
+    }
+
+    .cpu-cell-value {
+        font-size: 0.98rem;
+        font-weight: 700;
+    }
+
+    .cpu-worker-chip {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 0.12rem 0.5rem;
+        margin-right: 0.25rem;
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .cpu-worker-chip-unknown {
+        background: var(--bs-secondary);
+    }
+
+    .cpu-ownership-tree ul {
+        list-style: none;
+        margin: 0;
+        padding-left: 1.1rem;
+    }
+
+    .cpu-ownership-tree > ul {
+        padding-left: 0;
+    }
+
+    .cpu-tree-details > summary {
+        cursor: pointer;
+        font-weight: 600;
+        margin-bottom: 0.4rem;
+    }
+
+    .cpu-tree-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        justify-content: space-between;
+        gap: 0.6rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .cpu-tree-toolbar .form-label {
+        margin-bottom: 0.15rem;
+        font-size: 0.78rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+    }
+
+    .cpu-tree-chart {
+        width: 100%;
+        height: 720px;
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+        background: color-mix(in srgb, var(--lqos-surface-2) 72%, transparent);
+    }
+
+    .cpu-tree-scroll {
+        max-height: 26rem;
+        overflow: auto;
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+        padding: 0.6rem 0.75rem;
+    }
+
+    .cpu-crossings-scroll {
+        max-height: 18rem;
+        overflow: auto;
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+    }
+
+    .cpu-ownership-tree li:target > .cpu-tree-node {
+        outline: 2px solid var(--bs-info);
+        outline-offset: 2px;
+        border-radius: 0.35rem;
+    }
+
+    .cpu-workers-table {
+        min-width: 62rem;
+    }
+
+    .cpu-circuits-table {
+        min-width: 40rem;
+    }
+
+    .cpu-ownership-tree li {
+        margin: 0.22rem 0;
+    }
+
+    .cpu-tree-node code {
+        margin-right: 0.35rem;
+    }
+
+    .cpu-workers-note {
+        font-size: 0.85rem;
+    }
+
+    .cpu-workers-note:empty {
+        display: none;
+    }
+
+    @media (max-width: 1199.98px) {
+        .cpu-detail-selected {
+            border-left: 0;
+            padding-left: 0;
+            border-top: 1px solid var(--lqos-border);
+            padding-top: 1rem;
+        }
+    }
+</style>
+
+<div class="lqos-config-page">
+    <section class="lqos-config-panel">
+        <div class="lqos-config-panel-header">
+            <div>
+                <h5 class="lqos-config-panel-title"><i class="fa fa-microchip me-2"></i>CPU &amp; Workers</h5>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="badge bg-secondary" id="cpuWorkersState">Loading…</span>
+                <span class="text-muted small" id="cpuWorkersUpdated">Waiting for data</span>
+                <button class="btn btn-sm btn-outline-secondary" id="cpuWorkersRefresh" type="button">
+                    <i class="fa fa-rotate me-1"></i>Refresh
+                </button>
+            </div>
+        </div>
+
+        <div id="cpuWorkersReasons" class="mb-3 cpu-workers-note" aria-live="polite"></div>
+
+        <div class="cpu-summary-line">
+            <span><strong id="cpuWorkersCpuCount">—</strong> cores</span>
+            <span><strong id="cpuWorkersShapingCount">—</strong> shaping</span>
+            <span><strong id="cpuWorkersShardedCount">—</strong> sharded sites</span>
+            <span><strong id="cpuWorkersUnowned">—</strong> unowned</span>
+        </div>
+
+        <div class="lqos-config-section cpu-detail-layout">
+            <div class="cpu-detail-pane">
+                <h6 class="mb-2">Cores</h6>
+                <div id="cpuWorkersCpuList" class="cpu-meter-list">Waiting for the CPU sampler…</div>
+            </div>
+            <div class="cpu-detail-pane cpu-detail-selected">
+                <div class="cpu-detail-header">
+                    <div>
+                        <h6 class="mb-1" id="cpuSelectedTitle">Select a CPU</h6>
+                    </div>
+                    <div id="cpuSelectedBadges" class="d-flex flex-wrap gap-1 justify-content-end"></div>
+                </div>
+                <div id="cpuSelectedKpis" class="cpu-detail-kpis"></div>
+                <div id="cpuSelectedUsage" class="cpu-selected-meter"></div>
+                <div id="cpuSelectedWorkload" class="cpu-selected-workload"></div>
+            </div>
+        </div>
+
+    </section>
+</div>
+
+<script src="cpu_workers.js%CACHEBUSTERS%"></script>

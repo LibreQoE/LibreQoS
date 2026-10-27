@@ -159,8 +159,8 @@ mod tests {
         encode_session_cbor, read_frame, write_frame,
     };
     use crate::{
-        BusReply, BusRequest, BusResponse, BusSession, CircuitRollup, OverrideLayerSelection,
-        OverrideMutation, QooData, bus::BusClientError,
+        BusReply, BusRequest, BusResponse, BusSession, CircuitRollup, QooData,
+        bus::BusClientError,
     };
     use lqos_utils::{
         qoq_heatmap::QoqHeatmapBlocks,
@@ -184,21 +184,6 @@ mod tests {
             requests: vec![BusRequest::ClearUrgentIssueByIdentity {
                 code: "XDP_IP_MAPPING_APPLY_FAILED".to_string(),
                 dedupe_key: "XDP_IP_MAPPING_APPLY_FAILED".to_string(),
-            }],
-        };
-        let bytes = encode_session_cbor(&session).expect("encode_session_cbor");
-        let decoded = decode_session_cbor(&bytes).expect("decode_session_cbor");
-        assert_eq!(decoded.requests, session.requests);
-    }
-
-    #[test]
-    fn cbor_round_trip_override_mutation_request() {
-        let session = BusSession {
-            requests: vec![BusRequest::ApplyOverrideMutationBatch {
-                layer: OverrideLayerSelection::Treeguard,
-                mutations: vec![OverrideMutation::ClearNodeVirtualBatch {
-                    node_names: vec!["Node A".to_string(), "Node B".to_string()],
-                }],
             }],
         };
         let bytes = encode_session_cbor(&session).expect("encode_session_cbor");

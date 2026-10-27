@@ -1,29 +1,23 @@
 pub mod flow_data;
-mod stats_submission;
+pub(crate) mod stats_submission;
 mod throughput_entry;
 mod tracking_data;
 
 use self::flow_data::{
-    ActiveFlowSnapshot, FlowAnalysis, FlowbeeLocalData, active_flow_snapshot, get_asn_name_by_id,
-    live_active_flow_count, refresh_active_flow_snapshot, snapshot_asn_heatmaps,
+    ActiveFlowSnapshot, active_flow_snapshot, get_asn_name_and_country, get_asn_name_by_id,
+    live_active_flow_count, lookup_asn_id, snapshot_asn_heatmaps,
 };
 use self::throughput_entry::ThroughputEntry;
-use crate::system_stats::SystemStats;
 use crate::throughput_tracker::flow_data::FlowbeeEffectiveDirection;
-use crate::{
-    stats::TIME_TO_POLL_HOSTS,
-    throughput_tracker::tracking_data::{FlowApplyContext, ThroughputTracker},
-};
+use crate::throughput_tracker::tracking_data::ThroughputTracker;
 use arc_swap::ArcSwap;
 pub(crate) use flow_data::RttBuffer;
 use fxhash::{FxHashMap, FxHashSet};
-use lqos_bakery::{BakeryCommands, full_reload_in_progress};
 use lqos_bus::{
     AsnHeatmapData, BusResponse, CircuitHeatmapData, ExecutiveSummaryHeader, IpStats,
     SiteHeatmapData, TcHandle, TopFlowType, XdpPpingResult,
 };
 use lqos_queue_tracker::{ALL_QUEUE_SUMMARY, queue_stats_stale};
-use lqos_sys::flowbee_data::FlowbeeKey;
 #[cfg(test)]
 use lqos_utils::qoo::QoqScores;
 use lqos_utils::rtt::RttBucket;
@@ -36,13 +30,10 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::net::IpAddr;
 use std::sync::Arc;
-use timerfd::{SetTimeFlags, TimerFd, TimerState};
-use tokio::time::{Duration, Instant};
-use tracing::{debug, info, warn};
+use tokio::time::Duration;
+use tracing::warn;
 
 const RETIRE_AFTER_SECONDS: u64 = 30;
-const RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS: u64 = 5;
-type FinishedFlowExport = (FlowbeeKey, (FlowbeeLocalData, FlowAnalysis));
 
 pub static THROUGHPUT_TRACKER: Lazy<ThroughputTracker> = Lazy::new(ThroughputTracker::new);
 pub(crate) static CIRCUIT_RTT_BUFFERS: Lazy<ArcSwap<FxHashMap<i64, RttBuffer>>> =
@@ -69,36 +60,21 @@ pub(crate) fn circuit_current_rtt_p50_nanos(circuit_hash: i64) -> DownUpOrder<Op
 
 /// Returns the current per-circuit QoO values from the shared circuit QoO heatmaps.
 pub(crate) fn circuit_current_qoo(circuit_hash: i64) -> DownUpOrder<Option<f32>> {
+    // 3a group-1 increment 2: bridge boxes read the accumulator snapshot.
+    if let Some(snapshot) = crate::bridge_analytics::circuit_qoo_snapshot() {
+        return snapshot
+            .by_circuit
+            .iter()
+            .find(|(circuit_id, _)| hash_to_i64(circuit_id) == circuit_hash)
+            .map(|(_, blocks)| blocks.current_values())
+            .unwrap_or_default();
+    }
     let qoq_heatmaps = THROUGHPUT_TRACKER.circuit_qoq_heatmaps.lock();
     let Some(heatmap) = qoq_heatmaps.get(&circuit_hash) else {
         return DownUpOrder::default();
     };
     let blocks = heatmap.blocks();
     blocks.current_values()
-}
-
-fn finish_expired_flows(
-    finished_flow_exports: &mut Vec<FinishedFlowExport>,
-    expired_flows: &mut [FlowbeeKey],
-    netflow_sender: &crossbeam_channel::Sender<FinishedFlowExport>,
-    end_flows: impl FnOnce(&mut [FlowbeeKey]) -> anyhow::Result<()>,
-) {
-    for export in finished_flow_exports.drain(..) {
-        if let Err(e) = netflow_sender.send(export) {
-            warn!("Failed to send finished flow export: {:?}", e);
-        }
-    }
-
-    if !expired_flows.is_empty()
-        && let Err(e) = end_flows(expired_flows)
-    {
-        warn!("Failed to end flows: {:?}", e);
-    }
-}
-
-fn dedup_flow_keys(keys: &mut Vec<FlowbeeKey>) {
-    let mut seen = FxHashSet::default();
-    keys.retain(|key| seen.insert(*key));
 }
 
 /// Resolves the shaped-device row for an active flow from its hashes, then its local IP.
@@ -232,277 +208,30 @@ pub(crate) fn replace_raw_throughput_for_test(
     }
 }
 
-/// Create the throughput monitor thread, and begin polling for
-/// throughput data every second.
-///
-/// ## Arguments
-///
-/// * `long_term_stats_tx` - an optional MPSC sender to notify the
-///   collection thread that there is fresh data.
-pub fn spawn_throughput_monitor(
-    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-    system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
-    bakery_sender: crossbeam_channel::Sender<lqos_bakery::BakeryCommands>,
-) -> anyhow::Result<()> {
-    debug!("Starting the bandwidth monitor thread.");
-    std::thread::Builder::new()
-        .name("Throughput Monitor".to_string())
-        .spawn(|| throughput_task(netflow_sender, system_usage_actor, bakery_sender))?;
-
-    Ok(())
-}
-
-/// Used for tracking the "tick" time, with a view to
-/// finding where some code is stalling.
-#[derive(Debug)]
-struct ThroughputTaskTimeMetrics {
-    start: Instant,
-    update_cycle: f64,
-    zero_throughput_and_rtt: f64,
-    copy_previous_and_reset_rtt: f64,
-    apply_new_throughput_counters: f64,
-    apply_flow_data: f64,
-    apply_queue_stats: f64,
-    update_totals: f64,
-    next_cycle: f64,
-    finish_update_cycle: f64,
-    lts_submit: f64,
-}
-
-impl ThroughputTaskTimeMetrics {
-    fn new() -> Self {
-        Self {
-            start: Instant::now(),
-            update_cycle: 0.0,
-            zero_throughput_and_rtt: 0.0,
-            copy_previous_and_reset_rtt: 0.0,
-            apply_new_throughput_counters: 0.0,
-            apply_flow_data: 0.0,
-            apply_queue_stats: 0.0,
-            update_totals: 0.0,
-            next_cycle: 0.0,
-            finish_update_cycle: 0.0,
-            lts_submit: 0.0,
-        }
-    }
-
-    fn zero(&mut self) {
-        self.update_cycle = 0.0;
-        self.zero_throughput_and_rtt = 0.0;
-        self.copy_previous_and_reset_rtt = 0.0;
-        self.apply_new_throughput_counters = 0.0;
-        self.apply_flow_data = 0.0;
-        self.apply_queue_stats = 0.0;
-        self.update_totals = 0.0;
-        self.next_cycle = 0.0;
-        self.finish_update_cycle = 0.0;
-        self.lts_submit = 0.0;
-        self.start = Instant::now();
-    }
-}
-
-fn throughput_task(
-    netflow_sender: crossbeam_channel::Sender<(FlowbeeKey, (FlowbeeLocalData, FlowAnalysis))>,
-    system_usage_actor: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
-    bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
-) {
-    // Load RTT exclusion overrides once on startup. UI/API calls will refresh this on update.
-    crate::rtt_exclusions::refresh_from_disk();
-
-    // Obtain the flow timeout from the config, default to 30 seconds
-    let timeout_seconds = if let Ok(config) = lqos_config::load_config() {
-        if let Some(flow_config) = &config.flows {
-            flow_config.flow_timeout_seconds
-        } else {
-            30
-        }
-    } else {
-        30
-    };
-
-    let mut last_submitted_to_lts: Option<Instant> = None;
-    let mut tfd = match TimerFd::new() {
-        Ok(t) => t,
-        Err(e) => {
-            tracing::error!("Failed to create timer for throughput monitor: {}", e);
-            return;
-        }
-    };
-    assert_eq!(tfd.get_state(), TimerState::Disarmed);
-    tfd.set_state(
-        TimerState::Periodic {
-            current: Duration::new(1, 0),
-            interval: Duration::new(1, 0),
-        },
-        SetTimeFlags::Default,
-    );
-    let mut timer_metrics = ThroughputTaskTimeMetrics::new();
-
-    // Preallocate some buffers to avoid allocations in the loop
-    let mut rtt_circuit_tracker: FxHashMap<XdpIpAddress, RttBuffer> = FxHashMap::default();
-    let mut rtt_by_circuit: FxHashMap<i64, RttBuffer> = FxHashMap::default();
-    let mut tcp_retries: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
-    let mut tcp_retry_packets: FxHashMap<XdpIpAddress, DownUpOrder<u64>> = FxHashMap::default();
-    let mut expired_flows: Vec<FlowbeeKey> = Vec::new();
-    let mut finished_flow_exports: Vec<FinishedFlowExport> = Vec::new();
-
-    // Counter for occasional stats
-    let mut stats_counter = 0;
-    let mut reload_backoff_logged = false;
-    let mut last_reload_poll =
-        Instant::now() - Duration::from_secs(RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS);
-
-    loop {
-        let start = Instant::now();
-        timer_metrics.zero();
-        let bakery_reload_in_progress = full_reload_in_progress();
-        if bakery_reload_in_progress {
-            if !reload_backoff_logged {
-                info!(
-                    "Throughput monitor: backing off to every {} seconds while Bakery full reload is in progress",
-                    RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS
-                );
-                reload_backoff_logged = true;
-            }
-            if start.duration_since(last_reload_poll)
-                < Duration::from_secs(RELOAD_THROUGHPUT_POLL_INTERVAL_SECONDS)
-            {
-                let missed_ticks = tfd.read();
-                if missed_ticks > 1 {
-                    warn!("Missed {} ticks", missed_ticks - 1);
-                }
-                continue;
-            }
-            last_reload_poll = start;
-        } else if reload_backoff_logged {
-            info!("Throughput monitor: resuming 1-second polling after Bakery full reload");
-            reload_backoff_logged = false;
-        }
-
-        {
-            lqos_network_devices::with_network_json_write(|net_json_calc| {
-                timer_metrics.update_cycle = timer_metrics.start.elapsed().as_secs_f64();
-                net_json_calc.zero_throughput_and_rtt();
-                timer_metrics.zero_throughput_and_rtt = timer_metrics.start.elapsed().as_secs_f64();
-                THROUGHPUT_TRACKER.copy_previous_and_reset_rtt();
-                timer_metrics.copy_previous_and_reset_rtt =
-                    timer_metrics.start.elapsed().as_secs_f64();
-                THROUGHPUT_TRACKER
-                    .apply_new_throughput_counters(net_json_calc, bakery_sender.clone());
-                timer_metrics.apply_new_throughput_counters =
-                    timer_metrics.start.elapsed().as_secs_f64();
-                THROUGHPUT_TRACKER.apply_flow_data(FlowApplyContext {
-                    timeout_seconds,
-                    net_json_calc,
-                    rtt_circuit_tracker: &mut rtt_circuit_tracker,
-                    rtt_by_circuit: &mut rtt_by_circuit,
-                    tcp_retries: &mut tcp_retries,
-                    tcp_retry_packets: &mut tcp_retry_packets,
-                    expired_keys: &mut expired_flows,
-                    finished_flow_exports: &mut finished_flow_exports,
-                });
-                CIRCUIT_RTT_BUFFERS.store(Arc::new(rtt_by_circuit.clone()));
-                THROUGHPUT_TRACKER.record_circuit_heatmaps();
-                let enable_site_heatmaps = lqos_config::load_config()
-                    .map(|config| config.enable_site_heatmaps)
-                    .unwrap_or(true);
-                net_json_calc.record_site_heatmaps(enable_site_heatmaps);
-
-                timer_metrics.apply_flow_data = timer_metrics.start.elapsed().as_secs_f64();
-                if bakery_reload_in_progress {
-                    debug!(
-                        "Throughput monitor: skipping queue-stat application during Bakery full reload"
-                    );
-                } else {
-                    THROUGHPUT_TRACKER.apply_queue_stats(net_json_calc);
-                }
-                timer_metrics.apply_queue_stats = timer_metrics.start.elapsed().as_secs_f64();
-                THROUGHPUT_TRACKER.update_totals();
-                timer_metrics.update_totals = timer_metrics.start.elapsed().as_secs_f64();
-                THROUGHPUT_TRACKER.next_cycle();
-                timer_metrics.next_cycle = timer_metrics.start.elapsed().as_secs_f64();
-            });
-
-            dedup_flow_keys(&mut expired_flows);
-            refresh_active_flow_snapshot();
-            finish_expired_flows(
-                &mut finished_flow_exports,
-                expired_flows.as_mut_slice(),
-                &netflow_sender,
-                lqos_sys::end_flows,
-            );
-
-            // Clean up work tables after post-update exports and BPF cleanup.
-            rtt_circuit_tracker.clear();
-            rtt_by_circuit.clear();
-            tcp_retries.clear();
-            tcp_retry_packets.clear();
-            expired_flows.clear();
-
-            timer_metrics.finish_update_cycle = timer_metrics.start.elapsed().as_secs_f64();
-            let duration_ms = start.elapsed().as_micros();
-            TIME_TO_POLL_HOSTS.store(duration_ms as u64, std::sync::atomic::Ordering::Relaxed);
-        }
-
-        if last_submitted_to_lts.is_none() {
-            stats_submission::submit_throughput_stats(
-                1.0,
-                stats_counter,
-                system_usage_actor.clone(),
-            );
-        } else if let Some(last) = last_submitted_to_lts {
-            let elapsed_f64 = last.elapsed().as_secs_f64();
-            let my_system_usage_actor = system_usage_actor.clone();
-            // Submit if a reasonable amount of time has passed - drop if there was a long hitch
-            if elapsed_f64 < 2.0 {
-                match std::thread::Builder::new()
-                    .name("Throughput Stats Submit".to_string())
-                    .spawn(move || {
-                        stats_submission::submit_throughput_stats(
-                            elapsed_f64,
-                            stats_counter,
-                            my_system_usage_actor,
-                        );
-                    }) {
-                    Ok(handle) => {
-                        if let Err(e) = handle.join() {
-                            info!(
-                                "Throughput stats submit thread join error (ignored): {:?}",
-                                e
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        info!(
-                            "Failed to spawn throughput stats submit thread (ignored): {:?}",
-                            e
-                        );
-                    }
-                }
-            }
-        } else {
-            info!("No last submission timestamp; skipping stats submission this cycle");
-        }
-        // Notify of completion, which triggers processing
-        if let Err(e) = crate::lts2_sys::ingest_batch_complete() {
-            tracing::log::warn!("Error sending message to LTS2: {e:?}");
-        }
-        last_submitted_to_lts = Some(Instant::now());
-        timer_metrics.lts_submit = timer_metrics.start.elapsed().as_secs_f64();
-
-        // Counter for occasional stats
-        stats_counter = stats_counter.wrapping_add(1);
-
-        // Sleep until the next second
-        let missed_ticks = tfd.read();
-        if missed_ticks > 1 {
-            warn!("Missed {} ticks", missed_ticks - 1);
-            warn!("{:?}", timer_metrics);
-        }
-    }
-}
-
 pub fn current_throughput() -> BusResponse {
+    // K2 slice 1 source-dispatch: on a bridge box the kernel monitor is not
+    // the owner — read the bridge's own top-level interval counters.
+    // 3b §1.1: the pps series folds the actor's per-IP SENT rows (all
+    // transports), and the tcp/udp/icmp splits come from the per-flow packet
+ // delta seed ruling c) — CLASSIFIED-only, so the split sum tracks
+    // the total up to the Unknown-transport residual.
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let protocol = snapshot.protocol_packets_per_second;
+ // 3b display semantics: customer-facing throughput = the
+        // DELIVERED (shaped) rate everywhere; the pre-shaping ingress demand is
+        // a separate labeled metric, never this headline.
+        return BusResponse::CurrentThroughput {
+            bits_per_second: snapshot.bridge_shaped_bytes_per_second.to_bits_from_bytes(),
+            packets_per_second: crate::bridge_analytics::total_sent_packets_per_second(
+                &snapshot.by_ip,
+            ),
+            shaped_bits_per_second: snapshot.bridge_shaped_bytes_per_second.to_bits_from_bytes(),
+            tcp_packets_per_second: protocol.tcp,
+            udp_packets_per_second: protocol.udp,
+            icmp_packets_per_second: protocol.icmp,
+        };
+    }
     let (bits_per_second, packets_per_second, shaped_bits_per_second, tcp_pps, udp_pps, icmp_pps) = {
         (
             THROUGHPUT_TRACKER.actual_bits_per_second(),
@@ -524,6 +253,19 @@ pub fn current_throughput() -> BusResponse {
 }
 
 pub fn host_counters() -> BusResponse {
+    // K2 slice-3 3a: on a bridge box the per-IP actual interval counters are
+    // in the actor cache; the kernel tracker is never written post-K3.
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+ // 3b demand-source sweep: the host rate map reports the
+        // DELIVERED (shaped) series.
+        let result = snapshot
+            .by_ip
+            .iter()
+            .map(|(ip, row)| (*ip, row.shaped_bytes_per_second))
+            .collect();
+        return BusResponse::HostCounters(result);
+    }
     let mut result = Vec::new();
     THROUGHPUT_TRACKER
         .raw_data
@@ -551,7 +293,153 @@ type TopList = (
     DownUpOrder<TcpRetransmitSample>,
 );
 
+/// K2 slice-3 3a: one bridge per-IP row for the ranked tracker readers. The
+/// kernel `TopList` analog off `BridgeStatsSnapshot.by_ip`: actual interval
+/// rates, the RTT p50, the retransmit sample, and the catalog circuit join.
+/// `tc_handle` has no bridge source (default); the bridge wire is
+/// direction-agnostic (the same value is copied into both directions by
+/// `translate`), so downstream directional splits are honest-equal.
+struct BridgeIpRow {
+    ip: IpAddr,
+    bytes: DownUpOrder<u64>,
+    packets: DownUpOrder<u64>,
+    rtt_ms: Option<f32>,
+    circuit_hash: Option<i64>,
+    runtime_circuit_id: String,
+    retransmits: DownUpOrder<TcpRetransmitSample>,
+}
+
+impl BridgeIpRow {
+    fn to_ip_stats(&self) -> IpStats {
+        IpStats {
+            ip_address: self.ip.to_string(),
+            circuit_id: self.runtime_circuit_id.clone(),
+            bits_per_second: self.bytes.to_bits_from_bytes(),
+            packets_per_second: self.packets,
+            median_tcp_rtt: self.rtt_ms.unwrap_or(0.0),
+            tc_handle: TcHandle::default(),
+            tcp_retransmit_sample: self.retransmits,
+        }
+    }
+}
+
+/// The bridge-ranked reader rows (empty + stale-safe on a kernel box is not
+/// reachable here — callers gate on `is_active`).
+fn bridge_ip_rows() -> Vec<BridgeIpRow> {
+    let snapshot = crate::bridge_analytics::snapshot();
+    let catalog = lqos_network_devices::network_devices_catalog();
+    snapshot
+        .by_ip
+        .iter()
+        .filter(|(ip, _)| !ip.is_loopback())
+        .map(|(ip, live)| {
+            let (circuit_hash, circuit_id) = catalog
+                .device_longest_match_for_ip(&XdpIpAddress::from_ip(*ip))
+                .map(|(_, device)| (Some(device.circuit_hash), device.circuit_id.clone()))
+                .unwrap_or((None, String::new()));
+            BridgeIpRow {
+                ip: *ip,
+ // 3b demand-source sweep: ranked/displayed throughput
+                // is the DELIVERED (shaped) series.
+                bytes: live.shaped_bytes_per_second,
+                packets: live.packets_per_second,
+                rtt_ms: live
+                    .rtt_current_p50_nanos
+                    .map(|nanos| nanos as f32 / 1_000_000.0),
+                circuit_hash,
+                runtime_circuit_id: circuit_id,
+                retransmits: down_up_retransmit_sample(
+                    DownUpOrder::new(live.tcp_retransmits, 0),
+                    DownUpOrder::new(live.tcp_packets, 0),
+                ),
+            }
+        })
+        .collect()
+}
+
+/// §`lqos-74t.49.2` REQUIRED-3 (CALL-SITE-ONLY repoint): the best-effort /
+/// unmapped host-class reader — a sibling of `bridge_ip_rows`. The SHARED
+/// `bridge_ip_rows` keeps its FOUR shaped ranked callers byte-identical on
+/// `snapshot.by_ip`; ONLY `all_unknown_ips` reads this map. The class has no flow
+/// deltas (its rate fields stay 0); the reader carries the host identity + the
+/// catalog-miss filter.
+fn bridge_best_effort_ip_rows() -> Vec<BridgeIpRow> {
+    let snapshot = crate::bridge_analytics::snapshot();
+    let catalog = lqos_network_devices::network_devices_catalog();
+    snapshot
+        .best_effort_by_ip
+        .iter()
+        .filter(|(ip, _)| !ip.is_loopback())
+        .map(|(ip, live)| {
+            let (circuit_hash, circuit_id) = catalog
+                .device_longest_match_for_ip(&XdpIpAddress::from_ip(*ip))
+                .map(|(_, device)| (Some(device.circuit_hash), device.circuit_id.clone()))
+                .unwrap_or((None, String::new()));
+            BridgeIpRow {
+                ip: *ip,
+                // The best-effort class has no interval rate (no flow deltas);
+                // `bytes_per_second` is 0. The unknown-IP PAGE shows the
+                // cumulative `total_bytes` directly.
+                bytes: live.bytes_per_second,
+                packets: live.packets_per_second,
+                rtt_ms: live
+                    .rtt_current_p50_nanos
+                    .map(|nanos| nanos as f32 / 1_000_000.0),
+                circuit_hash,
+                runtime_circuit_id: circuit_id,
+                retransmits: down_up_retransmit_sample(
+                    DownUpOrder::new(live.tcp_retransmits, 0),
+                    DownUpOrder::new(live.tcp_packets, 0),
+                ),
+            }
+        })
+        .collect()
+}
+
 pub fn top_n(start: u32, end: u32) -> BusResponse {
+    // K2 slice 1 source-dispatch: bridge mode ranks the per-IP interval
+    // rates from the actor cache (packets are not on the wire; RTT is the
+    // per-IP p50; the circuit comes from the catalog join; TC handle is a
+    // kernel concept and stays default).
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let catalog = lqos_network_devices::network_devices_catalog();
+        let mut rows: Vec<(&IpAddr, &crate::bridge_analytics::IpLiveRow)> = snapshot
+            .by_ip
+            .iter()
+            .filter(|(ip, _)| !ip.is_loopback())
+            .collect();
+ // 3b demand-source sweep: rank + report the DELIVERED
+        // (shaped) series; `bytes_per_second` is the pre-shaping demand.
+        rows.sort_by_key(|(_, row)| std::cmp::Reverse(row.shaped_bytes_per_second.down));
+        let result = rows
+            .iter()
+            .skip(start as usize)
+            .take(end.saturating_sub(start) as usize)
+            .map(|(ip, row)| {
+                let (circuit_id, _circuit_name) = catalog
+                    .device_longest_match_for_ip(&XdpIpAddress::from_ip(**ip))
+                    .map(|(_, device)| (device.circuit_id.clone(), device.circuit_name.clone()))
+                    .unwrap_or_default();
+                IpStats {
+                    ip_address: ip.to_string(),
+                    circuit_id,
+                    bits_per_second: row.shaped_bytes_per_second.to_bits_from_bytes(),
+                    packets_per_second: row.packets_per_second,
+                    median_tcp_rtt: row
+                        .rtt_current_p50_nanos
+                        .map(|nanos| nanos as f32 / 1_000_000.0)
+                        .unwrap_or(0.0),
+                    tc_handle: TcHandle::default(),
+                    tcp_retransmit_sample: down_up_retransmit_sample(
+                        DownUpOrder::new(row.tcp_retransmits, 0),
+                        DownUpOrder::new(row.tcp_packets, 0),
+                    ),
+                }
+            })
+            .collect();
+        return BusResponse::TopDownloaders(result);
+    }
     let mut full_list: Vec<TopList> = {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
@@ -599,6 +487,19 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
 }
 
 pub fn top_n_up(start: u32, end: u32) -> BusResponse {
+    // K2 slice-3 3a: mirror the download-side bridge dispatch, ranking the
+    // per-IP upload interval rate.
+    if crate::bridge_analytics::is_active() {
+        let mut rows = bridge_ip_rows();
+        rows.sort_by_key(|row| std::cmp::Reverse(row.bytes.up));
+        let result = rows
+            .iter()
+            .skip(start as usize)
+            .take(end.saturating_sub(start) as usize)
+            .map(BridgeIpRow::to_ip_stats)
+            .collect();
+        return BusResponse::TopUploaders(result);
+    }
     let mut full_list: Vec<TopList> = {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
@@ -645,6 +546,21 @@ pub fn top_n_up(start: u32, end: u32) -> BusResponse {
     BusResponse::TopUploaders(result)
 }
 
+/// 3a cluster-1 increment 2: per-circuit (name, max-down-Mbps, max-up-Mbps)
+/// from the catalog — the plan denominator for the bridge heatmap rows.
+fn circuit_meta_by_id() -> FxHashMap<String, (String, f32, f32)> {
+    let catalog = lqos_network_devices::network_devices_catalog();
+    let mut meta: FxHashMap<String, (String, f32, f32)> = FxHashMap::default();
+    for device in catalog.iter_all_devices() {
+        let entry = meta
+            .entry(device.circuit_id.clone())
+            .or_insert_with(|| (device.circuit_name.clone(), 0.0, 0.0));
+        entry.1 = entry.1.max(device.download_max_mbps);
+        entry.2 = entry.2.max(device.upload_max_mbps);
+    }
+    meta
+}
+
 /// Retrieve per-circuit heatmap data for the executive summary.
 pub fn circuit_heatmaps() -> BusResponse {
     let enabled = lqos_config::load_config()
@@ -652,6 +568,36 @@ pub fn circuit_heatmaps() -> BusResponse {
         .unwrap_or(true);
     if !enabled {
         return BusResponse::CircuitHeatmaps(Vec::new());
+    }
+
+    // 3a cluster-1 increment 2: on a bridge box the rows come from the
+    // analytics accumulator (exact per-minute accounting; utilization unit).
+    if let Some(snapshot) = crate::bridge_analytics::circuit_heatmap_snapshot() {
+        let meta = circuit_meta_by_id();
+        let qoo = crate::bridge_analytics::circuit_qoo_snapshot();
+        let mut rows: Vec<CircuitHeatmapData> = snapshot
+            .by_circuit
+            .iter()
+            .map(|(circuit_id, minutes)| {
+                let (circuit_name, down_mbps, up_mbps) = meta
+                    .get(circuit_id)
+                    .cloned()
+                    .unwrap_or_else(|| (circuit_id.clone(), 0.0, 0.0));
+                CircuitHeatmapData {
+                    circuit_hash: hash_to_i64(circuit_id),
+                    circuit_id: circuit_id.clone(),
+                    circuit_name,
+                    blocks: crate::bridge_analytics::circuit_heatmap::blocks_from_minutes(
+                        minutes, down_mbps, up_mbps,
+                    ),
+                    qoq_blocks: qoo
+                        .as_ref()
+                        .and_then(|qoo| qoo.by_circuit.get(circuit_id).cloned()),
+                }
+            })
+            .collect();
+        rows.sort_by(|a, b| a.circuit_id.cmp(&b.circuit_id));
+        return BusResponse::CircuitHeatmaps(rows);
     }
 
     let catalog = lqos_network_devices::network_devices_catalog();
@@ -693,6 +639,13 @@ pub fn site_heatmaps() -> BusResponse {
         return BusResponse::SiteHeatmaps(Vec::new());
     }
 
+    // 3a cluster-1 increment 2: bridge boxes roll the sites up from the
+    // per-circuit accumulator (circuit id == the tree node name, the same
+    // join the tree live-view uses; self-inclusive parents chain).
+    if let Some(snapshot) = crate::bridge_analytics::circuit_heatmap_snapshot() {
+        return site_heatmaps_from_snapshot(&snapshot);
+    }
+
     lqos_network_devices::with_network_json_read(|net_json| {
         let mut rows: Vec<SiteHeatmapData> = net_json
             .get_nodes_when_ready()
@@ -706,7 +659,245 @@ pub fn site_heatmaps() -> BusResponse {
                     node_type: node.node_type.clone(),
                     depth: node.parents.len().saturating_sub(1),
                     blocks: heatmap.blocks(),
-                    qoq_blocks: node.qoq_heatmap.as_ref().map(|heatmap| heatmap.blocks()),
+                    // §`lqos-74t.47.1.4`: the site QoQ now reads the unified
+                    // `circuit_qoo` snapshot (the old `node.qoq_heatmap` is retired).
+                    qoq_blocks: crate::bridge_analytics::circuit_qoo_snapshot()
+                        .and_then(|snapshot| snapshot.by_node.get(&node.name).cloned()),
+                })
+            })
+            .collect();
+        rows.sort_by(|a, b| a.site_name.cmp(&b.site_name));
+        BusResponse::SiteHeatmaps(rows)
+    })
+}
+
+/// §lqos-74t.40 pin 1 (whole-window): stamp the A1 pooled percentile onto EVERY
+/// populated RTT block. The executive "Median RTT (ms)" reads `median_value`
+/// over the whole 15-minute series, so overwriting only the newest block leaves
+/// the older per-member `max_optional` blocks to swamp the median. A real
+/// no-data (missed) minute — `rtt[index] == None` — stays `None` (never a
+/// fabricated value). The pooled direction-agnostic source is folded into both
+/// directions, so the combined `rtt` is their mean (matching the newest-block
+/// rule). Pure and unit-gated (`pooled_site_rtt_covers_the_whole_window`).
+fn apply_pooled_site_rtt(
+    blocks: &mut lqos_utils::temporal_heatmap::HeatmapBlocks,
+    p50_down: Option<f32>,
+    p50_up: Option<f32>,
+    p90_down: Option<f32>,
+    p90_up: Option<f32>,
+) {
+    let pooled = match (p50_down, p50_up) {
+        (None, up) => up,
+        (down, None) => down,
+        (Some(down), Some(up)) => Some((down + up) / 2.0),
+    };
+    for index in 0..blocks.rtt.len() {
+        if blocks.rtt[index].is_none() {
+            continue;
+        }
+        blocks.rtt_p50_down[index] = p50_down;
+        blocks.rtt_p50_up[index] = p50_up;
+        blocks.rtt_p90_down[index] = p90_down;
+        blocks.rtt_p90_up[index] = p90_up;
+        blocks.rtt[index] = pooled;
+    }
+}
+
+#[cfg(test)]
+mod site_rtt_window_tests {
+    use super::apply_pooled_site_rtt;
+    use crate::bridge_analytics::circuit_heatmap::{
+        HeatmapMinute, RETENTION_MINUTES, blocks_from_minutes,
+    };
+
+    /// §lqos-74t.40 pin 1 whole-window (the bounded (a) correction): every
+    /// POPULATED block is stamped with the A1 pooled percentile, so the
+    /// executive's `median_value` over the series reads the pooled value and not
+    /// an old per-member `max_optional`; a real no-data minute stays `None`.
+    #[test]
+    fn pooled_site_rtt_covers_the_whole_window() {
+        let minutes = vec![
+            HeatmapMinute {
+                start_millis: 0,
+                rtt_p50_down_ms: Some(500.0),
+                rtt_p50_up_ms: Some(500.0),
+                ..HeatmapMinute::default()
+            },
+            HeatmapMinute {
+                start_millis: 60_000,
+                rtt_p50_down_ms: Some(500.0),
+                rtt_p50_up_ms: Some(500.0),
+                ..HeatmapMinute::default()
+            },
+            // A real missed minute: no RTT sample (sampled_intervals == 0).
+            HeatmapMinute {
+                start_millis: 120_000,
+                ..HeatmapMinute::default()
+            },
+        ];
+        let mut blocks = blocks_from_minutes(&minutes, 100.0, 100.0);
+        // The A1 pooled source reads 10 ms (p50) / 20 ms (p90).
+        apply_pooled_site_rtt(&mut blocks, Some(10.0), Some(10.0), Some(20.0), Some(20.0));
+
+        let newest = RETENTION_MINUTES - 1;
+        // The two populated minutes are the last two blocks: 10 ms, not 500 ms.
+        assert_eq!(blocks.rtt[newest - 1], Some(10.0));
+        assert_eq!(blocks.rtt[newest - 2], Some(10.0));
+        assert_eq!(blocks.rtt_p90_down[newest - 1], Some(20.0));
+        // No old `max_optional` survivor anywhere in the populated series.
+        assert!(
+            blocks.rtt.iter().flatten().all(|value| *value < 100.0),
+            "every populated block reads the pooled source, not 500 ms"
+        );
+        // The newest minute is a real no-data miss: honest None, not fabricated.
+        assert_eq!(blocks.rtt[newest], None);
+        assert_eq!(blocks.rtt_p50_down[newest], None);
+    }
+}
+
+/// 3a cluster-1 increment 2: site heatmaps roll the member circuits up through
+/// the tree (circuit id == node name, self-inclusive parent chain). The
+/// denominator is the summed member plan; `qoq_blocks` is honest-empty until
+/// the pinned QoO port lands.
+fn site_heatmaps_from_snapshot(
+    snapshot: &crate::bridge_analytics::circuit_heatmap::CircuitHeatmapSnapshot,
+) -> BusResponse {
+    let meta = circuit_meta_by_id();
+    // 3b DEFECT 1: the shared circuit→parent-node attribution — the tree keys
+    // nodes by NAME, not by circuit id.
+    let parent_by_circuit = crate::bridge_analytics::circuit_parent_node_by_id();
+    // §`lqos-74t.40` INSTRUMENT-FIRST (`docs/site_rollup_rtt_retrans_qoo_card.md`
+    // §5): when `LIBREQOS_TRACE_SITE` names a site (name substring), log its
+    // descendant circuit-id set, which members are attributed to the synthetic
+    // `orphans` umbrella, and the per-minute `max` RTT winner — distinguishing
+    // source-filter vs max-statistic vs mis-attribution. Diagnostic only.
+    let trace_site = std::env::var("LIBREQOS_TRACE_SITE")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let node_circuits = crate::bridge_analytics::node_circuits_by_index(
+            nodes,
+            &parent_by_circuit,
+            snapshot.all_circuits(),
+        );
+        if let Some(trace) = trace_site.as_deref() {
+            for (idx, circuits) in &node_circuits {
+                let Some(node) = nodes.get(*idx) else {
+                    continue;
+                };
+                if !node.name.contains(trace) {
+                    continue;
+                }
+                let orphan_children: Vec<&str> = circuits
+                    .iter()
+                    .copied()
+                    .filter(|c| {
+                        parent_by_circuit
+                            .get(*c)
+                            .map(|p| p.to_ascii_lowercase().contains("orphan"))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+                // The per-minute `max` winner for the down RTT p50 (the exact
+                // `max_optional` hazard) across the site's members.
+                let mut winner: Option<(f32, &str, u64)> = None;
+                for c in circuits.iter() {
+                    if let Some(minutes) = snapshot.by_circuit.get(*c) {
+                        for minute in minutes {
+                            if let Some(value) = minute.rtt_p50_down_ms
+                                && winner.map(|(w, _, _)| value > w).unwrap_or(true)
+                            {
+                                winner = Some((value, c, minute.start_millis));
+                            }
+                        }
+                    }
+                }
+                warn!(
+                    event = "SITE_ROLLUP_TRACE",
+                    site = %node.name,
+                    circuit_count = circuits.len(),
+                    circuits = ?circuits,
+                    orphan_children = ?orphan_children,
+                    max_rtt_p50_down_ms = winner.map(|(v, _, _)| v).unwrap_or(0.0),
+                    max_winner = winner.map(|(_, c, _)| c).unwrap_or(""),
+                    "site rollup trace (descendants / orphans / max winner)"
+                );
+            }
+            let unmatched: Vec<&str> = snapshot
+                .all_circuits()
+                .filter(|c| !parent_by_circuit.contains_key(*c))
+                .collect();
+            if !unmatched.is_empty() {
+                warn!(
+                    event = "SITE_ROLLUP_TRACE_UNMATCHED",
+                    count = unmatched.len(),
+                    circuits = ?unmatched,
+                    "circuits with no parent-node attribution (dropped from site rollups)"
+                );
+            }
+        }
+        let mut rows: Vec<SiteHeatmapData> = node_circuits
+            .into_iter()
+            .filter_map(|(idx, circuits)| {
+                let node = nodes.get(idx)?;
+                if node.name == "Root" || node.name.parse::<IpAddr>().is_ok() {
+                    return None;
+                }
+                // §lqos-74t.40 pin 4: the synthetic `orphans` umbrella is not a
+                // real site — never render it as a site row. Its directly
+                // attributed circuits are likewise a non-entity (see
+                // `node_circuits_by_index`), so they never reach an ancestor.
+                if node.id.as_deref() == Some(lqos_dataplane_types::ORPHANS_UMBRELLA_NODE_ID) {
+                    return None;
+                }
+                let mut down_mbps = 0.0_f32;
+                let mut up_mbps = 0.0_f32;
+                for circuit_id in &circuits {
+                    if let Some((_, down, up)) = meta.get(*circuit_id) {
+                        down_mbps += *down;
+                        up_mbps += *up;
+                    }
+                }
+                let minutes = snapshot.rollup(circuits.iter().copied());
+                // Pooled-distribution QoO rollup (per node, keyed by name).
+                let qoq_blocks = crate::bridge_analytics::circuit_qoo_snapshot()
+                    .and_then(|qoo| qoo.by_node.get(&node.name).cloned());
+                // §lqos-74t.40 pin 1: the site RTT = the A1 POOLED percentile over
+                // the node's member samples (`node.rtt_buffer`, folded by
+                // `apply_tree_rtt_accumulation`) — NOT the per-member `max`.
+                let mut blocks = crate::bridge_analytics::circuit_heatmap::blocks_from_minutes(
+                    &minutes, down_mbps, up_mbps,
+                );
+                // §lqos-74t.40 pin 1: the site RTT series = the A1 pooled
+                // percentile over the WHOLE window (the executive "Median RTT (ms)"
+                // reads `median_value` over all 15 blocks, so a newest-only rewrite
+                // leaves the older per-member `max_optional` blocks to swamp the
+                // median — the bounded (a) correction).
+                let down_pct = |p: u8| {
+                    node.rtt_buffer
+                        .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, p)
+                        .map(|d| d.as_millis() as f32)
+                };
+                let up_pct = |p: u8| {
+                    node.rtt_buffer
+                        .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Upload, p)
+                        .map(|d| d.as_millis() as f32)
+                };
+                apply_pooled_site_rtt(
+                    &mut blocks,
+                    down_pct(50),
+                    up_pct(50),
+                    down_pct(90),
+                    up_pct(90),
+                );
+                Some(SiteHeatmapData {
+                    site_name: node.name.clone(),
+                    node_type: node.node_type.clone(),
+                    depth: node.parents.len().saturating_sub(1),
+                    blocks,
+                    qoq_blocks,
                 })
             })
             .collect();
@@ -745,11 +936,49 @@ pub fn asn_heatmaps() -> BusResponse {
 
 /// Retrieve the global roll-up heatmap data for the executive summary.
 pub fn global_heatmap() -> BusResponse {
+    // 3a cluster-1 increment 2: the bridge global roll-up (Σ observed rows;
+    // denominator = the total configured per-circuit capacity).
+    if let Some(snapshot) = crate::bridge_analytics::circuit_heatmap_snapshot() {
+        let meta = circuit_meta_by_id();
+        let mut down_mbps = 0.0_f32;
+        let mut up_mbps = 0.0_f32;
+        for (_, down, up) in meta.values() {
+            down_mbps += *down;
+            up_mbps += *up;
+        }
+        let minutes = snapshot.rollup(snapshot.all_circuits());
+        return BusResponse::GlobalHeatmap(
+            crate::bridge_analytics::circuit_heatmap::blocks_from_minutes(
+                &minutes, down_mbps, up_mbps,
+            ),
+        );
+    }
     let heatmap = THROUGHPUT_TRACKER.global_heatmap.lock();
     BusResponse::GlobalHeatmap(heatmap.blocks())
 }
 
 pub fn worst_n(start: u32, end: u32) -> BusResponse {
+    // K2 slice-3 3a: rank the bridge's per-IP RTT p50 (the kernel's median
+    // latency analog); the RTT exclusions still apply via the catalog hash.
+    if crate::bridge_analytics::is_active() {
+        let mut rows: Vec<BridgeIpRow> = bridge_ip_rows()
+            .into_iter()
+            .filter(|row| row.rtt_ms.is_some())
+            .filter(|row| {
+                row.circuit_hash
+                    .map(|hash| !crate::rtt_exclusions::is_excluded_hash(hash))
+                    .unwrap_or(true)
+            })
+            .collect();
+        rows.sort_by(|a, b| b.rtt_ms.unwrap_or(0.0).total_cmp(&a.rtt_ms.unwrap_or(0.0)));
+        let result = rows
+            .iter()
+            .skip(start as usize)
+            .take(end.saturating_sub(start) as usize)
+            .map(BridgeIpRow::to_ip_stats)
+            .collect();
+        return BusResponse::WorstRtt(result);
+    }
     let mut full_list: Vec<TopList> = {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
@@ -803,6 +1032,39 @@ pub fn worst_n(start: u32, end: u32) -> BusResponse {
 }
 
 pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
+    // K2 slice-3 3a: rank the bridge's per-IP retransmit fraction (the same
+    // comparator shape as the kernel; the wire is direction-agnostic, so the
+    // sample's two directions carry the same value).
+    if crate::bridge_analytics::is_active() {
+        let mut rows: Vec<BridgeIpRow> = bridge_ip_rows()
+            .into_iter()
+            .filter(|row| row.rtt_ms.is_some())
+            .collect();
+        rows.sort_by(|a, b| {
+            let total_a = a
+                .retransmits
+                .down
+                .fraction()
+                .map(|f| f.get())
+                .unwrap_or(0.0)
+                + a.retransmits.up.fraction().map(|f| f.get()).unwrap_or(0.0);
+            let total_b = b
+                .retransmits
+                .down
+                .fraction()
+                .map(|f| f.get())
+                .unwrap_or(0.0)
+                + b.retransmits.up.fraction().map(|f| f.get()).unwrap_or(0.0);
+            total_b.total_cmp(&total_a)
+        });
+        let result = rows
+            .iter()
+            .skip(start as usize)
+            .take(end.saturating_sub(start) as usize)
+            .map(BridgeIpRow::to_ip_stats)
+            .collect();
+        return BusResponse::WorstRetransmits(result);
+    }
     let mut full_list: Vec<TopList> = {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
@@ -859,6 +1121,26 @@ pub fn worst_n_retransmits(start: u32, end: u32) -> BusResponse {
 }
 
 pub fn best_n(start: u32, end: u32) -> BusResponse {
+    // K2 slice-3 3a: rank the bridge's per-IP RTT p50 ascending.
+    if crate::bridge_analytics::is_active() {
+        let mut rows: Vec<BridgeIpRow> = bridge_ip_rows()
+            .into_iter()
+            .filter(|row| row.rtt_ms.is_some())
+            .filter(|row| {
+                row.circuit_hash
+                    .map(|hash| !crate::rtt_exclusions::is_excluded_hash(hash))
+                    .unwrap_or(true)
+            })
+            .collect();
+        rows.sort_by(|a, b| a.rtt_ms.unwrap_or(0.0).total_cmp(&b.rtt_ms.unwrap_or(0.0)));
+        let result = rows
+            .iter()
+            .skip(start as usize)
+            .take(end.saturating_sub(start) as usize)
+            .map(BridgeIpRow::to_ip_stats)
+            .collect();
+        return BusResponse::BestRtt(result);
+    }
     let mut full_list: Vec<TopList> = {
         let tp_cycle = THROUGHPUT_TRACKER
             .cycle
@@ -967,13 +1249,36 @@ pub fn xdp_pping_compat() -> BusResponse {
     BusResponse::XdpPping(result)
 }
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 pub struct MinMaxMedianRtt {
     pub min: f32,
     pub max: f32,
     pub median: f32,
 }
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 pub fn min_max_median_rtt() -> Option<MinMaxMedianRtt> {
+    // 3a LTS repoint: on a bridge box the RTT p50s ride the actor's by-IP rows.
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let mut samples: Vec<f32> = snapshot
+            .by_ip
+            .values()
+            .filter_map(|row| row.rtt_current_p50_nanos)
+            .map(|nanos| nanos as f32 / 1_000_000.0)
+            .filter(|millis| *millis > 0.0)
+            .collect();
+        if samples.is_empty() {
+            return None;
+        }
+        samples.sort_by(|a, b| a.total_cmp(b));
+        return Some(MinMaxMedianRtt {
+            min: samples[0],
+            max: samples[samples.len() - 1],
+            median: samples[samples.len() / 2],
+        });
+    }
+
     let reader_cycle = THROUGHPUT_TRACKER
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -1021,6 +1326,23 @@ pub struct TcpRetransmitTotal {
 }
 
 pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
+    // K2 slice-3 3a: sum the actor's per-IP retransmit/packet counters. The
+    // bridge wire is direction-agnostic, so both land in the DOWN side (the
+    // `flow_row_to_summary` convention); up stays zero.
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let mut total = TcpRetransmitTotal {
+            up: 0,
+            down: 0,
+            tcp_down: 0,
+            tcp_up: 0,
+        };
+        for row in snapshot.by_ip.values() {
+            total.down += row.tcp_retransmits as i32;
+            total.tcp_down += row.tcp_packets;
+        }
+        return total;
+    }
     let reader_cycle = THROUGHPUT_TRACKER
         .cycle
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -1047,6 +1369,21 @@ pub fn min_max_median_tcp_retransmits() -> TcpRetransmitTotal {
 }
 
 pub fn rtt_histogram<const N: usize>() -> BusResponse {
+    // K2 slice 1 source-dispatch: bridge mode buckets the per-IP RTT p50s
+    // (median-per-host; the widget's 10 ms-wide columns).
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let mut result = vec![0; N];
+        for row in snapshot.by_ip.values() {
+            let Some(nanos) = row.rtt_current_p50_nanos else {
+                continue;
+            };
+            let median_ms = nanos as f64 / 1_000_000.0;
+            let column = (median_ms / 10.0) as usize;
+            result[usize::min(column, N - 1)] += 1;
+        }
+        return BusResponse::RttHistogram(result);
+    }
     let mut result = vec![0; N];
     let reader_cycle = THROUGHPUT_TRACKER
         .cycle
@@ -1081,6 +1418,21 @@ pub fn host_counts() -> BusResponse {
 }
 
 fn current_host_counts() -> (u32, u32) {
+    // K2 slice-3 3a: on a bridge box, count the actor's per-IP rows; "shaped"
+    // is a row with shaped (dequeued) bytes this interval (there is no bridge
+    // tc_handle).
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let total = snapshot.by_ip.len() as u32;
+        let shaped = snapshot
+            .by_ip
+            .values()
+            .filter(|row| {
+                row.shaped_bytes_per_second.down > 0 || row.shaped_bytes_per_second.up > 0
+            })
+            .count() as u32;
+        return (total, shaped);
+    }
     let mut total = 0;
     let mut shaped = 0;
     let tp_cycle = THROUGHPUT_TRACKER
@@ -1122,8 +1474,7 @@ pub fn executive_summary_header() -> BusResponse {
     let unmapped_ip_count = total_hosts.saturating_sub(shaped_hosts) as u64;
 
     let queue_counts = ALL_QUEUE_SUMMARY.queue_counts();
-    let bakery_reload_in_progress = full_reload_in_progress();
-    let queue_stats_stale = queue_stats_stale() || bakery_reload_in_progress;
+    let queue_stats_stale = queue_stats_stale();
     let insight_connected = crate::lts2_sys::current_capabilities().control_service_reachable;
 
     BusResponse::ExecutiveSummaryHeader(ExecutiveSummaryHeader {
@@ -1136,7 +1487,6 @@ pub fn executive_summary_header() -> BusResponse {
         cake_queue_count: queue_counts.cake as u64,
         fq_codel_queue_count: queue_counts.fq_codel as u64,
         queue_stats_stale,
-        bakery_reload_in_progress,
         insight_connected,
     })
 }
@@ -1151,6 +1501,24 @@ type FullList = (
 );
 
 pub fn all_unknown_ips() -> BusResponse {
+    // K2 slice-3 3a: bridge mode lists the actor's per-IP rows that no catalog
+    // device resolves (the unconfirmed/unmapped class). The per-IP rows only
+    // exist while the actor observed them, so the kernel's 5-minute window is
+    // inherent.
+    if crate::bridge_analytics::is_active() {
+        let catalog = lqos_network_devices::network_devices_catalog();
+        let mut result: Vec<IpStats> = bridge_best_effort_ip_rows()
+            .into_iter()
+            .filter(|row| {
+                catalog
+                    .device_longest_match_for_ip(&XdpIpAddress::from_ip(row.ip))
+                    .is_none()
+            })
+            .map(|row| row.to_ip_stats())
+            .collect();
+        result.sort_by_key(|row| std::cmp::Reverse(row.bits_per_second.down));
+        return BusResponse::AllUnknownIps(result);
+    }
     let boot_time = time_since_boot();
     if boot_time.is_err() {
         warn!("The Linux system clock isn't available to provide time since boot, yet.");
@@ -1217,6 +1585,88 @@ pub fn all_unknown_ips() -> BusResponse {
     BusResponse::AllUnknownIps(result)
 }
 
+/// `.65`: the per-flow DELIVERED (shaped) bytes/second for an active bridge
+/// flow. Absent on the flow's first interval or after a counter reset (no
+/// rate), in which case the caller supplies zero.
+fn bridge_flow_rate_bytes_per_second(
+    snapshot: &crate::bridge_analytics::BridgeStatsSnapshot,
+    flow: &analytics_ipc::FlowRow,
+) -> DownUpOrder<u64> {
+    snapshot
+        .flow_bytes_per_second_directional
+        .get(&flow.id)
+        .copied()
+        .unwrap_or_else(DownUpOrder::zeroed)
+}
+
+/// K2 slice 1: map a bridge `FlowRow` to the lqtop summary shape. Bytes come
+/// from the wire's DELIVERED (shaped) counters; packets are not on the wire
+/// (zero). `.65`: `rate_estimate_bps` (bits/s) is derived from the
+/// caller-supplied per-flow DELIVERED bytes/second (×8). ASN comes from the
+/// v3-side GeoTable join and the circuit from the catalog.
+fn flow_row_to_summary(
+    flow: &analytics_ipc::FlowRow,
+    rate_bytes_per_second: DownUpOrder<u64>,
+) -> lqos_bus::FlowbeeSummaryData {
+    let remote_ip = flow.id.remote_ip;
+    let subscriber_ip = flow.id.subscriber_ip;
+    let (circuit_id, circuit_name) = lqos_network_devices::network_devices_catalog()
+        .device_longest_match_for_ip(&XdpIpAddress::from_ip(subscriber_ip))
+        .map(|(_, device)| (device.circuit_id.clone(), device.circuit_name.clone()))
+        .unwrap_or_default();
+    let asn = get_asn_name_and_country(remote_ip);
+    let mut rtt_samples = flow.rtt_samples_us.clone();
+    rtt_samples.sort_unstable();
+    let rtt_nanos = rtt_samples
+        .get(rtt_samples.len() / 2)
+        .map(|us| u64::from(*us) * 1_000)
+        .unwrap_or(0);
+    let end_status = match flow.state {
+        analytics_ipc::FlowState::Active | analytics_ipc::FlowState::Idle => 0,
+        analytics_ipc::FlowState::Fin => 1,
+        analytics_ipc::FlowState::Reset => 2,
+    };
+    lqos_bus::FlowbeeSummaryData {
+        remote_ip: remote_ip.to_string(),
+        local_ip: subscriber_ip.to_string(),
+        src_port: flow.id.subscriber_port,
+        dst_port: flow.id.remote_port,
+        ip_protocol: flow.id.protocol.into(),
+        start_time: flow.first_seen_millis,
+        last_seen: flow.last_seen_millis,
+ // 3b: `bytes_sent` reports the DELIVERED (shaped) per-flow
+        // series — naming parity (sent != enqueued); `actual` is the demand.
+        bytes_sent: DownUpOrder {
+            down: flow.shaped.download_bytes,
+            up: flow.shaped.upload_bytes,
+        },
+        packets_sent: DownUpOrder::zeroed(),
+        // `.65`: the per-flow DELIVERED bytes/second → bits/s (saturating to the
+        // wire field's u32 width).
+        rate_estimate_bps: DownUpOrder {
+            down: (rate_bytes_per_second.down.saturating_mul(8)).min(u64::from(u32::MAX)) as u32,
+            up: (rate_bytes_per_second.up.saturating_mul(8)).min(u64::from(u32::MAX)) as u32,
+        },
+        tcp_retransmits: DownUpOrder {
+            down: flow.tcp_retransmits.min(u64::from(u16::MAX)) as u16,
+            up: 0,
+        },
+        end_status,
+        tos: 0,
+        flags: 0,
+        rtt_nanos: DownUpOrder {
+            down: rtt_nanos,
+            up: 0,
+        },
+        remote_asn: lookup_asn_id(remote_ip).unwrap_or(0),
+        remote_asn_name: asn.name,
+        remote_asn_country: asn.country,
+        analysis: String::new(),
+        circuit_id,
+        circuit_name,
+    }
+}
+
 fn flow_summary_from_snapshot(flow: &ActiveFlowSnapshot) -> lqos_bus::FlowbeeSummaryData {
     lqos_bus::FlowbeeSummaryData {
         remote_ip: flow.display.remote_ip.clone(),
@@ -1245,6 +1695,21 @@ fn flow_summary_from_snapshot(flow: &ActiveFlowSnapshot) -> lqos_bus::FlowbeeSum
 
 /// Returns all rows from the latest active-flow snapshot.
 pub fn dump_active_flows() -> BusResponse {
+    // `.65` source-dispatch: bridge mode serves the wire's active flow rows
+    // with their DELIVERED (shaped) per-flow rate (bytes/s → bits/s), so the
+    // Shaper Top ASN widgets (which aggregate `rate_estimate_bps`) are
+    // non-empty and non-zero. The kernel snapshot is retired in bridge mode.
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let result: Vec<lqos_bus::FlowbeeSummaryData> = snapshot
+            .active_flows
+            .iter()
+            .map(|flow| {
+                flow_row_to_summary(flow, bridge_flow_rate_bytes_per_second(&snapshot, flow))
+            })
+            .collect();
+        return BusResponse::AllActiveFlows(result);
+    }
     let snapshot = active_flow_snapshot();
     let result: Vec<lqos_bus::FlowbeeSummaryData> =
         snapshot.iter().map(flow_summary_from_snapshot).collect();
@@ -1254,6 +1719,12 @@ pub fn dump_active_flows() -> BusResponse {
 
 /// Count active flows
 pub fn count_active_flows() -> BusResponse {
+    // K2 slice 1 source-dispatch: bridge mode counts the subscriber IPs
+    // with at least one active flow this poll (already stored).
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        return BusResponse::CountActiveFlows(snapshot.active_flow_ips.len() as u64);
+    }
     BusResponse::CountActiveFlows(live_active_flow_count())
 }
 
@@ -1273,6 +1744,49 @@ fn compare_top_flow(
 
 /// Top Flows Report
 pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
+    // K2 slice 1 source-dispatch: bridge mode ranks the wire's active flow
+    // rows (bytes from actual/shaped; packets/rate are not on the wire).
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let mut table: Vec<&analytics_ipc::FlowRow> = snapshot.active_flows.iter().collect();
+        let limit = n as usize;
+        let key = |flow: &analytics_ipc::FlowRow| -> u64 {
+            match flow_type {
+                // `.65`: rank the rate view by the DELIVERED (shaped) rate — the
+                // same quantity the summary now reports.
+                TopFlowType::RateEstimate => {
+                    let rate = bridge_flow_rate_bytes_per_second(&snapshot, flow);
+                    rate.down.saturating_add(rate.up)
+                }
+                TopFlowType::Bytes => flow
+                    .actual
+                    .download_bytes
+                    .saturating_add(flow.actual.upload_bytes),
+                TopFlowType::Packets => flow.tcp_sent_packets,
+                TopFlowType::Drops => flow.tcp_retransmits,
+                TopFlowType::RoundTripTime => flow
+                    .rtt_samples_us
+                    .iter()
+                    .copied()
+                    .max()
+                    .map(u64::from)
+                    .unwrap_or(0),
+            }
+        };
+        if limit == 0 {
+            table.clear();
+        } else {
+            table.sort_by_key(|flow| std::cmp::Reverse(key(flow)));
+            table.truncate(limit);
+        }
+        let result = table
+            .iter()
+            .map(|flow| {
+                flow_row_to_summary(flow, bridge_flow_rate_bytes_per_second(&snapshot, flow))
+            })
+            .collect();
+        return BusResponse::TopFlows(result);
+    }
     let snapshot = active_flow_snapshot();
     let mut table: Vec<&ActiveFlowSnapshot> = snapshot.iter().collect();
     let limit = n as usize;
@@ -1296,6 +1810,20 @@ pub fn top_flows(n: u32, flow_type: TopFlowType) -> BusResponse {
 /// Flows by IP
 pub fn flows_by_ip(ip: &str) -> BusResponse {
     if let Ok(ip) = ip.parse::<IpAddr>() {
+        // `.65` source-dispatch: bridge mode filters the wire's active flow
+        // rows by subscriber IP, with the DELIVERED per-flow rate.
+        if crate::bridge_analytics::is_active() {
+            let snapshot = crate::bridge_analytics::snapshot();
+            let matching_flows: Vec<lqos_bus::FlowbeeSummaryData> = snapshot
+                .active_flows
+                .iter()
+                .filter(|flow| flow.id.subscriber_ip == ip)
+                .map(|flow| {
+                    flow_row_to_summary(flow, bridge_flow_rate_bytes_per_second(&snapshot, flow))
+                })
+                .collect();
+            return BusResponse::FlowsByIp(matching_flows);
+        }
         let ip = XdpIpAddress::from_ip(ip);
         let snapshot = active_flow_snapshot();
         let matching_flows: Vec<_> = snapshot
@@ -1311,39 +1839,40 @@ pub fn flows_by_ip(ip: &str) -> BusResponse {
 
 /// Current endpoints by country
 pub fn current_endpoints_by_country() -> BusResponse {
-    let summary = flow_data::RECENT_FLOWS.country_summary();
-    BusResponse::CurrentEndpointsByCountry(summary)
+    let snapshot = crate::bridge_analytics::flow_history_snapshot().unwrap_or_default();
+    BusResponse::CurrentEndpointsByCountry(snapshot.country_summary())
 }
 
 /// Current endpoint lat/lon
 pub fn current_lat_lon() -> BusResponse {
-    let summary = flow_data::RECENT_FLOWS.lat_lon_endpoints();
-    BusResponse::CurrentLatLon(summary)
+    let snapshot = crate::bridge_analytics::flow_history_snapshot().unwrap_or_default();
+    BusResponse::CurrentLatLon(snapshot.lat_lon_endpoints())
 }
 
 /// Ether Protocol Summary
 pub fn ether_protocol_summary() -> BusResponse {
-    flow_data::RECENT_FLOWS.ether_protocol_summary()
+    let snapshot = crate::bridge_analytics::flow_history_snapshot().unwrap_or_default();
+    crate::node_manager::local_api::flow_wire::ether_protocol_summary(&snapshot)
 }
 
 /// IP Protocol Summary
 pub fn ip_protocol_summary() -> BusResponse {
-    BusResponse::IpProtocols(flow_data::RECENT_FLOWS.ip_protocol_summary())
+    let snapshot = crate::bridge_analytics::flow_history_snapshot().unwrap_or_default();
+    BusResponse::IpProtocols(snapshot.ip_protocol_summary())
 }
 
 /// Flow duration summary
 pub fn flow_duration() -> BusResponse {
+    let snapshot = crate::bridge_analytics::flow_history_snapshot().unwrap_or_default();
     BusResponse::FlowDuration(
-        flow_data::RECENT_FLOWS
-            .flow_duration_summary()
-            .into_iter()
-            .map(|v| (v.count, v.duration))
-            .collect(),
+        crate::node_manager::local_api::flow_wire::flow_duration_summary(&snapshot),
     )
 }
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 type RawNetJs = std::collections::HashMap<String, RawNetJsBody>;
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 #[derive(Deserialize, Debug)]
 struct RawNetJsBody {
     #[serde(rename = "downloadBandwidthMbps")]
@@ -1359,6 +1888,7 @@ struct RawNetJsBody {
     children: Option<RawNetJs>,
 }
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 #[derive(Serialize, Debug)]
 struct Lts2NetJs {
     name: String,
@@ -1373,6 +1903,7 @@ struct Lts2NetJs {
     children: Vec<Lts2NetJs>,
 }
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 impl RawNetJsBody {
     fn to_lts2(&self, name: &str) -> Lts2NetJs {
         let mut result = Lts2NetJs {
@@ -1396,6 +1927,7 @@ impl RawNetJsBody {
     }
 }
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 #[repr(C)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lts2Circuit {
@@ -1419,6 +1951,7 @@ pub struct Lts2Circuit {
     pub devices: Vec<Lts2Device>,
 }
 
+#[allow(dead_code)] // K3-B carve-out: LTS2 submission payload helper; used by stats_submission.
 #[repr(C)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Lts2Device {
@@ -1435,8 +1968,7 @@ pub struct Lts2Device {
 mod compatibility_tests {
     use super::{
         CIRCUIT_RTT_BUFFERS, Lts2Circuit, RawNetJsBody, circuit_current_qoo,
-        circuit_current_rtt_p50_nanos, finish_expired_flows, resolve_circuit_metadata_for_entry,
-        resolve_flow_device,
+        circuit_current_rtt_p50_nanos, resolve_circuit_metadata_for_entry, resolve_flow_device,
     };
     use crate::test_support::ActiveFlowSnapshotTestContext;
     use crate::throughput_tracker::flow_data::{
@@ -1450,11 +1982,11 @@ mod compatibility_tests {
     use lqos_config::{ConfigShapedDevices, ShapedDevice};
     use lqos_network_devices::{NetworkDevicesCatalog, ShapedDevicesCatalog};
     use lqos_sys::flowbee_data::{FlowbeeData, FlowbeeKey};
-    use lqos_utils::{XdpIpAddress, hash_to_i64};
     use lqos_utils::qoo::QoqScores;
     use lqos_utils::qoq_heatmap::TemporalQoqHeatmap;
     use lqos_utils::rtt::RttBuffer;
     use lqos_utils::units::DownUpOrder;
+    use lqos_utils::{XdpIpAddress, hash_to_i64};
     use serde::{Deserialize, Serialize};
     use serde_json::to_value;
     use std::net::Ipv4Addr;
@@ -1582,111 +2114,6 @@ mod compatibility_tests {
     }
 
     #[test]
-    fn finish_expired_flows_sends_exports_and_invokes_cleanup_once() {
-        let mut key = FlowbeeKey::default();
-        key.ip_protocol = 6;
-        key.src_port = 443;
-        key.dst_port = 54_321;
-
-        let mut raw = FlowbeeData::default();
-        raw.start_time = 10;
-        raw.last_seen = 20;
-        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
-        raw.packets_sent = DownUpOrder::new(10, 20);
-        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
-        raw.circuit_hash = 123;
-        raw.device_hash = 456;
-
-        let export = (
-            key,
-            (
-                FlowbeeLocalData::from_flow(&raw, &key),
-                FlowAnalysis::new(&key),
-            ),
-        );
-        let (sender, receiver) = crossbeam_channel::unbounded();
-        let mut finished_flow_exports = vec![export];
-        let mut expired_flows = vec![key];
-        let mut cleanup_keys = Vec::new();
-
-        finish_expired_flows(
-            &mut finished_flow_exports,
-            expired_flows.as_mut_slice(),
-            &sender,
-            |keys| {
-                cleanup_keys.extend_from_slice(keys);
-                Ok(())
-            },
-        );
-
-        let received = receiver
-            .try_recv()
-            .expect("finished flow export should be sent");
-        assert_eq!(received.0, key);
-        assert!(receiver.try_recv().is_err());
-        assert!(finished_flow_exports.is_empty());
-        assert_eq!(expired_flows, vec![key]);
-        assert_eq!(cleanup_keys, vec![key]);
-    }
-
-    #[test]
-    fn finish_expired_flows_runs_cleanup_when_export_receiver_is_closed() {
-        let mut key = FlowbeeKey::default();
-        key.ip_protocol = 6;
-        key.src_port = 443;
-        key.dst_port = 54_320;
-
-        let mut raw = FlowbeeData::default();
-        raw.start_time = 10;
-        raw.last_seen = 20;
-        raw.bytes_sent = DownUpOrder::new(1_000, 2_000);
-        raw.packets_sent = DownUpOrder::new(10, 20);
-        raw.rate_estimate_bps = DownUpOrder::new(30_000, 40_000);
-
-        let (sender, receiver) = crossbeam_channel::unbounded();
-        drop(receiver);
-        let mut finished_flow_exports = vec![(
-            key,
-            (
-                FlowbeeLocalData::from_flow(&raw, &key),
-                FlowAnalysis::new(&key),
-            ),
-        )];
-        let mut expired_flows = vec![key];
-        let mut cleanup_keys = Vec::new();
-
-        finish_expired_flows(
-            &mut finished_flow_exports,
-            expired_flows.as_mut_slice(),
-            &sender,
-            |keys| {
-                cleanup_keys.extend_from_slice(keys);
-                Ok(())
-            },
-        );
-
-        assert!(finished_flow_exports.is_empty());
-        assert_eq!(cleanup_keys, vec![key]);
-    }
-
-    #[test]
-    fn dedup_flow_keys_keeps_first_seen_order() {
-        let mut key_1 = FlowbeeKey::default();
-        key_1.ip_protocol = 6;
-        key_1.src_port = 443;
-        key_1.dst_port = 54_310;
-        let mut key_2 = key_1;
-        key_2.dst_port = 54_311;
-        let mut key_3 = key_1;
-        key_3.dst_port = 54_312;
-        let mut keys = vec![key_1, key_2, key_1, key_3, key_2];
-
-        super::dedup_flow_keys(&mut keys);
-
-        assert_eq!(keys, vec![key_1, key_2, key_3]);
-    }
-
-    #[test]
     fn post_write_snapshot_refresh_publishes_live_writes() {
         let _guard = active_flow_test_lock();
         let mut key = FlowbeeKey::default();
@@ -1724,6 +2151,96 @@ mod compatibility_tests {
 
         mutate_all_flows(|flows| flows.clear());
         refresh_active_flow_snapshot();
+    }
+
+    /// K2 slice 1: the bridge `FlowRow` → lqtop summary field map (bytes,
+    /// ports, protocol, RTT p50, end status). ASN/circuit joins depend on the
+    /// process-global tables, so they are exercised by the rig confirm.
+    #[test]
+    fn flow_row_to_summary_maps_the_wire_fields() {
+        let flow = analytics_ipc::FlowRow {
+            id: analytics_ipc::FlowId {
+                circuit_id: 1,
+                flow_hash: 1,
+                subscriber_ip: "192.0.2.10".parse().expect("test IP should parse"),
+                remote_ip: "203.0.113.9".parse().expect("test IP should parse"),
+                subscriber_port: 1234,
+                remote_port: 443,
+                protocol: 6,
+            },
+ // 3b sweep-fixture guard: demand != delivered.
+            actual: analytics_ipc::DirectionalCounters {
+                download_bytes: 999,
+                upload_bytes: 999,
+            },
+            shaped: analytics_ipc::DirectionalCounters {
+                download_bytes: 100,
+                upload_bytes: 20,
+            },
+            rtt_samples_us: vec![10_000, 20_000, 30_000],
+            tcp_sent_packets: 5,
+            tcp_retransmits: 1,
+            first_seen_millis: 1,
+            last_seen_millis: 2,
+            state: analytics_ipc::FlowState::Fin,
+            ..analytics_ipc::FlowRow::default()
+        };
+        // `.65`: pass a DELIVERED bytes/second rate; the summary reports bits/s.
+        let summary = super::flow_row_to_summary(&flow, DownUpOrder::new(1_000, 250));
+        assert_eq!(summary.remote_ip, "203.0.113.9");
+        assert_eq!(summary.local_ip, "192.0.2.10");
+        assert_eq!(summary.src_port, 1234);
+        assert_eq!(summary.dst_port, 443);
+        assert_eq!(summary.bytes_sent.down, 100);
+        assert_eq!(summary.bytes_sent.up, 20);
+        assert_eq!(
+            summary.rate_estimate_bps,
+            DownUpOrder::new(8_000, 2_000),
+            "the per-flow DELIVERED bytes/s is reported as bits/s (×8)"
+        );
+        assert_eq!(
+            summary.rtt_nanos.down, 20_000_000,
+            "median of the µs samples in ns"
+        );
+        assert_eq!(summary.end_status, 1, "FIN");
+        assert!(matches!(
+            summary.ip_protocol,
+            lqos_bus::FlowbeeProtocol::TCP
+        ));
+    }
+
+    /// `.65` Overview widgets: the per-flow DELIVERED rate reader keys off the
+    /// DIRECTIONAL map (`flow_bytes_per_second_directional`) and returns BOTH
+    /// slots; an absent flow reads zeroed. This is the widget-side contract the
+    /// circuit-page U=0 fix must not disturb (pins the map stays wired).
+    #[test]
+    fn bridge_flow_rate_reads_the_directional_map() {
+        let flow = analytics_ipc::FlowRow {
+            id: analytics_ipc::FlowId {
+                circuit_id: 1,
+                flow_hash: 42,
+                subscriber_ip: "192.0.2.10".parse().expect("test IP should parse"),
+                remote_ip: "203.0.113.9".parse().expect("test IP should parse"),
+                subscriber_port: 1234,
+                remote_port: 443,
+                protocol: 6,
+            },
+            ..analytics_ipc::FlowRow::default()
+        };
+        let mut snapshot = crate::bridge_analytics::BridgeStatsSnapshot::default();
+        assert_eq!(
+            super::bridge_flow_rate_bytes_per_second(&snapshot, &flow),
+            DownUpOrder::zeroed(),
+            "absent flow => zeroed"
+        );
+        snapshot
+            .flow_bytes_per_second_directional
+            .insert(flow.id.clone(), DownUpOrder::new(1_000, 250));
+        assert_eq!(
+            super::bridge_flow_rate_bytes_per_second(&snapshot, &flow),
+            DownUpOrder::new(1_000, 250),
+            "both directions come from the directional map"
+        );
     }
 
     #[test]
@@ -1792,14 +2309,8 @@ mod compatibility_tests {
                 raw_2.last_seen,
             );
             local_2.set_rtt_buffer(rtt_2);
-            flows.insert(
-                key_1,
-                (local_1, FlowAnalysis::new(&key_1)),
-            );
-            flows.insert(
-                key_2,
-                (local_2, FlowAnalysis::new(&key_2)),
-            );
+            flows.insert(key_1, (local_1, FlowAnalysis::new(&key_1)));
+            flows.insert(key_2, (local_2, FlowAnalysis::new(&key_2)));
         });
         let BusResponse::CountActiveFlows(count) = super::count_active_flows() else {
             panic!("active flow count response should match request");
@@ -1985,7 +2496,10 @@ mod compatibility_tests {
         };
         assert_eq!(flows_by_ip[0].circuit_id, "stale-circuit");
         assert_eq!(flows_by_ip[0].circuit_name, "Circuit Metadata Updated");
-        assert_eq!(active_flow_snapshot()[0].device_name, "Device Metadata Updated");
+        assert_eq!(
+            active_flow_snapshot()[0].device_name,
+            "Device Metadata Updated"
+        );
 
         mutate_all_flows(|flows| flows.clear());
         refresh_active_flow_snapshot();
@@ -2226,5 +2740,39 @@ mod compatibility_tests {
             .circuit_qoq_heatmaps
             .lock();
         *qoq_heatmaps = old_qoq;
+    }
+}
+
+/// K2 slice-3 3a: field oracles for the bridge-ranked reader rows.
+#[cfg(test)]
+mod bridge_reader_tests {
+    use super::{BridgeIpRow, down_up_retransmit_sample};
+    use lqos_bus::TcHandle;
+    use lqos_utils::units::DownUpOrder;
+
+    /// The bridge per-IP row maps onto the ranked reader's `IpStats` shape
+    /// (actual bytes → bits/s, RTT nanos → ms, the direction-agnostic
+    /// retransmit sample, the catalog circuit id, default tc handle).
+    #[test]
+    fn bridge_ip_row_maps_the_reader_fields() {
+        let row = BridgeIpRow {
+            ip: "192.0.2.10".parse().expect("test IP"),
+            bytes: DownUpOrder::new(1_000, 2_000),
+            packets: DownUpOrder::new(10, 20),
+            rtt_ms: Some(12.5),
+            circuit_hash: Some(7),
+            runtime_circuit_id: "c1".to_string(),
+            retransmits: down_up_retransmit_sample(
+                DownUpOrder::new(3, 0),
+                DownUpOrder::new(100, 0),
+            ),
+        };
+        let stats = row.to_ip_stats();
+        assert_eq!(stats.ip_address, "192.0.2.10");
+        assert_eq!(stats.circuit_id, "c1");
+        assert_eq!(stats.bits_per_second, DownUpOrder::new(8_000, 16_000));
+        assert_eq!(stats.packets_per_second, DownUpOrder::new(10, 20));
+        assert_eq!(stats.median_tcp_rtt, 12.5);
+        assert_eq!(stats.tc_handle, TcHandle::default());
     }
 }

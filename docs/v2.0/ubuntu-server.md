@@ -1,5 +1,7 @@
 # Install Ubuntu Server
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 You can download Ubuntu Server 24.04 LTS from <a href="https://ubuntu.com/download/server">here</a>.
 At this time, only Ubuntu Server 24.04 is supported. Please be sure not to use other versions.
 
@@ -12,7 +14,7 @@ At this time, only Ubuntu Server 24.04 is supported. Please be sure not to use o
 
 <img width="1292" alt="03 version" src="https://github.com/user-attachments/assets/4917e389-5aa7-4636-a0f3-ba826b107d0b" />
 
-For the network interfaces, disable the shaping interfaces entirely. Then, set a static IP address on the management interface (100.99.0.4 is just an example).
+For the network interfaces, disable the shaping interfaces entirely. Then, set a static IP address on the management interface (192.0.2.4 is just an example).
 <img width="1293" alt="04 net int" src="https://github.com/user-attachments/assets/6d9b10a6-ea4e-45cf-a993-b21342c86772" />
 
 <img width="1351" alt="05 no proxy" src="https://github.com/user-attachments/assets/f86ace56-d1b2-4cd0-88b4-5af1267153ea" />

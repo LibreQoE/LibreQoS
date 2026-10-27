@@ -1,0 +1,19 @@
+[package]
+name = "lqos_power"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-only"
+description = "Host CPU power posture for LibreQoS (turbo off + eco/balanced/performance)"
+
+[[bin]]
+name = "libreqos-power-profile"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+lqos_config = { path = "../lqos_config" }

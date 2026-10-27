@@ -1,5 +1,7 @@
 # CRM/NMS Integrations
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page preserves detailed legacy integration reference material.
 Canonical, task-oriented guidance lives in the per-integration pages linked from [CRM/NMS Integrations](integrations.md).
 

@@ -60,12 +60,6 @@ function validateConfig() {
         return false;
     }
 
-    const uispInterval = parseInt(document.getElementById("uispInterval").value, 10);
-    if (Number.isNaN(uispInterval) || uispInterval < 0) {
-        alert("UISP Reporting Interval must be a number of at least 0");
-        return false;
-    }
-
     const ltsUrl = document.getElementById("ltsUrl").value.trim();
     if (ltsUrl) {
         try {
@@ -84,7 +78,6 @@ function updateConfig() {
         gather_stats: document.getElementById("gatherStats").checked,
         collation_period_seconds: parseInt(document.getElementById("collationPeriod").value, 10),
         license_key: licenseKeyInput.value.trim() || null,
-        uisp_reporting_interval_seconds: parseInt(document.getElementById("uispInterval").value, 10) || null,
         lts_url: document.getElementById("ltsUrl").value.trim() || null,
     };
     window.config.local_api = window.config.local_api || {};
@@ -510,7 +503,6 @@ loadConfig(() => {
     const lts = window.config.long_term_stats;
     document.getElementById("gatherStats").checked = lts.gather_stats ?? true;
     document.getElementById("collationPeriod").value = lts.collation_period_seconds ?? 60;
-    document.getElementById("uispInterval").value = lts.uisp_reporting_interval_seconds ?? 300;
     document.getElementById("ltsUrl").value = lts.lts_url ?? "";
     licenseKeyInput.value = lts.license_key ?? "";
 

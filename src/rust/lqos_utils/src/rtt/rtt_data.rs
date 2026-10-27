@@ -25,7 +25,6 @@ pub struct RttData {
     nanoseconds: u64,
 }
 
-#[allow(dead_code)]
 impl RttData {
     /// Create an RTT value from nanoseconds.
     pub fn from_nanos(nanoseconds: u64) -> Self {
@@ -37,11 +36,6 @@ impl RttData {
         self.nanoseconds
     }
 
-    /// Return the RTT in microseconds.
-    pub fn as_micros(&self) -> f64 {
-        self.nanoseconds as f64 / 1_000.0
-    }
-
     /// Return the RTT in milliseconds.
     pub fn as_millis(&self) -> f64 {
         self.nanoseconds as f64 / 1_000_000.0
@@ -50,10 +44,5 @@ impl RttData {
     /// Return the RTT in milliseconds * 100.
     pub fn as_millis_times_100(&self) -> f64 {
         self.nanoseconds as f64 / 10_000.0
-    }
-
-    /// Return the RTT in seconds.
-    pub fn as_seconds(&self) -> f64 {
-        self.nanoseconds as f64 / 1_000_000_000.0
     }
 }

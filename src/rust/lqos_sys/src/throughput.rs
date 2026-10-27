@@ -1,4 +1,3 @@
-use lqos_utils::XdpIpAddress;
 use zerocopy::FromBytes;
 
 /// Representation of the XDP map from map_traffic
@@ -52,14 +51,6 @@ pub struct HostCounter {
 
     /// Time last seen, in nanoseconds since kernel boot
     pub last_seen: u64,
-}
-
-/// Iterates through all throughput entries, and sends them in turn to `callback`.
-/// This elides the need to clone or copy data.
-pub fn throughput_for_each(callback: &mut dyn FnMut(&XdpIpAddress, &[HostCounter])) {
-    unsafe {
-        crate::bpf_iterator::iterate_throughput(callback);
-    }
 }
 
 #[cfg(test)]

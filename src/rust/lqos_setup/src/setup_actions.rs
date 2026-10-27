@@ -49,15 +49,14 @@ pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> l
         .and_then(|single| single.mtu);
     let new_config = CURRENT_CONFIG.lock();
     config.node_name = new_config.node_name.clone();
-    config.queues.downlink_bandwidth_mbps = new_config.mbps_to_internet;
-    config.queues.uplink_bandwidth_mbps = new_config.mbps_to_network;
+    config.queues.downlink_bandwidth_mbps = new_config.mbps_to_internet as f64;
+    config.queues.uplink_bandwidth_mbps = new_config.mbps_to_network as f64;
     config.queues.generated_pn_download_mbps = new_config.mbps_to_internet;
     config.queues.generated_pn_upload_mbps = new_config.mbps_to_network;
     match new_config.bridge_mode {
         BridgeMode::Linux => {
             config.single_interface = None;
             config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: false,
                 to_internet: new_config.to_internet.clone(),
                 to_network: new_config.to_network.clone(),
                 mtu: existing_bridge_mtu,
@@ -66,7 +65,6 @@ pub(crate) fn build_candidate_config(existing: Option<lqos_config::Config>) -> l
         BridgeMode::XDP => {
             config.single_interface = None;
             config.bridge = Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: true,
                 to_internet: new_config.to_internet.clone(),
                 to_network: new_config.to_network.clone(),
                 mtu: existing_bridge_mtu,
@@ -148,6 +146,15 @@ pub(crate) fn prepare_commit() -> Result<CommitOutcome> {
     } else {
         ApplyMode::Apply
     };
+    // The bind pre-check (netplan-bridge upgrade card §2b): if the selected
+    // dataplane interfaces are still enslaved by a netplan bridge and this
+    // apply will NOT adopt/take over (mode Apply), refuse loudly rather than
+    // let the dataplane bind race systemd-networkd for the members.
+    if apply_mode == ApplyMode::Apply
+        && let Err(reason) = lqos_netplan_helper::bind_guard(&config)
+    {
+        bail!("{reason}");
+    }
     let response = {
         let mut pending = PENDING_CHILDREN.lock();
         apply_transaction(
@@ -230,6 +237,31 @@ pub(crate) fn persist_setup_success(
                 state_root.join(category).display()
             )
         })?;
+    }
+
+    // The bridge fail-closes without its typed runtime config; the setup
+    // success path is its producer (written once, never overwritten).
+    if let Some(path) = lqos_setup::bootstrap::ensure_bridge_conf_with(config)? {
+        event_log.push(format!(
+            "Wrote/migrated the bridge runtime config {} (the circuit capacity is DERIVED \
+             by the emitter; no operator circuit_capacity key; the [single_interface] \
+             topology is included when configured).",
+            path.display()
+        ));
+    }
+    if let Some(path) = lqos_setup::bootstrap::ensure_bridge_env_bdf_pair(config)? {
+        event_log.push(format!(
+            "Wrote the explicit WAN/LAN BDF pair into {} (from /etc/libreqos/lqos.conf's pair).",
+            path.display()
+        ));
+    }
+
+    // B.4 (docs/zero_manual_ports_installer_card.md): derive + write the managed
+    // ports plan NOW that the BDF + bandwidth keys exist. Never fatal (the plan
+    // is a derived convenience; a failure must not block setup success).
+    match lqos_setup::port_class::write_plan_from_setup(config) {
+        Ok((_out, msg)) => event_log.push(msg),
+        Err(e) => event_log.push(format!("Ports plan skipped: {e}")),
     }
 
     lqos_setup::bootstrap::record_setup_success(config)?;

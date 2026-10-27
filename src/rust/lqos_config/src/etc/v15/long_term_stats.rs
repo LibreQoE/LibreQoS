@@ -16,12 +16,6 @@ pub struct LongTermStats {
     /// statistics server
     pub license_key: Option<String>,
 
-    /// UISP reporting period (in seconds). UISP queries can be slow,
-    /// so hitting it every second or 10 seconds is going to cause problems
-    /// for some people. A good default may be 5 minutes. Not specifying this
-    /// disabled UISP integration.
-    pub uisp_reporting_interval_seconds: Option<u64>,
-
     /// If set, then this URL will be used for connecting to a self-hosted or
     /// development LTS server. It will be decorated with https:// and :443
     pub lts_url: Option<String>,
@@ -44,7 +38,6 @@ impl Default for LongTermStats {
             gather_stats: true,
             collation_period_seconds: 60,
             license_key: None,
-            uisp_reporting_interval_seconds: Some(300),
             lts_url: None,
             enable_insight_topology: None,
             insight_topology_role: None,

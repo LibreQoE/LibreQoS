@@ -33,6 +33,24 @@ pub struct CircuitLiveSnapshot {
     pub by_circuit_id: FxHashMap<String, CircuitLiveRollup>,
 }
 
+/// `lqos-74t.47` three-way RTT compose (pure). The two per-direction p50 medians
+/// ARE the two legs: `down` = the SUBSCRIBER-side (near) ring, `up` = the
+/// INTERNET-side (far) ring; `full = subscriber + internet` IFF both are present
+/// (an ESTIMATE — honest-empty otherwise). The legs reuse the SAME medians as
+/// `rtt_current_p50_nanos` (the `median_nanos_ms` upper-middle convention), so
+/// the triad and the legacy p50 agree by construction.
+pub(crate) fn rtt_legs_nanos(
+    rtt_nanos: DownUpOrder<Option<u64>>,
+) -> (Option<u64>, Option<u64>, Option<u64>) {
+    let subscriber = rtt_nanos.down;
+    let internet = rtt_nanos.up;
+    let full = match (subscriber, internet) {
+        (Some(s), Some(i)) => Some(s.saturating_add(i)),
+        _ => None,
+    };
+    (subscriber, internet, full)
+}
+
 fn rollup_to_bus(rollup: &CircuitLiveRollup) -> lqos_bus::CircuitRollup {
     lqos_bus::CircuitRollup {
         circuit_id: rollup.circuit_id.clone(),
@@ -114,6 +132,83 @@ fn kernel_age_from_last_seen(kernel_now: std::time::Duration, last_seen: u64) ->
 /// Side effects: stores the rebuilt snapshot in the global `CIRCUIT_LIVE_SNAPSHOT`
 /// cache and updates the refresh timestamp used by `fresh_circuit_live_snapshot`.
 pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
+    // K2 slice-3 3a: on a bridge box build the rollups from the actor cache
+    // (`by_circuit_id` live metrics + the catalog's per-IP device metadata).
+    // QoO has no bridge source yet (honest-empty `qoo`); the kernel path
+    // below reads the now-unwritten tracker + RTT/qoo caches.
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let catalog = lqos_network_devices::network_devices_catalog();
+
+        let mut by_circuit_id: FxHashMap<String, CircuitAccumulator> = FxHashMap::default();
+        for ip in snapshot.by_ip.keys() {
+            let Some((_, device)) = catalog
+                .device_longest_match_for_ip(&lqos_utils::XdpIpAddress::from_ip(*ip))
+            else {
+                continue;
+            };
+            if device.circuit_id.trim().is_empty() {
+                continue;
+            }
+            let entry = by_circuit_id.entry(device.circuit_id.clone()).or_default();
+            if entry.circuit_hash.is_none() {
+                entry.circuit_hash = Some(device.circuit_hash);
+            }
+            if entry.circuit_name.is_empty() {
+                entry.circuit_name = device.circuit_name.clone();
+            }
+            if entry.parent_node.is_empty() {
+                entry.parent_node = device.parent_node.clone();
+            }
+            if !device.device_name.trim().is_empty() {
+                entry.device_names.insert(device.device_name.clone());
+            }
+            entry.ip_addrs.insert(ip.to_string());
+            entry.plan_mbps.down = entry.plan_mbps.down.max(device.download_max_mbps);
+            entry.plan_mbps.up = entry.plan_mbps.up.max(device.upload_max_mbps);
+        }
+
+        let mut finalized: FxHashMap<String, CircuitLiveRollup> = FxHashMap::default();
+        for (circuit_id, live) in snapshot.by_circuit_id.iter() {
+            let acc = by_circuit_id.remove(circuit_id).unwrap_or_default();
+            let parent_node = super::effective_parent_for_circuit(circuit_id)
+                .map(|parent| parent.name)
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or(acc.parent_node);
+            finalized.insert(
+                circuit_id.clone(),
+                CircuitLiveRollup {
+                    circuit_id: circuit_id.clone(),
+                    circuit_name: if acc.circuit_name.is_empty() {
+                        circuit_id.clone()
+                    } else {
+                        acc.circuit_name
+                    },
+                    parent_node,
+                    device_names: sort_string_set(acc.device_names),
+                    ip_addrs: sort_string_set(acc.ip_addrs),
+                    plan_mbps: acc.plan_mbps,
+ // 3b demand-source sweep: the rollup's
+                    // customer-facing throughput is the DELIVERED series
+                    // (`live.bytes_per_second` is the bridge demand).
+                    bytes_per_second: live.shaped_bytes_per_second,
+                    rtt_current_p50_nanos: live.rtt_current_p50_nanos,
+                    qoo: circuit_current_qoo(lqos_utils::hash_to_i64(circuit_id)),
+                    tcp_retransmit_sample: live.tcp_retransmit_sample,
+                    last_seen_nanos: live.last_seen_nanos,
+                },
+            );
+        }
+
+        let snapshot = Arc::new(CircuitLiveSnapshot {
+            by_circuit_id: finalized,
+        });
+        CIRCUIT_LIVE_SNAPSHOT.store(snapshot.clone());
+        CIRCUIT_LIVE_LAST_REFRESH_SECS
+            .store(current_epoch_secs(), std::sync::atomic::Ordering::Release);
+        return snapshot;
+    }
+
     let Ok(kernel_now) = time_since_boot() else {
         let empty = Arc::new(CircuitLiveSnapshot::default());
         CIRCUIT_LIVE_SNAPSHOT.store(empty.clone());
@@ -310,5 +405,53 @@ mod tests {
         assert_eq!(rollup.bytes_per_second.down, 300);
         assert!(rollup_from_snapshot(&snapshot, "circuit-1").is_none());
         assert!(rollup_from_snapshot(&snapshot, " ").is_none());
+    }
+}
+
+#[cfg(test)]
+mod rtt_legs_tests {
+    use super::*;
+
+    /// The `lqos-74t.47` oracle: subscriber = median(down ring) = the p50.down,
+    /// internet = median(up ring) = the p50.up; full = their sum IFF both present.
+    #[test]
+    fn three_way_legs_compose_the_medians() {
+        let (s, i, f) = rtt_legs_nanos(DownUpOrder {
+            down: Some(1),
+            up: Some(20),
+        });
+        assert_eq!((s, i, f), (Some(1), Some(20), Some(21)));
+    }
+
+    /// (b) the triad IS the legacy per-direction p50 (`median_nanos_ms`
+    /// upper-middle) taken verbatim — never re-medianed — so the legs and the
+    /// legacy p50 agree by construction (no even-length convention drift).
+    #[test]
+    fn three_way_legs_use_the_legacy_p50_verbatim() {
+        let p50 = DownUpOrder {
+            down: Some(1_234),
+            up: Some(56_789),
+        };
+        let (s, i, f) = rtt_legs_nanos(p50);
+        assert_eq!((s, i), (p50.down, p50.up));
+        assert_eq!(f, Some(1_234 + 56_789));
+    }
+
+    /// A missing leg makes `full` honest-`None` (a download-only circuit has no
+    /// far leg), never a fabricated value.
+    #[test]
+    fn a_missing_leg_makes_full_honest_none() {
+        assert_eq!(
+            rtt_legs_nanos(DownUpOrder { down: Some(1_000), up: None }),
+            (Some(1_000), None, None)
+        );
+        assert_eq!(
+            rtt_legs_nanos(DownUpOrder { down: None, up: Some(2_000) }),
+            (None, Some(2_000), None)
+        );
+        assert_eq!(
+            rtt_legs_nanos(DownUpOrder { down: None, up: None }),
+            (None, None, None)
+        );
     }
 }

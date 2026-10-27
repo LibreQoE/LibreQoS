@@ -1,5 +1,7 @@
 # Quickstart: WebUI Deployment Path
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this page to move from package install to a safe pilot with the fewest moving parts.
 
 Follow this page in order:
@@ -40,10 +42,7 @@ On affected Ubuntu 24.04 hosts using `systemd-networkd`, the `.deb` install may 
 If that happens, run:
 
 ```bash
-cd /tmp/
-sudo apt-get update
-sudo HOTFIX_PACKAGE_VERSION=255.4-1ubuntu9999+libreqos1 /opt/libreqos/src/systemd_hotfix.sh install
-sudo dpkg --configure -a
+sudo /opt/libreqos/src/systemd_hotfix.sh install
 sudo reboot
 ```
 

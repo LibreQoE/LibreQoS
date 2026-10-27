@@ -13,6 +13,7 @@
                         <td class="table-value-cell">
                             <span class="lqos-inline-value-badge">
                                 <span id="bwMax" class="lqos-inline-value-badge-text"></span>
+                                <span id="circuitOverrideBadge" class="badge rounded-pill ms-2 d-none"></span>
                                 <a
                                     id="ethernetAdvisoryBadge"
                                     class="badge rounded-pill text-bg-warning ms-2 d-none lqos-inline-value-badge-item"
@@ -52,7 +53,11 @@
                         </td>
                     </tr>
                     <tr>
-                        <td colspan="2" id="captureButton">
+                        <td colspan="2">
+                            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                <div id="captureButton"></div>
+                                <div id="circuitAdminActions" class="text-end ms-auto"></div>
+                            </div>
                         </td>
                     </tr>
                 </table>
@@ -136,28 +141,25 @@
                 <div class="lqos-circuit-activity-controls">
                     <div class="lqos-circuit-activity-legend" aria-label="Queue Dynamics Legend">
                         <span class="lqos-circuit-activity-legend-item">
-                            <span id="queuingActivityLegendEnqueued" class="lqos-circuit-activity-legend-dot is-enqueued"></span>
+                            <span id="queuingActivityLegendEnqueuedDown" class="lqos-circuit-activity-legend-dot is-enqueued"></span>
+                            <span id="queuingActivityLegendEnqueuedUp" class="lqos-circuit-activity-legend-dot is-enqueued"></span>
                             <span>Enqueued</span>
                         </span>
                         <span class="lqos-circuit-activity-legend-item">
-                            <span id="queuingActivityLegendThroughput" class="lqos-circuit-activity-legend-dot is-throughput"></span>
+                            <span id="queuingActivityLegendThroughputDown" class="lqos-circuit-activity-legend-dot is-throughput"></span>
+                            <span id="queuingActivityLegendThroughputUp" class="lqos-circuit-activity-legend-dot is-throughput"></span>
                             <span>Throughput</span>
                         </span>
                         <span class="lqos-circuit-activity-legend-item">
-                            <span id="queuingActivityLegendCeiling" class="lqos-circuit-activity-legend-dot is-ceiling"></span>
+                            <span id="queuingActivityLegendCeilingDown" class="lqos-circuit-activity-legend-dot is-ceiling"></span>
+                            <span id="queuingActivityLegendCeilingUp" class="lqos-circuit-activity-legend-dot is-ceiling is-ceiling-up"></span>
                             <span>Ceiling</span>
                         </span>
-                        <span class="lqos-circuit-activity-legend-item">
-                            <span class="lqos-circuit-activity-legend-dot is-qoo"></span>
-                            <span>Circuit RTT (P50)</span>
+                        <span class="lqos-circuit-activity-legend-item" title="Access = RTT to the subscriber (near/access leg); Internet = RTT to the remote server (far leg); Full = end-to-end (Access + Internet)." aria-label="RTT Access and Internet">
+                            <span id="queuingActivityLegendRttDown" class="lqos-circuit-activity-legend-dot is-qoo"></span>
+                            <span id="queuingActivityLegendRttUp" class="lqos-circuit-activity-legend-dot is-qoo"></span>
+                            <span>RTT Access / Internet</span>
                         </span>
-                    </div>
-                    <div class="btn-group btn-group-sm lqos-circuit-activity-toggle" role="group" aria-label="Queuing Activity Direction">
-                        <input type="radio" class="btn-check" name="queuingDirection" id="queuingDirectionDown" autocomplete="off" checked>
-                        <label class="btn btn-outline-secondary" for="queuingDirectionDown">Download</label>
-
-                        <input type="radio" class="btn-check" name="queuingDirection" id="queuingDirectionUp" autocomplete="off">
-                        <label class="btn btn-outline-secondary" for="queuingDirectionUp">Upload</label>
                     </div>
                 </div>
             </div>
@@ -167,29 +169,61 @@
                     <span>Loading queue dynamics…</span>
                 </div>
             </div>
-            <div class="row g-2 mt-2">
-                <div class="col-12 col-md-6 col-xl-3">
-                    <div class="lqos-circuit-activity-kpi">
-                        <div class="lqos-circuit-activity-kpi-label">Enqueued throughput</div>
-                        <div id="queuingActivityThroughput" class="lqos-circuit-activity-kpi-value">-</div>
+            <div class="lqos-circuit-activity-kpis">
+                <div class="lqos-circuit-activity-kpi">
+                    <div class="lqos-circuit-activity-kpi-label">Throughput</div>
+                    <div class="lqos-circuit-activity-kpi-pairs">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="download">
+                            <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↓</span>
+                            <span id="queuingActivityThroughput" class="lqos-circuit-activity-kpi-value">-</span>
+                        </span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="upload">
+                            <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↑</span>
+                            <span id="queuingActivityThroughputUp" class="lqos-circuit-activity-kpi-value">-</span>
+                        </span>
                     </div>
                 </div>
-                <div class="col-12 col-md-6 col-xl-3">
-                    <div class="lqos-circuit-activity-kpi">
-                        <div class="lqos-circuit-activity-kpi-label">Circuit RTT (P50)</div>
-                        <div id="queuingActivityRtt" class="lqos-circuit-activity-kpi-value">-</div>
+                <div class="lqos-circuit-activity-kpi">
+                    <div class="lqos-circuit-activity-kpi-label" title="Enqueued (demand) — the offered rate before shaping" aria-label="Enqueued (demand)">Enqueued</div>
+                    <div class="lqos-circuit-activity-kpi-pairs">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="download">
+                            <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↓</span>
+                            <span id="queuingActivityEnqueued" class="lqos-circuit-activity-kpi-value">-</span>
+                        </span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="upload">
+                            <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↑</span>
+                            <span id="queuingActivityEnqueuedUp" class="lqos-circuit-activity-kpi-value">-</span>
+                        </span>
                     </div>
                 </div>
-                <div class="col-12 col-md-6 col-xl-3">
-                    <div class="lqos-circuit-activity-kpi">
-                        <div class="lqos-circuit-activity-kpi-label">Active Flows</div>
-                        <div id="queuingActivityFlows" class="lqos-circuit-activity-kpi-value">0</div>
+                <div class="lqos-circuit-activity-kpi">
+                    <div class="lqos-circuit-activity-kpi-label">Utilization</div>
+                    <div class="lqos-circuit-activity-kpi-pairs">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="download">
+                            <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↓</span>
+                            <span id="queuingActivityUtilization" class="lqos-circuit-activity-kpi-value">0%</span>
+                        </span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="upload">
+                            <span class="lqos-circuit-activity-kpi-arrow" aria-hidden="true">↑</span>
+                            <span id="queuingActivityUtilizationUp" class="lqos-circuit-activity-kpi-value">0%</span>
+                        </span>
                     </div>
                 </div>
-                <div class="col-12 col-md-6 col-xl-3">
-                    <div class="lqos-circuit-activity-kpi">
-                        <div class="lqos-circuit-activity-kpi-label">Utilization</div>
-                        <div id="queuingActivityUtilization" class="lqos-circuit-activity-kpi-value">0%</div>
+                <div class="lqos-circuit-activity-kpi lqos-circuit-activity-kpi-rtt">
+                    <div class="lqos-circuit-activity-kpi-label" title="Access = RTT to the subscriber (near/access leg); Internet = RTT to the remote server (far leg); Full = end-to-end (Access + Internet)." aria-label="RTT Access, Internet, and Full">RTT</div>
+                    <div class="lqos-circuit-activity-kpi-pairs">
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Access">
+                            <span class="lqos-circuit-activity-kpi-mini">Access</span>
+                            <span id="queuingActivityRtt" class="lqos-circuit-activity-kpi-value">-</span>
+                        </span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Internet">
+                            <span class="lqos-circuit-activity-kpi-mini">Internet</span>
+                            <span id="queuingActivityRttUp" class="lqos-circuit-activity-kpi-value">-</span>
+                        </span>
+                        <span class="lqos-circuit-activity-kpi-pair" aria-label="Full">
+                            <span class="lqos-circuit-activity-kpi-mini">Full</span>
+                            <span id="queuingActivityRttFull" class="lqos-circuit-activity-kpi-value">-</span>
+                        </span>
                     </div>
                 </div>
             </div>
@@ -350,5 +384,28 @@
 
 
 
+
+<!-- E3: admin-action modals (rate edit + remove confirm). Backend
+     endpoints re-check the Admin role; read-only users never see the
+     affordances. -->
+<div class="modal fade" id="circuitRateModal" tabindex="-1" aria-labelledby="circuitRateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="circuitRateModalLabel">Edit Circuit Rates</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="circuitRateFields"></div>
+                <div id="circuitRateError" class="text-danger small mt-2 d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-warning" id="circuitRateRevert">Revert to plan</button>
+                <button type="button" class="btn btn-primary" id="circuitRateSave">Save Override</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script src="circuit.js%CACHEBUSTERS%"></script>

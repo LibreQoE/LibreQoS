@@ -1,5 +1,7 @@
 # Recipe: Proxmox VM Deployment with 3 NICs
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this pattern for VM-based deployments where LibreQoS runs on Ubuntu Server 24.04 with dedicated management and shaping interfaces.
 
 ## Fit
@@ -131,10 +133,10 @@ network:
   ethernets:
     ens18:
       addresses:
-        - 100.99.0.10/24
+        - 192.0.2.10/24
       routes:
         - to: default
-          via: 100.99.0.1
+          via: 192.0.2.1
       nameservers:
         addresses: [1.1.1.1, 8.8.8.8]
     ens19:

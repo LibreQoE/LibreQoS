@@ -7,6 +7,8 @@ shaped-devices.js
 tree.js
 topology_manager.js
 topology_probes.js
+bridge.js
+cpu_workers.js
 help.js
 unknown-ips.js
 circuit.js
@@ -22,8 +24,8 @@ config_ssl.js
 config_rtt.js
 config_tuning.js
 config_queues.js
+config_dataplane.js
 config_stormguard.js
-config_treeguard.js
 config_lts.js
 config_iprange.js
 config_flows.js
@@ -42,8 +44,6 @@ config_devices.js
 config_users.js
 config_wispgate.js
 chatbot.js
-cpu_weights.js
-cpu_tree.js
 executive_worst_sites.js
 executive_oversubscribed_sites.js
 executive_sites_due_upgrade.js

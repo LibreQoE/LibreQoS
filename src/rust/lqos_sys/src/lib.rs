@@ -1,41 +1,15 @@
 #![warn(missing_docs)]
 
-//! `lqos_sys` is a system-library that builds LibreQoS's eBPF code
-//! and wraps it in a safe external Rust wrapper.
-//!
-//! The `build.rs` script compiles the C code found in `src/bpf`
-//! and statically embeds the result in this crate.
+//! `lqos_sys` retains the pure data structures that the bridge dataplane
+//! still consumes. The XDP/TC kernel wrapper, its BPF maps, and the map
+//! iterators were removed with the kernel datapath.
 
 #![deny(clippy::unwrap_used)]
-mod bifrost_maps;
-mod bpf_iterator;
-/// Provides direct access to LibBPF functionality, as exposed by the
-/// built-in, compiled eBPF programs. This is very-low level and should
-/// be handled with caution.
-pub mod bpf_map;
-mod cpu_map;
-/// Data shared between eBPF and Heimdall that needs local access
-/// for map control.
+
+/// Data shared between the kernel and Heimdall that still needs local access.
 pub mod flowbee_data;
-mod garbage_collector;
-mod ip_mapping;
-mod kernel_wrapper;
 mod linux;
-mod lqos_kernel;
-mod tc_classify_control;
 mod throughput;
 
-pub use bpf_iterator::{end_flows, expire_throughput, iterate_flows};
-pub use garbage_collector::bpf_garbage_collector;
-pub use ip_mapping::{
-    add_ip_to_tc, clear_hot_cache, clear_ips_from_tc, del_ip_from_tc, list_mapped_ips,
-};
-pub use kernel_wrapper::LibreQoSKernels;
 pub use linux::num_possible_cpus;
-pub use lqos_kernel::interface_name_to_index;
-pub use lqos_kernel::ip_mapping_capacity;
-pub use lqos_kernel::ip_mapping_subsystem_ready;
-pub use lqos_kernel::max_tracked_ips;
-pub use lqos_kernel::unload_xdp_from_interface;
-pub use tc_classify_control::{initialize_tc_classify_bypass, set_tc_classify_bypass};
-pub use throughput::{HostCounter, throughput_for_each};
+pub use throughput::HostCounter;

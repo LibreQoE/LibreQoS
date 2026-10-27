@@ -1,5 +1,7 @@
 # TreeGuard
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 TreeGuard is a current LibreQoS v2.0 feature for intelligent node management.
 
 Important status:

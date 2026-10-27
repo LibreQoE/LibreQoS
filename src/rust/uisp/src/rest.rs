@@ -27,7 +27,6 @@ async fn get_client() -> Result<reqwest::Client> {
 
 /// Submits a request to the UNMS API and returns the result as unprocessed text.
 /// This is a debug function: it doesn't do any parsing
-#[allow(dead_code)]
 pub async fn nms_request_get_text(url: &str, key: &str, api: &str) -> Result<String> {
     let full_url = format!("{}/{}", url_fixup(api), url);
     //println!("{full_url}");
@@ -44,7 +43,6 @@ pub async fn nms_request_get_text(url: &str, key: &str, api: &str) -> Result<Str
 }
 
 /// Submits a request to the UNMS API, returning a deserialized vector of type T.
-#[allow(dead_code)]
 pub async fn nms_request_get_vec<T>(url: &str, key: &str, api: &str) -> Result<Vec<T>>
 where
     T: DeserializeOwned,
@@ -61,77 +59,6 @@ where
         .await?;
 
     Ok(res.json::<Vec<T>>().await?)
-}
-
-#[allow(dead_code)]
-pub async fn nms_request_get_one<T>(url: &str, key: &str, api: &str) -> Result<T>
-where
-    T: DeserializeOwned,
-{
-    let full_url = format!("{}/{}", url_fixup(api), url);
-    //println!("{full_url}");
-    let client = get_client().await?;
-
-    let res = client
-        .get(&full_url)
-        .header("'Content-Type", "application/json")
-        .header("X-Auth-Token", key)
-        .send()
-        .await?;
-
-    Ok(res.json::<T>().await?)
-}
-
-/// This is a debug function: it doesn't do any parsing
-#[allow(dead_code)]
-pub async fn crm_request_get_text(api: &str, key: &str, url: &str) -> Result<String> {
-    let full_url = format!("{}/{}", url_fixup(api), url);
-    let client = get_client().await?;
-
-    let res = client
-        .get(&full_url)
-        .header("'Content-Type", "application/json")
-        .header("X-Auth-App-Key", key)
-        .send()
-        .await?;
-
-    Ok(res.text().await?)
-}
-
-#[allow(dead_code)]
-pub async fn crm_request_get_vec<T>(api: &str, key: &str, url: &str) -> Result<Vec<T>>
-where
-    T: DeserializeOwned,
-{
-    let full_url = format!("{}/{}", api, url);
-    let client = get_client().await?;
-
-    let res = client
-        .get(&full_url)
-        .header("'Content-Type", "application/json")
-        .header("X-Auth-App-Key", key)
-        .send()
-        .await?;
-
-    Ok(res.json::<Vec<T>>().await?)
-}
-
-#[allow(dead_code)]
-pub async fn crm_request_get_one<T>(api: &str, key: &str, url: &str) -> Result<T>
-where
-    T: DeserializeOwned,
-{
-    let full_url = format!("{}/{}", api, url);
-    let client = get_client().await?;
-
-    let res = client
-        .get(&full_url)
-        .header("'Content-Type", "application/json")
-        .header("X-Auth-App-Key", key)
-        .send()
-        .await?;
-
-    Ok(res.json::<T>().await?)
 }
 
 #[cfg(test)]

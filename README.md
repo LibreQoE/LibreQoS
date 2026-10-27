@@ -2,7 +2,7 @@
   <a href="https://libreqos.io/"><img src="https://github.com/user-attachments/assets/a3675b5a-d109-4e9c-9511-ece7fe6825c1" width="500" alt="LibreQoS"/></a>
 </p>
 
-# LibreQoS v2.2
+# LibreQoS
 
 LibreQoS is a self-hosted traffic management and network operations platform for Internet Service Providers and enterprise networks. It improves subscriber experience by reducing latency under load while giving operators a local, topology-aware view of network health, subscriber behavior, queue conditions, and traffic patterns.
 
@@ -16,16 +16,27 @@ LibreQoS runs on a server deployed as a managed bridge between the edge router a
 - Keep operational control with a self-hosted deployment model, open source core, and documented source-of-truth workflows.
 - Add optional long-term analytics, multi-shaper visibility, and support tooling through [LibreQoS Insight](https://libreqos.io/insight/).
 
-## What is new in the v2.0 experience
+## What is new in LibreQoS v3
 
-- **A stronger local operator console.** Dashboard, Site Map, Flow Globe, Network Tree, Queue Dynamics, Queue Stats, and ASN Analysis make day-to-day troubleshooting faster and more explainable.
-- **Topology-aware operations.** LibreQoS follows the way ISPs actually run networks: sites, APs, sectors, OLTs, branches, and subscriber hierarchies.
-- **Explainable congestion insight.** Queue Dynamics, Queue Tree, RTT, retransmits, utilization, and live flow views help operators see whether a problem is shaping-related, upstream, local RF, or elsewhere.
-- **Clear source-of-truth workflows.** Built-in integrations, manual files, and custom pipelines are all documented so operators can keep persistent shaping data under control.
-- **Production-focused deployment guidance.** Quickstart, upgrade, troubleshooting, architecture, and Ubuntu 24.04 hotfix documentation are all part of the v2.0 operator workflow.
+LibreQoS v3 is a ground-up dataplane change; here is what it means in the operator's terms:
+
+1. **Match subscribers by more than IP.** Classify traffic by CIDR / IPv4 / IPv6 **and** by VLAN tag, VXLAN (VNI + VLAN), or MPLS label — so you can correlate and shape subscribers whose identity isn't visible at L3. A tunnel/VLAN/MPLS miss is counted and never falls through to the IP lookup, so reused inner /24s cannot cross-customer misroute.
+2. **Lower latency under load, out of the box.** CAKE is the default queue discipline, and dynamic CAKE allocation is on by default. Idle circuits hold a cheap FIFO leaf and switch to CAKE only when they carry traffic.
+3. **Jumbo frame support.** The dataplane now supports MTU up to 9000-byte frames.
+4. **Multi-core CAKE.** Each worker core runs a full CAKE instance over its flow subset, with the rate shared across instances instead of serializing on one core.
+5. **Site sharding across CPU cores.** Site subtrees are distributed across cpu cores, so a large topology uses the whole server.
+6. **Subscriber plans up to 25 Gbps supported.** Shard-tin spreads a single circuit across worker cores — each running a full CAKE instance against a shared rate domain — so a high-rate plan is not capped by one core's CAKE throughput. Per-flow ordering is preserved.
+7. **CPU auto-balancing.** The bridge moves circuits between workers as load shifts, instead of leaving one core hot and the rest idle.
+8. **100G-class shaping on the right hardware.** Measured at ≥133 Gbps on commodity hardware (AMD Ryzen 9 7950X).
+9. **One command for support.** `libreqos-support-bundle` gathers systemd/journal state, the bridge log and leafstats, LKG metadata, config, hugepages, links, `lspci`, and `dpdk-devbind` — read-only, and it never restarts anything.
+
+Read the full [What's new in v3](docs/v3/whats-new.md) change list for the technical detail.
 
 <a href="https://libreqos.io/"><img alt="LibreQoS dashboard and operator views" src="https://github.com/user-attachments/assets/2f1f0390-2fae-4438-a252-00087569052d"></a>
 
+## Installing LibreQoS v3
+
+The install procedure — host requirements, the preflight checker, the apt archive, the configuration files, and the first boot — is maintained in the documentation: **[Installing LibreQoS v3](https://libreqos.readthedocs.io/en/latest/docs/v3/install.html)**. Upgrading an existing v2.0 host? Follow **[Upgrading from v2.0](https://libreqos.readthedocs.io/en/latest/docs/v3/upgrade-from-v2.html)**.
 
 ## How LibreQoS fits into an ISP network
 
@@ -40,7 +51,7 @@ LibreQoS helps operators work across several layers of the network:
 
 ## Open source core with optional commercial layers
 
-LibreQoS itself is open source under GPL2.
+LibreQoS is open source under GPL-2.0. See [LICENSE](LICENSE).
 
 Commercial add-ons are available for operators who want more:
 
@@ -49,11 +60,13 @@ Commercial add-ons are available for operators who want more:
 
 ## Documentation and getting started
 
-- [Documentation](https://libreqos.readthedocs.io/en/latest/)
-- [Quickstart](https://libreqos.readthedocs.io/en/latest/docs/v2.0/quickstart.html)
-- [System Requirements](https://libreqos.readthedocs.io/en/latest/docs/v2.0/requirements.html)
-- [Web UI / Node Manager](https://libreqos.readthedocs.io/en/latest/docs/v2.0/node-manager-ui.html)
-- [LibreQoS Insight](https://libreqos.readthedocs.io/en/latest/docs/v2.0/insight.html)
+- [LibreQoS v3 documentation](https://libreqos.readthedocs.io/en/latest/)
+- [What's new in v3](https://libreqos.readthedocs.io/en/latest/docs/v3/whats-new.html)
+- [Installing LibreQoS v3](https://libreqos.readthedocs.io/en/latest/docs/v3/install.html)
+- [Upgrading from v2.0](https://libreqos.readthedocs.io/en/latest/docs/v3/upgrade-from-v2.html)
+- [Operating LibreQoS v3](https://libreqos.readthedocs.io/en/latest/docs/v3/operate.html)
+- [Troubleshooting](https://libreqos.readthedocs.io/en/latest/docs/v3/troubleshooting.html)
+- [LibreQoS v2.0 documentation (archived)](https://libreqos.readthedocs.io/en/latest/docs/v2.0/index.html)
 
 ## LibreQoS Insight
 
@@ -62,7 +75,6 @@ LibreQoS Insight is the successor to the older Long Term Stats service. It is bu
 Insight provides a free 30-day trial so operators can evaluate its workflows on their own networks. Learn more at [LibreQoS Insight](https://libreqos.io/insight/).
 
 <a href="https://libreqos.io/insight"><img alt="LibreQoS Insight" src="https://github.com/user-attachments/assets/72a61d36-4ee5-438e-98c2-ba3203ea2df9"></a>
-
 
 ## Sponsors
 

@@ -1,7 +1,7 @@
-import {scaleNumber} from "../lq_js_common/helpers/scaling";
-import {scaleNanos} from "../lq_js_common/helpers/scaling";
-import {toNumber} from "../lq_js_common/helpers/scaling";
-import {isColorBlindMode} from "./colorblind";
+import {scaleNumber} from "../lq_js_common/helpers/scaling.js";
+import {scaleNanos} from "../lq_js_common/helpers/scaling.js";
+import {toNumber} from "../lq_js_common/helpers/scaling.js";
+import {isColorBlindMode} from "./colorblind.js";
 
 function lerpViridis(t) {
     const stops = [

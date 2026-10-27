@@ -201,20 +201,16 @@ fn validate_effective_node_identity_consistency(
 /// site-parent graph is acyclic, and every canonical site node remains present
 /// exactly once in the exported tree.
 fn validate_effective_topology_network_from_canonical(
-    config: &Config,
+    _config: &Config,
     canonical: &TopologyCanonicalStateFile,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
     effective_network: &Value,
-    virtualization: &QueueVirtualizationContext,
 ) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     let site_node_ids = canonical_site_node_ids(canonical);
     validate_effective_node_identity_consistency(ui_state, effective, &mut errors);
     validate_effective_site_parent_cycles(&site_node_ids, ui_state, effective, &mut errors);
-    let queue_policy_tree = queue_policy_reference_tree(canonical, ui_state, effective)
-        .unwrap_or_else(|_| Value::Object(Map::new()));
-    let queue_policy_root = queue_policy_tree.as_object();
 
     let mut counts = HashMap::new();
     let Some(root) = effective_network.as_object() else {
@@ -225,37 +221,12 @@ fn validate_effective_topology_network_from_canonical(
     for child in root.values() {
         count_node_ids(child, &mut counts);
     }
-    let child_branch_counts = logical_child_branch_counts(ui_state);
-    let attachment_branch_counts = effective_attachment_branch_counts(effective);
 
     for canonical_node in canonical
         .nodes
         .iter()
         .filter(|node| site_node_ids.contains(node.node_id.as_str()))
     {
-        let fallback_node;
-        let ui_node = if let Some(ui_node) = ui_state.find_node(&canonical_node.node_id) {
-            ui_node
-        } else {
-            fallback_node = TopologyEditorNode {
-                node_id: canonical_node.node_id.clone(),
-                node_name: canonical_node.node_name.clone(),
-                queue_visibility_policy: canonical_node.queue_visibility_policy,
-                ..TopologyEditorNode::default()
-            };
-            &fallback_node
-        };
-        if resolved_queue_visibility_policy(
-            config,
-            ui_node,
-            queue_policy_root.and_then(|root| find_node_by_id(root, &canonical_node.node_id)),
-            &child_branch_counts,
-            &attachment_branch_counts,
-            virtualization,
-        ) == TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren
-        {
-            continue;
-        }
         match counts
             .get(&canonical_node.node_id)
             .copied()
@@ -303,7 +274,6 @@ pub fn validate_effective_topology_network(
         ui_state,
         effective,
         effective_network,
-        &QueueVirtualizationContext::default(),
     )
 }
 
@@ -315,16 +285,80 @@ fn apply_effective_topology_to_network_json_from_canonical(
     canonical: &TopologyCanonicalStateFile,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
-    virtualization: &QueueVirtualizationContext,
+    direct_circuit_hosts: &DirectCircuitHosts,
+    read_only: bool,
 ) -> std::result::Result<Value, Vec<String>> {
     let mut out =
         apply_effective_topology_reparenting_only(canonical_network, ui_state, effective)?;
     if let Some(root) = out.as_object_mut() {
         recompile_effective_network_bandwidths(root, canonical, ui_state, effective);
-        apply_queue_hidden_node_virtualization(config, ui_state, effective, root, virtualization);
-        apply_runtime_squashing(config, ui_state, effective, root).map_err(|err| vec![err])?;
+        // K1b §4.1 item 1: fold the MERGED `AdjustSiteSpeed` overrides
+        // (operator + stormguard, operator-first) onto the effective node
+        // ceils AFTER the canonical/attachment recomputation so a StormGuard
+        // clamp reaches the compiled inner op (and the broker delta).
+        let runtime_overrides = load_runtime_shaping_overrides(config, read_only)
+            .map_err(|err| vec![format!("{err:#}")])?;
+        apply_site_speed_overrides(root, runtime_overrides.network_adjustments());
+        apply_runtime_squashing(config, ui_state, effective, direct_circuit_hosts, root)
+            .map_err(|err| vec![err])?;
     }
     Ok(out)
+}
+
+/// §`lqos-74t.29`: remove top-level attachment-only nodes from the compiled
+/// network tree (the `tree.html?parent=0` root duplication). A node is removed
+/// iff attachment-only (id OR name is an attachment option) AND childless AND
+/// NOT a direct circuit host (`circuit_parent_ids`) — the effective network IS
+/// the DPDK compiler input, so a circuit host must stay (else the leaf-parent
+/// chain breaks -> UnknownParent -> R3).
+fn remove_top_level_attachment_only_nodes(
+    out: &mut Value,
+    canonical: &TopologyCanonicalStateFile,
+    circuit_parent_ids: &BTreeSet<&str>,
+) {
+    let mut attachment_only: BTreeSet<&str> = BTreeSet::new();
+    for node in &canonical.nodes {
+        for parent in &node.allowed_parents {
+            for option in &parent.attachment_options {
+                if option.attachment_id != TOPOLOGY_ATTACHMENT_AUTO_ID {
+                    attachment_only.insert(option.attachment_id.as_str());
+                }
+                if !option.attachment_name.trim().is_empty() {
+                    attachment_only.insert(option.attachment_name.as_str());
+                }
+            }
+        }
+    }
+    let Some(root) = out.as_object_mut() else {
+        return;
+    };
+    root.retain(|key, value| {
+        let object = value.as_object();
+        let id = object
+            .and_then(|o| o.get("id"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let name = object
+            .and_then(|o| o.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or(key.as_str());
+        let is_attachment_only =
+            attachment_only.contains(id) || attachment_only.contains(name);
+        if !is_attachment_only {
+            return true;
+        }
+        // GUARD: a circuit host must stay (the effective network is the compiler
+        // input; removing it would orphan its leaf).
+        if circuit_parent_ids.contains(id) {
+            return true;
+        }
+        let has_children = object
+            .and_then(|o| o.get("children"))
+            .and_then(Value::as_object)
+            .map(|children| !children.is_empty())
+            .unwrap_or(false);
+        has_children
+    });
 }
 
 /// Applies the effective attachment selection to a canonical network tree and returns
@@ -353,7 +387,8 @@ pub fn apply_effective_topology_to_network_json(
         &canonical_state,
         ui_state,
         effective,
-        &QueueVirtualizationContext::default(),
+        &DirectCircuitHosts::default(),
+        false,
     )
 }
 
@@ -362,7 +397,8 @@ fn apply_effective_topology_to_canonical_state(
     canonical: &TopologyCanonicalStateFile,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
-    virtualization: &QueueVirtualizationContext,
+    direct_circuit_hosts: &DirectCircuitHosts,
+    read_only: bool,
 ) -> std::result::Result<Value, Vec<String>> {
     let canonical_network =
         if canonical.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration {
@@ -376,6 +412,97 @@ fn apply_effective_topology_to_canonical_state(
         canonical,
         ui_state,
         effective,
-        virtualization,
+        direct_circuit_hosts,
+        read_only,
     )
+}
+
+#[cfg(test)]
+mod lqos74t29_tests {
+    use super::*;
+
+    /// §`lqos-74t.29`: a top-level attachment-only childless, circuit-less node is
+    /// removed; a CIRCUIT HOST stays even when childless; a child-hosting node
+    /// stays.
+    #[test]
+    fn top_level_attachment_only_removed_but_circuit_host_kept() {
+        let option = |id: &str, name: &str| -> lqos_config::TopologyAttachmentOption {
+            serde_json::from_value(serde_json::json!({
+                "attachment_id": id,
+                "attachment_name": name
+            }))
+            .expect("attachment option")
+        };
+        let canonical = TopologyCanonicalStateFile {
+            nodes: vec![TopologyCanonicalNode {
+                node_id: "uisp:site:one".to_string(),
+                node_name: "Site One".to_string(),
+                node_kind: "site".to_string(),
+                allowed_parents: vec![TopologyAllowedParent {
+                    parent_node_id: "root".to_string(),
+                    parent_node_name: "Root".to_string(),
+                    attachment_options: vec![
+                        option("uisp:device:radio-1", "LTU-2049BoyScout"),
+                        option("uisp:device:radio-2", "AF5XHD-2800AirportRd"),
+                        option("uisp:device:radio-3", "Wave-Parent"),
+                    ],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut out = serde_json::json!({
+            "Site One": { "id": "uisp:site:one", "name": "Site One", "children": {} },
+            "LTU-2049BoyScout": { "id": "uisp:device:radio-1", "name": "LTU-2049BoyScout", "children": {} },
+            "AF5XHD-2800AirportRd": { "id": "uisp:device:radio-2", "name": "AF5XHD-2800AirportRd", "children": {} },
+            "Wave-Parent": { "id": "uisp:device:radio-3", "name": "Wave-Parent",
+                "children": { "Sub": { "id": "uisp:site:sub", "name": "Sub", "children": {} } } }
+        });
+        // radio-2 is a CIRCUIT HOST (its id is a circuit's effective parent).
+        let circuit_parents: BTreeSet<&str> = ["uisp:device:radio-2"].into_iter().collect();
+        remove_top_level_attachment_only_nodes(&mut out, &canonical, &circuit_parents);
+        let root = out.as_object().expect("object");
+        assert!(
+            !root.contains_key("LTU-2049BoyScout"),
+            "an attachment-only childless circuit-less top-level node is removed"
+        );
+        assert!(
+            root.contains_key("AF5XHD-2800AirportRd"),
+            "a CIRCUIT HOST stays even when childless"
+        );
+        assert!(
+            root.contains_key("Wave-Parent"),
+            "an attachment-only node that HOSTS children stays"
+        );
+        assert!(root.contains_key("Site One"));
+    }
+
+    /// `lqos-74t.15.2` (A1) — the `lqos-74t.29` no-op is SUPERSEDED: a childless,
+    /// circuit-less top-level node IS LOAD-BEARING (`analysis.rs:186` +
+    /// `walk_place:347`) ⇒ it IS emitted ⇒ removing it DOES change the compiled
+    /// content_key (the earlier elision/omission WAS the `AnalysisEmissionDivergence`
+    /// class). The `lqos-74t.29` dedup still drops it from the network, so its
+    /// effect is now a REAL content change — pinned here.
+    #[test]
+    fn dedup_changes_the_compiled_content_key() {
+        let with_node = serde_json::json!({
+            "Site One": { "id": "uisp:site:one", "name": "Site One", "children": {
+                "AP": { "id": "uisp:device:ap", "name": "AP", "children": {} } } },
+            "LTU-2049BoyScout": { "id": "uisp:device:radio-1", "name": "LTU-2049BoyScout", "children": {} }
+        });
+        let mut without_node = with_node.clone();
+        without_node
+            .as_object_mut()
+            .expect("object")
+            .remove("LTU-2049BoyScout");
+        let inputs = TopologyShapingInputsFile::default();
+        let tx_with = crate::compile_dataplane_transaction(&with_node, &inputs);
+        let tx_without = crate::compile_dataplane_transaction(&without_node, &inputs);
+        assert_ne!(
+            content_key(&tx_with),
+            content_key(&tx_without),
+            "(A1): a childless circuit-less top-level node IS emitted ⇒ removing it CHANGES the content"
+        );
+    }
 }

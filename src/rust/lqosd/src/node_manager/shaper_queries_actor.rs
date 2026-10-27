@@ -1,7 +1,6 @@
 mod caches;
 mod commands;
 mod queries;
-mod timed_cache;
 
 use crate::lts2_sys::control_channel::ControlChannelCommand;
 pub use crate::node_manager::shaper_queries_actor::commands::ShaperQueryCommand;

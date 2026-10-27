@@ -1,5 +1,7 @@
 # HTB + fq_codel + CAKE: Detailed Queueing Behavior in LibreQoS
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page is the canonical queueing deep-dive companion to [LibreQoS Backend Architecture](libreqos-backend-architecture.md).
 
 It explains:

@@ -43,6 +43,26 @@ export function immediateParentNodeFromTree(tree, node) {
     return tree[parentIndex][1] || null;
 }
 
+export function ancestorNodesFromTree(tree, node) {
+    const ancestors = [];
+    const seen = new Set();
+    let current = node;
+    while (current?.immediate_parent !== null && current?.immediate_parent !== undefined) {
+        const parentIndex = current.immediate_parent;
+        if (seen.has(parentIndex) || !tree?.[parentIndex]) {
+            break;
+        }
+        seen.add(parentIndex);
+        const parent = tree[parentIndex][1] || null;
+        if (!parent) {
+            break;
+        }
+        ancestors.push(parent);
+        current = parent;
+    }
+    return ancestors;
+}
+
 function formatMbps(value) {
     const numeric = toNumber(value, 0);
     if (numeric === 0) {
@@ -82,31 +102,49 @@ function parentDisplayName(parentNode, topologyOverrideData) {
         || "upstream parent";
 }
 
-function reasonForDirection({node, parentNode, rateOverrideData, topologyOverrideData, direction}) {
+function reasonForDirection({node, ancestorNodes, rateOverrideData, topologyOverrideData, direction}) {
     const configured = configuredMax(node);
     const effective = effectiveMax(node);
     const configuredValue = configured[direction];
     const effectiveValue = effective[direction];
     const override = overrideValue(rateOverrideData, direction);
-    const parentEffective = parentNode ? effectiveMax(parentNode)[direction] : null;
+    const immediateParent = ancestorNodes[0] || null;
     const directionName = direction === 0 ? "Download" : "Upload";
+    // The true limiter is the nearest ancestor whose OWN configured cap equals
+    // the node's effective value. An intermediate AP may itself be inherited
+    // (configured 1050 under a 800 grandparent), so checking only the immediate
+    // parent would name the AP rather than the ancestor that sets the cap.
+    const limitingAncestor = ancestorNodes.find((ancestor) => {
+        const ancestorEffective = effectiveMax(ancestor)[direction];
+        const ancestorConfigured = configuredMax(ancestor)[direction];
+        return ancestorEffective !== null
+            && ratesApproximatelyEqual(effectiveValue, ancestorEffective)
+            && (ratesApproximatelyEqual(ancestorConfigured, effectiveValue)
+                || rateBelow(ancestorConfigured, effectiveValue));
+    }) || (immediateParent
+        && ratesApproximatelyEqual(effectiveValue, effectiveMax(immediateParent)[direction])
+        ? immediateParent
+        : null);
 
     if (
-        parentEffective !== null
-        && ratesApproximatelyEqual(effectiveValue, parentEffective)
+        limitingAncestor
         && (rateBelow(effectiveValue, configuredValue) || (override !== null && rateBelow(effectiveValue, override)))
     ) {
-        const parentName = parentDisplayName(parentNode, topologyOverrideData);
-        const suffix = topologyOverrideParentIsActive(topologyOverrideData)
+        const isImmediate = limitingAncestor === immediateParent;
+        const parentName = isImmediate
+            ? parentDisplayName(limitingAncestor, topologyOverrideData)
+            : (limitingAncestor?.name || "upstream parent");
+        const suffix = isImmediate && topologyOverrideParentIsActive(topologyOverrideData)
             ? " selected by topology override"
             : "";
+        const ancestorLabel = isImmediate ? "parent" : "ancestor";
         const attachment = node?.active_attachment_name
             ? ` Active attachment: ${node.active_attachment_name}.`
             : "";
         return {
             kind: "parent",
             label: "Parent",
-            detail: `${directionName}: inherited from parent ${parentName}${suffix} at ${formatMbps(effectiveValue)}.${attachment}`,
+            detail: `${directionName}: inherited from ${ancestorLabel} ${parentName}${suffix} at ${formatMbps(effectiveValue)}.${attachment}`,
         };
     }
 
@@ -144,12 +182,16 @@ function reasonForDirection({node, parentNode, rateOverrideData, topologyOverrid
 export function buildNodeLimitSummary({
     node,
     parentNode = null,
+    ancestorNodes = null,
     rateOverrideData = null,
     topologyOverrideData = null,
 } = {}) {
+    const resolvedAncestors = Array.isArray(ancestorNodes) && ancestorNodes.length > 0
+        ? ancestorNodes
+        : (parentNode ? [parentNode] : []);
     const directions = [0, 1].map((direction) => reasonForDirection({
         node,
-        parentNode,
+        ancestorNodes: resolvedAncestors,
         rateOverrideData,
         topologyOverrideData,
         direction,

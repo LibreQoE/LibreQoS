@@ -1,5 +1,7 @@
 # Best Practices Guide for ISP Operations
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This guide consolidates operational best practices for deploying and running LibreQoS in ISP environments.
 
 Use this page as an operations playbook. Use feature-specific pages for implementation details.

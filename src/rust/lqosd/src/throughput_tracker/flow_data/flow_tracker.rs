@@ -1,4 +1,5 @@
 //! Owns the live active-flow table and publishes lock-free snapshots for readers.
+#![allow(dead_code)] // K3-B carve-out: active-flow snapshot structures/readers are retained; the kernel writer is retired and bridge flow-history is the live source.
 
 use crate::throughput_tracker::tracking_data::MAX_RETRY_TIMES;
 
@@ -220,6 +221,12 @@ pub(crate) fn live_active_flow_count() -> u64 {
 }
 
 /// Visits active-flow snapshot rows for a circuit after a recent cutoff.
+///
+/// `.65` KERNEL-ONLY RESIDUE (flagged, deliberately unchanged): this reads ONLY
+/// the kernel `active_flow_snapshot()`. The LTS2 streaming-circuit flow list
+/// (`lts2_sys/control_channel.rs`) stays on the kernel source — it is out of the
+/// Shaper Top ASN scope and has no bridge-rate requirement. Do not wire the
+/// bridge here without a separate decision.
 pub(crate) fn for_each_active_flow_for_circuit(
     circuit_hash: i64,
     recent_cutoff_nanos: u64,

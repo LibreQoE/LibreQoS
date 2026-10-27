@@ -52,7 +52,11 @@ fn default_decrease_fast_cooldown_seconds() -> f32 {
 }
 
 fn default_fallback_sqm() -> String {
-    "fq_codel".to_string()
+ // K1b ph2 (driver: the shipped default serves the bridge path
+    // (the DPDK-only future). `fq_codel` remains accepted for explicitly-set
+    // kernel-mode configs until K3; a bridge box rejects it loudly at the
+    // write path.
+    "cake".to_string()
 }
 
 fn default_delay_threshold_ms() -> f32 {
@@ -93,6 +97,19 @@ fn default_active_ping_weight() -> f32 {
 
 fn default_active_ping_timeout_seconds() -> f32 {
     1.0
+}
+
+/// K1b §4.6 pin 1: default TTL for machine-authored (StormGuard) site-rate
+/// clamps, in seconds. Pre-committed — tuning only by driver ruling.
+fn default_override_ttl_seconds() -> u64 {
+    300
+}
+
+/// K1b §4.8: default bound (seconds) on waiting for a clamp's minted
+/// generation to settle at the bridge. Pre-committed — tuning only by driver
+/// ruling.
+fn default_publish_wait_seconds() -> u64 {
+    30
 }
 
 /// StormGuard evaluation strategy.
@@ -162,9 +179,6 @@ pub struct StormguardConfig {
     /// Whether StormGuard may fall back to a per-circuit SQM action when direct HTB changes are unsafe.
     #[serde(default = "default_false")]
     pub circuit_fallback_enabled: bool,
-    /// Whether fallback SQM actions should be persisted into the StormGuard override layer.
-    #[serde(default = "default_true")]
-    pub circuit_fallback_persist: bool,
     /// SQM token to apply during fallback (for now, `fq_codel` or `cake`).
     #[serde(default = "default_fallback_sqm")]
     pub circuit_fallback_sqm: String,
@@ -202,6 +216,15 @@ pub struct StormguardConfig {
     /// Timeout for active pings (seconds, DelayProbeActive).
     #[serde(default = "default_active_ping_timeout_seconds")]
     pub active_ping_timeout_seconds: f32,
+    /// TTL (seconds) for StormGuard's machine-authored site-rate clamps. A
+    /// clamp not reasserted within this window is dropped and the un-clamped
+    /// rate republished (the dead-man's switch). Default 300.
+    #[serde(default = "default_override_ttl_seconds")]
+    pub override_ttl_seconds: u64,
+    /// Bound (seconds) on waiting for a clamp's minted generation to reach a
+    /// settled bridge publish state before failing loud. Default 30.
+    #[serde(default = "default_publish_wait_seconds")]
+    pub publish_wait_seconds: u64,
 }
 
 impl Default for StormguardConfig {
@@ -225,7 +248,6 @@ impl Default for StormguardConfig {
             decrease_cooldown_seconds: default_decrease_cooldown_seconds(),
             decrease_fast_cooldown_seconds: default_decrease_fast_cooldown_seconds(),
             circuit_fallback_enabled: default_false(),
-            circuit_fallback_persist: default_true(),
             circuit_fallback_sqm: default_fallback_sqm(),
             delay_threshold_ms: default_delay_threshold_ms(),
             delay_threshold_ratio: default_delay_threshold_ratio(),
@@ -237,6 +259,8 @@ impl Default for StormguardConfig {
             active_ping_interval_seconds: default_active_ping_interval_seconds(),
             active_ping_weight: default_active_ping_weight(),
             active_ping_timeout_seconds: default_active_ping_timeout_seconds(),
+            override_ttl_seconds: default_override_ttl_seconds(),
+            publish_wait_seconds: default_publish_wait_seconds(),
         }
     }
 }
@@ -288,10 +312,14 @@ impl StormguardConfig {
             self.decrease_fast_cooldown_seconds,
         )?;
 
+        // K1b ph2: `fq_codel` is kernel-mode-only (the bridge cannot instantiate
+        // it and rejects it loudly at the write path); `none`/`cake` are the
+        // bridge-safe tokens.
         let sqm = self.circuit_fallback_sqm.trim().to_ascii_lowercase();
-        if self.circuit_fallback_enabled && !matches!(sqm.as_str(), "fq_codel" | "cake") {
+        if self.circuit_fallback_enabled && !matches!(sqm.as_str(), "none" | "fq_codel" | "cake") {
             return Err(
-                "stormguard.circuit_fallback_sqm must be either 'fq_codel' or 'cake'".to_string(),
+                "stormguard.circuit_fallback_sqm must be one of 'none', 'fq_codel' (kernel-mode only), or 'cake'"
+                    .to_string(),
             );
         }
 
@@ -324,6 +352,12 @@ impl StormguardConfig {
             "stormguard.active_ping_timeout_seconds",
             self.active_ping_timeout_seconds,
         )?;
+        if self.override_ttl_seconds == 0 {
+            return Err("stormguard.override_ttl_seconds must be > 0".to_string());
+        }
+        if self.publish_wait_seconds == 0 {
+            return Err("stormguard.publish_wait_seconds must be > 0".to_string());
+        }
         if matches!(self.strategy, StormguardStrategy::DelayProbeActive)
             && self.active_ping_target.trim().is_empty()
         {

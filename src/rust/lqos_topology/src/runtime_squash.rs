@@ -47,10 +47,21 @@ fn min_attachment_bandwidth(
 fn should_runtime_squash_chain(
     chain_names: [&str; 4],
     do_not_squash_sites: &HashSet<String>,
+    direct_circuit_hosts: &DirectCircuitHosts,
 ) -> bool {
-    !chain_names
-        .into_iter()
-        .any(|name| do_not_squash_sites.contains(name))
+    // AP-anchor fix: never squash a chain that names a DIRECT-CIRCUIT node (an
+    // anchored/hosting AP) — the config `do_not_squash_sites` OR the direct
+    // NAME set. (Pass-2 checks child+grandchild; pass-3 the child — both ride
+    // the `chain_names`.)
+    //
+    // NOTE: `chain_names` are the CHILD **MAP KEYS** (the node display NAMES),
+    // so this gate is NAME-keyed. The ID-keyed guard for the same nodes lives at
+    // each call site (`child_direct_id` / `grandchild_direct_id`), because the
+    // node IDs are not the map keys.
+    !chain_names.into_iter().any(|name| {
+        do_not_squash_sites.contains(name)
+            || direct_circuit_hosts.direct_circuit_node_names.contains(name)
+    })
 }
 
 fn attachment_role_allows_runtime_squash(role: TopologyAttachmentRole) -> bool {
@@ -219,10 +230,20 @@ fn is_inactive_backhaul_stub_subtree(
     node: &Map<String, Value>,
     pair_by_attachment_id: &HashMap<String, (TopologyAttachmentRole, String)>,
     active_pair_ids: &HashSet<String>,
+    direct_circuit_hosts: &DirectCircuitHosts,
 ) -> bool {
     let Some(node_id) = node.get("id").and_then(Value::as_str) else {
         return false;
     };
+    // AP-anchor fix: an inactive backhaul stub that ANCHORS/HOSTS a direct
+    // circuit must NOT be pruned. The guard checks BOTH the id AND the name set,
+    // because node IDs are not the map keys.
+    let node_name = node.get("name").and_then(Value::as_str).unwrap_or("");
+    if direct_circuit_hosts.direct_circuit_node_ids.contains(node_id)
+        || direct_circuit_hosts.direct_circuit_node_names.contains(node_name)
+    {
+        return false;
+    }
     let Some((role, pair_id)) = pair_by_attachment_id.get(node_id) else {
         return false;
     };
@@ -237,7 +258,12 @@ fn is_inactive_backhaul_stub_subtree(
             return false;
         };
         node_type_is(child, "AP")
-            && is_inactive_backhaul_stub_subtree(child_node, pair_by_attachment_id, active_pair_ids)
+            && is_inactive_backhaul_stub_subtree(
+                child_node,
+                pair_by_attachment_id,
+                active_pair_ids,
+                direct_circuit_hosts,
+            )
     })
 }
 
@@ -245,6 +271,7 @@ fn prune_inactive_backhaul_stubs_in_children(
     children: &mut Map<String, Value>,
     pair_by_attachment_id: &HashMap<String, (TopologyAttachmentRole, String)>,
     active_pair_ids: &HashSet<String>,
+    direct_circuit_hosts: &DirectCircuitHosts,
 ) {
     let child_keys = children.keys().cloned().collect::<Vec<_>>();
     for child_key in child_keys {
@@ -258,6 +285,7 @@ fn prune_inactive_backhaul_stubs_in_children(
             grandchildren,
             pair_by_attachment_id,
             active_pair_ids,
+            direct_circuit_hosts,
         );
     }
 
@@ -267,7 +295,12 @@ fn prune_inactive_backhaul_stubs_in_children(
             .get(&child_key)
             .and_then(Value::as_object)
             .is_some_and(|node| {
-                is_inactive_backhaul_stub_subtree(node, pair_by_attachment_id, active_pair_ids)
+                is_inactive_backhaul_stub_subtree(
+                    node,
+                    pair_by_attachment_id,
+                    active_pair_ids,
+                    direct_circuit_hosts,
+                )
             });
         if should_remove {
             children.remove(&child_key);
@@ -280,6 +313,7 @@ fn squash_backhaul_pairs_in_children(
     children: &mut Map<String, Value>,
     do_not_squash_sites: &HashSet<String>,
     roles_by_node_id: &HashMap<String, TopologyAttachmentRole>,
+    direct_circuit_hosts: &DirectCircuitHosts,
 ) -> std::result::Result<(), String> {
     let child_keys = children.keys().cloned().collect::<Vec<_>>();
     for child_key in child_keys {
@@ -294,6 +328,7 @@ fn squash_backhaul_pairs_in_children(
             grandchildren,
             do_not_squash_sites,
             roles_by_node_id,
+            direct_circuit_hosts,
         )?;
     }
 
@@ -350,6 +385,19 @@ fn squash_backhaul_pairs_in_children(
             )) {
                 continue;
             }
+            // AP-anchor fix: never squash a chain whose CHILD or GRANDCHILD
+            // hosts/anchors a direct circuit (id OR name).
+            let child_direct_id = child_node
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| direct_circuit_hosts.direct_circuit_node_ids.contains(id));
+            let grandchild_direct_id = grandchild_node
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| direct_circuit_hosts.direct_circuit_node_ids.contains(id));
+            if child_direct_id || grandchild_direct_id {
+                continue;
+            }
             if !should_runtime_squash_chain(
                 [
                     parent_name.unwrap_or_default(),
@@ -358,6 +406,7 @@ fn squash_backhaul_pairs_in_children(
                     &endpoint_key,
                 ],
                 do_not_squash_sites,
+                direct_circuit_hosts,
             ) {
                 continue;
             }
@@ -452,6 +501,7 @@ fn squash_single_attachment_hops_in_children(
     children: &mut Map<String, Value>,
     do_not_squash_sites: &HashSet<String>,
     roles_by_node_id: &HashMap<String, TopologyAttachmentRole>,
+    direct_circuit_hosts: &DirectCircuitHosts,
 ) -> std::result::Result<(), String> {
     let child_keys = children.keys().cloned().collect::<Vec<_>>();
     for child_key in child_keys {
@@ -466,6 +516,7 @@ fn squash_single_attachment_hops_in_children(
             grandchildren,
             do_not_squash_sites,
             roles_by_node_id,
+            direct_circuit_hosts,
         )?;
     }
 
@@ -504,6 +555,15 @@ fn squash_single_attachment_hops_in_children(
             )) {
                 continue;
             }
+            // AP-anchor fix: never squash a chain whose CHILD hosts/anchors a
+            // direct circuit (id OR name).
+            let child_direct_id = child_node
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| direct_circuit_hosts.direct_circuit_node_ids.contains(id));
+            if child_direct_id {
+                continue;
+            }
             if !should_runtime_squash_chain(
                 [
                     parent_name.unwrap_or_default(),
@@ -512,6 +572,7 @@ fn squash_single_attachment_hops_in_children(
                     "",
                 ],
                 do_not_squash_sites,
+                direct_circuit_hosts,
             ) {
                 continue;
             }
@@ -587,6 +648,7 @@ fn apply_runtime_squashing(
     config: &Config,
     ui_state: &TopologyEditorStateFile,
     effective: &TopologyEffectiveStateFile,
+    direct_circuit_hosts: &DirectCircuitHosts,
     root: &mut Map<String, Value>,
 ) -> std::result::Result<(), String> {
     if !ui_state.source.starts_with("uisp/") {
@@ -605,9 +667,205 @@ fn apply_runtime_squashing(
         .collect::<HashSet<_>>();
     let active_pair_ids = selected_attachment_pair_ids(ui_state, effective);
     let pair_by_attachment_id = attachment_pair_memberships(ui_state);
-    prune_inactive_backhaul_stubs_in_children(root, &pair_by_attachment_id, &active_pair_ids);
+    prune_inactive_backhaul_stubs_in_children(
+        root,
+        &pair_by_attachment_id,
+        &active_pair_ids,
+        direct_circuit_hosts,
+    );
     let roles_by_node_id = selected_attachment_roles(ui_state, effective);
-    squash_backhaul_pairs_in_children(None, root, &do_not_squash_sites, &roles_by_node_id)?;
-    squash_single_attachment_hops_in_children(None, root, &do_not_squash_sites, &roles_by_node_id)?;
+    squash_backhaul_pairs_in_children(
+        None,
+        root,
+        &do_not_squash_sites,
+        &roles_by_node_id,
+        direct_circuit_hosts,
+    )?;
+    squash_single_attachment_hops_in_children(
+        None,
+        root,
+        &do_not_squash_sites,
+        &roles_by_node_id,
+        direct_circuit_hosts,
+    )?;
     Ok(())
 }
+
+#[cfg(test)]
+mod ap_anchor_tests {
+    use super::*;
+
+    fn ctx(ids: &[&str], names: &[&str]) -> DirectCircuitHosts {
+        DirectCircuitHosts {
+            direct_circuit_node_ids: ids.iter().map(|s| s.to_string()).collect(),
+            direct_circuit_node_names: names.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn inactive_stub_pair() -> (
+        HashMap<String, (TopologyAttachmentRole, String)>,
+        HashSet<String>,
+    ) {
+        let pair_by = HashMap::from([(
+            "ap1".to_string(),
+            (TopologyAttachmentRole::PtpBackhaul, "pair-x".to_string()),
+        )]);
+        // pair-x is INACTIVE (not in active_pair_ids).
+        (pair_by, HashSet::new())
+    }
+
+    fn stub_node() -> Map<String, Value> {
+        serde_json::json!({
+            "id": "ap1",
+            "name": "JR_AP_TR_D",
+            "type": "AP",
+            "children": {},
+        })
+        .as_object()
+        .expect("object")
+        .clone()
+    }
+
+    /// AP-anchor fix oracle: an inactive backhaul stub AP that HOSTS/ANCHORS a
+    /// direct circuit is EXEMPT (id OR name); a stub with no direct circuit still
+    /// prunes.
+    #[test]
+    fn anchored_backhaul_stub_is_not_pruned_by_id_or_name() {
+        let (pair_by, active) = inactive_stub_pair();
+        let node = stub_node();
+        assert!(
+            is_inactive_backhaul_stub_subtree(&node, &pair_by, &active, &ctx(&[], &[])),
+            "an inactive stub with no direct circuit must still prune"
+        );
+        assert!(
+            !is_inactive_backhaul_stub_subtree(&node, &pair_by, &active, &ctx(&["ap1"], &[])),
+            "an in_direct-id stub must be exempt"
+        );
+        assert!(
+            !is_inactive_backhaul_stub_subtree(
+                &node,
+                &pair_by,
+                &active,
+                &ctx(&[], &["JR_AP_TR_D"])
+            ),
+            "a name-only direct stub must be exempt (the FULL exemption mirrors both sets)"
+        );
+    }
+
+    /// AP-anchor fix oracle: `should_runtime_squash_chain` (pass-2 child+grandchild
+    /// and pass-3 child ride `chain_names`) blocks a chain that NAMES a direct
+    /// circuit node.
+    #[test]
+    fn should_squash_chain_blocks_a_direct_named_node() {
+        let empty = HashSet::<String>::new();
+        assert!(
+            should_runtime_squash_chain(
+                ["parent", "child", "grandchild", "endpoint"],
+                &empty,
+                &ctx(&[], &["child"])
+            ) == false,
+            "a direct CHILD name must block the squash"
+        );
+        assert!(
+            should_runtime_squash_chain(
+                ["parent", "child", "grandchild", "endpoint"],
+                &empty,
+                &ctx(&[], &["grandchild"])
+            ) == false,
+            "a direct GRANDCHILD name must block the squash"
+        );
+        assert!(
+            should_runtime_squash_chain(
+                ["parent", "child", "grandchild", "endpoint"],
+                &empty,
+                &ctx(&[], &[])
+            ),
+            "no direct name -> the squash is allowed"
+        );
+    }
+    fn children_of(value: Value) -> Map<String, Value> {
+        value.as_object().expect("object").clone()
+    }
+
+    fn squash_roles() -> HashMap<String, TopologyAttachmentRole> {
+        HashMap::from([("ep1".to_string(), TopologyAttachmentRole::PtpBackhaul)])
+    }
+
+    fn empty_sites() -> HashSet<String> {
+        HashSet::new()
+    }
+
+    fn pass3_tree() -> Map<String, Value> {
+        children_of(serde_json::json!({
+            "child": {"id": "ap1", "name": "child", "type": "AP", "children": {
+                "ep": {"id": "ep1", "name": "ep", "type": "Switch", "children": {}}
+            }}
+        }))
+    }
+
+    fn pass2_tree() -> Map<String, Value> {
+        children_of(serde_json::json!({
+            "child": {"id": "ap1", "name": "child", "type": "AP", "children": {
+                "gc": {"id": "ap2", "name": "gc", "type": "AP", "children": {
+                    "ep": {"id": "ep1", "name": "ep", "type": "Switch", "children": {}}
+                }}
+            }}
+        }))
+    }
+
+    /// (a)+(b) pass-3 end-to-end: the EXPLICIT child-id guard prevents the
+    /// single-attachment-hop squash of an anchored child; with no direct child the
+    /// hop IS squashed (the optimization).
+    #[test]
+    fn pass3_hop_survives_when_the_child_is_direct_by_id() {
+        let roles = squash_roles();
+        let empty = empty_sites();
+        let mut children = pass3_tree();
+        squash_single_attachment_hops_in_children(
+            None,
+            &mut children,
+            &empty,
+            &roles,
+            &ctx(&["ap1"], &[]),
+        )
+        .expect("squash");
+        assert!(
+            children.contains_key("child"),
+            "pass-3 must NOT remove a direct (anchored) child"
+        );
+        let mut children = pass3_tree();
+        squash_single_attachment_hops_in_children(None, &mut children, &empty, &roles, &ctx(&[], &[]))
+            .expect("squash");
+        assert!(!children.contains_key("child"), "pass-3 squashes when nothing is direct");
+        assert!(children.contains_key("ep"), "the endpoint is promoted");
+    }
+
+    /// (a)+(b) pass-2 end-to-end: the EXPLICIT child-or-grandchild id guard
+    /// prevents the backhaul-pair squash; with no direct node it IS squashed.
+    #[test]
+    fn pass2_pair_survives_when_child_or_grandchild_is_direct_by_id() {
+        let roles = squash_roles();
+        let empty = empty_sites();
+        for direct in [vec!["ap1"], vec!["ap2"]] {
+            let mut children = pass2_tree();
+            squash_backhaul_pairs_in_children(
+                None,
+                &mut children,
+                &empty,
+                &roles,
+                &ctx(&direct, &[]),
+            )
+            .expect("squash");
+            assert!(
+                children.contains_key("child"),
+                "pass-2 must NOT remove a child/grandchild direct by id: {direct:?}"
+            );
+        }
+        let mut children = pass2_tree();
+        squash_backhaul_pairs_in_children(None, &mut children, &empty, &roles, &ctx(&[], &[]))
+            .expect("squash");
+        assert!(!children.contains_key("child"), "pass-2 squashes when nothing is direct");
+        assert!(children.contains_key("ep"), "the endpoint is promoted");
+    }
+}
+

@@ -85,7 +85,7 @@ pub(crate) enum IngestorCommand {
     },
     AllowSubnet(String),
     IgnoreSubnet(String),
-    BlackboardJson(Vec<u8>),
+    BlackboardFragments(Vec<Vec<u8>>),
     FlowCount {
         timestamp: u64,
         flow_count: u64,

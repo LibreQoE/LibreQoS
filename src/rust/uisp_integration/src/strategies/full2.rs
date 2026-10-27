@@ -2,6 +2,7 @@ mod directionality;
 mod graph_mapping;
 mod link_mapping;
 mod net_json_parent;
+mod orphan_latch;
 
 use crate::blackboard_blob;
 use crate::errors::UispIntegrationError;
@@ -9,15 +10,14 @@ use crate::ethernet_advisory::apply_ethernet_rate_cap;
 use crate::ip_ranges::IpRanges;
 use crate::strategies::common::UispData;
 use crate::strategies::full2::directionality::{
-    LinkTopology, build_device_capacity_map, build_device_link_meta_map,
-    directed_caps_mbps_with_topology,
+    build_device_capacity_map, build_device_link_meta_map, directed_caps_mbps,
 };
 use crate::strategies::full2::graph_mapping::GraphMapping;
 use crate::strategies::full2::link_mapping::LinkMapping;
 use crate::strategies::full2::net_json_parent::{NetJsonParent, assign_export_names, walk_parents};
 use crate::strategies::legacy_bandwidth_overrides::{BandwidthOverride, find_bandwidth_override};
 use crate::strategies::legacy_routes_override::RouteOverride;
-use crate::uisp_types::{UispAttachmentRateSource, UispDevice};
+use crate::uisp_types::{UispAttachmentRateSource, UispDevice, UispSite};
 use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, CircuitEthernetMetadata, Config, ConfigShapedDevices,
     EthernetCapTargetKind, EthernetPortLimitPolicy, RequestedCircuitRates,
@@ -25,7 +25,7 @@ use lqos_config::{
     TopologyAttachmentOption, TopologyAttachmentRateSource, TopologyAttachmentRole,
     TopologyCanonicalIngressKind, TopologyCanonicalStateFile, TopologyEditorNode,
     TopologyEditorStateFile, TopologyParentCandidate, TopologyParentCandidatesFile,
-    TopologyParentCandidatesNode, TopologyQueueVisibilityPolicy, topology_auto_attachment_option,
+    TopologyParentCandidatesNode, topology_auto_attachment_option,
 };
 #[cfg(test)]
 use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
@@ -34,7 +34,7 @@ use petgraph::Directed;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{EdgeRef, NodeRef};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::env;
 use std::sync::Arc;
 use std::time::Instant;
@@ -77,6 +77,22 @@ fn topology_node_ethernet_advisory(device: &UispDevice) -> Option<CircuitEtherne
             device.name.clone(),
         )
     })
+}
+
+/// 3b rate fix(ii)): the base `(download, upload)` Mbps for a
+/// plan-less site. The CLIENT devices' UISP service plan wins; the site/PN
+/// `generated_pn_*` sentinel is only the last resort (the compiler leaf clamp
+/// caps it to the parent's effective ceil). PURE.
+fn planless_client_base_mbps(site: &UispSite, site_devices: &[&UispDevice]) -> (f32, f32) {
+    let (device_down, device_up) =
+        site_devices.iter().fold((0_u64, 0_u64), |(down, up), device| {
+            (down.max(device.raw_download), up.max(device.raw_upload))
+        });
+    if device_down > 0 || device_up > 0 {
+        (device_down as f32, device_up as f32)
+    } else {
+        (site.max_down_mbps as f32, site.max_up_mbps as f32)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -175,18 +191,33 @@ fn debug_graph_output_enabled() -> bool {
     env::var_os("LIBREQOS_UISP_DEBUG_GRAPH").is_some()
 }
 
+/// The node a circuit's `parent_node` (name-joined) must land on. A link/station
+/// radio is attachment-only (not in `parents`); a circuit whose serving device
+/// is a link resolves across it to the serving node (else it would be a dangling
+/// `parent_node` — `divergent_parent_nodes`, zero live data).
+fn resolved_anchor_node_id(
+    device_id: &str,
+    link_serving_node: &HashMap<String, String>,
+) -> String {
+    let node_id = format!("uisp:device:{device_id}");
+    link_serving_node
+        .get(&node_id)
+        .cloned()
+        .unwrap_or(node_id)
+}
+
 fn anchor_for_site_ap(
     site_id: &str,
     site_name: &str,
-    ap_device: &UispDevice,
+    anchor_node_id: String,
     parents: &HashMap<String, NetJsonParent<'_>>,
 ) -> Option<CircuitAnchor> {
-    let ap_node_id = format!("uisp:device:{}", ap_device.id);
-    parents.contains_key(&ap_node_id).then(|| CircuitAnchor {
+    let anchor = parents.get(&anchor_node_id)?;
+    Some(CircuitAnchor {
         circuit_id: site_id.to_owned(),
         circuit_name: Some(site_name.to_owned()),
-        anchor_node_id: ap_node_id,
-        anchor_node_name: Some(ap_device.name.to_owned()),
+        anchor_node_id,
+        anchor_node_name: Some(anchor.node_name.clone()),
     })
 }
 
@@ -330,6 +361,8 @@ async fn build_imported_full2_bundle_from_data(
     uisp_data: UispData,
     require_configured_root_site: bool,
     build_started: Instant,
+    latch: &mut orphan_latch::OrphanLatch,
+    poll_unix: u64,
 ) -> Result<ImportedTopologyBundle, UispIntegrationError> {
     let ethernet_policy = EthernetPortLimitPolicy::from(&config.integration_common);
 
@@ -399,28 +432,174 @@ async fn build_imported_full2_bundle_from_data(
         root_idx,
         LinkMapping::ethernet(config.queues.generated_pn_upload_mbps),
     );
-    for (_, site_ref) in site_map.iter() {
+    // §`lqos-74t.11` G2: key the no-path latch by the ROOT identity — a changed
+    // root is a full reload / import-identity change and clears the latch (NOT
+    // the ~3 s dataplane generation).
+    latch.set_root(&graph[root_idx].network_json_id());
+    // §`lqos-74t.11` G2: stamp the poll's wall-clock second (the persisted
+    // `last_run_unix`; the time-based hold-off key).
+    latch.set_run_unix(poll_unix);
+    // Resolve a latched `parent_id` (a `network_json_id`) back to its graph node.
+    let id_to_ref: HashMap<String, NodeIndex> = graph
+        .node_indices()
+        .map(|n| (graph[n].network_json_id(), n))
+        .collect();
+    // The set of nodes root-reachable in the PRE-attach graph (before any
+    // orphans/deferral edges are added). A latched parent is only a valid
+    // deferral target when it is reachable from its OWN edges — checking the
+    // live graph would count the orphans edges added earlier in this loop and
+    // make the decision iteration-order dependent.
+    let root_reachable: HashSet<NodeIndex> = {
+        let mut reachable = HashSet::new();
+        let mut stack = vec![root_idx];
+        while let Some(n) = stack.pop() {
+            if reachable.insert(n) {
+                for m in graph.neighbors_directed(n, petgraph::Outgoing) {
+                    stack.push(m);
+                }
+            }
+        }
+        reachable
+    };
+    for (site_id, site_ref) in site_map.iter() {
         if *site_ref == root_idx {
             continue;
         }
+        let node_id = graph[*site_ref].network_json_id();
         let a_star_run =
             petgraph::algo::astar(&graph, *site_ref, |n| n.id() == root_idx.id(), |_| 0, |_| 0);
 
         if a_star_run.is_none() {
+            // §`lqos-74t.11` BOUNDED DIAGNOSTIC (behavior-neutral; not gated):
+            // name WHICH input edge is missing for the no-path site, so a
+            // transient UISP input gap is distinguishable from an
+            // order-dependent orphan attach. Reports the site's raw child DEVICE
+            // rows (id, present-in-`device_map`, parsed) + data links incident to
+            // those devices (device-level, the only kind `add_device_links_to_graph`
+            // wires) + links incident to the SITE itself (site-level, currently
+            // UNWIRED) + the raw counts across polls.
+            let child_device_ids: Vec<&str> = uisp_data
+                .devices_raw
+                .iter()
+                .filter(|d| {
+                    d.identification
+                        .site
+                        .as_ref()
+                        .is_some_and(|s| &s.id == site_id)
+                })
+                .map(|d| d.identification.id.as_str())
+                .collect();
+            let child_device_states: Vec<(&str, bool, bool)> = child_device_ids
+                .iter()
+                .map(|cid| {
+                    (
+                        *cid,
+                        device_map.contains_key(*cid),
+                        uisp_data.find_parsed_device_by_id(cid).is_some(),
+                    )
+                })
+                .collect();
+            let mut device_incident_links = 0usize;
+            let mut site_incident_links = 0usize;
+            for link in uisp_data.data_links_raw.iter() {
+                let from_dev = link
+                    .from
+                    .device
+                    .as_ref()
+                    .map(|d| d.identification.id.as_str());
+                let to_dev = link
+                    .to
+                    .device
+                    .as_ref()
+                    .map(|d| d.identification.id.as_str());
+                if from_dev.is_some_and(|f| child_device_ids.contains(&f))
+                    || to_dev.is_some_and(|t| child_device_ids.contains(&t))
+                {
+                    device_incident_links += 1;
+                }
+                let from_site = link
+                    .from
+                    .site
+                    .as_ref()
+                    .map(|s| s.identification.id.as_str());
+                let to_site = link
+                    .to
+                    .site
+                    .as_ref()
+                    .map(|s| s.identification.id.as_str());
+                if from_site == Some(site_id.as_str()) || to_site == Some(site_id.as_str()) {
+                    site_incident_links += 1;
+                }
+            }
             warn!(
-                "No path is detected from {:?} to {}",
-                graph[*site_ref], root_site_name
+                event = "ORPHANS_CHILD_DETAIL",
+                site_id = %site_id,
+                child_devices = child_device_ids.len(),
+                child_device_states = ?child_device_states,
+                device_incident_data_links = device_incident_links,
+                site_incident_data_links = site_incident_links,
+                raw_devices = uisp_data.devices_raw.len(),
+                raw_data_links = uisp_data.data_links_raw.len(),
+                "no-path site detail: child devices (id, in_device_map, parsed) + incident \
+                 data links (device-level vs site-level) + raw counts — localizes a transient \
+                 UISP input gap / an unwired site-level link vs an order-dependent attach"
             );
-            graph.add_edge(
-                *site_ref,
-                orphans,
-                LinkMapping::ethernet(config.queues.generated_pn_download_mbps),
+            // §`lqos-74t.11` G2: a site is attached to `orphans` only after K
+            // consecutive no-path polls. While `count < K`, DEFER to the latched
+            // parent IF it is still present and root-reachable; else orphan.
+            let deferred = latch
+                .note_no_path(&node_id, poll_unix)
+                .and_then(|parent_id| id_to_ref.get(&parent_id).copied())
+                .filter(|pref| root_reachable.contains(pref));
+            let decision = if deferred.is_some() {
+                "defer to the latched parent"
+            } else {
+                "attach to the orphans umbrella"
+            };
+            // DIAGNOSTIC PROBE (not gated): the no-path site whose
+            // root-connectivity flaps (the `lqos-74t.3` real root). It now names
+            // the deferral decision so a census sees orphan-vs-defer.
+            warn!(
+                event = "ORPHANS_CHILD",
+                site_id = %node_id,
+                site_name = %graph[*site_ref].name(),
+                root = %root_site_name,
+                deferred = deferred.is_some(),
+                "no path to root (the churn toggle child) — lqos-74t.11 G2: {decision}"
             );
-            graph.add_edge(
-                orphans,
-                *site_ref,
-                LinkMapping::ethernet(config.queues.generated_pn_upload_mbps),
-            );
+            if let Some(pref) = deferred {
+                warn!(
+                    event = "ORPHANS_CHILD_DEFERRED",
+                    site_id = %node_id,
+                    latched_parent = %graph[pref].network_json_id(),
+                    "lqos-74t.11 G2: no root path for one poll (< K=2) — deferring the \
+                     orphans attach to the latched parent"
+                );
+                graph.add_edge(
+                    *site_ref,
+                    pref,
+                    LinkMapping::ethernet(config.queues.generated_pn_download_mbps),
+                );
+                graph.add_edge(
+                    pref,
+                    *site_ref,
+                    LinkMapping::ethernet(config.queues.generated_pn_upload_mbps),
+                );
+            } else {
+                graph.add_edge(
+                    *site_ref,
+                    orphans,
+                    LinkMapping::ethernet(config.queues.generated_pn_download_mbps),
+                );
+                graph.add_edge(
+                    orphans,
+                    *site_ref,
+                    LinkMapping::ethernet(config.queues.generated_pn_upload_mbps),
+                );
+            }
+        } else {
+            // A site WITH a root path resets its no-path counter.
+            latch.note_path(&node_id);
         }
     }
 
@@ -454,9 +633,22 @@ async fn build_imported_full2_bundle_from_data(
         };
     }
 
-    // Cull the APs that have no clients or only one link
+    // Cull the APs that have no clients or only one link — EXCEPT a role-keyed
+ // link/station radio (the implementer `#12` R5). The cull is structural /
+    // client-count; the link decision is ROLE-keyed and must never depend on a
+    // node this cull removes. A clientless single-link PtMP station client would
+    // otherwise be removed before the attachment decision, so it could never be
+    // its site's `current_attachment_id` (the live `.12` "Wave Long-Range absent,
+    // attachment null" symptom). Keep it in the graph as the attachment device;
+    // the node-emission skip below keeps it out of the tree.
     let mut to_remove = Vec::new();
     for (ap_id, ap_ref) in device_map.iter() {
+        if uisp_data
+            .find_parsed_device_by_id(ap_id)
+            .is_some_and(device_is_link)
+        {
+            continue;
+        }
         if aps_with_clients.contains(ap_id) {
             continue;
         }
@@ -509,6 +701,36 @@ async fn build_imported_full2_bundle_from_data(
     let mut parents = HashMap::<String, NetJsonParent>::new();
     let mut topology_parent_candidates = Vec::<TopologyParentCandidatesNode>::new();
     let mut topology_editor_nodes = Vec::<TopologyEditorNode>::new();
+    // `docs/topology_ptp_link_site_attachment_work_order.md` §5: a LINK/PTP
+    // device that is a site's attachment is NOT a tree node (the site attaches
+    // to the serving AP; the link is only the attachment). Keyed on the device
+    // ROLE (`device_is_link`), never structure — a chained AP is structurally
+ // identical (the implementer `#12` PIN-1).
+    // `docs/topology_ptp_link_site_attachment_work_order.md` (DRIVER): EVERY
+    // PTP/backhaul LINK device (by ROLE) is an ATTACHMENT — NOT a node of any
+    // kind (no `ap`, no `site`) — regardless of POSITION (root-level or nested)
+    // or whether it carries clients. It exists only as its dependent node's
+    // `current_attachment_id`.
+    let link_only_attachments: HashSet<NodeIndex> = graph
+        .node_indices()
+        .filter(|&node| {
+            access_point_device(&graph, node, &uisp_data.devices).is_some_and(device_is_link)
+        })
+        .collect();
+    // Shaping join (§3): a link/station radio is attachment-only, so it is NOT
+    // in `parents`. A circuit whose anchor resolves to a link must instead join
+    // the SERVING node across it — otherwise the anchor name matches no store
+    // node (`divergent_parent_nodes` ⇒ zero live data). Map link node id to the
+    // serving node id once, here, and reuse it for the anchor lookups below.
+    let mut link_serving_node: HashMap<String, String> = HashMap::new();
+    for &link in &link_only_attachments {
+        if let Some(serving) = nearest_serving_node(&graph, root_idx, link, &mut route_cache) {
+            link_serving_node.insert(
+                graph[link].network_json_id(),
+                graph[serving].network_json_id(),
+            );
+        }
+    }
     for node in graph.node_indices() {
         match &graph[node] {
             GraphMapping::GeneratedSite { name }
@@ -621,35 +843,129 @@ async fn build_imported_full2_bundle_from_data(
                     };
                     // We need the weight from node to parent_node in the graph edges
                     if let Some(_edge) = graph.find_edge(parent_node, node) {
-                        let parent_id = graph[parent_node].network_json_id();
-                        let parent = graph[parent_node].name();
-                        let parent_export_name = export_names
+                        // `docs/topology_ptp_link_site_attachment_work_order.md`:
+                        // a SITE's TREE parent is the LOGICAL parent — a site
+                        // whose attachment is a LINK/PTP device resolves to the
+                        // serving AP (the link stays the ATTACHMENT); direct
+                        // site→site children keep their site parent.
+                        let mut tree_parent = if matches!(graph[node], GraphMapping::Site { .. }) {
+                            native_parent
+                                .map(|candidate| {
+                                    logical_parent_for_candidate_cached(
+                                        &graph,
+                                        root_idx,
+                                        node,
+                                        candidate,
+                                        &mut route_cache,
+                                    )
+                                })
+                                .filter(|candidate| is_real_topology_node(&graph, *candidate))
+                                .unwrap_or(parent_node)
+                        } else {
+                            parent_node
+                        };
+                        // PIN-2: never emit a parent_id that the link SKIP drops
+                        // — walk UP across EVERY transparent link to the serving
+                        // node (a single hop is not enough for a PTP/PTP chain).
+                        while link_only_attachments.contains(&tree_parent) {
+                            let up = route_cache.route(&graph, root_idx, tree_parent);
+                            match immediate_parent_from_route(&up) {
+                                Some(parent) if parent != tree_parent => tree_parent = parent,
+                                _ => break,
+                            }
+                        }
+                        let mut parent_id = graph[tree_parent].network_json_id();
+                        let mut parent = graph[tree_parent].name();
+                        let mut parent_export_name = export_names
                             .get(&parent_id)
                             .cloned()
                             .unwrap_or_else(|| parent.clone());
+                        // L1 (`lqos-74t.63`): hold the FIRST-selected candidate
+                        // among the site's currently-VALID candidate parents,
+                        // suppressing a flap between two VALID redundant backhaul
+                        // links. A UISP backhaul-parent oscillation re-selects on a
+                        // STABLE id ⇒ a genuine span/owner-set change ⇒ the bridge's
+                        // R3 cold rebuild (which drops residual backlog) every ~10
+                        // min. Only a real SITE is pinned (a GeneratedSite is pinned
+                        // to the root above; an AP keeps its logical resolution). The
+                        // emitted rate stays the derived route's — the candidates are
+                        // redundant equivalents and an operator capacity override
+                        // still wins.
+                        if matches!(graph[node], GraphMapping::Site { .. }) {
+                            let valid_logical_parents: BTreeSet<String> = grouped_allowed_parents
+                                .iter()
+                                .map(|group| graph[group.logical_parent].network_json_id())
+                                .chain(std::iter::once(parent_id.clone()))
+                                .collect();
+                            let pinned_id =
+                                latch.pin_parent(&node_id, &parent_id, &valid_logical_parents);
+                            if pinned_id != parent_id
+                                && let Some(&pinned_ref) = id_to_ref.get(&pinned_id)
+                                && is_real_topology_node(&graph, pinned_ref)
+                            {
+                                warn!(
+                                    event = "TOPOLOGY_PARENT_PINNED",
+                                    site_id = %node_id,
+                                    derived_parent = %parent_id,
+                                    pinned_parent = %pinned_id,
+                                    "lqos-74t.63 L1: holding the first-selected candidate — \
+                                     suppressing a re-parent between two VALID redundant \
+                                     backhaul candidates"
+                                );
+                                tree_parent = pinned_ref;
+                                parent_id = graph[pinned_ref].network_json_id();
+                                parent = graph[pinned_ref].name();
+                                parent_export_name = export_names
+                                    .get(&parent_id)
+                                    .cloned()
+                                    .unwrap_or_else(|| parent.clone());
+                            }
+                        }
                         let current_parent = if is_real_topology_node(&graph, parent_node) {
                             Some(TopologyParentCandidate {
-                                node_id: parent_id.clone(),
-                                node_name: parent.clone(),
+                                node_id: graph[parent_node].network_json_id(),
+                                node_name: graph[parent_node].name(),
                             })
                         } else {
                             None
                         };
-                        let logical_current_parent = native_parent
-                            .map(|candidate| {
-                                logical_parent_for_candidate_cached(
-                                    &graph,
-                                    root_idx,
-                                    node,
-                                    candidate,
-                                    &mut route_cache,
-                                )
+                        // The operator view's parent == the TREE parent for a
+                        // SITE; non-sites keep the existing logical resolution.
+                        let logical_current_parent = if matches!(graph[node], GraphMapping::Site { .. })
+                        {
+                            Some(TopologyParentCandidate {
+                                node_id: parent_id.clone(),
+                                node_name: parent.clone(),
                             })
-                            .filter(|candidate| is_real_topology_node(&graph, *candidate))
-                            .map(|candidate| TopologyParentCandidate {
-                                node_id: graph[candidate].network_json_id(),
-                                node_name: graph[candidate].name(),
-                            });
+                        } else if matches!(graph[node], GraphMapping::GeneratedSite { .. }) {
+                            // ROOT A (`docs/broker_span_changing_move_root_card.md`):
+                            // a SYNTHETIC umbrella (the `orphans` GeneratedSite) must
+                            // have a DETERMINISTIC, STABLE parent — the ROOT — and must
+                            // NEVER re-parent (jackrabbit's orphans flipped
+                            // Medano Heights Apt 2 <-> Apt 3, a produced move with no
+                            // operator intent). Pin it; ignore the route/logical
+                            // resolution (which the UISP topology can flip).
+                            Some(TopologyParentCandidate {
+                                node_id: graph[root_idx].network_json_id(),
+                                node_name: graph[root_idx].name(),
+                            })
+                        } else {
+                            native_parent
+                                .map(|candidate| {
+                                    logical_parent_for_candidate_cached(
+                                        &graph,
+                                        root_idx,
+                                        node,
+                                        candidate,
+                                        &mut route_cache,
+                                    )
+                                })
+                                .filter(|candidate| is_real_topology_node(&graph, *candidate))
+                                .map(|candidate| TopologyParentCandidate {
+                                    node_id: graph[candidate].network_json_id(),
+                                    node_name: graph[candidate].name(),
+                                })
+                        };
                         let candidate_parent_rows: Vec<TopologyParentCandidate> = candidate_parents
                             .iter()
                             .copied()
@@ -666,7 +982,15 @@ async fn build_imported_full2_bundle_from_data(
                             &mut route_cache,
                         );
 
-                        if is_real_topology_node(&graph, node) {
+                        // A site's LINK/PTP attachment is ATTACHMENT-ONLY: it is
+                        // NOT a canonical/operator node (neither `ap` nor
+                        // `site`) — it exists solely as the site's
+                        // `current_attachment_id`. Emitting it here (while it is
+                        // skipped from `parents`) made the canonical DEFAULT its
+                        // kind to `site` (the live regression).
+                        if is_real_topology_node(&graph, node)
+                            && !link_only_attachments.contains(&node)
+                        {
                             topology_parent_candidates.push(TopologyParentCandidatesNode {
                                 node_id: graph[node].network_json_id(),
                                 node_name: name.to_owned(),
@@ -697,26 +1021,31 @@ async fn build_imported_full2_bundle_from_data(
                                     .map(|candidate| candidate.node_name.clone()),
                                 can_move: !allowed_parents.is_empty(),
                                 allowed_parents,
-                                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
                                 preferred_attachment_id: None,
                                 preferred_attachment_name: None,
                                 effective_attachment_id: None,
                                 effective_attachment_name: None,
                             });
                         }
-                        parents.insert(
-                            node_id.clone(),
-                            NetJsonParent {
-                                node_id: node_id.clone(),
-                                node_name: name.to_owned(),
-                                export_name: export_name.clone(),
-                                parent_id: Some(parent_id),
-                                parent_name: parent_export_name,
-                                mapping: &graph[node],
-                                download: download_capacity,
-                                upload: upload_capacity,
-                            },
-                        );
+                        // A site's LINK/PTP ATTACHMENT is not a tree node: the
+                        // site is re-parented to the serving AP, so the link has
+                        // no children and must not appear as a level. (It stays
+                        // in the EDITOR state as the site's attachment.)
+                        if !link_only_attachments.contains(&node) {
+                            parents.insert(
+                                node_id.clone(),
+                                NetJsonParent {
+                                    node_id: node_id.clone(),
+                                    node_name: name.to_owned(),
+                                    export_name: export_name.clone(),
+                                    parent_id: Some(parent_id),
+                                    parent_name: parent_export_name,
+                                    mapping: &graph[node],
+                                    download: download_capacity,
+                                    upload: upload_capacity,
+                                },
+                            );
+                        }
                     } else {
                         panic!("DID NOT FIND THE EDGE");
                     }
@@ -734,8 +1063,6 @@ async fn build_imported_full2_bundle_from_data(
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy:
-                        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -759,6 +1086,68 @@ async fn build_imported_full2_bundle_from_data(
             promote_to_root_set.len(),
             promote_to_root_set
         );
+    }
+
+ // the synthetic `Orphans` parent must be EMITTED as a real
+    // root child. When a path-less site is attached to it, the canonical-state
+    // write otherwise rejects the WHOLE import (`dangling parent
+    // libreqos:generated:uisp:site:orphans`) and no topology ever publishes.
+    // Force its entry to the root so the reference always resolves.
+    parents.insert(
+        orphans_node_id.clone(),
+        NetJsonParent {
+            node_id: orphans_node_id.clone(),
+            node_name: orphans_node_name.clone(),
+            export_name: orphans_node_name.clone(),
+            parent_id: Some(root_node_id.clone()),
+            parent_name: root_site_name.clone(),
+            mapping: &graph[orphans],
+            download: config.queues.generated_pn_download_mbps,
+            upload: config.queues.generated_pn_upload_mbps,
+        },
+    );
+    // §`lqos-74t.11` G2: record each present SITE's current (non-orphan) parent so
+    // a future one-poll no-path can defer to it. Orphans-placed sites are skipped
+    // (a genuine orphan must never become a deferral target); a site that regains
+    // its path refreshes its remembered parent here.
+    for parent in parents.values() {
+        if matches!(
+            parent.mapping,
+            GraphMapping::Site { .. } | GraphMapping::GeneratedSite { .. }
+        ) && let Some(parent_id) = parent.parent_id.as_deref()
+            && parent_id != orphans_node_id.as_str()
+        {
+            latch.remember_parent(&parent.node_id, parent_id);
+        }
+    }
+    // The canonical snapshot is built from `topology_editor_nodes` (via
+    // `from_editor_and_network`), NOT from `parents`/network.json alone. A
+    // path-less site references the synthetic Orphans umbrella as its parent,
+    // so the umbrella must ALSO be an editor node — otherwise the canonical
+    // validator rejects the whole import with
+    // `node <site> has dangling parent libreqos:generated:uisp:site:orphans`.
+ // The fix covered `parents`; this covers the editor/canonical
+    // representation the same fact has a second home in.
+    if !topology_editor_nodes
+        .iter()
+        .any(|node| node.node_id == orphans_node_id)
+    {
+        topology_editor_nodes.push(TopologyEditorNode {
+            node_id: orphans_node_id.clone(),
+            node_name: orphans_node_name.clone(),
+            latitude: graph[orphans].latitude(),
+            longitude: graph[orphans].longitude(),
+            current_parent_node_id: Some(root_node_id.clone()),
+            current_parent_node_name: Some(root_site_name.clone()),
+            current_attachment_id: None,
+            current_attachment_name: None,
+            can_move: false,
+            allowed_parents: Vec::new(),
+            preferred_attachment_id: None,
+            preferred_attachment_name: None,
+            effective_attachment_id: None,
+            effective_attachment_name: None,
+        });
     }
 
     // Write the network.json file
@@ -859,10 +1248,18 @@ async fn build_imported_full2_bundle_from_data(
                 } else if site.suspended && config.uisp_integration.suspended_strategy == "slow" {
                     (0.1, 0.1, 0.1, 0.1)
                 } else {
-                    let download_f32 = (site.max_down_mbps as f32)
-                        * config.uisp_integration.bandwidth_overhead_factor;
-                    let upload_f32 = (site.max_up_mbps as f32)
-                        * config.uisp_integration.bandwidth_overhead_factor;
+ // 3b rate fix(ii)): a plan-less site takes its
+                    // rate from the CLIENT devices' UISP service plan — NEVER
+                    // the whole-network `generated_pn_*` sentinel (the 100G
+                    // "unlimited PN", appropriate only for the parent SITE/PN
+                    // node). The compiler leaf clamp is the backstop when even
+                    // the device plan is absent.
+                    let (base_down, base_up) =
+                        planless_client_base_mbps(site, &site_devices);
+                    let download_f32 =
+                        base_down * config.uisp_integration.bandwidth_overhead_factor;
+                    let upload_f32 =
+                        base_up * config.uisp_integration.bandwidth_overhead_factor;
                     let download_min_f32 =
                         download_f32 * config.uisp_integration.commit_bandwidth_multiplier;
                     let upload_min_f32 =
@@ -890,7 +1287,9 @@ async fn build_imported_full2_bundle_from_data(
                 ethernet_advisories.push(advisory);
             }
             if !site_devices.is_empty() && seen_circuits.insert(site.id.clone()) {
-                if let Some(anchor) = anchor_for_site_ap(&site.id, &site.name, ap_device, &parents)
+                let anchor_node_id = resolved_anchor_node_id(&ap_device.id, &link_serving_node);
+                if let Some(anchor) =
+                    anchor_for_site_ap(&site.id, &site.name, anchor_node_id, &parents)
                 {
                     circuit_anchors.push(anchor);
                 } else {
@@ -906,7 +1305,7 @@ async fn build_imported_full2_bundle_from_data(
                 }
 
                 let parent_node = {
-                    let ap_node_id = format!("uisp:device:{}", ap_device.id);
+                    let ap_node_id = resolved_anchor_node_id(&ap_device.id, &link_serving_node);
                     if let Some(parent) = parents.get(&ap_node_id) {
                         parent.export_name.clone()
                     } else {
@@ -918,7 +1317,7 @@ async fn build_imported_full2_bundle_from_data(
                     }
                 };
                 let parent_node_id = {
-                    let ap_node_id = format!("uisp:device:{}", ap_device.id);
+                    let ap_node_id = resolved_anchor_node_id(&ap_device.id, &link_serving_node);
                     parents
                         .get(&ap_node_id)
                         .map(|parent| parent.node_id.clone())
@@ -981,7 +1380,6 @@ async fn build_imported_full2_bundle_from_data(
         generated_unix: topology_editor_state.generated_unix,
         ingress_identity: None,
         native_canonical: Some(canonical_state),
-        native_editor: Some(topology_editor_state),
         parent_candidates: Some(topology_candidates_file),
         compatibility_network_json: Value::Object(network_json),
         shaped_devices: config_shaped_devices(shaped_devices),
@@ -992,6 +1390,7 @@ async fn build_imported_full2_bundle_from_data(
             anchors: circuit_anchors,
         },
         ethernet_advisories,
+        circuit_matches: Default::default(),
     })
 }
 
@@ -1002,13 +1401,27 @@ pub async fn build_imported_full2_bundle(
 ) -> Result<ImportedTopologyBundle, UispIntegrationError> {
     let build_started = Instant::now();
     let uisp_data = UispData::fetch_uisp_data(config.clone(), ip_ranges).await?;
-    build_imported_full2_bundle_from_data(
+    // §`lqos-74t.11` G2: the no-path latch lives in ONE poll-scoped instance,
+    // loaded here and persisted after a successful build. The integration runs
+    // as a FRESH subprocess per poll, so the state MUST be file-backed.
+    let mut latch = orphan_latch::OrphanLatch::load(&config);
+    // One wall-clock second per poll (the time-based hold-off key). The public
+    // wrapper is the ONLY non-test caller; tests inject a fixed value.
+    let now_unix = now_unix().unwrap_or(0);
+    let result = build_imported_full2_bundle_from_data(
         config,
         uisp_data,
         require_configured_root_site,
         build_started,
+        &mut latch,
+        now_unix,
     )
-    .await
+    .await;
+    if result.is_ok() {
+        latch.prune();
+        latch.save();
+    }
+    result
 }
 
 fn add_device_links_to_graph(
@@ -1019,9 +1432,6 @@ fn add_device_links_to_graph(
 ) {
     let meta_by_id = build_device_link_meta_map(&uisp_data.devices_raw);
     let caps_by_id = build_device_capacity_map(&uisp_data.devices);
-    // Build once per import: the site assignment is the primary orientation
-    // signal; labels remain the fallback for east/west and missing topology.
-    let topology = LinkTopology::from_uisp_data(&uisp_data.sites, &uisp_data.devices);
 
     for link in uisp_data.data_links_raw.iter() {
         let Some(from_device) = &link.from.device else {
@@ -1058,14 +1468,9 @@ fn add_device_links_to_graph(
 
         let id_a = from_device.identification.id.as_str();
         let id_b = to_device.identification.id.as_str();
-        let (cap_ab, cap_ba) = if let Some((cap_ab, cap_ba)) = directed_caps_mbps_with_topology(
-            &meta_by_id,
-            Some(&topology),
-            &caps_by_id,
-            config,
-            id_a,
-            id_b,
-        ) {
+        let (cap_ab, cap_ba) = if let Some((cap_ab, cap_ba)) =
+            directed_caps_mbps(&meta_by_id, &caps_by_id, config, id_a, id_b)
+        {
             (cap_ab, cap_ba)
         } else {
             warn!(
@@ -1366,6 +1771,58 @@ fn topology_site_neighbor_for_access_point(
         .find(|neighbor| is_site_anchor_node(graph, *neighbor))
 }
 
+/// TRUE when a UISP device is a LINK/PTP device (the station side of a
+/// point-to-point backhaul) rather than a serving Access Point. Keyed on the
+/// device ROLE / wireless mode (the implementer `#12` PIN-1) — never structure, since a
+/// chained AP is structurally identical to a link.
+fn device_is_link(device: &UispDevice) -> bool {
+    let role = device.role.as_deref().unwrap_or("").to_ascii_lowercase();
+    let wireless = device
+        .wireless_mode
+        .as_deref()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    // `docs/topology_ptmp_ptp_attachment_card.md` §2 (the DRIVER's general
+    // rule): a radio that is a LINK / STATION is ATTACHMENT-ONLY. Two shapes,
+    // ONE predicate:
+    //   (a) a PtMP station client / CPE — `role ∈ {station, sta, cpe}` or a
+    //       `sta*`/`station*` wireless mode (`sta-ptmp`, `sta-ptp`) —
+    //       unified with the existing `is_wireless_station_cpe` classifier;
+    //   (b) a PTP / backhaul radio, EITHER end (`ap-ptp` OR `sta-ptp`) —
+    //       `role`/`wireless_mode` carries `ptp` (or a `backhaul` role).
+    // A sector AP (`role == ap`, wireless `ap-ptmp`) is NOT a link and STAYS a
+    // node; `ap-ptmp`/`sta-ptmp` do NOT contain `ptp`, so (b) cannot eat them.
+    // Never key on structure, `aps_with_clients`, or a derived kind.
+    if device.is_wireless_station_cpe()
+        || role.contains("ptp")
+        || role.contains("backhaul")
+        || wireless.contains("ptp")
+    {
+        return true;
+    }
+    // §2bis (the DRIVER's steer): an OPAQUE radio (`role=wireless`, blackBox, no
+    // decisive mode) is classified by the CONNECTED SITE TYPE (`classifies_as_link`,
+    // set in `UispData::from_parts`): own site endpoint => CPE/attachment; own
+    // site infra + connects an endpoint => AP/node; own site infra + infra<->infra
+    // => backhaul/attachment. This closes the `4600C_*`/`AVIAT_*` opaque bucket.
+    if role == "wireless" {
+        return device.classifies_as_link;
+    }
+    false
+}
+
+/// The UISP device behind a graph `AccessPoint` node (via the device list).
+fn access_point_device<'a>(
+    graph: &GraphType,
+    node: NodeIndex,
+    devices: &'a [UispDevice],
+) -> Option<&'a UispDevice> {
+    let GraphMapping::AccessPoint { id, .. } = &graph[node] else {
+        return None;
+    };
+    devices.iter().find(|device| device.id == *id)
+}
+
 fn logical_parent_from_path(graph: &GraphType, path: &[NodeIndex]) -> Option<NodeIndex> {
     path.iter()
         .rev()
@@ -1380,33 +1837,13 @@ fn logical_parent_from_path(graph: &GraphType, path: &[NodeIndex]) -> Option<Nod
         .or_else(|| immediate_parent_from_route(path))
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-fn remote_logical_parent_for_local_attachment(
-    graph: &GraphType,
-    root_idx: NodeIndex,
-    node_being_edited: NodeIndex,
-    candidate: NodeIndex,
-    devices: &[UispDevice],
-    route_overrides: &[RouteOverride],
-) -> Option<NodeIndex> {
-    let mut route_cache = RouteCache::new(devices, route_overrides);
-    remote_logical_parent_for_local_attachment_cached(
-        graph,
-        root_idx,
-        node_being_edited,
-        candidate,
-        &mut route_cache,
-    )
-}
-
 fn remote_logical_parent_for_local_attachment_cached(
     graph: &GraphType,
     root_idx: NodeIndex,
     node_being_edited: NodeIndex,
     candidate: NodeIndex,
     route_cache: &mut RouteCache<'_>,
-) -> Option<NodeIndex> {
+) -> Option<(NodeIndex, NodeIndex)> {
     let local_site = topology_site_neighbor_for_access_point(graph, candidate)?;
     if local_site != node_being_edited {
         return None;
@@ -1438,7 +1875,10 @@ fn remote_logical_parent_for_local_attachment_cached(
                 path.len(),
                 stable_node_key(graph, logical_parent),
                 stable_node_key(graph, peer),
-                logical_parent,
+                // `(nearest_site, serving_ap)`: the caller picks by the
+                // attachment's ROLE — a LINK/PTP device resolves to the serving
+                // AP (`peer`); a serving/chained AP keeps the nearest site.
+                (logical_parent, peer),
             ))
         })
         .min_by_key(|candidate| (candidate.0, candidate.1.clone(), candidate.2.clone()))
@@ -1465,6 +1905,32 @@ fn logical_parent_for_candidate(
     )
 }
 
+/// TRUE when the graph node is a role-keyed link/station radio (an
+/// ATTACHMENT-ONLY device, never a node). Never structural.
+fn is_transparent_link(graph: &GraphType, node: NodeIndex, devices: &[UispDevice]) -> bool {
+    access_point_device(graph, node, devices).is_some_and(device_is_link)
+}
+
+/// The nearest REAL topology node at or above `start` on the root route that
+/// is NOT a link/station radio (walking ACROSS transparent links). A link's
+/// "serving" node is the sector AP / switch / site beyond it — so a link's
+/// dependent node never parents to the link (which is not a node at all).
+fn nearest_serving_node(
+    graph: &GraphType,
+    root_idx: NodeIndex,
+    start: NodeIndex,
+    route_cache: &mut RouteCache<'_>,
+) -> Option<NodeIndex> {
+    let path = route_cache.route(graph, root_idx, start);
+    path.iter()
+        .rev()
+        .copied()
+        .find(|node| {
+            is_real_topology_node(graph, *node)
+                && !is_transparent_link(graph, *node, route_cache.devices)
+        })
+}
+
 fn logical_parent_for_candidate_cached(
     graph: &GraphType,
     root_idx: NodeIndex,
@@ -1472,22 +1938,39 @@ fn logical_parent_for_candidate_cached(
     candidate: NodeIndex,
     route_cache: &mut RouteCache<'_>,
 ) -> NodeIndex {
-    if let Some(remote_parent) = remote_logical_parent_for_local_attachment_cached(
-        graph,
-        root_idx,
-        node_being_edited,
-        candidate,
-        route_cache,
-    ) {
-        return remote_parent;
-    }
-
     match &graph[candidate] {
         GraphMapping::Root { .. } | GraphMapping::Site { .. } => candidate,
         GraphMapping::GeneratedSite { .. } => candidate,
         GraphMapping::AccessPoint { .. } => {
-            let path = route_cache.route(graph, root_idx, candidate);
-            logical_parent_from_path(graph, &path).unwrap_or(candidate)
+            // `docs/topology_ptmp_ptp_attachment_card.md` §3.4 (DRIVER): a
+            // link/station radio is TRANSPARENT — a node whose attachment is a
+            // link parents to the SERVING node ACROSS it (the sector AP, a
+            // switch, or a site), NEVER to the link (it is not a node). Keyed on
+            // the device ROLE, never device-under-device (that would drop a
+            // legitimate CHAINED AP — a chained AP is `ap-ptmp`, not a link).
+            if is_transparent_link(graph, candidate, route_cache.devices) {
+                // Prefer the peer across the link (the far-end serving node);
+                // then fall back to the nearest real node above the link itself.
+                if let Some((_, peer)) = remote_logical_parent_for_local_attachment_cached(
+                    graph,
+                    root_idx,
+                    node_being_edited,
+                    candidate,
+                    route_cache,
+                ) && let Some(serving) =
+                    nearest_serving_node(graph, root_idx, peer, route_cache)
+                {
+                    return serving;
+                }
+                if let Some(serving) = nearest_serving_node(graph, root_idx, candidate, route_cache)
+                {
+                    return serving;
+                }
+                return candidate;
+            }
+            // A non-link device (a serving/chained AP, a switch, a router) is
+            // the logical parent itself (the FULL MODEL the DRIVER ruled).
+            candidate
         }
     }
 }
@@ -1683,27 +2166,6 @@ fn rate_override_metadata_for_candidate(
             transport_cap_reason: None,
         },
     }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn topology_attachment_option_for_candidate(
-    graph: &GraphType,
-    logical_parent: NodeIndex,
-    candidate: NodeIndex,
-    devices: &[UispDevice],
-    aps_with_clients: &HashSet<String>,
-    route_overrides: &[RouteOverride],
-) -> TopologyAttachmentOption {
-    let mut route_cache = RouteCache::new(devices, route_overrides);
-    topology_attachment_option_for_candidate_cached(
-        graph,
-        logical_parent,
-        candidate,
-        devices,
-        aps_with_clients,
-        &mut route_cache,
-    )
 }
 
 fn topology_attachment_option_for_candidate_cached(
@@ -2242,9 +2704,11 @@ mod topology_override_tests {
     use super::{
         GraphType, TopologyAllowedParentGroup, TopologyAttachmentOverrideSelection,
         TopologyParentOverrideSelection, UispDevice, build_constrained_route,
-        build_imported_full2_bundle_from_data,
+        build_imported_full2_bundle_from_data, device_is_link,
         export_parent_anchor_for_override, first_probe_ip_for_device, immediate_parent_from_route,
         is_upstream_parent_candidate, logical_parent_for_candidate,
+        orphan_latch::ORPHAN_LATCH_HOLD_OFF_SECONDS, orphan_latch::OrphanLatch,
+        planless_client_base_mbps,
         resolve_attachment_parent_candidate, resolve_parent_candidate,
         topology_allowed_parent_groups_for_node, topology_allowed_parents_from_groups,
         topology_parent_candidates_for_node,
@@ -2253,7 +2717,7 @@ mod topology_override_tests {
     use crate::strategies::full2::graph_mapping::GraphMapping;
     use crate::strategies::full2::link_mapping::LinkMapping;
     use crate::uisp_types::{UispAttachmentRateSource, UispSite, UispSiteType};
-    use lqos_config::{TopologyAttachmentRole, TopologyQueueVisibilityPolicy};
+    use lqos_config::TopologyAttachmentRole;
     use lqos_overrides::{TopologyAttachmentMode, TopologyParentOverrideMode};
     use serde_json::{Map, Value, json};
     use std::collections::{HashMap, HashSet};
@@ -2387,7 +2851,38 @@ mod topology_override_tests {
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: UispAttachmentRateSource::Static,
+            classifies_as_link: false,
         }
+    }
+
+ /// 3b rate fix(ii), the plan-less-client oracle): a site carrying
+    /// the whole-network PN sentinel but a client device plan uses the DEVICE
+    /// plan, never the generated-PN 100G.
+    #[test]
+    fn planless_client_uses_the_device_plan_not_the_pn_sentinel() {
+        let mut site = parsed_site("site-1", "Client");
+        site.max_down_mbps = 100_000;
+        site.max_up_mbps = 100_000;
+        let mut device = parsed_device("dev-1", "CPE", "site-1");
+        device.raw_download = 322;
+        device.raw_upload = 322;
+        let devices = vec![&device];
+        assert_eq!(
+            planless_client_base_mbps(&site, &devices),
+            (322.0, 322.0),
+            "the client device plan wins over the PN sentinel"
+        );
+
+        // Truly plan-less (no QoS, no device plan): the last-resort site
+        // value stays; the compiler leaf clamp caps it to the parent.
+        let mut zero = parsed_device("dev-2", "CPE2", "site-1");
+        zero.raw_download = 0;
+        zero.raw_upload = 0;
+        let zero_devices = vec![&zero];
+        assert_eq!(
+            planless_client_base_mbps(&site, &zero_devices),
+            (100_000.0, 100_000.0)
+        );
     }
 
     fn find_network_node_with_parent<'a>(
@@ -2416,6 +2911,28 @@ mod topology_override_tests {
         find_network_node_with_parent(value, target_id, None).map(|(_node, parent_id)| parent_id)
     }
 
+    /// Walk the nested `{id, children}` compatibility tree and return the id of
+    /// the node's CONTAINER. The older `find_network_parent_id` loses the parent
+    /// through the id-less `children` wrapper; this helper carries the container
+    /// id correctly (needed for the §`lqos-74t.11` G2 deferral assertions).
+    fn network_parent_id_of(value: &Value, target_id: &str) -> Option<Option<String>> {
+        fn walk(node: &Value, target: &str, parent: Option<&str>) -> Option<Option<String>> {
+            let map = node.as_object()?;
+            if map.get("id").and_then(Value::as_str) == Some(target) {
+                return Some(parent.map(ToOwned::to_owned));
+            }
+            let this_id = map.get("id").and_then(Value::as_str);
+            let children = map.get("children")?.as_object()?;
+            children
+                .values()
+                .find_map(|child| walk(child, target, this_id))
+        }
+        value
+            .as_object()?
+            .values()
+            .find_map(|child| walk(child, target_id, None))
+    }
+
     #[tokio::test]
     async fn full2_import_emits_queue_auto_for_device_backed_branches() {
         let temp_dir = unique_temp_dir("uisp-full2-queue-auto");
@@ -2428,7 +2945,6 @@ mod topology_override_tests {
         config.uisp_integration.site = "Root Site".to_string();
         config.queues.generated_pn_download_mbps = 10_000;
         config.queues.generated_pn_upload_mbps = 10_000;
-        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
         let config_for_topology = config.clone();
 
         let root_site = raw_site("site-root", "Root Site", "site");
@@ -2468,23 +2984,22 @@ mod topology_override_tests {
             uisp_data,
             true,
             std::time::Instant::now(),
+            &mut OrphanLatch::default(),
+            0,
         )
         .await
         .expect("in-memory UISP import should build");
+        // Rung 1.5 §1.3: the editor view is the canonical projection.
         let editor = bundle
-            .native_editor
+            .native_canonical
             .as_ref()
-            .expect("full2 import should include native editor state");
+            .expect("full2 import should include native canonical state")
+            .to_editor_state();
         let root_switch = editor
             .nodes
             .iter()
             .find(|node| node.node_id == "uisp:device:device-root-switch")
             .expect("root switch should be exported as a topology editor node");
-
-        assert_eq!(
-            root_switch.queue_visibility_policy,
-            TopologyQueueVisibilityPolicy::QueueAuto
-        );
 
         let mut compiled = lqos_topology_compile::compile_topology(
             bundle,
@@ -2497,17 +3012,15 @@ mod topology_override_tests {
             .iter()
             .find(|node| node.node_id == "uisp:device:device-child-switch")
             .expect("compiled editor should include the child switch");
-        assert_eq!(
-            compiled_child_switch.queue_visibility_policy,
-            TopologyQueueVisibilityPolicy::QueueAuto
-        );
+        // FULL MODEL: each node parents to its serving DEVICE (the immediate
+        // device), not the flattened site.
         assert_eq!(
             compiled_child_switch.current_parent_node_id.as_deref(),
-            Some("uisp:site:site-root")
+            Some("uisp:device:device-root-switch")
         );
         assert_eq!(
             compiled_child_switch.current_parent_node_name.as_deref(),
-            Some("Root Site")
+            Some("Root Switch")
         );
         assert_eq!(
             compiled_child_switch.current_attachment_id.as_deref(),
@@ -2517,29 +3030,20 @@ mod topology_override_tests {
             compiled_child_switch.current_attachment_name.as_deref(),
             Some("Root Switch")
         );
-        assert!(
-            !compiled_child_switch
-                .allowed_parents
-                .iter()
-                .any(|parent| parent.parent_node_id == "uisp:device:device-root-switch")
-        );
         let compiled_child_site = compiled
             .editor
             .nodes
             .iter()
             .find(|node| node.node_id == "uisp:site:site-child")
             .expect("compiled editor should include the child site");
-        assert_eq!(
-            compiled_child_site.queue_visibility_policy,
-            TopologyQueueVisibilityPolicy::QueueAuto
-        );
+        // FULL MODEL: the child site parents to its serving DEVICE.
         assert_eq!(
             compiled_child_site.current_parent_node_id.as_deref(),
-            Some("uisp:site:site-root")
+            Some("uisp:device:device-child-switch")
         );
         assert_eq!(
             compiled_child_site.current_parent_node_name.as_deref(),
-            Some("Root Site")
+            Some("Child Switch")
         );
         assert_eq!(
             compiled_child_site.current_attachment_id.as_deref(),
@@ -2549,13 +3053,6 @@ mod topology_override_tests {
             compiled_child_site.current_attachment_name.as_deref(),
             Some("Child Switch")
         );
-        assert!(
-            !compiled_child_site
-                .allowed_parents
-                .iter()
-                .any(|parent| parent.parent_node_id == "uisp:device:device-child-switch")
-        );
-
         for node in &mut compiled.canonical.nodes {
             match node.node_id.as_str() {
                 "uisp:device:device-child-switch" => {
@@ -2568,13 +3065,14 @@ mod topology_override_tests {
             }
         }
 
-        let artifacts = lqos_topology::build_effective_topology_artifacts_from_canonical(
-            &config_for_topology,
-            &compiled.canonical,
-            &lqos_overrides::TopologyOverridesFile::default(),
-            &lqos_config::TopologyAttachmentHealthStateFile::default(),
-        )
-        .expect("effective topology should compile from full2 canonical output");
+        let artifacts =
+            lqos_topology::build_effective_topology_artifacts_from_canonical_with_runtime_queue_context(
+                &config_for_topology,
+                &compiled.canonical,
+                &lqos_overrides::TopologyOverridesFile::default(),
+                &lqos_config::TopologyAttachmentHealthStateFile::default(),
+            )
+            .expect("effective topology should compile from full2 canonical output");
         let effective_network = artifacts
             .effective_network
             .as_ref()
@@ -2590,7 +3088,7 @@ mod topology_override_tests {
             .expect("effective state should retain child switch attachment metadata");
         assert_eq!(
             effective_child_switch.logical_parent_node_id,
-            "uisp:site:site-root"
+            "uisp:device:device-root-switch"
         );
         assert_eq!(
             effective_child_switch.effective_attachment_id.as_deref(),
@@ -2614,7 +3112,7 @@ mod topology_override_tests {
             .expect("effective state should retain child site attachment metadata");
         assert_eq!(
             effective_child_site.logical_parent_node_id,
-            "uisp:site:site-root"
+            "uisp:device:device-child-switch"
         );
         assert_eq!(
             effective_child_site.effective_attachment_id.as_deref(),
@@ -2636,6 +3134,249 @@ mod topology_override_tests {
         );
 
         let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    /// A path-less site is parented to the synthetic Orphans umbrella. The
+    /// umbrella must exist in BOTH representations the same fact lives in:
+ /// `parents`/network.json (the fix) AND the editor/canonical
+    /// nodes (`from_editor_and_network`) — otherwise the canonical validator
+    /// rejects the whole import (`node <site> has dangling parent
+    /// libreqos:generated:uisp:site:orphans`) and no topology publishes on
+    /// evolved live data.
+    #[tokio::test]
+    async fn full2_import_emits_the_orphans_umbrella_editor_node() {
+        let temp_dir = unique_temp_dir("uisp-full2-orphans-umbrella");
+        let mut config = lqos_config::Config {
+            lqos_directory: temp_dir.to_string_lossy().to_string(),
+            state_directory: Some(temp_dir.join("state").to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+        config.uisp_integration.site = "Root Site".to_string();
+        config.queues.generated_pn_download_mbps = 10_000;
+        config.queues.generated_pn_upload_mbps = 10_000;
+
+        let root_site = raw_site("site-root", "Root Site", "site");
+        let orphan_site = raw_site("site-orphan", "Orphan Site", "site");
+        let root_device = raw_device("device-root-switch", "Root Switch", "site-root");
+        let orphan_device = raw_device("device-orphan-switch", "Orphan Switch", "site-orphan");
+        let root_parsed_device = parsed_device("device-root-switch", "Root Switch", "site-root");
+        let orphan_parsed_device =
+            parsed_device("device-orphan-switch", "Orphan Switch", "site-orphan");
+        // No data link: the orphan site has no path to the root, so the import
+        // attaches it to the generated Orphans umbrella.
+        let uisp_data = UispData::from_parts(
+            vec![root_site, orphan_site],
+            vec![root_device, orphan_device],
+            vec![],
+            vec![
+                parsed_site("site-root", "Root Site"),
+                parsed_site("site-orphan", "Orphan Site"),
+            ],
+            vec![root_parsed_device, orphan_parsed_device],
+        );
+
+        let bundle = build_imported_full2_bundle_from_data(
+            Arc::new(config),
+            uisp_data,
+            true,
+            std::time::Instant::now(),
+            &mut OrphanLatch::default(),
+            0,
+        )
+        .await
+        .expect("an orphan-bearing import must not dangling-parent-reject");
+
+        let editor = bundle
+            .native_canonical
+            .as_ref()
+            .expect("full2 import should include native canonical state")
+            .to_editor_state();
+        assert!(
+            editor
+                .nodes
+                .iter()
+                .any(|node| node.node_id == "libreqos:generated:uisp:site:orphans"),
+            "the Orphans umbrella must be emitted as an editor/canonical node"
+        );
+        let umbrella = editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "libreqos:generated:uisp:site:orphans")
+            .expect("umbrella present");
+        assert_eq!(
+            umbrella.current_parent_node_id.as_deref(),
+            Some("uisp:site:site-root"),
+            "the umbrella must hang off the root node so the chain terminates"
+        );
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    // ── §`lqos-74t.11` G2: the deferral WIRING through the real builder ────────
+    const G2_ORPHAN: &str = "uisp:site:site-orphan";
+    const G2_PARENT: &str = "uisp:site:site-parent";
+    const G2_ORPHANS: &str = "libreqos:generated:uisp:site:orphans";
+    /// The injected wall-clock second for every G2 deferral fixture.
+    const G2_NOW: u64 = 1_000_000;
+
+    /// A 3-site world: root → parent (linked when `link_parent`) and an UNLINKED
+    /// orphan (linked to the parent only when `link_orphan`). The orphan has no
+    /// root path unless linked.
+    fn deferral_uisp_data(link_parent: bool, link_orphan: bool) -> UispData {
+        let mut links = Vec::new();
+        if link_parent {
+            links.push(device_data_link(
+                "link-root-parent",
+                LinkEndpoint {
+                    site_id: "site-root",
+                    site_name: "Root Site",
+                    device_id: "device-root-switch",
+                    device_name: "Root Switch",
+                },
+                LinkEndpoint {
+                    site_id: "site-parent",
+                    site_name: "Parent Site",
+                    device_id: "device-parent-switch",
+                    device_name: "Parent Switch",
+                },
+            ));
+        }
+        if link_orphan {
+            links.push(device_data_link(
+                "link-parent-orphan",
+                LinkEndpoint {
+                    site_id: "site-parent",
+                    site_name: "Parent Site",
+                    device_id: "device-parent-switch",
+                    device_name: "Parent Switch",
+                },
+                LinkEndpoint {
+                    site_id: "site-orphan",
+                    site_name: "Orphan Site",
+                    device_id: "device-orphan-switch",
+                    device_name: "Orphan Switch",
+                },
+            ));
+        }
+        UispData::from_parts(
+            vec![
+                raw_site("site-root", "Root Site", "site"),
+                raw_site("site-parent", "Parent Site", "site"),
+                raw_site("site-orphan", "Orphan Site", "site"),
+            ],
+            vec![
+                raw_device("device-root-switch", "Root Switch", "site-root"),
+                raw_device("device-parent-switch", "Parent Switch", "site-parent"),
+                raw_device("device-orphan-switch", "Orphan Switch", "site-orphan"),
+            ],
+            links,
+            vec![
+                parsed_site("site-root", "Root Site"),
+                parsed_site("site-parent", "Parent Site"),
+                parsed_site("site-orphan", "Orphan Site"),
+            ],
+            vec![
+                parsed_device("device-root-switch", "Root Switch", "site-root"),
+                parsed_device("device-parent-switch", "Parent Switch", "site-parent"),
+                parsed_device("device-orphan-switch", "Orphan Switch", "site-orphan"),
+            ],
+        )
+    }
+
+    async fn build_deferral_bundle(
+        latch: &mut OrphanLatch,
+        link_parent: bool,
+        link_orphan: bool,
+    ) -> lqos_topology_compile::ImportedTopologyBundle {
+        let temp_dir = unique_temp_dir("uisp-full2-g2-deferral");
+        let mut config = lqos_config::Config {
+            lqos_directory: temp_dir.to_string_lossy().to_string(),
+            state_directory: Some(temp_dir.join("state").to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+        config.uisp_integration.site = "Root Site".to_string();
+        config.queues.generated_pn_download_mbps = 10_000;
+        config.queues.generated_pn_upload_mbps = 10_000;
+        let bundle = build_imported_full2_bundle_from_data(
+            Arc::new(config),
+            deferral_uisp_data(link_parent, link_orphan),
+            true,
+            std::time::Instant::now(),
+            latch,
+            G2_NOW,
+        )
+        .await
+        .expect("G2 deferral fixture should build");
+        let _ = std::fs::remove_dir_all(temp_dir);
+        bundle
+    }
+
+    /// Prime a no-path episode that started `age_secs` before `G2_NOW` (the
+    /// builder's injected clock), remembering `parent` as the deferral target.
+    fn prime_no_path(latch: &mut OrphanLatch, parent: &str, age_secs: u64) {
+        latch.remember_parent(G2_ORPHAN, parent);
+        // Starts the hold-off; the builder evaluates the age at `G2_NOW`.
+        latch.note_no_path(G2_ORPHAN, G2_NOW - age_secs);
+    }
+
+    /// (a) A remembered parent + a no-path WITHIN `T_hold` ⇒ the emitted parent
+    /// is the LATCHED parent, not the orphans umbrella.
+    #[tokio::test]
+    async fn g2_defers_a_no_path_within_the_hold_off_to_the_latched_parent() {
+        let mut latch = OrphanLatch::default();
+        prime_no_path(&mut latch, G2_PARENT, 1);
+        let bundle = build_deferral_bundle(&mut latch, true, false).await;
+        assert_eq!(
+            network_parent_id_of(&bundle.compatibility_network_json, G2_ORPHAN),
+            Some(Some(G2_PARENT.to_string())),
+            "G2: a no-path within T_hold must be parented to the latched parent"
+        );
+    }
+
+    /// (b1) A remembered parent ABSENT from the graph ⇒ orphans.
+    #[tokio::test]
+    async fn g2_orphans_when_the_latched_parent_is_absent() {
+        let mut latch = OrphanLatch::default();
+        prime_no_path(&mut latch, "uisp:site:no-such-site", 1);
+        let bundle = build_deferral_bundle(&mut latch, true, false).await;
+        assert_eq!(
+            network_parent_id_of(&bundle.compatibility_network_json, G2_ORPHAN),
+            Some(Some(G2_ORPHANS.to_string())),
+            "an absent latched parent must fall back to orphans"
+        );
+    }
+
+    /// (b2) A remembered parent PRESENT but not root-reachable ⇒ orphans.
+    #[tokio::test]
+    async fn g2_orphans_when_the_latched_parent_is_not_root_reachable() {
+        let mut latch = OrphanLatch::default();
+        prime_no_path(&mut latch, G2_PARENT, 1);
+        // The parent site itself is unlinked from the root.
+        let bundle = build_deferral_bundle(&mut latch, false, false).await;
+        assert_eq!(
+            network_parent_id_of(&bundle.compatibility_network_json, G2_ORPHAN),
+            Some(Some(G2_ORPHANS.to_string())),
+            "a latched parent that is not root-reachable must not be deferred to"
+        );
+    }
+
+    /// (c) A no-path that has persisted STRICTLY LONGER than `T_hold` ⇒ orphans.
+    #[tokio::test]
+    async fn g2_orphans_when_the_no_path_exceeds_the_hold_off() {
+        let mut latch = OrphanLatch::default();
+        prime_no_path(
+            &mut latch,
+            G2_PARENT,
+            ORPHAN_LATCH_HOLD_OFF_SECONDS + 1,
+        );
+        let bundle = build_deferral_bundle(&mut latch, true, false).await;
+        assert_eq!(
+            network_parent_id_of(&bundle.compatibility_network_json, G2_ORPHAN),
+            Some(Some(G2_ORPHANS.to_string())),
+            "a no-path strictly longer than T_hold must attach to orphans"
+        );
     }
 
     fn build_test_graph() -> (
@@ -2879,7 +3620,7 @@ mod topology_override_tests {
         let (
             graph,
             root,
-            parent_site,
+            _parent_site,
             child_site,
             _parent_wave,
             child_wave,
@@ -2898,32 +3639,471 @@ mod topology_override_tests {
             &[],
             &[],
         );
-        assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].logical_parent, parent_site);
-        assert_eq!(groups[0].candidate_nodes, vec![child_4600, child_wave]);
+        // FULL MODEL (DRIVER): the serving DEVICE is the parent ⇒ one group PER
+        // serving device (the parallel links attach to different devices).
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].logical_parent, child_4600);
+        assert_eq!(groups[0].candidate_nodes, vec![child_4600]);
+        assert_eq!(groups[1].logical_parent, child_wave);
+        assert_eq!(groups[1].candidate_nodes, vec![child_wave]);
 
         let allowed =
             topology_allowed_parents_from_groups(&graph, &groups, &[], &HashSet::new(), &[]);
-        assert_eq!(allowed.len(), 1);
-        assert_eq!(
-            allowed[0].parent_node_id,
-            graph[parent_site].network_json_id()
-        );
-        assert_eq!(allowed[0].parent_node_name, "Parent Site");
-        assert_eq!(
-            allowed[0]
-                .attachment_options
+        assert_eq!(allowed.len(), 2);
+        assert_eq!(allowed[0].parent_node_name, "Backhaul AirFiber Child");
+        assert_eq!(allowed[1].parent_node_name, "Backhaul Wave Child");
+        assert!(allowed
+            .iter()
+            .all(|parent| !parent.attachment_options.is_empty()));
+    }
+
+    /// `lqos-74t.63` G1-L1 BOUNDED-1: a DOWN backhaul link genuinely LEAVES the
+    /// candidate set — so the pin RELEASES (it can never hold a down parent). A
+    /// device kept in the graph but no longer root-reachable is dropped by
+    /// `topology_parent_candidates_for_node` (the `is_upstream_parent_candidate`
+    /// root-path + child-loop guard), not just by the set the latch is handed.
+    #[test]
+    fn lqos63_l1_a_down_backhaul_releases_the_pinned_candidate() {
+        use std::collections::BTreeSet;
+        let (
+            mut graph,
+            root,
+            _parent_site,
+            child_site,
+            parent_wave,
+            child_wave,
+            _parent_4600,
+            child_4600,
+        ) = build_parallel_attachment_graph();
+        let node_id = graph[child_site].network_json_id();
+        let wave_id = graph[child_wave].network_json_id();
+        let airfiber_id = graph[child_4600].network_json_id();
+
+        let valid_logical_parents = |graph: &GraphType| -> BTreeSet<String> {
+            let candidates =
+                topology_parent_candidates_for_node(graph, root, child_site, &[], &[]);
+            let groups = topology_allowed_parent_groups_for_node(
+                graph,
+                root,
+                child_site,
+                &candidates,
+                &[],
+                &[],
+            );
+            groups
                 .iter()
-                .map(|option| option.attachment_name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["Auto", "Backhaul AirFiber Child", "Backhaul Wave Child"]
+                .map(|group| graph[group.logical_parent].network_json_id())
+                .collect()
+        };
+
+        // Both parallel backhauls are valid candidates ⇒ the first selection pins.
+        let both = valid_logical_parents(&graph);
+        assert!(both.contains(&wave_id) && both.contains(&airfiber_id));
+        let mut latch = OrphanLatch::default();
+        assert_eq!(latch.pin_parent(&node_id, &wave_id, &both), wave_id);
+
+        // The WavePro backhaul LINK goes down: BOTH directed link edges are dropped
+        // (the far radio stays in the graph but the link no longer wires). The
+        // candidate must leave the set ⇒ the pin RELEASES and re-pins.
+        let fwd = graph
+            .find_edge(parent_wave, child_wave)
+            .expect("the wave upstream edge");
+        graph.remove_edge(fwd);
+        let rev = graph
+            .find_edge(child_wave, parent_wave)
+            .expect("the wave downstream edge");
+        graph.remove_edge(rev);
+        let after = valid_logical_parents(&graph);
+        assert!(
+            !after.contains(&wave_id),
+            "a down link drops the candidate from the set (so the pin cannot hold a down parent)"
+        );
+        assert!(after.contains(&airfiber_id));
+        assert_eq!(latch.pin_parent(&node_id, &airfiber_id, &after), airfiber_id);
+    }
+
+    /// `docs/topology_ptp_link_site_attachment_work_order.md` §5: a LINK/PTP
+    /// device (device ROLE, `sta-ptp`) that is a site's attachment resolves the
+    /// site's logical parent to the SERVING AP across the link (the link is the
+    /// attachment, not a tree level).
+    #[test]
+    fn ptp_link_by_role_parents_the_site_to_the_serving_ap() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(site("TrailerCity", "651b2e8a"));
+        let ap_idx = graph.add_node(ap("JR_AP_TC_C", "85532523", "TrailerCity"));
+        let link_idx = graph.add_node(ap("Wave Long-Range", "6ae6696b", "TrailerCity"));
+        let tower = graph.add_node(site("TrailerCity Tower Trailer", "aa9d8941"));
+        for (from, to) in [
+            (root, ap_idx),
+            (ap_idx, root),
+            (ap_idx, link_idx),
+            (link_idx, ap_idx),
+            (tower, link_idx),
+            (link_idx, tower),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+        let mut devices = vec![
+            parsed_device("85532523", "JR_AP_TC_C", "651b2e8a"),
+            parsed_device("6ae6696b", "Wave Long-Range", "651b2e8a"),
+        ];
+        // The ROLE is the discriminator (PIN-1), never the structure.
+        devices[1].role = Some("station".to_string());
+        devices[1].wireless_mode = Some("sta-ptp".to_string());
+
+        assert!(device_is_link(&devices[1]));
+        assert!(!device_is_link(&devices[0]));
+        let logical_parent =
+            logical_parent_for_candidate(&graph, root, tower, link_idx, &devices, &[]);
+        assert_eq!(
+            logical_parent, ap_idx,
+            "a role-keyed link-delivered site attaches to the SERVING AP"
+        );
+    }
+
+ /// the implementer `#12` PIN-1 (the NON-link fixture): a CHAINED AP (an AP under
+    /// another AP) is structurally identical to a link but is NOT one by ROLE ⇒
+    /// the site keeps the nearest-site parent and the intermediate AP is NOT
+    /// dropped/re-parented to the grandparent.
+    #[test]
+    fn chained_ap_site_is_not_re_parented_to_the_grandparent() {
+        let mut graph = GraphType::new();
+        let root = graph.add_node(site("Root Site", "site-root"));
+        let ap1 = graph.add_node(ap("Upstream AP", "device-ap1", "Root Site"));
+        let ap2 = graph.add_node(ap("Chained AP", "device-ap2", "Root Site"));
+        let child = graph.add_node(site("Child Site", "site-child"));
+        for (from, to) in [
+            (root, ap1),
+            (ap1, root),
+            (ap1, ap2),
+            (ap2, ap1),
+            (child, ap2),
+            (ap2, child),
+        ] {
+            graph.add_edge(from, to, LinkMapping::ethernet(1_000));
+        }
+        // Both are serving PTMP APs — `role=ap`, `ap-ptmp` mode (serve clients;
+        // NOT a PTP/backhaul link — a `ptmp` mode carries no `ptp`).
+        let mut devices = vec![
+            parsed_device("device-ap1", "Upstream AP", "site-root"),
+            parsed_device("device-ap2", "Chained AP", "site-root"),
+        ];
+        for d in &mut devices {
+            d.role = Some("ap".to_string());
+            d.wireless_mode = Some("ap-ptmp".to_string());
+        }
+        assert!(
+            !devices.iter().any(device_is_link),
+            "an `ap-ptmp` serving AP is NOT a PTP/backhaul link"
+        );
+
+        let logical_parent = logical_parent_for_candidate(&graph, root, child, ap2, &devices, &[]);
+        assert_eq!(
+            logical_parent, ap2,
+            "a chained-AP site parents to the intermediate AP (NOT the grandparent; no drop)"
+        );
+    }
+
+    /// Builds the canonical for the canonical TrailerCity/PTMP + WestRedd/PTP
+    /// shape: `Root Site --(ap)--> device-ap --(data link)--> device-link (the
+    /// radio) --(site)--> Child Site`, with the given link radio ROLE/mode. The
+    /// serving AP is a PtMP sector AP (`ap-ptmp`) and STAYS a node.
+    async fn build_link_attachment_canonical(
+        link_role: &str,
+        link_mode: Option<&str>,
+        link_name: &str,
+    ) -> lqos_config::TopologyCanonicalStateFile {
+        let temp_dir = unique_temp_dir("uisp-full2-link-attachment");
+        let mut config = lqos_config::Config {
+            lqos_directory: temp_dir.to_string_lossy().to_string(),
+            state_directory: Some(temp_dir.join("state").to_string_lossy().to_string()),
+            ..Default::default()
+        };
+        config.uisp_integration.enable_uisp = true;
+        config.uisp_integration.site = "Root Site".to_string();
+        config.queues.generated_pn_download_mbps = 10_000;
+        config.queues.generated_pn_upload_mbps = 10_000;
+
+        let root_site = raw_site("site-root", "Root Site", "site");
+        let child_site = raw_site("site-child", "Child Site", "site");
+        let ap_device = raw_device("device-ap", "Serving AP", "site-root");
+        let link_device = raw_device("device-link", link_name, "site-child");
+        let mut ap_parsed = parsed_device("device-ap", "Serving AP", "site-root");
+        ap_parsed.role = Some("ap".to_string());
+        ap_parsed.wireless_mode = Some("ap-ptmp".to_string());
+        let mut link_parsed = parsed_device("device-link", link_name, "site-child");
+        link_parsed.role = Some(link_role.to_string());
+        link_parsed.wireless_mode = link_mode.map(str::to_string);
+        assert!(device_is_link(&link_parsed));
+        assert!(!device_is_link(&ap_parsed));
+        let uisp_data = UispData::from_parts(
+            vec![root_site, child_site],
+            vec![ap_device, link_device],
+            vec![device_data_link(
+                "link-ap-child",
+                LinkEndpoint {
+                    site_id: "site-root",
+                    site_name: "Root Site",
+                    device_id: "device-ap",
+                    device_name: "Serving AP",
+                },
+                LinkEndpoint {
+                    site_id: "site-child",
+                    site_name: "Child Site",
+                    device_id: "device-link",
+                    device_name: link_name,
+                },
+            )],
+            vec![
+                parsed_site("site-root", "Root Site"),
+                parsed_site("site-child", "Child Site"),
+            ],
+            vec![ap_parsed, link_parsed],
+        );
+        let bundle = build_imported_full2_bundle_from_data(
+            Arc::new(config),
+            uisp_data,
+            true,
+            std::time::Instant::now(),
+            &mut OrphanLatch::default(),
+            0,
+        )
+        .await
+        .expect("in-memory UISP import should build");
+        bundle
+            .native_canonical
+            .expect("full2 import should include native canonical state")
+    }
+
+    /// `docs/topology_ptmp_ptp_attachment_card.md` §7: for BOTH shapes, (a) the
+    /// child site's parent == the serving AP; (b) the link is NOT in the canonical
+    /// node list (nor the derived editor list); (c) the link IS the site's
+    /// `current_attachment_id`; (d) the client-serving `ap-ptmp` AP STAYS a node;
+    /// (e) no node is emitted with the link's kind.
+    fn assert_link_attachment_shape(canonical: &lqos_config::TopologyCanonicalStateFile) {
+        assert!(
+            !canonical
+                .nodes
+                .iter()
+                .any(|node| node.node_id == "uisp:device:device-link"),
+            "a link/station radio is NOT a node — attachment-only (no `ap`, no `site`)"
         );
         assert!(
-            allowed[0]
-                .attachment_options
+            canonical
+                .nodes
                 .iter()
-                .skip(1)
-                .all(|option| option.attachment_role == TopologyAttachmentRole::PtpBackhaul)
+                .any(|node| node.node_id == "uisp:device:device-ap"),
+            "a client-serving `ap-ptmp` AP STAYS a node (no over-match)"
+        );
+        let editor = canonical.to_editor_state();
+        assert!(
+            !editor
+                .nodes
+                .iter()
+                .any(|node| node.node_id == "uisp:device:device-link"),
+            "the link is not an EDITOR node either"
+        );
+        let child = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("the child site is a node");
+        assert_eq!(
+            child.current_parent_node_id.as_deref(),
+            Some("uisp:device:device-ap"),
+            "the site parents ACROSS to the serving AP"
+        );
+        assert_eq!(
+            child.current_attachment_id.as_deref(),
+            Some("uisp:device:device-link"),
+            "the link/station radio IS the site's attachment"
+        );
+ // the implementer `#12` R2: the radio's RATE must survive the radio leaving the
+        // node list — it rides its ATTACHMENT OPTION (so the site's shaped rate
+        // is unchanged while the tree looks right).
+        let child_editor = editor
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "uisp:site:site-child")
+            .expect("the child site is an editor node");
+        let ap_group = child_editor
+            .allowed_parents
+            .iter()
+            .find(|parent| parent.parent_node_id == "uisp:device:device-ap")
+            .expect("the serving AP is the grouped logical parent");
+        let link_option = ap_group
+            .attachment_options
+            .iter()
+            .find(|option| option.attachment_id == "uisp:device:device-link")
+            .expect("the link is an attachment option, not a parent candidate");
+        assert!(
+            link_option.download_bandwidth_mbps.is_some()
+                || link_option.capacity_mbps.is_some(),
+            "the radio's rate rides the attachment option (R2): {link_option:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn ptp_link_is_attachment_only_and_the_site_parents_across() {
+        let canonical =
+            build_link_attachment_canonical("ap", Some("ap-ptp"), "WavePro-WestReddToRochester")
+                .await;
+        assert_link_attachment_shape(&canonical);
+    }
+
+    /// The DRIVER's canonical PtMP case: a site served through a PtMP STATION
+    /// CLIENT (`sta-ptmp`, 'Wave Long-Range') parents to the sector AP; the
+    /// station client is the attachment only.
+    #[tokio::test]
+    async fn ptmp_station_client_is_attachment_only_and_the_site_parents_across() {
+        let canonical =
+            build_link_attachment_canonical("station", Some("sta-ptmp"), "Wave Long-Range").await;
+        assert_link_attachment_shape(&canonical);
+    }
+
+ /// `docs/topology_ptmp_ptp_attachment_card.md` §2 + §7 (the implementer acceptance):
+    /// ONE union predicate covering BOTH shapes — a PtMP station client / CPE
+    /// (`sta-ptmp`, the DRIVER's 'Wave Long-Range') AND a PTP/backhaul radio,
+    /// EITHER end (`ap-ptp`/`sta-ptp`). A sector AP (`ap-ptmp`) and a plain
+    /// wired device stay NODES. A link that carries clients is still a link —
+    /// the predicate never consults `aps_with_clients`.
+    #[test]
+    fn device_is_link_is_the_pmtp_station_and_ptp_backhaul_class() {
+        let mut d = parsed_device("d", "D", "s");
+
+        // (a) PtMP station client / CPE — the canonical 'Wave Long-Range'.
+        d.role = Some("station".into());
+        d.wireless_mode = Some("sta-ptmp".into());
+        assert!(device_is_link(&d), "a PtMP station client is a LINK");
+        d.role = Some("cpe".into());
+        d.wireless_mode = None;
+        assert!(device_is_link(&d), "a `cpe` role is a LINK");
+        d.role = Some("sta".into());
+        d.wireless_mode = None;
+        assert!(device_is_link(&d), "a `sta` role is a LINK");
+        d.role = None;
+        d.wireless_mode = Some("station".into());
+        assert!(device_is_link(&d), "a `station*` mode is a LINK");
+
+        // (b) PTP / backhaul — EITHER end.
+        d.role = Some("ap".into());
+        d.wireless_mode = Some("ap-ptp".into());
+        assert!(device_is_link(&d), "AP-side PTP backhaul (WavePro/GigaBeam/…)");
+        d.role = Some("station".into());
+        d.wireless_mode = Some("sta-ptp".into());
+        assert!(device_is_link(&d), "station-side PTP");
+        d.role = Some("ptp".into());
+        d.wireless_mode = None;
+        assert!(device_is_link(&d), "an explicit ptp role");
+        d.role = Some("backhaul".into());
+        d.wireless_mode = None;
+        assert!(device_is_link(&d), "an explicit backhaul role");
+
+        // NOT links — node devices.
+        d.role = Some("ap".into());
+        d.wireless_mode = Some("ap-ptmp".into());
+        assert!(!device_is_link(&d), "a PTMP sector AP STAYS a node");
+        d.role = Some("ap".into());
+        d.wireless_mode = None;
+        assert!(!device_is_link(&d), "a plain AP stays");
+        d.role = Some("switch".into());
+        d.wireless_mode = None;
+        assert!(!device_is_link(&d), "a switch stays");
+        d.role = Some("router".into());
+        d.wireless_mode = None;
+        assert!(!device_is_link(&d), "a router stays");
+        d.role = None;
+        d.wireless_mode = None;
+        assert!(!device_is_link(&d), "no role/mode stays");
+    }
+
+    /// §2bis (the DRIVER's steer): an OPAQUE radio (`role=wireless`, blackBox,
+    /// no `wirelessMode`) is classified by the CONNECTED SITE TYPE —
+    /// `own site endpoint => CPE`; `own site infra + connects an endpoint => AP`;
+    /// `own site infra + infra<->infra => backhaul`. Closes `4600C_*`/`AVIAT_*`.
+    #[test]
+    fn opaque_radio_is_classified_by_the_connected_site_type() {
+        use crate::strategies::common::UispData;
+        use crate::uisp_types::UispSiteType;
+        let mut infra_a = parsed_site("site-a", "Infra A");
+        infra_a.site_type = UispSiteType::Site;
+        let mut infra_b = parsed_site("site-b", "Infra B");
+        infra_b.site_type = UispSiteType::Site;
+        let mut sub = parsed_site("sub-1", "Subscriber 1");
+        sub.site_type = UispSiteType::Client;
+
+        let raw_ap = raw_device("dev-ap", "JR_AP_RR_B", "site-a");
+        let raw_cpe = raw_device("dev-cpe", "Radio-103ThoroughbredCt", "sub-1");
+        let raw_bh = raw_device("dev-bh", "4600C_MRE_To_ROCH", "site-a");
+        let raw_router = raw_device("dev-router", "Rochester Router", "site-b");
+
+        let mut dev_ap = parsed_device("dev-ap", "JR_AP_RR_B", "site-a");
+        dev_ap.role = Some("wireless".into());
+        let mut dev_cpe = parsed_device("dev-cpe", "Radio-103ThoroughbredCt", "sub-1");
+        dev_cpe.role = Some("wireless".into());
+        let mut dev_bh = parsed_device("dev-bh", "4600C_MRE_To_ROCH", "site-a");
+        dev_bh.role = Some("wireless".into());
+        let mut dev_router = parsed_device("dev-router", "Rochester Router", "site-b");
+        dev_router.role = Some("router".into());
+
+        let link_ap_cpe = device_data_link(
+            "l1",
+            LinkEndpoint {
+                site_id: "site-a",
+                site_name: "Infra A",
+                device_id: "dev-ap",
+                device_name: "JR_AP_RR_B",
+            },
+            LinkEndpoint {
+                site_id: "sub-1",
+                site_name: "Subscriber 1",
+                device_id: "dev-cpe",
+                device_name: "Radio-103ThoroughbredCt",
+            },
+        );
+        let link_bh_router = device_data_link(
+            "l2",
+            LinkEndpoint {
+                site_id: "site-a",
+                site_name: "Infra A",
+                device_id: "dev-bh",
+                device_name: "4600C_MRE_To_ROCH",
+            },
+            LinkEndpoint {
+                site_id: "site-b",
+                site_name: "Infra B",
+                device_id: "dev-router",
+                device_name: "Rochester Router",
+            },
+        );
+
+        let data = UispData::from_parts(
+            vec![
+                raw_site("site-a", "Infra A", "site"),
+                raw_site("site-b", "Infra B", "site"),
+                raw_site("sub-1", "Subscriber 1", "endpoint"),
+            ],
+            vec![raw_ap, raw_cpe, raw_bh, raw_router],
+            vec![link_ap_cpe, link_bh_router],
+            vec![infra_a, infra_b, sub],
+            vec![dev_ap, dev_cpe, dev_bh, dev_router],
+        );
+        let by_id = |id: &str| data.devices.iter().find(|d| d.id == id).unwrap();
+        assert!(
+            !device_is_link(by_id("dev-ap")),
+            "an infra AP connecting an endpoint is a NODE"
+        );
+        assert!(
+            device_is_link(by_id("dev-cpe")),
+            "a radio at a subscriber endpoint is a CPE/attachment"
+        );
+        assert!(
+            device_is_link(by_id("dev-bh")),
+            "an infra<->infra radio is a backhaul/attachment"
+        );
+        assert!(
+            !device_is_link(by_id("dev-router")),
+            "a non-opaque infrastructure router stays a node"
         );
     }
 
@@ -2983,7 +4163,7 @@ mod topology_override_tests {
         let (
             graph,
             root,
-            parent_site,
+            _parent_site,
             child_site,
             _parent_wave,
             child_wave,
@@ -3004,7 +4184,9 @@ mod topology_override_tests {
         overrides.insert(
             graph[child_site].network_json_id(),
             TopologyAttachmentOverrideSelection {
-                parent_node_id: graph[parent_site].network_json_id(),
+                // FULL MODEL: the override names the SERVING DEVICE of the
+                // preferred path (the group that owns child_4600).
+                parent_node_id: graph[child_4600].network_json_id(),
                 mode: TopologyAttachmentMode::PreferredOrder,
                 attachment_preference_ids: vec![graph[child_4600].network_json_id()],
             },
@@ -3021,11 +4203,11 @@ mod topology_override_tests {
     }
 
     #[test]
-    fn logical_parent_for_parallel_attachment_candidate_is_upstream_site() {
+    fn logical_parent_for_parallel_attachment_candidate_is_the_serving_device() {
         let (
             graph,
             root,
-            parent_site,
+            _parent_site,
             child_site,
             _parent_wave,
             child_wave,
@@ -3033,9 +4215,10 @@ mod topology_override_tests {
             _child_4600,
         ) = build_parallel_attachment_graph();
 
+        // FULL MODEL: the serving DEVICE (the attachment) is the logical parent.
         let logical_parent =
             logical_parent_for_candidate(&graph, root, child_site, child_wave, &[], &[]);
-        assert_eq!(logical_parent, parent_site);
+        assert_eq!(logical_parent, child_wave);
     }
 
     #[test]
@@ -3096,10 +4279,11 @@ mod topology_override_tests {
 
         let groups =
             topology_allowed_parent_groups_for_node(&graph, root, beta_site, &candidates, &[], &[]);
+        // FULL MODEL (DRIVER): the serving DEVICE is the parent.
         assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].logical_parent, alpha_site);
+        assert_eq!(groups[0].logical_parent, beta_to_alpha);
         assert_eq!(groups[0].candidate_nodes, vec![beta_to_alpha]);
-        assert_eq!(groups[1].logical_parent, root);
+        assert_eq!(groups[1].logical_parent, beta_to_gamma);
         assert_eq!(groups[1].candidate_nodes, vec![beta_to_gamma]);
 
         let allowed =
@@ -3109,12 +4293,12 @@ mod topology_override_tests {
                 .iter()
                 .map(|parent| parent.parent_node_name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["Site Alpha", "Site Gamma"]
+            vec!["Beta - Alpha MLO5", "Beta - Gamma MLO6"]
         );
         let alpha_parent = allowed
             .iter()
-            .find(|parent| parent.parent_node_name == "Site Alpha")
-            .expect("expected Site Alpha as a legal parent");
+            .find(|parent| parent.parent_node_name == "Beta - Alpha MLO5")
+            .expect("expected the serving device as a legal parent");
         assert_eq!(
             alpha_parent
                 .attachment_options
@@ -3166,9 +4350,10 @@ mod topology_override_tests {
             Some(beta_to_alpha)
         );
 
+        // FULL MODEL: the serving DEVICE is the logical parent.
         let logical_parent =
             logical_parent_for_candidate(&graph, root, beta_site, beta_to_alpha, &[], &[]);
-        assert_eq!(logical_parent, alpha_site);
+        assert_eq!(logical_parent, beta_to_alpha);
         assert_eq!(
             export_parent_anchor_for_override(
                 &graph,
@@ -3178,7 +4363,7 @@ mod topology_override_tests {
                 &[],
                 &[],
             ),
-            alpha_to_beta
+            beta_to_alpha
         );
     }
 
@@ -3206,6 +4391,7 @@ mod topology_override_tests {
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: UispAttachmentRateSource::Static,
+            classifies_as_link: false,
         }];
 
         assert_eq!(
@@ -3538,6 +4724,7 @@ mod tests {
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: UispAttachmentRateSource::Static,
+            classifies_as_link: false,
         }
     }
 
@@ -3769,7 +4956,12 @@ mod tests {
         let device = test_uisp_device("device-missing", "Missing AP");
         let parents = HashMap::<String, NetJsonParent<'_>>::new();
 
-        let anchor = anchor_for_site_ap("circuit-1", "Circuit 1", &device, &parents);
+        let anchor = anchor_for_site_ap(
+            "circuit-1",
+            "Circuit 1",
+            format!("uisp:device:{}", device.id),
+            &parents,
+        );
 
         assert!(anchor.is_none());
     }
@@ -3796,8 +4988,13 @@ mod tests {
         );
         let device = test_uisp_device("device-present", "Present AP");
 
-        let anchor = anchor_for_site_ap("circuit-1", "Circuit 1", &device, &parents)
-            .expect("expected anchor to be emitted");
+        let anchor = anchor_for_site_ap(
+            "circuit-1",
+            "Circuit 1",
+            format!("uisp:device:{}", device.id),
+            &parents,
+        )
+        .expect("expected anchor to be emitted");
 
         assert_eq!(anchor.anchor_node_id, "uisp:device:device-present");
         assert_eq!(anchor.anchor_node_name.as_deref(), Some("Present AP"));

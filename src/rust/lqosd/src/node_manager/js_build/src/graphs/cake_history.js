@@ -1,4 +1,5 @@
 import {scaleNumber, toNumber, trimTrailingZeros} from "../lq_js_common/helpers/scaling";
+import {CAKE_TIN_LEGEND_PAIRS, cakeTinIndexFor} from "./cake_tin_order.mjs";
 
 export const CAKE_CHART_WINDOW_SECONDS = 180;
 export const CAKE_CHART_WINDOW_LABEL = "Last 3 minutes · 1s samples";
@@ -104,6 +105,40 @@ export function cakeScatterSeries(name, color) {
     };
 }
 
+// `lqos-74t.53`: the tin wire-order convention + legend pairs live in
+// `cake_tin_order.mjs` (so the pure node test can import them); re-exported here
+// for the chart modules.
+export {CAKE_TIN_LEGEND_PAIRS, cakeTinIndexFor};
+
+/**
+ * `lqos-74t.53` (A): ECharts toggles a legend item by SERIES NAME, but every tin
+ * has two series (its down line + the paired `… Up` line). Mirror the selection
+ * so a legend click hides/restores BOTH. `pairs` is explicit (the Voice up series
+ * is `"RT Voice Up"`); attach ONCE per chart (constructor), not per `setOption`.
+ */
+export function attachLegendPairMirror(chart, pairs) {
+    if (!chart?.on || !Array.isArray(pairs) || pairs.length === 0) {
+        return;
+    }
+    chart.on("legendselectchanged", (params) => {
+        const name = params?.name;
+        if (typeof name !== "string") {
+            return;
+        }
+        const pair = pairs.find((entry) => entry.down === name || entry.up === name);
+        if (!pair) {
+            return;
+        }
+        const other = pair.down === name ? pair.up : pair.down;
+        const selected = params?.selected || {};
+        const want = selected[name] !== false;
+        if (selected[other] === want) {
+            return; // already in sync (or a redundant feedback event)
+        }
+        chart.dispatchAction({ type: want ? "legendSelect" : "legendUnSelect", name: other });
+    });
+}
+
 export function cakeTooltip(unitFormatter) {
     return {
         trigger: "axis",
@@ -163,6 +198,65 @@ export function formatCakeMillisecondsFromUs(value) {
         return `${trimTrailingZeros(ms.toFixed(1))}ms`;
     }
     return `${trimTrailingZeros(ms.toFixed(2))}ms`;
+}
+
+/**
+ * Bridge mode (K2 slice 2 §7 /a): build a full per-direction
+ * aggregate option for the marks/drops graphs. The bridge wire has no
+ * per-tin drops/marks, so exactly one Down + one Up series are rendered from
+ * `CakeDiffTransit.drops`/`.marks`, with the honest "per-direction" label.
+ * Returns a complete option (title/grid/axes/series/tooltip) so the caller
+ * can swap it in with `setOption(option, true)` and drop the per-tin series.
+ */
+export function cakePerDirectionOption(msg, titleText, field, unitFormatter) {
+    const down = [];
+    const up = [];
+    for (const sample of cakeHistoryWindow(msg, CAKE_CHART_WINDOW_SECONDS)) {
+        if (!sample || !sample[0] || !sample[1]) {
+            down.push(null);
+            up.push(null);
+            continue;
+        }
+        down.push(sample[0][field] ?? 0);
+        up.push(0 - (sample[1][field] ?? 0));
+    }
+    return {
+        title: cakeChartTitle(titleText, "Packets per sample"),
+        grid: cakeCommonGrid(),
+        legend: {
+            orient: "horizontal",
+            right: 10,
+            top: "bottom",
+            // do NOT set selectedMode:false — it disables the legend
+            textStyle: {
+                color: '#aaa'
+            },
+            data: [
+                {
+                    name: "Down",
+                    icon: 'circle',
+                    itemStyle: { color: window.graphPalette[0] }
+                }, {
+                    name: "Up",
+                    icon: 'circle',
+                    itemStyle: { color: window.graphPalette[1] }
+                }
+            ]
+        },
+        xAxis: cakeCommonXAxis(CAKE_CHART_WINDOW_SECONDS),
+        yAxis: {
+            type: 'value',
+            axisLabel: {
+                formatter: (val) => unitFormatter(val),
+            }
+        },
+        series: [
+            { ...cakeScatterSeries("Down", window.graphPalette[0]), data: down },
+            { ...cakeScatterSeries("Up", window.graphPalette[1]), data: up },
+        ],
+        tooltip: cakeTooltip(unitFormatter),
+        animation: false,
+    };
 }
 
 export function cakeHistoryWindow(msg, windowSize = CAKE_CHART_WINDOW_SECONDS) {

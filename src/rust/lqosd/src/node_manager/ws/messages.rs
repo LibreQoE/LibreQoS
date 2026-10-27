@@ -9,7 +9,7 @@ use crate::node_manager::local_api::config::{ConfigSecretClearRequest, ConfigVie
 use crate::node_manager::local_api::dashboard_themes::{DashletIdentity, ThemeEntry};
 use crate::node_manager::local_api::device_counts::DeviceCount;
 use crate::node_manager::local_api::directories::{
-    CircuitDirectoryPage, CircuitDirectoryQuery, NodeDirectoryEntry, TreeGuardMetadataSummary,
+    CircuitDirectoryPage, CircuitDirectoryQuery, NodeDirectoryEntry,
 };
 use crate::node_manager::local_api::ethernet_caps::{EthernetCapsPage, EthernetCapsPageQuery};
 use crate::node_manager::local_api::executive::{
@@ -26,6 +26,10 @@ use crate::node_manager::local_api::node_topology_overrides::{
 };
 use crate::node_manager::local_api::packet_analysis::RequestAnalysisResult;
 use crate::node_manager::local_api::scheduler::{SchedulerDetails, SchedulerStatus};
+use crate::bridge_supervisor::BridgeHealthStatus;
+use crate::bridge_broker::outcomes::PublishRecord;
+use crate::bridge_broker::BridgeConvergenceSnapshot;
+use lqos_overrides::CircuitSpeedOverride;
 use crate::node_manager::local_api::search::SearchResult;
 use crate::node_manager::local_api::shaped_devices_page::{
     ShapedDevicesPage, ShapedDevicesPageQuery,
@@ -45,11 +49,7 @@ use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
 use crate::node_manager::local_api::{
     circuit_count::CircuitCount,
     circuit_live::{CircuitLiveMetrics, CircuitMetricsQuery},
-    cpu_affinity::{
-        CircuitBrief, CpuAffinityCircuitsPage, CpuAffinityRuntimeSnapshot, CpuAffinitySiteTreeNode,
-        CpuAffinitySummaryEntry, PreviewWeightItem,
-    },
-    flow_explorer::FlowTimeline,
+    flow_explorer::{FlowTimeline, FlowTimelineBucket},
     lts::{
         AsnFlowSizeWeb, CakeData, FlowCountViewWeb, FullPacketData, LtsTrialConfig,
         PercentShapedWeb, RecentMedians, ShaperRttHistogramEntry, ShaperStatus,
@@ -127,6 +127,36 @@ pub enum WsRequest {
     },
     SchedulerStatus,
     SchedulerDetails,
+    /// E2: the bridge Supervisor's verdict + raw report detail
+    /// (None when the DPDK bridge is not configured).
+    BridgeHealthStatus,
+    /// Read-only DPDK dataplane status (config + system sources, labelled by
+    /// provenance). Never writes anything.
+    DpdkStatus,
+    /// E3b: recent bridge publish outcomes (pending k/n, applied,
+    /// rejected + typed reason) — a read of the broker's own state.
+    BridgePublishStatus,
+    /// L4 §5: the operator convergence snapshot (state + the held op in
+    /// operator language + escalation counters) for the Bridge page.
+    BridgeConvergence,
+    /// `lqos-8h8` (c): the maintenance-window operator OVERRIDE — apply the
+    /// currently-held change NOW and/or arm a time-boxed global break-glass
+    /// (Admin-only; audited). Writes the control file the broker consumes.
+    BridgeMaintenanceOverride {
+        apply_now: bool,
+        break_glass_minutes: Option<u64>,
+    },
+    /// E3a (retarget): the operator circuit-speed override for one
+    /// circuit (None = no override — the base plan applies).
+    GetCircuitSpeedOverride {
+        circuit_id: String,
+    },
+    /// E3a (retarget): upsert or clear the operator circuit-speed
+    /// override. `speeds: None` = resume (delete); Admin-only.
+    SetCircuitSpeedOverride {
+        circuit_id: String,
+        speeds: Option<CircuitSpeedOverride>,
+    },
     DeviceCount,
     DevicesAll,
     ShapedDevicesPage {
@@ -266,7 +296,6 @@ pub enum WsRequest {
         query: EthernetCapsPageQuery,
     },
     NodeDirectory,
-    TreeGuardMetadataSummary,
     GetUsers,
     AddUser {
         username: String,
@@ -303,24 +332,6 @@ pub enum WsRequest {
     RequestAnalysis {
         ip: String,
     },
-    CpuAffinitySummary,
-    CpuAffinityRuntimeSnapshot,
-    CpuAffinityCircuits {
-        cpu: u32,
-        direction: Option<String>,
-        page: Option<usize>,
-        page_size: Option<usize>,
-        search: Option<String>,
-    },
-    CpuAffinityCircuitsAll {
-        direction: Option<String>,
-        search: Option<String>,
-    },
-    CpuAffinityPreviewWeights {
-        direction: Option<String>,
-        search: Option<String>,
-    },
-    CpuAffinitySiteTree,
     AsnList,
     CountryList,
     ProtocolList,
@@ -381,6 +392,30 @@ pub struct ThroughputData {
     pub udp_pps: DownUpOrder<u64>,
     pub icmp_pps: DownUpOrder<u64>,
     pub shaped_bps: DownUpOrder<u64>,
+    /// `.64.2.2`: the offered/pre-shaping DEMAND (bridge mode — `bridge_actual_bytes_per_second`).
+    /// In legacy mode `bps` already carries the demand, so this mirrors it.
+    #[serde(default)]
+    pub actual_bps: DownUpOrder<u64>,
+    /// `.66.2`: the whole-box CLASS rates (DEMAND/enqueue). `mapped` = a circuit
+    /// was resolved for the subscriber IP; `unmapped` = the `best_effort` slot;
+    /// `mapped_bps + unmapped_bps == actual_bps`. Bridge mode only (zeroed in
+    /// legacy mode).
+    ///
+    /// ADDITIVE: `ThroughputData` is `Serialize`-only, so the additive guarantee
+    /// is a NEW CBOR map key that old readers ignore (the `.65 actual_bps`
+    /// precedent) — NOT `serde(default)`.
+    ///
+    /// `.66.3` note: the pulse's "vs 24 h" chip uses the existing `LtsThroughput`
+    /// path (`local_api/lts/last_24_hours.rs::throughput_period_data`), which is
+    /// INSIGHT-LICENSE-GATED (`super::insight_gate().await?` → `FORBIDDEN` when
+    /// unentitled, `ws.rs:1475`); the widget must degrade/hide the chip there.
+    pub mapped_bps: DownUpOrder<u64>,
+    pub unmapped_bps: DownUpOrder<u64>,
+    /// `.117`: the backend-computed unmapped share of the DEMAND class
+    /// counters (`unmapped / (mapped + unmapped) * 100`). The pulse displays
+    /// this single value so the percentage cannot diverge from the class
+    /// counters by summing a different pair in the UI.
+    pub unmapped_pct: f32,
     pub max: DownUpOrder<u64>,
 }
 
@@ -398,163 +433,6 @@ pub struct EtherProtocolsData {
 pub struct RamData {
     pub total: u64,
     pub used: u64,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryCapacityInterfaceData {
-    pub name: String,
-    pub planned_qdiscs: usize,
-    pub infra_qdiscs: usize,
-    pub cake_qdiscs: usize,
-    pub fq_codel_qdiscs: usize,
-    pub estimated_memory_bytes: u64,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryLiveCapacityInterfaceData {
-    pub name: String,
-    pub live_qdiscs: usize,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryPreflightData {
-    pub ok: bool,
-    pub message: String,
-    pub safe_budget: usize,
-    pub hard_limit: usize,
-    pub estimated_total_memory_bytes: u64,
-    pub memory_available_bytes: Option<u64>,
-    pub memory_guard_min_available_bytes: u64,
-    pub memory_ok: bool,
-    pub interfaces: Vec<BakeryCapacityInterfaceData>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryStatusState {
-    pub active_circuits: usize,
-    pub mode: String,
-    pub current_action_started_unix: Option<u64>,
-    pub current_apply_phase: Option<String>,
-    pub current_apply_total_tc_commands: usize,
-    pub current_apply_completed_tc_commands: usize,
-    pub current_apply_total_chunks: usize,
-    pub current_apply_completed_chunks: usize,
-    pub last_success_unix: Option<u64>,
-    pub last_full_reload_success_unix: Option<u64>,
-    pub last_failure_unix: Option<u64>,
-    pub last_failure_summary: Option<String>,
-    pub last_apply_type: String,
-    pub last_total_tc_commands: usize,
-    pub last_class_commands: usize,
-    pub last_qdisc_commands: usize,
-    pub last_build_duration_ms: u64,
-    pub last_apply_duration_ms: u64,
-    pub avg_tc_io_interval_ms: Option<u64>,
-    pub last_tc_io_unix: Option<u64>,
-    pub tc_io_interval_samples: usize,
-    pub runtime_operations: BakeryRuntimeOperationsData,
-    pub queue_distribution: Vec<BakeryQueueDistributionData>,
-    pub live_capacity_interfaces: Vec<BakeryLiveCapacityInterfaceData>,
-    pub live_capacity_safe_budget: usize,
-    pub live_capacity_updated_at_unix: Option<u64>,
-    pub preflight: Option<BakeryPreflightData>,
-    pub reload_required: bool,
-    pub reload_required_reason: Option<String>,
-    pub passthrough_degraded: bool,
-    pub passthrough_degraded_reason: Option<String>,
-    pub dirty_subtree_count: usize,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryStatusData {
-    pub current_state: BakeryStatusState,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryQueueDistributionData {
-    pub queue: u32,
-    pub top_level_site_count: usize,
-    pub site_count: usize,
-    pub circuit_count: usize,
-    pub download_mbps: u64,
-    pub upload_mbps: u64,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryRuntimeOperationsData {
-    pub submitted_count: usize,
-    pub deferred_count: usize,
-    pub applying_count: usize,
-    pub awaiting_cleanup_count: usize,
-    pub failed_count: usize,
-    pub blocked_count: usize,
-    pub dirty_count: usize,
-    pub latest: Option<BakeryRuntimeOperationHeadlineData>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryRuntimeOperationHeadlineData {
-    pub operation_id: u64,
-    pub site_hash: i64,
-    pub site_name: Option<String>,
-    pub action: String,
-    pub status: String,
-    pub attempt_count: u32,
-    pub updated_at_unix: u64,
-    pub next_retry_at_unix: Option<u64>,
-    pub last_error: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BakeryActivityEntry {
-    pub ts: u64,
-    pub event: String,
-    pub status: String,
-    pub summary: String,
-    pub site_hash: Option<i64>,
-    pub site_name: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct TreeguardStatusData {
-    pub enabled: bool,
-    pub dry_run: bool,
-    pub paused_for_bakery_reload: bool,
-    pub pause_reason: Option<String>,
-    pub cpu_max_pct: Option<u8>,
-    pub total_nodes: usize,
-    pub total_circuits: usize,
-    pub managed_nodes: usize,
-    pub managed_circuits: usize,
-    pub virtualized_nodes: usize,
-    pub cake_circuits: usize,
-    pub mixed_sqm_circuits: usize,
-    pub fq_codel_circuits: usize,
-    pub last_action_summary: Option<String>,
-    pub warnings: Vec<String>,
-}
-
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct TreeguardActivityEntry {
-    pub time: String,
-    pub entity_type: String,
-    pub entity_id: String,
-    pub action: String,
-    pub persisted: bool,
-    pub reason: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub batch_kind: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -633,6 +511,39 @@ pub enum WsResponse {
     },
     SchedulerDetails {
         data: SchedulerDetails,
+    },
+    BridgeHealthStatus {
+        data: Option<BridgeHealthStatus>,
+    },
+    BridgePublishStatus {
+        data: Vec<PublishRecord>,
+    },
+    BridgeMaintenanceOverride {
+        ok: bool,
+        message: String,
+    },
+    BridgeConvergence {
+        data: BridgeConvergenceSnapshot,
+    },
+    GetCircuitSpeedOverrideResult {
+        circuit_id: String,
+        data: Option<CircuitSpeedOverride>,
+    },
+    SetCircuitSpeedOverrideResult {
+        ok: bool,
+        /// False when the stored override already equaled the request
+        /// (a no-op dispatch): no file write, no new publish generation
+        /// — the UI must settle immediately instead of awaiting an
+        /// outcome that will never exist (the false-NO_ACK fix).
+        changed: bool,
+        message: String,
+        suspended: bool,
+        /// F-NA (docs/false_no_ack_outcome_card.md): the MINTED
+        /// post-write generation (present only when changed=true and
+        /// the mint succeeded). The UI polls the outcome for THIS
+        /// exact generation — return-to-base (revert-to-plan) lands on
+        /// a retained generation the old key-diff could never see.
+        generation: Option<String>,
     },
     DeviceCount {
         data: DeviceCount,
@@ -742,9 +653,6 @@ pub enum WsResponse {
     NodeDirectory {
         data: Vec<NodeDirectoryEntry>,
     },
-    TreeGuardMetadataSummary {
-        data: TreeGuardMetadataSummary,
-    },
     GetNodeRateOverride {
         data: NodeRateOverrideData,
     },
@@ -826,6 +734,9 @@ pub enum WsResponse {
     LtsCapabilitiesResult {
         data: LtsCapabilitiesSummary,
     },
+    DpdkStatusResult {
+        data: crate::node_manager::local_api::dpdk_status::DpdkStatus,
+    },
     LtsStartSignupResult {
         claim_id: String,
     },
@@ -895,7 +806,8 @@ pub enum WsResponse {
         data: ExecutiveLeaderboardPage,
     },
     FlowMap {
-        data: Vec<(f64, f64, String, u64, f32)>,
+        /// `(lat, lng, country, bytes_down, rtt_internet_nanos, bytes_up)`.
+        data: Vec<(f64, f64, String, u64, f32, u64)>,
     },
     CircuitByIdResult {
         id: String,
@@ -904,24 +816,6 @@ pub enum WsResponse {
     },
     RequestAnalysisResult {
         data: RequestAnalysisResult,
-    },
-    CpuAffinitySummary {
-        data: Vec<CpuAffinitySummaryEntry>,
-    },
-    CpuAffinityRuntimeSnapshot {
-        data: CpuAffinityRuntimeSnapshot,
-    },
-    CpuAffinityCircuits {
-        data: CpuAffinityCircuitsPage,
-    },
-    CpuAffinityCircuitsAll {
-        data: Vec<CircuitBrief>,
-    },
-    CpuAffinityPreviewWeights {
-        data: Vec<PreviewWeightItem>,
-    },
-    CpuAffinitySiteTree {
-        data: Option<CpuAffinitySiteTreeNode>,
     },
     AsnList {
         data: Vec<AsnListEntry>,
@@ -935,14 +829,17 @@ pub enum WsResponse {
     AsnFlowTimeline {
         asn: u32,
         data: Vec<FlowTimeline>,
+        buckets: Vec<FlowTimelineBucket>,
     },
     CountryFlowTimeline {
         iso_code: String,
         data: Vec<FlowTimeline>,
+        buckets: Vec<FlowTimelineBucket>,
     },
     ProtocolFlowTimeline {
         protocol: String,
         data: Vec<FlowTimeline>,
+        buckets: Vec<FlowTimelineBucket>,
     },
     SearchResults {
         term: String,
@@ -1055,18 +952,6 @@ pub enum WsResponse {
     },
     StormguardRuntime {
         data: StormguardRuntimeStatus,
-    },
-    BakeryStatus {
-        data: BakeryStatusData,
-    },
-    BakeryActivity {
-        data: Vec<BakeryActivityEntry>,
-    },
-    TreeGuardStatus {
-        data: TreeguardStatusData,
-    },
-    TreeGuardActivity {
-        data: Vec<TreeguardActivityEntry>,
     },
     CircuitWatcher {
         data: CircuitSummaryData,

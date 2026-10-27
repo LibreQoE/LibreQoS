@@ -1,4 +1,5 @@
 use allocative_derive::Allocative;
+#[cfg(test)]
 use lqos_sys::flowbee_data::FlowbeeKey;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -11,12 +12,8 @@ mod protocol;
 use super::AsnId;
 pub use protocol::FlowProtocol;
 mod finished_flows;
-pub use finished_flows::FinishedFlowAnalysis;
-pub use finished_flows::RECENT_FLOWS;
-mod kernel_ringbuffer;
 use crate::throughput_tracker::flow_data::flow_analysis::asn::AsnNameCountryFlag;
 pub use finished_flows::{AsnCountryListEntry, AsnListEntry, AsnProtocolListEntry};
-pub use kernel_ringbuffer::*;
 pub use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBuffer, RttData};
 
 static ANALYSIS: Lazy<FlowAnalysisSystem> = Lazy::new(FlowAnalysisSystem::new);
@@ -50,15 +47,8 @@ impl FlowAnalysisSystem {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn len_and_capacity() -> (usize, usize, usize, usize) {
-        let lock = ANALYSIS.asn_table.lock();
-        if let Some(table) = lock.as_ref() {
-            table.len()
-        } else {
-            (0, 0, 0, 0)
-        }
-    }
+
+
 }
 
 pub fn setup_flow_analysis() -> anyhow::Result<()> {
@@ -76,6 +66,7 @@ pub struct FlowAnalysis {
 }
 
 impl FlowAnalysis {
+    #[cfg(test)] // test-only fixture: gate to the test build.
     pub fn new(key: &FlowbeeKey) -> Self {
         let asn_id = lookup_asn_id(key.remote_ip.as_ip());
         let protocol_analysis = FlowProtocol::new(key);
@@ -116,4 +107,44 @@ pub fn get_asn_name_by_id(id: u32) -> String {
         return table.find_name_by_id(id);
     }
     "Unknown".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// K2 slice 1 oracle: the ASN join resolves known fixture IPs to their
+    /// expected ASN id + organization name. The fixture table replaces the
+    /// process-global one for the duration of the test.
+    #[test]
+    fn asn_join_resolves_fixture_ips() {
+        let table = asn::GeoTable::fixture(&[
+            ("203.0.113.0", 24, 64500, "Fixture ASN"),
+            ("198.51.100.0", 24, 64501, "Other ASN"),
+        ]);
+        ANALYSIS.asn_table.lock().replace(table);
+
+        assert_eq!(
+            lookup_asn_id("203.0.113.9".parse().expect("test IP")),
+            Some(64500)
+        );
+        let owners = get_asn_name_and_country("203.0.113.9".parse().expect("test IP"));
+        assert_eq!(owners.name, "Fixture ASN");
+        assert_eq!(
+            lookup_asn_id("198.51.100.7".parse().expect("test IP")),
+            Some(64501)
+        );
+        assert_eq!(
+            get_asn_name_by_id(64500),
+            "Fixture ASN",
+            "the id->name map resolves"
+        );
+        assert_eq!(
+            lookup_asn_id("192.0.2.1".parse().expect("test IP")),
+            None,
+            "an unmapped IP has no ASN"
+        );
+
+        *ANALYSIS.asn_table.lock() = None;
+    }
 }

@@ -20,7 +20,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+/// Shared test lock for the crate's process-global state. The dynamic-circuits
+/// snapshot is mutated by both this module's tests and `state::tests`; both
+/// must take this one lock (two different locks left the snapshot racy).
+pub(crate) static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn make_node(
     name: &str,
@@ -30,7 +33,6 @@ fn make_node(
     NetworkJsonNode {
         name: name.to_string(),
         id: id.map(|value| value.to_string()),
-        virtual_node: false,
         max_throughput: (0.0, 0.0),
         current_throughput: DownUpOrder::zeroed(),
         current_packets: DownUpOrder::zeroed(),
@@ -50,7 +52,6 @@ fn make_node(
         longitude: None,
         active_attachment_name: active_attachment_name.map(|value| value.to_string()),
         heatmap: None,
-        qoq_heatmap: None,
     }
 }
 
@@ -92,7 +93,10 @@ fn write_runtime_status(
         .expect("runtime status path should have a parent")
         .join("network.effective.json");
     std::fs::write(&effective_network_path, "{}\n").expect("effective network should write");
-    let shaping_generation = lqos_config::compute_shaping_inputs_file_generation(shaping_inputs_path)
+    let shaping_inputs = lqos_config::load_shaping_inputs_at_path(shaping_inputs_path)
+        .expect("shaping inputs should load");
+    let shaping_generation = shaping_inputs
+        .compute_shaping_generation_with_export(None)
         .expect("shaping generation should compute");
     let effective_generation =
         lqos_config::compute_effective_network_file_generation(&effective_network_path)
@@ -105,6 +109,7 @@ fn write_runtime_status(
             "ready": ready,
             "shaping_inputs_path": shaping_inputs_path,
             "effective_state_path": "",
+            "operator_view_path": effective_network_path,
             "effective_network_path": effective_network_path,
             "source_generation": source_generation,
             "shaping_generation": shaping_generation,
@@ -402,7 +407,7 @@ fn runtime_inputs_leave_runtime_fallback_circuits_unparented() {
 }
 
 #[test]
-fn source_loader_bypasses_ready_runtime_inputs() {
+fn source_loader_ignores_unverified_runtime_inputs() {
     let _guard = TEST_LOCK.lock();
 
     let lqos_directory = unique_temp_dir("lqos-network-devices-runtime-empty");
@@ -453,12 +458,12 @@ fn source_loader_bypasses_ready_runtime_inputs() {
         generated_unix: Some(123),
         ingress_identity: Some("import-base".to_string()),
         native_canonical: None,
-        native_editor: None,
         parent_candidates: None,
         compatibility_network_json: json!({}),
         shaped_devices: import_devices,
         circuit_anchors: CircuitAnchorsFile::default(),
         ethernet_advisories: Vec::new(),
+        circuit_matches: Default::default(),
     };
     TopologyImportFile::from_imported_bundle(&imported, "full")
         .save(&Config {
@@ -478,10 +483,14 @@ fn source_loader_bypasses_ready_runtime_inputs() {
         .expect("generation should compute");
     write_runtime_status(&status_path, true, &runtime_path, &source_generation);
 
+    // K1b §4.8 custody: a hand-written runtime status/artifact is NOT verified
+    // by the topology custody check, so the preferred source falls back to the
+    // integration import. (The verified-runtime path is covered by the
+    // lqos_topology verify oracle + the live deploy.)
     let loaded = load_shaped_devices_for_config(&config)
         .expect("preferred shaped-device source should load");
     assert_eq!(loaded.shaped.devices.len(), 1);
-    assert_eq!(loaded.shaped.devices[0].circuit_id, "runtime-circuit");
+    assert_eq!(loaded.shaped.devices[0].circuit_id, "import-circuit");
 
     let source =
         load_source_shaped_devices_for_config(&config).expect("raw integration source should load");
@@ -523,12 +532,12 @@ fn load_shaped_devices_uses_topology_import_when_runtime_is_not_ready() {
         generated_unix: Some(123),
         ingress_identity: Some("import-base".to_string()),
         native_canonical: None,
-        native_editor: None,
         parent_candidates: None,
         compatibility_network_json: json!({}),
         shaped_devices: import_devices,
         circuit_anchors: CircuitAnchorsFile::default(),
         ethernet_advisories: Vec::new(),
+        circuit_matches: Default::default(),
     };
     TopologyImportFile::from_imported_bundle(&imported, "full")
         .save(&Config {
@@ -564,12 +573,12 @@ fn load_shaped_devices_stays_empty_when_topology_import_is_empty() {
         generated_unix: Some(123),
         ingress_identity: Some("import-base".to_string()),
         native_canonical: None,
-        native_editor: None,
         parent_candidates: None,
         compatibility_network_json: json!({}),
         shaped_devices: ConfigShapedDevices::default(),
         circuit_anchors: CircuitAnchorsFile::default(),
         ethernet_advisories: Vec::new(),
+        circuit_matches: Default::default(),
     };
     TopologyImportFile::from_imported_bundle(&imported, "full")
         .save(&Config {
@@ -665,4 +674,176 @@ fn load_shaped_devices_stays_empty_when_runtime_status_is_malformed() {
     let loaded =
         load_shaped_devices_for_config(&config).expect("malformed status should stay empty");
     assert!(loaded.shaped.devices.is_empty());
+}
+
+fn range_promoted_row(circuit_id: &str, ip: &str) -> DynamicCircuit {
+    DynamicCircuit {
+        shaped: ShapedDevice {
+            circuit_id: circuit_id.to_string(),
+            device_id: circuit_id.to_string(),
+            parent_node: "tunnel-circuits:site:site-1".to_string(),
+            ipv4: vec![(ip.parse::<Ipv4Addr>().expect("ipv4"), 32)],
+            download_min_mbps: 1.0,
+            upload_min_mbps: 1.0,
+            download_max_mbps: 10.0,
+            upload_max_mbps: 10.0,
+            ..Default::default()
+        },
+        last_seen_unix: 100,
+    }
+}
+
+/// Dynamic-ranges H2: a RADIUS Start (session-derived id, the real plan) for an
+/// IP the promotion scanner already promoted must replace the promoted row in
+/// place — exactly ONE store row survives, carrying the RADIUS plan. Without
+/// this, the store (and therefore the transaction) would hold two /32 Maps for
+/// the same subscriber IP.
+#[test]
+fn replace_by_ip_upgrades_a_promoted_row_in_place() {
+    let _guard = TEST_LOCK.lock();
+
+    let promoted = range_promoted_row("dynamic-range:dr-pool:10.60.0.5", "10.60.0.5");
+    let snapshot = vec![promoted.clone()];
+
+    let radius = ShapedDevice {
+        circuit_id: "radius:nas-1:user:abcd".to_string(),
+        device_id: "radius:nas-1:user:abcd".to_string(),
+        parent_node: "tunnel-circuits:site:site-1".to_string(),
+        ipv4: vec![("10.60.0.5".parse::<Ipv4Addr>().expect("ipv4"), 32)],
+        download_min_mbps: 100.0,
+        upload_min_mbps: 50.0,
+        download_max_mbps: 100.0,
+        upload_max_mbps: 50.0,
+        ..Default::default()
+    };
+
+    let updated =
+        crate::actor::merge_dynamic_circuits_replacing_by_ip(&snapshot, radius.clone(), 200);
+
+    assert_eq!(updated.len(), 1, "exactly one row must survive: {updated:?}");
+    assert_eq!(updated[0].shaped.circuit_id, "radius:nas-1:user:abcd");
+    assert_eq!(
+        updated[0].shaped.download_max_mbps, 100.0,
+        "the RADIUS plan must win"
+    );
+    assert_eq!(updated[0].shaped.ipv4.len(), 1);
+    assert_eq!(updated[0].last_seen_unix, 200);
+}
+
+/// The replace must only drop rows that share an IP; unrelated rows survive.
+#[test]
+fn replace_by_ip_keeps_unrelated_rows() {
+    let _guard = TEST_LOCK.lock();
+
+    let other = range_promoted_row("dynamic-range:dr-pool:10.60.0.9", "10.60.0.9");
+    let promoted = range_promoted_row("dynamic-range:dr-pool:10.60.0.5", "10.60.0.5");
+    let snapshot = vec![promoted, other];
+
+    let radius = ShapedDevice {
+        circuit_id: "radius:nas-1:user:abcd".to_string(),
+        device_id: "radius:nas-1:user:abcd".to_string(),
+        parent_node: "tunnel-circuits:site:site-1".to_string(),
+        ipv4: vec![("10.60.0.5".parse::<Ipv4Addr>().expect("ipv4"), 32)],
+        ..Default::default()
+    };
+
+    let updated =
+        crate::actor::merge_dynamic_circuits_replacing_by_ip(&snapshot, radius, 200);
+
+    assert_eq!(updated.len(), 2, "the unrelated row survives: {updated:?}");
+    assert!(
+        updated
+            .iter()
+            .any(|c| c.shaped.circuit_id == "dynamic-range:dr-pool:10.60.0.9"),
+        "the 10.60.0.9 row must be untouched"
+    );
+    assert!(
+        updated
+            .iter()
+            .any(|c| c.shaped.circuit_id == "radius:nas-1:user:abcd"),
+        "the RADIUS row must be present"
+    );
+}
+
+/// A circuit with no IPs must not clobber the store (the empty-IP guard).
+#[test]
+fn replace_by_ip_with_no_ips_does_not_remove_other_rows() {
+    let _guard = TEST_LOCK.lock();
+
+    let promoted = range_promoted_row("dynamic-range:dr-pool:10.60.0.5", "10.60.0.5");
+    let snapshot = vec![promoted];
+
+    let no_ip = ShapedDevice {
+        circuit_id: "radius:no-ip".to_string(),
+        device_id: "radius:no-ip".to_string(),
+        parent_node: "tunnel-circuits:site:site-1".to_string(),
+        ..Default::default()
+    };
+
+    let updated = crate::actor::merge_dynamic_circuits_replacing_by_ip(&snapshot, no_ip, 200);
+    assert_eq!(updated.len(), 2, "both rows survive: {updated:?}");
+}
+
+#[test]
+fn e2_operator_view_catalog_arm_zero_csv_identity() {
+    use lqos_config::{OperatorViewDevice, OperatorViewNode, TopologyOperatorViewFile};
+
+    // T5 rung 1 / F10: circuit identity from the E2 operator view
+    // ALONE — no ShapedDevices.csv anywhere in this world.
+    let view = TopologyOperatorViewFile {
+        schema_version: 1,
+        source_generation: "t5-zero-csv".to_string(),
+        nodes: vec![
+            OperatorViewNode {
+                id: "uisp:site:42".to_string(),
+                name: "UISP Site Downtown".to_string(),
+                parent_id: None,
+                node_type: "site".to_string(),
+                download_mbps: Some(10_000.0),
+                upload_mbps: Some(10_000.0),
+                commit_download_mbps: None,
+                commit_upload_mbps: None,
+                devices: Vec::new(),
+                latitude: None,
+                longitude: None,
+                tunnel_identity: None,
+                rate_source: lqos_config::OperatorRateSource::Base,
+            },
+            OperatorViewNode {
+                id: "c1".to_string(),
+                name: "Bench Client 1".to_string(),
+                parent_id: Some("uisp:site:42".to_string()),
+                node_type: "circuit".to_string(),
+                download_mbps: Some(200.0),
+                upload_mbps: Some(100.0),
+                commit_download_mbps: Some(50.0),
+                commit_upload_mbps: Some(25.0),
+                devices: vec![OperatorViewDevice {
+                    device_id: "dev1".to_string(),
+                    device_name: "Bench Radio".to_string(),
+                    ipv4: vec!["100.97.0.1".to_string()],
+                    mac: "aa:bb:cc:dd:ee:ff".to_string(),
+                    download_min_mbps: 50,
+                    upload_min_mbps: 25,
+                    download_max_mbps: 200,
+                    upload_max_mbps: 100,
+                    ipv6: Vec::new(),
+                }],
+                latitude: None,
+                longitude: None,
+                tunnel_identity: None,
+                rate_source: lqos_config::OperatorRateSource::Base,
+            },
+        ],
+        ambiguous_base_names: Default::default(),
+    };
+
+    let shaped = crate::runtime_inputs::shaped_devices_from_operator_view(&view);
+    assert_eq!(shaped.devices.len(), 1, "identity from E2 alone");
+    let device = &shaped.devices[0];
+    assert_eq!(device.circuit_id, "c1");
+    assert_eq!(device.circuit_name, "Bench Client 1");
+    assert_eq!(device.parent_node, "UISP Site Downtown");
+    assert_eq!(device.ipv4.len(), 1);
+    assert_eq!(device.download_max_mbps, 200.0);
 }

@@ -1,87 +1,66 @@
-use anyhow::{Context, Result, anyhow};
-use lqos_bakery::BakeryCommands;
+use anyhow::{Result, anyhow};
 use lqos_config::ShapedDevice;
-use lqos_overrides::{OverrideFile, OverrideLayer, OverrideStore};
-use lqos_utils::hash_to_i64;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::time::{Duration, Instant};
+use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
+use std::collections::HashSet;
 use tracing::warn;
 
 #[derive(Debug)]
 pub enum CircuitFallbackOutcome {
     Applied { persisted: bool },
-    AppliedUnpersisted { error: String },
     Cleared { persisted: bool },
     DryRun { action: String },
     Skipped { reason: String },
 }
 
 pub struct SiteOverrideUpdate {
+    /// Stable canonical node id, when the watched site resolved one. Rung-3 1a:
+    /// the clamp is written keyed by this id so a later site rename cannot
+    /// orphan it; `site_name` remains the display/legacy fallback.
+    pub node_id: Option<String>,
     pub site_name: String,
     pub download_bandwidth_mbps: Option<f32>,
     pub upload_bandwidth_mbps: Option<f32>,
 }
 
-#[derive(Clone)]
-pub struct PersistedCircuitFallback {
-    pub sqm_override: String,
-    pub devices: Vec<ShapedDevice>,
-}
-
-/// Waits asynchronously for an acknowledged Bakery operation.
-///
-/// Side effects: yields to the Tokio runtime while polling the synchronous reply channel.
-pub(crate) async fn wait_for_bakery_reply<T>(
-    reply_receiver: std::sync::mpsc::Receiver<Result<T, String>>,
-    operation: &str,
-) -> Result<T> {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        match reply_receiver.try_recv() {
-            Ok(Ok(value)) => return Ok(value),
-            Ok(Err(error)) => return Err(anyhow!(error)),
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                return Err(anyhow!("Bakery closed the {operation} reply channel"));
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() >= deadline => {
-                return Err(anyhow!("timed out waiting for Bakery to {operation}"));
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        }
-    }
-}
-
-pub fn apply_site_override_updates(updates: &[SiteOverrideUpdate]) -> Result<bool> {
+pub fn apply_site_override_updates(
+    updates: &[SiteOverrideUpdate],
+    ttl_seconds: u64,
+) -> Result<bool> {
     if updates.is_empty() {
         return Ok(false);
     }
 
     let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
     let mut changed = false;
+    let expires_at_unix = unix_time_secs().saturating_add(ttl_seconds);
 
     for update in updates {
         let desired = (update.download_bandwidth_mbps, update.upload_bandwidth_mbps);
         if desired == (None, None) {
-            let removed = overrides.remove_site_bandwidth_override_count(None, &update.site_name);
+            let removed = overrides.remove_site_bandwidth_override_count(
+                update.node_id.as_deref(),
+                &update.site_name,
+            );
             if removed > 0 {
                 changed = true;
             }
             continue;
         }
 
-        if current_site_override(&overrides, &update.site_name) == Some(desired) {
-            continue;
-        }
-
-        overrides.set_site_bandwidth_override(
-            None,
+        // K1b §4.6 pin 1: refresh the dead-man's-switch TTL on every
+        // reasserting pass. The expiry is part of the entry, so an
+        // otherwise-identical clamp still rewrites (content change →
+        // source-generation hash → republish).
+        // Rung-3 1a: write keyed by the stable node id when known.
+        if overrides.set_site_bandwidth_override_with_expiry(
+            update.node_id.clone(),
             update.site_name.clone(),
             update.download_bandwidth_mbps,
             update.upload_bandwidth_mbps,
-        );
-        changed = true;
+            Some(expires_at_unix),
+        ) {
+            changed = true;
+        }
     }
 
     if !changed {
@@ -92,6 +71,72 @@ pub fn apply_site_override_updates(updates: &[SiteOverrideUpdate]) -> Result<boo
     Ok(true)
 }
 
+/// K1b §4.6 pin 1: drops StormGuard site-speed entries whose TTL has lapsed,
+/// writing the layer back in ONE RMW so the source-generation hash flips and
+/// the topology manager republishes the un-clamped rates. Returns `true` when
+/// the layer changed.
+///
+/// Side effects: mutates and persists the StormGuard override layer.
+pub fn sweep_lapsed_site_overrides(now_unix: u64) -> Result<bool> {
+    let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
+    let removed = overrides.remove_lapsed_site_speed_overrides(now_unix);
+    if removed.is_empty() {
+        return Ok(false);
+    }
+    for site_name in &removed {
+        warn!(
+            "StormGuard clamp for site '{site_name}' lapsed without reassertion; dropping the override and republishing"
+        );
+    }
+    OverrideStore::save_layer(OverrideLayer::Stormguard, &overrides)?;
+    Ok(true)
+}
+
+fn unix_time_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+/// K1b §4.2 operator supremacy: true when an operator `AdjustSiteSpeed`
+/// override already claims this site. StormGuard refuses up-front to clamp
+/// such a site (loud WARN at the call site), rather than writing a layer entry
+/// the operator-first merge would silently drop.
+///
+/// Rung-3 1a: the join is id-first — a stable `node_id` match claims the site
+/// across renames — with the operator entry's display `site_name` as the
+/// fallback for legacy id-less operator entries.
+pub fn operator_owns_site_speed(node_id: Option<&str>, site_name: &str) -> Result<bool> {
+    let operator = OverrideStore::load_layer(OverrideLayer::Operator)?;
+    Ok(operator_adjustment_claims(
+        operator.network_adjustments(),
+        node_id,
+        site_name,
+    ))
+}
+
+/// Pure id-first / name-fallback claim check for operator `AdjustSiteSpeed`
+/// entries (rung-3 1a).
+fn operator_adjustment_claims(
+    adjustments: &[NetworkAdjustment],
+    node_id: Option<&str>,
+    site_name: &str,
+) -> bool {
+    let node_id = node_id.map(str::trim).filter(|node_id| !node_id.is_empty());
+    adjustments.iter().any(|adj| {
+        matches!(
+            adj,
+            NetworkAdjustment::AdjustSiteSpeed {
+                node_id: current_id,
+                site_name: current_name,
+                ..
+            } if current_name == site_name
+                || (node_id.is_some() && current_id.as_deref() == node_id)
+        )
+    })
+}
+
 /// Removes every adaptive override owned by StormGuard.
 ///
 /// Side effects: replaces the persisted StormGuard override layer with an empty layer.
@@ -99,13 +144,16 @@ pub fn clear_stormguard_override_layer() -> Result<()> {
     OverrideStore::save_layer(OverrideLayer::Stormguard, &OverrideFile::default())
 }
 
-pub async fn apply_circuit_fallback(
+/// K1b ph2 §9.3 (LayerApply strategy): the BRIDGE-mode circuit fallback —
+/// write the StormGuard layer entry (with the §9.2 TTL) and wait for the
+/// bridge to apply the republished transaction.
+pub async fn apply_circuit_fallback_layer(
     circuit_id: &str,
     sqm_override: &str,
-    persist: bool,
     dry_run: bool,
-    tree_generation: u64,
-    bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
+    ttl_seconds: u64,
+    publish_wait_seconds: u64,
+    bus_tx: crate::bus::StormguardBusSender,
 ) -> Result<CircuitFallbackOutcome> {
     let devices = load_devices_for_circuit(circuit_id)?;
     if devices.is_empty() {
@@ -113,132 +161,110 @@ pub async fn apply_circuit_fallback(
             reason: "No ShapedDevices rows found for circuit.".to_string(),
         });
     }
-
-    if let Some(reason) = conflicting_sqm_owner(&devices)? {
+    if let Some(reason) = conflicting_sqm_owner(&devices, circuit_id)? {
         return Ok(CircuitFallbackOutcome::Skipped { reason });
     }
-
+    // §9.1-1: the bridge cannot instantiate fq_codel — reject it loudly.
+    if let Err(error) = validate_circuit_aqm_token(sqm_override) {
+        return Ok(CircuitFallbackOutcome::Skipped {
+            reason: format!("Unsupported circuit AQM token: {error}"),
+        });
+    }
     if dry_run {
         return Ok(CircuitFallbackOutcome::DryRun {
-            action: format!("Would set SQM override to '{sqm_override}'"),
+            action: format!("Would set circuit AQM to '{sqm_override}'"),
         });
     }
 
-    let reply_receiver = apply_circuit_sqm_override_live(
-        circuit_id,
-        Some(sqm_override),
-        tree_generation,
-        bakery_sender.clone(),
-    )?;
-    if !wait_for_bakery_reply(reply_receiver, "apply StormGuard circuit fallback").await? {
-        return Ok(CircuitFallbackOutcome::Skipped {
-            reason: "Circuit is absent from Bakery state.".to_string(),
-        });
-    }
-    let persisted = if persist {
-        match set_devices_sqm_override(&devices, sqm_override) {
-            Ok(persisted) => persisted,
-            Err(persistence_error) => {
-                let rollback = apply_circuit_sqm_override_live(
-                    circuit_id,
-                    None,
-                    tree_generation,
-                    bakery_sender,
-                );
-                let rollback = match rollback {
-                    Ok(rollback_receiver) => wait_for_bakery_reply(
-                        rollback_receiver,
-                        "roll back unpersisted StormGuard circuit fallback",
-                    )
-                    .await
-                    .map(|_| ()),
-                    Err(error) => Err(error),
-                };
-                if let Err(rollback_error) = rollback {
-                    let error = format!(
-                        "StormGuard could not persist or roll back circuit fallback for {circuit_id}; retaining in-memory ownership: persistence={persistence_error}; rollback={rollback_error}"
-                    );
-                    warn!("{error}");
-                    return Ok(CircuitFallbackOutcome::AppliedUnpersisted { error });
-                }
-                return Err(persistence_error).context(
-                    "failed to persist StormGuard circuit fallback; live change was rolled back",
-                );
-            }
+    let snapshot = OverrideStore::load_layer(OverrideLayer::Stormguard).ok();
+    let expires_at_unix = unix_time_secs().saturating_add(ttl_seconds);
+    let changed = set_circuit_aqm_override(circuit_id, Some(sqm_override), Some(expires_at_unix))?;
+    if changed
+        && let Err(error) =
+            crate::site_state::publish_clamp_and_wait(&bus_tx, publish_wait_seconds).await
+    {
+        if let Some(snapshot) = &snapshot
+            && let Err(restore_error) = crate::site_state::restore_override_snapshot(
+                snapshot,
+                "after a rejected StormGuard circuit AQM fallback",
+            )
+        {
+            warn!(
+                "StormGuard could not restore overrides after a rejected circuit fallback: {restore_error}"
+            );
         }
-    } else {
-        false
-    };
-    Ok(CircuitFallbackOutcome::Applied { persisted })
+        return Err(error);
+    }
+    Ok(CircuitFallbackOutcome::Applied { persisted: true })
 }
 
-pub async fn clear_circuit_fallback(
+/// K1b ph2 §9.3 (LayerApply): restore-by-deletion — drop the layer entry and
+/// wait for the republished transaction.
+pub async fn clear_circuit_fallback_layer(
     circuit_id: &str,
     dry_run: bool,
-    tree_generation: u64,
-    bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
+    publish_wait_seconds: u64,
+    bus_tx: crate::bus::StormguardBusSender,
 ) -> Result<CircuitFallbackOutcome> {
-    let fallback = load_persisted_circuit_fallbacks()?
-        .remove(circuit_id)
-        .unwrap_or(PersistedCircuitFallback {
-            sqm_override: String::new(),
-            devices: load_devices_for_circuit(circuit_id)?,
-        });
-    if fallback.devices.is_empty() {
+    let devices = load_devices_for_circuit(circuit_id)?;
+    if devices.is_empty() {
         return Ok(CircuitFallbackOutcome::Skipped {
             reason: "No ShapedDevices rows found for circuit.".to_string(),
         });
     }
-
-    if let Some(reason) = conflicting_sqm_owner(&fallback.devices)? {
+    if let Some(reason) = conflicting_sqm_owner(&devices, circuit_id)? {
         return Ok(CircuitFallbackOutcome::Skipped { reason });
     }
-
     if dry_run {
         return Ok(CircuitFallbackOutcome::DryRun {
-            action: "Would clear SQM fallback override".to_string(),
+            action: "Would clear circuit AQM fallback".to_string(),
         });
     }
-
-    let device_ids: Vec<String> = fallback
-        .devices
-        .iter()
-        .map(|d| d.device_id.clone())
-        .collect();
-    let reply_receiver =
-        apply_circuit_sqm_override_live(circuit_id, None, tree_generation, bakery_sender)?;
-    if !wait_for_bakery_reply(reply_receiver, "clear StormGuard circuit fallback").await? {
-        let persisted = clear_device_overrides(&device_ids)?;
-        return Ok(CircuitFallbackOutcome::Skipped {
-            reason: format!("Circuit is absent from Bakery state; persisted={persisted}"),
-        });
+    let snapshot = OverrideStore::load_layer(OverrideLayer::Stormguard).ok();
+    let changed = clear_circuit_aqm_override(circuit_id)?;
+    if changed
+        && let Err(error) =
+            crate::site_state::publish_clamp_and_wait(&bus_tx, publish_wait_seconds).await
+    {
+        if let Some(snapshot) = &snapshot
+            && let Err(restore_error) = crate::site_state::restore_override_snapshot(
+                snapshot,
+                "after a rejected StormGuard circuit AQM clear",
+            )
+        {
+            warn!(
+                "StormGuard could not restore overrides after a rejected circuit clear: {restore_error}"
+            );
+        }
+        return Err(error);
     }
-    let persisted = clear_device_overrides(&device_ids)?;
-    Ok(CircuitFallbackOutcome::Cleared { persisted })
+    Ok(CircuitFallbackOutcome::Cleared { persisted: true })
 }
 
-pub fn load_persisted_circuit_fallbacks() -> Result<HashMap<String, PersistedCircuitFallback>> {
-    let overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    let current_devices = lqos_network_devices::load_shaped_devices()?.devices;
-    Ok(group_circuit_fallbacks(&overrides, &current_devices))
+fn set_circuit_aqm_override(
+    circuit_id: &str,
+    aqm_token: Option<&str>,
+    expires_at_unix: Option<u64>,
+) -> Result<bool> {
+    let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
+    if !overrides.set_circuit_aqm_return_changed(
+        circuit_id.to_string(),
+        aqm_token.map(str::to_string),
+        expires_at_unix,
+    ) {
+        return Ok(false);
+    }
+    OverrideStore::save_layer(OverrideLayer::Stormguard, &overrides)?;
+    Ok(true)
 }
 
-fn current_site_override(
-    overrides: &OverrideFile,
-    site_name: &str,
-) -> Option<(Option<f32>, Option<f32>)> {
-    overrides
-        .network_adjustments()
-        .iter()
-        .find_map(|adj| match adj {
-            lqos_overrides::NetworkAdjustment::AdjustSiteSpeed {
-                node_id: _,
-                site_name: current,
-                download_bandwidth_mbps,
-                upload_bandwidth_mbps,
-            } if current == site_name => Some((*download_bandwidth_mbps, *upload_bandwidth_mbps)),
-            _ => None,
-        })
+fn clear_circuit_aqm_override(circuit_id: &str) -> Result<bool> {
+    let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
+    if overrides.remove_circuit_aqm_by_circuit_count(circuit_id) == 0 {
+        return Ok(false);
+    }
+    OverrideStore::save_layer(OverrideLayer::Stormguard, &overrides)?;
+    Ok(true)
 }
 
 fn load_devices_for_circuit(circuit_id: &str) -> Result<Vec<ShapedDevice>> {
@@ -250,7 +276,7 @@ fn load_devices_for_circuit(circuit_id: &str) -> Result<Vec<ShapedDevice>> {
         .collect())
 }
 
-fn conflicting_sqm_owner(devices: &[ShapedDevice]) -> Result<Option<String>> {
+fn conflicting_sqm_owner(devices: &[ShapedDevice], circuit_id: &str) -> Result<Option<String>> {
     let device_ids: HashSet<&str> = devices.iter().map(|d| d.device_id.as_str()).collect();
     let source_devices = lqos_network_devices::load_source_shaped_devices()?.devices;
     if has_source_sqm_override(&device_ids, &source_devices) {
@@ -260,20 +286,63 @@ fn conflicting_sqm_owner(devices: &[ShapedDevice]) -> Result<Option<String>> {
     }
 
     let operator = OverrideStore::load_layer(OverrideLayer::Operator)?;
-    if has_sqm_override_for_device_ids(&operator, &device_ids) {
+    if has_sqm_override_for_device_ids(&operator, &device_ids)
+        || has_circuit_aqm_for_circuit(&operator, circuit_id)
+    {
         return Ok(Some(
             "Operator SQM overrides are present for this circuit.".to_string(),
         ));
     }
 
-    let treeguard = OverrideStore::load_layer(OverrideLayer::Treeguard)?;
-    if has_sqm_override_for_device_ids(&treeguard, &device_ids) {
-        return Ok(Some(
-            "TreeGuard SQM overrides are present for this circuit.".to_string(),
+ // TreeGuard is retiring: the treeguard precedence arm collapses
+    // to stormguard > operator, so its ownership check is dropped here.
+    Ok(None)
+}
+
+/// K1b ph2 §9.3: a circuit-level AQM entry in an operator/treeguard layer claims
+/// the circuit (operator supremacy, the §4.2 rule applied to SQM). A `none`
+/// token is not an ownership claim.
+fn has_circuit_aqm_for_circuit(overrides: &OverrideFile, circuit_id: &str) -> bool {
+    overrides.circuit_adjustments().iter().any(|adj| {
+        matches!(
+            adj,
+            lqos_overrides::CircuitAdjustment::CircuitAdjustAqm {
+                circuit_id: current,
+                aqm_token,
+                ..
+            } if current == circuit_id && aqm_token_claims(aqm_token)
+        )
+    })
+}
+
+fn aqm_token_claims(token: &str) -> bool {
+    let trimmed = token.trim();
+    !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("none")
+}
+
+/// K1b ph2 §9.1-1: the bridge can only instantiate `none` or `cake[...]`.
+/// `fq_codel` compiles but the bridge rejects it (live ignore / boot FATAL), so
+/// the StormGuard write path must refuse it loudly (the LayerApply bridge
+/// strategy). `fq_codel` remains valid for the kernel-mode strategy path.
+pub fn validate_circuit_aqm_token(token: &str) -> Result<()> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("none") {
+        return Ok(());
+    }
+    // Mirror `aqm_from_override`'s acceptance: any `cake`-prefixed token
+    // (the `[diffserv4]`/`rtt<N>` qualifiers are parsed downstream).
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("cake") {
+        return Ok(());
+    }
+    if lower == "fq_codel" {
+        return Err(anyhow!(
+            "fq_codel is not supported by the bridge; the effective circuit AQM grammar is none | cake"
         ));
     }
-
-    Ok(None)
+    Err(anyhow!(
+        "unsupported circuit AQM token '{trimmed}'; the effective grammar is none | cake"
+    ))
 }
 
 fn has_source_sqm_override(device_ids: &HashSet<&str>, source_devices: &[ShapedDevice]) -> bool {
@@ -308,139 +377,6 @@ fn has_sqm_override_for_device_ids(overrides: &OverrideFile, device_ids: &HashSe
     })
 }
 
-fn set_devices_sqm_override(base_devices: &[ShapedDevice], sqm_override: &str) -> Result<bool> {
-    let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    let mut changed = false;
-    for base_device in base_devices {
-        if overrides.set_device_sqm_override_return_changed(
-            base_device.device_id.clone(),
-            Some(sqm_override.to_string()),
-        ) {
-            changed = true;
-        }
-        if overrides.remove_persistent_shaped_device_by_device_count(&base_device.device_id) > 0 {
-            changed = true;
-        }
-    }
-
-    if !changed {
-        return Ok(false);
-    }
-
-    OverrideStore::save_layer(OverrideLayer::Stormguard, &overrides)?;
-    Ok(true)
-}
-
-fn clear_device_overrides(device_ids: &[String]) -> Result<bool> {
-    let mut overrides = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    let mut removed_any = false;
-    for device_id in device_ids {
-        let removed_adjustments = overrides.remove_device_sqm_override_by_device_count(device_id);
-        let removed_devices = overrides.remove_persistent_shaped_device_by_device_count(device_id);
-        if removed_adjustments > 0 || removed_devices > 0 {
-            removed_any = true;
-        }
-    }
-
-    if !removed_any {
-        return Ok(false);
-    }
-
-    OverrideStore::save_layer(OverrideLayer::Stormguard, &overrides)?;
-    Ok(true)
-}
-
-fn apply_circuit_sqm_override_live(
-    circuit_id: &str,
-    sqm_override: Option<&str>,
-    tree_generation: u64,
-    bakery_sender: crossbeam_channel::Sender<BakeryCommands>,
-) -> Result<std::sync::mpsc::Receiver<Result<bool, String>>> {
-    let (reply, reply_receiver) = std::sync::mpsc::channel();
-    bakery_sender.send(BakeryCommands::StormGuardCircuitAdjustment {
-        tree_generation,
-        circuit_hash: hash_to_i64(circuit_id),
-        sqm_override: sqm_override.map(str::to_string),
-        reply: Some(reply),
-    })?;
-
-    Ok(reply_receiver)
-}
-
-fn group_circuit_fallbacks(
-    overrides: &OverrideFile,
-    current_devices: &[ShapedDevice],
-) -> HashMap<String, PersistedCircuitFallback> {
-    let devices_by_id: HashMap<&str, &ShapedDevice> = current_devices
-        .iter()
-        .map(|device| (device.device_id.as_str(), device))
-        .collect();
-    let mut grouped: BTreeMap<String, PersistedCircuitFallback> = BTreeMap::new();
-
-    for adj in overrides.circuit_adjustments() {
-        let lqos_overrides::CircuitAdjustment::DeviceAdjustSqm {
-            device_id,
-            sqm_override,
-        } = adj
-        else {
-            continue;
-        };
-        let Some(token) = sqm_override.as_deref().map(str::trim) else {
-            continue;
-        };
-        let Some(device) = devices_by_id.get(device_id.as_str()) else {
-            continue;
-        };
-        if token.is_empty() || device.circuit_id.trim().is_empty() {
-            continue;
-        }
-
-        let entry =
-            grouped
-                .entry(device.circuit_id.clone())
-                .or_insert_with(|| PersistedCircuitFallback {
-                    sqm_override: token.to_string(),
-                    devices: Vec::new(),
-                });
-        if entry.sqm_override != token {
-            continue;
-        }
-        entry.devices.push((*device).clone());
-    }
-
-    for device in overrides.persistent_devices() {
-        let Some(token) = device.sqm_override.as_deref().map(str::trim) else {
-            continue;
-        };
-        let Some(current_device) = devices_by_id.get(device.device_id.as_str()) else {
-            continue;
-        };
-        if token.is_empty() || current_device.circuit_id.trim().is_empty() {
-            continue;
-        }
-
-        let entry = grouped
-            .entry(current_device.circuit_id.clone())
-            .or_insert_with(|| PersistedCircuitFallback {
-                sqm_override: token.to_string(),
-                devices: Vec::new(),
-            });
-
-        if entry.sqm_override != token {
-            continue;
-        }
-        if entry
-            .devices
-            .iter()
-            .any(|existing| existing.device_id == current_device.device_id)
-        {
-            continue;
-        }
-        entry.devices.push((*current_device).clone());
-    }
-    grouped.into_iter().collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -456,94 +392,6 @@ mod tests {
     }
 
     #[test]
-    fn group_circuit_fallbacks_groups_by_circuit_and_token() {
-        let mut d1 = sample_device("dev1", "c1");
-        d1.sqm_override = Some("fq_codel".to_string());
-        let mut d2 = sample_device("dev2", "c1");
-        d2.sqm_override = Some("fq_codel".to_string());
-        let mut d3 = sample_device("dev3", "c2");
-        d3.sqm_override = Some("cake".to_string());
-
-        let mut overrides = OverrideFile::default();
-        assert!(overrides.set_device_sqm_override_return_changed(
-            "dev1".to_string(),
-            Some("fq_codel".to_string())
-        ));
-        assert!(overrides.set_device_sqm_override_return_changed(
-            "dev2".to_string(),
-            Some("fq_codel".to_string())
-        ));
-        assert!(
-            overrides.set_device_sqm_override_return_changed(
-                "dev3".to_string(),
-                Some("cake".to_string())
-            )
-        );
-
-        let grouped = group_circuit_fallbacks(&overrides, &[d1, d2, d3]);
-        assert_eq!(grouped.len(), 2);
-        assert_eq!(
-            grouped
-                .get("c1")
-                .expect("c1 circuit fallback should be grouped")
-                .sqm_override,
-            "fq_codel"
-        );
-        assert_eq!(
-            grouped
-                .get("c1")
-                .expect("c1 circuit fallback should be grouped")
-                .devices
-                .len(),
-            2
-        );
-        assert_eq!(
-            grouped
-                .get("c2")
-                .expect("c2 circuit fallback should be grouped")
-                .sqm_override,
-            "cake"
-        );
-    }
-
-    #[test]
-    fn group_circuit_fallbacks_ignores_blank_or_mixed_tokens() {
-        let mut d1 = sample_device("dev1", "c1");
-        d1.sqm_override = Some("fq_codel".to_string());
-        let mut d2 = sample_device("dev2", "c1");
-        d2.sqm_override = Some("cake".to_string());
-        let mut d3 = sample_device("dev3", "c2");
-        d3.sqm_override = Some(" ".to_string());
-
-        let mut overrides = OverrideFile::default();
-        assert!(overrides.set_device_sqm_override_return_changed(
-            "dev1".to_string(),
-            Some("fq_codel".to_string())
-        ));
-        assert!(
-            overrides.set_device_sqm_override_return_changed(
-                "dev2".to_string(),
-                Some("cake".to_string())
-            )
-        );
-        assert!(
-            overrides
-                .set_device_sqm_override_return_changed("dev3".to_string(), Some(" ".to_string()))
-        );
-
-        let grouped = group_circuit_fallbacks(&overrides, &[d1, d2, d3]);
-        assert_eq!(
-            grouped
-                .get("c1")
-                .expect("c1 should remain grouped when one token differs")
-                .devices
-                .len(),
-            1
-        );
-        assert!(!grouped.contains_key("c2"));
-    }
-
-    #[test]
     fn source_sqm_change_is_visible_while_effective_device_has_stormguard_token() {
         let mut effective = sample_device("dev1", "c1");
         effective.sqm_override = Some("cake".to_string());
@@ -552,5 +400,109 @@ mod tests {
         let device_ids = HashSet::from([effective.device_id.as_str()]);
 
         assert!(has_source_sqm_override(&device_ids, &[source]));
+    }
+
+    #[test]
+    fn validate_circuit_aqm_token_accepts_none_and_cake_only() {
+        // §9.1-1: the bridge can only instantiate none | cake; fq_codel is a
+        // loud reject even though the compiler can express it.
+        for ok in ["", "none", "NONE", "cake", "cake diffserv4 rtt20"] {
+            assert!(
+                validate_circuit_aqm_token(ok).is_ok(),
+                "{ok:?} should be accepted"
+            );
+        }
+        for bad in ["fq_codel", "pfifo", "sfq"] {
+            assert!(
+                validate_circuit_aqm_token(bad).is_err(),
+                "{bad:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn lapsed_circuit_aqm_entries_are_swept() {
+        let mut overrides = OverrideFile::default();
+        overrides.add_circuit_adjustment(lqos_overrides::CircuitAdjustment::CircuitAdjustAqm {
+            circuit_id: "c1".to_string(),
+            aqm_token: "cake".to_string(),
+            expires_at_unix: Some(1),
+        });
+        overrides.add_circuit_adjustment(lqos_overrides::CircuitAdjustment::CircuitAdjustAqm {
+            circuit_id: "c2".to_string(),
+            aqm_token: "cake".to_string(),
+            expires_at_unix: None,
+        });
+        let removed = overrides.remove_lapsed_circuit_aqm_overrides(100);
+        assert_eq!(removed, vec!["c1".to_string()]);
+        assert!(!has_circuit_aqm_for_circuit(&overrides, "c1"));
+        assert!(has_circuit_aqm_for_circuit(&overrides, "c2"));
+    }
+
+    #[test]
+    fn circuit_aqm_entry_claims_the_circuit() {
+        let mut overrides = OverrideFile::default();
+        overrides.add_circuit_adjustment(lqos_overrides::CircuitAdjustment::CircuitAdjustAqm {
+            circuit_id: "c1".to_string(),
+            aqm_token: "cake".to_string(),
+            expires_at_unix: None,
+        });
+        assert!(has_circuit_aqm_for_circuit(&overrides, "c1"));
+        assert!(!has_circuit_aqm_for_circuit(&overrides, "c2"));
+    }
+
+    #[test]
+    fn circuit_aqm_none_token_is_not_an_ownership_claim() {
+        let mut overrides = OverrideFile::default();
+        assert!(overrides.set_circuit_aqm_return_changed(
+            "c1".to_string(),
+            Some("none".to_string()),
+            None
+        ));
+        assert!(
+            !has_circuit_aqm_for_circuit(&overrides, "c1"),
+            "a none token must not claim the circuit"
+        );
+    }
+
+    #[test]
+    fn operator_site_speed_claim_joins_by_id_with_name_fallback() {
+        let id_carrying = vec![NetworkAdjustment::AdjustSiteSpeed {
+            node_id: Some("node-1".to_string()),
+            site_name: "old-name".to_string(),
+            download_bandwidth_mbps: Some(100.0),
+            upload_bandwidth_mbps: None,
+            expires_at_unix: None,
+        }];
+        // Id-first: the operator entry claims the site even after a rename.
+        assert!(operator_adjustment_claims(
+            &id_carrying,
+            Some("node-1"),
+            "new-name"
+        ));
+        assert!(!operator_adjustment_claims(
+            &id_carrying,
+            Some("node-2"),
+            "new-name"
+        ));
+
+        let name_only = vec![NetworkAdjustment::AdjustSiteSpeed {
+            node_id: None,
+            site_name: "legacy-site".to_string(),
+            download_bandwidth_mbps: Some(100.0),
+            upload_bandwidth_mbps: None,
+            expires_at_unix: None,
+        }];
+        // Legacy fallback: a name-only operator entry still claims by name.
+        assert!(operator_adjustment_claims(
+            &name_only,
+            Some("node-9"),
+            "legacy-site"
+        ));
+        assert!(!operator_adjustment_claims(
+            &name_only,
+            Some("node-9"),
+            "other-site"
+        ));
     }
 }

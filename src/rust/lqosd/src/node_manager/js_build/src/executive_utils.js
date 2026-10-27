@@ -1,6 +1,12 @@
 import {listenOnceMatchingWithTimeout} from "./pubsub/listeners";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 
+// `.64.4` (R1.2): the pure label builders live in an import-free module so the
+// fit oracle + `node --test` can import the SHIPPED builders (this module pulls
+// in the WebSocket runtime, which Node cannot resolve). Re-exported here so the
+// existing call sites keep reading them from `executive_utils`.
+export {heatRowsCaption, heatRowAriaLabel, typeMonoMarkup} from "./executive_heat_labels.mjs";
+
 const wsClient = get_ws_client();
 const DEFAULT_EXECUTIVE_REFRESH_MS = 5000;
 let executiveRequestCounter = 0;

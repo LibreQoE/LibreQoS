@@ -1,30 +1,12 @@
 use crate::DynamicCircuit;
 use anyhow::{Context, Result};
-use lqos_config::ShapedDevice;
+use lqos_config::{DynamicCircuitsFile, ShapedDevice, dynamic_circuits_path};
 use lqos_utils::{hash_to_i64, normalize_circuit_id_key};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tracing::warn;
-
-const DYNAMIC_CIRCUITS_FILENAME: &str = "dynamic_circuits.json";
-
-fn dynamic_circuits_path(config: &lqos_config::Config) -> PathBuf {
-    Path::new(&config.lqos_directory).join(DYNAMIC_CIRCUITS_FILENAME)
-}
-
-fn default_dynamic_circuits_schema_version() -> u32 {
-    1
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
-struct DynamicCircuitsFile {
-    #[serde(default = "default_dynamic_circuits_schema_version")]
-    schema_version: u32,
-    #[serde(default)]
-    circuits: Vec<DynamicCircuit>,
-}
 
 fn recompute_hashes(device: &mut ShapedDevice) {
     device.circuit_hash = hash_to_i64(&device.circuit_id);
@@ -111,7 +93,7 @@ pub(crate) fn persist_dynamic_circuits_to_disk(circuits: &[DynamicCircuit]) -> R
     let config = lqos_config::load_config().context("load lqos config")?;
     let path = dynamic_circuits_path(config.as_ref());
     let file = DynamicCircuitsFile {
-        schema_version: default_dynamic_circuits_schema_version(),
+        schema_version: 1,
         circuits: circuits.to_vec(),
     };
     atomic_write_json(&path, &file)

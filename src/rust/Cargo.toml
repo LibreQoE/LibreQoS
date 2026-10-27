@@ -28,30 +28,35 @@ members = [
     "lqosd", # LibreQoS Daemon
     "lqos_bus", # Bus data types
     "lqtop", # A command line utility to show current activity
-    "xdp_iphash_to_cpu_cmdline", # Rust port of the C xdp_iphash_to_cpu_cmdline tool, for compatibility
     "xdp_pping", # Rust port of cpumap's `xdp_pping` tool, for compatibility
     "lqos_python", # Python bindings for using the Rust bus directly
     "lqusers", # CLI control for managing the web user list
     "lqos_utils", # A collection of macros and helpers we find useful
     "lqos_setup", # A quick CLI setup for first-time users
+    "lqos_power", # Host CPU power posture (turbo off + eco/balanced/performance)
     "lqos_heimdall", # Library for managing Heimdall flow watching
-    "lqos_map_perf", # A CLI tool for testing eBPF map performance
     "uisp", # REST support for the UISP API
     "uisp_integration", # UISP Integration in Rust
     "lqos_probe", # Shared active probe provider and result types.
     "lqos_radius", # Rootless RADIUS accounting packet parsing and diagnostic UDP listener.
     "lqos_stormguard", # An implementation of CAKE AutoRotate using dynamic bus information. EXPERIMENTAL.
-    "lqos_bakery", # The bakery makes CAKEs - controls queue creation.
     "lqos_overrides", # A CLI tool and library for unifying the override system and allowing API support for changing network.json and ShapedDevices.csv
     "lqos_topology", # Shared topology runtime domain logic and health/effective-state helper.
+    "lqos_dataplane_types", # Shared lqosd<->bridge dataplane transaction schema (the wire contract).
     "lqos_topology_compile", # Shared topology compilation and mode projection layer.
     "lqos_support_tool", # Support/sanity-check CLI for gathering and submitting support dumps.
     "lqos_netplan_helper", # Managed netplan inspection/transaction helper.
+    "lqos_preflight", # The v2->v3 pre-install qualification core (pure, shared by the standalone checker + the deb preinst).
 ]
 
 [dependencies]
 
 [workspace.dependencies]
+# Shared lqosd<->bridge analytics socket protocol (the wire contract for
+# E2 stats+health). Post-cutover the bridge crate lives in-repo at
+# rust/libreqos_dpdk/analytics_ipc, so this resolves as a PATH dep — the
+# two-repo vendoring lockstep + pinned rev retired with the merge.
+analytics_ipc = { path = "../../rust/libreqos_dpdk/analytics_ipc", default-features = false }
 anyhow = "1"
 thiserror = "1"
 tokio = { version = "1", features = [ "full" ] }

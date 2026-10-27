@@ -1,22 +1,3 @@
-fn topology_import_ingress_enabled(config: &Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
-}
-
 fn runtime_flat_mode(config: &Config) -> bool {
     config.shared_topology_compile_mode() == Some("flat")
 }
@@ -60,7 +41,7 @@ fn runtime_flat_bucket_count(config: &Config) -> usize {
     if shaping_cpu_count > 0 {
         queue_count = queue_count.min(shaping_cpu_count);
     }
-    if config.on_a_stick_mode() {
+    if config.single_interface.is_some() {
         queue_count = (queue_count / 2).max(1);
     }
     queue_count.max(1)
@@ -75,32 +56,53 @@ fn runtime_flat_bucket_id(index: usize) -> String {
 }
 
 fn current_flat_bucket_names(config: &Config) -> Option<BTreeSet<String>> {
-    let Value::Object(current_network) = read_json_value(&topology_effective_network_path(config))?
-    else {
-        return None;
+    // T5 rung 1: the bucket-stability check reads the E2 operator
+    // view (the network.effective.json interchange is retired). The
+    // check translates: every node in the view is a generated bucket
+    // whose name matches Generated_PN_{index+1} and which is a LEAF —
+    // no SITE/AP node claims it as parent (the dict shape's
+    // `children: {}`). Circuits are NOT dict children; they attach to
+    // buckets by parent id and must not count as children here.
+    let view = match TopologyOperatorViewFile::load(config) {
+        Ok(view) => view,
+        Err(_) => return None,
     };
-    if current_network.is_empty() {
+    if view.nodes.is_empty() {
         return None;
     }
 
+    let parent_ids: HashSet<&str> = view
+        .nodes
+        .iter()
+        .filter(|node| !node.is_circuit())
+        .filter_map(|node| node.parent_id.as_deref())
+        .collect();
     let mut bucket_names = BTreeSet::new();
-    for index in 0..current_network.len() {
+    let mut site_or_ap_count = 0usize;
+    for node in &view.nodes {
+        if node.is_circuit() {
+            // Circuits ride in E2 (they attach to buckets by parent
+            // id) but are not dict children — skip them.
+            continue;
+        }
+        let index = node
+            .id
+            .strip_prefix("libreqos:generated:flat:bucket:")
+            .and_then(|suffix| suffix.parse().ok())?;
         let bucket_name = runtime_flat_bucket_name(index);
         let expected_id = runtime_flat_bucket_id(index);
-        let node = current_network.get(&bucket_name)?.as_object()?;
-        if node.get("id").and_then(Value::as_str) != Some(expected_id.as_str()) {
+        if node.id != expected_id || node.name != bucket_name {
             return None;
         }
-        if !node
-            .get("children")
-            .and_then(Value::as_object)
-            .is_some_and(|children| children.is_empty())
-        {
+        if parent_ids.contains(node.id.as_str()) {
             return None;
         }
         bucket_names.insert(bucket_name);
+        site_or_ap_count += 1;
     }
-    (bucket_names.len() == current_network.len()).then_some(bucket_names)
+    (!bucket_names.is_empty()
+        && bucket_names.len() == site_or_ap_count)
+    .then_some(bucket_names)
 }
 
 fn previous_flat_bucket_assignments(

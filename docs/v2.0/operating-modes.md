@@ -1,5 +1,7 @@
 # Operating Modes and Source of Truth
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 ## Page Purpose
 
 Use this page to decide where permanent shaping changes should live before you go to production.
@@ -32,7 +34,7 @@ Key behavior:
 - Built-in integrations do not use `network.json` as their normal working file.
 - Direct file edits may be overwritten on the next scheduler refresh.
 - `flat` mode intentionally simplifies the tree when you want lower overhead.
-- Built-in integrations can keep a fuller logical topology for Topology Manager while publishing a separate queue-visible runtime tree for `network.effective.json`, `shaping_inputs.json`, `tree.html`, and HTB.
+- Built-in integrations can keep a fuller logical topology for Topology Manager while publishing a separate queue-visible runtime tree for `topology_operator_view.json`, `shaping_inputs.json`, `tree.html`, and HTB.
 - Large integration roots and aggregation-only sites can be auto-virtualized automatically, so the queue-visible tree does not waste HTB depth or impose artificial aggregate bottlenecks while the nodes still remain visible for monitoring.
 
 ## Custom Source of Truth

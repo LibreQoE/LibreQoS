@@ -79,7 +79,7 @@ fn flat_binpacking_reuses_assignments_for_identical_input() {
         ],
     );
     let artifacts = flat_test_artifacts(&config);
-    publish_effective_topology_artifacts(&config, &artifacts, "flat-identical")
+    publish_effective_topology_artifacts(&config, &artifacts)
         .expect("initial flat topology should publish");
     let before =
         TopologyShapingInputsFile::load(&config).expect("published shaping inputs should load");
@@ -102,7 +102,7 @@ fn flat_binpacking_bounds_existing_moves_when_circuits_change() {
     ];
     write_flat_test_devices(&config, &initial_circuits);
     let artifacts = flat_test_artifacts(&config);
-    publish_effective_topology_artifacts(&config, &artifacts, "flat-before-add")
+    publish_effective_topology_artifacts(&config, &artifacts)
         .expect("initial flat topology should publish");
     let before_add = flat_assignment(
         &TopologyShapingInputsFile::load(&config).expect("initial shaping inputs should load"),
@@ -122,7 +122,7 @@ fn flat_binpacking_bounds_existing_moves_when_circuits_change() {
     let after_add = flat_assignment(&after_add_inputs);
     assert!(changed_existing_assignments(&before_add, &after_add) <= 1);
 
-    publish_effective_topology_artifacts(&config, &artifacts, "flat-before-remove")
+    publish_effective_topology_artifacts(&config, &artifacts)
         .expect("flat topology with the added circuit should publish");
     let after_add_published = flat_assignment(
         &TopologyShapingInputsFile::load(&config)
@@ -162,7 +162,7 @@ fn flat_binpacking_discards_invalid_or_wrong_queue_count_history() {
             .expect("cold flat shaping inputs should build")
             .expect("cold flat shaping inputs should be present"),
     );
-    publish_effective_topology_artifacts(&config, &artifacts, "flat-invalid-history")
+    publish_effective_topology_artifacts(&config, &artifacts)
         .expect("initial flat topology should publish");
 
     let mut invalid_history =
@@ -233,4 +233,21 @@ fn flat_binpacking_discards_invalid_or_wrong_queue_count_history() {
     );
 
     assert_eq!(after_queue_change, cold_three_bucket_assignment);
+}
+
+#[test]
+fn debug_flat_bucket_e2_reads() {
+    use crate::{current_flat_bucket_names, previous_flat_bucket_assignments};
+    let config = flat_test_config("lqos-topology-flat-debug-e2", 2);
+    write_flat_test_devices(
+        &config,
+        &[("circuit-a", 100.0), ("circuit-b", 80.0)],
+    );
+    let artifacts = flat_test_artifacts(&config);
+    publish_effective_topology_artifacts(&config, &artifacts)
+        .expect("publish");
+    let view = lqos_config::TopologyOperatorViewFile::load(&config).expect("e2 loads");
+    eprintln!("E2 nodes: {:?}", view.nodes.iter().map(|n| (n.id.clone(), n.name.clone(), n.node_type.clone(), n.parent_id.clone())).collect::<Vec<_>>());
+    eprintln!("current_flat_bucket_names: {:?}", current_flat_bucket_names(&config));
+    eprintln!("history: {:?}", previous_flat_bucket_assignments(&config, &["Generated_PN_1".to_string(), "Generated_PN_2".to_string()]));
 }

@@ -1,0 +1,5 @@
+# Minimal engine workspace for the permissive interface crate
+# carried into the public projection (the open-core boundary).
+# Every other engine crate is closed and is not published.
+[workspace]
+members = ["analytics_ipc"]

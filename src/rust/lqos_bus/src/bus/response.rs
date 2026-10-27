@@ -15,15 +15,6 @@ use lqos_utils::{
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
-/// Result from a bus-backed override mutation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
-pub struct OverrideMutationResult {
-    /// True when the mutation changed the selected override layer on disk.
-    pub changed: bool,
-    /// Entity identifiers changed by the mutation, such as node names or device IDs.
-    pub changed_entities: Vec<String>,
-}
-
 /// An urgent issue to be displayed prominently in the UI
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct UrgentIssue {
@@ -145,56 +136,6 @@ pub struct BakeryStatsSnapshot {
     pub active_circuits: u64,
 }
 
-/// Serializable snapshot of a Bakery-tracked TreeGuard runtime node operation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
-pub struct TreeGuardRuntimeNodeOperationSnapshot {
-    /// Monotonic Bakery-local operation identifier.
-    pub operation_id: u64,
-    /// Stable Bakery site hash derived from the node name.
-    pub site_hash: i64,
-    /// Requested runtime action (`virtualize` or `restore`).
-    pub action: String,
-    /// Current operation status.
-    pub status: String,
-    /// Number of retry/apply attempts performed so far.
-    pub attempt_count: u32,
-    /// Unix timestamp when the operation was submitted.
-    pub submitted_at_unix: u64,
-    /// Unix timestamp when the operation last changed state.
-    pub updated_at_unix: u64,
-    /// Optional unix timestamp for the next retry, if waiting.
-    pub next_retry_at_unix: Option<u64>,
-    /// Last error observed by Bakery for this operation, if any.
-    pub last_error: Option<String>,
-    /// Structured failure reason observed by Bakery for this operation, if any.
-    pub failure_reason: Option<String>,
-}
-
-/// Serializable snapshot of Bakery's retained runtime branch state for a TreeGuard node.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
-pub struct TreeGuardRuntimeNodeBranchSnapshot {
-    /// Stable Bakery site hash derived from the node name.
-    pub site_hash: i64,
-    /// Which retained branch is currently active (`shadow` or `original`).
-    pub active_branch: String,
-    /// Current runtime lifecycle label for the node.
-    pub lifecycle: String,
-    /// Whether Bakery is still waiting to prune the inactive branch.
-    pub pending_prune: bool,
-    /// Optional unix timestamp for the next prune/cleanup retry, if one is pending.
-    pub next_prune_attempt_unix: Option<u64>,
-    /// Hashes of branch sites currently marked active.
-    pub active_site_hashes: Vec<i64>,
-    /// Hashes of original/saved sites retained for restore logic.
-    pub saved_site_hashes: Vec<i64>,
-    /// Hashes of inactive-branch sites queued for pruning.
-    pub prune_site_hashes: Vec<i64>,
-    /// Observed downlink qdisc major for the runtime root, if known.
-    pub qdisc_down_major: Option<u16>,
-    /// Observed uplink qdisc major for the runtime root, if known.
-    pub qdisc_up_major: Option<u16>,
-}
-
 /// Circuit-level TemporalHeatmap data for the executive summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Allocative)]
 pub struct CircuitHeatmapData {
@@ -263,9 +204,6 @@ pub struct ExecutiveSummaryHeader {
     /// Whether the displayed queue counts are intentionally held at their last-known values.
     #[serde(default)]
     pub queue_stats_stale: bool,
-    /// Whether Bakery is currently applying a full reload batch.
-    #[serde(default)]
-    pub bakery_reload_in_progress: bool,
     /// Whether Insight is connected.
     pub insight_connected: bool,
 }
@@ -452,7 +390,8 @@ pub struct FlowMapPoint {
     pub country: String,
     /// Bytes sent (download direction)
     pub bytes_sent: u64,
-    /// RTT sample in nanoseconds
+    /// Internet-side (WAN-anchored) RTT sample in nanoseconds (`rtt_nanos_up`;
+    /// the `.47` `.up` leg)
     pub rtt_nanos: f32,
 }
 
@@ -518,6 +457,20 @@ pub struct FlowTimelineEntry {
     pub remote_ip: String,
 }
 
+/// Cluster-2: one class's aggregate-ring bucket (the additive field on the
+/// timeline responses; filtered to the requested ASN/country/protocol).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
+pub struct FlowTimelineBucket {
+    /// Wall-clock minute start (unix millis)
+    pub start_millis: u64,
+    /// Number of successful 1 s folds in the minute (0 = a missed minute)
+    pub sampled_intervals: u16,
+    /// The class's bytes for the minute (down/up)
+    pub bytes: DownUpOrder<u64>,
+    /// New flows first seen in the minute
+    pub flows: u64,
+}
+
 /// Scheduler details response
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
 pub struct SchedulerDetails {
@@ -536,43 +489,6 @@ pub struct QueueStatsTotal {
     pub marks: DownUpOrder<u64>,
     /// Total drops (down/up)
     pub drops: DownUpOrder<u64>,
-}
-
-/// Cumulative byte counter for one network node.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
-pub struct NodeByteCounters {
-    /// Optional stable node identifier from `network.json` metadata.
-    pub node_id: Option<String>,
-    /// Node name as it appears in `network.json`.
-    pub name: String,
-    /// Cumulative bytes (down/up) since `lqosd` started tracking.
-    ///
-    /// Node totals include traffic from descendant nodes.
-    pub bytes: DownUpOrder<u64>,
-}
-
-/// Cumulative byte counter for one circuit.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
-pub struct CircuitByteCounters {
-    /// Circuit ID from `ShapedDevices.csv` or a dynamic circuit.
-    pub circuit_id: String,
-    /// Circuit name from `ShapedDevices.csv` or a dynamic circuit.
-    pub circuit_name: String,
-    /// Effective parent node for this circuit.
-    pub parent_node: String,
-    /// Cumulative bytes (down/up) since `lqosd` started tracking.
-    pub bytes: DownUpOrder<u64>,
-}
-
-/// Cumulative byte counters for network nodes and circuits.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Allocative)]
-pub struct ByteCountersSnapshot {
-    /// Whether byte counters are enabled in configuration.
-    pub enabled: bool,
-    /// Cumulative counters for every node in the runtime network tree.
-    pub nodes: Vec<NodeByteCounters>,
-    /// Cumulative counters for circuits with recorded traffic.
-    pub circuits: Vec<CircuitByteCounters>,
 }
 
 /// Circuit capacity utilization row
@@ -659,6 +575,36 @@ pub enum WarningLevel {
     Error,
 }
 
+/// K1b §4.6 pin 3: lifecycle of one minted generation as seen by the bridge
+/// broker's outcome ring. The bus-boundary mirror of
+/// `lqosd::bridge_broker::outcomes::PublishState` (the daemon maps one to the
+/// other; the bus crate cannot depend on the daemon).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
+#[serde(rename_all = "snake_case")]
+pub enum BridgePublishStatus {
+    /// Emitted, waiting for the bridge ack.
+    Pending {
+        /// 1-based position in the compliance sequence.
+        seq_pos: usize,
+        /// Length of the compliance sequence.
+        seq_len: usize,
+    },
+    /// Bounded `ATTEMPT_EXHAUSTED` retry in progress.
+    Retrying {
+        /// Attempt number.
+        attempt: u32,
+        /// Maximum attempts.
+        max: u32,
+    },
+    /// The bridge acked APPLIED.
+    Applied,
+    /// Terminal reject with a typed reason.
+    Rejected {
+        /// Typed rejection reason (e.g. `REJECTED_OBSERVE_MODE`).
+        reason: String,
+    },
+}
+
 /// A `BusResponse` object represents a single
 /// reply generated from a `BusRequest`, and batched
 /// inside a `BusReply`.
@@ -670,6 +616,10 @@ pub enum BusResponse {
 
     /// An operation failed, with the enclosed error message.
     Fail(String),
+
+    /// AVAIL 0(c): the broker's reconciliation convergence record, as a
+    /// versioned JSON document (the Python consumer + the operator detail).
+    ConvergenceState(String),
 
     /// We aren't ready to process your call, please stay on the line
     /// and try later.
@@ -743,6 +693,15 @@ pub enum BusResponse {
 
     /// Probe observations returned from the shared active probe provider.
     ProbeObservations(Vec<lqos_probe::ProbeObservation>),
+
+    /// K1b §4.6 pin 3: the bridge publish lifecycle for the requested
+    /// generation, or `None` when the generation is absent from the ring.
+    BridgePublishStatus {
+        /// The generation that was looked up.
+        generation: String,
+        /// Its lifecycle state, if known.
+        status: Option<BridgePublishStatus>,
+    },
 
     /// A tuple of (mapped)(unknown) host counts.
     HostCounts((u32, u32)),
@@ -890,22 +849,34 @@ pub enum BusResponse {
     ProtocolList(Vec<ProtocolListEntry>),
 
     /// ASN flow timeline
-    AsnFlowTimeline(Vec<FlowTimelineEntry>),
+    AsnFlowTimeline {
+        /// The per-flow rows (PART A recent_flows retention)
+        entries: Vec<FlowTimelineEntry>,
+        /// The aggregate ring window for the ASN (cluster-2 additive field)
+        buckets: Vec<FlowTimelineBucket>,
+    },
 
     /// Country flow timeline
-    CountryFlowTimeline(Vec<FlowTimelineEntry>),
+    CountryFlowTimeline {
+        /// The per-flow rows (PART A recent_flows retention)
+        entries: Vec<FlowTimelineEntry>,
+        /// The aggregate ring window for the country
+        buckets: Vec<FlowTimelineBucket>,
+    },
 
     /// Protocol flow timeline
-    ProtocolFlowTimeline(Vec<FlowTimelineEntry>),
+    ProtocolFlowTimeline {
+        /// The per-flow rows (PART A recent_flows retention)
+        entries: Vec<FlowTimelineEntry>,
+        /// The aggregate ring window for the protocol
+        buckets: Vec<FlowTimelineBucket>,
+    },
 
     /// Scheduler details
     SchedulerDetails(SchedulerDetails),
 
     /// Queue stats totals (marks/drops)
     QueueStatsTotal(QueueStatsTotal),
-
-    /// Cumulative byte counters for nodes and circuits.
-    ByteCounters(ByteCountersSnapshot),
 
     /// Current QoO data.
     Qoo(Option<QooData>),
@@ -931,14 +902,13 @@ pub enum BusResponse {
     /// Insight license summary (licensed + optional max circuits).
     InsightLicenseSummary(InsightLicenseSummary),
 
-    /// Latest Bakery runtime node-operation snapshot for a named TreeGuard node, if any.
-    TreeGuardRuntimeNodeOperation(Option<TreeGuardRuntimeNodeOperationSnapshot>),
-
-    /// Latest Bakery runtime branch-state snapshot for a named TreeGuard node, if any.
-    TreeGuardRuntimeNodeBranch(Option<TreeGuardRuntimeNodeBranchSnapshot>),
-
-    /// Result from a bus-backed override mutation.
-    OverrideMutationResult(OverrideMutationResult),
+    /// `lqos-74t.118.2`: read-only CPU & Workers snapshot assembled by lqosd.
+    ///
+    /// A versioned JSON document (the `ConvergenceState` precedent): bridge
+    /// worker affinity, applied ownership/crossings, moves availability and
+    /// placement state. The bus crate carries it opaque so it stays free of
+    /// `analytics_ipc`/broker types; lqos_api owns the typed contract.
+    CpuWorkers(String),
 }
 
 #[cfg(test)]

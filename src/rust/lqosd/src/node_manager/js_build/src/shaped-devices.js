@@ -24,6 +24,9 @@ const wsClient = get_ws_client();
 const DYNAMIC_VIEW_MODE_STORAGE_KEY = "lqosShapedDevicesDynamicViewMode";
 let dynamicViewMode = loadDynamicViewMode();
 
+const DYNAMIC_EMPTY_REASON =
+    "No dynamic circuits yet — no RADIUS accounting is enabled, no configured range resolves to a topology node, or no host has been promoted yet.";
+
 const QOO_TOOLTIP_HTML =
     "<h5>Quality of Outcome (QoO)</h5>" +
     "<p>Quality of Outcome (QoO) is IETF IPPM “Internet Quality” (draft-ietf-ippm-qoo).<br>" +
@@ -268,17 +271,18 @@ function applyCircuitUpdate(device) {
     const circuitId = device.circuit_id;
     latestByCircuitId.set(circuitId, device);
     const plan = planByCircuitId.get(circuitId) || {down: 0, up: 0};
+    const staleSuffix = device.stale ? ' <span class="badge text-bg-warning" title="Bridge stats stale: serving last-good data (analytics socket unreachable)">stale</span>' : "";
 
     updateMetricText(circuitId, "lastSeen", formatLastSeen(device.last_seen_nanos));
     updateMetricHtml(
         circuitId,
         "tpDown",
-        formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, toNumber(plan.down, 0)),
+        formatThroughput(toNumber(device.bytes_per_second.down, 0) * 8, toNumber(plan.down, 0)) + staleSuffix,
     );
     updateMetricHtml(
         circuitId,
         "tpUp",
-        formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, toNumber(plan.up, 0)),
+        formatThroughput(toNumber(device.bytes_per_second.up, 0) * 8, toNumber(plan.up, 0)) + staleSuffix,
     );
     updateMetricHtml(
         circuitId,
@@ -755,6 +759,13 @@ function ensureLayout() {
     summary.classList.add("small", "text-body-secondary", "ms-auto");
     toolbar.appendChild(summary);
 
+    // E2 honesty badge: which dataplane feeds the live counters, and
+    // whether bridge stats are stale (last-good, socket unreachable).
+    const statsSource = document.createElement("span");
+    statsSource.id = "sdStatsSource";
+    statsSource.classList.add("small", "text-body-secondary", "ms-2");
+    toolbar.appendChild(statsSource);
+
     target.appendChild(toolbar);
 
     grid = document.createElement("div");
@@ -922,7 +933,8 @@ function renderDevices() {
     if (layout.pageCounter) layout.pageCounter.innerText = "Page " + (page + 1) + " / " + totalPages;
     if (layout.summary) {
         if (totalRows === 0) {
-            layout.summary.innerText = "No matches";
+            layout.summary.innerText =
+                shapedDevicesKind === "Dynamic" ? DYNAMIC_EMPTY_REASON : "No matches";
         } else {
             const start = page * devicesPerPage + 1;
             const end = Math.min((page + 1) * devicesPerPage, totalRows);
@@ -943,9 +955,26 @@ function renderDevices() {
     layout.listWrap.classList.toggle("d-none", !showList);
 
     if (showList) {
-        shapedDevices.forEach((device) => {
-            layout.listBody.appendChild(buildDeviceListRow(device));
-        });
+        if (shapedDevices.length === 0) {
+            const tr = document.createElement("tr");
+            const td = document.createElement("td");
+            td.colSpan = 9;
+            td.className = "text-muted";
+            td.innerText =
+                shapedDevicesKind === "Dynamic" ? DYNAMIC_EMPTY_REASON : "No shaped devices.";
+            tr.appendChild(td);
+            layout.listBody.appendChild(tr);
+        } else {
+            shapedDevices.forEach((device) => {
+                layout.listBody.appendChild(buildDeviceListRow(device));
+            });
+        }
+    } else if (shapedDevices.length === 0) {
+        const col = document.createElement("div");
+        col.classList.add("col-12", "text-muted");
+        col.innerText =
+            shapedDevicesKind === "Dynamic" ? DYNAMIC_EMPTY_REASON : "No shaped devices match.";
+        layout.grid.appendChild(col);
     } else {
         shapedDevices.forEach((device) => {
             const col = document.createElement("div");
@@ -968,10 +997,29 @@ function renderDevices() {
 
 function handleCircuitMetrics(msg) {
     const metrics = msg && Array.isArray(msg.data) ? msg.data : [];
+    let source = null;
+    let stale = false;
     metrics.forEach((metric) => {
         if (!metric || !metric.circuit_id) return;
+        source = metric.source || source;
+        if (metric.stale) stale = true;
         applyCircuitUpdate(metric);
     });
+    renderStatsSource(source, stale);
+}
+
+function renderStatsSource(source, stale) {
+    const el = document.getElementById("sdStatsSource");
+    if (!el) return;
+    if (source === "bridge") {
+        el.innerHTML = stale
+            ? ' <span class="badge text-bg-warning">bridge stats: stale (last-good)</span>'
+            : ' <span class="badge text-bg-secondary">stats: bridge</span>';
+    } else if (source === "kernel") {
+        el.innerHTML = ' <span class="badge text-bg-secondary">stats: kernel</span>';
+    } else {
+        el.innerHTML = "";
+    }
 }
 
 wsClient.on("CircuitMetricsSnapshot", handleCircuitMetrics);

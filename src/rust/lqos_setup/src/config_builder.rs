@@ -38,15 +38,9 @@ impl ConfigBuilder {
             let mut internet_vlan = 0;
             let mut network_vlan = 0;
             let mode = if let Some(bridge) = &cfg.bridge {
-                if bridge.use_xdp_bridge {
-                    to_internet = bridge.to_internet.clone();
-                    to_network = bridge.to_network.clone();
-                    BridgeMode::XDP
-                } else {
-                    to_internet = bridge.to_internet.clone();
-                    to_network = bridge.to_network.clone();
-                    BridgeMode::Linux
-                }
+                to_internet = bridge.to_internet.clone();
+                to_network = bridge.to_network.clone();
+                BridgeMode::Linux
             } else if let Some(si) = &cfg.single_interface {
                 to_internet = si.interface.clone();
                 internet_vlan = si.internet_vlan;
@@ -61,8 +55,8 @@ impl ConfigBuilder {
                 to_network,
                 internet_vlan,
                 network_vlan,
-                mbps_to_internet: cfg.queues.downlink_bandwidth_mbps,
-                mbps_to_network: cfg.queues.uplink_bandwidth_mbps,
+                mbps_to_internet: cfg.queues.downlink_bandwidth_mbps.round() as u64,
+                mbps_to_network: cfg.queues.uplink_bandwidth_mbps.round() as u64,
                 allow_subnets: cfg.ip_ranges.allow_subnets.clone(),
                 node_name: cfg.node_name.clone(),
                 config_load_error: None,
@@ -91,10 +85,10 @@ impl ConfigBuilder {
     }
 }
 
+/// The resolved configuration path (read AND write). Delegates to the single
+/// `lqos_config` resolver so the setup flow and the daemon cannot diverge.
 pub fn current_config_path() -> PathBuf {
-    std::env::var_os("LQOS_CONFIG")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/etc/lqos.conf"))
+    PathBuf::from(lqos_config::config_path())
 }
 
 fn existing_config_load_error_for_path(config_path: &Path) -> Option<String> {
@@ -108,13 +102,6 @@ fn existing_config_load_error_for_path(config_path: &Path) -> Option<String> {
 
 pub fn existing_config_load_error() -> Option<String> {
     existing_config_load_error_for_path(&current_config_path())
-}
-
-pub fn existing_config_uses_xdp() -> bool {
-    lqos_config::load_config()
-        .ok()
-        .and_then(|config| config.bridge.as_ref().map(|bridge| bridge.use_xdp_bridge))
-        .unwrap_or(false)
 }
 
 #[cfg(test)]

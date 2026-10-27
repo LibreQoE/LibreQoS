@@ -1,5 +1,7 @@
 # Deployment Recipes
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page collects repeatable, scenario-based deployment recipes.
 
 Use recipes after you have completed base install and health validation in [Quickstart](quickstart.md).

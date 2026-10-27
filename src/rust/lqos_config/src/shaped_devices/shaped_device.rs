@@ -89,6 +89,19 @@ pub struct ShapedDevice {
     pub parent_hash: i64,
 }
 
+/// Reconciles a v2 per-circuit SQM token to the v3 pipeline's supported set:
+/// `fq_codel` (the v2 kernel SQM) becomes `cake`. Without this,
+/// `dataplane_compiler::aqm_from_override` maps the token to
+/// `DataplaneLeafAqm::None` and the circuit's SQM layer is silently dropped to
+/// FIFO (the per-circuit form of the box-level `[queues] default_sqm` bug).
+/// `cake` / `none` / an empty side pass through unchanged.
+fn reconcile_v3_sqm(token: &str) -> &str {
+    match token {
+        "fq_codel" => "cake",
+        other => other,
+    }
+}
+
 impl ShapedDevice {
     /// Refreshes derived hash fields from the current circuit, device, and parent identifiers.
     ///
@@ -357,7 +370,8 @@ impl ShapedDevice {
                     let down = parts.next().unwrap_or("").trim();
                     let up = parts.next().unwrap_or("").trim();
 
-                    // Validate each side if present
+                    // Validate each side if present (v2 `fq_codel` is accepted
+                    // for upgrade compat; it is RECONCILED below).
                     let valid =
                         |s: &str| -> bool { matches!(s, "" | "cake" | "fq_codel" | "none") };
                     if !valid(down) || !valid(up) {
@@ -366,12 +380,16 @@ impl ShapedDevice {
                         )));
                     }
 
-                    // Store normalized (trimmed, lowercase) representation exactly as down_sqm/up_sqm
-                    device.sqm_override = Some(format!("{down}/{up}"));
+                    // Store the v3-RECONCILED (trimmed, lowercase) down_sqm/up_sqm.
+                    device.sqm_override =
+                        Some(format!("{}/{}", reconcile_v3_sqm(down), reconcile_v3_sqm(up)));
                 } else {
                     // Single token applies to both directions when used
                     match token.as_str() {
-                        "cake" | "fq_codel" | "none" => device.sqm_override = Some(token),
+                        "cake" | "fq_codel" | "none" => {
+                            device.sqm_override =
+                                Some(reconcile_v3_sqm(token.as_str()).to_string())
+                        }
                         other => {
                             return Err(ShapedDevicesError::CsvEntryParseError(format!(
                                 "Invalid sqm override '{other}'. Allowed values: 'cake', 'fq_codel', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/fq_codel', '/none')"
@@ -809,5 +827,65 @@ mod tests {
 
         let result = ShapedDevice::from_csv(&record, None);
         assert!(result.is_err(), "Should reject invalid rate strings");
+    }
+
+    /// v2 `fq_codel` in the `sqm` column is reconciled to `cake` (else the
+    /// compiler maps it to FIFO — the per-circuit silent-FIFO bug).
+    #[test]
+    fn test_v2_fq_codel_sqm_is_reconciled_to_cake() {
+        let record = StringRecord::from(vec![
+            "c1",
+            "Circuit 1",
+            "d1",
+            "Device 1",
+            "Tower-A",
+            "00:00:00:00:00:01",
+            "192.168.1.1",
+            "",
+            "10",
+            "20",
+            "100",
+            "200",
+            "comment",
+            "fq_codel",
+        ]);
+        let device = ShapedDevice::from_csv(&record, None).expect("should parse");
+        assert_eq!(device.sqm_override.as_deref(), Some("cake"));
+    }
+
+    /// The directional form reconciles per side (`fq_codel/none` -> `cake/none`).
+    #[test]
+    fn test_directional_v2_fq_codel_is_reconciled_per_side() {
+        let record = StringRecord::from(vec![
+            "c1",
+            "Circuit 1",
+            "d1",
+            "Device 1",
+            "Tower-A",
+            "00:00:00:00:00:01",
+            "192.168.1.1",
+            "",
+            "10",
+            "20",
+            "100",
+            "200",
+            "comment",
+            "fq_codel/none",
+        ]);
+        let device = ShapedDevice::from_csv(&record, None).expect("should parse");
+        assert_eq!(device.sqm_override.as_deref(), Some("cake/none"));
+    }
+
+    /// A `cake` / `none` token is left untouched (no spurious rewrite).
+    #[test]
+    fn test_supported_sqm_tokens_are_unchanged() {
+        for (token, expect) in [("cake", "cake"), ("none", "none"), ("", "")] {
+            let record = StringRecord::from(vec![
+                "c1", "Circuit 1", "d1", "Device 1", "Tower-A", "00:00:00:00:00:01",
+                "192.168.1.1", "", "10", "20", "100", "200", "comment", token,
+            ]);
+            let device = ShapedDevice::from_csv(&record, None).expect("should parse");
+            assert_eq!(device.sqm_override.as_deref(), Some(expect).filter(|s| !s.is_empty()));
+        }
     }
 }

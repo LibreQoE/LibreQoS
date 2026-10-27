@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "source": "libreqos_network",
+  "ingress_kind": "native_integration",
+  "nodes": [
+    {
+      "node_id": "s1",
+      "node_name": "Site One",
+      "node_kind": "site",
+      "rate_input": {
+        "intrinsic_download_mbps": 1000,
+        "intrinsic_upload_mbps": 1000
+      }
+    },
+    {
+      "node_id": "ap1",
+      "node_name": "AP One",
+      "node_kind": "ap",
+      "current_parent_node_id": "s1",
+      "current_parent_node_name": "Site One",
+      "rate_input": {
+        "intrinsic_download_mbps": 100,
+        "intrinsic_upload_mbps": 100
+      }
+    }
+  ],
+  "compatibility_network_json": {}
+}

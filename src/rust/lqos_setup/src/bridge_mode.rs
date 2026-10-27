@@ -4,11 +4,11 @@ use cursive::{
     views::{Dialog, LinearLayout, RadioGroup, TextView},
 };
 
-use crate::config_builder::{BridgeMode, CURRENT_CONFIG, existing_config_uses_xdp};
+use crate::config_builder::{BridgeMode, CURRENT_CONFIG};
 
 pub fn bridge_mode(s: &mut Cursive) {
     let current_mode = CURRENT_CONFIG.lock().bridge_mode;
-    let show_legacy_xdp = existing_config_uses_xdp() || current_mode == BridgeMode::XDP;
+    let show_legacy_xdp = current_mode == BridgeMode::XDP;
 
     // create the group and buttons
     let mut group = RadioGroup::new().on_change(|_s, mode| {

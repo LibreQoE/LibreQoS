@@ -1,5 +1,6 @@
-import {lerpGreenToRedViaOrange} from "../helpers/scaling";
-import {isColorBlindMode} from "../helpers/colorblind";
+import {lerpGreenToRedViaOrange} from "../helpers/scaling.js";
+import {isColorBlindMode} from "../helpers/colorblind.js";
+import {heatRowAriaLabel, typeMonoMarkup} from "../executive_heat_labels.mjs";
 
 export const MAX_HEATMAP_ROWS = 10;
 
@@ -224,10 +225,9 @@ export function heatRow(label, badge, values, colorFn, formatValue, link = null,
     const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
     const latestLabel = describeValue ? `${formatValue(latest)} ${describeValue(latest)}`.trim() : formatValue(latest);
     return `
-        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(`${label} ${badge || ""} latest ${latestLabel}`)}">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(heatRowAriaLabel(label, badge, latestLabel))}">
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
-                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
-                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+                ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
             <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} heatmap history`)}">${heatmapRow(values, colorFn, formatValue, describeValue)}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
@@ -357,7 +357,7 @@ function heatmapRowQuadrants(quads, colorFn, formatValue, describeValue = null) 
     return cells;
 }
 
-export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = null, describeValue = null) {
+export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = null, describeValue = null, options = {}) {
     const quads = {
         ul_p50: blocks?.rtt_p50_up || [],
         ul_p90: blocks?.rtt_p90_up || [],
@@ -370,13 +370,22 @@ export function rttHeatRow(label, badge, blocks, colorFn, formatValue, link = nu
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
     const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
     const latestLabel = describeValue ? `${formatValue(latest)} ${describeValue(latest)}`.trim() : formatValue(latest);
+    // `.64.3.1` (A1): the Executive Median RTT WIDGET renders p50 ONLY (upload p50
+    // over download p50, a 1x2 split); the detail page keeps the full 2x2 quad
+    // (p50 / p90) — scoped via `options.p50Only` so only the widget changes.
+    const cells = options.p50Only
+        ? heatmapRowSplit(quads.ul_p50, quads.dl_p50, colorFn, formatValue, {
+            topLabel: "Upload p50 RTT",
+            bottomLabel: "Download p50 RTT",
+            meaning: "Top is upload p50, bottom is download p50 (median RTT).",
+        })
+        : heatmapRowQuadrants(quads, colorFn, formatValue, describeValue);
     return `
-        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(`${label} ${badge || ""} latest RTT ${latestLabel}`)}">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(heatRowAriaLabel(label, badge, latestLabel, "RTT"))}">
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
-                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
-                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+                ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} RTT heatmap history`)}">${heatmapRowQuadrants(quads, colorFn, formatValue, describeValue)}</div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} RTT heatmap history`)}">${cells}</div>
             <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
@@ -442,21 +451,23 @@ function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValu
     const latestTop = latestValue(topValues);
     const latestBottom = latestValue(bottomValues);
     const formattedLatest = `
-        <div>${formatValue(latestTop)}</div>
-        <div>${formatValue(latestBottom)}</div>
+        <span class="exec-latest-pair" title="Upload / Download">
+            <span>${formatValue(latestTop)}</span>
+            <span class="exec-latest-sep">/</span>
+            <span>${formatValue(latestBottom)}</span>
+        </span>
     `;
     const redactClass =
         badge === "Site" || badge === "Circuit" ? " redactable" : "";
     const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
     const latestLabel = `${formatValue(latestTop)} / ${formatValue(latestBottom)}`;
     return `
-        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(`${label} ${badge || ""} latest ${latestLabel}`)}">
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(heatRowAriaLabel(label, badge, latestLabel))}">
             <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
-                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
-                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+                ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
             </div>
             <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, options)}</div>
-            <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
+            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
 }
@@ -464,19 +475,99 @@ function splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValu
 export function retransmitHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
     const topValues = blocks?.retransmit_up || [];
     const bottomValues = blocks?.retransmit_down || [];
-    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link, {
-        topLabel: "Upload retransmits",
-        bottomLabel: "Download retransmits",
-        meaning: "Top is upload, bottom is download. Higher percentages mean more TCP retransmits during this 15-minute block.",
-    });
+    const latestTop = latestValue(topValues);
+    const latestBottom = latestValue(bottomValues);
+    const both = latestTop !== null && latestBottom !== null;
+
+    let max = null;
+    let direction = null;
+    if (both) {
+        if (latestTop >= latestBottom) {
+            max = latestTop;
+            direction = latestTop > latestBottom ? "upload" : null;
+        } else {
+            max = latestBottom;
+            direction = "download";
+        }
+    } else if (latestTop !== null) {
+        max = latestTop;
+        direction = "upload";
+    } else if (latestBottom !== null) {
+        max = latestBottom;
+        direction = "download";
+    }
+
+    const arrow = direction === "upload" ? "↑" : direction === "download" ? "↓" : "";
+    const formattedLatest = max === null
+        ? `<span class="exec-latest-pair">—</span>`
+        : `<span class="exec-latest-pair" title="Upload ${formatValue(latestTop)} · Download ${formatValue(latestBottom)}"><span>${formatValue(max)}</span>${arrow ? `<span class="exec-latest-dir">${arrow}</span>` : ""}</span>`;
+    const latestLabel = both
+        ? `${formatValue(latestTop)} / ${formatValue(latestBottom)}${direction ? ` (higher: ${direction})` : ""}`
+        : formatValue(max);
+    const redactClass =
+        badge === "Site" || badge === "Circuit" ? " redactable" : "";
+    const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    return `
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(heatRowAriaLabel(label, badge, latestLabel))}">
+            <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
+                ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
+            </div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} retransmit heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, {
+                topLabel: "Upload retransmits",
+                bottomLabel: "Download retransmits",
+                meaning: "Top is upload, bottom is download. Higher percentages mean more TCP retransmits during this 15-minute block.",
+            })}</div>
+            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
+        </div>
+    `;
 }
 
 export function utilizationHeatRow(label, badge, blocks, colorFn, formatValue, link = null) {
     const topValues = blocks?.upload || [];
     const bottomValues = blocks?.download || [];
-    return splitHeatRow(label, badge, topValues, bottomValues, colorFn, formatValue, link, {
-        topLabel: "Upload utilization",
-        bottomLabel: "Download utilization",
-        meaning: "Top is upload, bottom is download. This shows how much of planned or available capacity was in use during this 15-minute block.",
-    });
+    const latestTop = latestValue(topValues);
+    const latestBottom = latestValue(bottomValues);
+    const both = latestTop !== null && latestBottom !== null;
+
+    let max = null;
+    let direction = null;
+    if (both) {
+        if (latestTop >= latestBottom) {
+            max = latestTop;
+            direction = latestTop > latestBottom ? "upload" : null;
+        } else {
+            max = latestBottom;
+            direction = "download";
+        }
+    } else if (latestTop !== null) {
+        max = latestTop;
+        direction = "upload";
+    } else if (latestBottom !== null) {
+        max = latestBottom;
+        direction = "download";
+    }
+
+    const arrow = direction === "upload" ? "↑" : direction === "download" ? "↓" : "";
+    const formattedLatest = max === null
+        ? `<span class="exec-latest-pair">—</span>`
+        : `<span class="exec-latest-pair" title="Upload ${formatValue(latestTop)} · Download ${formatValue(latestBottom)}"><span>${formatValue(max)}</span>${arrow ? `<span class="exec-latest-dir">${arrow}</span>` : ""}</span>`;
+    const latestLabel = both
+        ? `${formatValue(latestTop)} / ${formatValue(latestBottom)}${direction ? ` (higher: ${direction})` : ""}`
+        : formatValue(max);
+    const redactClass =
+        badge === "Site" || badge === "Circuit" ? " redactable" : "";
+    const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
+    return `
+        <div class="exec-heat-row" role="listitem" aria-label="${escapeHeatAttr(heatRowAriaLabel(label, badge, latestLabel))}">
+            <div class="exec-heat-label text-truncate" title="${escapeHeatAttr(label)}">
+                ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
+            </div>
+            <div class="exec-heat-cells" role="img" aria-label="${escapeHeatAttr(`${label} utilization heatmap history`)}">${heatmapRowSplit(topValues, bottomValues, colorFn, formatValue, {
+                topLabel: "Upload utilization",
+                bottomLabel: "Download utilization",
+                meaning: "Top is upload, bottom is download. This shows how much of planned or available capacity was in use during this 15-minute block.",
+            })}</div>
+            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
+        </div>
+    `;
 }

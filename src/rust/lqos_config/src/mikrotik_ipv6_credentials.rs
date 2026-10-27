@@ -126,12 +126,11 @@ pub enum MikrotikIpv6CredentialError {
     },
 }
 
-/// Loads Mikrotik IPv6 router credentials, auto-migrating the legacy CSV file if necessary.
+/// Loads Mikrotik IPv6 router credentials. Phase D: READ-ONLY — the legacy CSV
+/// migration moved to `repair_runtime_state`.
 pub fn load_mikrotik_ipv6_router_credentials(
     config: &Config,
 ) -> Result<Vec<MikrotikIpv6RouterCredential>, MikrotikIpv6CredentialError> {
-    migrate_legacy_mikrotik_ipv6_credentials(config)?;
-
     let config_path = config.resolved_mikrotik_ipv6_config_path();
     if config_path.exists() {
         let credentials = read_credentials_toml(&config_path)?;

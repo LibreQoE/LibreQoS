@@ -60,8 +60,17 @@ export class ThroughputRingBufferGraphTimescale extends DashboardGraph {
 
     onThemeChange() {
         super.onThemeChange();
-        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
-        this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
+        // `.64.2.3` — passing fix for a PRE-EXISTING bug, NOT caused by .64.2.3:
+        // `withEmptyLegend()` yields `{ data: [] }`, so the former
+        // `legend.data[0]/[1]` deref threw a TypeError on a theme toggle during a
+        // non-Live period. Recolor the legend ONLY when it carries entries, so a
+        // populated legend is unchanged and an empty one is a safe no-op. The
+        // series colors below (the timescale's rendered colors) stay unconditional.
+        const legendData = this.option.legend?.data;
+        if (Array.isArray(legendData) && legendData.length >= 2) {
+            legendData[0].itemStyle.color = window.graphPalette[0];
+            legendData[1].itemStyle.color = window.graphPalette[1];
+        }
         this.option.series[0].lineStyle.color = window.graphPalette[0];
         this.option.series[0].areaStyle.color = window.graphPalette[0];
         this.option.series[1].lineStyle.color = window.graphPalette[0];

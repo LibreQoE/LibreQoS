@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs::read_to_string,
     io::Write,
     path::{Path, PathBuf},
@@ -10,11 +9,10 @@ use lqos_config::ShapedDevice;
 use serde::{Deserialize, Serialize};
 
 use crate::file_lock::FileLock;
+use crate::topology_overrides::TopologyOverridesFile;
 
 const OPERATOR_OVERRIDES_FILE: &str = "lqos_overrides.json";
 const STORMGUARD_OVERRIDES_FILE: &str = "lqos_overrides.stormguard.json";
-const TREEGUARD_OVERRIDES_FILE: &str = "lqos_overrides.treeguard.json";
-const LEGACY_AUTOPILOT_OVERRIDES_FILE: &str = "lqos_overrides.autopilot.json";
 
 /// Selects which overrides file to load/save.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,15 +21,13 @@ pub enum OverrideLayer {
     Operator,
     /// StormGuard-owned overrides (`lqos_overrides.stormguard.json`).
     Stormguard,
-    /// TreeGuard-owned overrides (`lqos_overrides.treeguard.json`).
-    Treeguard,
 }
 
 /// Helper for working with layered override files.
 pub struct OverrideStore;
 
 /// A circuit- or device-level override applied while generating shaped-device output.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CircuitAdjustment {
     /// Replaces some or all circuit bandwidth values for a specific circuit.
@@ -67,6 +63,21 @@ pub enum CircuitAdjustment {
         /// Replacement SQM override token. `None` or empty removes the override.
         sqm_override: Option<String>,
     },
+    /// K1b ph2: sets a circuit-level SQM/AQM token (the StormGuard circuit
+    /// fallback wire). Applied as a POST-pass on the assembled circuit rows so
+    /// it outranks any device-level seed. Effective grammar is `none | cake`.
+    CircuitAdjustAqm {
+        /// Circuit identifier to update.
+        circuit_id: String,
+        /// Replacement AQM token. `none`/empty clears the fallback.
+        aqm_token: String,
+        /// K1b ph2 §9.2: unix-seconds expiry for machine-authored
+        /// (StormGuard) entries. Operator entries are `None` (immortal);
+        /// StormGuard entries are refreshed on every reasserting pass — the
+        /// dead-man's switch, exactly the `AdjustSiteSpeed` precedent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expires_at_unix: Option<u64>,
+    },
     /// Removes a circuit from generated output by circuit ID.
     RemoveCircuit {
         /// Circuit identifier to remove.
@@ -101,14 +112,12 @@ pub enum NetworkAdjustment {
         download_bandwidth_mbps: Option<f32>,
         /// Replacement upload bandwidth in Mbps.
         upload_bandwidth_mbps: Option<f32>,
-    },
-    /// Marks a named node as virtual or non-virtual.
-    SetNodeVirtual {
-        /// Node name to update.
-        node_name: String,
-        #[serde(rename = "virtual")]
-        /// Whether the node should be treated as virtual.
-        virtual_node: bool,
+        /// K1b §4.6 pin 1: unix-seconds expiry for machine-authored
+        /// (StormGuard) entries. Operator entries are `None` (immortal);
+        /// StormGuard entries are refreshed on every reasserting pass — the
+        /// dead-man's switch bounding a clamp whose detector stopped.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expires_at_unix: Option<u64>,
     },
     /// Overrides immediate upstream parent selection for a topology node.
     TopologyParentOverride {
@@ -133,6 +142,50 @@ pub enum TopologyParentOverrideMode {
     Pinned,
     /// Try parents in operator-specified order, then fall back to native selection.
     PreferredOrder,
+}
+
+/// The suspend floor in Mbps (the config suspend encoding: the v3
+/// compiler rounds 0.01 to 0, the broker floors 0/0 to the trickle —
+/// docs/e3_derivation.md.
+pub const SUSPEND_FLOOR_MBPS: f32 = 0.01;
+
+/// A circuit-level speed override as exposed to admin callers.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CircuitSpeedOverride {
+    /// Replacement minimum download bandwidth in Mbps (`None` = keep base).
+    pub min_download_bandwidth: Option<f32>,
+    /// Replacement maximum download bandwidth in Mbps (`None` = keep base).
+    pub max_download_bandwidth: Option<f32>,
+    /// Replacement minimum upload bandwidth in Mbps (`None` = keep base).
+    pub min_upload_bandwidth: Option<f32>,
+    /// Replacement maximum upload bandwidth in Mbps (`None` = keep base).
+    pub max_upload_bandwidth: Option<f32>,
+}
+
+impl CircuitSpeedOverride {
+    /// True when every direction is floored at
+    /// [`SUSPEND_FLOOR_MBPS`] — the suspend encoding written by the
+    /// circuit page's suspend toggle.
+    pub fn is_suspend_floor(&self) -> bool {
+        [
+            self.min_download_bandwidth,
+            self.max_download_bandwidth,
+            self.min_upload_bandwidth,
+            self.max_upload_bandwidth,
+        ]
+        .iter()
+        .all(|value| value.is_some_and(|value| value == SUSPEND_FLOOR_MBPS))
+    }
+
+    /// The suspend-floor override for every direction.
+    pub fn suspend_floor() -> Self {
+        Self {
+            min_download_bandwidth: Some(SUSPEND_FLOOR_MBPS),
+            max_download_bandwidth: Some(SUSPEND_FLOOR_MBPS),
+            min_upload_bandwidth: Some(SUSPEND_FLOOR_MBPS),
+            max_upload_bandwidth: Some(SUSPEND_FLOOR_MBPS),
+        }
+    }
 }
 
 /// Consolidated UISP-specific overrides stored in an override file.
@@ -162,7 +215,7 @@ pub struct UispRouteOverride {
 }
 
 /// The serialized contents of a single LibreQoS overrides file.
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct OverrideFile {
     /// Devices that will be persisted into ShapedDevices.csv by the scheduler. Useful
     /// for adding persistent "catch all", or API-controlled new devices that are somehow detached
@@ -181,24 +234,18 @@ pub struct OverrideFile {
     /// UISP integration consolidated overrides
     #[serde(default)]
     uisp: Option<UispOverrides>,
+    /// Topology-manager operator overrides. Rung 1.5 §1.2: the former
+    /// `topology_overrides.json` folded into this single operator file.
+    #[serde(default)]
+    topology: TopologyOverridesFile,
 }
 
 fn overrides_path(config: &lqos_config::Config, layer: OverrideLayer) -> PathBuf {
     let file = match layer {
         OverrideLayer::Operator => OPERATOR_OVERRIDES_FILE,
         OverrideLayer::Stormguard => STORMGUARD_OVERRIDES_FILE,
-        OverrideLayer::Treeguard => TREEGUARD_OVERRIDES_FILE,
     };
     Path::new(&config.lqos_directory).join(file)
-}
-
-fn treeguard_read_path(config: &lqos_config::Config) -> PathBuf {
-    let canonical = Path::new(&config.lqos_directory).join(TREEGUARD_OVERRIDES_FILE);
-    if canonical.exists() {
-        return canonical;
-    }
-    let legacy = Path::new(&config.lqos_directory).join(LEGACY_AUTOPILOT_OVERRIDES_FILE);
-    if legacy.exists() { legacy } else { canonical }
 }
 
 fn load_from_path(path: &Path) -> Result<OverrideFile> {
@@ -224,6 +271,36 @@ fn ensure_exists_default(path: &Path) -> Result<()> {
 fn save_to_path(path: &Path, overrides: &OverrideFile) -> Result<()> {
     let as_json = serde_json::to_string_pretty(overrides)?;
     write_atomic(path, as_json.as_bytes())?;
+    Ok(())
+}
+
+/// Rung 1.5 §1.2: fold a legacy `topology_overrides.json` into the operator
+/// file's `topology` section ONCE. On first sight: import, back up, WARN, and
+/// never read the old file again. An absent file is a no-op, and no load path
+/// re-creates it.
+pub(crate) fn migrate_legacy_topology_overrides(config: &lqos_config::Config) -> Result<()> {
+    let legacy_path = TopologyOverridesFile::path_for_config(config);
+    if !legacy_path.exists() {
+        return Ok(());
+    }
+    let operator_path = overrides_path(config, OverrideLayer::Operator);
+    let mut operator = if operator_path.exists() {
+        load_from_path(&operator_path)?
+    } else {
+        OverrideFile::default()
+    };
+    if operator.topology().is_empty() {
+        let legacy = TopologyOverridesFile::load_from_explicit_path(&legacy_path)?;
+        operator.set_topology(legacy);
+        save_to_path(&operator_path, &operator)?;
+    }
+    let backup_path = legacy_path.with_file_name("topology_overrides.json.migrated");
+    std::fs::rename(&legacy_path, &backup_path)?;
+    tracing::warn!(
+        "Migrated legacy topology_overrides.json into lqos_overrides.json (backup: {}). \
+         The old file is never read again.",
+        backup_path.display()
+    );
     Ok(())
 }
 
@@ -260,7 +337,6 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
 fn merge_persistent_devices_by_id(
     operator_devices: &[ShapedDevice],
     stormguard_devices: &[ShapedDevice],
-    treeguard_devices: &[ShapedDevice],
 ) -> Vec<ShapedDevice> {
     use std::collections::{HashMap, HashSet};
 
@@ -269,12 +345,6 @@ fn merge_persistent_devices_by_id(
         by_id.insert(dev.device_id.as_str(), dev.clone());
     }
     for dev in stormguard_devices
-        .iter()
-        .filter(|dev| !persistent_device_carries_sqm(dev))
-    {
-        by_id.insert(dev.device_id.as_str(), dev.clone());
-    }
-    for dev in treeguard_devices
         .iter()
         .filter(|dev| !persistent_device_carries_sqm(dev))
     {
@@ -296,20 +366,6 @@ fn merge_persistent_devices_by_id(
     }
 
     for dev in stormguard_devices
-        .iter()
-        .filter(|dev| !persistent_device_carries_sqm(dev))
-    {
-        let did = dev.device_id.as_str();
-        if seen.contains(did) {
-            continue;
-        }
-        if let Some(merged) = by_id.get(did) {
-            out.push(merged.clone());
-            seen.insert(did);
-        }
-    }
-
-    for dev in treeguard_devices
         .iter()
         .filter(|dev| !persistent_device_carries_sqm(dev))
     {
@@ -354,6 +410,7 @@ fn circuit_adjustment_merge_key(adj: &CircuitAdjustment) -> (&'static str, &str)
         CircuitAdjustment::CircuitAdjustSpeed { circuit_id, .. } => ("circuit_speed", circuit_id),
         CircuitAdjustment::DeviceAdjustSpeed { device_id, .. } => ("device_speed", device_id),
         CircuitAdjustment::DeviceAdjustSqm { device_id, .. } => ("device_sqm", device_id),
+        CircuitAdjustment::CircuitAdjustAqm { circuit_id, .. } => ("circuit_aqm", circuit_id),
         CircuitAdjustment::RemoveCircuit { circuit_id } => ("remove_circuit", circuit_id),
         CircuitAdjustment::RemoveDevice { device_id } => ("remove_device", device_id),
         CircuitAdjustment::ReparentCircuit { circuit_id, .. } => ("reparent_circuit", circuit_id),
@@ -363,9 +420,7 @@ fn circuit_adjustment_merge_key(adj: &CircuitAdjustment) -> (&'static str, &str)
 fn merge_circuit_adjustments_owned(
     operator_adjustments: &[CircuitAdjustment],
     stormguard_adjustments: &[CircuitAdjustment],
-    treeguard_adjustments: &[CircuitAdjustment],
     stormguard_devices: &[ShapedDevice],
-    treeguard_devices: &[ShapedDevice],
 ) -> Vec<CircuitAdjustment> {
     use std::collections::{HashMap, HashSet};
 
@@ -375,19 +430,11 @@ fn merge_circuit_adjustments_owned(
         .cloned()
         .chain(legacy_sqm_adjustments_from_devices(stormguard_devices))
         .collect();
-    let treeguard_combined: Vec<CircuitAdjustment> = treeguard_adjustments
-        .iter()
-        .cloned()
-        .chain(legacy_sqm_adjustments_from_devices(treeguard_devices))
-        .collect();
 
     for adj in operator_adjustments {
         by_key.insert(circuit_adjustment_merge_key(adj), adj.clone());
     }
     for adj in &stormguard_combined {
-        by_key.insert(circuit_adjustment_merge_key(adj), adj.clone());
-    }
-    for adj in &treeguard_combined {
         by_key.insert(circuit_adjustment_merge_key(adj), adj.clone());
     }
 
@@ -414,16 +461,6 @@ fn merge_circuit_adjustments_owned(
             seen.insert(key);
         }
     }
-    for adj in &treeguard_combined {
-        let key = circuit_adjustment_merge_key(adj);
-        if seen.contains(&key) {
-            continue;
-        }
-        if let Some(merged) = by_key.get(&key) {
-            out.push(merged.clone());
-            seen.insert(key);
-        }
-    }
 
     out
 }
@@ -431,7 +468,6 @@ fn merge_circuit_adjustments_owned(
 fn merge_network_adjustments_owned(
     operator_adjustments: &[NetworkAdjustment],
     stormguard_adjustments: &[NetworkAdjustment],
-    _treeguard_adjustments: &[NetworkAdjustment],
 ) -> Vec<NetworkAdjustment> {
     use std::collections::{HashMap, HashSet};
 
@@ -444,6 +480,7 @@ fn merge_network_adjustments_owned(
             site_name,
             download_bandwidth_mbps,
             upload_bandwidth_mbps,
+            expires_at_unix,
         } = adj
         {
             let key = site_speed_key(node_id.as_deref(), site_name);
@@ -454,6 +491,7 @@ fn merge_network_adjustments_owned(
                     site_name: site_name.clone(),
                     download_bandwidth_mbps: *download_bandwidth_mbps,
                     upload_bandwidth_mbps: *upload_bandwidth_mbps,
+                    expires_at_unix: *expires_at_unix,
                 },
             );
             if !stormguard_site_seen.contains(&key) {
@@ -464,32 +502,18 @@ fn merge_network_adjustments_owned(
     }
 
     let mut out = Vec::new();
-    let mut operator_virtual_seen: HashSet<&str> = HashSet::new();
     let mut operator_site_speed_seen: HashSet<String> = HashSet::new();
     let mut operator_site_name_seen: HashSet<String> = HashSet::new();
     let mut operator_topology_seen: HashSet<&str> = HashSet::new();
 
     for adj in operator_adjustments {
         match adj {
-            NetworkAdjustment::SetNodeVirtual {
-                node_name,
-                virtual_node,
-            } => {
-                let name = node_name.as_str();
-                if operator_virtual_seen.contains(name) {
-                    continue;
-                }
-                operator_virtual_seen.insert(name);
-                out.push(NetworkAdjustment::SetNodeVirtual {
-                    node_name: node_name.clone(),
-                    virtual_node: *virtual_node,
-                });
-            }
             NetworkAdjustment::AdjustSiteSpeed {
                 node_id,
                 site_name,
                 download_bandwidth_mbps,
                 upload_bandwidth_mbps,
+                expires_at_unix,
             } => {
                 let key = site_speed_key(node_id.as_deref(), site_name);
                 if operator_site_speed_seen.contains(&key) {
@@ -502,6 +526,7 @@ fn merge_network_adjustments_owned(
                     site_name: site_name.clone(),
                     download_bandwidth_mbps: *download_bandwidth_mbps,
                     upload_bandwidth_mbps: *upload_bandwidth_mbps,
+                    expires_at_unix: *expires_at_unix,
                 });
             }
             NetworkAdjustment::TopologyParentOverride {
@@ -536,6 +561,7 @@ fn merge_network_adjustments_owned(
             site_name,
             download_bandwidth_mbps,
             upload_bandwidth_mbps,
+            expires_at_unix,
         }) = stormguard_site_speeds.get(&key)
         else {
             continue;
@@ -548,38 +574,27 @@ fn merge_network_adjustments_owned(
             site_name: site_name.clone(),
             download_bandwidth_mbps: *download_bandwidth_mbps,
             upload_bandwidth_mbps: *upload_bandwidth_mbps,
+            expires_at_unix: *expires_at_unix,
         });
     }
 
     out
 }
 
-fn merge_owned_sections(
-    mut operator: OverrideFile,
-    stormguard: OverrideFile,
-    treeguard: OverrideFile,
-) -> OverrideFile {
+fn merge_owned_sections(mut operator: OverrideFile, stormguard: OverrideFile) -> OverrideFile {
     let operator_circuit = std::mem::take(&mut operator.circuit_adjustments);
     let operator_devices = std::mem::take(&mut operator.persistent_devices);
-    operator.persistent_devices = merge_persistent_devices_by_id(
-        &operator_devices,
-        &stormguard.persistent_devices,
-        &treeguard.persistent_devices,
-    );
+    operator.persistent_devices =
+        merge_persistent_devices_by_id(&operator_devices, &stormguard.persistent_devices);
     operator.circuit_adjustments = merge_circuit_adjustments_owned(
         &operator_circuit,
         &stormguard.circuit_adjustments,
-        &treeguard.circuit_adjustments,
         &stormguard.persistent_devices,
-        &treeguard.persistent_devices,
     );
 
     let operator_network = std::mem::take(&mut operator.network_adjustments);
-    operator.network_adjustments = merge_network_adjustments_owned(
-        &operator_network,
-        &stormguard.network_adjustments,
-        &treeguard.network_adjustments,
-    );
+    operator.network_adjustments =
+        merge_network_adjustments_owned(&operator_network, &stormguard.network_adjustments);
 
     operator
 }
@@ -610,21 +625,51 @@ impl OverrideFile {
     pub fn load() -> Result<Self> {
         let lock = FileLock::new_for_operation("load operator overrides")?;
         let config = lqos_config::load_config()?;
-        let path = overrides_path(&config, OverrideLayer::Operator);
-        ensure_exists_default(&path)?;
-        let as_json = load_from_path(&path)?;
+        let result = Self::load_for_config(&config);
         drop(lock); // Explicitly drop for clarity. RAII does it anyway.
-        Ok(as_json)
+        result
+    }
+
+    /// Phase D: READ-ONLY variant of [`Self::load`] — never creates or migrates
+    /// the operator file. Read callers use this.
+    pub fn load_read_only() -> Result<Self> {
+        let lock = FileLock::new_for_operation("load operator overrides")?;
+        let config = lqos_config::load_config()?;
+        let path = overrides_path(&config, OverrideLayer::Operator);
+        let result = if path.exists() {
+            load_from_path(&path)
+        } else {
+            Ok(OverrideFile::default())
+        };
+        drop(lock);
+        result
+    }
+
+    /// Loads the operator-owned overrides file for an EXPLICIT config, running
+    /// the one-time topology-overrides migration first.
+    ///
+    /// Side effects: may migrate/back up `topology_overrides.json` and create
+    /// an empty `lqos_overrides.json`.
+    pub fn load_for_config(config: &lqos_config::Config) -> Result<Self> {
+        migrate_legacy_topology_overrides(config)?;
+        let path = overrides_path(config, OverrideLayer::Operator);
+        ensure_exists_default(&path)?;
+        load_from_path(&path)
     }
 
     /// Saves this value to the operator-owned overrides file.
     pub fn save(&self) -> Result<()> {
         let lock = FileLock::new_for_operation("save operator overrides")?;
         let config = lqos_config::load_config()?;
-        let path = overrides_path(&config, OverrideLayer::Operator);
-        save_to_path(&path, self)?;
+        let result = self.save_for_config(&config);
         drop(lock); // Explicitly drop for clarity. RAII does it anyway.
-        Ok(())
+        result
+    }
+
+    /// Saves this value to the operator-owned overrides file for an EXPLICIT config.
+    pub fn save_for_config(&self, config: &lqos_config::Config) -> Result<()> {
+        let path = overrides_path(config, OverrideLayer::Operator);
+        save_to_path(&path, self)
     }
 
     /// Borrow the list of persistent devices without modifying the file.
@@ -640,6 +685,16 @@ impl OverrideFile {
     /// Borrow the list of network adjustments without modifying the file.
     pub fn network_adjustments(&self) -> &[NetworkAdjustment] {
         &self.network_adjustments
+    }
+
+    /// Borrow the topology-manager operator overrides section.
+    pub fn topology(&self) -> &TopologyOverridesFile {
+        &self.topology
+    }
+
+    /// Replace the topology-manager operator overrides section.
+    pub fn set_topology(&mut self, topology: TopologyOverridesFile) {
+        self.topology = topology;
     }
 
     /// Borrow UISP overrides if present
@@ -784,6 +839,94 @@ impl OverrideFile {
         before.saturating_sub(self.circuit_adjustments.len())
     }
 
+    /// K1b ph2: add or replace the circuit-level AQM token for `circuit_id`,
+    /// carrying an optional unix-seconds expiry (the §9.2 dead-man's switch).
+    /// `None`/empty token removes the entry. Returns true if the stored layer
+    /// changed.
+    pub fn set_circuit_aqm_return_changed(
+        &mut self,
+        circuit_id: String,
+        aqm_token: Option<String>,
+        expires_at_unix: Option<u64>,
+    ) -> bool {
+        let normalized = aqm_token.and_then(|token| {
+            let trimmed = token.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        if self.circuit_adjustments.iter().any(|adj| {
+            matches!(
+                adj,
+                CircuitAdjustment::CircuitAdjustAqm {
+                    circuit_id: current,
+                    aqm_token: existing,
+                    expires_at_unix: existing_expires,
+                } if current == &circuit_id
+                    && Some(existing) == normalized.as_ref()
+                    && existing_expires == &expires_at_unix
+            )
+        }) {
+            return false;
+        }
+
+        self.circuit_adjustments.retain(|adj| {
+            !matches!(
+                adj,
+                CircuitAdjustment::CircuitAdjustAqm {
+                    circuit_id: current, ..
+                } if current == &circuit_id
+            )
+        });
+        if let Some(token) = normalized {
+            self.circuit_adjustments
+                .push(CircuitAdjustment::CircuitAdjustAqm {
+                    circuit_id,
+                    aqm_token: token,
+                    expires_at_unix,
+                });
+        }
+        true
+    }
+
+    /// K1b ph2 §9.2: drop circuit-level AQM entries whose machine-authored TTL
+    /// has lapsed (`expires_at_unix <= now_unix`). Operator entries (`None`) are
+    /// immortal. Returns the dropped circuit ids so the caller can WARN once per
+    /// entry.
+    pub fn remove_lapsed_circuit_aqm_overrides(&mut self, now_unix: u64) -> Vec<String> {
+        let mut removed = Vec::new();
+        self.circuit_adjustments.retain(|adj| match adj {
+            CircuitAdjustment::CircuitAdjustAqm {
+                circuit_id,
+                expires_at_unix: Some(expires),
+                ..
+            } if *expires <= now_unix => {
+                removed.push(circuit_id.clone());
+                false
+            }
+            _ => true,
+        });
+        removed
+    }
+
+    /// K1b ph2: remove any circuit-level AQM entry for `circuit_id`.
+    /// Returns number removed.
+    pub fn remove_circuit_aqm_by_circuit_count(&mut self, circuit_id: &str) -> usize {
+        let before = self.circuit_adjustments.len();
+        self.circuit_adjustments.retain(|adj| {
+            !matches!(
+                adj,
+                CircuitAdjustment::CircuitAdjustAqm {
+                    circuit_id: current, ..
+                } if current == circuit_id
+            )
+        });
+        before.saturating_sub(self.circuit_adjustments.len())
+    }
+
     /// Remove a circuit adjustment by index. Returns true if removed.
     pub fn remove_circuit_adjustment_by_index(&mut self, index: usize) -> bool {
         if index < self.circuit_adjustments.len() {
@@ -791,6 +934,91 @@ impl OverrideFile {
             return true;
         }
         false
+    }
+
+    /// Upsert the operator circuit-speed override for one circuit
+    /// (merge-keyed: a prior `CircuitAdjustSpeed` for the same circuit
+    /// id is replaced). Returns true if the stored adjustments changed.
+    ///
+    /// Validation: every PRESENT rate must be finite and > 0 — raw
+    /// zero is never a valid operator rate (0/0 is the suspend
+    /// encoding; suspension is the explicit 0.01 floor, never a rate
+    /// edit), and NaN/inf would poison every later compile.
+    pub fn set_circuit_speed_return_changed(
+        &mut self,
+        circuit_id: &str,
+        speeds: CircuitSpeedOverride,
+    ) -> Result<bool, String> {
+        for (label, value) in [
+            ("min_download_bandwidth", speeds.min_download_bandwidth),
+            ("max_download_bandwidth", speeds.max_download_bandwidth),
+            ("min_upload_bandwidth", speeds.min_upload_bandwidth),
+            ("max_upload_bandwidth", speeds.max_upload_bandwidth),
+        ] {
+            if let Some(value) = value {
+                if !value.is_finite() {
+                    return Err(format!("{label} must be finite"));
+                }
+                if value <= 0.0 {
+                    return Err(format!(
+                        "{label} must be > 0 (to suspend a circuit use the {SUSPEND_FLOOR_MBPS} Mbps floor)"
+                    ));
+                }
+            }
+        }
+        let replacement = CircuitAdjustment::CircuitAdjustSpeed {
+            circuit_id: circuit_id.to_string(),
+            min_download_bandwidth: speeds.min_download_bandwidth,
+            max_download_bandwidth: speeds.max_download_bandwidth,
+            min_upload_bandwidth: speeds.min_upload_bandwidth,
+            max_upload_bandwidth: speeds.max_upload_bandwidth,
+        };
+        let existing = self
+            .circuit_adjustments
+            .iter()
+            .position(|adj| {
+                matches!(adj, CircuitAdjustment::CircuitAdjustSpeed { circuit_id: existing, .. }
+                    if existing == circuit_id)
+            });
+        if let Some(index) = existing {
+            if self.circuit_adjustments[index] == replacement {
+                return Ok(false);
+            }
+            self.circuit_adjustments[index] = replacement;
+        } else {
+            self.circuit_adjustments.push(replacement);
+        }
+        Ok(true)
+    }
+
+    /// Removes any operator circuit-speed override for one circuit.
+    /// Returns how many entries were removed (0 or 1 — the merge key
+    /// keeps at most one).
+    pub fn remove_circuit_speed_by_circuit_count(&mut self, circuit_id: &str) -> usize {
+        let before = self.circuit_adjustments.len();
+        self.circuit_adjustments
+            .retain(|adj| !matches!(adj, CircuitAdjustment::CircuitAdjustSpeed { circuit_id: existing, .. }
+                if existing == circuit_id));
+        before - self.circuit_adjustments.len()
+    }
+
+    /// Returns the operator circuit-speed override for one circuit, if set.
+    pub fn circuit_speed_override(&self, circuit_id: &str) -> Option<CircuitSpeedOverride> {
+        self.circuit_adjustments.iter().find_map(|adj| match adj {
+            CircuitAdjustment::CircuitAdjustSpeed {
+                circuit_id: existing,
+                min_download_bandwidth,
+                max_download_bandwidth,
+                min_upload_bandwidth,
+                max_upload_bandwidth,
+            } if existing == circuit_id => Some(CircuitSpeedOverride {
+                min_download_bandwidth: *min_download_bandwidth,
+                max_download_bandwidth: *max_download_bandwidth,
+                min_upload_bandwidth: *min_upload_bandwidth,
+                max_upload_bandwidth: *max_upload_bandwidth,
+            }),
+            _ => None,
+        })
     }
 
     /// Add a network adjustment entry.
@@ -842,11 +1070,32 @@ impl OverrideFile {
         download_bandwidth_mbps: Option<f32>,
         upload_bandwidth_mbps: Option<f32>,
     ) -> bool {
+        self.set_site_bandwidth_override_with_expiry(
+            node_id,
+            site_name,
+            download_bandwidth_mbps,
+            upload_bandwidth_mbps,
+            None,
+        )
+    }
+
+    /// K1b §4.6 pin 1: add or replace a site bandwidth override carrying an
+    /// optional unix-seconds expiry. `None` = immortal (operator); `Some` =
+    /// machine-authored (StormGuard) with a dead-man's-switch TTL.
+    pub fn set_site_bandwidth_override_with_expiry(
+        &mut self,
+        node_id: Option<String>,
+        site_name: String,
+        download_bandwidth_mbps: Option<f32>,
+        upload_bandwidth_mbps: Option<f32>,
+        expires_at_unix: Option<u64>,
+    ) -> bool {
         let desired = NetworkAdjustment::AdjustSiteSpeed {
             node_id: node_id.clone(),
             site_name: site_name.clone(),
             download_bandwidth_mbps,
             upload_bandwidth_mbps,
+            expires_at_unix,
         };
         if self.find_site_bandwidth_override(node_id.as_deref(), &site_name) == Some(&desired) {
             return false;
@@ -892,54 +1141,111 @@ impl OverrideFile {
         before.saturating_sub(self.network_adjustments.len())
     }
 
-    /// Add or replace a virtual-node flag for a specific network.json node name.
-    pub fn set_network_node_virtual(&mut self, node_name: String, virtual_node: bool) {
-        self.network_adjustments.retain(|adj| match adj {
-            NetworkAdjustment::SetNodeVirtual { node_name: n, .. } => n != &node_name,
-            _ => true,
-        });
-        self.network_adjustments
-            .push(NetworkAdjustment::SetNodeVirtual {
-                node_name,
-                virtual_node,
-            });
-    }
-
-    /// Remove any virtual-node overrides for `node_name`. Returns number removed.
-    pub fn remove_network_node_virtual_by_name_count(&mut self, node_name: &str) -> usize {
-        let before = self.network_adjustments.len();
-        self.network_adjustments.retain(|adj| match adj {
-            NetworkAdjustment::SetNodeVirtual { node_name: n, .. } => n != node_name,
-            _ => true,
-        });
-        before.saturating_sub(self.network_adjustments.len())
-    }
-
-    /// Remove virtual-node overrides for all names in `node_names` in one pass.
-    /// Returns the sorted list of node names that had at least one override removed.
-    pub fn remove_network_node_virtual_by_names(&mut self, node_names: &[String]) -> Vec<String> {
-        if node_names.is_empty() {
-            return Vec::new();
-        }
-
-        let requested_names = node_names
+    /// Rung-3 1a: migrate name-only `AdjustSiteSpeed` entries to their stable
+    /// node ids in one pass, using `node_ids_by_name` (canonical node name →
+    /// node id). Name-only entries whose name resolves are rewritten to carry
+    /// the id; entries that already carry an id, or whose name is unresolved,
+    /// are left untouched. A name-only entry whose resolved id is already
+    /// claimed by an id-carrying entry is dropped as a duplicate (the
+    /// id-carrying entry wins). Returns `true` when the layer changed and the
+    /// caller must persist it.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn migrate_site_bandwidth_overrides_to_node_ids(
+        &mut self,
+        node_ids_by_name: &std::collections::HashMap<String, String>,
+    ) -> bool {
+        let mut claimed_ids: std::collections::HashSet<String> = self
+            .network_adjustments
             .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        let mut removed_names = HashSet::new();
+            .filter_map(|adj| match adj {
+                NetworkAdjustment::AdjustSiteSpeed {
+                    node_id: Some(node_id),
+                    ..
+                } => {
+                    let node_id = node_id.trim();
+                    (!node_id.is_empty()).then(|| node_id.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+
+        let mut changed = false;
+        let mut migrated = Vec::with_capacity(self.network_adjustments.len());
+        for adj in self.network_adjustments.drain(..) {
+            let NetworkAdjustment::AdjustSiteSpeed {
+                node_id,
+                site_name,
+                download_bandwidth_mbps,
+                upload_bandwidth_mbps,
+                expires_at_unix,
+            } = adj
+            else {
+                migrated.push(adj);
+                continue;
+            };
+
+            let carries_id = node_id
+                .as_deref()
+                .is_some_and(|node_id| !node_id.trim().is_empty());
+            if carries_id {
+                migrated.push(NetworkAdjustment::AdjustSiteSpeed {
+                    node_id,
+                    site_name,
+                    download_bandwidth_mbps,
+                    upload_bandwidth_mbps,
+                    expires_at_unix,
+                });
+                continue;
+            }
+
+            let Some(node_id) = node_ids_by_name.get(&site_name) else {
+                migrated.push(NetworkAdjustment::AdjustSiteSpeed {
+                    node_id,
+                    site_name,
+                    download_bandwidth_mbps,
+                    upload_bandwidth_mbps,
+                    expires_at_unix,
+                });
+                continue;
+            };
+            if !claimed_ids.insert(node_id.clone()) {
+                // An id-carrying entry already claims this node: the legacy
+                // name-only duplicate is dropped, never double-applied.
+                changed = true;
+                continue;
+            }
+            migrated.push(NetworkAdjustment::AdjustSiteSpeed {
+                node_id: Some(node_id.clone()),
+                site_name,
+                download_bandwidth_mbps,
+                upload_bandwidth_mbps,
+                expires_at_unix,
+            });
+            changed = true;
+        }
+        self.network_adjustments = migrated;
+        changed
+    }
+
+    /// K1b §4.6 pin 1: drop site-speed entries whose machine-authored TTL has
+    /// lapsed (`expires_at_unix <= now_unix`). Operator entries (`None`) are
+    /// immortal. Returns the dropped site names so the caller can WARN once per
+    /// entry.
+    pub fn remove_lapsed_site_speed_overrides(&mut self, now_unix: u64) -> Vec<String> {
+        let mut removed = Vec::new();
         self.network_adjustments.retain(|adj| match adj {
-            NetworkAdjustment::SetNodeVirtual { node_name, .. }
-                if requested_names.contains(node_name.as_str()) =>
-            {
-                removed_names.insert(node_name.clone());
+            NetworkAdjustment::AdjustSiteSpeed {
+                site_name,
+                expires_at_unix: Some(expires),
+                ..
+            } if *expires <= now_unix => {
+                removed.push(site_name.clone());
                 false
             }
             _ => true,
         });
-
-        let mut removed_names = removed_names.into_iter().collect::<Vec<_>>();
-        removed_names.sort();
-        removed_names
+        removed
     }
 
     /// Returns the stored topology parent override for `node_id`, if present.
@@ -1101,31 +1407,21 @@ impl OverrideStore {
     ///
     /// This function is pure: it has no side effects.
     pub fn path_for_layer_config(config: &lqos_config::Config, layer: OverrideLayer) -> PathBuf {
-        match layer {
-            OverrideLayer::Operator | OverrideLayer::Stormguard => overrides_path(config, layer),
-            OverrideLayer::Treeguard => treeguard_read_path(config),
-        }
+        overrides_path(config, layer)
     }
 
-    /// Loads a single overrides layer.
+    /// Loads a single overrides layer. Phase D: READ-ONLY — never creates the
+    /// operator file (the write arm is the explicit RMW/save path).
     ///
-    /// Side effects: acquires the global overrides lock and may create the operator overrides file.
+    /// Side effects: acquires the global overrides lock and reads the layer.
     pub fn load_layer(layer: OverrideLayer) -> Result<OverrideFile> {
         let lock = FileLock::new_for_operation(&format!("load {layer:?} overrides"))?;
         let config = lqos_config::load_config()?;
         let path = Self::path_for_layer_config(&config, layer);
-        let overrides = match layer {
-            OverrideLayer::Operator => {
-                ensure_exists_default(&path)?;
-                load_from_path(&path)?
-            }
-            OverrideLayer::Stormguard | OverrideLayer::Treeguard => {
-                if !path.exists() {
-                    OverrideFile::default()
-                } else {
-                    load_from_path(&path)?
-                }
-            }
+        let overrides = if path.exists() {
+            load_from_path(&path)?
+        } else {
+            OverrideFile::default()
         };
         drop(lock);
         Ok(overrides)
@@ -1148,11 +1444,10 @@ impl OverrideStore {
     /// When adaptive layers are disabled, this is equivalent to loading the operator layer only.
     ///
     /// Side effects: acquires the global overrides lock and may create the operator overrides file.
-    pub fn load_effective(apply_stormguard: bool, apply_treeguard: bool) -> Result<OverrideFile> {
+    pub fn load_effective(apply_stormguard: bool) -> Result<OverrideFile> {
         let lock = FileLock::new_for_operation("load effective overrides")?;
         let config = lqos_config::load_config()?;
-        let merged =
-            Self::load_effective_for_config_inner(&config, apply_stormguard, apply_treeguard)?;
+        let merged = Self::load_effective_for_config_inner(&config, apply_stormguard)?;
         drop(lock);
         Ok(merged)
     }
@@ -1167,39 +1462,131 @@ impl OverrideStore {
     pub fn load_effective_for_config(
         config: &lqos_config::Config,
         apply_stormguard: bool,
-        apply_treeguard: bool,
     ) -> Result<OverrideFile> {
-        Self::load_effective_for_config_inner(config, apply_stormguard, apply_treeguard)
+        Self::load_effective_for_config_inner(config, apply_stormguard)
+    }
+
+    /// Locked read-modify-write of the OPERATOR circuit-speed override
+    /// for one circuit (E3 admin actions). `None` deletes the entry
+    /// (resume); `Some` upserts it (rate edit / suspend floor).
+    ///
+    /// The whole sequence runs under ONE cross-process lock
+    /// acquisition — the plain `load()` + mutate + `save()` sequence
+    /// is a lost-update race and must not be used for writes.
+    ///
+    /// Side effects: reads and possibly rewrites the operator
+    /// overrides file (temp+rename); creates the empty operator file
+    /// when absent.
+    pub fn set_circuit_speed_override(
+        circuit_id: &str,
+        speeds: Option<CircuitSpeedOverride>,
+    ) -> Result<bool> {
+        let circuit_id = circuit_id.trim();
+        if circuit_id.is_empty() {
+            anyhow::bail!("circuit id must not be empty");
+        }
+        let lock = FileLock::new_for_operation("set circuit speed override")?;
+        let config = lqos_config::load_config()?;
+        let path = overrides_path(&config, OverrideLayer::Operator);
+        ensure_exists_default(&path)?;
+        let mut overrides = load_from_path(&path)?;
+        let changed = match speeds {
+            None => overrides.remove_circuit_speed_by_circuit_count(circuit_id) > 0,
+            Some(speeds) => overrides
+                .set_circuit_speed_return_changed(circuit_id, speeds)
+                .map_err(|message| anyhow::anyhow!("{message}"))?,
+        };
+        if changed {
+            save_to_path(&path, &overrides)?;
+        }
+        drop(lock);
+        Ok(changed)
+    }
+
+    /// Reads the OPERATOR circuit-speed override for one circuit.
+    ///
+    /// Side effects: reads the operator overrides file (creating the
+    /// empty file when absent).
+    pub fn circuit_speed_override(circuit_id: &str) -> Result<Option<CircuitSpeedOverride>> {
+        let circuit_id = circuit_id.trim();
+        if circuit_id.is_empty() {
+            anyhow::bail!("circuit id must not be empty");
+        }
+        let lock = FileLock::new_for_operation("read circuit speed override")?;
+        let config = lqos_config::load_config()?;
+        let path = overrides_path(&config, OverrideLayer::Operator);
+        if !path.exists() {
+            drop(lock);
+            return Ok(None);
+        }
+        let overrides = load_from_path(&path)?;
+        drop(lock);
+        Ok(overrides.circuit_speed_override(circuit_id))
     }
 
     fn load_effective_for_config_inner(
         config: &lqos_config::Config,
         apply_stormguard: bool,
-        apply_treeguard: bool,
+    ) -> Result<OverrideFile> {
+        Self::load_effective_for_config_inner_with(config, apply_stormguard, true)
+    }
+
+    /// Read-only variant of [`Self::load_effective_for_config`]: loads the
+    /// effective override layers WITHOUT creating or migrating the operator
+    /// overrides file. A read path must never write (the scheduler readiness
+    /// verifier runs this per tick).
+    pub fn load_effective_for_config_read_only(
+        config: &lqos_config::Config,
+        apply_stormguard: bool,
+    ) -> Result<OverrideFile> {
+        Self::load_effective_for_config_inner_with(config, apply_stormguard, false)
+    }
+
+    /// Phase D: read-only variant of [`Self::load_effective`] — loads config
+    /// then reads the effective layers WITHOUT creating/migrating the operator
+    /// file. The write arm is the explicit RMW (`set_circuit_speed_override`
+    /// etc.); read callers use this.
+    pub fn load_effective_read_only(apply_stormguard: bool) -> Result<OverrideFile> {
+        let config = lqos_config::load_config()?;
+        Self::load_effective_for_config_read_only(&config, apply_stormguard)
+    }
+
+    fn load_effective_for_config_inner_with(
+        config: &lqos_config::Config,
+        apply_stormguard: bool,
+        create_if_missing: bool,
     ) -> Result<OverrideFile> {
         let operator_path = overrides_path(config, OverrideLayer::Operator);
-        ensure_exists_default(&operator_path)?;
-        let operator = load_from_path(&operator_path)?;
+        let operator = if create_if_missing {
+            ensure_exists_default(&operator_path)?;
+            load_from_path(&operator_path)?
+        } else if operator_path.exists() {
+            load_from_path(&operator_path)?
+        } else {
+            OverrideFile::default()
+        };
 
-        if !apply_stormguard && !apply_treeguard {
+        if !apply_stormguard {
             return Ok(operator);
         }
 
         let stormguard_path = overrides_path(config, OverrideLayer::Stormguard);
-        let stormguard = if !apply_stormguard || !stormguard_path.exists() {
+        let stormguard = if !stormguard_path.exists() {
             OverrideFile::default()
         } else {
             load_from_path(&stormguard_path)?
         };
 
-        let treeguard_path = treeguard_read_path(config);
-        let treeguard = if !apply_treeguard || !treeguard_path.exists() {
-            OverrideFile::default()
-        } else {
-            load_from_path(&treeguard_path)?
-        };
+        // T4 amendment 2 (t4_legacy_display_names_derivation.md §5.2):
+        // name-only StormGuard site-speed entries go stale when the
+        // tree's naming changes. The staleness WARN lives at the
+        // CONSUMPTION point (lqos_stormguard's site rollout —
+        // config.rs), not here: this crate is below the tree store in
+        // the layering and cannot see live node names. Id-carrying
+        // entries are unaffected (ids are stable across naming —
+        // pin 4).
 
-        Ok(merge_owned_sections(operator, stormguard, treeguard))
+        Ok(merge_owned_sections(operator, stormguard))
     }
 }
 
@@ -1224,7 +1611,7 @@ mod tests {
     }
 
     #[test]
-    fn effective_merge_treeguard_wins_for_persistent_devices() {
+    fn effective_merge_stormguard_wins_for_persistent_devices() {
         let mut operator = OverrideFile::default();
         operator.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
             "dev1", "operator",
@@ -1243,27 +1630,16 @@ mod tests {
             "stormguard",
         ));
 
-        let mut treeguard = OverrideFile::default();
-        treeguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
-            "dev1",
-            "treeguard",
-        ));
-        treeguard.add_persistent_shaped_device_return_changed(shaped_device_with_comment(
-            "dev4",
-            "treeguard",
-        ));
-
-        let merged = merge_owned_sections(operator, stormguard, treeguard);
+        let merged = merge_owned_sections(operator, stormguard);
         let comments_by_id: std::collections::HashMap<&str, &str> = merged
             .persistent_devices
             .iter()
             .map(|d| (d.device_id.as_str(), d.comment.as_str()))
             .collect();
 
-        assert_eq!(comments_by_id.get("dev1"), Some(&"treeguard"));
+        assert_eq!(comments_by_id.get("dev1"), Some(&"stormguard"));
         assert_eq!(comments_by_id.get("dev2"), Some(&"operator"));
         assert_eq!(comments_by_id.get("dev3"), Some(&"stormguard"));
-        assert_eq!(comments_by_id.get("dev4"), Some(&"treeguard"));
     }
 
     #[test]
@@ -1278,12 +1654,7 @@ mod tests {
         sg_device.download_max_mbps = 10.0;
         stormguard.add_persistent_shaped_device_return_changed(sg_device);
 
-        let mut treeguard = OverrideFile::default();
-        let mut tg_device = shaped_device_with_sqm("dev2", "cake");
-        tg_device.download_max_mbps = 20.0;
-        treeguard.add_persistent_shaped_device_return_changed(tg_device);
-
-        let merged = merge_owned_sections(operator, stormguard, treeguard);
+        let merged = merge_owned_sections(operator, stormguard);
 
         let merged_ids: Vec<&str> = merged
             .persistent_devices()
@@ -1304,7 +1675,6 @@ mod tests {
             })
             .collect();
         assert_eq!(sqm_by_id.get("dev1"), Some(&"fq_codel"));
-        assert_eq!(sqm_by_id.get("dev2"), Some(&"cake"));
     }
 
     #[test]
@@ -1326,56 +1696,24 @@ mod tests {
     }
 
     #[test]
-    fn effective_merge_keeps_operator_node_virtual_and_ignores_treeguard_runtime_virtualization() {
+    fn effective_merge_keeps_operator_site_speed_and_adds_stormguard() {
         let mut operator = OverrideFile::default();
-        operator.set_network_node_virtual("NodeA".to_string(), false);
         operator.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
             node_id: Some("node-site-1".to_string()),
             site_name: "Site1".to_string(),
             download_bandwidth_mbps: Some(100.0),
             upload_bandwidth_mbps: Some(50.0),
+            expires_at_unix: None,
         });
 
         let mut stormguard = OverrideFile::default();
         stormguard.set_site_bandwidth_override(None, "Site1".to_string(), Some(80.0), Some(40.0));
         stormguard.set_site_bandwidth_override(None, "Site2".to_string(), Some(150.0), Some(75.0));
 
-        let mut treeguard = OverrideFile::default();
-        treeguard.set_network_node_virtual("NodeA".to_string(), true);
-        treeguard.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
-            node_id: Some("node-site-3".to_string()),
-            site_name: "Site3".to_string(),
-            download_bandwidth_mbps: Some(200.0),
-            upload_bandwidth_mbps: Some(100.0),
-        });
+        let merged = merge_owned_sections(operator, stormguard);
 
-        let merged = merge_owned_sections(operator, stormguard, treeguard);
-
-        let node_a_virtual = merged
-            .network_adjustments()
-            .iter()
-            .find_map(|adj| match adj {
-                NetworkAdjustment::SetNodeVirtual {
-                    node_name,
-                    virtual_node,
-                } if node_name == "NodeA" => Some(*virtual_node),
-                _ => None,
-            });
-        assert_eq!(node_a_virtual, Some(false));
-
-        let node_three_virtual = merged
-            .network_adjustments()
-            .iter()
-            .find_map(|adj| match adj {
-                NetworkAdjustment::SetNodeVirtual {
-                    node_name,
-                    virtual_node,
-                } if node_name == "Node3" => Some(*virtual_node),
-                _ => None,
-            });
-        assert_eq!(node_three_virtual, None);
-
-        // Operator site speed should beat StormGuard; TreeGuard site speed should be ignored.
+        // Operator site speed should beat StormGuard for the same site;
+        // StormGuard's non-conflicting site is carried through.
         let site_speed_names: Vec<&str> = merged
             .network_adjustments()
             .iter()
@@ -1385,6 +1723,64 @@ mod tests {
             })
             .collect();
         assert_eq!(site_speed_names, vec!["Site1", "Site2"]);
+    }
+
+    #[test]
+    fn merge_preserves_stormguard_site_speed_expiry() {
+        // K1b §4.6 pin 1: the merge must carry the TTL, or a clamped site
+        // becomes immortal the moment it passes through the effective store.
+        let operator = OverrideFile::default();
+        let mut stormguard = OverrideFile::default();
+        stormguard.set_site_bandwidth_override_with_expiry(
+            None,
+            "Site1".to_string(),
+            Some(80.0),
+            Some(40.0),
+            Some(1234),
+        );
+        let merged = merge_owned_sections(operator, stormguard);
+        let expiry = merged.network_adjustments().iter().find_map(|adj| match adj {
+            NetworkAdjustment::AdjustSiteSpeed {
+                expires_at_unix, ..
+            } => Some(*expires_at_unix),
+            _ => None,
+        });
+        assert_eq!(expiry, Some(Some(1234)));
+    }
+
+    #[test]
+    fn remove_lapsed_site_speed_overrides_drops_only_lapsed_machine_entries() {
+        // K1b §4.6 pin 1: operator entries (None) are immortal; a machine
+        // entry past its TTL is dropped and its name reported.
+        let mut of = OverrideFile::default();
+        of.set_site_bandwidth_override(None, "Operator".to_string(), Some(1.0), Some(1.0));
+        of.set_site_bandwidth_override_with_expiry(
+            None,
+            "Future".to_string(),
+            Some(2.0),
+            Some(2.0),
+            Some(10_000),
+        );
+        of.set_site_bandwidth_override_with_expiry(
+            None,
+            "Lapsed".to_string(),
+            Some(3.0),
+            Some(3.0),
+            Some(1_000),
+        );
+
+        let removed = of.remove_lapsed_site_speed_overrides(5_000);
+        assert_eq!(removed, vec!["Lapsed".to_string()]);
+
+        let names: Vec<&str> = of
+            .network_adjustments()
+            .iter()
+            .filter_map(|adj| match adj {
+                NetworkAdjustment::AdjustSiteSpeed { site_name, .. } => Some(site_name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(names, vec!["Operator", "Future"]);
     }
 
     #[test]
@@ -1407,6 +1803,95 @@ mod tests {
                 upload_bandwidth_mbps: Some(upload),
                 ..
             }) if node_id == "node-ap27" && *download == 120.5 && *upload == 60.25
+        ));
+    }
+
+    #[test]
+    fn name_only_site_speed_entries_migrate_to_node_ids() {
+        // 1a: a pre-migration file stored the clamp by site name; one load pass
+        // rewrites it to the stable node id, preserving rate + TTL.
+        let mut of = OverrideFile::default();
+        of.set_site_bandwidth_override_with_expiry(
+            None,
+            "Tower-1".to_string(),
+            Some(800.0),
+            Some(400.0),
+            Some(4_000),
+        );
+        let mut ids_by_name = std::collections::HashMap::new();
+        ids_by_name.insert("Tower-1".to_string(), "uisp:site:tower-1".to_string());
+
+        assert!(of.migrate_site_bandwidth_overrides_to_node_ids(&ids_by_name));
+        let found = of.find_site_bandwidth_override(Some("uisp:site:tower-1"), "Tower-1");
+        assert!(matches!(
+            found,
+            Some(NetworkAdjustment::AdjustSiteSpeed {
+                node_id: Some(node_id),
+                download_bandwidth_mbps: Some(download),
+                upload_bandwidth_mbps: Some(upload),
+                expires_at_unix: Some(4_000),
+                ..
+            }) if node_id == "uisp:site:tower-1" && *download == 800.0 && *upload == 400.0
+        ));
+
+        // Idempotent: a second pass finds nothing to rewrite.
+        assert!(!of.migrate_site_bandwidth_overrides_to_node_ids(&ids_by_name));
+    }
+
+    #[test]
+    fn migration_keeps_unresolved_name_only_entries_untouched() {
+        let mut of = OverrideFile::default();
+        of.set_site_bandwidth_override(None, "Stale".to_string(), Some(10.0), None);
+        let ids_by_name = std::collections::HashMap::new();
+
+        assert!(!of.migrate_site_bandwidth_overrides_to_node_ids(&ids_by_name));
+        let found = of.find_site_bandwidth_override(None, "Stale");
+        assert!(matches!(
+            found,
+            Some(NetworkAdjustment::AdjustSiteSpeed {
+                node_id: None,
+                download_bandwidth_mbps: Some(10.0),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn migration_drops_name_only_duplicate_when_id_entry_exists() {
+        // An id-carrying entry (new write path) plus a legacy name-only twin:
+        // the migration must not leave both, which would double-apply.
+        let mut of = OverrideFile::default();
+        of.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
+            node_id: None,
+            site_name: "Tower-1".to_string(),
+            download_bandwidth_mbps: Some(800.0),
+            upload_bandwidth_mbps: None,
+            expires_at_unix: Some(4_000),
+        });
+        of.add_network_adjustment(NetworkAdjustment::AdjustSiteSpeed {
+            node_id: Some("uisp:site:tower-1".to_string()),
+            site_name: "Tower-1".to_string(),
+            download_bandwidth_mbps: Some(900.0),
+            upload_bandwidth_mbps: None,
+            expires_at_unix: Some(4_000),
+        });
+        let mut ids_by_name = std::collections::HashMap::new();
+        ids_by_name.insert("Tower-1".to_string(), "uisp:site:tower-1".to_string());
+
+        assert!(of.migrate_site_bandwidth_overrides_to_node_ids(&ids_by_name));
+        let entries: Vec<&NetworkAdjustment> = of
+            .network_adjustments()
+            .iter()
+            .filter(|adj| matches!(adj, NetworkAdjustment::AdjustSiteSpeed { .. }))
+            .collect();
+        assert_eq!(entries.len(), 1, "the duplicate must be dropped");
+        let found = of.find_site_bandwidth_override(Some("uisp:site:tower-1"), "Tower-1");
+        assert!(matches!(
+            found,
+            Some(NetworkAdjustment::AdjustSiteSpeed {
+                download_bandwidth_mbps: Some(900.0),
+                ..
+            })
         ));
     }
 
@@ -1482,13 +1967,8 @@ mod tests {
         );
 
         let stormguard = OverrideFile::default();
-        let mut treeguard = OverrideFile::default();
-        treeguard.add_network_adjustment(NetworkAdjustment::SetNodeVirtual {
-            node_name: "NodeA".to_string(),
-            virtual_node: true,
-        });
 
-        let merged = merge_owned_sections(operator, stormguard, treeguard);
+        let merged = merge_owned_sections(operator, stormguard);
         assert!(matches!(
             merged.find_topology_parent_override("uisp:site:site-t2"),
             Some(NetworkAdjustment::TopologyParentOverride {
@@ -1519,5 +1999,244 @@ mod tests {
         assert!(!of.is_circuit_rtt_excluded("C1"));
 
         assert!(!of.set_circuit_rtt_excluded_return_changed("C1", false));
+    }
+}
+
+#[cfg(test)]
+mod circuit_speed_tests {
+    use super::*;
+
+    #[test]
+    fn set_upserts_by_circuit_and_detects_change() {
+        let mut file = OverrideFile::default();
+        let speeds = CircuitSpeedOverride {
+            min_download_bandwidth: Some(10.0),
+            max_download_bandwidth: Some(100.0),
+            min_upload_bandwidth: Some(5.0),
+            max_upload_bandwidth: Some(50.0),
+        };
+        assert!(file.set_circuit_speed_return_changed("c1", speeds).unwrap());
+        // Same content: no change.
+        assert!(!file.set_circuit_speed_return_changed("c1", speeds).unwrap());
+        // Different content: replaced, never duplicated.
+        let edited = CircuitSpeedOverride {
+            max_download_bandwidth: Some(200.0),
+            ..speeds
+        };
+        assert!(file.set_circuit_speed_return_changed("c1", edited).unwrap());
+        assert_eq!(file.circuit_adjustments().len(), 1);
+        let stored = file.circuit_speed_override("c1").expect("present");
+        assert_eq!(stored.max_download_bandwidth, Some(200.0));
+    }
+
+    #[test]
+    fn remove_clears_the_entry_once() {
+        let mut file = OverrideFile::default();
+        file.set_circuit_speed_return_changed("c1", CircuitSpeedOverride::suspend_floor())
+            .unwrap();
+        assert_eq!(file.remove_circuit_speed_by_circuit_count("c1"), 1);
+        assert_eq!(file.remove_circuit_speed_by_circuit_count("c1"), 0);
+        assert!(file.circuit_speed_override("c1").is_none());
+    }
+
+    #[test]
+    fn zero_nan_and_negative_rates_are_rejected() {
+        let mut file = OverrideFile::default();
+        let base = CircuitSpeedOverride {
+            min_download_bandwidth: Some(10.0),
+            max_download_bandwidth: Some(100.0),
+            min_upload_bandwidth: Some(5.0),
+            max_upload_bandwidth: Some(50.0),
+        };
+        let zeroed = CircuitSpeedOverride {
+            max_upload_bandwidth: Some(0.0),
+            ..base
+        };
+        assert!(file.set_circuit_speed_return_changed("c1", zeroed).is_err());
+        let nan = CircuitSpeedOverride {
+            min_download_bandwidth: Some(f32::NAN),
+            ..base
+        };
+        assert!(file.set_circuit_speed_return_changed("c1", nan).is_err());
+        let negative = CircuitSpeedOverride {
+            max_download_bandwidth: Some(-1.0),
+            ..base
+        };
+        assert!(file.set_circuit_speed_return_changed("c1", negative).is_err());
+        // Rejections never mutate.
+        assert!(file.circuit_adjustments().is_empty());
+        // The suspend floor itself is legal (0.01 > 0).
+        assert!(file
+            .set_circuit_speed_return_changed("c1", CircuitSpeedOverride::suspend_floor())
+            .unwrap());
+    }
+
+    #[test]
+    fn suspend_floor_recognizes_only_the_full_floor() {
+        let floor = CircuitSpeedOverride::suspend_floor();
+        assert!(floor.is_suspend_floor());
+        let partial = CircuitSpeedOverride {
+            max_upload_bandwidth: Some(0.02),
+            ..floor
+        };
+        assert!(!partial.is_suspend_floor());
+        // A partial override (only some directions set) is not a suspend.
+        let partial_override = CircuitSpeedOverride {
+            min_download_bandwidth: Some(SUSPEND_FLOOR_MBPS),
+            max_download_bandwidth: Some(SUSPEND_FLOOR_MBPS),
+            min_upload_bandwidth: None,
+            max_upload_bandwidth: None,
+        };
+        assert!(!partial_override.is_suspend_floor());
+    }
+
+    #[test]
+    fn other_circuits_adjustments_are_untouched() {
+        let mut file = OverrideFile::default();
+        file.set_circuit_speed_return_changed("c1", CircuitSpeedOverride::suspend_floor())
+            .unwrap();
+        file.set_circuit_speed_return_changed("c2", CircuitSpeedOverride::suspend_floor())
+            .unwrap();
+        assert_eq!(file.remove_circuit_speed_by_circuit_count("c1"), 1);
+        assert!(file.circuit_speed_override("c2").is_some());
+        assert_eq!(file.circuit_adjustments().len(), 1);
+    }
+
+    fn temp_overrides_config(tag: &str) -> lqos_config::Config {
+        let dir = std::env::temp_dir().join(format!(
+            "lqos-overrides-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        lqos_config::Config {
+            lqos_directory: dir.to_string_lossy().to_string(),
+            state_directory: None,
+            ..lqos_config::Config::default()
+        }
+    }
+
+    fn topology_override(child: &str) -> crate::topology_overrides::TopologyAttachmentOverride {
+        crate::topology_overrides::TopologyAttachmentOverride {
+            child_node_id: child.to_string(),
+            child_node_name: format!("{child}-name"),
+            parent_node_id: "parent-1".to_string(),
+            parent_node_name: "Parent".to_string(),
+            mode: crate::topology_overrides::TopologyAttachmentMode::Auto,
+            attachment_preference_ids: Vec::new(),
+            attachment_preference_names: Vec::new(),
+        }
+    }
+
+    /// Rung 1.5 §1.2 migration gate: a legacy file is imported ONCE, backed up,
+    /// and never dual-read or re-created.
+    #[test]
+    fn legacy_topology_overrides_migrate_once_and_are_never_dual_read() {
+        let config = temp_overrides_config("topology-migration");
+        let legacy_path =
+            crate::topology_overrides::TopologyOverridesFile::path_for_config(&config);
+        let legacy = crate::topology_overrides::TopologyOverridesFile {
+            schema_version: 3,
+            overrides: vec![topology_override("child-1")],
+            ..Default::default()
+        };
+        std::fs::write(&legacy_path, serde_json::to_string_pretty(&legacy).unwrap())
+            .expect("legacy file");
+
+        // Phase D: the explicit repair entry runs the migration; the loader is
+        // read-only.
+        crate::topology_overrides::TopologyOverridesFile::repair(&config)
+            .expect("repair should migrate");
+        let loaded = crate::topology_overrides::TopologyOverridesFile::load_for_config(&config)
+            .expect("load");
+        assert_eq!(loaded.overrides.len(), 1);
+        assert!(!legacy_path.exists(), "legacy file must be renamed away");
+        assert!(
+            legacy_path
+                .with_file_name("topology_overrides.json.migrated")
+                .exists()
+        );
+
+        let again = crate::topology_overrides::TopologyOverridesFile::load_for_config(&config)
+            .expect("second load");
+        assert_eq!(again.overrides.len(), 1);
+        assert!(
+            !legacy_path.exists(),
+            "legacy file must not be re-created after migration"
+        );
+    }
+
+    #[test]
+    fn absent_legacy_topology_file_is_a_noop_and_not_recreated() {
+        let config = temp_overrides_config("topology-absent");
+        let legacy_path =
+            crate::topology_overrides::TopologyOverridesFile::path_for_config(&config);
+        let loaded = crate::topology_overrides::TopologyOverridesFile::load_for_config(&config)
+            .expect("load");
+        assert!(loaded.is_empty());
+        assert!(!legacy_path.exists(), "no legacy file may be created");
+    }
+
+    /// Rung 1.5 §1.2 #12-MED gate: a topology section save is a section-merge
+    /// RMW — sibling sections are preserved byte-for-byte.
+    #[test]
+    fn topology_section_save_preserves_sibling_sections() {
+        let config = temp_overrides_config("topology-siblings");
+        let mut combined = OverrideFile::default();
+        combined.add_persistent_shaped_device_return_changed(ShapedDevice {
+            device_id: "dev-keep".to_string(),
+            comment: "keep".to_string(),
+            ..ShapedDevice::default()
+        });
+        combined
+            .set_circuit_speed_return_changed(
+                "circuit-keep",
+                CircuitSpeedOverride {
+                    min_download_bandwidth: Some(10.0),
+                    max_download_bandwidth: Some(100.0),
+                    min_upload_bandwidth: Some(10.0),
+                    max_upload_bandwidth: Some(100.0),
+                },
+            )
+            .expect("circuit speed");
+        combined.set_topology_parent_override_return_changed(
+            "node-keep".to_string(),
+            "Node Keep".to_string(),
+            TopologyParentOverrideMode::Pinned,
+            vec![("p1".to_string(), "P1".to_string())],
+        );
+        let path = OverrideFile::operator_path_for_config(&config);
+        combined.save_to_explicit_path(&path).expect("seed combined");
+        let siblings_before = serde_json::to_value(
+            OverrideFile::load_from_explicit_path(&path).expect("load seed"),
+        )
+        .expect("serialize");
+
+        crate::topology_overrides::TopologyOverridesFile {
+            schema_version: 3,
+            overrides: vec![topology_override("child-new")],
+            ..Default::default()
+        }
+        .save_for_config(&config)
+        .expect("section save");
+
+        let after =
+            OverrideFile::load_from_explicit_path(&path).expect("load after section save");
+        let siblings_after = serde_json::to_value(&after).expect("serialize");
+        for key in [
+            "persistent_devices",
+            "circuit_adjustments",
+            "network_adjustments",
+        ] {
+            assert_eq!(
+                siblings_before[key], siblings_after[key],
+                "sibling section {key} must be preserved byte-equal"
+            );
+        }
+        assert_eq!(after.topology().overrides.len(), 1);
+        assert_eq!(after.topology().overrides[0].child_node_id, "child-new");
     }
 }

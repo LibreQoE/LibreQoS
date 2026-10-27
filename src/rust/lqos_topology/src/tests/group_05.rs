@@ -1,6 +1,6 @@
     #[test]
     fn duplicate_device_candidates_do_not_block_valid_site_override_publish() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
 
         let canonical_network = json!({
@@ -66,7 +66,6 @@
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: vec![],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -89,7 +88,6 @@
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -112,7 +110,6 @@
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -144,7 +141,6 @@
                             has_probe_unavailable_attachments: false,
                         },
                     ],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -206,7 +202,6 @@
                 current_attachment_name: Some("Beta - Alpha 60".to_string()),
                 can_move: true,
                 allowed_parents: vec![],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -237,7 +232,7 @@
             }
         });
 
-        let config = Config::default();
+        let config = test_config();
         let canonical_network = json!({
             "Site Alpha": {
                 "children": {
@@ -285,7 +280,6 @@
                     current_attachment_name: None,
                     can_move: true,
                     allowed_parents: vec![],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -302,7 +296,6 @@
                     current_attachment_name: None,
                     can_move: true,
                     allowed_parents: vec![],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -351,7 +344,7 @@
             }
         });
 
-        let config = Config::default();
+        let config = test_config();
         let errors = validate_effective_topology_network(
             &config, &exported, &ui_state, &effective, &exported,
         )
@@ -387,7 +380,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -425,7 +417,7 @@
             }
         });
 
-        let config = Config::default();
+        let config = test_config();
         let errors = validate_effective_topology_network(
             &config, &exported, &ui_state, &effective, &exported,
         )
@@ -457,7 +449,6 @@
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: vec![],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -474,7 +465,6 @@
                     current_attachment_name: Some("Legacy Attachment".to_string()),
                     can_move: false,
                     allowed_parents: vec![],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -525,7 +515,7 @@
             }
         });
 
-        let config = Config::default();
+        let config = test_config();
         validate_effective_topology_network(&config, &exported, &ui_state, &effective, &exported)
             .expect("fixed-parent legacy nodes should validate");
     }
@@ -533,7 +523,7 @@
 
     #[test]
     fn compute_effective_state_keeps_fixed_parent_nodes_without_allowed_parents() {
-        let config = Config::default();
+        let config = test_config();
         let canonical = TopologyEditorStateFile {
             schema_version: 1,
             source: "uisp/ap_site".to_string(),
@@ -551,7 +541,6 @@
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: vec![],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -568,7 +557,6 @@
                     current_attachment_name: Some("Legacy Attachment".to_string()),
                     can_move: false,
                     allowed_parents: vec![],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -606,7 +594,7 @@
 
     #[test]
     fn compute_effective_state_does_not_infer_parent_for_native_integration_nodes() {
-        let config = Config::default();
+        let config = test_config();
         let canonical = TopologyEditorStateFile {
             schema_version: 1,
             source: "python/full".to_string(),
@@ -629,7 +617,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -656,7 +643,7 @@
 
     #[test]
     fn compute_effective_state_auto_prefers_dynamic_attachment_when_probes_disabled() {
-        let config = Config::default();
+        let config = test_config();
         let mut dynamic_attachment =
             sample_attachment_option("dynamic-link", "WavePro-MREToRochester");
         dynamic_attachment.rate_source = TopologyAttachmentRateSource::DynamicIntegration;
@@ -701,7 +688,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -737,7 +723,7 @@
     fn effective_state_fallback_does_not_keep_old_parent_attachment_after_reparent() {
         use lqos_overrides::TopologyOverridesFile;
 
-        let config = Config::default();
+        let config = test_config();
         let canonical = TopologyEditorStateFile {
             schema_version: 1,
             source: "uisp/full2".to_string(),
@@ -879,7 +865,6 @@
                         has_probe_unavailable_attachments: false,
                     },
                 ],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,

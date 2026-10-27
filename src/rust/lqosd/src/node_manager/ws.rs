@@ -12,11 +12,12 @@ use std::time::Duration;
 use crate::lts2_sys::control_channel::ControlChannelCommand;
 use crate::node_manager::auth::{LoginResult, login_from_cookie_header};
 use crate::node_manager::local_api::{
-    circuit, circuit_count, config, cpu_affinity, dashboard_themes, device_counts, directories,
-    ethernet_caps, executive, flow_explorer, flow_map, local_api_keys, lts, network_tree,
-    network_tree_lite, node_rate_overrides, node_topology_overrides, packet_analysis,
-    reload_libreqos, scheduler, search, shaped_device_api, shaped_devices_page, topology_manager,
-    topology_probes, unknown_ips, urgent, warnings,
+    circuit, circuit_count, circuit_override, config, dashboard_themes,
+    device_counts, directories, dpdk_status, ethernet_caps, executive, flow_explorer, flow_map,
+    local_api_keys, lts, network_tree, network_tree_lite, node_rate_overrides,
+    node_topology_overrides, packet_analysis, reload_libreqos, scheduler, search,
+    shaped_device_api, shaped_devices_page, topology_manager, topology_probes, unknown_ips,
+    urgent, warnings,
 };
 use crate::node_manager::shaper_queries_actor::ShaperQueryCommand;
 use crate::node_manager::ws::messages::{
@@ -468,14 +469,19 @@ async fn receive_channel_message(
 
     match request {
         WsRequest::Subscribe { channel } => {
-            if !subscribed_channels.contains(&channel) {
+            // Unknown/retired channels (the lenient decoder's sentinel) are
+            // silently skipped: a stale client must neither spam the log nor
+            // drop the connection.
+            if channel != PublishedChannels::Unknown && !subscribed_channels.contains(&channel) {
                 channels.subscribe(channel, tx.clone()).await;
                 subscribed_channels.insert(channel);
             }
         }
         WsRequest::Unsubscribe { channel } => {
-            subscribed_channels.remove(&channel);
-            channels.unsubscribe(channel, tx.clone()).await;
+            if channel != PublishedChannels::Unknown {
+                subscribed_channels.remove(&channel);
+                channels.unsubscribe(channel, tx.clone()).await;
+            }
         }
         WsRequest::Private(command) => {
             request_state.private_state.handle_request(command).await;
@@ -548,6 +554,162 @@ async fn receive_channel_message(
             let response = WsResponse::SchedulerStatus {
                 data: scheduler::scheduler_status_data(),
             };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::BridgeHealthStatus => {
+            let response = WsResponse::BridgeHealthStatus {
+                data: (*crate::bridge_supervisor::bridge_health_status()).clone(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::DpdkStatus => match dpdk_status::dpdk_status_data(*request_state.login) {
+            Ok(data) => {
+                let response = WsResponse::DpdkStatusResult { data };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(StatusCode::FORBIDDEN) => {
+                let response = WsResponse::Error {
+                    message: "Unauthorized".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+            Err(_) => {
+                let response = WsResponse::Error {
+                    message: "Unable to load DPDK status".to_string(),
+                };
+                if send_ws_response(&tx, response).await {
+                    return true;
+                }
+            }
+        },
+        WsRequest::BridgePublishStatus => {
+            let response = WsResponse::BridgePublishStatus {
+                data: crate::bridge_broker::outcomes::publish_outcomes(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::BridgeConvergence => {
+            let response = WsResponse::BridgeConvergence {
+                data: crate::bridge_broker::convergence_snapshot(),
+            };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::BridgeMaintenanceOverride {
+            apply_now,
+            break_glass_minutes,
+        } => {
+            let is_admin = *request_state.login == crate::node_manager::auth::LoginResult::Admin;
+            let (ok, message) = if !is_admin {
+                (false, "Admin required".to_string())
+            } else {
+                match lqos_config::load_config() {
+                    Err(_) => (false, "Unable to load config".to_string()),
+                    Ok(config) => {
+                        let path = crate::bridge_broker::maintenance_control_path(&config);
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        let control =
+                            crate::bridge_broker::maintenance::MaintenanceControl {
+                                apply_now,
+                                break_glass_until_unix: break_glass_minutes
+                                    .map(|mins| now.saturating_add(mins.saturating_mul(60))),
+                                requested_by: Some(format!("{:?}", request_state.login)),
+                                requested_at_unix: Some(now),
+                            };
+                        let json = serde_json::to_string_pretty(&control).unwrap_or_default();
+                        match std::fs::write(&path, json) {
+                            Ok(()) => (
+                                true,
+                                "maintenance override recorded (the broker applies it next tick)"
+                                    .to_string(),
+                            ),
+                            Err(err) => (false, format!("write failed: {err}")),
+                        }
+                    }
+                }
+            };
+            let response = WsResponse::BridgeMaintenanceOverride { ok, message };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::GetCircuitSpeedOverride { circuit_id } => {
+            let response =
+                match circuit_override::get_circuit_speed_override_data(
+                    *request_state.login,
+                    circuit_id.clone(),
+                ) {
+                    Ok(data) => WsResponse::GetCircuitSpeedOverrideResult {
+                        circuit_id,
+                        data,
+                    },
+                    Err(_) => WsResponse::Error {
+                        message: "Unable to read the circuit override".to_string(),
+                    },
+                };
+            if send_ws_response(&tx, response).await {
+                return true;
+            }
+        }
+        WsRequest::SetCircuitSpeedOverride { circuit_id, speeds } => {
+            let suspended = speeds
+                .as_ref()
+                .is_some_and(|speeds| speeds.is_suspend_floor());
+            let response =
+                match circuit_override::set_circuit_speed_override_data(
+                    *request_state.login,
+                    circuit_id.clone(),
+                    speeds,
+                ) {
+                    Ok(changed) => {
+                        // F-NA: mint the post-write generation ONLY for a
+                        // real write — a no-op never publishes, and a mint
+                        // is wasted (and wrong) for it. A mint failure with
+                        // changed=true surfaces as generation=None; the UI
+                        // then runs to the honest watchdog rather than
+                        // guessing a correlation key.
+                        let generation = if changed {
+                            match lqos_config::load_config().as_ref() {
+                                Ok(config) => {
+                                    lqos_topology::mint_next_shaping_generation(config)
+                                        .ok()
+                                        .flatten()
+                                }
+                                Err(_) => None,
+                            }
+                        } else {
+                            None
+                        };
+                        WsResponse::SetCircuitSpeedOverrideResult {
+                            ok: true,
+                            changed,
+                            message: if changed { "Ok".to_string() } else { "Already in this state".to_string() },
+                            suspended,
+                            generation,
+                        }
+                    }
+                    Err(message) => WsResponse::SetCircuitSpeedOverrideResult {
+                        ok: false,
+                        changed: false,
+                        message,
+                        suspended: false,
+                        generation: None,
+                    },
+                };
             if send_ws_response(&tx, response).await {
                 return true;
             }
@@ -710,79 +872,7 @@ async fn receive_channel_message(
         }
         WsRequest::RequestAnalysis { ip } => {
             let response = WsResponse::RequestAnalysisResult {
-                data: packet_analysis::request_analysis_data(&ip),
-            };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-        }
-        WsRequest::CpuAffinitySummary => {
-            let response = WsResponse::CpuAffinitySummary {
-                data: cpu_affinity::cpu_affinity_summary_data(),
-            };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-        }
-        WsRequest::CpuAffinityRuntimeSnapshot => {
-            let response = WsResponse::CpuAffinityRuntimeSnapshot {
-                data: cpu_affinity::cpu_affinity_runtime_snapshot_data(),
-            };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-        }
-        WsRequest::CpuAffinityCircuits {
-            cpu,
-            direction,
-            page,
-            page_size,
-            search,
-        } => {
-            let query = cpu_affinity::CircuitsQuery {
-                direction,
-                page,
-                page_size,
-                search,
-            };
-            let response = WsResponse::CpuAffinityCircuits {
-                data: cpu_affinity::cpu_affinity_circuits_data(cpu, query),
-            };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-        }
-        WsRequest::CpuAffinityCircuitsAll { direction, search } => {
-            let query = cpu_affinity::CircuitsQuery {
-                direction,
-                page: None,
-                page_size: None,
-                search,
-            };
-            let response = WsResponse::CpuAffinityCircuitsAll {
-                data: cpu_affinity::cpu_affinity_circuits_all_data(query),
-            };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-        }
-        WsRequest::CpuAffinityPreviewWeights { direction, search } => {
-            let query = cpu_affinity::CircuitsQuery {
-                direction,
-                page: None,
-                page_size: None,
-                search,
-            };
-            let response = WsResponse::CpuAffinityPreviewWeights {
-                data: cpu_affinity::cpu_affinity_preview_weights_data(query),
-            };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-        }
-        WsRequest::CpuAffinitySiteTree => {
-            let response = WsResponse::CpuAffinitySiteTree {
-                data: cpu_affinity::cpu_affinity_site_tree_data(),
+                data: packet_analysis::request_analysis_data(&ip, *request_state.login),
             };
             if send_ws_response(&tx, response).await {
                 return true;
@@ -813,8 +903,13 @@ async fn receive_channel_message(
             }
         }
         WsRequest::AsnFlowTimeline { asn } => {
-            let response = flow_explorer::flow_timeline_data(asn)
-                .map(|data| WsResponse::AsnFlowTimeline { asn, data });
+            let response = flow_explorer::flow_timeline_data(asn).map(|data| {
+                WsResponse::AsnFlowTimeline {
+                    asn,
+                    data,
+                    buckets: flow_explorer::asn_timeline_buckets(asn),
+                }
+            });
             if send_flow_timeline_response(&tx, "ASN", response).await {
                 return true;
             }
@@ -824,6 +919,7 @@ async fn receive_channel_message(
                 WsResponse::CountryFlowTimeline {
                     iso_code: iso_code.clone(),
                     data,
+                    buckets: flow_explorer::country_timeline_buckets(&iso_code),
                 }
             });
             if send_flow_timeline_response(&tx, "country", response).await {
@@ -835,6 +931,9 @@ async fn receive_channel_message(
                 WsResponse::ProtocolFlowTimeline {
                     protocol: protocol.clone(),
                     data,
+                    buckets: flow_explorer::protocol_timeline_buckets(
+                        &protocol.replace("_", "/"),
+                    ),
                 }
             });
             if send_flow_timeline_response(&tx, "protocol", response).await {
@@ -2579,14 +2678,6 @@ async fn receive_channel_message(
                 return true;
             }
         }
-        WsRequest::TreeGuardMetadataSummary => {
-            let response = WsResponse::TreeGuardMetadataSummary {
-                data: directories::treeguard_metadata_summary(),
-            };
-            if send_ws_response(&tx, response).await {
-                return true;
-            }
-        }
         WsRequest::GetUsers => match config::get_users_data(*request_state.login) {
             Ok(data) => {
                 let response = WsResponse::GetUsers { data };
@@ -2799,6 +2890,7 @@ mod tests {
     use crate::node_manager::local_api::urgent::{UrgentList, UrgentStatus};
     use crate::node_manager::ws::messages::WsRequest;
     use crate::node_manager::ws::messages::{WsResponse, encode_ws_message};
+    use crate::node_manager::ws::published_channels::PublishedChannels;
     use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
     use serde_cbor::Value as CborValue;
     use std::collections::BTreeMap;
@@ -3308,5 +3400,41 @@ mod tests {
         let err = decode_ws_request(&payload).expect_err("legacy payload must fail");
         assert!(err.contains("expected an array of length 4"));
         assert!(err.contains("192.168.1.2"));
+    }
+
+    #[test]
+    fn unknown_channel_subscribe_decodes_to_skip_sentinel() {
+        // A retired channel (the K3 bakery class) must SKIP, not fail the whole
+        // request decode — the fix for the `unknown variant 'BakeryStatus'`
+        // spam and the resulting reconnect loop.
+        let payload = serde_cbor::to_vec(&map(vec![(
+            "Subscribe",
+            map(vec![("channel", text("BakeryStatus"))]),
+        )]))
+        .expect("encode subscribe");
+        let request =
+            decode_ws_request(&payload).expect("an unknown channel must not fail the decode");
+        match request {
+            WsRequest::Subscribe { channel } => {
+                assert_eq!(channel, PublishedChannels::Unknown);
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn known_channel_subscribe_decodes_exactly() {
+        let payload = serde_cbor::to_vec(&map(vec![(
+            "Subscribe",
+            map(vec![("channel", text("Throughput"))]),
+        )]))
+        .expect("encode subscribe");
+        let request = decode_ws_request(&payload).expect("known channel must decode");
+        match request {
+            WsRequest::Subscribe { channel } => {
+                assert_eq!(channel, PublishedChannels::Throughput);
+            }
+            other => panic!("unexpected request: {other:?}"),
+        }
     }
 }

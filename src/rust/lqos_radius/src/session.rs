@@ -1937,7 +1937,7 @@ fn resolved_parent_attachment(
 }
 
 fn parent_from_shaped_device(device: &ShapedDevice) -> Option<DynamicCircuitParent> {
-    // lqos_bakery dynamic-circuit validation still requires parent_node.
+    // Dynamic-circuit validation still requires parent_node.
     let parent = DynamicCircuitParent {
         parent_node: device.parent_node.clone(),
         parent_node_id: device.parent_node_id.clone(),

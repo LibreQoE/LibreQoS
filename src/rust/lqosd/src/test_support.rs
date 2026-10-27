@@ -14,6 +14,13 @@ pub(crate) fn runtime_config_test_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Serializes tests that mutate the process-global operator warning sink or the
+/// shaping runtime status (`lqos-74t.35` failure-surfacing).
+pub(crate) fn failure_surfacing_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 /// Holds global active-flow snapshot state for tests and restores replaced shaped-device state on drop.
 pub(crate) struct ActiveFlowSnapshotTestContext {
     _runtime_guard: Option<MutexGuard<'static, ()>>,
@@ -22,17 +29,6 @@ pub(crate) struct ActiveFlowSnapshotTestContext {
 }
 
 impl ActiveFlowSnapshotTestContext {
-    /// Creates an active-flow test context without changing shaped-device catalog state.
-    pub(crate) fn empty() -> Self {
-        let active_flow_guard = active_flow_test_lock();
-        replace_active_flows_for_test(Vec::new());
-        Self {
-            _runtime_guard: None,
-            _active_flow_guard: active_flow_guard,
-            old_shaped: None,
-        }
-    }
-
     /// Creates an active-flow test context with a temporary shaped-device catalog.
     pub(crate) fn with_shaped_devices(reason: &str, devices: Vec<ShapedDevice>) -> Self {
         let runtime_guard = runtime_config_test_lock()

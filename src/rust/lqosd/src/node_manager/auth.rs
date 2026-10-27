@@ -553,7 +553,14 @@ fn serve_standalone_page(page: &str) -> Result<Response, StatusCode> {
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let mut response = Html(body).into_response();
-    apply_node_manager_security_headers(response.headers_mut());
+    let extra = load_config()
+        .ok()
+        .and_then(|cfg| {
+            crate::node_manager::security_headers::insight_csp_origin(
+                cfg.long_term_stats.lts_url.as_deref(),
+            )
+        });
+    apply_node_manager_security_headers(response.headers_mut(), extra.as_deref());
     Ok(response)
 }
 
@@ -592,6 +599,22 @@ pub async fn get_username(jar: &CookieJar) -> String {
     match session_from_cookie(jar, &snapshot) {
         Ok(Some(user)) => user.username,
         Ok(None) | Err(_) => "Anonymous".to_string(),
+    }
+}
+
+/// E3: the session's role for UI affordance gating ("Admin" sees the
+/// admin-action surfaces; anything else — including anonymous — is
+/// read-only). The BACKEND remains the authority: write endpoints
+/// re-check the session and reject non-Admin regardless of what the
+/// UI rendered.
+pub async fn get_role(jar: &CookieJar) -> &'static str {
+    let snapshot = auth_snapshot();
+    match session_from_cookie(jar, &snapshot) {
+        Ok(Some(user)) => match user.role {
+            UserRole::Admin => "Admin",
+            UserRole::ReadOnly => "ReadOnly",
+        },
+        Ok(None) | Err(_) => "Anonymous",
     }
 }
 

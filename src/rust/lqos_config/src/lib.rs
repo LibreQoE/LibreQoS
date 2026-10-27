@@ -13,6 +13,7 @@ pub mod authentication;
 mod circuit_anchors;
 mod circuit_ethernet_metadata;
 mod cpu_topology;
+mod dynamic_circuits;
 mod etc;
 mod ethernet_port_limits;
 mod hex_encoding;
@@ -22,11 +23,17 @@ mod planner;
 mod program_control;
 mod qoo_profiles;
 mod runtime_state_migration;
+pub use runtime_state_migration::repair_runtime_state;
 mod shaped_devices;
 mod topology_canonical_state;
+mod topology_operator_view;
 mod topology_editor_state;
 mod topology_parent_candidates;
 mod topology_runtime_state;
+mod tunnel_circuits;
+
+#[cfg(test)]
+mod mode_flag_retirement_gate;
 
 pub use authentication::{AuthenticatedUser, UserRole, WebUser, WebUsers};
 pub use circuit_anchors::{
@@ -40,16 +47,19 @@ pub use circuit_ethernet_metadata::{
 pub use cpu_topology::{
     CpuListParseError, ShapingCpuDetection, ShapingCpuSource, detect_shaping_cpus,
 };
+pub use dynamic_circuits::{
+    DYNAMIC_CIRCUITS_FILENAME, DynamicCircuit, DynamicCircuitsFile, dynamic_circuits_path,
+};
 pub use etc::{
-    BridgeConfig, Config, DynamicCircuitRangeRule, DynamicCircuitsConfig, LazyQueueMode,
-    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, QueueMode, RadiusAccountingClient,
+    BridgeConfig, Config, DEFAULT_ANALYTICS_SOCKET, DEFAULT_CONFIG_PATH, DataplaneBridgeConfig,
+    DynamicCircuitRangeRule, DynamicCircuitsConfig, LocalApiKeyConfig,
+    MAX_LOCAL_API_KEYS, MikrotikIpv6Config, PowerConfig, PowerProfile, QueueMode,
+    RadiusAccountingClient,
     RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
     RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
     RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
-    TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
-    TreeguardLinksConfig, TreeguardQooConfig, Tunables, clear_cached_config, disable_xdp_bridge,
-    enable_long_term_stats, load_config, normalize_external_hostname,
-    treeguard_cpu_mode_migration_notice, update_config, validate_rate_profile_mbps,
+    MaintenanceWindowConfig, TopologyConfig, Tunables, clear_cached_config, config_path,
+    load_config, normalize_external_hostname, update_config, validate_rate_profile_mbps,
 };
 pub use ethernet_port_limits::{
     DEFAULT_ETHERNET_PORT_LIMIT_MULTIPLIER, EthernetPortLimitPolicy, EthernetPortObservation,
@@ -68,69 +78,71 @@ pub use planner::{
     build_class_identity_reservations, plan_class_identities,
     plan_class_identities_with_constraints, plan_top_level_assignments,
 };
-pub use program_control::load_libreqos;
+pub use program_control::{RELOAD_REQUEST_ACK, reload_request_path, request_libreqos_reload};
 pub use qoo_profiles::{
     DEFAULT_QOO_PROFILE_ID, QooProfileInfo, QooProfilesError, active_qoo_profile,
     list_qoo_profiles, load_qoo_profiles_file,
 };
 pub use shaped_devices::{ConfigShapedDevices, ShapedDevice};
 pub use topology_canonical_state::{
-    TOPOLOGY_CANONICAL_STATE_FILENAME, TopologyCanonicalIngressKind, TopologyCanonicalNode,
-    TopologyCanonicalRateInput, TopologyCanonicalRateInputSource, TopologyCanonicalStateError,
-    TopologyCanonicalStateFile, topology_canonical_state_path,
-    topology_ingress_identity_from_tokens,
+    deduped_display_names, validate_topology_nodes, TOPOLOGY_CANONICAL_STATE_FILENAME, TopologyCanonicalIngressKind,
+    TopologyCanonicalNode, TopologyCanonicalRateInput, TopologyCanonicalRateInputSource,
+    TopologyCanonicalStateError, TopologyCanonicalStateFile, repair_stale_topology_state,
+    topology_canonical_state_path, topology_ingress_identity_from_tokens,
+};
+pub use topology_operator_view::{
+    topology_operator_view_path, TOPOLOGY_OPERATOR_VIEW_FILENAME, OperatorRateSource,
+    OperatorViewDevice, OperatorViewNode, TopologyOperatorViewFile,
 };
 pub use topology_editor_state::{
     TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_EDITOR_STATE_FILENAME, TopologyAllowedParent,
     TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,
     TopologyAttachmentRole, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
-    TopologyQueueVisibilityPolicy, topology_auto_attachment_option, topology_editor_state_path,
+    topology_auto_attachment_option, topology_editor_state_path,
 };
 pub use topology_parent_candidates::{
     TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyParentCandidate, TopologyParentCandidatesError,
     TopologyParentCandidatesFile, TopologyParentCandidatesNode, topology_parent_candidates_path,
+};
+pub use tunnel_circuits::{
+    TUNNEL_CIRCUITS_FILENAME, TUNNEL_CIRCUITS_MAX_BYTES, TUNNEL_CIRCUITS_MAX_ENTRIES,
+    TUNNEL_CIRCUITS_SCHEMA_VERSION, TUNNEL_CIRCUITS_SNAPSHOT_FILENAME, TUNNEL_CIRCUIT_ID_PREFIX,
+    TUNNEL_PLAN_MBPS_MAX, TUNNEL_SITE_ID_PREFIX, TUNNEL_VLAN_MAX, TUNNEL_VNI_MAX,
+    TunnelCircuitEntry, TunnelCircuitsError, TunnelCircuitsFile, tunnel_circuit_id,
+    tunnel_circuits_input_path, tunnel_circuits_snapshot_path, tunnel_site_node_id,
 };
 #[allow(deprecated)]
 pub use topology_runtime_state::{
     TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME, TOPOLOGY_COMPILED_SHAPING_FILENAME,
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
     TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
+    TOPOLOGY_DATA_PLANE_TRANSACTION_FILENAME,
     TopologyAttachmentEndpointStatus, TopologyAttachmentHealthEntry,
-    TopologyAttachmentHealthStateFile, TopologyEffectiveAttachmentState,
+    TopologyAttachmentHealthStateFile, TopologyCircuitMatchIdentity, TopologyCircuitMatchIndex,
+    TopologyEffectiveAttachmentState,
     TopologyEffectiveNodeState, TopologyEffectiveStateFile, TopologyRuntimeShapingPayloadIdentity,
     TopologyRuntimeStateError, TopologyRuntimeStatusFile, TopologyShapingCircuitInput,
     TopologyShapingDeviceInput, TopologyShapingInputsFile, TopologyShapingResolutionSource,
+    TunnelIdentity,
     active_runtime_shaping_inputs_path, active_runtime_shaping_inputs_path_from_status,
     compute_effective_network_file_generation, compute_effective_network_generation,
-    compute_shaping_inputs_file_generation, compute_topology_source_generation,
+    compute_topology_source_generation,
     load_active_runtime_shaping_inputs, load_active_runtime_shaping_inputs_from_status,
+    load_shaping_inputs_at_path,
     topology_attachment_health_state_path, topology_compiled_shaping_path,
-    topology_effective_network_path, topology_effective_state_path, topology_import_path,
-    topology_runtime_status_path, topology_shaping_inputs_path,
-    validated_runtime_shaping_inputs_path,
+    topology_dataplane_transaction_path, topology_effective_network_path,
+    topology_effective_state_path, topology_import_path, topology_runtime_status_path,
+    topology_shaping_inputs_path, validated_runtime_shaping_inputs_path,
 };
 
-/// Returns whether an integration-backed topology ingress is enabled in the
-/// current config.
-///
-/// This function is pure: it has no side effects.
-pub fn integration_ingress_enabled(config: &Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
+/// T1 named legacy escape (t1_tree_repoint_derivation T1b): when true, the
+/// dashboard tree store is populated from the legacy `network.json` instead
+/// of the v3 compiler artifact. Pure: loads config, no side effects beyond
+/// that read.
+pub fn legacy_network_json_tree_enabled() -> bool {
+    crate::load_config()
+        .map(|cfg| cfg.legacy_network_json_tree)
+        .unwrap_or(false)
 }
 
 /// Returns whether the current integration import artifact advertises any shaped devices.

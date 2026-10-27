@@ -1,0 +1,30 @@
+[package]
+name = "analytics_ipc"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+crossterm = { version = "0.28", optional = true }
+libc = "0.2"
+nix = { version = "0.29", features = ["socket", "uio"] }
+ratatui = { version = "0.29", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_cbor = "0.11"
+shmem-ipc = "0.3"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["tui"]
+# The interactive lqtop terminal UI. Server/protocol consumers (the bridge,
+# lqosd's E2 stats actor) build with `default-features = false` so they do
+# not pull ratatui+crossterm transitively (E2 card §5.1.1).
+tui = ["dep:ratatui", "dep:crossterm"]
+
+[[bin]]
+name = "lqtop"
+path = "src/bin/lqtop.rs"
+required-features = ["tui"]

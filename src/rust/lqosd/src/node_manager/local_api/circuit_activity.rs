@@ -1,5 +1,5 @@
 use crate::throughput_tracker::flow_data::{
-    ActiveFlowDisplayFields, ActiveFlowSnapshot, for_each_active_flow_for_circuit,
+    ActiveFlowDisplayFields, ActiveFlowSnapshot, FlowProtocol, for_each_active_flow_for_circuit,
 };
 use lqos_utils::hash_to_i64;
 use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
@@ -24,6 +24,15 @@ pub struct CircuitSummaryData {
     #[serde(default)]
     pub actual_bytes_per_second: DownUpOrder<u64>,
     pub rtt_current_p50_nanos: DownUpOrder<Option<u64>>,
+    /// `lqos-74t.47` three-way RTT: the SUBSCRIBER-side (near) leg in nanos.
+    #[serde(default)]
+    pub subscriber_rtt_nanos: Option<u64>,
+    /// The INTERNET-side (far) leg in nanos.
+    #[serde(default)]
+    pub internet_rtt_nanos: Option<u64>,
+    /// The composed FULL RTT in nanos (an ESTIMATE; `None` when a leg is empty).
+    #[serde(default)]
+    pub full_rtt_nanos: Option<u64>,
     pub tcp_retransmit_sample: DownUpOrder<TcpRetransmitSample>,
     pub qoo_score: Option<f32>,
     pub rtt_excluded: bool,
@@ -92,6 +101,16 @@ pub struct CircuitTopAsnRow {
     pub up_bps: u64,
     pub rtt_down_nanos: u64,
     pub rtt_up_nanos: u64,
+    /// `lqos-74t.47` three-way RTT: the SUBSCRIBER-side (near) leg in nanos
+    /// (`median(rtt_samples_down_us)`), `None` when the ring has no samples.
+    #[serde(default)]
+    pub subscriber_rtt_nanos: Option<u64>,
+    /// The INTERNET-side (far) leg in nanos (`median(rtt_samples_up_us)`).
+    #[serde(default)]
+    pub internet_rtt_nanos: Option<u64>,
+    /// The composed FULL RTT in nanos (an ESTIMATE; `None` when a leg is empty).
+    #[serde(default)]
+    pub full_rtt_nanos: Option<u64>,
     pub qoo_down: Option<f32>,
     pub qoo_up: Option<f32>,
     pub retransmit_down_pct: f64,
@@ -269,6 +288,13 @@ fn current_and_recent_cutoff_nanos() -> Option<(u64, u64)> {
 }
 
 fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
+    // 3a cluster-3: on a bridge box the active-flow tabs read the retained
+    // bridge active set + the GeoTable join (the kernel ACTIVE_FLOW_SNAPSHOT
+    // has no bridge writer post-K3).
+    if crate::bridge_analytics::is_active() {
+        return bridge_flow_snapshot_rows(circuit_id);
+    }
+
     let circuit_hash = hash_to_i64(circuit_id);
     let catalog = lqos_network_devices::network_devices_catalog();
     let display_rate_ceiling = circuit_display_rate_ceiling_bps(&catalog, circuit_hash);
@@ -294,6 +320,147 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
         rows.push(row);
     });
     rows
+}
+
+/// 3a cluster-3 pin): the bridge active-flow rows for the circuit
+/// tabs. The subscriber IP resolves to the product circuit id via the catalog
+/// (the same IP join `join_by_circuit` performs); ASN/country/lat/lon ride the
+/// GeoTable join. The bridge wire is per-direction for BYTES; every
+/// direction-agnostic scalar fills the DOWN slot only (up honest-empty).
+fn bridge_flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
+    let snapshot = crate::bridge_analytics::snapshot();
+    let requested_hash = hash_to_i64(circuit_id);
+    let catalog = lqos_network_devices::network_devices_catalog();
+    snapshot
+        .active_flows
+        .iter()
+        .filter_map(|flow| {
+            let (_, device) = catalog.device_longest_match_for_ip(
+                &lqos_utils::XdpIpAddress::from_ip(flow.id.subscriber_ip),
+            )?;
+            if hash_to_i64(&device.circuit_id) != requested_hash {
+                return None;
+            }
+            let class = crate::bridge_analytics::resolve_flow_class(flow.id.remote_ip);
+            let device_name = if device.device_name.trim().is_empty() {
+                "Unknown".to_string()
+            } else {
+                device.device_name.clone()
+            };
+            Some(bridge_row_from_flow(
+                flow,
+                device_name,
+                &class,
+                snapshot.captured_at_millis,
+                snapshot
+                    .flow_bytes_per_second_directional
+                    .get(&flow.id)
+                    .copied(),
+            ))
+        })
+        .collect()
+}
+
+/// The pinned bridge `FlowRow` → `CircuitFlowSnapshotRow` map (pure; the
+/// field oracle covers it):
+/// - BYTES are directional (both slots exact);
+/// - the RATE is DIRECTIONAL: the per-flow interval delta (from the poll's
+///   differencing) when available; the lifetime average split the SAME way is
+///   the honest fallback for a flow's FIRST interval only (or after a reset).
+///   Each direction is ×8 to bits/s (the row fields saturate at `u32::MAX`);
+///   `sort_rate_bps` is the exact `(down+up)*8`;
+/// - `tcp_retransmits` and the merged RTT p50 fill the DOWN slot only;
+/// - the retransmit % uses the scope-matched `tcp_sent_packets` denominator;
+/// - the PACKETS columns and QoO stay honest-empty (no wire source at this rev).
+///
+/// Asymmetry preserved (pre-existing; do not "fix" here): the interval-delta
+/// path differences the DELIVERED (shaped) counters, while the first-interval
+/// lifetime fallback reads the ACTUAL (`flow.actual.*`) bytes.
+fn bridge_row_from_flow(
+    flow: &analytics_ipc::FlowRow,
+    device_name: String,
+    class: &crate::bridge_analytics::flow_history::ResolvedClass,
+    captured_at_millis: u64,
+    delta_bytes_per_second: Option<DownUpOrder<u64>>,
+) -> CircuitFlowSnapshotRow {
+    let down_bytes = flow.actual.download_bytes;
+    let up_bytes = flow.actual.upload_bytes;
+    // The directional rate in bits/s. Interval delta (DELIVERED/shaped) is
+    // primary; a flow's FIRST interval (or a counter reset) falls back to the
+    // lifetime average, split down/up the SAME way. Kept in u64 so
+    // `sort_rate_bps = (down+up)*8` is exact; the displayed row fields then
+    // saturate at u32::MAX.
+    let (down_bits, up_bits): (u64, u64) = match delta_bytes_per_second {
+        Some(rate) => (rate.down.saturating_mul(8), rate.up.saturating_mul(8)),
+        None => {
+            let duration_ms = flow
+                .last_seen_millis
+                .saturating_sub(flow.first_seen_millis)
+                .max(1_000);
+            let lifetime_bits = |bytes: u64| -> u64 {
+                ((bytes as u128 * 8 * 1_000) / duration_ms as u128).min(u64::MAX as u128) as u64
+            };
+            (lifetime_bits(down_bytes), lifetime_bits(up_bytes))
+        }
+    };
+    let sort_rate_bps = down_bits.saturating_add(up_bits) as f64;
+    let rtt_down_nanos =
+        crate::bridge_analytics::translate::percentile_nanos(&flow.rtt_samples_down_us).unwrap_or(0);
+    let rtt_up_nanos =
+        crate::bridge_analytics::translate::percentile_nanos(&flow.rtt_samples_up_us).unwrap_or(0);
+    let retransmit_down_pct = if flow.tcp_sent_packets_down > 0 {
+        (flow.tcp_retransmits_down as f64 / flow.tcp_sent_packets_down as f64) * 100.0
+    } else {
+        0.0
+    };
+    let retransmit_up_pct = if flow.tcp_sent_packets_up > 0 {
+        (flow.tcp_retransmits_up as f64 / flow.tcp_sent_packets_up as f64) * 100.0
+    } else {
+        0.0
+    };
+    let age_nanos = captured_at_millis
+        .saturating_sub(flow.last_seen_millis)
+        .saturating_mul(1_000_000);
+    let asn_name = class
+        .asn
+        .map(crate::throughput_tracker::flow_data::get_asn_name_by_id)
+        .filter(|name| !name.eq_ignore_ascii_case("unknown"))
+        .unwrap_or_default();
+
+    CircuitFlowSnapshotRow {
+        device_name,
+        asn_id: class.asn.unwrap_or(0),
+        asn_name,
+        asn_country: class.country_name.clone(),
+        protocol_name: FlowProtocol::from_parts(
+            flow.id.protocol,
+            flow.id.remote_port,
+            flow.id.subscriber_port,
+        )
+        .to_string(),
+        remote_ip: flow.id.remote_ip.to_string(),
+        down_bps: down_bits.min(u32::MAX as u64) as u32,
+        up_bps: up_bits.min(u32::MAX as u64) as u32,
+        bytes_sent_down: down_bytes,
+        bytes_sent_up: up_bytes,
+        packets_sent_down: flow.sent_pkts_down,
+        packets_sent_up: flow.sent_pkts_up,
+        tcp_retransmits_down: flow.tcp_retransmits_down.min(u16::MAX as u64) as u16,
+        tcp_retransmits_up: flow.tcp_retransmits_up.min(u16::MAX as u64) as u16,
+        retransmit_down_pct,
+        retransmit_up_pct,
+        rtt_down_nanos,
+        rtt_up_nanos,
+        qoo_down: None,
+        qoo_up: None,
+        age_nanos,
+        opacity: 1.0
+            - f64::min(
+                1.0,
+                age_nanos as f64 / RECENT_CIRCUIT_FLOWS_WINDOW_NANOS as f64,
+            ),
+        sort_rate_bps,
+    }
 }
 
 fn sort_direction_is_asc(sort_direction: &str) -> bool {
@@ -534,13 +701,27 @@ pub fn circuit_top_asns_data(query: &CircuitTopAsnsQuery) -> CircuitTopAsnsData 
     let total_asns = buckets.len();
     let mut bucket_rows: Vec<CircuitTopAsnRow> = buckets
         .into_values()
-        .map(|mut row| CircuitTopAsnRow {
+        .map(|mut row| {
+            let rtt_down_nanos = median_u64(&mut row.rtt_down_nanos).unwrap_or_default();
+            let rtt_up_nanos = median_u64(&mut row.rtt_up_nanos).unwrap_or_default();
+            // lqos-74t.47: down = subscriber leg, up = internet leg; full = the
+            // estimated sum IFF BOTH legs have samples (honest-empty otherwise).
+            let subscriber_rtt_nanos = (rtt_down_nanos > 0).then_some(rtt_down_nanos);
+            let internet_rtt_nanos = (rtt_up_nanos > 0).then_some(rtt_up_nanos);
+            let full_rtt_nanos = match (subscriber_rtt_nanos, internet_rtt_nanos) {
+                (Some(s), Some(i)) => Some(s.saturating_add(i)),
+                _ => None,
+            };
+            CircuitTopAsnRow {
             asn_name: row.asn_name,
             asn_country: row.asn_country,
             down_bps: row.down_bps,
             up_bps: row.up_bps,
-            rtt_down_nanos: median_u64(&mut row.rtt_down_nanos).unwrap_or_default(),
-            rtt_up_nanos: median_u64(&mut row.rtt_up_nanos).unwrap_or_default(),
+            rtt_down_nanos,
+            rtt_up_nanos,
+            subscriber_rtt_nanos,
+            internet_rtt_nanos,
+            full_rtt_nanos,
             qoo_down: median_f32(&mut row.qoo_down),
             qoo_up: median_f32(&mut row.qoo_up),
             retransmit_down_pct: if row.packets_sent_down > 0 {
@@ -554,6 +735,7 @@ pub fn circuit_top_asns_data(query: &CircuitTopAsnsQuery) -> CircuitTopAsnsData 
                 0.0
             },
             flow_count: row.flow_count,
+            }
         })
         .collect();
 
@@ -926,5 +1108,145 @@ mod tests {
         assert_eq!(row.device_name, "Unknown");
         assert_eq!(row.retransmit_down_pct, 0.0);
         assert_eq!(row.retransmit_up_pct, 0.0);
+    }
+}
+
+/// 3a cluster-3 field oracles: the pinned bridge `FlowRow` mapping.
+#[cfg(test)]
+mod bridge_active_flow_tests {
+    use super::*;
+    use crate::bridge_analytics::flow_history::ResolvedClass;
+    use analytics_ipc::{DirectionalCounters, FlowId, FlowState};
+
+    fn flow(
+        down: u64,
+        up: u64,
+        first: u64,
+        last: u64,
+        retransmits: u64,
+        tcp_packets: u64,
+    ) -> analytics_ipc::FlowRow {
+        analytics_ipc::FlowRow {
+            id: FlowId {
+                circuit_id: 7,
+                flow_hash: 1,
+                subscriber_ip: "100.97.0.1".parse().expect("subscriber IP"),
+                remote_ip: "198.51.100.1".parse().expect("remote IP"),
+                subscriber_port: 1234,
+                remote_port: 443,
+                protocol: 6,
+            },
+            actual: DirectionalCounters {
+                download_bytes: down,
+                upload_bytes: up,
+            },
+            shaped: DirectionalCounters::default(),
+            rtt_samples_us: vec![10_000, 20_000],
+            tcp_sent_packets: tcp_packets,
+            tcp_retransmits: retransmits,
+            first_seen_millis: first,
+            last_seen_millis: last,
+            state: FlowState::Active,
+            rtt_samples_down_us: vec![10_000, 20_000],
+            rtt_samples_up_us: vec![30_000, 40_000],
+            retransmit_times_down_ns: Vec::new(),
+            retransmit_times_up_ns: Vec::new(),
+            tcp_retransmits_down: retransmits,
+            tcp_retransmits_up: 0,
+            tcp_sent_packets_down: tcp_packets,
+            tcp_sent_packets_up: 0,
+            sent_pkts_down: 100,
+            sent_pkts_up: 50,
+        }
+    }
+
+    fn class() -> ResolvedClass {
+        ResolvedClass {
+            asn: Some(64500),
+            country_iso: "FR".to_string(),
+            country_name: "France".to_string(),
+            lat: 1.0,
+            lon: 2.0,
+        }
+    }
+
+    /// The pinned convention: directional bytes both slots; the DIRECTIONAL
+    /// lifetime rate FALLBACK split down/up the SAME way, the retransmit scalar,
+    /// and the merged RTT p50 in the DOWN slot only; packets and QoO
+    /// honest-empty. The `U = 0` regression guard: up is no longer hard-zero.
+    #[test]
+    fn bridge_active_flow_row_maps_the_pinned_convention() {
+        let row = bridge_row_from_flow(
+            &flow(1_000_000, 500_000, 0, 1_000, 3, 100),
+            "dev1".to_string(),
+            &class(),
+            1_000,
+            None,
+        );
+        assert_eq!(row.bytes_sent_down, 1_000_000);
+        assert_eq!(row.bytes_sent_up, 500_000);
+        // Fallback: each direction ×8 over the 1 s (floored) duration.
+        assert_eq!(row.down_bps, 8_000_000, "1,000,000 B/s * 8");
+        assert_eq!(row.up_bps, 4_000_000, "500,000 B/s * 8 (was hard-zero)");
+        assert_eq!(
+            row.sort_rate_bps,
+            row.down_bps as f64 + row.up_bps as f64,
+            "sort == down+up"
+        );
+        // Filled directional packets columns + per-direction retransmit/RTT.
+        assert_eq!(row.packets_sent_down, 100);
+        assert_eq!(row.packets_sent_up, 50);
+        assert_eq!(row.tcp_retransmits_down, 3);
+        assert_eq!(row.tcp_retransmits_up, 0);
+        assert_eq!(row.retransmit_down_pct, 3.0);
+        assert_eq!(row.retransmit_up_pct, 0.0);
+        assert_eq!(row.rtt_down_nanos, 20_000_000, "down-direction median");
+        assert_eq!(row.rtt_up_nanos, 40_000_000, "up-direction median");
+        assert_eq!(row.qoo_down, None);
+        assert_eq!(row.qoo_up, None);
+        assert_eq!(row.protocol_name, "HTTPS");
+        assert_eq!(row.remote_ip, "198.51.100.1");
+        assert_eq!(row.asn_id, 64500);
+        assert_eq!(row.asn_country, "France");
+    }
+
+    /// The per-flow interval delta (both directions nonzero) drives BOTH slots:
+    /// down != 0, up != 0, and `sort == down+up`; the lifetime fallback is not
+    /// used.
+    #[test]
+    fn per_flow_delta_splits_both_directions() {
+        let row = bridge_row_from_flow(
+            &flow(1_000_000, 500_000, 0, 1_000, 0, 100),
+            "dev1".to_string(),
+            &class(),
+            1_000,
+            Some(DownUpOrder::new(250_000, 100_000)),
+        );
+        // 250_000 B/s down * 8 = 2 Mbps; 100_000 B/s up * 8 = 0.8 Mbps.
+        assert_ne!(row.down_bps, 0);
+        assert_ne!(row.up_bps, 0);
+        assert_eq!(row.down_bps, 2_000_000);
+        assert_eq!(row.up_bps, 800_000);
+        assert_eq!(row.sort_rate_bps, 2_800_000.0, "sort == down+up");
+    }
+
+    /// The lifetime-rate duration is floored at one second (never divide by
+    /// zero) and the retransmit denominator is the scope-matched scalar. An
+    /// up-only flow lands entirely in the UP slot (the pinned split).
+    #[test]
+    fn lifetime_rate_duration_is_floored_and_retransmit_needs_packets() {
+        let row = bridge_row_from_flow(
+            &flow(0, 8_000_000, 5_000, 5_000, 9, 0),
+            "dev".to_string(),
+            &ResolvedClass::default(),
+            5_000,
+            None,
+        );
+        assert_eq!(row.down_bps, 0);
+        assert_eq!(row.up_bps, 64_000_000);
+        assert_eq!(row.sort_rate_bps, 64_000_000.0);
+        assert_eq!(row.retransmit_down_pct, 0.0);
+        assert_eq!(row.asn_id, 0);
+        assert!(row.asn_name.is_empty());
     }
 }

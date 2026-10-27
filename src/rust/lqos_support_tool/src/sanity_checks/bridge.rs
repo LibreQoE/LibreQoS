@@ -6,8 +6,8 @@ pub fn check_bridge(results: &mut Vec<SanityCheck>) {
     if let Ok(cfg) = load_config()
         && let Ok(interfaces) = get_interfaces_from_ip_link()
     {
-        // On a stick mode is bridge-free
-        if cfg.on_a_stick_mode() {
+        // Single-interface mode is bridge-free
+        if cfg.single_interface.is_some() {
             results.push(SanityCheck {
                 name: "Single Interface Mode: Bridges Ignored".to_string(),
                 success: true,
@@ -16,15 +16,13 @@ pub fn check_bridge(results: &mut Vec<SanityCheck>) {
             return;
         }
 
-        // Is the XDP bridge enabled?
-        if let Some(bridge) = &cfg.bridge
-            && bridge.use_xdp_bridge
-        {
+        // K3-B: the XDP bridge is retired; check Linux bridge membership.
+        if cfg.bridge.is_some() {
             for bridge_if in interfaces.iter().filter(|bridge_if| {
                 bridge_if.link_type == "ether" && bridge_if.operational_state == "UP"
             }) {
-                // We found a bridge. Check member interfaces to check that it does NOT include any XDP
-                // bridge members.
+                // We found a bridge. Check member interfaces to check that it does NOT include the
+                // LibreQoS-managed interfaces.
                 let in_bridge: Vec<&IpLinkInterface> = interfaces
                     .iter()
                     .filter(|member_if| {
@@ -42,10 +40,10 @@ pub fn check_bridge(results: &mut Vec<SanityCheck>) {
 
                 if in_bridge.len() == 2 {
                     results.push(SanityCheck {
-                        name: format!("Linux Bridge AND XDP Bridge At Once ({})", bridge_if.name),
+                        name: format!("Linux Bridge Membership ({})", bridge_if.name),
                         success: false,
                         comments: format!(
-                            "Bridge ({}) contains both the internet and ISP interfaces, and you have the xdp_bridge enabled. This is not supported.",
+                            "Bridge ({}) contains both the internet and ISP interfaces, which LibreQoS manages directly. This is not supported.",
                             bridge_if.name
                         ),
                     });

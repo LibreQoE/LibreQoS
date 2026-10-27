@@ -70,10 +70,6 @@ enum RequestedMode {
         to_network: String,
         mtu: Option<u32>,
     },
-    XdpBridge {
-        to_internet: String,
-        to_network: String,
-    },
     SingleInterface {
         interface: String,
         mtu: Option<u32>,
@@ -300,17 +296,10 @@ fn bridge_management_risk(bridge_name: &str, bridge: &NetplanBridge) -> Option<S
 
 fn requested_mode(config: &Config) -> RequestedMode {
     if let Some(bridge) = &config.bridge {
-        if bridge.use_xdp_bridge {
-            RequestedMode::XdpBridge {
-                to_internet: bridge.to_internet.trim().to_string(),
-                to_network: bridge.to_network.trim().to_string(),
-            }
-        } else {
-            RequestedMode::LinuxBridge {
-                to_internet: bridge.to_internet.trim().to_string(),
-                to_network: bridge.to_network.trim().to_string(),
-                mtu: bridge.mtu,
-            }
+        RequestedMode::LinuxBridge {
+            to_internet: bridge.to_internet.trim().to_string(),
+            to_network: bridge.to_network.trim().to_string(),
+            mtu: bridge.mtu,
         }
     } else if let Some(single) = &config.single_interface {
         RequestedMode::SingleInterface {
@@ -325,7 +314,6 @@ fn requested_mode(config: &Config) -> RequestedMode {
 fn mode_label(mode: &RequestedMode) -> String {
     match mode {
         RequestedMode::LinuxBridge { .. } => "Linux Bridge".to_string(),
-        RequestedMode::XdpBridge { .. } => "XDP Bridge".to_string(),
         RequestedMode::SingleInterface { .. } => "Single Interface".to_string(),
         RequestedMode::Unknown => "Unconfigured".to_string(),
     }
@@ -337,10 +325,6 @@ fn selected_interfaces(mode: &RequestedMode) -> Vec<String> {
             to_internet,
             to_network,
             ..
-        }
-        | RequestedMode::XdpBridge {
-            to_internet,
-            to_network,
         } => [to_internet.clone(), to_network.clone()]
             .into_iter()
             .filter(|iface| !iface.is_empty())
@@ -389,13 +373,6 @@ fn managed_preview_yaml(mode: &RequestedMode) -> (Option<String>, Option<String>
         RequestedMode::SingleInterface { interface, mtu } if !interface.is_empty() => (
             Some(managed_single_interface_yaml(interface, *mtu)),
             None,
-        ),
-        RequestedMode::XdpBridge { .. } => (
-            None,
-            Some(
-                "XDP bridge mode remains a manual workflow. LibreQoS does not generate netplan for this mode."
-                    .to_string(),
-            ),
         ),
         RequestedMode::Unknown => (
             None,
@@ -649,7 +626,7 @@ pub(crate) fn adoption_rewrite_for_path(path: &Path, config: &Config) -> Result<
                 ));
             }
         }
-        RequestedMode::XdpBridge { .. } | RequestedMode::Unknown => {
+        RequestedMode::Unknown => {
             return Err(
                 "Adoption is only supported for managed Linux bridge and single-interface modes."
                     .to_string(),
@@ -774,26 +751,6 @@ fn assess_file(path: &Path, doc: &NetplanDocument, mode: &RequestedMode) -> File
                         "{interface} is already a member of bridge {bridge_name}."
                     ));
                     has_conflict = true;
-                }
-            }
-        }
-        RequestedMode::XdpBridge {
-            to_internet,
-            to_network,
-        } => {
-            for iface in [to_internet, to_network] {
-                if doc.network.ethernets.contains_key(iface) {
-                    relevant.insert(iface.clone());
-                }
-            }
-            for (bridge_name, bridge) in &doc.network.bridges {
-                let members: BTreeSet<_> = bridge.interfaces.iter().cloned().collect();
-                if members.contains(to_internet.as_str()) || members.contains(to_network.as_str()) {
-                    relevant.insert(to_internet.clone());
-                    relevant.insert(to_network.clone());
-                    details.push(format!(
-                        "Bridge {bridge_name} already contains one or more selected interfaces."
-                    ));
                 }
             }
         }
@@ -1054,18 +1011,8 @@ pub fn inspect_network_mode_with_paths(
         )
     };
 
-    if matches!(mode, RequestedMode::XdpBridge { .. }) {
-        warnings.push(
-            "XDP bridge mode remains manual. LibreQoS only provides inspection for this mode in the current helper slice."
-                .to_string(),
-        );
-    }
-
     let can_apply = !editing_locked
-        && !matches!(
-            mode,
-            RequestedMode::XdpBridge { .. } | RequestedMode::Unknown
-        )
+        && !matches!(mode, RequestedMode::Unknown)
         && !has_pending_try
         && preview.is_some();
     let strong_confirmation_text = if dangerous_changes.is_empty() {
@@ -1126,15 +1073,118 @@ pub fn inspect_network_mode(config: &Config) -> NetworkModeInspection {
     )
 }
 
+/// A netplan bridge enslaving a selected dataplane interface (the bind
+/// pre-check; the netplan-bridge upgrade card §2b).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetplanEnslavement {
+    /// The bridge name.
+    pub bridge: String,
+    /// The file the bridge is defined in.
+    pub file: PathBuf,
+    /// The bridge's member interfaces.
+    pub members: Vec<String>,
+    /// True when the bridge (or a dataplane member) carries management.
+    pub management_at_risk: bool,
+}
+
+/// Detect a netplan bridge enslaving either selected dataplane interface. Pure
+/// file reads; `None` means no selected interface is still enslaved.
+pub fn dataplane_netplan_enslavement(config: &Config) -> Option<NetplanEnslavement> {
+    dataplane_netplan_enslavement_at(Path::new(NETPLAN_DIR), config)
+}
+
+/// The testable surface: scan `netplan_dir` for a bridge over the configured
+/// dataplane interfaces.
+pub fn dataplane_netplan_enslavement_at(
+    netplan_dir: &Path,
+    config: &Config,
+) -> Option<NetplanEnslavement> {
+    let selected: BTreeSet<String> = selected_interfaces(&requested_mode(config))
+        .into_iter()
+        .collect();
+    if selected.is_empty() {
+        return None;
+    }
+
+    let mut entries: Vec<PathBuf> = match fs::read_dir(netplan_dir) {
+        Ok(read_dir) => read_dir.flatten().map(|entry| entry.path()).collect(),
+        Err(_) => return None,
+    };
+    entries.sort();
+
+    for path in entries {
+        if path.extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+            continue;
+        }
+        let Ok(doc) = parse_netplan_file(&path) else {
+            continue;
+        };
+        for (bridge_name, bridge) in &doc.network.bridges {
+            let members = bridge.interfaces.clone();
+            if !members.iter().any(|member| selected.contains(member)) {
+                continue;
+            }
+            let mut management_at_risk = bridge.has_l3_config();
+            if !management_at_risk {
+                management_at_risk = members.iter().any(|member| {
+                    selected.contains(member)
+                        && doc
+                            .network
+                            .ethernets
+                            .get(member)
+                            .is_some_and(NetplanInterface::has_l3_config)
+                });
+            }
+            return Some(NetplanEnslavement {
+                bridge: bridge_name.clone(),
+                file: path.clone(),
+                members,
+                management_at_risk,
+            });
+        }
+    }
+    None
+}
+
+/// The bind pre-check (card §2b): `Err` with the named, operator-facing reason
+/// when a selected dataplane interface is still netplan-enslaved, `Ok(())` when
+/// free. Callers must refuse the bind on `Err` — never best-effort, never race
+/// networkd.
+pub fn bind_guard(config: &Config) -> Result<(), String> {
+    bind_guard_at(Path::new(NETPLAN_DIR), config)
+}
+
+/// The testable surface for [`bind_guard`].
+pub fn bind_guard_at(netplan_dir: &Path, config: &Config) -> Result<(), String> {
+    match dataplane_netplan_enslavement_at(netplan_dir, config) {
+        None => Ok(()),
+        Some(enslaved) => {
+            let mut reason = format!(
+                "refusing to bind: netplan bridge {} ({}) still enslaves dataplane interface(s) [{}]",
+                enslaved.bridge,
+                enslaved.file.display(),
+                enslaved.members.join(", ")
+            );
+            if enslaved.management_at_risk {
+                reason
+                    .push_str("; management appears to ride the bridge — console access required");
+            }
+            reason.push_str(
+                "; run the network-mode adoption first (the operator flow, transactional with a backup id), then bind",
+            );
+            Err(reason)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{adoption_rewrite_for_path, inspect_network_mode_with_paths};
+    use super::{adoption_rewrite_for_path, bind_guard_at, inspect_network_mode_with_paths};
     use std::collections::{BTreeMap, BTreeSet};
 
     fn linux_bridge_config() -> lqos_config::Config {
         lqos_config::Config {
             bridge: Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: false,
                 to_internet: "ens19".to_string(),
                 to_network: "ens20".to_string(),
                 mtu: None,
@@ -1237,32 +1287,6 @@ mod tests {
             .expect("managed preview should exist");
 
         assert!(!preview.contains("mtu:"));
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn xdp_bridge_mode_keeps_managed_preview_disabled() {
-        let mut config = linux_bridge_config();
-        let bridge = config.bridge.as_mut().expect("bridge");
-        bridge.use_xdp_bridge = true;
-        bridge.mtu = Some(9000);
-
-        let root = test_env("xdp-mtu-preview");
-        let inspection = inspect_network_mode_with_paths(
-            &config,
-            &root.join("netplan"),
-            &root.join("pending"),
-            &BTreeSet::from(["ens19".to_string(), "ens20".to_string()]),
-            &queue_caps(),
-        );
-
-        assert!(inspection.managed_preview_yaml.is_none());
-        assert!(
-            inspection
-                .preview_note
-                .as_deref()
-                .is_some_and(|note| note.contains("manual workflow"))
-        );
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1477,6 +1501,60 @@ network:
         assert!(!rewritten.contains("renderer: null"));
         assert!(!rewritten.contains("gateway4: null"));
         assert!(rewritten.contains("ens30"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_guard_refuses_an_enslaved_pair_with_the_named_error() {
+        let root = test_env("bind-guard-enslaved");
+        let netplan = root.join("netplan");
+        std::fs::write(
+            netplan.join("50-cloud-init.yaml"),
+            "network:\n  version: 2\n  bridges:\n    br0:\n      interfaces: [ens19, ens20]\n",
+        )
+        .expect("write enslaved fixture");
+
+        let err = bind_guard_at(&netplan, &linux_bridge_config()).expect_err("must refuse");
+        assert!(err.contains("br0"), "names the bridge: {err}");
+        assert!(
+            err.contains("adoption"),
+            "points at the adoption flow: {err}"
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_guard_allows_a_free_pair() {
+        let root = test_env("bind-guard-free");
+        let netplan = root.join("netplan");
+        std::fs::write(
+            netplan.join("50-cloud-init.yaml"),
+            "network:\n  version: 2\n  ethernets:\n    ens19:\n      dhcp4: false\n    ens20:\n      dhcp4: false\n",
+        )
+        .expect("write free fixture");
+
+        assert!(bind_guard_at(&netplan, &linux_bridge_config()).is_ok());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bind_guard_names_the_management_risk() {
+        let root = test_env("bind-guard-mgmt");
+        let netplan = root.join("netplan");
+        std::fs::write(
+            netplan.join("50-cloud-init.yaml"),
+            "network:\n  version: 2\n  bridges:\n    br0:\n      interfaces: [ens19, ens20]\n      addresses: [10.0.0.2/24]\n",
+        )
+        .expect("write mgmt fixture");
+
+        let err = bind_guard_at(&netplan, &linux_bridge_config()).expect_err("must refuse");
+        assert!(
+            err.contains("management"),
+            "names the management risk: {err}"
+        );
 
         let _ = std::fs::remove_dir_all(root);
     }

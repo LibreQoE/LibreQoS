@@ -6,77 +6,102 @@
             <div class="lqos-config-panel-header">
                 <div>
                     <h5 class="lqos-config-panel-title">System Tuning</h5>
-                    <div class="lqos-config-panel-subtitle">Adjust IRQ handling, kernel packet budgets, and NIC offload behavior on systems that need manual tuning.</div>
+                    <div class="lqos-config-panel-subtitle">Inspect the DPDK dataplane and tune the kernel-netdev path where the host still owns the interfaces.</div>
                 </div>
             </div>
 
-            <div class="lqos-config-note lqos-config-note-warning mb-3" role="alert">
-                <i class="fa fa-exclamation-triangle me-2"></i>These are advanced settings. Change them only when you have a measured reason to do so.
-            </div>
+            <div class="lqos-config-section">
+                <h6 class="lqos-config-section-title">DPDK Dataplane</h6>
+                <div class="lqos-config-section-subtitle">The DPDK pipeline owns the dataplane ports (the PMD owns the NIC), so most of this is informational and read-only. Only the boot worker count is editable.</div>
 
-            <div class="row g-3">
-                <div class="col-12 col-xl-6">
-                    <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Interrupts and Budgets</h6>
-                        <div class="lqos-config-section-subtitle">Control how aggressively the host services NIC interrupts and packet processing.</div>
-
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="setCpuGovernorPerformance" aria-describedby="setCpuGovernorPerformanceHelp">
-                            <label class="form-check-label" for="setCpuGovernorPerformance">Set CPU Governor to Performance</label>
-                            <div id="setCpuGovernorPerformanceHelp" class="form-text">Runs <code>cpupower frequency-set --governor performance</code> during LibreQoS tuning. Enabled by default.</div>
-                        </div>
-
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="stopIrqBalance">
-                            <label class="form-check-label" for="stopIrqBalance">Stop IRQ Balance Service</label>
-                            <div class="form-text">Disables the <code>irq_balance</code> system service.</div>
-                        </div>
-
+                <div class="row g-3">
+                    <div class="col-12 col-xl-5">
                         <div class="mb-3">
-                            <label for="netdevBudgetUsecs" class="form-label">Netdev Budget (μs)</label>
-                            <input type="number" class="form-control" id="netdevBudgetUsecs">
-                            <div class="form-text">Time budget for network device processing in microseconds.</div>
+                            <label for="dpdkWorkers" class="form-label">DPDK Worker Count (Configured — <code>[queues] workers</code>)</label>
+                            <input type="number" class="form-control" id="dpdkWorkers" min="1" aria-describedby="dpdkWorkersHelp">
+                            <div id="dpdkWorkersHelp" class="form-text">Applies after the next <code>libreqos-setup</code> run (the plan/env writer renders <code>[queues] workers</code> into <code>LIBREQOS_DPDK_WORKERS</code>) <strong>and</strong> a <code>libreqos-bridge</code> restart — not a restart alone. Leave blank to let the installer derive it.</div>
                         </div>
+                        <div class="form-text">The EAL lcore set remains authoritative; this value sizes the worker pool and defaults the RX/TX queue counts. The panel's <em>boot</em> value (<code>LIBREQOS_DPDK_WORKERS</code>) is shown read-only and can legitimately differ from this configured value until the installer re-renders the environment.</div>
+                    </div>
 
-                        <div class="mb-3">
-                            <label for="netdevBudgetPackets" class="form-label">Netdev Budget (Packets)</label>
-                            <input type="number" class="form-control" id="netdevBudgetPackets">
-                            <div class="form-text">Packet budget for network device processing.</div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="rxUsecs" class="form-label">RX Polling Frequency (μs)</label>
-                            <input type="number" class="form-control" id="rxUsecs">
-                            <div class="form-text">Receive-side polling frequency in microseconds.</div>
-                        </div>
-
-                        <div class="mb-0">
-                            <label for="txUsecs" class="form-label">TX Polling Frequency (μs)</label>
-                            <input type="number" class="form-control" id="txUsecs">
-                            <div class="form-text">Transmit-side polling frequency in microseconds.</div>
-                        </div>
+                    <div class="col-12 col-xl-7">
+                        <div id="dpdkStatusTable" class="small" aria-live="polite">Loading DPDK status...</div>
                     </div>
                 </div>
+            </div>
 
-                <div class="col-12 col-xl-6">
-                    <div class="lqos-config-section h-100">
-                        <h6 class="lqos-config-section-title">Offload Controls</h6>
-                        <div class="lqos-config-section-subtitle">Disable hardware features that interfere with troubleshooting or expected shaping behavior.</div>
+            <div class="lqos-config-section">
+                <h6 class="lqos-config-section-title">Management NIC / Kernel Netdev</h6>
+                <div class="lqos-config-section-subtitle">These <code>sysctl</code> and <code>ethtool</code> knobs apply only to interfaces the kernel still owns — the management NIC and the <code>af_packet</code> lab path. They do not tune DPDK-bound dataplane ports.</div>
 
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="disableRxVlan">
-                            <label class="form-check-label" for="disableRxVlan">Disable RX VLAN Offloading</label>
+                <div class="lqos-config-note lqos-config-note-warning mb-3" role="alert">
+                    <i class="fa fa-exclamation-triangle me-2"></i>These are advanced settings. Change them only when you have a measured reason to do so.
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-12 col-xl-6">
+                        <div class="lqos-config-section h-100">
+                            <h6 class="lqos-config-section-title">Interrupts and Budgets</h6>
+                            <div class="lqos-config-section-subtitle">Control how aggressively the host services NIC interrupts and packet processing on kernel netdevs.</div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="setCpuGovernorPerformance" aria-describedby="setCpuGovernorPerformanceHelp">
+                                <label class="form-check-label" for="setCpuGovernorPerformance">Set CPU Governor to Performance</label>
+                                <div id="setCpuGovernorPerformanceHelp" class="form-text">Runs <code>cpupower frequency-set --governor performance</code> during LibreQoS tuning. Enabled by default.</div>
+                            </div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="stopIrqBalance">
+                                <label class="form-check-label" for="stopIrqBalance">Stop IRQ Balance Service</label>
+                                <div class="form-text">Disables the <code>irq_balance</code> system service.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="netdevBudgetUsecs" class="form-label">Netdev Budget (μs)</label>
+                                <input type="number" class="form-control" id="netdevBudgetUsecs">
+                                <div class="form-text">Time budget for network device processing in microseconds.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="netdevBudgetPackets" class="form-label">Netdev Budget (Packets)</label>
+                                <input type="number" class="form-control" id="netdevBudgetPackets">
+                                <div class="form-text">Packet budget for network device processing.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="rxUsecs" class="form-label">RX Polling Frequency (μs)</label>
+                                <input type="number" class="form-control" id="rxUsecs">
+                                <div class="form-text">Receive-side polling frequency in microseconds.</div>
+                            </div>
+
+                            <div class="mb-0">
+                                <label for="txUsecs" class="form-label">TX Polling Frequency (μs)</label>
+                                <input type="number" class="form-control" id="txUsecs">
+                                <div class="form-text">Transmit-side polling frequency in microseconds.</div>
+                            </div>
                         </div>
+                    </div>
 
-                        <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" id="disableTxVlan">
-                            <label class="form-check-label" for="disableTxVlan">Disable TX VLAN Offloading</label>
-                        </div>
+                    <div class="col-12 col-xl-6">
+                        <div class="lqos-config-section h-100">
+                            <h6 class="lqos-config-section-title">Offload Controls</h6>
+                            <div class="lqos-config-section-subtitle">Disable kernel/hardware features that interfere with troubleshooting or expected shaping behavior.</div>
 
-                        <div class="mb-0">
-                            <label for="disableOffload" class="form-label">Disable Offload Features</label>
-                            <input type="text" class="form-control" id="disableOffload" aria-describedby="offloadHelp">
-                            <div id="offloadHelp" class="form-text">Comma-separated list of offload features to disable, for example <code>gso,tso,lro</code>.</div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="disableRxVlan">
+                                <label class="form-check-label" for="disableRxVlan">Disable RX VLAN Offloading</label>
+                            </div>
+
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="disableTxVlan">
+                                <label class="form-check-label" for="disableTxVlan">Disable TX VLAN Offloading</label>
+                            </div>
+
+                            <div class="mb-0">
+                                <label for="disableOffload" class="form-label">Disable Offload Features</label>
+                                <input type="text" class="form-control" id="disableOffload" aria-describedby="offloadHelp">
+                                <div id="offloadHelp" class="form-text">Comma-separated list of offload features to disable, for example <code>gso,tso,lro</code>.</div>
+                            </div>
                         </div>
                     </div>
                 </div>

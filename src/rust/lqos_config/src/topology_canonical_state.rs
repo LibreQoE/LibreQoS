@@ -1,10 +1,10 @@
 use crate::{
     Config, TOPOLOGY_ATTACHMENT_AUTO_ID, TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME,
-    TOPOLOGY_COMPILED_SHAPING_FILENAME, TOPOLOGY_EDITOR_STATE_FILENAME,
+    TOPOLOGY_COMPILED_SHAPING_FILENAME,
     TOPOLOGY_EFFECTIVE_NETWORK_FILENAME, TOPOLOGY_EFFECTIVE_STATE_FILENAME,
     TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_RUNTIME_STATUS_FILENAME, TOPOLOGY_SHAPING_INPUTS_FILENAME,
     TopologyAllowedParent, TopologyEditorNode, TopologyEditorStateError, TopologyEditorStateFile,
-    TopologyParentCandidatesError, TopologyParentCandidatesFile, TopologyQueueVisibilityPolicy,
+    TopologyParentCandidatesError, TopologyParentCandidatesFile,
 };
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,126 @@ use tracing::warn;
 
 /// Runtime filename carrying canonical topology state used by `lqos_topology`.
 pub const TOPOLOGY_CANONICAL_STATE_FILENAME: &str = "topology_canonical_state.json";
+
+/// Builds the DEDUPED display-name assignment for a node set: the
+/// human node names (for the dict-keyed legacy import the import
+/// fallback already carries the dict key), deduped by the global
+/// export-name machinery, plus the AMBIGUOUS base names (raw keys
+/// claimed by >1 distinct node — the loud-miss doctrine: a catalog
+/// reference to an ambiguous base must never silently pick a
+/// winner). Deterministic — `globally_unique_export_names` sorts its
+/// input by (name, id), so any node order produces the same result;
+/// stable per-INPUT: a same-name sibling flips existing nodes
+/// plain↔suffixed. T5 rung 1: the transport for these names is the
+/// E2 operator view (the T4 file side-channel retired — names ride
+/// E2 natively).
+pub fn deduped_display_names(
+    nodes: &[TopologyCanonicalNode],
+) -> (std::collections::BTreeMap<String, String>, std::collections::BTreeSet<String>)
+{
+    let base_names_by_id: HashMap<String, String> = nodes
+        .iter()
+        .map(|node| (node.node_id.clone(), node.node_name.clone()))
+        .collect();
+    let mut ids_by_base: HashMap<&str, std::collections::BTreeSet<&str>> = HashMap::new();
+    for node in nodes {
+        if node.node_id.trim().is_empty() {
+            continue;
+        }
+        ids_by_base
+            .entry(node.node_name.as_str())
+            .or_default()
+            .insert(node.node_id.as_str());
+    }
+    let ambiguous_bases = ids_by_base
+        .into_iter()
+        .filter(|(_, ids)| ids.len() > 1)
+        .map(|(base, _)| base.to_string())
+        .collect();
+    (
+        globally_unique_export_names(nodes, &base_names_by_id)
+            .into_iter()
+            .collect(),
+        ambiguous_bases,
+    )
+}
+
+/// Validates the model invariants (T5 ruling 6): unique non-empty
+/// ids, parent-exists, acyclic. Evaluated at import AND publish — a
+/// failed validate is a LOUD reject, never a silent pass-through.
+/// Names may collide (dedupe handles them); ids may not.
+///
+/// "Single root" interpretation (recorded): the canonical model is a
+/// FOREST whose parentless nodes are root-level sites under the
+/// implicit topology root — the single synthetic root is added by the
+/// projections (E1's DATA_PLANE_ROOT_NODE_ID, E2's tree builder Root),
+/// so parentless nodes are legal here by construction. What the model
+/// must reject is any chain that does not terminate: dangling parents,
+/// self-parents, and cycles.
+pub fn validate_topology_nodes(
+    nodes: &[TopologyCanonicalNode],
+) -> Result<(), Vec<String>> {
+    let mut errors: Vec<String> = Vec::new();
+    let mut ids_by_node: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for (index, node) in nodes.iter().enumerate() {
+        if node.node_id.trim().is_empty() {
+            errors.push(format!("node #{index} has an empty id"));
+            continue;
+        }
+        if let Some(first) = ids_by_node.insert(node.node_id.as_str(), index) {
+            errors.push(format!(
+                "duplicate node id {}: nodes #{first} and #{index}",
+                node.node_id
+            ));
+        }
+        if node.current_parent_node_id.as_deref() == Some(node.node_id.as_str()) {
+            errors.push(format!("node {} is its own parent", node.node_id));
+        }
+    }
+    for node in nodes {
+        let Some(parent) = node.current_parent_node_id.as_deref() else {
+            continue;
+        };
+        if parent.is_empty() || parent == node.node_id {
+            continue;
+        }
+        if !ids_by_node.contains_key(parent) {
+            errors.push(format!(
+                "node {} has dangling parent {parent}",
+                node.node_id
+            ));
+        }
+    }
+    // Cycle check: walk each node's ancestry to a root, bounding the
+    // walk by the node count.
+    let count = nodes.len();
+    for node in nodes {
+        let mut current = node.current_parent_node_id.as_deref();
+        let mut steps = 0;
+        while let Some(parent) = current {
+            if parent.is_empty() {
+                break;
+            }
+            steps += 1;
+            if steps > count {
+                errors.push(format!(
+                    "cycle detected through node {}",
+                    node.node_id
+                ));
+                break;
+            }
+            current = nodes
+                .iter()
+                .find(|candidate| candidate.node_id == parent)
+                .and_then(|candidate| candidate.current_parent_node_id.as_deref());
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
 
 /// Source category for canonical topology state ingestion.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,9 +204,6 @@ pub struct TopologyCanonicalNode {
     /// Node kind or type label.
     #[serde(default)]
     pub node_kind: String,
-    /// Whether the canonical node is logical-only / virtual.
-    #[serde(default)]
-    pub is_virtual: bool,
     /// Current canonical logical parent node ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_parent_node_id: Option<String>,
@@ -105,9 +222,6 @@ pub struct TopologyCanonicalNode {
     /// Allowed logical parents and their attachment choices.
     #[serde(default)]
     pub allowed_parents: Vec<TopologyAllowedParent>,
-    /// Baseline queue-visibility policy for runtime-effective topology export.
-    #[serde(default)]
-    pub queue_visibility_policy: TopologyQueueVisibilityPolicy,
     /// Canonical rate inputs used for effective rate compilation.
     #[serde(default)]
     pub rate_input: TopologyCanonicalRateInput,
@@ -162,13 +276,16 @@ pub enum TopologyCanonicalStateError {
     /// Serializing or deserializing the snapshot failed.
     #[error("Unable to parse topology canonical state JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// The model failed its invariants (T5 ruling 6) — the payload is
+    /// a LOUD reject at import AND publish.
+    #[error("Topology canonical state failed validation: {0:?}")]
+    Validation(Vec<String>),
 }
 
 #[derive(Clone)]
 struct NetworkNodeSnapshot {
     export_name: String,
     node_type: String,
-    is_virtual: bool,
     download_mbps: Option<u64>,
     upload_mbps: Option<u64>,
     latitude: Option<f32>,
@@ -181,33 +298,6 @@ fn default_topology_canonical_schema_version() -> u32 {
 
 fn empty_json_object() -> Value {
     Value::Object(Map::new())
-}
-
-fn topology_import_ingress_enabled(config: &Config) -> bool {
-    crate::integration_ingress_enabled(config)
-}
-
-fn canonical_ingress_kind_matches_mode(
-    ingress_kind: TopologyCanonicalIngressKind,
-    integration_ingress: bool,
-) -> bool {
-    matches!(
-        (ingress_kind, integration_ingress),
-        (TopologyCanonicalIngressKind::NativeIntegration, true)
-            | (TopologyCanonicalIngressKind::LegacyNetworkJson, false)
-    )
-}
-
-fn current_legacy_network_json_identity(
-    config: &Config,
-) -> Result<Option<String>, TopologyCanonicalStateError> {
-    let legacy_network_path = Path::new(&config.lqos_directory).join("network.json");
-    if !legacy_network_path.exists() {
-        return Ok(None);
-    }
-    let raw = std::fs::read_to_string(legacy_network_path)?;
-    let network = serde_json::from_str::<Value>(&raw)?;
-    Ok(topology_ingress_fingerprint_for_network_json(&network))
 }
 
 pub(crate) fn topology_ingress_fingerprint_from_tokens<I>(tokens: I) -> Option<String>
@@ -288,11 +378,7 @@ pub(crate) fn topology_ingress_fingerprint_for_network_json(
 pub(crate) fn current_topology_ingress_identity(
     config: &Config,
 ) -> Result<Option<String>, TopologyCanonicalStateError> {
-    let integration_ingress = topology_import_ingress_enabled(config);
-    if !integration_ingress {
-        return current_legacy_network_json_identity(config);
-    }
-
+    // Phase C S4: the materialized import is the ONE ingress identity source.
     let topology_import_path = config.topology_state_file_path(TOPOLOGY_IMPORT_FILENAME);
     if topology_import_path.exists() {
         let raw = std::fs::read_to_string(topology_import_path)?;
@@ -341,6 +427,41 @@ fn topology_stale_directory_path(config: &Config) -> PathBuf {
     config.quarantine_state_directory_path()
 }
 
+/// Phase D: read-only currency check shared by the loader and the repair entry.
+fn canonical_state_is_current(state: &TopologyCanonicalStateFile, config: &Config) -> bool {
+    if state.nodes.is_empty() {
+        return false;
+    }
+    state.ingress_kind == TopologyCanonicalIngressKind::NativeIntegration
+        && match state.matches_current_ingress(config) {
+            Ok(is_current) => is_current,
+            Err(err) => {
+                warn!(
+                    "Unable to validate topology canonical state against current ingress; preserving existing state: {err}"
+                );
+                true
+            }
+        }
+}
+
+/// Phase D: the explicit stale-canonical quarantine, moved out of the read-only
+/// loader. Called by `repair_runtime_state` only — never by a read/verify path.
+pub fn repair_stale_topology_state(
+    config: &Config,
+) -> Result<(), TopologyCanonicalStateError> {
+    let state = TopologyCanonicalStateFile::load(config)?;
+    if state.nodes.is_empty() || canonical_state_is_current(&state, config) {
+        return Ok(());
+    }
+    quarantine_stale_topology_state(
+        config,
+        &format!(
+            "canonical topology source '{}' does not match current topology ingress identity",
+            state.source
+        ),
+    )
+}
+
 pub(crate) fn quarantine_stale_topology_state(
     config: &Config,
     reason: &str,
@@ -354,7 +475,6 @@ pub(crate) fn quarantine_stale_topology_state(
     let mut moved = Vec::new();
     let paths = [
         config.topology_state_read_path(TOPOLOGY_CANONICAL_STATE_FILENAME),
-        config.topology_state_read_path(TOPOLOGY_EDITOR_STATE_FILENAME),
         config.shaping_state_read_path(TOPOLOGY_COMPILED_SHAPING_FILENAME),
         config.topology_state_read_path(TOPOLOGY_ATTACHMENT_HEALTH_STATE_FILENAME),
         config.topology_state_read_path(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME),
@@ -413,7 +533,6 @@ struct InsightLogicalNodeEntry {
     node_id: String,
     export_name: String,
     node_kind: String,
-    is_virtual: bool,
     download_mbps: Option<u64>,
     upload_mbps: Option<u64>,
     latitude: Option<f32>,
@@ -632,9 +751,6 @@ fn build_insight_logical_entry_json(
     }
     map.insert("downloadBandwidthMbps".into(), download.into());
     map.insert("uploadBandwidthMbps".into(), upload.into());
-    if entry.is_virtual {
-        map.insert("virtual".into(), true.into());
-    }
     map.insert("children".into(), Value::Object(children));
 
     (Value::Object(map), download, upload)
@@ -750,10 +866,6 @@ fn build_network_node_index(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string(),
-            is_virtual: node
-                .get("virtual")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
             download_mbps: read_u64_field(node, "downloadBandwidthMbps"),
             upload_mbps: read_u64_field(node, "uploadBandwidthMbps"),
             latitude: read_f32_field(node, "latitude"),
@@ -951,10 +1063,6 @@ fn import_legacy_network_children(
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string();
-        let is_virtual = node
-            .get("virtual")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
         let download = read_u64_field(node, "downloadBandwidthMbps");
         let upload = read_u64_field(node, "uploadBandwidthMbps");
         let latitude = read_f32_field(node, "latitude");
@@ -991,14 +1099,12 @@ fn import_legacy_network_children(
             latitude,
             longitude,
             node_kind: node_kind.clone(),
-            is_virtual,
             current_parent_node_id,
             current_parent_node_name,
             current_attachment_id,
             current_attachment_name,
             can_move: false,
             allowed_parents: Vec::new(),
-            queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
             rate_input: TopologyCanonicalRateInput {
                 intrinsic_download_mbps: download,
                 intrinsic_upload_mbps: upload,
@@ -1032,6 +1138,121 @@ pub fn topology_canonical_state_path(config: &Config) -> PathBuf {
     config.topology_state_read_path(TOPOLOGY_CANONICAL_STATE_FILENAME)
 }
 
+/// Returns true when a compatibility network value is a non-empty object.
+fn compatibility_is_sited(compatibility: &Value) -> bool {
+    compatibility
+        .as_object()
+        .map(|object| !object.is_empty())
+        .unwrap_or(false)
+}
+
+/// Loads the staged integration import's `(source, compatibility_network_json)`.
+///
+/// Used by the fresh-box fallback when the canonical file is absent: the cold
+/// box has no canonical compat to extract from, only the import it was seeded
+/// with.
+fn load_import_compat(
+    config: &Config,
+) -> Result<Option<(String, Value)>, TopologyCanonicalStateError> {
+    let path = config.topology_state_file_path(TOPOLOGY_IMPORT_FILENAME);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(err) => {
+            warn!(
+                "topology import {} is unreadable ({err}); the canonical state may compile flat",
+                path.display()
+            );
+            return Ok(None);
+        }
+    };
+    let imported: Value = match serde_json::from_str(&raw) {
+        Ok(value) => value,
+        Err(err) => {
+            warn!(
+                "topology import {} is not valid JSON ({err}); the canonical state may compile flat",
+                path.display()
+            );
+            return Ok(None);
+        }
+    };
+    let source = imported
+        .get("source")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            imported
+                .get("imported")
+                .and_then(|value| value.get("source"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or_default()
+        .to_string();
+    let compatibility = imported
+        .get("imported")
+        .and_then(|value| value.get("compatibility_network_json"))
+        .cloned()
+        .or_else(|| imported.get("compatibility_network_json").cloned());
+    if !compatibility.as_ref().is_some_and(compatibility_is_sited) {
+        warn!(
+            "topology import {} carries no sited compatibility_network_json; the canonical state may compile flat",
+            path.display()
+        );
+        return Ok(None);
+    }
+    Ok(compatibility.map(|value| (source, value)))
+}
+
+/// Rebuilds a native-node canonical from the compatibility network when the
+/// loaded canonical has empty `nodes`.
+///
+/// The rebuilt state is RE-STAMPED as `NativeIntegration` with the integration's
+/// `source`/`ingress_identity` so `canonical_state_is_current` holds on the next
+/// load — a bare [`TopologyCanonicalStateFile::from_legacy_network_json`] stamps
+/// `LegacyNetworkJson` and would be discarded again.
+fn rebuild_canonical_from_compat(
+    state: &TopologyCanonicalStateFile,
+    config: &Config,
+) -> Result<Option<TopologyCanonicalStateFile>, TopologyCanonicalStateError> {
+    if !state.nodes.is_empty() {
+        return Ok(None);
+    }
+    let mut source = state.source.clone();
+    let mut compatibility = state.compatibility_network_json.clone();
+    if !compatibility_is_sited(&compatibility) {
+        if let Some((import_source, import_compat)) = load_import_compat(config)? {
+            if source.trim().is_empty() {
+                source = import_source;
+            }
+            if compatibility_is_sited(&import_compat) {
+                compatibility = import_compat;
+            }
+        }
+    }
+    if !compatibility_is_sited(&compatibility) {
+        return Ok(None);
+    }
+    let rebuilt = TopologyCanonicalStateFile::from_legacy_network_json(&compatibility);
+    if rebuilt.nodes.is_empty() {
+        return Ok(None);
+    }
+    let ingress_identity = state
+        .ingress_identity
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| current_topology_ingress_identity(config).ok().flatten());
+    Ok(Some(TopologyCanonicalStateFile {
+        schema_version: rebuilt.schema_version,
+        source,
+        generated_unix: rebuilt.generated_unix,
+        ingress_identity,
+        ingress_kind: TopologyCanonicalIngressKind::NativeIntegration,
+        nodes: rebuilt.nodes,
+        compatibility_network_json: compatibility,
+    }))
+}
+
 impl TopologyCanonicalStateFile {
     /// Loads the canonical topology state if it exists.
     ///
@@ -1047,66 +1268,27 @@ impl TopologyCanonicalStateFile {
         Ok(state)
     }
 
-    /// Loads canonical topology state, falling back to importing legacy `network.json`
-    /// only when integration-import ingress is not enabled.
+    /// Loads canonical topology state, keeping it only when its ingress kind and
+    /// identity match the current materialized import (the integration and
+    /// manual producers both persist a `NativeIntegration` canonical).
     ///
-    /// Side effects: reads `topology_canonical_state.json` and, in DIY/manual mode when missing,
-    /// may read `network.json` from `config.lqos_directory`.
+    /// Phase D: READ-ONLY — the stale-state quarantine moved to
+    /// [`repair_stale_topology_state`], an explicit repair entry.
+    ///
+    /// Side effects: reads `topology_canonical_state.json`.
     pub fn load_with_legacy_fallback(config: &Config) -> Result<Self, TopologyCanonicalStateError> {
         let state = Self::load(config)?;
-        let integration_ingress = topology_import_ingress_enabled(config);
-        if !integration_ingress {
-            let legacy_network_path = Path::new(&config.lqos_directory).join("network.json");
-            if !legacy_network_path.exists() {
-                return Ok(state);
-            }
-            let raw = std::fs::read_to_string(legacy_network_path)?;
-            let network = serde_json::from_str::<Value>(&raw)?;
-            let imported = Self::from_legacy_network_json(&network);
-            let imported_identity = imported.topology_ingress_fingerprint();
-            let stale_state = !state.nodes.is_empty()
-                && (!canonical_ingress_kind_matches_mode(state.ingress_kind, false)
-                    || state.topology_ingress_fingerprint() != imported_identity);
-            if stale_state {
-                let quarantine_result = quarantine_stale_topology_state(
-                    config,
-                    &format!(
-                        "canonical topology source '{}' is stale for current manual topology ingress",
-                        state.source
-                    ),
-                );
-                if let Err(err) = quarantine_result {
-                    warn!(
-                        "Unable to quarantine stale topology state before manual network.json import; using current manual topology anyway: {err}"
-                    );
-                }
-            }
-            return Ok(imported);
+        if canonical_state_is_current(&state, config) {
+            return Ok(state);
         }
-
-        if !state.nodes.is_empty() {
-            let is_current = canonical_ingress_kind_matches_mode(state.ingress_kind, true)
-                && match state.matches_current_ingress(config) {
-                    Ok(is_current) => is_current,
-                    Err(err) => {
-                        warn!(
-                            "Unable to validate topology canonical state against current ingress; preserving existing state: {err}"
-                        );
-                        true
-                    }
-                };
-            if is_current {
-                return Ok(state);
-            }
-            quarantine_stale_topology_state(
-                config,
-                &format!(
-                    "canonical topology source '{}' does not match current topology ingress identity",
-                    state.source
-                ),
-            )?;
+        // Fresh-box / native-empty fallback (docs/classifier_snapshot_selftest_card.md
+        // §flat-world): a canonical whose native `nodes` are empty (or an absent
+        // file) but whose compatibility network is sited must still yield a usable
+        // canonical — the integration import wrote the compat tree without native
+        // nodes, so the runtime load would otherwise compile a flat world.
+        if let Some(rebuilt) = rebuild_canonical_from_compat(&state, config)? {
+            return Ok(rebuilt);
         }
-
         Ok(Self::default())
     }
 
@@ -1114,6 +1296,10 @@ impl TopologyCanonicalStateFile {
     ///
     /// Side effects: writes `topology_canonical_state.json` into `config.lqos_directory`.
     pub fn save(&self, config: &Config) -> Result<(), TopologyCanonicalStateError> {
+        // T5 ruling 6: validate at the persistence boundary — a model
+        // violation is a LOUD reject, never a silent pass-through.
+        validate_topology_nodes(&self.nodes)
+            .map_err(TopologyCanonicalStateError::Validation)?;
         atomic_write_json(
             &config.topology_state_file_path(TOPOLOGY_CANONICAL_STATE_FILENAME),
             self,
@@ -1192,7 +1378,6 @@ impl TopologyCanonicalStateFile {
                     current_attachment_name: node.current_attachment_name.clone(),
                     can_move: node.can_move,
                     allowed_parents: node.allowed_parents.clone(),
-                    queue_visibility_policy: node.queue_visibility_policy,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -1236,6 +1421,13 @@ impl TopologyCanonicalStateFile {
 
         let mut entries = HashMap::<String, InsightLogicalNodeEntry>::new();
         for node in &self.nodes {
+ // the implementer `#12` R3: the SECOND `"" -> "Site"` home
+            // (`normalized_insight_node_kind`). A DEVICE canonical node with an
+            // EMPTY kind is an attachment-only link (no network.json source); it
+            // must not be fabricated as a `Site` in the compat/Insight network.
+            if node.node_id.starts_with("uisp:device:") && node.node_kind.trim().is_empty() {
+                continue;
+            }
             let (download_mbps, upload_mbps) = canonical_node_rates(node);
             let export_name = export_names_by_id
                 .get(&node.node_id)
@@ -1247,7 +1439,6 @@ impl TopologyCanonicalStateFile {
                     node_id: node.node_id.clone(),
                     export_name,
                     node_kind: node.node_kind.clone(),
-                    is_virtual: node.is_virtual,
                     download_mbps,
                     upload_mbps,
                     latitude: node.latitude,
@@ -1262,7 +1453,15 @@ impl TopologyCanonicalStateFile {
             let Some(parent_id) = node.current_parent_node_id.as_ref() else {
                 continue;
             };
-            if !entries.contains_key(parent_id) || parent_id == &node.node_id {
+            // L4/R3 regression (jackrabbit panic `topology_canonical_state.rs:711`):
+            // a node SKIPPED from `entries` above (an empty-kind DEVICE, the
+            // attachment-only link) must NOT be added as a child either — the
+            // child sort's `entries.get(child).expect(...)` would panic. A child
+            // must itself be an entry.
+            if !entries.contains_key(&node.node_id)
+                || !entries.contains_key(parent_id)
+                || parent_id == &node.node_id
+            {
                 continue;
             }
             children_by_parent
@@ -1340,14 +1539,12 @@ impl TopologyCanonicalStateFile {
                     node_kind: snapshot
                         .map(|snapshot| snapshot.node_type.clone())
                         .unwrap_or_default(),
-                    is_virtual: snapshot.is_some_and(|snapshot| snapshot.is_virtual),
                     current_parent_node_id: node.current_parent_node_id.clone(),
                     current_parent_node_name: node.current_parent_node_name.clone(),
                     current_attachment_id: node.current_attachment_id.clone(),
                     current_attachment_name: node.current_attachment_name.clone(),
                     can_move: node.can_move,
                     allowed_parents: node.allowed_parents.clone(),
-                    queue_visibility_policy: node.queue_visibility_policy,
                     rate_input: canonical_rate_input_from_network_snapshot(node, snapshot),
                 }
             })
@@ -1409,6 +1606,11 @@ impl From<TopologyCanonicalStateError> for TopologyEditorStateError {
         match value {
             TopologyCanonicalStateError::Io(err) => TopologyEditorStateError::Io(err),
             TopologyCanonicalStateError::Json(err) => TopologyEditorStateError::Json(err),
+            TopologyCanonicalStateError::Validation(errors) => {
+                TopologyEditorStateError::Custom(format!(
+                    "topology canonical state failed validation: {errors:?}"
+                ))
+            }
         }
     }
 }
@@ -1418,15 +1620,15 @@ mod tests {
     use super::{
         TOPOLOGY_CANONICAL_STATE_FILENAME, TopologyCanonicalIngressKind,
         TopologyCanonicalRateInputSource, TopologyCanonicalStateFile,
-        current_topology_ingress_identity, legacy_id_for_name,
-        topology_ingress_identity_from_tokens,
+        canonical_state_is_current, current_topology_ingress_identity, legacy_id_for_name,
+        repair_stale_topology_state, topology_ingress_identity_from_tokens,
     };
     use crate::{
         Config, TOPOLOGY_EDITOR_STATE_FILENAME, TOPOLOGY_EFFECTIVE_NETWORK_FILENAME,
         TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyAllowedParent,
         TopologyAttachmentHealthStatus, TopologyAttachmentOption, TopologyAttachmentRateSource,
         TopologyAttachmentRole, TopologyCanonicalNode, TopologyEditorNode, TopologyEditorStateFile,
-        TopologyParentCandidatesFile, TopologyQueueVisibilityPolicy,
+        TopologyParentCandidatesFile,
     };
     use serde_json::{Value, json};
     use std::fs;
@@ -1506,7 +1708,6 @@ mod tests {
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -1562,7 +1763,6 @@ mod tests {
                 current_attachment_name: None,
                 can_move: false,
                 allowed_parents: Vec::new(),
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -2170,21 +2370,23 @@ mod tests {
         let loaded = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
             .expect("load with fallback should succeed");
 
-        assert!(loaded.find_node("uisp:device:current-ap").is_some());
-        assert!(loaded.find_node("uisp:device:old-ap").is_none());
+        // Phase D: the loader is READ-ONLY — a stale canonical yields the
+        // default and is NOT quarantined.
+        assert!(loaded.nodes.is_empty());
+        assert!(loaded.find_node("uisp:device:current-ap").is_none());
+        assert!(
+            topology_state_dir
+                .join(TOPOLOGY_CANONICAL_STATE_FILENAME)
+                .exists(),
+            "the read-only loader must not quarantine"
+        );
+
+        // The explicit repair entry quarantines it.
+        repair_stale_topology_state(&config)
+            .expect("repair should quarantine the stale canonical");
         assert!(
             !topology_state_dir
                 .join(TOPOLOGY_CANONICAL_STATE_FILENAME)
-                .exists()
-        );
-        assert!(
-            !topology_state_dir
-                .join(TOPOLOGY_EDITOR_STATE_FILENAME)
-                .exists()
-        );
-        assert!(
-            !topology_state_dir
-                .join(TOPOLOGY_EFFECTIVE_NETWORK_FILENAME)
                 .exists()
         );
 
@@ -2199,15 +2401,10 @@ mod tests {
                 .iter()
                 .any(|name| name.starts_with("topology_canonical_state.json.stale-"))
         );
-        assert!(
-            quarantined
-                .iter()
-                .any(|name| name.starts_with("topology_editor_state.json.stale-"))
-        );
     }
 
     #[test]
-    fn manual_mode_reimports_legacy_network_even_when_native_state_identity_matches() {
+    fn current_native_canonical_matching_the_import_identity_is_preserved() {
         let lqos_directory = unique_temp_dir("lqos-config-canonical-ingress-identity");
         let ingress_identity = topology_ingress_identity_from_tokens([
             "import:uisp/full2".to_string(),
@@ -2262,14 +2459,12 @@ mod tests {
                 latitude: None,
                 longitude: None,
                 node_kind: "AP".to_string(),
-                is_virtual: false,
                 current_parent_node_id: None,
                 current_parent_node_name: None,
                 current_attachment_id: None,
                 current_attachment_name: None,
                 can_move: false,
                 allowed_parents: Vec::new(),
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 rate_input: super::TopologyCanonicalRateInput {
                     intrinsic_download_mbps: Some(100),
                     intrinsic_upload_mbps: Some(100),
@@ -2303,7 +2498,6 @@ mod tests {
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -2326,37 +2520,12 @@ mod tests {
         assert!(loaded.find_node("uisp:device:current-ap").is_some());
         assert_eq!(
             loaded.ingress_kind,
-            TopologyCanonicalIngressKind::LegacyNetworkJson
+            TopologyCanonicalIngressKind::NativeIntegration
         );
         assert!(
-            !topology_state_dir
+            topology_state_dir
                 .join(TOPOLOGY_CANONICAL_STATE_FILENAME)
                 .exists()
-        );
-        assert!(
-            !topology_state_dir
-                .join(TOPOLOGY_EDITOR_STATE_FILENAME)
-                .exists()
-        );
-        let quarantine_directory = config.quarantine_state_directory_path();
-        let quarantined = if quarantine_directory.exists() {
-            fs::read_dir(&quarantine_directory)
-                .expect("directory should read")
-                .filter_map(|entry| entry.ok())
-                .map(|entry| entry.file_name().to_string_lossy().to_string())
-                .collect::<Vec<_>>()
-        } else {
-            Vec::<String>::new()
-        };
-        assert!(
-            quarantined
-                .iter()
-                .any(|name| name.starts_with("topology_canonical_state.json.stale-"))
-        );
-        assert!(
-            quarantined
-                .iter()
-                .any(|name| name.starts_with("topology_editor_state.json.stale-"))
         );
     }
 
@@ -2367,24 +2536,22 @@ mod tests {
         fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
         let canonical = TopologyCanonicalStateFile {
             schema_version: 1,
-            source: "legacy/network.json".to_string(),
+            source: "legacy/manual".to_string(),
             generated_unix: Some(1),
             ingress_identity: Some("previous-manual-identity".to_string()),
-            ingress_kind: TopologyCanonicalIngressKind::LegacyNetworkJson,
+            ingress_kind: TopologyCanonicalIngressKind::NativeIntegration,
             nodes: vec![TopologyCanonicalNode {
                 node_id: "tower-1".to_string(),
                 node_name: "Tower 1".to_string(),
                 latitude: None,
                 longitude: None,
                 node_kind: "Site".to_string(),
-                is_virtual: false,
                 current_parent_node_id: None,
                 current_parent_node_name: None,
                 current_attachment_id: None,
                 current_attachment_name: None,
                 can_move: false,
                 allowed_parents: Vec::new(),
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 rate_input: super::TopologyCanonicalRateInput {
                     intrinsic_download_mbps: Some(100),
                     intrinsic_upload_mbps: Some(100),
@@ -2417,7 +2584,7 @@ mod tests {
 
         assert_eq!(
             loaded.ingress_kind,
-            TopologyCanonicalIngressKind::LegacyNetworkJson
+            TopologyCanonicalIngressKind::NativeIntegration
         );
         assert!(loaded.find_node("tower-1").is_some());
         assert!(
@@ -2527,45 +2694,33 @@ mod tests {
     }
 
     #[test]
-    fn current_topology_ingress_identity_uses_network_json_in_manual_mode() {
+    fn current_topology_ingress_identity_ignores_manual_network_json() {
+        // Phase C S4: the materialized import is the ONE identity source; the
+        // legacy network.json fingerprint retired, so a manual network.json
+        // alone yields no identity (the producer persists the import first).
         let lqos_directory = unique_temp_dir("lqos-config-manual-network-json-identity");
-        let network_json = json!({
-            "Legacy Tower": {
-                "children": {},
-                "type": "Site",
-                "downloadBandwidthMbps": 100,
-                "uploadBandwidthMbps": 100
-            }
-        });
         fs::write(
             lqos_directory.join("network.json"),
-            serde_json::to_string_pretty(&network_json).expect("network json should serialize"),
+            serde_json::to_string_pretty(&json!({
+                "Legacy Tower": {
+                    "children": {},
+                    "type": "Site",
+                    "downloadBandwidthMbps": 100,
+                    "uploadBandwidthMbps": 100
+                }
+            }))
+            .expect("network json should serialize"),
         )
         .expect("network json should write");
-        fs::write(
-            lqos_directory.join(TOPOLOGY_PARENT_CANDIDATES_FILENAME),
-            serde_json::to_string_pretty(&TopologyParentCandidatesFile {
-                source: "uisp/ap_site".to_string(),
-                ingress_identity: Some("stale-parent-candidates-identity".to_string()),
-                nodes: Vec::new(),
-            })
-            .expect("parent candidates should serialize"),
-        )
-        .expect("parent candidates should write");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
             ..Config::default()
         };
 
-        let identity = current_topology_ingress_identity(&config)
-            .expect("ingress identity should load")
-            .expect("manual network.json identity should exist");
-        let expected = TopologyCanonicalStateFile::from_legacy_network_json(&network_json)
-            .topology_ingress_fingerprint()
-            .expect("legacy fingerprint should compute");
-
-        assert_eq!(identity, expected);
+        let identity =
+            current_topology_ingress_identity(&config).expect("ingress identity should load");
+        assert!(identity.is_none());
     }
 
     #[test]
@@ -2598,6 +2753,62 @@ mod tests {
         assert!(loaded.nodes.is_empty());
     }
 
+    /// Regression (jackrabbit panic `topology_canonical_state.rs:711`): an
+    /// empty-kind DEVICE is SKIPPED from `entries` (the R3 attachment-only-link
+    /// guard), so it must NOT be added as a `children_by_parent` child either —
+    /// the child sort's `entries.get(child).expect(...)` panicked when such a
+    /// device's parent WAS a valid entry (the jackrabbit canonical shape; `.12`
+    /// did not hit it).
+    #[test]
+    fn insight_topology_network_json_skips_an_empty_kind_device_child() {
+        let canonical = TopologyCanonicalStateFile {
+            nodes: vec![
+                TopologyCanonicalNode {
+                    node_id: "uisp:site:root".to_string(),
+                    node_name: "WestRedd".to_string(),
+                    node_kind: "Site".to_string(),
+                    ..Default::default()
+                },
+                TopologyCanonicalNode {
+                    node_id: "uisp:device:ap".to_string(),
+                    node_name: "JR_AP".to_string(),
+                    node_kind: "AP".to_string(),
+                    current_parent_node_id: Some("uisp:site:root".to_string()),
+                    ..Default::default()
+                },
+                // The attachment-only LINK: a DEVICE with an EMPTY kind whose
+                // parent IS a valid entry — the exact panicking shape.
+                TopologyCanonicalNode {
+                    node_id: "uisp:device:link".to_string(),
+                    node_name: "4600C_MRE_To_ROCH".to_string(),
+                    node_kind: String::new(),
+                    current_parent_node_id: Some("uisp:device:ap".to_string()),
+                    ..Default::default()
+                },
+                // A site parented to the (skipped) link.
+                TopologyCanonicalNode {
+                    node_id: "uisp:site:child".to_string(),
+                    node_name: "MRE".to_string(),
+                    node_kind: "Site".to_string(),
+                    current_parent_node_id: Some("uisp:device:link".to_string()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        // Must NOT panic.
+        let json = canonical.insight_topology_network_json();
+        let text = json.to_string();
+        assert!(
+            !text.contains("uisp:device:link"),
+            "the empty-kind link is not emitted: {text}"
+        );
+        assert!(
+            text.contains("uisp:device:ap"),
+            "a valid device still emits: {text}"
+        );
+    }
+
     #[test]
     fn insight_topology_network_json_uses_logical_parent_hierarchy() {
         let editor_state = TopologyEditorStateFile {
@@ -2617,7 +2828,6 @@ mod tests {
                     current_attachment_name: Some("WestRedd-SiteRouter".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -2634,7 +2844,6 @@ mod tests {
                     current_attachment_name: Some("Core-WestRedd".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -2651,7 +2860,6 @@ mod tests {
                     current_attachment_name: Some("AVIAT_WestRedd".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -2668,7 +2876,6 @@ mod tests {
                     current_attachment_name: Some("AF60LR-MonteDelSOl".to_string()),
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -2769,5 +2976,290 @@ mod tests {
             .and_then(Value::as_object)
             .expect("expected Tuscany Ridge children");
         assert!(tuscany_children.contains_key("Monte Del Sol"));
+    }
+
+    fn fallback_test_sited_network() -> Value {
+        json!({
+            "WestRedd-SiteRouter": {
+                "type": "site",
+                "id": "uisp:site:westredd",
+                "children": {
+                    "Core-WestRedd": {
+                        "type": "AP",
+                        "id": "uisp:device:core-westredd",
+                        "downloadBandwidthMbps": 100,
+                        "uploadBandwidthMbps": 100,
+                        "children": {}
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn native_empty_canonical_rebuilds_from_sited_compat_and_stays_current() {
+        let lqos_directory = unique_temp_dir("lqos-config-canonical-native-empty");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
+        let mut canonical =
+            TopologyCanonicalStateFile::from_legacy_network_json(&fallback_test_sited_network());
+        // The fresh-box defect: the integration wrote the compat tree but left
+        // the native nodes empty.
+        canonical.nodes.clear();
+        canonical.ingress_kind = TopologyCanonicalIngressKind::NativeIntegration;
+        canonical.source = "integration:test".to_string();
+        canonical.ingress_identity = Some("identity-native-empty".to_string());
+        fs::write(
+            topology_state_dir.join(TOPOLOGY_CANONICAL_STATE_FILENAME),
+            serde_json::to_string_pretty(&canonical).expect("canonical should serialize"),
+        )
+        .expect("canonical should write");
+
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let loaded = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
+            .expect("canonical should load");
+        assert!(
+            !loaded.nodes.is_empty(),
+            "empty-native/sited-compat must rebuild native nodes"
+        );
+        assert_eq!(
+            loaded.ingress_kind,
+            TopologyCanonicalIngressKind::NativeIntegration
+        );
+        assert_eq!(
+            loaded.ingress_identity.as_deref(),
+            Some("identity-native-empty")
+        );
+        assert!(
+            canonical_state_is_current(&loaded, &config),
+            "the rebuilt canonical must stay current on reload"
+        );
+        let _ = std::fs::remove_dir_all(&lqos_directory);
+    }
+
+    #[test]
+    fn absent_canonical_rebuilds_from_import_compat() {
+        let lqos_directory = unique_temp_dir("lqos-config-canonical-absent");
+        let topology_state_dir = lqos_directory.join("state/topology");
+        fs::create_dir_all(&topology_state_dir).expect("topology state dir should exist");
+        // No canonical file — the cold box only has the staged import.
+        let import = json!({
+            "schema_version": 1,
+            "source": "integration:import",
+            "ingress_identity": "identity-absent",
+            "imported": {
+                "compatibility_network_json": fallback_test_sited_network()
+            }
+        });
+        fs::write(
+            topology_state_dir.join(TOPOLOGY_IMPORT_FILENAME),
+            serde_json::to_string_pretty(&import).expect("import should serialize"),
+        )
+        .expect("import should write");
+
+        let config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..Config::default()
+        };
+        let loaded = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
+            .expect("canonical should load");
+        assert!(
+            !loaded.nodes.is_empty(),
+            "file-absent must rebuild native nodes from the import compat"
+        );
+        assert_eq!(
+            loaded.ingress_kind,
+            TopologyCanonicalIngressKind::NativeIntegration
+        );
+        assert_eq!(loaded.ingress_identity.as_deref(), Some("identity-absent"));
+        let _ = std::fs::remove_dir_all(&lqos_directory);
+    }
+}
+
+#[cfg(test)]
+mod t4_display_name_map_tests {
+    use super::*;
+
+    fn t4_node(id: &str, name: &str) -> TopologyCanonicalNode {
+        TopologyCanonicalNode {
+            node_id: id.to_string(),
+            node_name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn t4_site(id: &str, name: &str) -> TopologyCanonicalNode {
+        TopologyCanonicalNode {
+            node_id: id.to_string(),
+            node_name: name.to_string(),
+            node_kind: "Site".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn t4_ap(id: &str, name: &str) -> TopologyCanonicalNode {
+        TopologyCanonicalNode {
+            node_id: id.to_string(),
+            node_name: name.to_string(),
+            node_kind: "ap".to_string(),
+            ..Default::default()
+        }
+    }
+
+    /// T4 pin 1: dedupe is deterministic — SORTED input order drives
+    /// name assignment, so any node permutation yields the identical
+    /// map and ambiguous set (HashMap iteration must never pick the
+    /// duplicate-suffix winner).
+    #[test]
+    fn display_names_deterministic_under_shuffled_input() {
+        let ids = ["id-a", "id-b", "id-c", "id-d"];
+        let nodes = vec![
+            t4_node(ids[0], "tower-1"),
+            t4_node(ids[1], "tower-1"),
+            t4_node(ids[2], "s10-a"),
+            t4_node(ids[3], "tower-1"),
+        ];
+
+        let (ordered_names, ordered_ambiguous) = deduped_display_names(&nodes);
+        let (reversed_names, reversed_ambiguous) = {
+            let mut shuffled = nodes.clone();
+            shuffled.reverse();
+            deduped_display_names(&shuffled)
+        };
+        let (rotated_names, rotated_ambiguous) = {
+            let mut shuffled = nodes.clone();
+            shuffled.rotate_left(2);
+            shuffled.swap(0, 3);
+            deduped_display_names(&shuffled)
+        };
+
+        assert_eq!(ordered_names, reversed_names);
+        assert_eq!(ordered_names, rotated_names);
+        assert_eq!(ordered_ambiguous, reversed_ambiguous);
+        assert_eq!(ordered_ambiguous, rotated_ambiguous);
+        assert!(ordered_ambiguous.contains("tower-1"));
+        assert!(!ordered_ambiguous.contains("s10-a"));
+    }
+
+    /// T4 amendment 5: dedupe is stable per-INPUT — the same input
+    /// file always yields the same names — and a same-name sibling
+    /// FLIPS existing nodes plain↔suffixed (membership change, not
+    /// generation change). The suffix shape is `{name} [hash8]`.
+    #[test]
+    fn dedupe_stable_per_input_and_sibling_flip() {
+        let lone = vec![t4_node("id-b", "tower-1")];
+        let (first_names, _) = deduped_display_names(&lone);
+        let (again_names, _) = deduped_display_names(&lone);
+        assert_eq!(first_names.get("id-b").expect("map entry present"), "tower-1");
+        assert_eq!(first_names, again_names, "same input ⇒ same names");
+
+        // A same-name sibling arrives: BOTH non-Site claimants end up
+        // SUFFIXED (duplicate_count > 1 with no unique Site owner ⇒
+        // duplicate_export_name for each) — the existing id-b node
+        // FLIPS plain→suffixed purely from the membership change
+        // (amendment 5), and the raw base becomes ambiguous (pin 2's
+        // loud-miss safety).
+        let with_sibling = vec![t4_node("id-b", "tower-1"), t4_node("id-a", "tower-1")];
+        let (flipped_names, flipped_ambiguous) = deduped_display_names(&with_sibling);
+        assert_eq!(flipped_names.get("id-a").expect("map entry present"), "tower-1 [id-a]");
+        // short_node_suffix takes the first 8 chars of the last
+        // ':'-segment: "id-b" stays "id-b" — the exact `{name} [hash8]`
+        // shape.
+        assert_eq!(flipped_names.get("id-b").expect("map entry present"), "tower-1 [id-b]");
+        assert!(flipped_ambiguous.contains("tower-1"));
+
+        // A SITE keeps the plain name when the only OTHER claimant is
+        // a non-Site kind (the unique site owner wins the plain
+        // slot). Note an empty/unknown kind normalizes to Site — the
+        // AP must be a real "ap" here.
+        let site_vs_ap = vec![t4_site("site-1", "pop-1"), t4_ap("ap-1", "pop-1")];
+        let (mixed_names, _) = deduped_display_names(&site_vs_ap);
+        assert_eq!(mixed_names.get("site-1").expect("map entry present"), "pop-1");
+        assert_eq!(mixed_names.get("ap-1").expect("map entry present"), "pop-1 [ap-1]");
+
+        // Per-input stability on the flipped world too.
+        let (flipped_again_names, _) = deduped_display_names(&with_sibling);
+        assert_eq!(flipped_names, flipped_again_names);
+    }
+
+
+}
+
+
+#[cfg(test)]
+mod t5_validate_tests {
+    use super::*;
+
+    fn t4_temp_dir() -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock should be monotonic enough for tests")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("t5-validate-{unique}"));
+        std::fs::create_dir_all(&path).expect("temp directory should be creatable");
+        path
+    }
+
+    fn node(id: &str, parent: Option<&str>) -> TopologyCanonicalNode {
+        TopologyCanonicalNode {
+            node_id: id.to_string(),
+            node_name: id.to_string(),
+            current_parent_node_id: parent.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    /// T5 ruling 6 gate: each model violation is a LOUD reject.
+    #[test]
+    fn validate_rejects_each_violation_class() {
+        // Duplicate id.
+        let dup = vec![node("a", None), node("a", None)];
+        assert!(validate_topology_nodes(&dup).is_err());
+        // Dangling parent.
+        let dangling = vec![node("a", Some("missing"))];
+        assert!(validate_topology_nodes(&dangling).is_err());
+        // Cycle.
+        let cyclic = vec![node("a", Some("b")), node("b", Some("a"))];
+        assert!(validate_topology_nodes(&cyclic).is_err());
+        // Self-parent.
+        let self_parent = vec![node("a", Some("a"))];
+        assert!(validate_topology_nodes(&self_parent).is_err());
+        // Empty id.
+        let empty = vec![node("  ", None)];
+        assert!(validate_topology_nodes(&empty).is_err());
+        // A clean forest (multiple parentless root-level sites) is
+        // LEGAL — the projections add the single synthetic root.
+        let forest = vec![node("s1", None), node("s2", None), node("ap", Some("s1"))];
+        assert!(validate_topology_nodes(&forest).is_ok());
+    }
+
+    /// T5 ruling 6: validate fires at the IMPORT persistence
+    /// boundary — a model violation rejects the save LOUDLY.
+    #[test]
+    fn save_rejects_an_invalid_model() {
+        let root = t4_temp_dir();
+        let config = Config {
+            lqos_directory: root.display().to_string(),
+            state_directory: Some(root.join("state").display().to_string()),
+            ..Config::default()
+        };
+        let state = TopologyCanonicalStateFile {
+            nodes: vec![node("a", Some("dangling"))],
+            ..Default::default()
+        };
+        let result = state.save(&config);
+        assert!(result.is_err(), "save rejects a dangling parent");
+        match result {
+            Err(TopologyCanonicalStateError::Validation(errors)) => {
+                assert!(errors.iter().any(|e| e.contains("dangling")), "{errors:?}");
+            }
+            other => panic!("expected the Validation reject, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

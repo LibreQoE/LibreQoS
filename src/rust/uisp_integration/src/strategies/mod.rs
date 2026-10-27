@@ -49,10 +49,8 @@ fn write_compiled_outputs(
         error!("Unable to write topology parent candidates snapshot: {e:?}");
         UispIntegrationError::WriteNetJson
     })?;
-    compiled.editor.save(config).map_err(|e| {
-        error!("Unable to write topology editor state snapshot: {e:?}");
-        UispIntegrationError::WriteNetJson
-    })?;
+    // Rung 1.5 §1.3: topology_editor_state.json is never persisted — the
+    // editor view is `canonical.to_editor_state()` everywhere.
     compiled.canonical.save(config).map_err(|e| {
         error!("Unable to write topology canonical state snapshot: {e:?}");
         UispIntegrationError::WriteNetJson

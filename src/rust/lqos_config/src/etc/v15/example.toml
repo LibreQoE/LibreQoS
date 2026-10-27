@@ -4,7 +4,6 @@ state_directory = "/opt/libreqos/state"
 node_id = "0000-0000-0000"
 node_name = "Example Node"
 packet_capture_time = 10
-queue_check_period_ms = 1000
 display_cobrand = false
 enable_circuit_heatmaps = true
 enable_site_heatmaps = true
@@ -23,7 +22,6 @@ disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
 
 # EITHER:
 [bridge]
-use_xdp_bridge = true
 to_internet = "eth0"
 to_network = "eth1"
 # mtu = 1500
@@ -52,65 +50,35 @@ generated_pn_upload_mbps = 1000
 dry_run = false
 sudo = false
 #override_available_queues = 12 # This can be omitted and be 0 for Python
+# DPDK scheduler WORKER count ("--workers"). Omit to DERIVE it from the link
+# bandwidth + physical cores (docs/zero_manual_ports_installer_card.md B.4).
+# NOTE: this is NOT override_available_queues above -- that one tunes the
+# CAKE/placement QUEUE BUILD (lqos_python/lqos_topology), a different axis.
+#workers = 4
 use_binpacking = false
 
-[treeguard]
-enabled = true
-dry_run = false
-tick_seconds = 1
-
-[treeguard.cpu]
-mode = "cpu_aware"
-cpu_high_pct = 75
-cpu_low_pct = 55
-
-[treeguard.links]
-enabled = false
-all_nodes = true
-nodes = []
-idle_util_pct = 2.0
-idle_min_minutes = 15
-rtt_missing_seconds = 120
-unvirtualize_util_pct = 5.0
-min_state_dwell_minutes = 30
-max_link_changes_per_hour = 4
-reload_cooldown_minutes = 10
-top_level_auto_virtualize = false
-top_level_safe_util_pct = 85.0
-
-[treeguard.circuits]
-enabled = true
-all_circuits = true
-circuits = []
-switching_enabled = true
-independent_directions = true
-idle_util_pct = 2.0
-idle_min_minutes = 15
-rtt_missing_seconds = 120
-upgrade_util_pct = 5.0
-min_switch_dwell_minutes = 30
-max_switches_per_hour = 4
-persist_sqm_overrides = true
-
-[treeguard.qoo]
-enabled = true
-min_score = 70.0
+[power]
+# Host CPU power posture (docs/power_profile_work_order.md). Turbo is ALWAYS off
+# (forced) — there is no turbo knob and no way to enable it through LibreQoS.
+# balanced (default) = turbo off, change nothing else (does not fight
+# tuned/cpupower/power-profiles-daemon/BIOS).
+# eco = + a ~65% frequency cap + "power" EPP.
+# performance = + governor/EPP performance + shallow C-states (still no turbo).
+# Applied by libreqos-setup / libreqos-power.service (bare metal only).
+profile = "balanced"
+# eco's frequency cap, as a percent of the turbo-off maximum (default 65; 10-100).
+#eco_max_freq_pct = 65
 
 [long_term_stats]
 gather_stats = true
 collation_period_seconds = 10
 license_key = "(data)"
-uisp_reporting_interval_seconds = 300
-
-[byte_counters]
-# Optional cumulative byte counters for nodes and circuits, exposed by lqos_api.
-enabled = false
 
 [local_api]
 bearer_token = ""
 
 [ip_ranges]
-ignore_subnets = []
+ignore_subnets = [ "192.168.0.0/16" ]
 allow_subnets = [ "172.16.0.0/12", "10.0.0.0/8", "100.64.0.0/16", "192.168.0.0/16" ]
 
 [integration_common]
@@ -158,7 +126,6 @@ timeout_secs = 20
 
 [topology]
 compile_mode = "ap_site"
-queue_auto_virtualize_threshold_mbps = 5001
 
 [uisp_integration]
 enable_uisp = false

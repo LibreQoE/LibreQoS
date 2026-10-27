@@ -5,7 +5,7 @@ use lqos_config::{
     CircuitAnchor, CircuitAnchorsFile, ConfigShapedDevices, ShapedDevice,
     TopologyCanonicalIngressKind, TopologyCanonicalNode, TopologyCanonicalStateFile,
     TopologyEditorNode, TopologyEditorStateFile, TopologyParentCandidatesFile,
-    TopologyQueueVisibilityPolicy, topology_ingress_identity_from_tokens,
+    topology_ingress_identity_from_tokens,
 };
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -373,7 +373,6 @@ struct SanitizedTopologyIndex {
     exported_node_names_by_id: HashMap<String, String>,
     exported_parent_by_node_id: HashMap<String, Option<String>>,
     node_names_by_id: HashMap<String, String>,
-    queue_policy_by_node_id: HashMap<String, TopologyQueueVisibilityPolicy>,
 }
 
 fn sanitized_topology_index(imported: &ImportedTopologyBundle) -> SanitizedTopologyIndex {
@@ -388,17 +387,9 @@ fn sanitized_topology_index(imported: &ImportedTopologyBundle) -> SanitizedTopol
         .map(|(node_id, node)| (node_id.clone(), node.parent_id.clone()))
         .collect::<HashMap<_, _>>();
 
-    let mut queue_policy_by_node_id = HashMap::new();
-    if let Some(native) = imported.native_editor.as_ref() {
-        for node in &native.nodes {
-            node_names_by_id.insert(node.node_id.clone(), node.node_name.clone());
-            queue_policy_by_node_id.insert(node.node_id.clone(), node.queue_visibility_policy);
-        }
-    }
     if let Some(native) = imported.native_canonical.as_ref() {
         for node in &native.nodes {
             node_names_by_id.insert(node.node_id.clone(), node.node_name.clone());
-            queue_policy_by_node_id.insert(node.node_id.clone(), node.queue_visibility_policy);
         }
     }
 
@@ -406,7 +397,6 @@ fn sanitized_topology_index(imported: &ImportedTopologyBundle) -> SanitizedTopol
         exported_node_names_by_id,
         exported_parent_by_node_id,
         node_names_by_id,
-        queue_policy_by_node_id,
     }
 }
 
@@ -495,9 +485,6 @@ fn sanitize_editor_nodes(
                 node.current_attachment_name = None;
             }
 
-            if let Some(policy) = topology_index.queue_policy_by_node_id.get(&node.node_id) {
-                node.queue_visibility_policy = *policy;
-            }
             node.node_name = exported_name.clone();
             Some(node)
         })
@@ -509,39 +496,30 @@ fn sanitized_editor_state(
     generated_unix: Option<u64>,
     imported: &ImportedTopologyBundle,
 ) -> TopologyEditorStateFile {
+    // Rung 1.5 §1.3: the editor view is ALWAYS the canonical projection —
+    // the embedded editor payload is dead (#12-HIGH), so the trusted-parent
+    // seed and the editor domain object both derive from canonical only.
     let has_native_topology = imported
-        .native_editor
+        .native_canonical
         .as_ref()
-        .is_some_and(|editor| !editor.nodes.is_empty())
-        || imported
-            .native_canonical
-            .as_ref()
-            .is_some_and(|canonical| !canonical.nodes.is_empty());
+        .is_some_and(|canonical| !canonical.nodes.is_empty());
     let mut trusted_native_current_parents = HashMap::new();
-    if let Some(editor) = imported.native_editor.as_ref() {
-        for node in &editor.nodes {
-            if let Some(parent_id) = node.current_parent_node_id.as_ref() {
-                trusted_native_current_parents.insert(node.node_id.clone(), parent_id.clone());
-            }
-        }
-    } else if let Some(canonical) = imported.native_canonical.as_ref() {
+    if let Some(canonical) = imported.native_canonical.as_ref() {
         for node in &canonical.nodes {
             if let Some(parent_id) = node.current_parent_node_id.as_ref() {
                 trusted_native_current_parents.insert(node.node_id.clone(), parent_id.clone());
             }
         }
     }
-    let editor = imported.native_editor.clone().unwrap_or_else(|| {
-        imported
-            .native_canonical
-            .clone()
-            .unwrap_or_else(|| {
-                TopologyCanonicalStateFile::from_legacy_network_json(
-                    &imported.compatibility_network_json,
-                )
-            })
-            .to_editor_state()
-    });
+    let editor = imported
+        .native_canonical
+        .clone()
+        .unwrap_or_else(|| {
+            TopologyCanonicalStateFile::from_legacy_network_json(
+                &imported.compatibility_network_json,
+            )
+        })
+        .to_editor_state();
     let editor = merge_legacy_parent_candidates(editor, imported.parent_candidates.as_ref());
     let topology_index = sanitized_topology_index(imported);
 
@@ -660,6 +638,7 @@ fn projected_outputs(
             anchors,
         },
         ethernet_advisories: imported.ethernet_advisories,
+        circuit_matches: imported.circuit_matches,
     }
 }
 
@@ -700,6 +679,7 @@ fn compile_full_like(
             anchors: imported.circuit_anchors.anchors,
         },
         ethernet_advisories: imported.ethernet_advisories,
+        circuit_matches: imported.circuit_matches,
     })
 }
 
@@ -825,9 +805,10 @@ mod tests {
         CircuitAnchor, CircuitAnchorsFile, ConfigShapedDevices, ShapedDevice,
         TopologyAllowedParent, TopologyAttachmentHealthStatus, TopologyAttachmentOption,
         TopologyAttachmentRateSource, TopologyAttachmentRole, TopologyCanonicalIngressKind,
-        TopologyCanonicalStateFile, TopologyEditorNode, TopologyEditorStateFile,
+        TopologyCanonicalNode, TopologyCanonicalStateFile, TopologyEditorNode,
+        TopologyEditorStateFile,
         TopologyParentCandidate, TopologyParentCandidatesFile, TopologyParentCandidatesNode,
-        TopologyQueueVisibilityPolicy, topology_auto_attachment_option,
+        topology_auto_attachment_option,
     };
     use serde_json::{Value, json};
 
@@ -898,7 +879,6 @@ mod tests {
             current_attachment_name: None,
             can_move: false,
             allowed_parents: Vec::new(),
-            queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
             preferred_attachment_id: None,
             preferred_attachment_name: None,
             effective_attachment_id: None,
@@ -906,9 +886,7 @@ mod tests {
         }
     }
 
-    fn root_switch_editor_node(
-        queue_visibility_policy: TopologyQueueVisibilityPolicy,
-    ) -> TopologyEditorNode {
+    fn root_switch_editor_node() -> TopologyEditorNode {
         TopologyEditorNode {
             node_id: "uisp:device:root-switch".to_string(),
             node_name: "Root Switch".to_string(),
@@ -920,7 +898,6 @@ mod tests {
             current_attachment_name: Some("Root Site".to_string()),
             can_move: true,
             allowed_parents: Vec::new(),
-            queue_visibility_policy,
             preferred_attachment_id: None,
             preferred_attachment_name: None,
             effective_attachment_id: None,
@@ -954,7 +931,6 @@ mod tests {
             current_attachment_name: Some(current_attachment_name.to_string()),
             can_move: true,
             allowed_parents,
-            queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
             preferred_attachment_id: None,
             preferred_attachment_name: None,
             effective_attachment_id: None,
@@ -963,7 +939,6 @@ mod tests {
     }
 
     fn queue_auto_device_parent_editor(
-        root_switch_policy: TopologyQueueVisibilityPolicy,
         child_attachment_id: &str,
         child_attachment_name: &str,
         child_allowed_parents: Vec<TopologyAllowedParent>,
@@ -975,13 +950,94 @@ mod tests {
             ingress_identity: None,
             nodes: vec![
                 root_site_editor_node(),
-                root_switch_editor_node(root_switch_policy),
+                root_switch_editor_node(),
                 child_switch_editor_node(
                     child_attachment_id,
                     child_attachment_name,
                     child_allowed_parents,
                 ),
             ],
+        }
+    }
+
+    /// Rung 1.5 test bridge: the bundle no longer carries a native editor, so
+    /// legacy editor-shaped test inputs fold into the canonical object.
+    fn editor_node_to_canonical(node: TopologyEditorNode) -> TopologyCanonicalNode {
+        TopologyCanonicalNode {
+            node_id: node.node_id,
+            node_name: node.node_name,
+            latitude: node.latitude,
+            longitude: node.longitude,
+            node_kind: String::new(),
+            current_parent_node_id: node.current_parent_node_id,
+            current_parent_node_name: node.current_parent_node_name,
+            current_attachment_id: node.current_attachment_id,
+            current_attachment_name: node.current_attachment_name,
+            can_move: node.can_move,
+            allowed_parents: node.allowed_parents,
+            rate_input: Default::default(),
+        }
+    }
+
+    fn canonical_from_editor(editor: TopologyEditorStateFile) -> TopologyCanonicalStateFile {
+        TopologyCanonicalStateFile {
+            schema_version: editor.schema_version,
+            source: editor.source,
+            generated_unix: editor.generated_unix,
+            ingress_identity: editor.ingress_identity,
+            ingress_kind: TopologyCanonicalIngressKind::NativeIntegration,
+            nodes: editor
+                .nodes
+                .into_iter()
+                .map(editor_node_to_canonical)
+                .collect(),
+            compatibility_network_json: serde_json::Value::Object(serde_json::Map::new()),
+        }
+    }
+
+    fn merge_editor_into_canonical(
+        editor: Option<TopologyEditorStateFile>,
+        canonical: Option<TopologyCanonicalStateFile>,
+    ) -> Option<TopologyCanonicalStateFile> {
+        match (editor, canonical) {
+            // HEAD precedence: the editor supplies the node set/structure, the
+            // canonical supplies authoritative names + queue policy for shared ids.
+            (Some(editor), Some(canonical)) => {
+                let canonical_by_id: std::collections::HashMap<String, TopologyCanonicalNode> =
+                    canonical
+                        .nodes
+                        .into_iter()
+                        .map(|node| (node.node_id.clone(), node))
+                        .collect();
+                let TopologyEditorStateFile {
+                    schema_version,
+                    source,
+                    generated_unix,
+                    ingress_identity,
+                    nodes: editor_nodes,
+                } = editor;
+                let nodes = editor_nodes
+                    .into_iter()
+                    .map(|editor_node| {
+                        let mut node = editor_node_to_canonical(editor_node);
+                        if let Some(canonical_node) = canonical_by_id.get(&node.node_id) {
+                            node.node_name = canonical_node.node_name.clone();
+                        }
+                        node
+                    })
+                    .collect();
+                Some(TopologyCanonicalStateFile {
+                    schema_version,
+                    source,
+                    generated_unix,
+                    ingress_identity,
+                    ingress_kind: TopologyCanonicalIngressKind::NativeIntegration,
+                    nodes,
+                    compatibility_network_json: canonical.compatibility_network_json,
+                })
+            }
+            (Some(editor), None) => Some(canonical_from_editor(editor)),
+            (None, canonical) => canonical,
         }
     }
 
@@ -993,13 +1049,13 @@ mod tests {
             source: "uisp/full2".to_string(),
             generated_unix: Some(1),
             ingress_identity: None,
-            native_canonical,
-            native_editor,
+            native_canonical: merge_editor_into_canonical(native_editor, native_canonical),
             parent_candidates: None,
             compatibility_network_json: queue_auto_device_parent_network_json(),
             shaped_devices: shaped_devices(Vec::new()),
             circuit_anchors: CircuitAnchorsFile::default(),
             ethernet_advisories: Vec::new(),
+            circuit_matches: Default::default(),
         }
     }
 
@@ -1044,13 +1100,6 @@ mod tests {
                 nodes: Vec::new(),
                 compatibility_network_json: network.clone(),
             }),
-            native_editor: Some(TopologyEditorStateFile {
-                schema_version: 1,
-                source: "uisp/full2".to_string(),
-                generated_unix: Some(1),
-                ingress_identity: None,
-                nodes: Vec::new(),
-            }),
             parent_candidates: None,
             compatibility_network_json: network,
             shaped_devices: shaped_devices(vec![
@@ -1078,12 +1127,13 @@ mod tests {
                 ],
             },
             ethernet_advisories: Vec::new(),
+            circuit_matches: Default::default(),
         }
     }
 
     fn imported_bundle_with_hidden_logical_parent() -> ImportedTopologyBundle {
         let mut bundle = imported_bundle();
-        bundle.native_editor = Some(TopologyEditorStateFile {
+        let editor = TopologyEditorStateFile {
             schema_version: 1,
             source: "uisp/full2".to_string(),
             generated_unix: Some(1),
@@ -1099,13 +1149,13 @@ mod tests {
                 current_attachment_name: Some("Missing Attachment".to_string()),
                 can_move: false,
                 allowed_parents: Vec::new(),
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
                 effective_attachment_name: None,
             }],
-        });
+        };
+        bundle.native_canonical = merge_editor_into_canonical(Some(editor), bundle.native_canonical);
         bundle
     }
 
@@ -1208,8 +1258,8 @@ mod tests {
             source: "uisp/full2".to_string(),
             generated_unix: Some(1),
             ingress_identity: None,
-            native_canonical: None,
-            native_editor: Some(TopologyEditorStateFile {
+            native_canonical: merge_editor_into_canonical(
+                Some(TopologyEditorStateFile {
                 schema_version: 1,
                 source: "uisp/full2".to_string(),
                 generated_unix: Some(1),
@@ -1256,13 +1306,14 @@ mod tests {
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
                     effective_attachment_name: None,
                 }],
             }),
+                None,
+            ),
             parent_candidates: None,
             compatibility_network_json: json!({
                 "Site Alpha": {
@@ -1289,6 +1340,7 @@ mod tests {
             shaped_devices: shaped_devices(Vec::new()),
             circuit_anchors: CircuitAnchorsFile::default(),
             ethernet_advisories: Vec::new(),
+            circuit_matches: Default::default(),
         };
 
         let compiled = compile_topology(imported, TopologyCompileMode::Full)
@@ -1306,134 +1358,9 @@ mod tests {
         assert_eq!(node.current_attachment_name.as_deref(), Some("AP Alpha"));
     }
 
-    #[test]
-    fn full_mode_preserves_native_parent_when_attachment_matches_exported_device_parent() {
-        let editor = queue_auto_device_parent_editor(
-            TopologyQueueVisibilityPolicy::QueueAuto,
-            "uisp:device:root-switch",
-            "Root Switch",
-            vec![allowed_parent("uisp:site:site-root", "Root Site")],
-        );
-        let canonical = TopologyCanonicalStateFile::from_editor_and_network(
-            &editor,
-            &queue_auto_device_parent_network_json(),
-            TopologyCanonicalIngressKind::NativeIntegration,
-        );
-        let imported = queue_auto_device_parent_bundle(None, Some(canonical));
-
-        let compiled = compile_topology(imported, TopologyCompileMode::Full)
-            .expect("full compilation should preserve canonical logical parents");
-        let child_switch = compiled
-            .editor
-            .nodes
-            .iter()
-            .find(|node| node.node_id == "uisp:device:child-switch")
-            .expect("child switch should remain in editor state");
-        let root_switch = compiled
-            .editor
-            .nodes
-            .iter()
-            .find(|node| node.node_id == "uisp:device:root-switch")
-            .expect("root switch should remain in editor state");
-
-        assert_eq!(
-            root_switch.queue_visibility_policy,
-            TopologyQueueVisibilityPolicy::QueueAuto
-        );
-        assert_eq!(
-            child_switch.current_parent_node_id.as_deref(),
-            Some("uisp:site:site-root")
-        );
-        assert_eq!(
-            child_switch.current_parent_node_name.as_deref(),
-            Some("Root Site")
-        );
-        assert_eq!(
-            child_switch.current_attachment_id.as_deref(),
-            Some("uisp:device:root-switch")
-        );
-        assert_eq!(
-            child_switch.current_attachment_name.as_deref(),
-            Some("Root Switch")
-        );
-        assert_eq!(
-            child_switch
-                .allowed_parents
-                .iter()
-                .filter(|parent| parent.parent_node_id == "uisp:device:root-switch")
-                .count(),
-            0
-        );
-    }
-
-    #[test]
-    fn full_mode_preserves_native_canonical_queue_policy_without_reparenting() {
-        let editor = queue_auto_device_parent_editor(
-            TopologyQueueVisibilityPolicy::QueueVisible,
-            "uisp:device:root-switch",
-            "Root Switch",
-            vec![allowed_parent("uisp:site:site-root", "Root Site")],
-        );
-        let mut canonical = TopologyCanonicalStateFile::from_editor_and_network(
-            &editor,
-            &queue_auto_device_parent_network_json(),
-            TopologyCanonicalIngressKind::NativeIntegration,
-        );
-        let root_switch = canonical
-            .nodes
-            .iter_mut()
-            .find(|node| node.node_id == "uisp:device:root-switch")
-            .expect("canonical fixture should include root switch");
-        root_switch.queue_visibility_policy = TopologyQueueVisibilityPolicy::QueueAuto;
-        let imported = queue_auto_device_parent_bundle(Some(editor), Some(canonical));
-
-        let compiled = compile_topology(imported, TopologyCompileMode::Full)
-            .expect("full compilation should prefer canonical queue policy");
-        let child_switch = compiled
-            .editor
-            .nodes
-            .iter()
-            .find(|node| node.node_id == "uisp:device:child-switch")
-            .expect("child switch should remain in editor state");
-        let root_switch = compiled
-            .editor
-            .nodes
-            .iter()
-            .find(|node| node.node_id == "uisp:device:root-switch")
-            .expect("root switch should remain in editor state");
-
-        assert_eq!(
-            root_switch.queue_visibility_policy,
-            TopologyQueueVisibilityPolicy::QueueAuto
-        );
-        assert_eq!(
-            child_switch.current_parent_node_id.as_deref(),
-            Some("uisp:site:site-root")
-        );
-        assert_eq!(
-            child_switch.current_parent_node_name.as_deref(),
-            Some("Root Site")
-        );
-        assert_eq!(
-            child_switch.current_attachment_id.as_deref(),
-            Some("uisp:device:root-switch")
-        );
-        assert_eq!(
-            child_switch.current_attachment_name.as_deref(),
-            Some("Root Switch")
-        );
-        assert!(
-            !child_switch
-                .allowed_parents
-                .iter()
-                .any(|parent| parent.parent_node_id == "uisp:device:root-switch")
-        );
-    }
-
-    #[test]
+        #[test]
     fn full_mode_does_not_infer_matching_device_attachment_parent() {
         let mut editor = queue_auto_device_parent_editor(
-            TopologyQueueVisibilityPolicy::QueueAuto,
             "uisp:device:root-switch",
             "Root Switch",
             Vec::new(),
@@ -1472,7 +1399,6 @@ mod tests {
     #[test]
     fn full_mode_can_use_exported_device_parent_for_different_attachment() {
         let mut editor = queue_auto_device_parent_editor(
-            TopologyQueueVisibilityPolicy::QueueAuto,
             "uisp:device:child-switch",
             "Child Switch",
             vec![allowed_parent("uisp:device:root-switch", "Root Switch")],
@@ -1523,7 +1449,6 @@ mod tests {
     #[test]
     fn full_mode_preserves_explicit_native_device_parent_missing_from_allowed_parents() {
         let mut editor = queue_auto_device_parent_editor(
-            TopologyQueueVisibilityPolicy::QueueAuto,
             "uisp:device:root-switch",
             "Root Switch",
             vec![allowed_parent("uisp:site:site-root", "Root Site")],
@@ -1573,7 +1498,6 @@ mod tests {
     #[test]
     fn full_mode_preserves_explicit_native_device_parent_without_duplicate_allowed_parent() {
         let mut editor = queue_auto_device_parent_editor(
-            TopologyQueueVisibilityPolicy::QueueAuto,
             "uisp:device:root-switch",
             "Root Switch",
             vec![
@@ -1631,8 +1555,8 @@ mod tests {
             source: "uisp/full2".to_string(),
             generated_unix: Some(1),
             ingress_identity: None,
-            native_canonical: None,
-            native_editor: Some(TopologyEditorStateFile {
+            native_canonical: merge_editor_into_canonical(
+                Some(TopologyEditorStateFile {
                 schema_version: 1,
                 source: "uisp/full2".to_string(),
                 generated_unix: Some(1),
@@ -1649,7 +1573,6 @@ mod tests {
                         current_attachment_name: None,
                         can_move: false,
                         allowed_parents: Vec::new(),
-                        queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                         preferred_attachment_id: None,
                         preferred_attachment_name: None,
                         effective_attachment_id: None,
@@ -1672,7 +1595,6 @@ mod tests {
                             all_attachments_suppressed: false,
                             has_probe_unavailable_attachments: false,
                         }],
-                        queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                         preferred_attachment_id: None,
                         preferred_attachment_name: None,
                         effective_attachment_id: None,
@@ -1680,6 +1602,8 @@ mod tests {
                     },
                 ],
             }),
+                None,
+            ),
             parent_candidates: None,
             compatibility_network_json: json!({
                 "AVIAT_WestRedd": {
@@ -1693,6 +1617,7 @@ mod tests {
             shaped_devices: shaped_devices(Vec::new()),
             circuit_anchors: CircuitAnchorsFile::default(),
             ethernet_advisories: Vec::new(),
+            circuit_matches: Default::default(),
         };
 
         let compiled = compile_topology(imported, TopologyCompileMode::Full)
@@ -1768,7 +1693,6 @@ mod tests {
     #[test]
     fn full_mode_merges_legacy_parent_candidates_into_editor_state() {
         let mut imported = imported_bundle();
-        imported.native_editor = None;
         imported.native_canonical = None;
         imported.parent_candidates = Some(TopologyParentCandidatesFile {
             source: "python/integration_common".to_string(),
@@ -1828,12 +1752,12 @@ mod tests {
             generated_unix: Some(1),
             ingress_identity: None,
             native_canonical: None,
-            native_editor: None,
             parent_candidates: None,
             compatibility_network_json: network,
             shaped_devices: shaped_devices(Vec::new()),
             circuit_anchors: CircuitAnchorsFile::default(),
             ethernet_advisories: Vec::new(),
+            circuit_matches: Default::default(),
         };
 
         let compiled =

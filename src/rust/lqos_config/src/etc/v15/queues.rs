@@ -30,16 +30,16 @@ pub struct QueueConfig {
     /// Queue application mode.
     pub queue_mode: QueueMode,
 
-    /// Upstream bandwidth total - download
-    pub uplink_bandwidth_mbps: u64,
+    /// Upstream bandwidth total - upload (Mbps; a decimal is accepted).
+    pub uplink_bandwidth_mbps: f64,
 
-    /// Downstream bandwidth total - upload
-    pub downlink_bandwidth_mbps: u64,
-
-    /// Upstream bandwidth per interface queue
-    pub generated_pn_download_mbps: u64,
+    /// Downstream bandwidth total - download (Mbps; a decimal is accepted).
+    pub downlink_bandwidth_mbps: f64,
 
     /// Downstream bandwidth per interface queue
+    pub generated_pn_download_mbps: u64,
+
+    /// Upstream bandwidth per interface queue
     pub generated_pn_upload_mbps: u64,
 
     /// Should shell commands actually execute, or just be printed?
@@ -51,21 +51,16 @@ pub struct QueueConfig {
     /// Should we override the number of available queues?
     pub override_available_queues: Option<u32>,
 
+    /// DPDK scheduler WORKER count (`--workers`); `None` = derive via the
+    /// installer's ceiling-table rule (docs/zero_manual_ports_installer_card.md
+    /// B.4). NOT the same axis as `override_available_queues` above: that one
+    /// tunes the CAKE/placement QUEUE BUILD (the lqos_python/lqos_topology
+    /// subsystem); this one sizes the DPDK worker pool. Two unrelated knobs.
+    pub workers: Option<u32>,
+
     /// Should we invoke the binpacking algorithm to optimize flat
     /// networks?
     pub use_binpacking: bool,
-
-    /// Enable lazy queue creation (only create circuit queues when traffic is detected)
-    pub lazy_queues: Option<LazyQueueMode>,
-
-    /// Expiration time in seconds for unused lazy queues (None = never expire)
-    pub lazy_expire_seconds: Option<u64>,
-
-    /// Hold-off on creating lazy queues until this many bytes have been seen
-    pub lazy_threshold_bytes: Option<u64>,
-
-    /// Auto-change queues to fq_codel if they are greater than or equal to X Mbps. Defaults to 1000.
-    pub fast_queues_fq_codel: Option<f64>,
 }
 
 impl Serialize for QueueConfig {
@@ -73,7 +68,7 @@ impl Serialize for QueueConfig {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("QueueConfig", 15)?;
+        let mut state = serializer.serialize_struct("QueueConfig", 12)?;
         state.serialize_field("default_sqm", &self.default_sqm)?;
         state.serialize_field("queue_mode", &self.queue_mode)?;
         // Preserve the legacy field during rewrites so older binaries that still
@@ -89,11 +84,8 @@ impl Serialize for QueueConfig {
         state.serialize_field("dry_run", &self.dry_run)?;
         state.serialize_field("sudo", &self.sudo)?;
         state.serialize_field("override_available_queues", &self.override_available_queues)?;
+        state.serialize_field("workers", &self.workers)?;
         state.serialize_field("use_binpacking", &self.use_binpacking)?;
-        state.serialize_field("lazy_queues", &self.lazy_queues)?;
-        state.serialize_field("lazy_expire_seconds", &self.lazy_expire_seconds)?;
-        state.serialize_field("lazy_threshold_bytes", &self.lazy_threshold_bytes)?;
-        state.serialize_field("fast_queues_fq_codel", &self.fast_queues_fq_codel)?;
         state.end()
     }
 }
@@ -104,30 +96,15 @@ struct QueueConfigCompat {
     default_sqm: String,
     queue_mode: Option<QueueMode>,
     monitor_only: bool,
-    uplink_bandwidth_mbps: u64,
-    downlink_bandwidth_mbps: u64,
+    uplink_bandwidth_mbps: f64,
+    downlink_bandwidth_mbps: f64,
     generated_pn_download_mbps: u64,
     generated_pn_upload_mbps: u64,
     dry_run: bool,
     sudo: bool,
     override_available_queues: Option<u32>,
+    workers: Option<u32>,
     use_binpacking: bool,
-    lazy_queues: Option<LazyQueueMode>,
-    lazy_expire_seconds: Option<u64>,
-    lazy_threshold_bytes: Option<u64>,
-    fast_queues_fq_codel: Option<f64>,
-}
-
-/// Lazy queue creation modes
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default, Allocative)]
-pub enum LazyQueueMode {
-    /// No lazy queue creation
-    #[default]
-    No,
-    /// HTB queues for circuits are created on build, but CAKE classes are created on demand
-    Htb,
-    /// Full lazy queue creation, both HTB queues and CAKE classes are created on demand.
-    Full,
 }
 
 impl Default for QueueConfig {
@@ -135,18 +112,15 @@ impl Default for QueueConfig {
         Self {
             default_sqm: "cake diffserv4".to_string(),
             queue_mode: QueueMode::Shape,
-            uplink_bandwidth_mbps: 1_000,
-            downlink_bandwidth_mbps: 1_000,
+            uplink_bandwidth_mbps: 1_000.0,
+            downlink_bandwidth_mbps: 1_000.0,
             generated_pn_download_mbps: 1_000,
             generated_pn_upload_mbps: 1_000,
             dry_run: false,
             sudo: false,
             override_available_queues: None,
+            workers: None,
             use_binpacking: false,
-            lazy_queues: None, // Default to disabled for backward compatibility
-            lazy_expire_seconds: Some(600), // 10 minutes default
-            lazy_threshold_bytes: None,
-            fast_queues_fq_codel: None,
         }
     }
 }
@@ -172,11 +146,8 @@ impl Default for QueueConfigCompat {
             dry_run: defaults.dry_run,
             sudo: defaults.sudo,
             override_available_queues: defaults.override_available_queues,
+            workers: defaults.workers,
             use_binpacking: defaults.use_binpacking,
-            lazy_queues: defaults.lazy_queues.clone(),
-            lazy_expire_seconds: defaults.lazy_expire_seconds,
-            lazy_threshold_bytes: defaults.lazy_threshold_bytes,
-            fast_queues_fq_codel: defaults.fast_queues_fq_codel,
         }
     }
 }
@@ -205,11 +176,8 @@ impl<'de> Deserialize<'de> for QueueConfig {
             dry_run: compat.dry_run,
             sudo: compat.sudo,
             override_available_queues: compat.override_available_queues,
+            workers: compat.workers,
             use_binpacking: compat.use_binpacking,
-            lazy_queues: compat.lazy_queues,
-            lazy_expire_seconds: compat.lazy_expire_seconds,
-            lazy_threshold_bytes: compat.lazy_threshold_bytes,
-            fast_queues_fq_codel: compat.fast_queues_fq_codel,
         };
         cfg.set_queue_mode(queue_mode);
         Ok(cfg)

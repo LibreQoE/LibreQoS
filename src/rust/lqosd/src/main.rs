@@ -4,18 +4,21 @@
 #![deny(clippy::unwrap_used)]
 
 mod blackboard;
-mod byte_counters;
+pub mod bridge_analytics;
+pub mod bridge_broker;
+pub mod bridge_supervisor;
 mod dynamic_circuits;
+mod e2_rates;
 mod file_lock;
-mod ip_mapping;
+mod heimdall;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
 pub mod lts2_sys;
 mod memory_watchdog;
+pub mod netflow;
 mod network_devices_hooks;
 mod node_manager;
-mod override_writer;
-mod preflight_checks;
+mod outage_containment;
 mod probe_provider;
 mod program_control;
 mod radius_accounting;
@@ -25,13 +28,14 @@ mod scheduler_control;
 mod shaped_devices_tracker;
 mod shaping_runtime;
 mod stats;
-mod stick;
 mod system_stats;
 #[cfg(test)]
 mod test_support;
+#[cfg(test)]
+mod k3_retirement_gate;
 mod throughput_tracker;
 mod tool_status;
-mod treeguard;
+mod tunnel_circuits_ingest;
 mod tuning;
 mod urgent;
 mod validation;
@@ -41,42 +45,28 @@ mod version_checks;
 use std::io::Write;
 use std::net::IpAddr;
 
-use crate::ip_mapping::clear_hot_cache;
 use crate::{
     file_lock::FileLock,
-    ip_mapping::{clear_ip_flows, del_ip_flow, list_mapped_ips, map_ip_to_flow},
-    throughput_tracker::flow_data::{
-        FlowActor, flowbee_handle_events, live_active_flow_count, setup_netflow_tracker,
-    },
+    throughput_tracker::flow_data::live_active_flow_count,
 };
+use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
 use anyhow::Result;
-use lqos_bus::{
-    BusRequest, BusResponse, InsightLicenseSummary, TreeGuardRuntimeNodeBranchSnapshot,
-    TreeGuardRuntimeNodeOperationSnapshot, UnixSocketServer,
-};
-use lqos_heimdall::{n_second_packet_dump, perf_interface::heimdall_handle_events, start_heimdall};
-use lqos_queue_tracker::{
-    add_watched_queue, get_raw_circuit_data, spawn_queue_monitor, spawn_queue_structure_monitor,
-};
-use lqos_sys::LibreQoSKernels;
+use lqos_bus::{BusRequest, BusResponse, InsightLicenseSummary, UnixSocketServer};
+use lqos_heimdall::{n_second_packet_dump, start_heimdall};
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use lqos_utils::unix_time::unix_now;
 use signal_hook::{
     consts::{SIGHUP, SIGINT, SIGTERM},
     iterator::Signals,
 };
-use stats::{BUS_REQUESTS, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
-use std::{thread, time::Duration};
-use throughput_tracker::flow_data::get_rtt_events_per_second;
+use stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS};
+use std::time::Duration;
 use tracing::{error, info, warn};
 
 // Use MiMalloc only on supported platforms
 //#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 //use mimalloc::MiMalloc;
 
-use crate::blackboard::{BLACKBOARD_SENDER, BlackboardCommand};
-
-use crate::remote_commands::start_remote_commands;
 use lqos_stormguard::{STORMGUARD_DEBUG, STORMGUARD_STATS};
 use tracing::level_filters::LevelFilter;
 // Use MiMalloc only on supported platforms
@@ -84,24 +74,20 @@ use tracing::level_filters::LevelFilter;
 // #[global_allocator]
 // static GLOBAL: MiMalloc = MiMalloc;
 
+/// The stock default filter: WARN, plus the dedicated LTS-volume diagnostic
+/// target at INFO (`lqos-74t.2.1.1`). The `.2.1` LTS-volume instruments are
+/// `info!` on the `lqos_lts_volume` target, so a fresh box (no `RUST_LOG`) can
+/// read the LTS volume without a drop-in while nothing else floods.
+pub fn default_filter_directives() -> &'static str {
+    "warn,lqos_lts_volume=info"
+}
+
 /// Configure a highly detailed logging system.
 pub fn set_console_logging() -> anyhow::Result<()> {
-    // install global collector configured based on RUST_LOG env var.
-    let level = if let Ok(level) = std::env::var("RUST_LOG") {
-        match level.to_lowercase().as_str() {
-            "trace" => LevelFilter::TRACE,
-            "debug" => LevelFilter::DEBUG,
-            "info" => LevelFilter::INFO,
-            "warn" => LevelFilter::WARN,
-            "error" => LevelFilter::ERROR,
-            _ => LevelFilter::WARN,
-        }
-    } else {
-        LevelFilter::WARN
-    };
-
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(level)
+    // `RUST_LOG`, when set, is honored as a BARE level (the historical
+    // behavior); any other value falls to WARN. When it is UNSET, the stock
+    // default keeps WARN but lifts the LTS-volume target to INFO.
+    let fmt = tracing_subscriber::fmt()
         // Use a more compact, abbreviated log format
         .compact()
         // Display source code file paths
@@ -111,75 +97,44 @@ pub fn set_console_logging() -> anyhow::Result<()> {
         // Display the thread ID an event was recorded on
         .with_thread_ids(false)
         // Don't display the event's target (module path)
-        .with_target(false)
-        // Build the subscriber
-        .finish();
+        .with_target(false);
 
-    // Set the subscriber as the default
-    tracing::subscriber::set_global_default(subscriber)?;
+    match std::env::var("RUST_LOG").ok() {
+        Some(level) => {
+            let level = match level.to_lowercase().as_str() {
+                "trace" => LevelFilter::TRACE,
+                "debug" => LevelFilter::DEBUG,
+                "info" => LevelFilter::INFO,
+                "warn" => LevelFilter::WARN,
+                "error" => LevelFilter::ERROR,
+                _ => LevelFilter::WARN,
+            };
+            tracing::subscriber::set_global_default(fmt.with_max_level(level).finish())?;
+        }
+        None => {
+            // `env-filter` is enabled in the workspace; the default keeps WARN
+            // and enables ONLY the LTS-volume diagnostic target at INFO.
+            let filter = tracing_subscriber::EnvFilter::new(default_filter_directives());
+            tracing::subscriber::set_global_default(fmt.with_env_filter(filter).finish())?;
+        }
+    }
     Ok(())
 }
 
-fn initialize_license_storage_and_release(
-    initialize_storage: impl FnOnce() -> Result<()>,
-    license_cache_ready_tx: crossbeam_channel::Sender<()>,
-) {
+fn initialize_license_storage(initialize_storage: impl FnOnce() -> Result<()>) {
     info!("Starting local Insight license-cache initialization");
     match initialize_storage() {
         Ok(()) => info!("Completed local Insight license-cache initialization successfully"),
-        Err(err) => {
-            warn!("Completed local Insight license-cache initialization with error: {err:?}")
-        }
-    }
-    if let Err(err) = license_cache_ready_tx.send(()) {
-        warn!("Unable to release the Bakery startup gate: {err}");
+        Err(err) => record_shaping_warning(
+            "Insight license-cache initialization completed with an error",
+            format!("{err:?}"),
+        ),
     }
 }
 
-fn normalize_mapping_request(
-    tc_handle: lqos_bus::TcHandle,
-    cpu: u32,
-    upload: bool,
-) -> anyhow::Result<(lqos_bus::TcHandle, u32, bool)> {
-    let config = lqos_config::load_config()?;
-
-    // With derived upload mapping, we only store one mapping in the kernel.
-    // In non-stick mode, `upload` is meaningless; treat it as false.
-    if !config.on_a_stick_mode() {
-        return Ok((tc_handle, cpu, false));
-    }
-
-    let stick_offset = stick::stick_offset();
-    if stick_offset == 0 {
-        return Ok((tc_handle, cpu, false));
-    }
-
-    if !upload {
-        return Ok((tc_handle, cpu, false));
-    }
-
-    let base_cpu = cpu.checked_sub(stick_offset).ok_or_else(|| {
-        anyhow::anyhow!(
-            "On-a-stick upload mapping CPU ({cpu}) is less than stick_offset ({stick_offset})."
-        )
-    })?;
-
-    let (major, minor) = tc_handle.get_major_minor();
-    let stick_offset_u16 = u16::try_from(stick_offset).map_err(|_| {
-        anyhow::anyhow!(
-            "stick_offset ({stick_offset}) exceeds u16 range; cannot normalize tc_handle."
-        )
-    })?;
-    let base_major = major.checked_sub(stick_offset_u16).ok_or_else(|| {
-        anyhow::anyhow!(
-            "On-a-stick upload mapping tc_handle major ({major}) is less than stick_offset ({stick_offset})."
-        )
-    })?;
-
-    let base_tc_handle = lqos_bus::TcHandle::from_u32(((base_major as u32) << 16) | minor as u32);
-    Ok((base_tc_handle, base_cpu, false))
-}
-
+/// Surfaces a recoverable subsystem failure: logs it, records it in the
+/// operator warning sink, and latches the shaping runtime state. One composite
+/// so the three writer calls stay in a single place (not scattered per site).
 fn record_shaping_failure(
     state: shaping_runtime::ShapingRuntimeState,
     summary: impl Into<String>,
@@ -192,7 +147,55 @@ fn record_shaping_failure(
     shaping_runtime::mark_error(state, summary, detail);
 }
 
+/// Surfaces a recoverable warning that does not by itself degrade the shaping
+/// runtime state; the operator still sees it in the warning sink.
+fn record_shaping_warning(summary: impl Into<String>, detail: impl Into<String>) {
+    let summary = summary.into();
+    let detail = detail.into();
+    warn!("{summary}: {detail}");
+    node_manager::add_global_warning(node_manager::WarningLevel::Warning, summary);
+}
+
 fn main() -> Result<()> {
+    // The seam-align probe (the v2->v3 preflight / deb preinst): print the
+    // wire PROTOCOL_VERSION and exit, so an installed lqosd's protocol can be
+    // compared against the new dataplane artifact's (the mixed-version hazard
+    // that presents as a bridge "magic/version mismatch").
+    if std::env::args().any(|arg| arg == "--print-protocol-version") {
+        println!("{}", lqos_dataplane_types::wire::PROTOCOL_VERSION);
+        return Ok(());
+    }
+    // #4 (`docs/resolved_posture_spec.md`): the resolved-posture probe — print
+    // the RESOLVED semantic posture and exit (mirrors --print-protocol-version),
+    // so the DoD `diff <(lqosd --print-resolved-posture|sort) ...` is mechanical.
+    if std::env::args().any(|arg| arg == "--print-resolved-posture") {
+        use crate::bridge_broker::posture::{PostureInput, render_probe, resolve_posture};
+        let input = match lqos_config::load_config() {
+            Ok(config) => PostureInput {
+                queue_mode_observe: config.queues.queue_mode.is_observe(),
+                dataplane_bridge_present: config.dataplane_bridge.is_some(),
+            },
+            Err(_) => PostureInput {
+                queue_mode_observe: false,
+                dataplane_bridge_present: false,
+            },
+        };
+        print!("{}", render_probe(&resolve_posture(input)));
+        return Ok(());
+    }
+
+    // WP5 (`docs/wp5_seam_state_surface.md`): the reconciliation-state
+    // probe — print the PERSISTED `SEAM_STATE` snapshot and exit. LEVEL-INDEPENDENT:
+    // lqosd defaults to WARN, so the `info!` emit never reaches the journal at the
+    // default; this reads the file the broker's tick writes. Diffable + one-command.
+    if std::env::args().any(|arg| arg == "--print-seam-state") {
+        match std::fs::read_to_string("/run/libreqos/seam_state.json") {
+            Ok(json) => print!("{json}"),
+            Err(_) => println!("SEAM_STATE unavailable (the broker has not ticked yet)"),
+        }
+        return Ok(());
+    }
+
     // Set up logging
     set_console_logging()?;
 
@@ -217,38 +220,28 @@ fn main() -> Result<()> {
 
     // Load config
     let config = lqos_config::load_config()?;
-    byte_counters::set_enabled(config.byte_counters.enabled);
+    // Phase D: the explicit repair entry — lqosd startup is the PRIMARY owner.
+    // It runs BEFORE the runtime's first load; a failure is a LOUD boot failure
+    // (fail-closed), never a degraded silent start.
+    lqos_config::repair_runtime_state(config.as_ref())
+        .map_err(|e| anyhow::anyhow!("runtime-state repair failed at startup: {e}"))?;
+    // `lqos-74t.118.3`: compute the shaping-CPU topology once at startup for
+    // the same-origin CPU & Workers page (never on the request path).
+    node_manager::local_api::cpu_workers::init_topology(config.as_ref());
     let web_config = config.clone();
     let radius_accounting_config = config.radius_accounting.clone();
     shaping_runtime::mark_starting("LibreQoS is starting shaping services.");
 
     ensure_rustls_crypto_provider()?;
 
-    let (license_cache_ready_tx, license_cache_ready_rx) = crossbeam_channel::bounded(1);
-
-    // Start the Bakery before checking the local license cache so its command
-    // queue is available, but keep its worker behind the readiness token.
-    let bakery_sender = match lqos_bakery::start_bakery(license_cache_ready_rx) {
-        Ok(sender) => Some(sender),
-        Err(err) => {
-            record_shaping_failure(
-                shaping_runtime::ShapingRuntimeState::Degraded,
-                "LibreQoS could not start the shaping worker.",
-                format!("{err:#}"),
-            );
-            None
-        }
-    };
-
-    initialize_license_storage_and_release(
-        || lts2_sys::license_grant::init_license_storage(&config),
-        license_cache_ready_tx,
-    );
+    initialize_license_storage(|| lts2_sys::license_grant::init_license_storage(&config));
 
     // Apply Tunings
     tuning::tune_lqosd_from_config_file()?;
 
     // Spawn tracking sub-systems
+    // Fatal: the daemon exits before the API is serving, so there is no live
+    // surface to carry this failure.
     let Ok(control_channel) = lts2_sys::control_channel::init_control_channel() else {
         error!("Failed to initialize Insight control channel, exiting.");
         std::process::exit(1);
@@ -256,15 +249,42 @@ fn main() -> Result<()> {
     let control_tx_for_lts = control_channel.tx.clone();
     let control_tx_for_web = control_channel.tx.clone();
     if let Err(e) = lts2_sys::start_lts2(control_tx_for_lts) {
-        error!("Failed to start Insight: {:?}", e);
+        record_shaping_failure(
+            shaping_runtime::ShapingRuntimeState::Degraded,
+            "Insight client failed to start",
+            format!("{e:?}"),
+        );
     } else {
         info!("Insight client started successfully");
     }
     lqos_network_devices::start_daemon_mode(Some(std::sync::Arc::new(
         network_devices_hooks::LqosdNetworkDevicesHooks,
     )))?;
-    override_writer::start_override_writer_actor()?;
+    // The system-usage actor is started BEFORE the bridge analytics actor so
+ // its sender can ride the LTS/Insight submission trigger.
     let system_usage_tx = system_stats::start_system_stats()?;
+    // E1 (bridge broker): owns the bridge control seam — watches the
+    // published dataplane transaction and emits semantic deltas.
+    // Inert under queue_mode=observe.
+    bridge_broker::start_bridge_broker(&config);
+    // E2 (stats + health): bridge analytics polling + the Supervisor
+    // probe. Inert without [dataplane_bridge] / the analytics socket
+    // env (kernel-dataplane installs untouched). The system-usage sender
+    // powers the orphaned LTS submission trigger.
+    bridge_analytics::start_bridge_analytics(&config, system_usage_tx.clone());
+    bridge_supervisor::start_bridge_supervisor(&config);
+    // C2 (circuit-outage containment): the cold-path black-hole + churn
+    // tripwire — ONE operator-visible surface that names a held circuit.
+    outage_containment::start_outage_containment();
+    // 3a: the NetFlow exporter (F-A export-as-is; a cold-path consumer of the
+    // retained bridge completion events; a no-op unless [flows] enables it).
+    netflow::start(&config);
+    // 3a LTS reinstatement (the #32 spawn-move pattern): the Insight blackboard
+    // relay and the remote-command worker are attach-orphans — spawn them on
+    // the common startup path (their only former spawner was the deleted
+    // kernel attach).
+    blackboard::start_blackboard();
+    remote_commands::start_remote_commands();
 
     // Handle signals
     let mut signals = Signals::new([SIGINT, SIGHUP, SIGTERM])?;
@@ -279,104 +299,43 @@ fn main() -> Result<()> {
 
     version_checks::start_version_check()?;
 
-    let mut kernels = None;
-    let stormguard_bakery_sender = match bakery_sender.clone() {
-        None => None,
-        Some(bakery_sender_for_shaping) => match preflight_checks::preflight_checks() {
-            Ok(()) => match stick::recompute_stick_offset(&config) {
-                Ok(stick_offset) => match FlowActor::start() {
-                    Ok(()) => {
-                        let kernel_result = if config.on_a_stick_mode() {
-                            LibreQoSKernels::on_a_stick_mode(
-                                config.internet_interface(),
-                                config.stick_vlans().1 as u16,
-                                config.stick_vlans().0 as u16,
-                                stick_offset,
-                                Some(heimdall_handle_events),
-                                Some(flowbee_handle_events),
-                            )
-                        } else {
-                            LibreQoSKernels::new(
-                                &config.internet_interface(),
-                                &config.isp_interface(),
-                                Some(heimdall_handle_events),
-                                Some(flowbee_handle_events),
-                            )
-                        };
-
-                        match kernel_result {
-                            Ok(started_kernels) => {
-                                kernels = Some(started_kernels);
-                                blackboard::start_blackboard();
-                                start_remote_commands();
-                                let flow_tx = setup_netflow_tracker()?;
-                                let _ = throughput_tracker::flow_data::setup_flow_analysis();
-                                start_heimdall()?;
-                                spawn_queue_structure_monitor()?;
-                                shaped_devices_tracker::topology_runtime_status_watcher()?;
-                                throughput_tracker::spawn_throughput_monitor(
-                                    flow_tx,
-                                    system_usage_tx.clone(),
-                                    bakery_sender_for_shaping.clone(),
-                                )?;
-                                spawn_queue_monitor()?;
-
-                                if let Err(err) =
-                                    treeguard::actor::start_treeguard_actor(system_usage_tx.clone())
-                                {
-                                    warn!("Failed to start TreeGuard actor: {err}");
-                                }
-
-                                lqos_sys::bpf_garbage_collector();
-                                Some(bakery_sender_for_shaping)
-                            }
-                            Err(err) => {
-                                let detail = format!("{err:#}");
-                                record_shaping_failure(
-                                    shaping_runtime::ShapingRuntimeState::ErrorKernelAttach,
-                                    "LibreQoS failed to start because XDP/TC kernel attach failed.",
-                                    detail,
-                                );
-                                return Err(
-                                    err.context("LibreQoS failed to attach the XDP/TC kernel")
-                                );
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        record_shaping_failure(
-                            shaping_runtime::ShapingRuntimeState::Degraded,
-                            "LibreQoS could not start shaping runtime services.",
-                            format!("{err:#}"),
-                        );
-                        None
-                    }
-                },
-                Err(err) => {
-                    record_shaping_failure(
-                        shaping_runtime::ShapingRuntimeState::ErrorConfig,
-                        "LibreQoS could not start shaping because the configuration is invalid.",
-                        format!("{err:#}"),
-                    );
-                    None
-                }
-            },
-            Err(err) => {
-                let detail = format!("{err:#}");
-                record_shaping_failure(
-                    shaping_runtime::classify_preflight_error(&detail),
-                    "LibreQoS could not start shaping because preflight failed.",
-                    detail,
-                );
-                None
-            }
-        },
-    };
+    // K3-A: the XDP/TC kernel attach path is gone — LibreQoS is bridge-only.
+    // There is no kernel shaper sender, so StormGuard starts with `None` and
+    // runs its bridge arms. K3-B retires the kernel flowbee feed entirely;
+    // bridge flow history is the flow-analysis source.
+ // K2 defect-fix: both file watchers are mode-neutral.
+    // The kernel-attach branch never runs on a bridge-only box, so spawning
+    // them there left bridge deployments without the E2 effective-rate refresh
+    // (topology_runtime_status.json) and without the tunnel_circuits.json
+    // cold-pass ingest. Spawn them on the common startup path instead: kernel
+    // boxes are unchanged and bridge boxes gain both.
+    shaped_devices_tracker::topology_runtime_status_watcher()?;
+    tunnel_circuits_ingest::start_tunnel_circuits_watcher()?;
+    // K2 slice 1: the ASN GeoTable is mode-neutral data (the TopFlows ASN
+    // join needs it on bridge boxes too); only the kernel flowbee feed stays
+    // kernel-gated.
+    let _ = throughput_tracker::flow_data::setup_flow_analysis();
 
     let control_tx_for_webserver = control_tx_for_web.clone();
     let system_usage_tx_for_web = system_usage_tx.clone();
-    let shaping_started = stormguard_bakery_sender.is_some();
-    let bakery_sender_for_stormguard = stormguard_bakery_sender;
+    // K1b startup decoupling §1.5: a bridge-only box IS the shaper, so report
+    // Active when the kernel path started OR the bridge analytics are live.
+    let shaping_started = bridge_analytics::is_active();
+    // K3-A: the kernel transport is gone. The bridge analytics socket is the
+    // only capture transport; a box without bridge analytics has no capture
+    // feed and is left without Heimdall.
+    let heimdall_transport = if bridge_analytics::is_active() {
+        let settings = config.dataplane_bridge.clone().unwrap_or_default();
+        Some(lqos_heimdall::HeimdallTransport::Bridge {
+            socket: bridge_analytics::analytics_socket_path(&settings),
+        })
+    } else {
+        None
+    };
+    match heimdall_transport {
+        Some(transport) => start_heimdall(transport)?,
+        None => tracing::debug!("Heimdall inactive: no kernel attach and no bridge analytics"),
+    }
     let handle = std::thread::Builder::new()
         .name("Async Bus/Web".to_string())
         .spawn(move || {
@@ -385,6 +344,8 @@ fn main() -> Result<()> {
                 .thread_stack_size(8 * 1024 * 1024)
                 .build()
             else {
+                // Fatal: the bus/web thread returns here; without it there is
+                // no API to surface through.
                 error!("Unable to start Tokio runtime. Not much is going to work");
                 return;
             };
@@ -394,48 +355,26 @@ fn main() -> Result<()> {
                 let probe_client_for_stormguard = probe_client.clone();
                 probe_provider::install_probe_client(probe_client.clone());
 
-                tokio::spawn(async move {
-                    match lts2_sys::control_channel::start_control_channel(control_channel).await {
-                        Ok(_) => info!("Insight control channel started successfully"),
-                        Err(e) => error!("Insight control channel failed to start: {:#}", e),
-                    }
-                });
-
-                tokio::spawn(async move {
-                    match bakery_sender_for_stormguard {
-                        Some(bakery_sender_for_async) => {
-                            use tokio::time::{Duration, sleep};
-                            for _ in 0..100u32 {
-                                if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
-                                    break;
-                                }
-                                sleep(Duration::from_millis(50)).await;
-                            }
-                            if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                                let _ = sender.send(lqos_bakery::BakeryCommands::BusReady);
-                            }
-
-                            match lqos_stormguard::start_stormguard(
-                                bakery_sender_for_async,
-                                shaped_devices_tracker::full_network_map_snapshot,
-                                probe_client_for_stormguard,
-                            )
-                            .await
-                            {
-                                Ok(_) => info!("StormGuard started successfully"),
-                                Err(e) => error!("StormGuard failed to start: {:#}", e),
-                            }
-                        }
-                        None => {
-                            warn!("StormGuard not started because shaping is degraded.");
-                        }
-                    }
-                });
-
+                // K1b §4.6 pin 3: StormGuard needs the in-process bus to poll
+                // the bridge publish outcome ring, so the channel is created
+                // before the StormGuard task (the topology thread and the
+                // webserver take clones below).
                 let (bus_tx, bus_rx) = tokio::sync::mpsc::channel::<(
                     tokio::sync::oneshot::Sender<lqos_bus::BusReply>,
                     BusRequest,
                 )>(100);
+                let bus_tx_for_stormguard = bus_tx.clone();
+
+                tokio::spawn(async move {
+                    match lts2_sys::control_channel::start_control_channel(control_channel).await {
+                        Ok(_) => info!("Insight control channel started successfully"),
+                        Err(e) => record_shaping_failure(
+                            shaping_runtime::ShapingRuntimeState::Degraded,
+                            "Insight control channel failed to start",
+                            format!("{e:#}"),
+                        ),
+                    }
+                });
 
                 if let Err(err) = radius_accounting::start_configured_radius_accounting(
                     radius_accounting_config,
@@ -444,10 +383,42 @@ fn main() -> Result<()> {
                 )
                 .await
                 {
-                    error!("RADIUS accounting listener was not started: {err}");
+                    record_shaping_failure(
+                        shaping_runtime::ShapingRuntimeState::Degraded,
+                        "RADIUS accounting listener was not started",
+                        format!("{err}"),
+                    );
                 }
 
                 lqos_topology::start_topology_thread(bus_tx.clone());
+
+                // K1b startup decoupling §1.1: StormGuard spawns AFTER the
+                // topology thread and UNCONDITIONALLY; on a bridge-only box the
+                // sender is None and the kernel/bakery arms no-op.
+                tokio::spawn(async move {
+                    use tokio::time::{Duration, sleep};
+                    for _ in 0..100u32 {
+                        if tokio::fs::metadata(lqos_bus::BUS_SOCKET_PATH).await.is_ok() {
+                            break;
+                        }
+                        sleep(Duration::from_millis(50)).await;
+                    }
+                    match lqos_stormguard::start_stormguard(
+                        shaped_devices_tracker::full_network_map_snapshot,
+                        crate::bridge_analytics::bridge_passive_rtt_p90_by_name,
+                        probe_client_for_stormguard,
+                        bus_tx_for_stormguard,
+                    )
+                    .await
+                    {
+                        Ok(_) => info!("StormGuard started successfully"),
+                        Err(e) => record_shaping_failure(
+                            shaping_runtime::ShapingRuntimeState::Degraded,
+                            "StormGuard failed to start",
+                            format!("{e:#}"),
+                        ),
+                    }
+                });
 
                 let webserver_disabled = web_config.disable_webserver.unwrap_or(false);
                 if !webserver_disabled {
@@ -462,7 +433,11 @@ fn main() -> Result<()> {
                         )
                         .await
                         {
-                            error!("Node Manager Failed: {e:?}");
+                            record_shaping_failure(
+                                shaping_runtime::ShapingRuntimeState::Degraded,
+                                "Node Manager (webserver) failed to start",
+                                format!("{e:?}"),
+                            );
                         }
                     });
                 } else {
@@ -491,9 +466,6 @@ fn main() -> Result<()> {
                                 warn!("This should never happen - terminating on unknown signal")
                             }
                         }
-                        std::mem::drop(kernels);
-                        // Give kernel/driver a moment to finalize detach
-                        thread::sleep(Duration::from_millis(50));
                         UnixSocketServer::signal_cleanup();
                         std::mem::drop(file_lock);
                         std::process::exit(0);
@@ -526,7 +498,6 @@ fn memory_debug() {
             let mut fb = allocative::FlameGraphBuilder::default();
             fb.visit_global_roots();
             // fb.visit_root(&*THROUGHPUT_TRACKER);
-            // fb.visit_root(&*RECENT_FLOWS);
             // lqos_network_devices::with_network_json_read(|net_json| fb.visit_root(net_json));
             let flamegraph_src = fb.finish();
             let flamegraph_src = flamegraph_src.flamegraph();
@@ -546,9 +517,6 @@ fn memory_debug() {}
 fn update_lqosd_config_from_bus(config: &lqos_config::Config) -> BusResponse {
     match lqos_config::update_config(config) {
         Ok(()) => {
-            if let Ok(cfg) = lqos_config::load_config() {
-                let _ = stick::recompute_stick_offset(&cfg);
-            }
             BusResponse::Ack
         }
         Err(err) => {
@@ -582,64 +550,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 throughput_tracker::worst_n_retransmits(*start, *end)
             }
             BusRequest::GetBestRtt { start, end } => throughput_tracker::best_n(*start, *end),
-            BusRequest::MapIpToFlow {
-                ip_address,
-                tc_handle,
-                cpu,
-                circuit_id,
-                device_id,
-                upload,
-            } => {
-                match normalize_mapping_request(*tc_handle, *cpu, *upload) {
-                    Ok((tc_handle, cpu, upload)) => {
-                        let resp = map_ip_to_flow(
-                            ip_address,
-                            &tc_handle,
-                            cpu,
-                            upload,
-                            *circuit_id,
-                            *device_id,
-                        );
-                        if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                            let _ = sender.send(lqos_bakery::BakeryCommands::MapIp {
-                                ip_address: ip_address.clone(),
-                                tc_handle,
-                                cpu,
-                                upload,
-                            });
-                        }
-                        resp
-                    }
-                    Err(e) => BusResponse::Fail(e.to_string()),
-                }
-            }
-            BusRequest::ClearHotCache => {
-                // Let the bakery finalize staged mapping changes, then clear hot cache.
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let _ = sender.send(lqos_bakery::BakeryCommands::CommitMappings);
-                }
-                clear_hot_cache()
-            }
-            BusRequest::DelIpFlow { ip_address, upload: _ } => {
-                // With derived upload mapping, both directions share a single mapping entry.
-                // Always delete from the base mapping set.
-                let resp = del_ip_flow(ip_address, false);
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let _ = sender.send(lqos_bakery::BakeryCommands::DelIp {
-                        ip_address: ip_address.clone(),
-                        upload: false,
-                    });
-                }
-                resp
-            }
-            BusRequest::ClearIpFlow => {
-                let resp = clear_ip_flows();
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let _ = sender.send(lqos_bakery::BakeryCommands::ClearIpAll);
-                }
-                resp
-            }
-            BusRequest::ListIpFlow => list_mapped_ips(),
             BusRequest::XdpPping => throughput_tracker::xdp_pping_compat(),
             BusRequest::RttHistogram => throughput_tracker::rtt_histogram::<50>(),
             BusRequest::ProbeBatch {
@@ -652,14 +562,46 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 Ok(observations) => BusResponse::ProbeObservations(observations),
                 Err(err) => BusResponse::Fail(err),
             },
+            BusRequest::BridgePublishStatus { generation } => {
+                // K1b §4.6 pin 3: the read-only outcome-ring lookup. The
+                // bridge broker records what it already logs; this arm never
+                // mutates it.
+                let status = crate::bridge_broker::outcomes::publish_outcomes()
+                    .into_iter()
+                    .find(|record| &record.generation == generation)
+                    .map(|record| match record.state {
+                        crate::bridge_broker::outcomes::PublishState::Pending {
+                            seq_pos,
+                            seq_len,
+                        } => lqos_bus::BridgePublishStatus::Pending { seq_pos, seq_len },
+                        crate::bridge_broker::outcomes::PublishState::Retrying {
+                            attempt,
+                            max,
+                        } => lqos_bus::BridgePublishStatus::Retrying { attempt, max },
+                        crate::bridge_broker::outcomes::PublishState::Applied => {
+                            lqos_bus::BridgePublishStatus::Applied
+                        }
+                        crate::bridge_broker::outcomes::PublishState::Rejected { reason } => {
+                            lqos_bus::BridgePublishStatus::Rejected { reason }
+                        }
+                    });
+                BusResponse::BridgePublishStatus {
+                    generation: generation.clone(),
+                    status,
+                }
+            }
             BusRequest::HostCounts => throughput_tracker::host_counts(),
             BusRequest::AllUnknownIps => throughput_tracker::all_unknown_ips(),
             BusRequest::ReloadLibreQoS => program_control::reload_libre_qos(),
-            BusRequest::GetRawQueueData(circuit_id) => get_raw_circuit_data(circuit_id),
-            BusRequest::WatchQueue(circuit_id) => {
-                add_watched_queue(circuit_id);
-                lqos_bus::BusResponse::Ack
+            BusRequest::GetRawQueueData(circuit_id) => {
+                // `.115`: bridge-analytics snapshot from the in-process
+                // last-reply cache. No analytics-socket call on this path; a
+                // miss is an explicit None (the API maps it to 200 + null).
+                BusResponse::RawQueueData(
+                    crate::bridge_analytics::raw_queue_snapshot(&circuit_id).map(Box::new),
+                )
             }
+            BusRequest::WatchQueue(_circuit_id) => lqos_bus::BusResponse::Ack,
             BusRequest::UpdateLqosDTuning(..) => tuning::tune_lqosd_from_bus(req),
             BusRequest::UpdateLqosdConfig(config) => update_lqosd_config_from_bus(config),
             BusRequest::CreateDynamicCircuit { shaped_device } => {
@@ -697,9 +639,11 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetLqosStats => BusResponse::LqosdStats {
                 bus_requests: BUS_REQUESTS.load(std::sync::atomic::Ordering::Relaxed),
                 time_to_poll_hosts: TIME_TO_POLL_HOSTS.load(std::sync::atomic::Ordering::Relaxed),
-                high_watermark: HIGH_WATERMARK.as_down_up(),
+                // K3-B: the kernel-fed high-watermark and RTT-event counters are
+                // retired; bridge telemetry reports zeros here.
+                high_watermark: lqos_utils::units::DownUpOrder::zeroed(),
                 tracked_flows: live_active_flow_count(),
-                rtt_events_per_second: get_rtt_events_per_second(),
+                rtt_events_per_second: 0,
             },
             BusRequest::GetPacketHeaderDump(id) => {
                 BusResponse::PacketDump(n_second_packet_dump(*id))
@@ -709,7 +653,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let ip = ip.parse::<IpAddr>();
                 if let Ok(ip) = ip {
                     if let Some((session_id, countdown)) =
-                        lqos_heimdall::hyperfocus_on_target(ip.into())
+                        crate::heimdall::start_analysis_privileged(ip)
                     {
                         BusResponse::PacketCollectionSession {
                             session_id,
@@ -763,131 +707,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
                 BusResponse::Ack
             }
-            BusRequest::BakeryStart => {
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let sender = sender.clone();
-                    let _ = sender.send(lqos_bakery::BakeryCommands::StartBatch);
-                    BusResponse::Ack
-                } else {
-                    BusResponse::Fail("Bakery not initialized".to_string())
-                }
-            }
-            BusRequest::BakeryCommit => {
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let sender = sender.clone();
-                    let _ = sender.send(lqos_bakery::BakeryCommands::CommitBatch);
-                    BusResponse::Ack
-                } else {
-                    BusResponse::Fail("Bakery not initialized".to_string())
-                }
-            }
-            BusRequest::BakeryChangeSiteSpeedLive { site_hash, download_bandwidth_min, upload_bandwidth_min, download_bandwidth_max, upload_bandwidth_max } => {
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let sender = sender.clone();
-                    let command = lqos_bakery::BakeryCommands::ChangeSiteSpeedLive {
-                        site_hash: *site_hash,
-                        download_bandwidth_min: *download_bandwidth_min,
-                        upload_bandwidth_min: *upload_bandwidth_min,
-                        download_bandwidth_max: *download_bandwidth_max,
-                        upload_bandwidth_max: *upload_bandwidth_max,
-                    };
-                    let _ = sender.send(command);
-                }
-                BusResponse::Ack
-            }
-            BusRequest::BakeryMqSetup {
-                queues_available,
-                stick_offset,
-            } => {
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let sender = sender.clone();
-                    let _ = sender.send(lqos_bakery::BakeryCommands::MqSetup {
-                        queues_available: *queues_available,
-                        stick_offset: *stick_offset,
-                    });
-                    BusResponse::Ack
-                } else {
-                    BusResponse::Fail("Bakery not initialized".to_string())
-                }
-            }
-            BusRequest::BakeryAddSite {
-                site_hash,
-                parent_class_id,
-                up_parent_class_id,
-                class_minor,
-                download_bandwidth_min,
-                upload_bandwidth_min,
-                download_bandwidth_max,
-                upload_bandwidth_max,
-            } => {
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let sender = sender.clone();
-                    let _ = sender.send(lqos_bakery::BakeryCommands::AddSite {
-                        site_hash: *site_hash,
-                        parent_class_id: *parent_class_id,
-                        up_parent_class_id: *up_parent_class_id,
-                        class_minor: *class_minor,
-                        download_bandwidth_min: *download_bandwidth_min,
-                        upload_bandwidth_min: *upload_bandwidth_min,
-                        download_bandwidth_max: *download_bandwidth_max,
-                        upload_bandwidth_max: *upload_bandwidth_max,
-                    });
-                    BusResponse::Ack
-                } else {
-                    BusResponse::Fail("Bakery not initialized".to_string())
-                }
-            }
-            BusRequest::BakeryAddCircuit {
-                circuit_hash,
-                circuit_name,
-                site_name,
-                parent_class_id,
-                up_parent_class_id,
-                class_minor,
-                download_bandwidth_min,
-                upload_bandwidth_min,
-                download_bandwidth_max,
-                upload_bandwidth_max,
-                class_major,
-                up_class_major,
-                ip_addresses,
-                sqm_override,
-            } => {
-                if let Some(s) = sqm_override.as_ref()
-                    && s.eq_ignore_ascii_case("fq_codel") {
-                        tracing::info!(
-                            "lqosd: Received BakeryAddCircuit with fq_codel override for circuit_hash={} (parent_class_id={}, up_parent_class_id={}, class_minor=0x{:x})",
-                            circuit_hash,
-                            parent_class_id.as_tc_string(),
-                            up_parent_class_id.as_tc_string(),
-                            class_minor
-                        );
-                    }
-                if let Some(sender) = lqos_bakery::BAKERY_SENDER.get() {
-                    let sender = sender.clone();
-                    let _ = sender.send(lqos_bakery::BakeryCommands::AddCircuit {
-                        circuit_hash: *circuit_hash,
-                        circuit_name: circuit_name.clone(),
-                        site_name: site_name.clone(),
-                        parent_class_id: *parent_class_id,
-                        up_parent_class_id: *up_parent_class_id,
-                        class_minor: *class_minor,
-                        download_bandwidth_min: *download_bandwidth_min,
-                        upload_bandwidth_min: *upload_bandwidth_min,
-                        download_bandwidth_max: *download_bandwidth_max,
-                        upload_bandwidth_max: *upload_bandwidth_max,
-                        class_major: *class_major,
-                        up_class_major: *up_class_major,
-                        down_qdisc_handle: None,
-                        up_qdisc_handle: None,
-                        ip_addresses: ip_addresses.clone(),
-                        sqm_override: sqm_override.clone(),
-                    });
-                    BusResponse::Ack
-                } else {
-                    BusResponse::Fail("Bakery not initialized".to_string())
-                }
-            }
             BusRequest::GetStormguardStats => {
                 let cloned = {
                     let lock = STORMGUARD_STATS.lock();
@@ -904,136 +723,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             }
             BusRequest::GetStormguardRuntimeStatus => {
                 BusResponse::StormguardRuntimeStatus(lqos_stormguard::runtime_status())
-            }
-            BusRequest::GetBakeryStats => BusResponse::BakeryActiveCircuits(
-                lqos_bakery::ACTIVE_CIRCUITS.load(std::sync::atomic::Ordering::Relaxed),
-            ),
-            BusRequest::BakeryReportPreflight {
-                ok,
-                message,
-                safe_budget,
-                hard_limit,
-                estimated_total_memory_bytes,
-                memory_available_bytes,
-                memory_guard_min_available_bytes,
-                memory_ok,
-                interfaces,
-            } => {
-                lqos_bakery::record_qdisc_preflight_snapshot(
-                    lqos_bakery::BakeryPreflightSnapshot {
-                        ok: *ok,
-                        message: message.clone(),
-                        safe_budget: *safe_budget,
-                        hard_limit: *hard_limit,
-                        estimated_total_memory_bytes: *estimated_total_memory_bytes,
-                        memory_available_bytes: *memory_available_bytes,
-                        memory_guard_min_available_bytes: *memory_guard_min_available_bytes,
-                        memory_ok: *memory_ok,
-                        memory_warning_only: *ok && !*memory_ok,
-                        interfaces: interfaces
-                            .iter()
-                            .map(|entry| lqos_bakery::BakeryCapacityInterfaceSnapshot {
-                                name: entry.name.clone(),
-                                planned_qdiscs: entry.planned_qdiscs,
-                                infra_qdiscs: entry.infra_qdiscs,
-                                cake_qdiscs: entry.cake_qdiscs,
-                                fq_codel_qdiscs: entry.fq_codel_qdiscs,
-                                estimated_memory_bytes: entry.estimated_memory_bytes,
-                            })
-                            .collect(),
-                    },
-                );
-                BusResponse::Ack
-            },
-            BusRequest::TreeGuardSetNodeVirtual {
-                node_name,
-                virtualized,
-            } => match crate::treeguard::bakery::submit_node_virtualization_live(
-                node_name,
-                *virtualized,
-            ) {
-                Ok(()) => BusResponse::Ack,
-                Err(err) => BusResponse::Fail(err.to_string()),
-            },
-            BusRequest::TreeGuardGetNodeVirtualStatus { node_name } => {
-                let snapshot = crate::treeguard::bakery::node_virtualization_operation_status(
-                    node_name,
-                )
-                .map(|snapshot| {
-                    let failure_reason = snapshot.failure_reason.map(|reason| match reason {
-                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNoPromotableChildren => {
-                            "structural_ineligible_no_promotable_children".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleSinglePromotableChild => {
-                            "structural_ineligible_single_promotable_child".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationFailureReason::StructuralIneligibleNestedRuntimeBranch => {
-                            "structural_ineligible_nested_runtime_branch".to_string()
-                        }
-                    });
-                    TreeGuardRuntimeNodeOperationSnapshot {
-                    operation_id: snapshot.operation_id,
-                    site_hash: snapshot.site_hash,
-                    action: match snapshot.action {
-                        lqos_bakery::BakeryRuntimeNodeOperationAction::Virtualize => {
-                            "virtualize".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationAction::Restore => {
-                            "restore".to_string()
-                        }
-                    },
-                    status: match snapshot.status {
-                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Submitted => {
-                            "submitted".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Deferred => {
-                            "deferred".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Applying => {
-                            "applying".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationStatus::AppliedAwaitingCleanup => {
-                            "applied_awaiting_cleanup".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Completed => {
-                            "completed".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Failed => {
-                            "failed".to_string()
-                        }
-                        lqos_bakery::BakeryRuntimeNodeOperationStatus::Dirty => {
-                            "dirty".to_string()
-                        }
-                    },
-                    attempt_count: snapshot.attempt_count,
-                    submitted_at_unix: snapshot.submitted_at_unix,
-                    updated_at_unix: snapshot.updated_at_unix,
-                    next_retry_at_unix: snapshot.next_retry_at_unix,
-                    last_error: snapshot.last_error,
-                    failure_reason,
-                }});
-                BusResponse::TreeGuardRuntimeNodeOperation(snapshot)
-            }
-            BusRequest::TreeGuardGetNodeVirtualBranchState { node_name } => {
-                let snapshot = crate::treeguard::bakery::node_virtualization_branch_state(
-                    node_name,
-                )
-                .map(|snapshot| TreeGuardRuntimeNodeBranchSnapshot {
-                    site_hash: snapshot.site_hash,
-                    active_branch: snapshot.active_branch.to_ascii_lowercase(),
-                    lifecycle: snapshot.lifecycle,
-                    pending_prune: snapshot.pending_prune,
-                    next_prune_attempt_unix: snapshot.next_prune_attempt_unix,
-                    active_site_hashes: snapshot.active_site_hashes,
-                    saved_site_hashes: snapshot.saved_site_hashes,
-                    prune_site_hashes: snapshot.prune_site_hashes,
-                    qdisc_down_major: snapshot.qdisc_down_major,
-                    qdisc_up_major: snapshot.qdisc_up_major,
-                });
-                BusResponse::TreeGuardRuntimeNodeBranch(snapshot)
-            }
-            BusRequest::ApplyOverrideMutationBatch { layer, mutations } => {
-                override_writer::apply_bus_mutation_batch(*layer, mutations.clone())
             }
             BusRequest::ApiReady => {
                 tool_status::api_seen();
@@ -1065,6 +754,30 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 }
                 tool_status::scheduler_progress(Some(progress));
                 BusResponse::Ack
+            }
+            BusRequest::SchedulerIntegrationStatus(status) => {
+                tool_status::scheduler_seen();
+                tool_status::scheduler_integration_status(Some(status.clone()));
+                BusResponse::Ack
+            }
+            // AVAIL 0(c) (CARD §2): the read-only convergence-record consumer.
+            // The broker is the sole writer; this only clones the published
+            // snapshot (never blocks on the broker actor).
+            BusRequest::GetConvergenceState => {
+                // WP5 (`docs/wp5_seam_state_surface.md`): the SEAM_STATE
+                // reconciliation snapshot (replaces the retired AVAIL 0(c)
+                // convergence record).
+                let snapshot = crate::bridge_broker::convergence_snapshot();
+                BusResponse::ConvergenceState(
+                    serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string()),
+                )
+            }
+            // `lqos-74t.118.2`: the read-only CPU & Workers snapshot. The
+            // broker is the sole writer; this clones the published document and
+            // merges the per-request bridge/autobalance view (never blocks the
+            // broker actor).
+            BusRequest::GetCpuWorkers => {
+                BusResponse::CpuWorkers(crate::bridge_broker::cpu_workers_json())
             }
             BusRequest::LogInfo(msg) => {
                 info!("BUS LOG: {}", msg);
@@ -1124,13 +837,17 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
             BusRequest::GetFlowMap => {
                 let points = node_manager::flow_map_data()
                     .into_iter()
-                    .map(|(lat, lon, country, bytes_sent, rtt_nanos)| lqos_bus::FlowMapPoint {
-                        lat,
-                        lon,
-                        country,
-                        bytes_sent,
-                        rtt_nanos,
-                    })
+                    .map(
+                        |(lat, lon, country, bytes_sent, rtt_nanos, _bytes_up)| {
+                            lqos_bus::FlowMapPoint {
+                                lat,
+                                lon,
+                                country,
+                                bytes_sent,
+                                rtt_nanos,
+                            }
+                        },
+                    )
                     .collect();
                 BusResponse::FlowMap(points)
             }
@@ -1167,7 +884,7 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 BusResponse::ProtocolList(entries)
             }
             BusRequest::GetAsnFlowTimeline { asn } => {
-                let data = node_manager::flow_timeline_data(*asn)
+                let entries = node_manager::flow_timeline_data(*asn)
                     .unwrap_or_else(|err| {
                         warn!("Unable to build ASN flow timeline: {err}");
                         Vec::new()
@@ -1175,10 +892,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
-                BusResponse::AsnFlowTimeline(data)
+                let buckets = node_manager::asn_timeline_buckets(*asn)
+                    .into_iter()
+                    .map(flow_bucket_to_bus)
+                    .collect();
+                BusResponse::AsnFlowTimeline { entries, buckets }
             }
             BusRequest::GetCountryFlowTimeline { iso_code } => {
-                let data = node_manager::country_timeline_data(iso_code)
+                let entries = node_manager::country_timeline_data(iso_code)
                     .unwrap_or_else(|err| {
                         warn!("Unable to build country flow timeline: {err}");
                         Vec::new()
@@ -1186,10 +907,14 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
-                BusResponse::CountryFlowTimeline(data)
+                let buckets = node_manager::country_timeline_buckets(iso_code)
+                    .into_iter()
+                    .map(flow_bucket_to_bus)
+                    .collect();
+                BusResponse::CountryFlowTimeline { entries, buckets }
             }
             BusRequest::GetProtocolFlowTimeline { protocol } => {
-                let data = node_manager::protocol_timeline_data(protocol)
+                let entries = node_manager::protocol_timeline_data(protocol)
                     .unwrap_or_else(|err| {
                         warn!("Unable to build protocol flow timeline: {err}");
                         Vec::new()
@@ -1197,7 +922,13 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                     .into_iter()
                     .map(flow_timeline_to_bus)
                     .collect();
-                BusResponse::ProtocolFlowTimeline(data)
+                let buckets = node_manager::protocol_timeline_buckets(
+                    &protocol.replace("_", "/"),
+                )
+                .into_iter()
+                .map(flow_bucket_to_bus)
+                .collect();
+                BusResponse::ProtocolFlowTimeline { entries, buckets }
             }
             BusRequest::GetSchedulerDetails => {
                 let details = node_manager::scheduler_details_data();
@@ -1211,7 +942,6 @@ fn handle_bus_requests(requests: &[BusRequest], responses: &mut Vec<BusResponse>
                 let totals = queue_stats_total_data();
                 BusResponse::QueueStatsTotal(totals)
             }
-            BusRequest::GetByteCounters => BusResponse::ByteCounters(byte_counters::snapshot()),
             BusRequest::GetQoo => {
                 let data = node_manager::local_api::executive::qoo_global();
                 BusResponse::Qoo(Some(data))
@@ -1306,6 +1036,17 @@ fn flow_timeline_to_bus(entry: node_manager::FlowTimeline) -> lqos_bus::FlowTime
     }
 }
 
+fn flow_bucket_to_bus(
+    bucket: node_manager::FlowTimelineBucket,
+) -> lqos_bus::FlowTimelineBucket {
+    lqos_bus::FlowTimelineBucket {
+        start_millis: bucket.start_millis,
+        sampled_intervals: bucket.sampled_intervals,
+        bytes: bucket.bytes,
+        flows: bucket.flows,
+    }
+}
+
 fn queue_stats_total_data() -> lqos_bus::QueueStatsTotal {
     lqos_bus::QueueStatsTotal {
         marks: lqos_utils::units::DownUpOrder::new(
@@ -1322,6 +1063,43 @@ fn queue_stats_total_data() -> lqos_bus::QueueStatsTotal {
 fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
     use crate::throughput_tracker::THROUGHPUT_TRACKER;
     use lqos_utils::units::DownUpOrder;
+
+    // K2 slice-3 3a: on a bridge box the per-circuit interval bytes + RTT p50
+    // are in the actor cache; the kernel tracker is never written post-K3.
+    if crate::bridge_analytics::is_active() {
+        let snapshot = crate::bridge_analytics::snapshot();
+        let catalog = lqos_network_devices::shaped_devices_catalog();
+        return snapshot
+            .by_circuit_id
+            .iter()
+            .filter_map(|(circuit_id, row)| {
+                catalog
+                    .iter_devices()
+                    .find(|device| device.circuit_id == *circuit_id)
+                    .map(|device| {
+ // 3b demand-source sweep: capacity headroom
+                        // is read against the DELIVERED (shaped) rate.
+                        let down_mbps =
+                            (row.shaped_bytes_per_second.down as f64 * 8.0) / 1_000_000.0;
+                        let down = down_mbps / device.download_max_mbps as f64;
+                        let up_mbps =
+                            (row.shaped_bytes_per_second.up as f64 * 8.0) / 1_000_000.0;
+                        let up = up_mbps / device.upload_max_mbps as f64;
+                        lqos_bus::CircuitCapacityRow {
+                            circuit_name: device.circuit_name.clone(),
+                            circuit_id: circuit_id.clone(),
+                            capacity: [down, up],
+                            median_rtt: row
+                                .rtt_current_p50_nanos
+                                .down
+                                .map(|nanos| nanos as f32 / 1_000_000.0)
+                                .unwrap_or(0.0),
+                        }
+                    })
+            })
+            .collect();
+    }
+
     use std::collections::HashMap;
 
     struct CircuitAccumulator {
@@ -1385,7 +1163,10 @@ fn tree_capacity_data() -> Vec<lqos_bus::NodeCapacity> {
             .iter()
             .enumerate()
             .map(|(id, node)| {
-                let node = crate::shaped_devices_tracker::node_to_transport(node);
+                let mut node = crate::shaped_devices_tracker::node_to_transport(node);
+                // Cluster 5 (kernel_gating_audit_card §2.5): the bus arm
+                // overlays like the TreeCapacity ticker.
+                crate::bridge_analytics::overlay_live_fields(id, &mut node);
                 let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
                 let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
                 let effective_max = node.effective_max_throughput.unwrap_or(node.max_throughput);
@@ -1438,7 +1219,11 @@ fn tree_summary_l2_data() -> Vec<(usize, Vec<(usize, lqos_config::NetworkJsonTra
             if p_node.immediate_parent == Some(0) {
                 for (c_idx, c_node) in nodes.iter().enumerate() {
                     if c_node.immediate_parent == Some(p_idx) {
-                        let t = crate::shaped_devices_tracker::node_to_transport(c_node);
+                        let mut t = crate::shaped_devices_tracker::node_to_transport(c_node);
+                        // Cluster 5 (kernel_gating_audit_card §2.5): the bus
+                        // arm overlays like the TreeSummaryL2 ticker (so the
+                        // top-N is ranked on live throughput).
+                        crate::bridge_analytics::overlay_live_fields(c_idx, &mut t);
                         let total = t.current_throughput.0 + t.current_throughput.1;
                         candidates.push((p_idx, c_idx, t, total));
                     }
@@ -1488,27 +1273,6 @@ mod tests {
     use lqos_bus::{UrgentSeverity, UrgentSource};
 
     #[test]
-    fn license_cache_error_releases_bakery_startup_gate() {
-        let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
-
-        initialize_license_storage_and_release(
-            || Err(anyhow::anyhow!("synthetic license-cache failure")),
-            ready_tx,
-        );
-
-        assert!(matches!(ready_rx.try_recv(), Ok(())));
-    }
-
-    #[test]
-    fn license_cache_success_releases_bakery_startup_gate() {
-        let (ready_tx, ready_rx) = crossbeam_channel::bounded(1);
-
-        initialize_license_storage_and_release(|| Ok(()), ready_tx);
-
-        assert!(matches!(ready_rx.try_recv(), Ok(())));
-    }
-
-    #[test]
     fn bus_clear_urgent_issue_by_identity_reaches_urgent_store() {
         let code = "TEST_BUS_XDP_IP_MAPPING_APPLY_FAILED";
         urgent::clear_by_identity(code, code);
@@ -1552,5 +1316,90 @@ mod tests {
             BusResponse::Qoo(None),
             BusResponse::Qoo(None),
         ] if global.key == "global"));
+    }
+
+    /// `.35` failure-surfacing oracle: a wired subsystem failure must reach the
+    /// API OUTPUT (the bus response the websocket relays), not merely the sink.
+    #[test]
+    fn wired_failure_surfaces_in_global_warnings_response() {
+        let _guard = test_support::failure_surfacing_test_lock()
+            .lock()
+            .expect("failure-surfacing test lock should not be poisoned");
+        node_manager::clear_global_warnings();
+        shaping_runtime::mark_starting("oracle reset");
+
+        let summary = "StormGuard failed to start (oracle)";
+        // One composite call is all a caller does; the three writers live here.
+        record_shaping_failure(
+            shaping_runtime::ShapingRuntimeState::Degraded,
+            summary,
+            "no probe client",
+        );
+
+        // Sink end: the operator warning is recorded at Error level.
+        let sink = node_manager::get_global_warnings();
+        assert!(
+            sink.iter()
+                .any(|(level, message)| *level == node_manager::WarningLevel::Error
+                    && message.as_str() == summary),
+            "the wired failure must populate the warning sink: {sink:?}"
+        );
+
+        // Runtime end: the status latched the failure.
+        let status = shaping_runtime::get_status();
+        assert_eq!(status.state, shaping_runtime::ShapingRuntimeState::Degraded);
+        assert!(status.degraded);
+
+        // API end: the bus response that backs the UI carries the warning.
+        let requests = [BusRequest::GetGlobalWarnings];
+        let mut responses = Vec::new();
+        handle_bus_requests(&requests, &mut responses);
+        let [BusResponse::GlobalWarnings(list)] = responses.as_slice() else {
+            panic!("GetGlobalWarnings must answer with GlobalWarnings: {responses:?}");
+        };
+        assert!(
+            list.iter().any(|(level, message)| {
+                *level == lqos_bus::WarningLevel::Error && message.as_str() == summary
+            }),
+            "the API output must carry the wired failure: {list:?}"
+        );
+
+        // The UI switches on the serialized level name; the error must survive
+        // the wire as "Error".
+        let json = serde_json::to_string(&responses).expect("bus response must serialize");
+        assert!(
+            json.contains("\"Error\"") && json.contains(summary),
+            "serialized API output must expose the Error level: {json}"
+        );
+
+        shape_cleanup();
+    }
+
+    /// Resets the process-global failure-surfacing state used by these tests.
+    fn shape_cleanup() {
+        node_manager::clear_global_warnings();
+        shaping_runtime::mark_starting("oracle cleanup");
+    }
+
+    /// `lqos-74t.2.1.1`: the stock default keeps WARN but lifts the LTS-volume
+    /// diagnostic target to INFO — the one home for the directive string. The
+    /// E2E oracle proves the journal effect on a stock `.12`.
+    #[test]
+    fn default_filter_lifts_the_lts_volume_target() {
+        assert_eq!(default_filter_directives(), "warn,lqos_lts_volume=info");
+    }
+
+    /// `lqos-74t.2.1.1`: EVERY LTS-volume instrument carries the dedicated
+    /// target, so the stock filter actually lifts it (a removed tag silently
+    /// re-hides the instrument — the original bug).
+    #[test]
+    fn lts_volume_instruments_carry_the_dedicated_target() {
+        const T: &str = "target: \"lqos_lts_volume\"";
+        let mq = include_str!("lts2_sys/lts2_client/ingestor/message_queue.rs");
+        let ing = include_str!("lts2_sys/lts2_client/ingestor.rs");
+        let ba = include_str!("bridge_analytics/mod.rs");
+        assert_eq!(mq.matches(T).count(), 4, "message_queue.rs");
+        assert_eq!(ing.matches(T).count(), 1, "ingestor.rs");
+        assert_eq!(ba.matches(T).count(), 1, "bridge_analytics/mod.rs");
     }
 }

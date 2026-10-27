@@ -41,6 +41,13 @@ pub struct UispDevice {
     pub transport_cap_mbps: Option<u64>,
     pub transport_cap_reason: Option<String>,
     pub attachment_rate_source: UispAttachmentRateSource,
+    /// `docs/topology_ptmp_ptp_attachment_card.md` §2bis (the DRIVER's steer): the
+    /// CONNECTED-SITE-TYPE classification for an OPAQUE radio (`role=wireless`,
+    /// `type=blackBox`, no `wirelessMode`). Set in `UispData::from_parts`: `own
+    /// site endpoint => CPE/attachment`; `own site infra + connects an endpoint
+    /// => AP/node`; `own site infra + infra<->infra => backhaul/attachment`. The
+    /// explicit role/mode signals still FORCE (see `device_is_link`).
+    pub classifies_as_link: bool,
 }
 
 impl UispDevice {
@@ -450,7 +457,6 @@ impl UispDevice {
 
     /// Check if an IP/CIDR represents a network address (all host bits are zero)
     /// Returns true if it's a network address, false if it's a host address
-    #[cfg_attr(test, allow(dead_code))]
     pub fn is_network_address(cidr: &str) -> bool {
         if !cidr.contains('/') {
             return false;
@@ -768,6 +774,8 @@ impl UispDevice {
             transport_cap_mbps,
             transport_cap_reason,
             attachment_rate_source,
+            // §2bis: computed by `UispData::from_parts` (needs site types + data links).
+            classifies_as_link: false,
         }
     }
 
@@ -1311,6 +1319,7 @@ mod tests {
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: super::UispAttachmentRateSource::Static,
+            classifies_as_link: false,
         };
 
         let rendered = device.ipv6_list();

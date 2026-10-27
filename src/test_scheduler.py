@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import contextlib
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -48,12 +49,14 @@ def install_scheduler_stubs():
     lqlib.insight_topology_role = lambda: "primary"
     lqlib.automatic_import_netzur = lambda: False
     lqlib.automatic_import_visp = lambda: False
-    lqlib.calculate_hash = lambda: 0
     lqlib.calculate_shaping_runtime_hash = lambda: 0
-    lqlib.calculate_topology_source_generation = lambda: "test-generation"
-    lqlib.calculate_shaping_inputs_generation = lambda _path: "shape-1"
-    lqlib.calculate_effective_network_generation = lambda _path: "effective-1"
-    lqlib.topology_import_ingress_enabled = lambda: False
+    lqlib.persist_topology_canonical_state = lambda _payload: None
+    # Stale-stub repair: scheduler.py imports this native fn; without it the
+    # whole module import fails (pre-existing; unrelated to the §0b change).
+    lqlib.scheduler_integration_status = lambda **_kwargs: False
+    lqlib.verify_published_shaping_generation = lambda: (True, "test-generation")
+    lqlib.repair_runtime_state = lambda: None
+    lqlib.write_compiled_topology_from_legacy_artifacts = lambda *_args, **_kwargs: True
     lqlib.efficiency_core_ids = lambda: []
     lqlib.scheduler_alive = Mock()
     lqlib.scheduler_error = Mock()
@@ -204,7 +207,8 @@ class TestSchedulerErrorReporting(unittest.TestCase):
         scheduler.set_scheduler_status_bus_enabled(True)
         scheduler._reset_startup_topology_runtime_wait()
         scheduler._reset_partial_topology_runtime_wait()
-        scheduler.clear_integration_failure()
+        scheduler.integration_consecutive_failures = 0
+        scheduler.last_integration_duration_ms = None
         scheduler.shaping_runtime_hash = 0
 
     def test_python_integration_output_does_not_set_scheduler_error(self):
@@ -227,30 +231,30 @@ class TestSchedulerErrorReporting(unittest.TestCase):
             mock_scheduler_output.call_args.args[0],
         )
 
-    def test_python_integration_nonzero_exit_sets_scheduler_error(self):
+    def test_python_integration_nonzero_exit_emits_integration_status(self):
         result = types.SimpleNamespace(returncode=2, stdout="normal info\n", stderr="")
 
         with patch.object(scheduler, "run_integration_subprocess", return_value=result):
             with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
                 with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
-                    with patch("builtins.print"):
-                        scheduler.run_python_integration(
-                            "integrationExample",
-                            "importExample",
-                            label="Example",
-                        )
+                    with patch.object(scheduler, "publish_integration_status") as mock_status:
+                        with patch("builtins.print"):
+                            scheduler.run_python_integration(
+                                "integrationExample",
+                                "importExample",
+                                label="Example",
+                            )
 
-        mock_scheduler_error.assert_called_once()
-        self.assertIn(
-            "Example exited with code 2. Continuing.",
-            mock_scheduler_error.call_args.args[0],
-        )
-        self.assertIn("Output preview:\nnormal info", mock_scheduler_error.call_args.args[0])
-        self.assertIn(
-            "Full output saved to /tmp/lqos_scheduler_example_",
-            mock_scheduler_error.call_args.args[0],
-        )
+        # The integration outcome must NOT be written to the scheduler-error axis.
+        mock_scheduler_error.assert_not_called()
         mock_scheduler_output.assert_not_called()
+        mock_status.assert_called_once()
+        args, kwargs = mock_status.call_args
+        self.assertEqual(args[0], "Example")
+        self.assertFalse(kwargs["ok"])
+        self.assertIn("Example exited with code 2. Continuing.", kwargs["error_message"])
+        self.assertIn("Output preview:\nnormal info", kwargs["error_message"])
+        self.assertIn("Full output saved to /tmp/lqos_scheduler_example_", kwargs["error_message"])
 
     def test_import_from_crm_clears_error_and_keeps_success_output_non_error(self):
         result = types.SimpleNamespace(returncode=0, stdout="uisp info\n", stderr="")
@@ -263,8 +267,9 @@ class TestSchedulerErrorReporting(unittest.TestCase):
                         with patch.object(scheduler.os.path, "isfile", return_value=False):
                             with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
                                 with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
-                                    with patch("builtins.print"):
-                                        scheduler.importFromCRM()
+                                    with patch.object(scheduler, "publish_integration_status") as mock_status:
+                                        with patch("builtins.print"):
+                                            scheduler.importFromCRM()
 
         self.assertEqual(mock_scheduler_error.call_args_list, [(( "",),)])
         self.assertEqual(mock_scheduler_output.call_args_list[0], (("",),))
@@ -272,8 +277,12 @@ class TestSchedulerErrorReporting(unittest.TestCase):
             "UISP integration completed successfully. Captured 1 line(s) of output.",
             mock_scheduler_output.call_args_list[1].args[0],
         )
+        mock_status.assert_called_once()
+        _args, kwargs = mock_status.call_args
+        self.assertEqual(_args[0], "UISP integration")
+        self.assertTrue(kwargs["ok"])
 
-    def test_import_from_crm_reports_nonzero_exit(self):
+    def test_import_from_crm_reports_nonzero_exit_as_integration_status(self):
         result = types.SimpleNamespace(returncode=1, stdout="uisp info\n", stderr="")
 
         with patch.object(scheduler, "automatic_import_uisp", return_value=True):
@@ -284,27 +293,28 @@ class TestSchedulerErrorReporting(unittest.TestCase):
                         with patch.object(scheduler.os.path, "isfile", return_value=False):
                             with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
                                 with patch.object(scheduler, "scheduler_output") as mock_scheduler_output:
-                                    with patch("builtins.print"):
-                                        scheduler.importFromCRM()
+                                    with patch.object(scheduler, "publish_integration_status") as mock_status:
+                                        with patch("builtins.print"):
+                                            scheduler.importFromCRM()
 
-        self.assertEqual(mock_scheduler_error.call_args_list[0], (("",),))
+        # Only the run-start clears touch the scheduler-error axis.
+        self.assertEqual(mock_scheduler_error.call_args_list, [(( "",),)])
+        self.assertEqual(mock_scheduler_output.call_args_list, [(( "",),)])
+        mock_status.assert_called_once()
+        _args, kwargs = mock_status.call_args
+        self.assertEqual(_args[0], "UISP integration")
+        self.assertFalse(kwargs["ok"])
         self.assertIn(
             "UISP integration exited with code 1. Continuing.",
-            mock_scheduler_error.call_args_list[1].args[0],
+            kwargs["error_message"],
         )
-        self.assertIn(
-            "Output preview:\nuisp info",
-            mock_scheduler_error.call_args_list[1].args[0],
-        )
+        self.assertIn("Output preview:\nuisp info", kwargs["error_message"])
         self.assertIn(
             "Full output saved to /tmp/lqos_scheduler_uisp_integration_",
-            mock_scheduler_error.call_args_list[1].args[0],
+            kwargs["error_message"],
         )
-        self.assertEqual(mock_scheduler_output.call_args_list, [(( "",),)])
 
-    def test_ready_progress_keeps_latest_integration_failure_visible(self):
-        scheduler.remember_integration_failure("Sonar exited with code 1. Continuing.")
-
+    def test_ready_progress_does_not_reassert_integration_failure(self):
         with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
             with patch.object(scheduler, "scheduler_error") as mock_scheduler_error:
                 scheduler.publish_ready_progress(
@@ -317,15 +327,53 @@ class TestSchedulerErrorReporting(unittest.TestCase):
                 )
 
         mock_progress.assert_called_once()
-        mock_scheduler_error.assert_called_once()
-        self.assertIn(
-            "Scheduler ready using last-known-good topology; latest integration import failed.",
-            mock_scheduler_error.call_args.args[0],
+        # Integration faults live on the integration axis, never the error axis.
+        mock_scheduler_error.assert_not_called()
+
+    def test_classify_integration_error_maps_known_patterns(self):
+        self.assertEqual(
+            scheduler.classify_integration_error(
+                "UispConnectError: too many redirects"
+            ),
+            "redirect_loop",
         )
-        self.assertIn(
-            "Sonar exited with code 1. Continuing.",
-            mock_scheduler_error.call_args.args[0],
+        self.assertEqual(scheduler.classify_integration_error("HTTP 401 Unauthorized"), "auth")
+        self.assertEqual(scheduler.classify_integration_error("HTTP 403 Forbidden"), "auth")
+        self.assertEqual(scheduler.classify_integration_error("request timed out"), "unreachable")
+        self.assertEqual(
+            scheduler.classify_integration_error("Temporary failure in name resolution"),
+            "unreachable",
         )
+        self.assertEqual(
+            scheduler.classify_integration_error("something odd happened"),
+            "exited_unknown",
+        )
+        self.assertEqual(scheduler.classify_integration_error(""), "none")
+
+    def test_integration_error_detail_skips_the_wrapper_header(self):
+        message = (
+            "UISP integration exited with code 1. Continuing.\n"
+            "Output preview:\n"
+            "UispConnectError: too many redirects\n"
+            "Full output saved to /tmp/x.log"
+        )
+        detail = scheduler._integration_error_detail(message)
+        self.assertIn("too many redirects", detail)
+        self.assertNotIn("exited with code", detail)
+        self.assertNotIn("Output preview", detail)
+
+    def test_recent_runs_ring_is_bounded_to_the_max(self):
+        scheduler.recent_integration_runs = []
+        with patch.object(scheduler, "_scheduler_integration_status_native", return_value=True):
+            for i in range(scheduler.RECENT_INTEGRATION_RUNS_MAX + 3):
+                scheduler.publish_integration_status("Example", ok=(i % 2 == 0))
+
+        self.assertEqual(
+            len(scheduler.recent_integration_runs),
+            scheduler.RECENT_INTEGRATION_RUNS_MAX,
+        )
+        ats = [run[0] for run in scheduler.recent_integration_runs]
+        self.assertEqual(ats, sorted(ats))
 
 
 class TestSchedulerLogging(unittest.TestCase):
@@ -333,7 +381,8 @@ class TestSchedulerLogging(unittest.TestCase):
         scheduler.set_scheduler_status_bus_enabled(True)
         scheduler._reset_startup_topology_runtime_wait()
         scheduler._reset_partial_topology_runtime_wait()
-        scheduler.clear_integration_failure()
+        scheduler.integration_consecutive_failures = 0
+        scheduler.last_integration_duration_ms = None
         scheduler.shaping_runtime_hash = 0
 
     def test_configure_scheduler_stdio_enables_line_buffering_when_supported(self):
@@ -391,7 +440,7 @@ class TestSchedulerLogging(unittest.TestCase):
                 for call in mock_progress.call_args_list
             )
         )
-        self.assertEqual(fake_ads.add_job.call_count, 3)
+        self.assertEqual(fake_ads.add_job.call_count, 4)
         fake_ads.start.assert_called_once()
 
     def test_topology_runtime_refresh_tick_reports_refresh_failure(self):
@@ -423,29 +472,24 @@ class TestSchedulerLogging(unittest.TestCase):
                 "topology_runtime_readiness_detail",
                 return_value=(True, "", "generation-1"),
             ):
-                with patch.object(
-                    scheduler,
-                    "current_topology_source_generation",
-                    return_value="generation-1",
-                ):
-                    with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=5):
-                        with patch.object(
-                            scheduler,
-                            "refreshShapers",
-                            side_effect=stale_exc,
-                        ):
-                            with patch.object(scheduler, "clear_scheduler_error") as mock_clear_error:
+                with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=5):
+                    with patch.object(
+                        scheduler,
+                        "refreshShapers",
+                        side_effect=stale_exc,
+                    ):
+                        with patch.object(scheduler, "clear_scheduler_error") as mock_clear_error:
+                            with patch.object(
+                                scheduler,
+                                "report_scheduler_runtime_failure",
+                            ) as mock_report:
                                 with patch.object(
                                     scheduler,
-                                    "report_scheduler_runtime_failure",
-                                ) as mock_report:
-                                    with patch.object(
-                                        scheduler,
-                                        "publish_scheduler_progress",
-                                    ) as mock_progress:
-                                        with patch("builtins.print"):
-                                            scheduler.shaping_runtime_hash = 1
-                                            scheduler.topology_runtime_refresh_tick()
+                                    "publish_scheduler_progress",
+                                ) as mock_progress:
+                                    with patch("builtins.print"):
+                                        scheduler.shaping_runtime_hash = 1
+                                        scheduler.topology_runtime_refresh_tick()
 
         mock_clear_error.assert_called_once()
         mock_report.assert_not_called()
@@ -915,28 +959,23 @@ class TestSchedulerLogging(unittest.TestCase):
                         ):
                             with patch.object(
                                 scheduler,
-                                "current_topology_source_generation",
-                                return_value="generation-1",
+                                "refreshShapers",
+                                side_effect=stale_exc,
                             ):
                                 with patch.object(
                                     scheduler,
-                                    "refreshShapers",
-                                    side_effect=stale_exc,
-                                ):
+                                    "clear_scheduler_error",
+                                ) as mock_clear_error:
                                     with patch.object(
                                         scheduler,
-                                        "clear_scheduler_error",
-                                    ) as mock_clear_error:
+                                        "report_scheduler_runtime_failure",
+                                    ) as mock_report:
                                         with patch.object(
                                             scheduler,
-                                            "report_scheduler_runtime_failure",
-                                        ) as mock_report:
-                                            with patch.object(
-                                                scheduler,
-                                                "publish_scheduler_progress",
-                                            ) as mock_progress:
-                                                with patch("builtins.print"):
-                                                    scheduler.importAndShapePartialReload()
+                                            "publish_scheduler_progress",
+                                        ) as mock_progress:
+                                            with patch("builtins.print"):
+                                                scheduler.importAndShapePartialReload()
 
         mock_clear_error.assert_called_once()
         mock_report.assert_not_called()
@@ -970,7 +1009,7 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
                     "shaping_generation": "shape-1",
                     "effective_generation": "effective-1",
                     "shaping_inputs_path": shaping_inputs,
-                    "effective_network_path": effective_network,
+                    "operator_view_path": effective_network,
                     "ready": True,
                 },
                 handle,
@@ -982,8 +1021,8 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(True, "generation-1"),
                 ):
                     ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
@@ -1004,8 +1043,8 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-new",
+                    "verify_published_shaping_generation",
+                    return_value=(True, "generation-new"),
                 ):
                     ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
@@ -1029,8 +1068,8 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(True, "generation-1"),
                 ):
                     ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
@@ -1065,8 +1104,8 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(True, "generation-1"),
                 ):
                     ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
@@ -1097,8 +1136,8 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(True, "generation-1"),
                 ):
                     ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
@@ -1124,8 +1163,8 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(True, "generation-1"),
                 ):
                     ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
@@ -1158,21 +1197,18 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(False, "generation-1"),
                 ):
-                    with patch.object(
-                        scheduler,
-                        "calculate_shaping_inputs_generation",
-                        return_value="shape-2",
-                    ):
-                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
         self.assertFalse(ready)
         self.assertEqual(generation, "generation-1")
         self.assertIn("do not match", detail)
 
-    def test_ready_true_with_stale_effective_generation_is_not_ready(self):
+    def test_ready_true_with_failed_operator_view_custody_is_not_ready(self):
+        # Phase A §1 ruling 2: verify now owns the operator-view match-assert;
+        # a failing custody verdict surfaces as "do not match".
         with tempfile.TemporaryDirectory() as tempdir:
             shaping_inputs = os.path.join(tempdir, "shaping_inputs.json")
             effective_network = os.path.join(tempdir, "network.effective.json")
@@ -1189,7 +1225,7 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
                         "shaping_generation": "shape-1",
                         "effective_generation": "effective-1",
                         "shaping_inputs_path": shaping_inputs,
-                        "effective_network_path": effective_network,
+                        "operator_view_path": effective_network,
                         "ready": True,
                     },
                     handle,
@@ -1197,19 +1233,14 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(False, "generation-1"),
                 ):
-                    with patch.object(
-                        scheduler,
-                        "calculate_effective_network_generation",
-                        return_value="effective-2",
-                    ):
-                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
         self.assertFalse(ready)
         self.assertEqual(generation, "generation-1")
-        self.assertIn("effective network does not match", detail)
+        self.assertIn("do not match", detail)
 
     def test_ready_true_without_effective_network_path_is_not_ready(self):
         with tempfile.TemporaryDirectory() as tempdir:
@@ -1231,8 +1262,8 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(True, "generation-1"),
                 ):
                     ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
@@ -1240,66 +1271,20 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
         self.assertEqual(generation, "generation-1")
         self.assertIn("effective network path", detail)
 
-    def test_effective_generation_exception_is_not_ready(self):
+    def test_verify_exception_is_not_ready(self):
         with tempfile.TemporaryDirectory() as tempdir:
             self._write_ready_runtime_status(tempdir)
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    side_effect=OSError("bad shaping inputs"),
                 ):
-                    with patch.object(
-                        scheduler,
-                        "calculate_effective_network_generation",
-                        side_effect=OSError("bad effective network"),
-                    ):
-                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
         self.assertFalse(ready)
-        self.assertEqual(generation, "generation-1")
-        self.assertIn("effective network generation could not be verified", detail)
-        self.assertIn("bad effective network", detail)
-
-    def test_effective_generation_none_is_not_ready(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-            self._write_ready_runtime_status(tempdir)
-            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
-                with patch.object(
-                    scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
-                ):
-                    with patch.object(
-                        scheduler,
-                        "calculate_effective_network_generation",
-                        return_value=None,
-                    ):
-                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
-
-        self.assertFalse(ready)
-        self.assertEqual(generation, "generation-1")
-        self.assertIn("effective network generation could not be verified", detail)
-
-    def test_shaping_generation_exception_is_not_ready(self):
-        with tempfile.TemporaryDirectory() as tempdir:
-            self._write_ready_runtime_status(tempdir)
-            with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
-                with patch.object(
-                    scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
-                ):
-                    with patch.object(
-                        scheduler,
-                        "calculate_shaping_inputs_generation",
-                        side_effect=OSError("bad shaping inputs"),
-                    ):
-                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
-
-        self.assertFalse(ready)
-        self.assertEqual(generation, "generation-1")
-        self.assertIn("shaping inputs generation could not be verified", detail)
+        self.assertIsNone(generation)
+        self.assertIn("shaping inputs could not be verified", detail)
         self.assertIn("bad shaping inputs", detail)
 
     def test_shaping_generation_none_is_not_ready(self):
@@ -1308,26 +1293,22 @@ class TestTopologyRuntimeReadiness(unittest.TestCase):
             with patch.object(scheduler, "get_libreqos_directory", return_value=tempdir):
                 with patch.object(
                     scheduler,
-                    "calculate_topology_source_generation",
-                    return_value="generation-1",
+                    "verify_published_shaping_generation",
+                    return_value=(None, "generation-1"),
                 ):
-                    with patch.object(
-                        scheduler,
-                        "calculate_shaping_inputs_generation",
-                        return_value=None,
-                    ):
-                        ready, detail, generation = scheduler.topology_runtime_readiness_detail()
+                    ready, detail, generation = scheduler.topology_runtime_readiness_detail()
 
         self.assertFalse(ready)
         self.assertEqual(generation, "generation-1")
-        self.assertIn("shaping inputs generation could not be verified", detail)
+        self.assertIn("still building outputs", detail)
 
 
 class TestTopologyRuntimeGating(unittest.TestCase):
     def setUp(self):
         scheduler._reset_startup_topology_runtime_wait()
         scheduler._reset_partial_topology_runtime_wait()
-        scheduler.clear_integration_failure()
+        scheduler.integration_consecutive_failures = 0
+        scheduler.last_integration_duration_ms = None
         scheduler.shaping_runtime_hash = 0
 
     def test_full_reload_skips_refresh_when_topology_runtime_not_ready(self):
@@ -1396,11 +1377,6 @@ class TestTopologyRuntimeGating(unittest.TestCase):
                         "topology_runtime_readiness_detail",
                         return_value=(True, "", "generation-1"),
                     ):
-                        with patch.object(
-                            scheduler,
-                            "current_topology_source_generation",
-                            return_value="generation-1",
-                        ):
                             with patch.object(
                                 scheduler,
                                 "refreshShapers",
@@ -1433,27 +1409,25 @@ class TestTopologyRuntimeGating(unittest.TestCase):
 
 
 class TestSchedulerOverrideMerge(unittest.TestCase):
-    def test_merge_rows_replaces_matching_device_id(self):
-        existing = [["93", "Name", "splynx_service_93", "Name", "AP", "MAC", "1.1.1.1", "", "1", "1", "330", "330", "", ""]]
-        override = [["93", "Name", "splynx_service_93", "Name", "AP", "MAC", "1.1.1.1/32", "", "1", "1", "330", "330", "", "fq_codel/fq_codel"]]
 
-        merged, changed = scheduler.merge_rows_replace_by_device_id(existing, override)
+    def test_write_topology_canonical_state_routes_through_the_rust_saver(self):
+        # Phase C S1b: the canonical RUNTIME file is written by the Rust
+        # atomic+validating saver, never by a bare Python open().
+        import liblqos_python
 
-        self.assertTrue(changed)
-        self.assertEqual(len(merged), 1)
-        self.assertEqual(merged[0][2], "splynx_service_93")
-        self.assertEqual(merged[0][6], "1.1.1.1/32")
-        self.assertEqual(merged[0][13], "fq_codel/fq_codel")
-
-    def test_merge_rows_appends_unmatched_non_splynx_override(self):
-        existing = [["93", "Name", "splynx_service_93", "Name", "AP", "MAC", "1.1.1.1", "", "1", "1", "330", "330", "", ""]]
-        override = [["145", "Other", "legacy_device_1", "Other", "AP", "MAC2", "2.2.2.2", "", "1", "1", "300", "300", "", ""]]
-
-        merged, changed = scheduler.merge_rows_replace_by_device_id(existing, override)
-
-        self.assertTrue(changed)
-        self.assertEqual(len(merged), 2)
-        self.assertEqual(merged[1][2], "legacy_device_1")
+        captured = {}
+        original = liblqos_python.persist_topology_canonical_state
+        liblqos_python.persist_topology_canonical_state = (
+            lambda payload: captured.setdefault("payload", payload)
+        )
+        payload = {"schema_version": 1, "nodes": []}
+        try:
+            with patch("builtins.open") as mock_open:
+                scheduler.write_topology_canonical_state("/ignored/path.json", payload)
+                mock_open.assert_not_called()
+        finally:
+            liblqos_python.persist_topology_canonical_state = original
+        self.assertEqual(captured["payload"], json.dumps(payload))
 
     def test_required_override_section_retries_transient_lock_failure(self):
         reader = Mock(side_effect=[
@@ -1505,7 +1479,7 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         self.assertIn("invalid overrides json", str(raised.exception))
 
     def test_apply_lqos_overrides_aborts_when_network_adjustments_are_unavailable(self):
-        with patch.object(scheduler, "topology_import_ingress_enabled", return_value=True):
+        with contextlib.nullcontext():
             with patch.object(
                 scheduler,
                 "overrides_materialized",
@@ -1520,69 +1494,6 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
 
         mock_load_canonical.assert_not_called()
         mock_write_canonical.assert_not_called()
-
-    def test_apply_lqos_overrides_reads_all_sections_before_writing_non_ingress_files(self):
-        with patch.object(scheduler, "topology_import_ingress_enabled", return_value=False):
-            with patch.object(
-                scheduler,
-                "overrides_materialized",
-                side_effect=RuntimeError("locked by another process: pid 42"),
-            ):
-                with patch.object(scheduler, "OVERRIDE_SECTION_READ_ATTEMPTS", 2):
-                    with patch.object(scheduler.time, "sleep"):
-                        with patch.object(scheduler, "read_shaped_devices_csv") as mock_read_sd:
-                            with patch.object(scheduler, "write_shaped_devices_csv") as mock_write_sd:
-                                with patch.object(scheduler, "load_network_json") as mock_load_network:
-                                    with patch.object(scheduler, "write_network_json") as mock_write_network:
-                                        with self.assertRaises(scheduler.RequiredOverrideReadError):
-                                            scheduler.apply_lqos_overrides()
-
-        mock_read_sd.assert_not_called()
-        mock_write_sd.assert_not_called()
-        mock_load_network.assert_not_called()
-        mock_write_network.assert_not_called()
-
-    def test_apply_lqos_overrides_uses_single_materialized_snapshot(self):
-        header = [
-            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node", "MAC",
-            "IPv4", "IPv6", "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps",
-            "Upload Max Mbps", "Comment",
-        ]
-        rows = []
-        materialized = {
-            "persistent_devices": [],
-            "circuit_adjustments": [],
-            "network_adjustments": [],
-        }
-
-        with patch.object(scheduler, "topology_import_ingress_enabled", return_value=False):
-            with patch.object(scheduler, "overrides_materialized", return_value=materialized) as mock_materialized:
-                with patch.object(
-                    scheduler,
-                    "overrides_persistent_devices_materialized",
-                    side_effect=AssertionError("legacy persistent reader should not be used"),
-                    create=True,
-                ) as mock_persistent:
-                    with patch.object(
-                        scheduler,
-                        "overrides_circuit_adjustments_materialized",
-                        side_effect=AssertionError("legacy circuit reader should not be used"),
-                        create=True,
-                    ) as mock_circuit:
-                        with patch.object(
-                            scheduler,
-                            "overrides_network_adjustments_materialized",
-                            side_effect=AssertionError("legacy network reader should not be used"),
-                        ) as mock_network:
-                            with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
-                                with patch.object(scheduler, "load_network_json", return_value={}):
-                                    with patch.object(scheduler, "load_topology_canonical_state", return_value=None):
-                                        scheduler.apply_lqos_overrides()
-
-        mock_materialized.assert_called_once_with()
-        mock_persistent.assert_not_called()
-        mock_circuit.assert_not_called()
-        mock_network.assert_not_called()
 
     def test_import_from_crm_does_not_continue_after_override_failure(self):
         with patch.object(
@@ -1614,203 +1525,6 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
             )
         )
 
-    def test_apply_lqos_overrides_device_adjust_sqm_only_updates_sqm_column(self):
-        header = [
-            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node", "MAC",
-            "IPv4", "IPv6", "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps",
-            "Upload Max Mbps", "Comment", "SQM"
-        ]
-        rows = [[
-            "93", "Name", "splynx_service_93", "Name", "AP", "MAC", "1.1.1.1", "",
-            "1", "1", "330", "330", "", ""
-        ]]
-
-        # Test-only fake csv path.
-        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):  # nosec B108
-            with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
-                with patch.object(
-                    scheduler,
-                    "overrides_materialized",
-                    return_value={
-                        "persistent_devices": [],
-                        "circuit_adjustments": [{
-                            "type": "device_adjust_sqm",
-                            "device_id": "splynx_service_93",
-                            "sqm_override": "fq_codel/fq_codel",
-                        }],
-                        "network_adjustments": [],
-                    },
-                ):
-                    with patch.object(scheduler, "write_shaped_devices_csv") as mock_write:
-                        scheduler.apply_lqos_overrides()
-
-        written_rows = mock_write.call_args.args[2]
-        self.assertEqual(written_rows[0][10], "330")
-        self.assertEqual(written_rows[0][11], "330")
-        self.assertEqual(written_rows[0][13], "fq_codel/fq_codel")
-
-    def test_apply_lqos_overrides_reparent_clears_parent_node_id_when_present(self):
-        header = [
-            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node",
-            "Parent Node ID", "MAC", "IPv4", "IPv6", "Download Min Mbps",
-            "Upload Min Mbps", "Download Max Mbps", "Upload Max Mbps", "Comment",
-        ]
-        rows = [[
-            "93", "Name", "splynx_service_93", "Name", "AP",
-            "uisp:device:ap-1", "MAC", "1.1.1.1", "",
-            "1", "1", "330", "330", "",
-        ]]
-
-        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):  # nosec B108
-            with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
-                with patch.object(
-                    scheduler,
-                    "overrides_materialized",
-                    return_value={
-                        "persistent_devices": [],
-                        "circuit_adjustments": [{
-                            "type": "reparent_circuit",
-                            "circuit_id": "93",
-                            "parent_node": "AP-Updated",
-                        }],
-                        "network_adjustments": [],
-                    },
-                ):
-                    with patch.object(scheduler, "write_shaped_devices_csv") as mock_write:
-                        scheduler.apply_lqos_overrides()
-
-        written_rows = mock_write.call_args.args[2]
-        self.assertEqual(written_rows[0][4], "AP-Updated")
-        self.assertEqual(written_rows[0][5], "")
-
-    def test_apply_lqos_overrides_updates_canonical_only_for_integration_ingress(self):
-        header = [
-            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node", "MAC",
-            "IPv4", "IPv6", "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps",
-            "Upload Max Mbps", "Comment",
-        ]
-        rows = [[
-            "93", "Name", "splynx_service_93", "Name", "AP", "MAC", "1.1.1.1", "",
-            "1", "1", "330", "330", "",
-        ]]
-        canonical_state = {
-            "compatibility_network_json": {
-                "NodeB": {
-                    "downloadBandwidthMbps": 200,
-                    "uploadBandwidthMbps": 100,
-                    "children": {},
-                }
-            },
-            "nodes": [
-                {
-                    "node_id": "node-b",
-                    "node_name": "NodeB",
-                    "rate_input": {
-                        "intrinsic_download_mbps": 200,
-                        "intrinsic_upload_mbps": 100,
-                    },
-                }
-            ],
-        }
-
-        with patch.object(scheduler, "shaped_devices_csv_path", return_value="/tmp/ShapedDevices.csv"):  # nosec B108
-            with patch.object(scheduler, "read_shaped_devices_csv", return_value=(header, rows)):
-                with patch.object(
-                    scheduler,
-                    "overrides_materialized",
-                    return_value={
-                        "persistent_devices": [],
-                        "circuit_adjustments": [],
-                        "network_adjustments": [{
-                                "type": "adjust_site_speed",
-                                "node_id": "node-b",
-                                "site_name": "NodeB",
-                                "download_bandwidth_mbps": 80,
-                                "upload_bandwidth_mbps": 40,
-                            }],
-                    },
-                ):
-                    with patch.object(scheduler, "topology_import_ingress_enabled", return_value=True):
-                        with patch.object(scheduler, "load_topology_canonical_state", return_value=canonical_state):
-                            with patch.object(scheduler, "write_topology_canonical_state") as mock_write_canonical:
-                                with patch.object(scheduler, "load_network_json") as mock_load_network:
-                                    with patch.object(scheduler, "write_network_json") as mock_write_network:
-                                        with patch.object(scheduler, "write_shaped_devices_csv") as mock_write_sd:
-                                            scheduler.apply_lqos_overrides()
-
-        mock_load_network.assert_not_called()
-        mock_write_network.assert_not_called()
-        mock_write_sd.assert_not_called()
-        mock_write_canonical.assert_called_once()
-        rate_input = canonical_state["nodes"][0]["rate_input"]
-        self.assertEqual(rate_input["source"], "operator_override")
-        self.assertEqual(rate_input["intrinsic_download_mbps"], 80)
-        self.assertEqual(rate_input["intrinsic_upload_mbps"], 40)
-
-    def test_override_devices_to_rows_preserves_anchor_node_id(self):
-        header = [
-            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node",
-            "Parent Node ID", "Anchor Node ID", "MAC", "IPv4", "IPv6",
-            "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps", "Upload Max Mbps",
-            "Comment", "SQM",
-        ]
-        rows = scheduler.override_devices_to_rows(
-            [{
-                "circuitID": "93",
-                "circuitName": "Name",
-                "deviceID": "device-93",
-                "deviceName": "Name",
-                "ParentNode": "AP",
-                "ParentNodeID": "uisp:device:ap-1",
-                "AnchorNodeID": "uisp:site:site-93",
-                "mac": "MAC",
-                "ipv4s": ["1.1.1.1"],
-                "ipv6s": [],
-                "minDownload": 1,
-                "minUpload": 1,
-                "maxDownload": 330,
-                "maxUpload": 330,
-                "comment": "",
-                "sqm": "fq_codel/fq_codel",
-            }],
-            header,
-            include_sqm=True,
-        )
-
-        self.assertEqual(rows[0][6], "uisp:site:site-93")
-        self.assertEqual(rows[0][15], "fq_codel/fq_codel")
-
-    def test_override_devices_to_rows_preserves_diy_id_header_alias(self):
-        header = [
-            "Circuit ID", "Circuit Name", "Device ID", "Device Name", "Parent Node",
-            "Parent Node ID", "id", "MAC", "IPv4", "IPv6",
-            "Download Min Mbps", "Upload Min Mbps", "Download Max Mbps", "Upload Max Mbps",
-            "Comment",
-        ]
-        rows = scheduler.override_devices_to_rows(
-            [{
-                "circuitID": "93",
-                "circuitName": "Name",
-                "deviceID": "device-93",
-                "deviceName": "Name",
-                "ParentNode": "AP",
-                "ParentNodeID": "uisp:device:ap-1",
-                "AnchorNodeID": "uisp:site:site-93",
-                "mac": "MAC",
-                "ipv4s": ["1.1.1.1"],
-                "ipv6s": [],
-                "minDownload": 1,
-                "minUpload": 1,
-                "maxDownload": 330,
-                "maxUpload": 330,
-                "comment": "",
-            }],
-            header,
-            include_sqm=False,
-        )
-
-        self.assertEqual(rows[0][6], "uisp:site:site-93")
-
     def test_runtime_state_path_includes_shaping_inputs(self):
         # Test-only fake install root.
         with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
@@ -1836,7 +1550,6 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
                         "id": "node-b",
                         "downloadBandwidthMbps": 200,
                         "uploadBandwidthMbps": 100,
-                        "virtual": False,
                         "children": {},
                     },
                 },
@@ -1854,11 +1567,6 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
                     "download_bandwidth_mbps": 80.5,
                     "upload_bandwidth_mbps": 40.25,
                 },
-                {
-                    "type": "set_node_virtual",
-                    "node_name": "NodeB",
-                    "virtual": True,
-                },
             ],
         ):
             changed = scheduler.apply_network_adjustments(network)
@@ -1867,7 +1575,6 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         node = network["Root"]["children"]["NodeB"]
         self.assertEqual(node["downloadBandwidthMbps"], 80.5)
         self.assertEqual(node["uploadBandwidthMbps"], 40.25)
-        self.assertTrue(network["Root"]["children"]["NodeB"]["virtual"])
 
     def test_apply_network_adjustments_keeps_legacy_name_based_matching(self):
         network = {
@@ -1945,41 +1652,190 @@ class TestSchedulerOverrideMerge(unittest.TestCase):
         self.assertEqual(site["downloadBandwidthMbps"], 940)
         self.assertEqual(site["uploadBandwidthMbps"], 500)
 
-    def test_apply_network_adjustments_does_not_materialize_runtime_treeguard_virtual_state(self):
-        network = {
-            "Root": {
-                "children": {
-                    "REGION_01": {
-                        "virtual": False,
-                        "children": {},
-                    }
+class TestReloadRequest(unittest.TestCase):
+    def setUp(self):
+        scheduler.scheduler_started_at = 1_000
+        scheduler.last_reload_request_nonce = None
+
+    def _write_token(self, tempdir, requested_at, nonce, requested_by="admin"):
+        path = os.path.join(tempdir, "reload_request.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "requested_at": requested_at,
+                    "requested_by": requested_by,
+                    "nonce": nonce,
                 },
-            }
-        }
+                handle,
+            )
+        return path
 
-        effective_adjustments = [
-            {
-                "type": "set_node_virtual",
-                "node_name": "REGION_01",
-                "virtual": True,
-            }
-        ]
+    def test_fresh_nonce_triggers_exactly_one_full_reload(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = self._write_token(tempdir, 2_000, "nonce-1")
+            fake_ads = Mock()
+            with patch.object(scheduler, "ads", fake_ads):
+                with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                    with patch("builtins.print"):
+                        scheduler.reload_request_tick(path)
 
-        with patch.dict(
-            scheduler.apply_network_adjustments.__globals__,
-            {"overrides_network_adjustments_effective": lambda: effective_adjustments},
-            clear=False,
+        fake_ads.add_job.assert_called_once()
+        args = fake_ads.add_job.call_args.args
+        self.assertIs(args[0], scheduler._run_full_reload_and_publish)
+        self.assertEqual(args[1], "date")
+        self.assertTrue(
+            any(call.args[:3] == (True, "reload_requested", "Reload requested")
+                for call in mock_progress.call_args_list)
+        )
+        self.assertFalse(os.path.exists(path), "the consumed token is cleared")
+
+    def test_duplicate_nonce_is_a_noop(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = self._write_token(tempdir, 2_000, "nonce-1")
+            fake_ads = Mock()
+            with patch.object(scheduler, "ads", fake_ads):
+                with patch.object(scheduler, "publish_scheduler_progress"):
+                    with patch("builtins.print"):
+                        scheduler.reload_request_tick(path)
+                        self._write_token(tempdir, 2_000, "nonce-1")
+                        scheduler.reload_request_tick(path)
+
+        self.assertEqual(fake_ads.add_job.call_count, 1, "the nonce is the idempotency key")
+
+    def test_stale_token_is_ignored_and_cleared(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = self._write_token(tempdir, 500, "nonce-old")
+            fake_ads = Mock()
+            with patch.object(scheduler, "ads", fake_ads):
+                scheduler.reload_request_tick(path)
+
+        fake_ads.add_job.assert_not_called()
+        self.assertFalse(os.path.exists(path), "a pre-start token is cleared")
+
+    def test_missing_token_is_a_noop(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            fake_ads = Mock()
+            with patch.object(scheduler, "ads", fake_ads):
+                scheduler.reload_request_tick(os.path.join(tempdir, "absent.json"))
+        fake_ads.add_job.assert_not_called()
+
+    def test_malformed_token_is_cleared_without_reloading(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = os.path.join(tempdir, "reload_request.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("{not json")
+            fake_ads = Mock()
+            with patch.object(scheduler, "ads", fake_ads):
+                with patch.object(scheduler, "scheduler_output") as mock_output:
+                    scheduler.reload_request_tick(path)
+
+        fake_ads.add_job.assert_not_called()
+        mock_output.assert_called_once()
+        self.assertFalse(os.path.exists(path))
+
+
+class TestSchedulerProgressWeights(unittest.TestCase):
+    """`.63.1` (1): time-weighted step boundaries (the integration step — the
+    ~70 % long pole — occupies ~70 % of the bar)."""
+
+    def test_startup_sequence_is_time_weighted(self):
+        self.assertEqual(scheduler._scheduler_progress_percent(2, 5, active=True), 2)
+        self.assertEqual(scheduler._scheduler_progress_percent(3, 5, active=True), 72)
+        self.assertEqual(scheduler._scheduler_progress_percent(4, 5, active=True), 75)
+        self.assertEqual(scheduler._scheduler_progress_percent(5, 5, active=True), 90)
+        # The terminal (inactive, last step) is exactly 100.
+        self.assertEqual(scheduler._scheduler_progress_percent(5, 5, active=False), 100)
+
+    def test_refresh_sequence_is_time_weighted(self):
+        self.assertEqual(scheduler._scheduler_progress_percent(1, 4, active=True), 0)
+        self.assertEqual(scheduler._scheduler_progress_percent(2, 4, active=True), 5)
+        self.assertEqual(scheduler._scheduler_progress_percent(4, 4, active=False), 100)
+
+    def test_unknown_step_count_falls_back_to_uniform(self):
+        self.assertEqual(scheduler._scheduler_progress_percent(2, 10, active=True), 10)
+        self.assertEqual(scheduler._scheduler_progress_percent(5, 10, active=False), 50)
+
+
+class TestFullReloadTerminalPublish(unittest.TestCase):
+    """`.63.1` (#1): EVERY button-reload exit publishes exactly ONE terminal
+    `active=false` state (ready/100, validation_failed/100, or degraded/100).
+    The deferred path is NOT terminal (the 3 s topology tick owns the 100)."""
+
+    def test_publishes_ready_terminal_on_true(self):
+        with patch.object(scheduler, "importAndShapeFullReload", return_value=True) as mock_reload:
+            with patch.object(scheduler, "publish_ready_progress") as mock_ready:
+                scheduler._run_full_reload_and_publish()
+        mock_reload.assert_called_once()
+        mock_ready.assert_called_once()
+        self.assertEqual(mock_ready.call_args.args[0], False)
+        self.assertEqual(mock_ready.call_args.kwargs.get("percent"), 100)
+
+    def test_deferred_is_not_terminal(self):
+        with patch.object(scheduler, "importAndShapeFullReload", return_value=False):
+            with patch.object(scheduler, "publish_ready_progress") as mock_ready:
+                with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                    scheduler._run_full_reload_and_publish()
+        mock_ready.assert_not_called()
+        mock_progress.assert_not_called()
+
+    def test_validation_failure_publishes_validation_terminal(self):
+        with patch.object(
+            scheduler,
+            "importAndShapeFullReload",
+            side_effect=scheduler.ValidationFailure("bad topology"),
         ):
-            with patch.object(
-                scheduler,
-                "overrides_network_adjustments_materialized",
-                return_value=[],
-            ) as mock_materialized:
-                changed = scheduler.apply_network_adjustments(network)
+            with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                with patch.object(scheduler, "publish_ready_progress") as mock_ready:
+                    scheduler._run_full_reload_and_publish()
+        mock_ready.assert_not_called()
+        # REQUIRED-2: assert a TERMINAL was published, not merely that ready was not.
+        mock_progress.assert_called_once()
+        args = mock_progress.call_args
+        self.assertEqual(args.args[0], False)
+        self.assertEqual(args.args[1], "validation_failed")
+        self.assertEqual(args.kwargs.get("percent"), 100)
 
-        mock_materialized.assert_called_once_with()
-        self.assertFalse(changed)
-        self.assertFalse(network["Root"]["children"]["REGION_01"]["virtual"])
+    def test_exception_publishes_degraded_terminal(self):
+        with patch.object(
+            scheduler, "importAndShapeFullReload", side_effect=RuntimeError("boom")
+        ):
+            with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                with patch.object(scheduler, "publish_ready_progress") as mock_ready:
+                    scheduler._run_full_reload_and_publish()
+        mock_ready.assert_not_called()
+        # report_scheduler_runtime_failure does NOT publish when startup=False,
+        # so the wrapper MUST publish the terminal itself.
+        mock_progress.assert_called_once()
+        args = mock_progress.call_args
+        self.assertEqual(args.args[0], False)
+        self.assertEqual(args.args[1], "degraded")
+        self.assertEqual(args.kwargs.get("percent"), 100)
+
+
+class TestFullReloadHashNotPublished(unittest.TestCase):
+    """`.63.1` #12 (1): the `shaping_runtime_hash == 0` exit publishes its OWN
+    degraded/100 terminal (the wrapper does not see it — it returns False)."""
+
+    def test_hash_zero_publishes_degraded_terminal(self):
+        with patch.object(scheduler, "importFromCRM"):
+            with patch.object(scheduler, "ensure_topology_runtime_process", return_value=True):
+                with patch.object(scheduler, "calculate_shaping_runtime_hash", return_value=0):
+                    with patch.object(scheduler, "enable_insight_topology", return_value=True):
+                        with patch.object(scheduler, "mark_shaping_runtime_hash_applied"):
+                            with patch.object(scheduler, "publish_scheduler_progress") as mock_progress:
+                                previous = scheduler.shaping_runtime_hash
+                                scheduler.shaping_runtime_hash = 0
+                                try:
+                                    completed = scheduler.importAndShapeFullReload()
+                                finally:
+                                    scheduler.shaping_runtime_hash = previous
+        self.assertFalse(completed)
+        terminals = [
+            call for call in mock_progress.call_args_list
+            if call.kwargs.get("percent") == 100
+        ]
+        self.assertEqual(len(terminals), 1, "exactly one terminal must be published")
+        self.assertEqual(terminals[0].args[1], "degraded")
 
 
 if __name__ == "__main__":

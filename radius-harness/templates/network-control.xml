@@ -1,5 +1,0 @@
-<network>
-  <name>radius-control</name>
-  <bridge name='vbr-rcontrol'/>
-  <forward mode='none'/>
-</network>

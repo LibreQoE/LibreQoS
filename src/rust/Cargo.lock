@@ -53,7 +53,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "version_check",
- "zerocopy",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]
@@ -101,6 +101,18 @@ name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
+
+[[package]]
+name = "analytics_ipc"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nix 0.29.0",
+ "serde",
+ "serde_cbor",
+ "shmem-ipc",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "android_system_properties"
@@ -219,9 +231,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.16.2"
+version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a054912289d18629dc78375ba2c3726a3afe3ff71b4edba9dedfca0e3446d1fc"
+checksum = "b281d307588d634de920874890732659e2e7672f72b5e10e81badc1a8a83621e"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -229,14 +241,15 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.39.1"
+version = "0.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83a25cf98105baa966497416dbd42565ce3a8cf8dbfd59803ec9ad46f3126399"
+checksum = "9bff6c3b54fad79a2e60b8102caf565819711497c1f5f092f49508e2f5c31b27"
 dependencies = [
  "cc",
  "cmake",
  "dunce",
  "fs_extra",
+ "pkg-config",
 ]
 
 [[package]]
@@ -343,26 +356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bindgen"
-version = "0.71.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
-dependencies = [
- "bitflags 2.11.0",
- "cexpr",
- "clang-sys",
- "itertools 0.13.0",
- "log",
- "prettyplease",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash",
- "shlex",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -453,15 +446,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 
 [[package]]
-name = "cexpr"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
-dependencies = [
- "nom",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -509,6 +493,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "chrono-tz"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
+dependencies = [
+ "chrono",
+ "phf",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -544,17 +538,6 @@ dependencies = [
  "crypto-common",
  "inout",
  "zeroize",
-]
-
-[[package]]
-name = "clang-sys"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
-dependencies = [
- "glob",
- "libc",
- "libloading",
 ]
 
 [[package]]
@@ -922,7 +905,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0b1fab2ae45819af2d0731d60f2afe17227ebb1a1538a236da84c93e9a60162"
 dependencies = [
  "dispatch2",
- "nix",
+ "nix 0.31.2",
  "windows-sys 0.61.2",
 ]
 
@@ -1537,9 +1520,9 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "h2"
-version = "0.4.13"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f44da3a8150a6703ed5d34e164b875fd14c2cdab9af1252a9a1020bde2bdc54"
+checksum = "ef8e5e5a340588f4452631496976cf8636d4a7ecf600239fdc27615d2530bc16"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1568,7 +1551,7 @@ checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
 dependencies = [
  "cfg-if",
  "crunchy",
- "zerocopy",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]
@@ -2117,31 +2100,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
-name = "libbpf-sys"
-version = "1.7.0+v1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a109478760b2900aa2a6f2087e9d0de1d9c535b1758602af2845d5d2ccfaed7c"
-dependencies = [
- "cc",
- "nix",
- "pkg-config",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.185"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52ff2c0fe9bc6cb6b14a0592c2ff4fa9ceb83eea9db979b0487cd054946a2b8f"
-
-[[package]]
-name = "libloading"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
-dependencies = [
- "cfg-if",
- "windows-link",
-]
 
 [[package]]
 name = "libredox"
@@ -2204,25 +2166,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
-name = "lqos_bakery"
-version = "0.1.0"
-dependencies = [
- "allocative",
- "anyhow",
- "crossbeam-channel",
- "lqos_bus",
- "lqos_config",
- "lqos_sys",
- "lqos_utils",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
 name = "lqos_bus"
 version = "0.1.0"
 dependencies = [
@@ -2231,7 +2174,7 @@ dependencies = [
  "lqos_config",
  "lqos_probe",
  "lqos_utils",
- "nix",
+ "nix 0.31.2",
  "serde",
  "serde_cbor",
  "thiserror 1.0.69",
@@ -2252,7 +2195,7 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "lqos_utils",
- "nix",
+ "nix 0.31.2",
  "once_cell",
  "rand_core 0.6.4",
  "serde",
@@ -2266,26 +2209,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "lqos_dataplane_types"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "lqos_heimdall"
 version = "0.1.0"
 dependencies = [
+ "analytics_ipc",
  "anyhow",
  "dashmap",
  "lqos_bus",
  "lqos_config",
- "lqos_sys",
  "lqos_utils",
  "once_cell",
  "timerfd",
  "tracing",
- "zerocopy",
-]
-
-[[package]]
-name = "lqos_map_perf"
-version = "0.1.0"
-dependencies = [
- "lqos_sys",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]
@@ -2316,6 +2262,8 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "lqos_config",
+ "lqos_dataplane_types",
+ "lqos_topology",
  "lqos_topology_compile",
  "lqos_utils",
  "once_cell",
@@ -2337,6 +2285,34 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lqos_power"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "lqos_config",
+ "serde",
+ "serde_json",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "lqos_preflight"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "csv",
+ "lqos_config",
+ "lqos_dataplane_types",
+ "lqos_topology_compile",
+ "lqos_utils",
+ "serde",
+ "serde_yaml",
 ]
 
 [[package]]
@@ -2361,16 +2337,16 @@ dependencies = [
  "base64",
  "chrono",
  "csv",
- "lqos_bakery",
  "lqos_bus",
  "lqos_config",
  "lqos_network_devices",
  "lqos_overrides",
  "lqos_sys",
+ "lqos_topology",
  "lqos_topology_compile",
  "lqos_utils",
  "miniz_oxide",
- "nix",
+ "nix 0.31.2",
  "pyo3",
  "reqwest",
  "serde",
@@ -2390,7 +2366,6 @@ dependencies = [
  "arc-swap",
  "criterion",
  "dashmap",
- "lqos_bakery",
  "lqos_bus",
  "lqos_config",
  "lqos_sys",
@@ -2435,7 +2410,8 @@ dependencies = [
  "libc",
  "lqos_config",
  "lqos_netplan_helper",
- "nix",
+ "lqos_power",
+ "nix 0.31.2",
  "once_cell",
  "parking_lot",
  "serde",
@@ -2453,15 +2429,16 @@ dependencies = [
  "anyhow",
  "crossbeam-channel",
  "csv",
- "lqos_bakery",
  "lqos_bus",
  "lqos_config",
  "lqos_network_devices",
  "lqos_overrides",
  "lqos_probe",
  "lqos_queue_tracker",
+ "lqos_topology",
  "lqos_utils",
  "parking_lot",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -2476,7 +2453,7 @@ dependencies = [
  "lqos_config",
  "lqos_network_devices",
  "miniz_oxide",
- "nix",
+ "nix 0.31.2",
  "serde",
  "serde_cbor",
  "serde_json",
@@ -2488,18 +2465,10 @@ version = "0.1.0"
 dependencies = [
  "allocative",
  "allocative_derive",
- "anyhow",
- "bindgen",
- "libbpf-sys",
- "lqos_bus",
- "lqos_config",
  "lqos_utils",
- "nix",
- "once_cell",
- "parking_lot",
  "thiserror 1.0.69",
  "tracing",
- "zerocopy",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]
@@ -2507,12 +2476,15 @@ name = "lqos_topology"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ip_network_table",
  "lqos_bus",
  "lqos_config",
+ "lqos_dataplane_types",
  "lqos_overrides",
  "lqos_probe",
  "lqos_topology_compile",
  "lqos_utils",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",
@@ -2537,7 +2509,7 @@ dependencies = [
  "allocative_derive",
  "byteorder",
  "crossbeam-channel",
- "nix",
+ "nix 0.31.2",
  "notify",
  "num-traits",
  "rustls",
@@ -2546,7 +2518,7 @@ dependencies = [
  "smallvec",
  "thiserror 1.0.69",
  "tracing",
- "zerocopy",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]
@@ -2555,12 +2527,16 @@ version = "0.1.0"
 dependencies = [
  "allocative",
  "allocative_derive",
+ "analytics_ipc",
  "anyhow",
  "arc-swap",
  "axum",
  "axum-extra",
  "base64",
  "bincode",
+ "chrono",
+ "chrono-tz",
+ "ciborium",
  "crossbeam-channel",
  "crossbeam-queue",
  "csv",
@@ -2573,9 +2549,10 @@ dependencies = [
  "ip_network",
  "ip_network_table",
  "itertools 0.13.0",
- "lqos_bakery",
+ "libc",
  "lqos_bus",
  "lqos_config",
+ "lqos_dataplane_types",
  "lqos_heimdall",
  "lqos_netplan_helper",
  "lqos_network_devices",
@@ -2591,7 +2568,7 @@ dependencies = [
  "lqos_utils",
  "miniz_oxide",
  "native-tls",
- "nix",
+ "nix 0.31.2",
  "once_cell",
  "parking_lot",
  "png",
@@ -2617,7 +2594,7 @@ dependencies = [
  "tungstenite",
  "ureq",
  "uuid",
- "zerocopy",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]
@@ -2693,6 +2670,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "memfd"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6627dc657574b49d6ad27105ed671822be56e0d2547d413bfbf3e8d8fa92e7a"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "memmap2"
+version = "0.5.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2716,12 +2711,6 @@ dependencies = [
  "mime",
  "unicase",
 ]
-
-[[package]]
-name = "minimal-lexical"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
@@ -2841,6 +2830,19 @@ dependencies = [
 
 [[package]]
 name = "nix"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
+dependencies = [
+ "bitflags 2.11.0",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+ "memoffset",
+]
+
+[[package]]
+name = "nix"
 version = "0.31.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d6d0705320c1e6ba1d912b5e37cf18071b6c2e9b7fa8215a1e8a7651966f5d3"
@@ -2857,16 +2859,6 @@ name = "no-std-net"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43794a0ace135be66a25d3ae77d41b91615fb68ae937f904090203e81f755b65"
-
-[[package]]
-name = "nom"
-version = "7.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
-dependencies = [
- "memchr",
- "minimal-lexical",
-]
 
 [[package]]
 name = "notify"
@@ -3152,6 +3144,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "phf"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7"
+dependencies = [
+ "phf_shared",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
+dependencies = [
+ "siphasher",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3291,7 +3301,7 @@ version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
- "zerocopy",
+ "zerocopy 0.8.48",
 ]
 
 [[package]]
@@ -3653,12 +3663,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustc-hash"
-version = "2.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
-
-[[package]]
 name = "rustc_version"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3695,9 +3699,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.38"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69f9466fb2c14ea04357e91413efb882e2a6d4a406e625449bc0a5d360d53a21"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -3759,9 +3763,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.13"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -4001,6 +4005,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "shmem-ipc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed2c25dc1d7ab67a96fed55bcd5699bf8e63ce9d820c7829883cd2095988f26a"
+dependencies = [
+ "byteorder",
+ "libc",
+ "memfd",
+ "memmap2",
+ "thiserror 1.0.69",
+ "zerocopy 0.3.2",
+]
+
+[[package]]
 name = "signal-hook"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4036,6 +4054,12 @@ name = "simd-adler32"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
+
+[[package]]
+name = "siphasher"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
 name = "slab"
@@ -4177,6 +4201,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 dependencies = [
  "futures-core",
+]
+
+[[package]]
+name = "synstructure"
+version = "0.12.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f36bdaa60a83aca3921b5259d5400cbf5e90fc51931376a9bd4a0eb79aa7210f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -5011,9 +5047,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.6"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "804f18a4ac2676ffb4e8b5b5fa9ae38af06df08162314f96a68d2a363e21a8ca"
+checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -5024,14 +5060,14 @@ version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
 dependencies = [
- "webpki-roots 1.0.6",
+ "webpki-roots 1.0.10",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.6"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cfaf3c063993ff62e73cb4311efde4db1efb31ab78a3e5c457939ad5cc0bed"
+checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -5533,17 +5569,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
-name = "xdp_iphash_to_cpu_cmdline"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "lqos_bus",
- "lqos_utils",
- "tokio",
-]
-
-[[package]]
 name = "xdp_pping"
 version = "0.1.0"
 dependencies = [
@@ -5578,7 +5603,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
- "synstructure",
+ "synstructure 0.13.2",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da091bab2bd35db397c46f5b81748b56f28f8fda837087fab9b6b07b6d66e3f1"
+dependencies = [
+ "byteorder",
+ "zerocopy-derive 0.2.0",
 ]
 
 [[package]]
@@ -5587,7 +5622,18 @@ version = "0.8.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eed437bf9d6692032087e337407a86f04cd8d6a16a37199ed57949d415bd68e9"
 dependencies = [
- "zerocopy-derive",
+ "zerocopy-derive 0.8.48",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d498dbd1fd7beb83c86709ae1c33ca50942889473473d287d56ce4770a18edfb"
+dependencies = [
+ "proc-macro2",
+ "syn 1.0.109",
+ "synstructure 0.12.6",
 ]
 
 [[package]]
@@ -5619,7 +5665,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
- "synstructure",
+ "synstructure 0.13.2",
 ]
 
 [[package]]

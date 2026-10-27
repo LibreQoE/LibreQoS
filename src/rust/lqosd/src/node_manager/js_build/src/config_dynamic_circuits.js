@@ -229,7 +229,7 @@ function renderRangesTable() {
         );
         const attach = mkText(rule.attach_to, (v) => {
             window.config.dynamic_circuits.ranges[index].attach_to = v;
-        }, "network.json node (optional)");
+        }, "Blank = root; or network.json node");
         attach.setAttribute("list", "networkNodesDatalist");
         addCell("Attach To", attach);
 
@@ -320,6 +320,7 @@ function updateConfigFromUi() {
             ...rule,
             name: String(rule?.name ?? "").trim(),
             ip_range: normalizeIpRangeInput(rule?.ip_range),
+            // Blank attach_to is meaningful (the dataplane root); keep it blank.
             attach_to: String(rule?.attach_to ?? "").trim(),
         }));
     }

@@ -11,12 +11,6 @@ pub struct NetworkJsonTransport {
     /// Optional stable node identifier carried in network.json metadata.
     #[serde(default)]
     pub id: Option<String>,
-    /// True if this node is a "virtual" (logical-only) node.
-    #[serde(rename = "virtual", default)]
-    pub is_virtual: bool,
-    /// True if TreeGuard has runtime-virtualized this node in the active Bakery tree.
-    #[serde(default)]
-    pub runtime_virtualized: bool,
     /// Max throughput for node (not clamped)
     pub max_throughput: (f64, f64),
     /// Configured max throughput from `network.json`.

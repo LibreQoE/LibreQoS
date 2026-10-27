@@ -1,5 +1,7 @@
 # Prerequisites
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 ## Servers & Hypervisors
 
 ### Disable Hyper-Threading in the BIOS

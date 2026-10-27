@@ -12,6 +12,18 @@ fn default_ttl_seconds() -> u64 {
     300
 }
 
+fn default_promotion_min_bytes_per_second() -> u64 {
+    1024
+}
+
+fn default_promotion_window_seconds() -> u64 {
+    5
+}
+
+fn default_promotion_cap_per_range_per_minute() -> u32 {
+    10
+}
+
 fn deserialize_ip_network_allow_default<'de, D>(deserializer: D) -> Result<IpNetwork, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -58,7 +70,7 @@ pub struct DynamicCircuitRangeRule {
     pub download_max_mbps: f32,
     /// Maximum upstream rate in Mbps.
     pub upload_max_mbps: f32,
-    /// Optional attachment target in `network.json` (node name). Empty means no attachment.
+    /// Blank = root (dataplane root node); non-empty must resolve to a network.json node.
     #[serde(default)]
     pub attach_to: String,
 }
@@ -81,6 +93,18 @@ pub struct DynamicCircuitsConfig {
     /// Rules evaluated against unknown IPs (and future dynamic overlay logic).
     #[serde(default)]
     pub ranges: Vec<DynamicCircuitRangeRule>,
+    /// Dynamic-ranges abuse posture: minimum sustained per-IP activity
+    /// (bytes/second) before an in-range, catalog-unresolved host is promoted.
+    /// Never one packet. Pre-committed — tuning only by driver ruling.
+    #[serde(default = "default_promotion_min_bytes_per_second")]
+    pub promotion_min_bytes_per_second: u64,
+    /// Seconds the activity must be sustained before promotion. Pre-committed.
+    #[serde(default = "default_promotion_window_seconds")]
+    pub promotion_window_seconds: u64,
+    /// Maximum promotions per range per minute (the state-growth cap).
+    /// Pre-committed — tuning only by driver ruling.
+    #[serde(default = "default_promotion_cap_per_range_per_minute")]
+    pub promotion_cap_per_range_per_minute: u32,
 }
 
 impl Default for DynamicCircuitsConfig {
@@ -90,6 +114,9 @@ impl Default for DynamicCircuitsConfig {
             ttl_seconds: default_ttl_seconds(),
             enable_unknown_ip_promotion: false,
             ranges: Vec::new(),
+            promotion_min_bytes_per_second: default_promotion_min_bytes_per_second(),
+            promotion_window_seconds: default_promotion_window_seconds(),
+            promotion_cap_per_range_per_minute: default_promotion_cap_per_range_per_minute(),
         }
     }
 }
@@ -99,6 +126,19 @@ impl DynamicCircuitsConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.ttl_seconds == 0 {
             return Err("dynamic_circuits.ttl_seconds must be > 0".to_string());
+        }
+        if self.promotion_min_bytes_per_second == 0 {
+            return Err(
+                "dynamic_circuits.promotion_min_bytes_per_second must be > 0".to_string(),
+            );
+        }
+        if self.promotion_window_seconds == 0 {
+            return Err("dynamic_circuits.promotion_window_seconds must be > 0".to_string());
+        }
+        if self.promotion_cap_per_range_per_minute == 0 {
+            return Err(
+                "dynamic_circuits.promotion_cap_per_range_per_minute must be > 0".to_string(),
+            );
         }
 
         for (index, rule) in self.ranges.iter().enumerate() {
@@ -192,6 +232,7 @@ mod tests {
             ttl_seconds: 300,
             enable_unknown_ip_promotion: true,
             ranges: vec![rule],
+            ..Default::default()
         });
 
         let raw = toml::to_string_pretty(&config).expect("config should serialize to TOML");
@@ -240,6 +281,7 @@ mod tests {
             ttl_seconds: 300,
             enable_unknown_ip_promotion: true,
             ranges: vec![ipv4_rule.clone(), ipv6_rule.clone()],
+            ..Default::default()
         });
 
         let raw = toml::to_string_pretty(&config).expect("config should serialize to TOML");
@@ -252,5 +294,19 @@ mod tests {
         assert_eq!(ranges.len(), 2);
         assert_eq!(ranges[0], ipv4_rule);
         assert_eq!(ranges[1], ipv6_rule);
+    }
+
+    #[test]
+    fn promotion_knobs_reject_zero() {
+        let mut config = DynamicCircuitsConfig::default();
+        assert!(config.validate().is_ok(), "defaults are valid");
+        config.promotion_min_bytes_per_second = 0;
+        assert!(config.validate().is_err());
+        config.promotion_min_bytes_per_second = 1024;
+        config.promotion_window_seconds = 0;
+        assert!(config.validate().is_err());
+        config.promotion_window_seconds = 5;
+        config.promotion_cap_per_range_per_minute = 0;
+        assert!(config.validate().is_err());
     }
 }

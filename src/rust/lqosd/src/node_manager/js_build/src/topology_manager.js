@@ -909,7 +909,9 @@ function attachmentRateEditOption() {
 function startAttachmentRateEdit(parentNodeId, attachmentId) {
     const parent = allowedParentsForSelected().find((entry) => entry.parent_node_id === parentNodeId);
     const option = explicitAttachmentOptions(parent).find((entry) => entry.attachment_id === attachmentId);
-    if (!topologyManagerState?.writable || !option?.can_override_rate) {
+    // An explicit override WINS: allow the edit for ANY writable, non-AUTO
+    // attachment (`can_override_rate` is a telemetry-source marker, not a gate).
+    if (!topologyManagerState?.writable) {
         return;
     }
     moveMode = false;
@@ -1254,35 +1256,46 @@ function renderHierarchyPanel() {
     const meta = selectedMeta();
     const canonicalIds = currentPathIds(selectedNodeId);
     const liveIds = effectivePathIds(selectedNodeId);
-    const savedIds = meta?.has_override
-        ? proposedPathIds(selectedNodeId, meta.override_parent_node_id)
-        : liveIds;
-    const summaryIds = moveMode && proposedParentId
-        ? proposedPathIds(selectedNodeId, proposedParentId)
-        : savedIds;
+    // P0 (`lqos-74t.23`): ONE path by default (Canonical = desired). A second
+    // Live (applied) row appears ONLY when it DIFFERS. "Saved"/"Proposed" is a
+    // STATE (the chip below), never a third path.
     renderHierarchyPath("topologyManagerCanonicalHierarchy", canonicalIds, {
         highlightNodeId: selectedNodeId,
     });
-    renderHierarchyPath("topologyManagerLiveHierarchy", liveIds, {
-        highlightNodeId: selectedNodeId,
-    });
-    renderHierarchyPath("topologyManagerSavedHierarchy", summaryIds, {
-        highlightNodeId: selectedNodeId,
-    });
-    const savedLabel = document.getElementById("topologyManagerSavedHierarchyLabel");
-    if (savedLabel) {
-        savedLabel.textContent = moveMode && proposedParentId
-            ? "Proposed"
-            : "Saved";
+    const liveDiffers = !!selectedNodeId && !samePathIds(canonicalIds, liveIds);
+    const liveRow = document.getElementById("topologyManagerLiveHierarchyRow");
+    if (liveRow) {
+        liveRow.classList.toggle("d-none", !liveDiffers);
+        if (liveDiffers) {
+            renderHierarchyPath("topologyManagerLiveHierarchy", liveIds, {
+                highlightNodeId: selectedNodeId,
+            });
+        }
+    }
+    // Saved-path discoverability: when an override exists it is shown
+    // (conditionally), so the collapsed common case never hides operator
+    // intent.
+    const savedIds = meta?.has_override
+        ? proposedPathIds(selectedNodeId, meta.override_parent_node_id)
+        : null;
+    const savedBlock = document.getElementById("topologyManagerSavedOverride");
+    if (savedBlock) {
+        const showSaved = !!savedIds;
+        savedBlock.classList.toggle("d-none", !showSaved);
+        if (showSaved) {
+            renderHierarchyPath("topologyManagerSavedOverridePath", savedIds, {
+                highlightNodeId: selectedNodeId,
+            });
+        }
     }
     const details = document.getElementById("topologyManagerHierarchyMeta");
     if (details) {
         const rows = [];
-        if (meta?.effective_parent_node_id && meta.effective_parent_node_id !== meta.current_parent_node_id) {
-            rows.push("Canonical reflects the latest integration snapshot. Live reflects the runtime-effective topology used for shaping.");
+        if (liveDiffers) {
+            rows.push("Canonical is the desired topology (latest integration snapshot); Live is the runtime-effective path used for shaping.");
         }
         if (meta?.has_override && !meta?.override_live) {
-            rows.push("Saved shows operator intent. It is not live until the runtime-effective topology matches it.");
+            rows.push("An override is saved but is not live until the runtime-effective topology matches it.");
         }
         details.className = rows.length > 0 ? "topology-manager-compact-note mt-2" : "d-none";
         details.textContent = rows.join(" ");
@@ -1309,12 +1322,14 @@ function renderHierarchyPanel() {
             badge.textContent = "Attachment Rate";
         } else if (meta?.has_override && meta?.override_live) {
             badge.className = "badge rounded-pill text-bg-success";
-            badge.textContent = "Live Override";
+            badge.textContent = "Override saved · live";
         } else if (meta?.has_override) {
             badge.className = "badge rounded-pill text-bg-info";
-            badge.textContent = "Saved Override";
+            badge.textContent = "Override saved · not live";
         } else {
-            badge.className = "badge rounded-pill text-bg-warning d-none";
+            // P0: the common case is a first-class state, not a hidden row.
+            badge.className = "badge rounded-pill text-bg-success";
+            badge.textContent = "Live";
         }
     }
 
@@ -1482,13 +1497,13 @@ function renderAttachmentHealthList(parentMeta, options = {}) {
                 const isUsingNow = !!option.effective_selected;
                 const isPreferred = selectionBadges.includes("Preferred");
                 const editingRate = isEditingAttachmentRate(parentMeta, option);
-                const disabledReason = option.rate_override_disabled_reason
-                    ? `<div class="small text-body-secondary mt-1">${escapeHtml(option.rate_override_disabled_reason)}</div>`
-                    : "";
+                const telemetryHint =
+                    !option.can_override_rate && option.rate_override_disabled_reason
+                        ? `<div class="small text-body-secondary mt-1">${escapeHtml(option.rate_override_disabled_reason)} (the explicit override wins)</div>`
+                        : "";
                 const rateButtonsHtml = !showRateButtons
                     ? ""
-                    : option.can_override_rate
-                        ? `
+                    : `
                             <button class="btn btn-sm ${editingRate ? "btn-primary" : "btn-outline-primary"}" type="button" data-edit-attachment-rate-parent-id="${escapeHtml(parentMeta.parent_node_id)}" data-edit-attachment-rate-id="${escapeHtml(option.attachment_id)}">
                                 ${editingRate ? "Editing Rates" : option.has_rate_override ? "Edit Rates" : "Set Rates"}
                             </button>
@@ -1496,8 +1511,7 @@ function renderAttachmentHealthList(parentMeta, options = {}) {
                                 ? `<button class="btn btn-sm btn-outline-danger" type="button" data-clear-attachment-rate-parent-id="${escapeHtml(parentMeta.parent_node_id)}" data-clear-attachment-rate-id="${escapeHtml(option.attachment_id)}">
                                     Clear Rates
                                 </button>`
-                                : ""}`
-                        : disabledReason;
+                                : ""}${telemetryHint}`;
                 return `
                 <div class="list-group-item topology-manager-attachment-row ${isUsingNow ? "topology-manager-attachment-row-active" : ""} ${!isUsingNow && isPreferred ? "topology-manager-attachment-row-preferred" : ""}">
                     <div class="d-flex flex-column gap-2">
@@ -1522,12 +1536,21 @@ function renderAttachmentHealthList(parentMeta, options = {}) {
                                         : ""}
                             </div>
                             <div class="d-flex flex-wrap gap-2 justify-content-end">
-                                ${showProbeButtons && option.pair_id
-                                    ? `<button class="btn btn-sm ${option.probe_enabled ? "btn-outline-secondary" : "btn-outline-info"}" type="button" data-probe-policy-pair-id="${escapeHtml(option.pair_id)}" data-probe-policy-enabled="${option.probe_enabled ? "false" : "true"}">
-                                        ${option.probe_enabled ? "Turn Probe Off" : "Turn Probe On"}
-                                    </button>`
+                                ${(showProbeButtons && option.pair_id) || rateButtonsHtml
+                                    ? `<div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Row actions">
+                                            <i class="fa fa-ellipsis"></i>
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            ${showProbeButtons && option.pair_id
+                                                ? `<li><button class="dropdown-item" type="button" data-probe-policy-pair-id="${escapeHtml(option.pair_id)}" data-probe-policy-enabled="${option.probe_enabled ? "false" : "true"}">
+                                                    ${option.probe_enabled ? "Turn Probe Off" : "Turn Probe On"}
+                                                </button></li>`
+                                                : ""}
+                                            ${rateButtonsHtml ? `<li>${rateButtonsHtml}</li>` : ""}
+                                        </ul>
+                                    </div>`
                                     : ""}
-                                ${rateButtonsHtml}
                             </div>
                         </div>
                         ${editingRate
@@ -1580,12 +1603,15 @@ function renderManualAttachmentGroupSection(meta) {
         : "Using integration-emitted attachment options. Create a manual group here only when you need to model explicit parallel paths yourself.";
 
     if (!manualAttachmentEditMode) {
+        // P2 (`lqos-74t.24`): collapsed by default (progressive disclosure) —
+        // the section renders only when relevant (a movable parent with a manual
+        // group OR the create affordance).
         return `
-            <div class="topology-manager-section">
-                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2">
+            <details class="topology-manager-section">
+                <summary class="small text-uppercase text-body-secondary">Manual Attachment Group${hasManualGroup ? " · active" : ""}</summary>
+                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mt-2">
                     <div>
-                        <div class="small text-uppercase text-body-secondary">Manual Attachment Group</div>
-                        <div class="small text-body-secondary mt-1">
+                        <div class="small text-body-secondary">
                             Parent <strong>${escapeHtml(parent.parent_node_name)}</strong> · ${escapeHtml(summary)} · <strong>${explicit.length}</strong> explicit attachment${explicit.length === 1 ? "" : "s"}
                         </div>
                     </div>
@@ -1600,7 +1626,7 @@ function renderManualAttachmentGroupSection(meta) {
                             : ""}
                     </div>
                 </div>
-            </div>
+            </details>
         `;
     }
 
@@ -1705,6 +1731,11 @@ function renderDetailsPanel() {
     const editingDisabled = !meta.can_move;
     const currentAttachment = meta.current_attachment_name || "Auto / integration default";
     const effectiveAttachment = meta.effective_attachment_name || "Auto / integration default";
+    // P2 (`lqos-74t.24`): Radio Paths show the resolution only when it is NOT the
+    // auto default; else ONE line `Auto (integration)` (kills the triple
+    // "Auto / integration default").
+    const radioIsAuto = currentAttachment === "Auto / integration default"
+        && effectiveAttachment === "Auto / integration default";
     const statusNote = editingDisabled
         ? "This node is read-only here. You can still use the preview to inspect upstream and downstream context."
         : moveMode
@@ -1716,26 +1747,24 @@ function renderDetailsPanel() {
                     : attachmentRateEditAttachmentId
                         ? "Attachment rate override editing is active below."
                         : "Inspect mode only. Use Start Move to change parentage or Edit Attachment Preference to tune radios.";
+    // P1 (`lqos-74t.24`): PARENT on ONE line — effective (live), with the
+    // canonical/saved delta inline only when it differs. The three parent pills
+    // (Live / Canonical / Saved) are gone; only the compact counts remain.
+    const parentLabel = !effectiveParent || effectiveParent === "Root / none" ? "Root" : effectiveParent;
+    const parentParts = [`Parent: <strong>${escapeHtml(parentLabel)}</strong>`];
+    if (meta.effective_parent_node_name
+        && meta.effective_parent_node_name !== currentParent
+        && currentParent !== "Root / none") {
+        parentParts.push(`<span class="text-body-secondary">canonical ${escapeHtml(currentParent)}</span>`);
+    }
+    if (meta.has_override) {
+        parentParts.push(`<span class="text-body-secondary">saved ${savedOverrideText}</span>`);
+    }
+    const parentLine = `<div class="topology-manager-parent-line small">${parentParts.join(" · ")}</div>`;
     const branchSummaryPills = [
-        `<span class="topology-manager-summary-pill"><span>${meta.effective_parent_node_name ? "Live parent" : "Parent"}</span><strong>${escapeHtml(effectiveParent)}</strong></span>`,
         `<span class="topology-manager-summary-pill"><span>Descendants</span><strong>${descendantCount(meta.node_id)}</strong></span>`,
         `<span class="topology-manager-summary-pill"><span>Legal parents</span><strong>${legalParentCount}</strong></span>`,
     ];
-    if (meta.effective_parent_node_name && meta.effective_parent_node_name !== currentParent) {
-        branchSummaryPills.push(
-            `<span class="topology-manager-summary-pill"><span>Canonical parent</span><strong>${escapeHtml(currentParent)}</strong></span>`
-        );
-    }
-    if (meta.has_override) {
-        branchSummaryPills.push(
-            `<span class="topology-manager-summary-pill"><span>Saved override</span><strong>${savedOverrideText}</strong></span>`
-        );
-    }
-    if (treeNode?.runtime_virtualized) {
-        branchSummaryPills.push(
-            "<span class=\"topology-manager-summary-pill\"><span>Runtime</span><strong class=\"text-warning-emphasis\">Virtualized in Bakery</strong></span>"
-        );
-    }
     const showInlineAttachmentEditButton = !editingDisabled
         && !moveMode
         && !showAttachmentInspectEditor
@@ -1808,6 +1837,7 @@ function renderDetailsPanel() {
                 </div>
                 <span class="badge ${meta.can_move ? "text-bg-info" : "text-bg-secondary"}">${meta.can_move ? "Movable" : "Read Only"}</span>
             </div>
+            ${parentLine}
             <div class="topology-manager-summary-meta">
                 ${branchSummaryPills.join("")}
             </div>
@@ -1837,21 +1867,28 @@ function renderDetailsPanel() {
                                     <div class="topology-manager-section-subtitle">${attachmentParentSummary}</div>
                                 </div>
                             </div>
-                            <div class="topology-manager-kv-grid">
+                            ${radioIsAuto
+                                ? `<div class="topology-manager-kv-grid"><div class="topology-manager-kv-row"><span>Radio Paths</span><strong>Auto (integration)</strong></div></div>`
+                                : `<div class="topology-manager-kv-grid">
                                 <div class="topology-manager-kv-row"><span>Using now</span><strong>${escapeHtml(currentAttachment)}</strong></div>
                                 <div class="topology-manager-kv-row"><span>Preferred</span><strong>${escapeHtml(attachmentPreferenceLabel)}</strong></div>
                                 ${currentAttachment === effectiveAttachment
                                     ? ""
                                     : `<div class="topology-manager-kv-row"><span>Will apply</span><strong>${escapeHtml(effectiveAttachment)}</strong></div>`}
-                            </div>
+                            </div>`}
                             ${attachmentParent
                                 ? `
                                     <div>
                                         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                                             <div class="small text-uppercase text-body-secondary mb-0">Attachment Health</div>
-                                            <a class="btn btn-sm btn-outline-secondary" href="topology_probes.html">
-                                                <i class="fa fa-wave-square"></i> Probe Debug
-                                            </a>
+                                            <div class="dropdown">
+                                                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="More actions">
+                                                    <i class="fa fa-ellipsis"></i>
+                                                </button>
+                                                <ul class="dropdown-menu dropdown-menu-end">
+                                                    <li><a class="dropdown-item" href="topology_probes.html"><i class="fa fa-wave-square"></i> Probe Debug</a></li>
+                                                </ul>
+                                            </div>
                                         </div>
                                         ${renderAttachmentHealthList(attachmentParent)}
                                     </div>

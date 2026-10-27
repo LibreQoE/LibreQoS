@@ -1,5 +1,7 @@
 # System Requirements
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 LibreQoS can be run either on a dedicated physical server (bare metal) or as a VM. Ubuntu Server 24.04 is the supported operating system.
 
 ## Fast Sizing Guide (Start Here)

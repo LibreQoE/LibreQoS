@@ -1,3 +1,4 @@
+#![allow(dead_code)] // K3-B carve-out: the ASN heatmap store and reader are retained; the kernel aggregate feed is retired.
 use fxhash::FxHashMap;
 use lqos_utils::{
     temporal_heatmap::{HeatmapBlocks, TemporalHeatmap, executive_retransmit_percent},
@@ -9,12 +10,29 @@ use parking_lot::Mutex;
 const MAX_ASN_HEATMAPS: usize = 1000;
 const EXPIRE_CYCLES: u64 = 15 * 60; // 15 minutes
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct AsnAggregate {
     pub bytes: DownUpOrder<u64>,
     pub packets: DownUpOrder<u64>,
     pub retransmits: DownUpOrder<u64>,
-    pub rtts: Vec<f32>,
+ /// Additive RTT WINDOW numerics: count + sum (⇒ mean
+    /// [sic]) + min/max per direction, folded from each flow's current 8-slot
+    /// tail every tick (no differencing; residence-weighted per the heatmap
+    /// precedent).  `count == 0` = no samples; `min == 0` = no sample.  RTT is
+    /// NOT under the byte conservation identity.
+    pub rtt_count: DownUpOrder<u64>,
+    pub rtt_sum_us: DownUpOrder<u64>,
+    pub rtt_min_us: DownUpOrder<u64>,
+    pub rtt_max_us: DownUpOrder<u64>,
+    /// TRUE per-tick RTT percentiles (µs) computed by the fold over the current
+    /// latency tails (card v3, pin A): v2's exact arithmetic — interpolated
+    /// median for p50, ceil-rank for p90; `None` when the tick had no samples.
+    /// The store pools these into the minute cells; the additive window
+    /// numerics above stay aggregate-internal.
+    pub rtt_p50_down: Option<f32>,
+    pub rtt_p50_up: Option<f32>,
+    pub rtt_p90_down: Option<f32>,
+    pub rtt_p90_up: Option<f32>,
 }
 
 struct AsnHeatmapEntry {
@@ -51,8 +69,11 @@ impl AsnHeatmapStore {
 
         self.retain_recent(current_cycle);
 
-        for (asn, mut aggregate) in aggregates.drain() {
-            let (p50, p90) = p50_p90(&mut aggregate.rtts);
+        for (asn, aggregate) in aggregates.drain() {
+            // v2 parity (card v3, pin A): the fold hands TRUE per-tick p50/p90
+            // computed over the current latency tails; the store pools them
+            // into the minute cells.  The additive window numerics stay
+            // aggregate-internal (not rendered here).
             let retransmit_down =
                 executive_retransmit_percent(aggregate.retransmits.down, aggregate.packets.down);
             let retransmit_up =
@@ -62,13 +83,19 @@ impl AsnHeatmapStore {
                 last_updated_cycle: current_cycle,
             });
             entry.last_updated_cycle = current_cycle;
+ // UNIT CONVENTION: the store's rtt slots are
+            // MILLISECONDS (v2's contract — tracking_data.rs combined rtt_ms).
+            // The fold's true percentiles are in MICROSECONDS (the wire unit,
+            // FlowRow.rtt_samples_*_us), so convert exactly ONCE here at the
+            // boundary. Omitting this renders a real 10-30 ms RTT as
+            // 10,000-30,000 (the 1000× bug).
             entry.heatmap.add_sample(
                 bytes_to_mbps(aggregate.bytes.down),
                 bytes_to_mbps(aggregate.bytes.up),
-                p50,
-                p50,
-                p90,
-                p90,
+                aggregate.rtt_p50_down.map(|v| v / 1000.0),
+                aggregate.rtt_p50_up.map(|v| v / 1000.0),
+                aggregate.rtt_p90_down.map(|v| v / 1000.0),
+                aggregate.rtt_p90_up.map(|v| v / 1000.0),
                 retransmit_down,
                 retransmit_up,
             );
@@ -127,34 +154,91 @@ fn bytes_to_mbps(bytes: u64) -> f32 {
     (bytes as f64 * 8.0 / 1_000_000.0) as f32
 }
 
-fn p50_p90(values: &mut [f32]) -> (Option<f32>, Option<f32>) {
-    if values.is_empty() {
-        return (None, None);
-    }
-    values.sort_by(|a, b| a.total_cmp(b));
-    let len = values.len();
-
-    let p50 = {
-        let mid = len / 2;
-        if len % 2 == 1 {
-            Some(values[mid])
-        } else {
-            Some((values[mid - 1] + values[mid]) / 2.0)
-        }
-    };
-    let p90 = {
-        let rank = ((0.90 * len as f32).ceil() as usize).saturating_sub(1);
-        Some(values[rank.min(len - 1)])
-    };
-
-    (p50, p90)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{AsnAggregate, AsnHeatmapStore};
+    use super::{AsnAggregate, AsnHeatmapStore, bytes_to_mbps};
     use fxhash::FxHashMap;
     use lqos_utils::units::DownUpOrder;
+
+    /// The rendered-heatmap smoke (card v3 §6.6): the fold's TRUE per-tick
+    /// p50/p90 render through the store into the snapshot cells — bytes to the
+    /// throughput slots, the percentiles to the p50/p90 slots, and the
+    /// qualified retransmit to its slot.
+    #[test]
+    fn asn_heatmap_renders_true_rtt_percentiles() {
+        let mut store = AsnHeatmapStore::new();
+        let mut aggregates = FxHashMap::default();
+        aggregates.insert(
+            64514,
+            AsnAggregate {
+                bytes: DownUpOrder {
+                    down: 12_500_000,
+                    up: 1_250_000,
+                },
+                packets: DownUpOrder { down: 100, up: 10 },
+                retransmits: DownUpOrder { down: 2, up: 0 },
+                rtt_count: DownUpOrder { down: 2, up: 1 },
+                rtt_sum_us: DownUpOrder { down: 2200, up: 400 },
+                rtt_min_us: DownUpOrder { down: 700, up: 400 },
+                rtt_max_us: DownUpOrder { down: 1500, up: 400 },
+                // The fold's TRUE percentiles for this tick.
+                rtt_p50_down: Some(1100.0),
+                rtt_p50_up: Some(400.0),
+                rtt_p90_down: Some(1500.0),
+                rtt_p90_up: Some(400.0),
+            },
+        );
+
+        store.update(aggregates, 1, true);
+
+        let blocks = store
+            .entries
+            .get(&64514)
+            .expect("ASN heatmap should exist")
+            .heatmap
+            .blocks();
+        let last = blocks.download.len() - 1;
+        assert_eq!(blocks.download[last], Some(bytes_to_mbps(12_500_000)));
+        assert_eq!(blocks.upload[last], Some(bytes_to_mbps(1_250_000)));
+        assert_eq!(blocks.rtt_p50_down[last], Some(1.1));
+        assert_eq!(blocks.rtt_p90_down[last], Some(1.5));
+        assert_eq!(blocks.rtt_p50_up[last], Some(0.4));
+        assert_eq!(blocks.rtt_p90_up[last], Some(0.4));
+        // Qualified retransmit (2/100) renders as a percentage.
+        assert_eq!(blocks.retransmit_down[last], Some(2.0));
+    }
+
+    /// Retention regression (card v3 §6.5 — the v1 units bug): the store's
+    /// cycle domain is SECONDS, so a 120 s gap must RETAIN the entry (the v1
+    /// bug stamped millis against `EXPIRE_CYCLES = 900` and purged every
+    /// update), while an entry older than 15 min is purged.
+    #[test]
+    fn asn_heatmap_retains_recent_cycles_and_purges_stale() {
+        let mut store = AsnHeatmapStore::new();
+        let one = |bytes: u64| {
+            let mut m: FxHashMap<u32, AsnAggregate> = FxHashMap::default();
+            m.insert(
+                64515,
+                AsnAggregate {
+                    bytes: DownUpOrder { down: bytes, up: 0 },
+                    ..Default::default()
+                },
+            );
+            m
+        };
+        store.update(one(1_000_000), 1_000, true);
+        store.update(one(2_000_000), 1_120, true);
+        assert!(
+            store.entries.contains_key(&64515),
+            "a 120 s gap must retain the entry (the v1 bug purged every update)"
+        );
+        // No update for the ASN for >900 s: the next tick's retain purges it.
+        store.update(FxHashMap::default(), 2_100, true);
+        assert!(
+            !store.entries.contains_key(&64515),
+            "an entry older than EXPIRE_CYCLES purges"
+        );
+    }
 
     #[test]
     fn asn_heatmaps_suppress_low_confidence_retransmits() {
@@ -169,7 +253,14 @@ mod tests {
                 },
                 packets: DownUpOrder { down: 99, up: 0 },
                 retransmits: DownUpOrder { down: 1, up: 0 },
-                rtts: vec![10.0, 12.0],
+                rtt_count: DownUpOrder { down: 2, up: 0 },
+                rtt_sum_us: DownUpOrder { down: 22, up: 0 },
+                rtt_min_us: DownUpOrder { down: 10, up: 0 },
+                rtt_max_us: DownUpOrder { down: 12, up: 0 },
+                rtt_p50_down: None,
+                rtt_p50_up: None,
+                rtt_p90_down: None,
+                rtt_p90_up: None,
             },
         );
 
@@ -197,7 +288,14 @@ mod tests {
                 },
                 packets: DownUpOrder { down: 100, up: 0 },
                 retransmits: DownUpOrder { down: 2, up: 0 },
-                rtts: vec![10.0, 12.0],
+                rtt_count: DownUpOrder { down: 2, up: 0 },
+                rtt_sum_us: DownUpOrder { down: 22, up: 0 },
+                rtt_min_us: DownUpOrder { down: 10, up: 0 },
+                rtt_max_us: DownUpOrder { down: 12, up: 0 },
+                rtt_p50_down: None,
+                rtt_p50_up: None,
+                rtt_p90_down: None,
+                rtt_p90_up: None,
             },
         );
 

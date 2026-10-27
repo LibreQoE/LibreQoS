@@ -1,7 +1,6 @@
 use crate::NetworkJsonTransport;
 use allocative_derive::Allocative;
 use lqos_utils::{
-    qoq_heatmap::TemporalQoqHeatmap,
     rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
     temporal_heatmap::TemporalHeatmap,
     units::DownUpOrder,
@@ -15,10 +14,6 @@ pub struct NetworkJsonNode {
 
     /// Optional stable node identifier from `network.json` metadata.
     pub id: Option<String>,
-
-    /// If true, this node is "virtual" (logical only): it exists for monitoring/aggregation
-    /// but should be omitted from the physical HTB tree.
-    pub virtual_node: bool,
 
     /// The maximum throughput allowed per `network.json` for this node
     pub max_throughput: (f64, f64), // In mbps
@@ -80,9 +75,6 @@ pub struct NetworkJsonNode {
 
     /// Rolling per-site TemporalHeatmap (optional, allocated when enabled).
     pub heatmap: Option<TemporalHeatmap>,
-
-    /// Rolling per-site QoO/QoQ TemporalQoqHeatmap (optional, allocated when enabled).
-    pub qoq_heatmap: Option<TemporalQoqHeatmap>,
 }
 
 impl NetworkJsonNode {
@@ -103,21 +95,9 @@ impl NetworkJsonNode {
             (Some(d), Some(u)) => vec![d.as_millis() as f32, u.as_millis() as f32],
         };
 
-        let qoo = self
-            .qoq_heatmap
-            .as_ref()
-            .map(|heatmap| {
-                let blocks = heatmap.blocks();
-                let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
-                (latest(&blocks.download_total), latest(&blocks.upload_total))
-            })
-            .unwrap_or((None, None));
-
         NetworkJsonTransport {
             name: self.name.clone(),
             id: self.id.clone(),
-            is_virtual: self.virtual_node,
-            runtime_virtualized: false,
             max_throughput: self.max_throughput,
             configured_max_throughput: self.max_throughput,
             effective_max_throughput: None,
@@ -156,7 +136,9 @@ impl NetworkJsonNode {
             current_marks: (self.current_marks.get_down(), self.current_marks.get_up()),
             current_drops: (self.current_drops.get_down(), self.current_drops.get_up()),
             rtts,
-            qoo,
+            // §`lqos-74t.47.1.4`: the tree QoQ is filled on the lqosd side from
+            // the unified `circuit_qoo` snapshot (`node_to_transport_*`).
+            qoo: (None, None),
             parents: self.parents.clone(),
             immediate_parent: self.immediate_parent,
             node_type: self.node_type.clone(),

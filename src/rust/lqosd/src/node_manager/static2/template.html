@@ -24,6 +24,9 @@
     <script src="vendor/echarts-gl.min.js"></script>
     <script src="vendor/echarts_dark.js"></script>
     <script src="vendor/echart_vintage.js"></script>
+    <!-- §`lqos-74t.47.4`: uPlot renders the Queue Dynamics chart (vendored, MIT). -->
+    <script src="vendor/uplot.min.js"></script>
+    <link href="vendor/uplot.min.css" rel="stylesheet">
     <link href="./node_manager.css" rel="stylesheet">
     <link rel="stylesheet" href="vendor/fontawesome/css/all.css">
     <script src="vendor/bootstrap.bundle.min.js"></script>
@@ -32,6 +35,7 @@
 <body>
 %%%LTS_SCRIPT%%%
 <script>window.LQOS_UI_VERSION = "%%VERSION%%";</script>
+<script>window.USER_ROLE = "%%ROLE%%";</script>
 <div id="wrapper" class="lqos-shell"> <!-- Whole Page Wrapper -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toastHolder"></div>
 
@@ -44,10 +48,11 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav flex-column">
                     <!-- Logo -->
-                    <li class="nav-item text-center mb-2">
-                        <a class="nav-link" href="index.html" aria-label="LibreQoS home" %%COBRAND_LOGO_DESCRIBEDBY%%>
+                    <li class="nav-item mb-2">
+                        <a class="nav-link lqos-brand-link" href="index.html" aria-label="LibreQoS home" %%COBRAND_LOGO_DESCRIBEDBY%%>
                             <span class="lqos-logo-row">
                                 <img class="lqos_logo" src="tinylogo.svg" alt="LibreQoS SVG Logo" width="48" height="48">
+                                <span class="lqos-wordmark">LibreQoS <span class="lqos-wordmark-version">v3</span></span>
                                 %%COBRAND_LOGO%%
                             </span>
                         </a>
@@ -68,6 +73,12 @@
                         <div id="searchResults">
 
                         </div>
+                    </li>
+                    <!-- Dashboard -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="index.html">
+                            <i class="fa fa-fw fa-centerline fa-gauge-high nav-icon"></i> Dashboard
+                        </a>
                     </li>
                     <!-- Tree -->
                     <li class="nav-item">
@@ -116,12 +127,6 @@
                             <i class="fa fa-fw fa-centerline fa-globe nav-icon"></i> ASN Analysis
                         </a>
                     </li>
-                    <!-- CPU Affinity -->
-                    <li class="nav-item">
-                        <a class="nav-link" href="cpu_weights.html">
-                            <i class="fa fa-fw fa-centerline fa-microchip nav-icon"></i> CPU Affinity
-                        </a>
-                    </li>
                     <!-- Statistics -->
                     %%LTS_LINK%%
                     %%API_LINK%%
@@ -139,53 +144,69 @@
                         </a>
                         <hr />
                     </li>
-                    <!-- Reload Button -->
-                    <li class="nav-item">
-                        <button class="nav-link btn btn-link text-start w-100 p-0 border-0" type="button" id="lnkReloadLqos" aria-label="Reload LibreQoS">
-                            <i class="fa fa-fw fa-centerline fa-recycle" aria-hidden="true"></i> Reload LibreQoS
-                        </button>
-                    </li>
+                    <li class="nav-section-label">System Health</li>
                     %%URGENT_STATUS%%
                     %%SCHEDULER_STATUS%%
+                    %%BRIDGE_STATUS%%
+                    <li class="nav-item">
+                        <a class="nav-link" href="cpu_workers.html">
+                            <i class="fa fa-fw fa-centerline fa-microchip nav-icon"></i> CPU &amp; Workers
+                        </a>
+                    </li>
                     %%UPDATE_STATUS%%
-                    <hr />
-                    <!-- Dark mode switch -->
+                    <!-- Display preferences (kept out of the main nav list) -->
                     <li class="nav-item">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light" aria-label="Toggle day or night mode">
-                            <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon" aria-hidden="true"></i><span class="visually-hidden">Toggle day or night mode</span></label>
-                        </div>
+                        <details class="nav-display">
+                            <summary class="nav-link">
+                                <i class="fa fa-fw fa-centerline fa-palette nav-icon"></i> Display
+                            </summary>
+                            <div class="nav-display-body">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="darkModeSwitch" title="Dark/Light" aria-label="Toggle day or night mode">
+                                    <label class="form-check-label" for="darkModeSwitch"><i class="fa fa-moon" aria-hidden="true"></i><span>Dark mode</span></label>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact" aria-label="Toggle redaction mode">
+                                    <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret" aria-hidden="true"></i><span>Redact</span></label>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode" aria-label="Toggle color blind mode">
+                                    <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye" aria-hidden="true"></i><span>Color blind</span></label>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon" aria-label="Toggle Klingon mode">
+                                    <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock" aria-hidden="true"></i><span>Klingon</span></label>
+                                </div>
+                            </div>
+                        </details>
                     </li>
-                    <!-- Redact switch -->
-                    <li class="nav-item">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="redactSwitch" title="Redact" aria-label="Toggle redaction mode">
-                            <label class="form-check-label" for="redactSwitch"><i class="fa fa-user-secret" aria-hidden="true"></i><span class="visually-hidden">Toggle redaction mode</span></label>
-                        </div>
+                    <!-- Maintenance: admin reload + queue mode. Kept out of the
+                         main nav so System Health stays high in the sidebar. -->
+                    <li class="nav-item d-none" id="maintenanceNav">
+                        <details class="nav-display">
+                            <summary class="nav-link">
+                                <i class="fa fa-fw fa-centerline fa-wrench nav-icon"></i> Maintenance
+                            </summary>
+                            <div class="nav-display-body">
+                                <div class="d-none" id="reloadLibreQoSItem">
+                                    <a class="nav-link" href="#" id="reloadLibreQoSLink"
+                                       title="Re-sync the integration (or manual data) and apply now"
+                                       aria-label="Reload LibreQoS">
+                                        <i class="fa fa-fw fa-centerline fa-rotate nav-icon" aria-hidden="true"></i> Reload LibreQoS
+                                    </a>
+                                </div>
+                                <div class="d-none" id="observeShapeNav">
+                                    <div class="small text-uppercase text-secondary mt-1 mb-1">Queue Mode <span id="queueModeSummary" class="text-secondary small ms-1"></span></div>
+                                    <div class="btn-group btn-group-sm w-100" role="group" aria-label="Observe or shape mode">
+                                        <button type="button" class="btn btn-outline-secondary" id="btnQueueModeObserve">Observe</button>
+                                        <button type="button" class="btn btn-outline-secondary" id="btnQueueModeShape">Shape</button>
+                                    </div>
+                                    <div class="small text-secondary mt-2">Reload required. Switching modes re-syncs and applies; the bridge keeps shaping and traffic is not interrupted.</div>
+                                </div>
+                            </div>
+                        </details>
                     </li>
-                    <!-- Color blind switch -->
-                    <li class="nav-item">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="colorBlindSwitch" title="Color Blind Mode" aria-label="Toggle color blind mode">
-                            <label class="form-check-label" for="colorBlindSwitch"><i class="fa fa-eye" aria-hidden="true"></i><span class="visually-hidden">Toggle color blind mode</span></label>
-                        </div>
-                    </li>
-                    <!-- Klingon switch -->
-                    <li class="nav-item">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="klingonSwitch" title="Klingon" aria-label="Toggle Klingon mode">
-                            <label class="form-check-label" for="klingonSwitch"><i class="fa-solid fa-hand-spock" aria-hidden="true"></i><span class="visually-hidden">Toggle Klingon mode</span></label>
-                        </div>
-                    </li>
-                    <li class="nav-item d-none" id="observeShapeNav">
-                        <div class="small text-uppercase text-secondary mb-1">Queue Mode</div>
-                        <div class="btn-group btn-group-sm w-100" role="group" aria-label="Observe or shape mode">
-                            <button type="button" class="btn btn-outline-secondary" id="btnQueueModeObserve">Observe</button>
-                            <button type="button" class="btn btn-outline-secondary" id="btnQueueModeShape">Shape</button>
-                        </div>
-                        <div class="small text-secondary mt-2">Reload required. Switching modes typically cause a brief traffic pause of about 5 seconds.</div>
-                        <hr />
-                    </li>
+                    <hr class="mt-auto" />
                     <!-- User Info -->
                     <li class="nav-item">
                         <div class="dropdown">
@@ -219,12 +240,13 @@
     <div class='modal-dialog modal-fullscreen'>
         <div class='modal-content'>
             <div class='modal-header'>
-                <h1 class='modal-title fs-5' id='reloadModalLabel'>LibreQoS Reload Result</h1>
+                <h1 class='modal-title fs-5' id='reloadModalLabel'>Reload LibreQoS</h1>
                 <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
             </div>
             <div class='modal-body'>
           <pre id='reloadLibreResult' style='overflow: auto; height: 100%; width: 100%;'>
           </pre>
+                <div class='small text-secondary mt-2'>The bridge keeps shaping; traffic is not interrupted.</div>
             </div>
             <div class='modal-footer'>
                 <button type='button' class='btn btn-secondary' data-bs-dismiss='modal'>Close</button>
@@ -238,7 +260,7 @@
     <div class='modal-dialog modal-xl modal-dialog-scrollable'>
         <div class='modal-content'>
             <div class='modal-header'>
-                <h1 class='modal-title fs-5' id='schedulerModalLabel'>Scheduler Status</h1>
+                <h1 class='modal-title fs-5' id='schedulerModalLabel'>System Health</h1>
                 <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
             </div>
             <div class='modal-body'>
@@ -251,13 +273,13 @@
     </div>
     </div>
 
-<!-- Urgent Issues Modal -->
+<!-- Alerts Modal -->
 <div class='modal fade' id='urgentModal' tabindex='-1' aria-labelledby='urgentModalLabel' aria-hidden='true'>
     <div class='modal-dialog modal-xl modal-dialog-scrollable'>
         <div class='modal-content'>
             <div class='modal-header'>
-                <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel'>Urgent Issues</h1>
-                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge all urgent issues' aria-label='Acknowledge all urgent issues'><i class='fa fa-times' aria-hidden='true'></i></button>
+                <h1 class='modal-title fs-5 text-secondary' id='urgentModalLabel'>Alerts</h1>
+                <button type='button' class='btn btn-outline-secondary btn-sm me-2' id='urgentClearAll' title='Acknowledge all alerts' aria-label='Acknowledge all alerts'><i class='fa fa-times' aria-hidden='true'></i></button>
                 <button type='button' class='btn-close' data-bs-dismiss='modal' aria-label='Close'></button>
             </div>
             <div class='modal-body'>

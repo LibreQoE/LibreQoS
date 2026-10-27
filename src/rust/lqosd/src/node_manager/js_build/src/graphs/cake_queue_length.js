@@ -8,11 +8,14 @@ import {
     cakeScatterSeries,
     cakeTooltip,
     formatCakePackets,
+    attachLegendPairMirror,
 } from "./cake_history";
 
 export class CakeQueueLength extends DashboardGraph {
     constructor(id) {
         super(id);
+        // `lqos-74t.53` (A): mirror the Queue Length legend toggle to its `… Up` line.
+        attachLegendPairMirror(this.chart, [{ down: "Queue Length", up: "Queue Length Up" }]);
 
         this.option = {
             title: cakeChartTitle("Queue Length", "Packets"),
@@ -21,7 +24,7 @@ export class CakeQueueLength extends DashboardGraph {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
-                selectMode: false,
+                // do NOT set selectedMode:false — it disables the legend + the mirror
                 textStyle: {
                     color: '#aaa'
                 },

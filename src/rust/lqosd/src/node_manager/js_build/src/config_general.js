@@ -181,12 +181,6 @@ function validateConfig() {
         return false;
     }
 
-    const queueCheckPeriod = parseInt(document.getElementById("queueCheckPeriod").value);
-    if (isNaN(queueCheckPeriod) || queueCheckPeriod < 100) {
-        alert("Queue Check Period must be a number of at least 100 milliseconds");
-        return false;
-    }
-
     // Validate webserver listen address if provided
     const webserverListen = document.getElementById("webserverListen").value.trim();
     if (webserverListen) {
@@ -204,7 +198,6 @@ function updateConfig() {
     // Update only the general configuration section
     window.config.node_name = document.getElementById("nodeName").value.trim();
     window.config.packet_capture_time = parseInt(document.getElementById("packetCaptureTime").value);
-    window.config.queue_check_period_ms = parseInt(document.getElementById("queueCheckPeriod").value);
     window.config.disable_webserver = document.getElementById("disableWebserver").checked;
     window.config.disable_icmp_ping = document.getElementById("disableIcmpPing").checked;
     window.config.exclude_efficiency_cores = document.getElementById("excludeEfficiencyCores").checked;
@@ -242,9 +235,6 @@ loadConfig(() => {
         }
         if (window.config.packet_capture_time) {
             document.getElementById("packetCaptureTime").value = window.config.packet_capture_time;
-        }
-        if (window.config.queue_check_period_ms) {
-            document.getElementById("queueCheckPeriod").value = window.config.queue_check_period_ms;
         }
 
         // Optional fields with nullish coalescing

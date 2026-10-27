@@ -44,6 +44,13 @@ export class Dashboard {
         this.dashlets = [];
         this.tabDashlets = {}; // dashlets organized by tab
         this.layout = new DashboardLayout(cookieName, defaultLayout);
+        // Drop persisted tabs whose dashlets are all retired (e.g. the
+        // K3-retired Bakery tab) so a saved layout never keeps a dead tab.
+        this.layout.pruneRetiredTabs(new Set(
+            (Array.isArray(this.dashletMenu) ? this.dashletMenu : [])
+                .map((entry) => entry && entry.tag)
+                .filter(Boolean)
+        ));
         // During edit mode, this holds the active tab's dashlets being edited
         this.dashletIdentities = [];
 
@@ -292,9 +299,16 @@ export class Dashboard {
     }
 
     #buildTabUI() {
+        // One row: the tabs, then the time range + dashboard actions on the
+        // right. The time controls and edit button are initialized before
+        // build() (the dashlets read window.timePeriods during setup), so they
+        // live in hidden source containers until they are moved here.
+        const tabBar = document.createElement('div');
+        tabBar.classList.add('dashboard-tabbar');
+
         // Create tab navigation
         let tabNav = document.createElement('ul');
-        tabNav.classList.add('nav', 'nav-tabs', 'mb-3');
+        tabNav.classList.add('nav', 'nav-tabs');
         tabNav.id = this.divName + '_tabs';
         
         this.layout.tabs.forEach((tab, index) => {
@@ -316,8 +330,22 @@ export class Dashboard {
             li.appendChild(a);
             tabNav.appendChild(li);
         });
-        
-        this.parentDiv.appendChild(tabNav);
+
+        tabBar.appendChild(tabNav);
+
+        const actions = document.createElement('div');
+        actions.classList.add('dashboard-tabbar-actions');
+        for (const id of ['timescale', 'controls']) {
+            const element = document.getElementById(id);
+            if (element) {
+                actions.appendChild(element);
+            }
+        }
+        if (actions.childElementCount > 0) {
+            tabBar.appendChild(actions);
+        }
+
+        this.parentDiv.appendChild(tabBar);
     }
 
     #buildTabContents() {

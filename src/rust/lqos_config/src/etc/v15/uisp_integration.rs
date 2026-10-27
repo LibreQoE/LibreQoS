@@ -22,7 +22,6 @@ pub struct UispIntegration {
     pub airmax_flexible_frame_download_ratio: f32,
     pub ltu_capacity: f32,
     pub exclude_sites: Vec<String>,
-    pub squash_sites: Option<Vec<String>>,
     pub ipv6_with_mikrotik: bool,
     pub bandwidth_overhead_factor: f32,
     pub commit_bandwidth_multiplier: f32,
@@ -33,8 +32,6 @@ pub struct UispIntegration {
     pub infrastructure_transport_caps_enabled: bool,
     pub insecure_ssl: Option<bool>,
 
-    /// Deprecated legacy importer-side squashing toggle. Existing values are ignored.
-    pub enable_squashing: Option<bool>,
     pub do_not_squash_sites: Option<Vec<String>>,
 }
 
@@ -61,7 +58,6 @@ impl Default for UispIntegration {
             airmax_flexible_frame_download_ratio: default_airmax_flexible_frame_download_ratio(),
             ltu_capacity: 1.0,
             exclude_sites: vec![],
-            squash_sites: None,
             ipv6_with_mikrotik: false,
             bandwidth_overhead_factor: 1.0,
             commit_bandwidth_multiplier: 1.0,
@@ -69,7 +65,6 @@ impl Default for UispIntegration {
             ignore_calculated_capacity: false,
             infrastructure_transport_caps_enabled: default_infrastructure_transport_caps_enabled(),
             insecure_ssl: None,
-            enable_squashing: None,
             do_not_squash_sites: None,
         }
     }

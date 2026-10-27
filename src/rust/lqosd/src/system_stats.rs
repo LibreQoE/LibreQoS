@@ -10,6 +10,10 @@ const MAX_CPUS_COUNTED: usize = 128;
 /// Stores overall CPU usage
 pub static CPU_USAGE: Lazy<[AtomicU32; MAX_CPUS_COUNTED]> = Lazy::new(build_empty_cpu_list);
 
+/// The kernel CPU id for each `CPU_USAGE` slot. `u32::MAX` = unproven join
+/// (`lqos-74t.118.2`/`.3`): the page must show `CPU ?`, never index-as-id.
+pub static CPU_IDS: Lazy<[AtomicU32; MAX_CPUS_COUNTED]> = Lazy::new(build_unset_cpu_ids);
+
 /// Total number of CPUs detected
 pub static NUM_CPUS: AtomicUsize = AtomicUsize::new(0);
 
@@ -63,9 +67,15 @@ pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sende
                 sys.cpus()
                     .iter()
                     .enumerate()
-                    .map(|(i, cpu)| (i, cpu.cpu_usage() as u32)) // Always rounds down
-                    .for_each(|(i, cpu)| {
-                        CPU_USAGE[i].store(cpu, std::sync::atomic::Ordering::Relaxed)
+                    .map(|(i, cpu)| (i, cpu.cpu_usage() as u32, cpu_id_from_name(cpu.name()))) // Always rounds down
+                    .for_each(|(i, cpu, id)| {
+                        if i < MAX_CPUS_COUNTED {
+                            CPU_USAGE[i].store(cpu, std::sync::atomic::Ordering::Relaxed);
+                            CPU_IDS[i].store(
+                                id.unwrap_or(u32::MAX),
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                        }
                     });
 
                 NUM_CPUS.store(sys.cpus().len(), std::sync::atomic::Ordering::Relaxed);
@@ -102,10 +112,51 @@ pub fn start_system_stats() -> anyhow::Result<Sender<tokio::sync::oneshot::Sende
     Ok(tx)
 }
 
+/// `lqos-74t.118.3`: the same sampler lqosd already runs, exposed read-only for
+/// the same-origin CPU & Workers endpoint. `num_cpus` is capped at the array
+/// bound; a 0 count means the sampler has not produced its first tick yet.
+pub struct CpuUsageSnapshot {
+    pub cpu_usage: Vec<u32>,
+    pub cpu_ids: Vec<u32>,
+    pub num_cpus: usize,
+}
+
+pub fn cpu_usage_snapshot() -> CpuUsageSnapshot {
+    let num_cpus = NUM_CPUS
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .min(MAX_CPUS_COUNTED);
+    let cpu_usage = CPU_USAGE[..num_cpus]
+        .iter()
+        .map(|value| value.load(std::sync::atomic::Ordering::Relaxed))
+        .collect();
+    let cpu_ids = CPU_IDS[..num_cpus]
+        .iter()
+        .map(|value| value.load(std::sync::atomic::Ordering::Relaxed))
+        .collect();
+    CpuUsageSnapshot {
+        cpu_usage,
+        cpu_ids,
+        num_cpus,
+    }
+}
+
+fn cpu_id_from_name(name: &str) -> Option<u32> {
+    name.strip_prefix("cpu")?.parse().ok()
+}
+
 fn build_empty_cpu_list() -> [AtomicU32; MAX_CPUS_COUNTED] {
     let mut temp = Vec::with_capacity(MAX_CPUS_COUNTED);
     for _ in 0..MAX_CPUS_COUNTED {
         temp.push(AtomicU32::new(0));
+    }
+    temp.try_into()
+        .expect("This should never happen, sizes are constant.")
+}
+
+fn build_unset_cpu_ids() -> [AtomicU32; MAX_CPUS_COUNTED] {
+    let mut temp = Vec::with_capacity(MAX_CPUS_COUNTED);
+    for _ in 0..MAX_CPUS_COUNTED {
+        temp.push(AtomicU32::new(u32::MAX));
     }
     temp.try_into()
         .expect("This should never happen, sizes are constant.")

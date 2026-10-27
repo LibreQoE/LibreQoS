@@ -1,17 +1,29 @@
-import { colorByQoqScore, colorByRttMs } from "./helpers/color_scales";
+import { colorByQoqScore, colorByRttMs, resolveRttThresholds } from "./helpers/color_scales";
 import { isColorBlindMode } from "./helpers/colorblind";
 import { isDarkMode } from "./helpers/dark_mode";
 import { isRedacted } from "./helpers/redact";
 import { effectiveMax } from "./helpers/network_rates.mjs";
 import { scaleNumber, toNumber } from "./lq_js_common/helpers/scaling";
+import { lerpGreenToRedViaOrange } from "./helpers/scaling";
 import { get_ws_client, subscribeWS } from "./pubsub/ws";
+import { localBboxCenter } from "./site_map_bbox.mjs";
+import { insightTileUrls } from "./site_map_config.mjs";
+import { buildFieldGrid, glowRadiusKm } from "./site_map_field.mjs";
+import { planarHaloHexbin } from "./site_map_hexbin.mjs";
 
 const wsClient = get_ws_client();
 
 const INITIAL_REQUEST_TIMEOUT_MS = 2500;
 const HISTORY_WINDOW_MS = 30_000;
 
-const TILE_BBOX_URL = "https://insight.libreqos.com/tiles/api/bbox";
+// The tile base is CONFIGURABLE: the server injects window.lqosInsightBaseUrl
+// from long_term_stats.lts_url.  The default keeps the historical Insight OSM
+// cache; a host whose DNS fails for the base still gets a working map via the
+// local-bbox fallback in ensureMapInitialized.
+const INSIGHT_TILES = insightTileUrls(
+    typeof window !== "undefined" ? window.lqosInsightBaseUrl : undefined
+);
+const TILE_BBOX_URL = INSIGHT_TILES.bboxUrl;
 // NOTE: This key is intentionally non-secret. The remote OSM cache uses it as a lightweight gate.
 // It must match both the bbox Authorization token and the tile `key=` query param.
 const OSM_CACHE_KEY = "LibreQoSRocks";
@@ -20,7 +32,7 @@ const INSIGHT_TILE_PROTOCOL = "insight";
 // Insight OSM cache tiles: `z/y/x.png` (Cloudflare cache-friendly). See `src/lts2/rust/osm_cache/src/http.rs`.
 // The Insight tile server returns `503 + Retry-After` while it fetches missing tiles, so we route
 // requests through a custom MapLibre protocol handler that retries before surfacing errors.
-const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://insight.libreqos.com/tiles/{z}/{y}/{x}.png?key=${encodeURIComponent(OSM_CACHE_KEY)}`;
+const TILE_URL_TEMPLATE = `${INSIGHT_TILE_PROTOCOL}://${INSIGHT_TILES.tileHost}${INSIGHT_TILES.tilePath}?key=${encodeURIComponent(OSM_CACHE_KEY)}`;
 const TILE_ATTRIBUTION = "© OpenStreetMap contributors";
 const TILE_MAX_ZOOM = 17;
 
@@ -138,6 +150,51 @@ const AP_POINTS_LAYER_ID = "site-map-ap-points";
 const FANOUT_LINE_LAYER_ID = "site-map-fanout-lines-layer";
 const FANOUT_POINT_LAYER_ID = "site-map-fanout-points-layer";
 const SITE_LINK_LAYER_ID = "site-map-site-links-line";
+// `.67`: the site heat field (a native MapLibre heatmap layer, below the markers).
+// `.67.12`: the flat 2D HEXBIN (per-cell color = RTT, size = throughput) — a
+// native MapLibre `fill` over a GeoJSON of scaled hexagons. Replaces the density
+// heatmap in Heatmap mode.
+const SITE_HEX_SOURCE_ID = "site-map-hex-source";
+const SITE_HEX_LAYER_ID = "site-map-hex-layer";
+// `.67.1` (ii): a PARALLEL unclustered site source + layer so the Cluster
+// toggle can show individual points without hiding everything at low zoom.
+const SITE_PLAIN_SOURCE_ID = "site-map-sites-plain";
+const SITE_PLAIN_POINTS_LAYER_ID = "site-map-sites-plain-points";
+// `.67.3`: the value-interpolated RTT field — IDW on a grid rendered to a canvas
+// and served as a MapLibre `image` source (below the markers). NOT density.
+const SITE_FIELD_SOURCE_ID = "site-map-rtt-field-source";
+const SITE_FIELD_LAYER_ID = "site-map-rtt-field-layer";
+const FIELD_GRID_W = 256;
+const FIELD_GRID_H = 160;
+const FIELD_GRID_W_LARGE = 160;
+const FIELD_GRID_H_LARGE = 100;
+const FIELD_LARGE_POINT_COUNT = 200;
+// `.67.4` Lever 3: the IDW neighbourhood is widened + the exponent lowered, and
+// — the real fix for the per-point bullseye — a SMOOTHING LENGTH-SCALE `s` is
+// added to the kernel (`w = 1/(d^2 + s^2)^(p/2)`, smoothed IDW / Shepard with a
+// Gaussian-like length-scale). That removes the `d->0` singularity so a site no
+// longer dominates its own cells (no bullseye) while an isolated hotspot still
+// keeps alpha=1 and the local-maximum value (reads red).
+const FIELD_IDW_K = 12;
+const FIELD_IDW_POWER = 1.5;
+const FIELD_SMOOTH_MIN_KM = 0.5;
+const FIELD_SMOOTH_FRACTION = 0.08;
+// `.67.4`: marker polish (Lever 1 + 2). Sites are the ONLY ringed markers:
+// small, near-uniform, dark-ringed, opaque dots. In VALUE-field mode the
+// ambient AP markers become tiny RING-LESS dots (a PAINT change only — the AP
+// source still feeds `fieldPoints()`), fading in above AP_DECLUTTER_MIN_ZOOM.
+// The selection-gated FANOUT_POINT overlay is intentionally left untouched.
+const SITE_DOT_OPACITY = 0.92;
+const SITE_RING_WIDTH = 1.2;
+const AP_DECLUTTER_DOT_RADIUS = 2.2;
+const AP_DECLUTTER_MIN_ZOOM = 7;
+const AP_DECLUTTER_DOT_OPACITY = 0.55;
+// `.67.5`: per-site glow radius ∝ sqrt(circuit count), clamped to a fraction of
+// the base falloff so a huge site cannot paint the map and a small site (or an
+// AP / count=0 point) stays visible. countRef = the max count among the plotted
+// sites (self-scaling; floor 1).
+const GLOW_RADIUS_MIN_FRACTION = 0.3;
+const GLOW_RADIUS_MAX_FRACTION = 1.6;
 
 const INSIGHT_TILE_MAX_PARALLEL_FETCHES = 2;
 let insightTileFetchActive = 0;
@@ -251,6 +308,15 @@ function throughputRadiusPx(bitsPerSecond, maxBitsPerSecond) {
     return Math.round(6 + (Math.log10(1 + (ratio * 99)) * 10));
 }
 
+// `.67.4` Lever 2: the DISPLAYED marker radius. The traffic scaling (6..26 px)
+// is heavily damped toward a small near-uniform dot (6..9 px) so markers read as
+// crisp dots, not blobs. Both the layer paint (`dotRadius`) and the size legend
+// use this, so the legend cannot lie.
+function displayMarkerRadiusPx(rawRadius) {
+    const r = Number.isFinite(Number(rawRadius)) ? Number(rawRadius) : 7;
+    return Math.round((6 + ((r - 6) * 0.15)) * 100) / 100;
+}
+
 function worstQoo(qooDown, qooUp) {
     const values = [qooDown, qooUp].filter((value) => Number.isFinite(value));
     if (!values.length) return null;
@@ -263,7 +329,10 @@ function worstRtt(rttDownMs, rttUpMs) {
     return Math.max(...values);
 }
 
-function metricColorForMode(mode, metricValue) {
+// `.67.3`: the RTT marker/value color comes from `resolveRttThresholds()`
+// (the CONFIG source), NOT the `.67.1` three-handle override. The value field
+// calls the same, so a site's marker and its own cell cannot disagree.
+function metricColorForMode(mode, metricValue, max = null) {
     if (mode === "qoo") {
         return colorByQoqScore(metricValue);
     }
@@ -274,8 +343,39 @@ function metricColorForMode(mode, metricValue) {
     if (!Number.isFinite(numeric)) {
         return "#8893a5";
     }
+    if (mode === "throughput") {
+        return lerpGreenToRedViaOrange(numeric, Math.max(1, Number(max) || 1));
+    }
     return colorByRttMs(numeric);
 }
+
+// `.67.12`: the native density-heatmap helpers (`defaultHeatRange`,
+// `heatWeightExpression`, `heatColorExpression`, `heatColorCssGradient`) were
+// RETIRED with the `heatmap` layer — the hexbin uses the metric ramp
+// (`colorByRttMs` → `resolveRttThresholds`) + `hexbinBorderAlpha` instead.
+
+// `.67.3`: parse a CSS color (`#rrggbb`, `#rgb`, `rgb()`, `rgba()`) into [r,g,b].
+function parseRgb(color) {
+    const s = String(color || "").trim();
+    if (s.startsWith("#")) {
+        const hex = s.slice(1);
+        const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+        return [
+            parseInt(full.slice(0, 2), 16) || 0,
+            parseInt(full.slice(2, 4), 16) || 0,
+            parseInt(full.slice(4, 6), 16) || 0,
+        ];
+    }
+    const m = s.match(/rgba?\(([^)]+)\)/i);
+    if (m) {
+        const parts = m[1].split(",").map((v) => Number(v.trim()));
+        return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+    }
+    return [136, 147, 165];
+}
+
+// `.67.3`: an equirectangular km distance (fine at site/city scale) lives in
+// the pure site_map_field helper (shared with its unit test).
 
 function averageOrNull(sum, count) {
     return count > 0 ? (sum / count) : null;
@@ -373,15 +473,18 @@ function findNearestAncestorSiteIndex(indexMap, startIndex) {
 }
 
 function markerPalette() {
+    // `.67.4` Lever 2: the site ring is DARK (match the mockup), not white — a
+    // thin dark outline around a small bright dot. AP/fanout keep their ring in
+    // the non-field modes (in VALUE-field mode the AP ring is zeroed).
     if (isDarkMode()) {
         return {
-            siteStroke: "rgba(244, 248, 255, 0.68)",
+            siteStroke: "rgba(2, 6, 23, 0.72)",
             apStroke: "rgba(244, 248, 255, 0.54)",
             link: "rgba(15, 23, 42, 0.35)",
         };
     }
     return {
-        siteStroke: "rgba(15, 23, 42, 0.36)",
+        siteStroke: "rgba(15, 23, 42, 0.58)",
         apStroke: "rgba(15, 23, 42, 0.28)",
         link: "rgba(15, 23, 42, 0.35)",
     };
@@ -669,7 +772,28 @@ async function requestOsmCenterFromBbox(siteLatLonPairs, timeoutMs = 2500) {
 
 class SiteMapPage {
     constructor() {
-        this.mode = "qoo";
+        // `.67`: the Site Map opens as a LIVE RTT heatmap by default.
+        this.mode = "rtt";
+        this.renderMode = "heatmap";
+        // `.67.12`: the Heatmap is the HEXBIN (per-cell color = RTT, size =
+        // throughput). The settings panel is gone (`.67.8`); the native density
+        // `heatmap` layer and the value field are retired, so the former
+        // Radius/Intensity/heatMaxThroughput fields are gone too.
+        this.fieldMode = "density";
+        this.fieldFalloffKm = 25;
+        // `.67.8`: glow radius ∝ live throughput (replaces the `.67.5` circuit
+        // count); always on (no toggle).
+        this.glowByThroughput = true;
+        this.fieldOpacity = 0.85;
+        // `.67.10`: ONE persistent canvas backs the `canvas` source (no data URL).
+        this.fieldCanvas = null;
+        this.filters = {
+            siteType: "all",
+            showMarkers: true,
+            showLabels: true,
+            onlyIssues: false,
+            cluster: false,
+        };
         this.history = [];
         this.latestSnapshot = null;
         this.subscription = null;
@@ -705,9 +829,11 @@ class SiteMapPage {
         this.legendGradient = document.getElementById("siteMapLegendGradient");
         this.legendLow = document.getElementById("siteMapLegendLow");
         this.legendHigh = document.getElementById("siteMapLegendHigh");
-        this.sizeDotSmall = document.getElementById("siteMapSizeDotSmall");
-        this.sizeDotMedium = document.getElementById("siteMapSizeDotMedium");
-        this.sizeDotLarge = document.getElementById("siteMapSizeDotLarge");
+        this.legendTitle = document.getElementById("siteMapLegendTitle");
+        this.legendCaveat = document.getElementById("siteMapLegendCaveat");
+        this.legendStops = document.getElementById("siteMapLegendStops");
+        this.legendScale = document.getElementById("siteMapLegendScale");
+        this.fieldCaveat = document.getElementById("siteMapFieldCaveat");
     }
 
     init() {
@@ -723,17 +849,34 @@ class SiteMapPage {
     }
 
     bindControls() {
-        const setMode = (mode) => {
-            this.mode = mode;
-            document.getElementById("siteMapModeQoo")?.classList.toggle("btn-primary", mode === "qoo");
-            document.getElementById("siteMapModeQoo")?.classList.toggle("btn-outline-secondary", mode !== "qoo");
-            document.getElementById("siteMapModeRtt")?.classList.toggle("btn-primary", mode === "rtt");
-            document.getElementById("siteMapModeRtt")?.classList.toggle("btn-outline-secondary", mode !== "rtt");
-            this.refreshLegend();
-            this.renderFromHistory();
+        const toggleGroup = (buttons, active) => {
+            buttons.forEach(([id, value]) => {
+                const el = document.getElementById(id);
+                el?.classList.toggle("btn-primary", value === active);
+                el?.classList.toggle("btn-outline-secondary", value !== active);
+            });
         };
-        document.getElementById("siteMapModeQoo")?.addEventListener("click", () => setMode("qoo"));
-        document.getElementById("siteMapModeRtt")?.addEventListener("click", () => setMode("rtt"));
+        // `.67.16`: the metric selector is GONE — the metric is FIXED to RTT
+        // (`this.mode` defaults to "rtt").
+        // `.67`: Heatmap | Points | Connections (Heatmap default).
+        const setRenderMode = (mode) => {
+            this.renderMode = mode;
+            toggleGroup([
+                ["siteMapRenderHeatmap", "heatmap"],
+                ["siteMapRenderPoints", "points"],
+                ["siteMapRenderConnections", "connections"],
+            ], mode);
+            this.refreshLegend();
+            this.applyRenderMode();
+        };
+        document.getElementById("siteMapRenderHeatmap")?.addEventListener("click", () => setRenderMode("heatmap"));
+        document.getElementById("siteMapRenderPoints")?.addEventListener("click", () => setRenderMode("points"));
+        document.getElementById("siteMapRenderConnections")?.addEventListener("click", () => setRenderMode("connections"));
+        toggleGroup([
+            ["siteMapRenderHeatmap", "heatmap"],
+            ["siteMapRenderPoints", "points"],
+            ["siteMapRenderConnections", "connections"],
+        ], this.renderMode);
         document.getElementById("siteMapUnmappedToggle")?.addEventListener("click", () => {
             this.unmappedOpen = !this.unmappedOpen;
             this.syncUnmappedPanel();
@@ -796,9 +939,19 @@ class SiteMapPage {
             if (!this.map) {
                 return;
             }
+            // `.67.9`: adding sources/layers before the style is loaded throws
+            // "Style is not done loading" and (via the catch below) skips ALL
+            // layers. `load`/`styledata` re-invoke this once it is ready.
+            if (!this.map.isStyleLoaded()) {
+                return;
+            }
             try {
                 this.installSourcesAndLayers();
             } catch (err) {
+                // `.67.9` R2: do NOT silently swallow — a throw here skips ALL
+                // MapLibre layers (the DOM labels persist) => "labels only, no
+                // field". Log it so it is visible, then bail.
+                console.error("[site-map] installSourcesAndLayers failed; MapLibre layers skipped", err);
                 return;
             }
             if (!this.map.getSource(SITE_SOURCE_ID) || !this.map.getLayer(SITE_POINTS_LAYER_ID)) {
@@ -809,6 +962,7 @@ class SiteMapPage {
                 this.mapBootstrapped = true;
             }
             this.applyTheme();
+            this.applyRenderMode();
             this.renderFromHistory();
         };
 
@@ -850,6 +1004,102 @@ class SiteMapPage {
         if (this.map.getLayer(AP_POINTS_LAYER_ID)) {
             this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-stroke-color", palette.apStroke);
         }
+        if (this.map.getLayer(SITE_PLAIN_POINTS_LAYER_ID)) {
+            this.map.setPaintProperty(SITE_PLAIN_POINTS_LAYER_ID, "circle-stroke-color", palette.siteStroke);
+        }
+        if (this.map.getLayer(SITE_HEX_LAYER_ID)) {
+            this.map.setPaintProperty(SITE_HEX_LAYER_ID, "fill-color", ["get", "metricColor"]);
+        }
+    }
+
+    // `.67.12`: the retired `heatRange()` / `applyHeatPaint()` (the native heatmap
+    // weight/color/radius) are gone with the `heatmap` layer.
+
+    // `.67` / `.67.1`: Heatmap | Points | Connections × the Data Filters. The heat
+    // field is on only in Heatmap mode; the topology lines only in Connections;
+    // the markers + labels stay on top in every mode.
+    applyRenderMode() {
+        if (!this.map) {
+            return;
+        }
+        const show = (layerId, visible) => {
+            if (this.map.getLayer(layerId)) {
+                this.map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
+            }
+        };
+        const heat = this.renderMode === "heatmap";
+        const links = this.renderMode === "connections";
+        const markers = this.filters.showMarkers;
+        // `.67.7`: in Heatmap mode the marker DOTS are hidden on top of the field;
+        // the labels are a separate DOM overlay (syncSiteLabelMarkers, gated by
+        // showLabels) and persist. The "Show site markers" checkbox only governs
+        // the NON-heatmap modes, and the selection-gated fanout overlay hides too
+        // (consistent).
+        const showSites = !heat && markers && this.filters.siteType !== "aps";
+        const showAps = !heat && markers && this.filters.siteType !== "sites";
+        const valueField = heat && this.fieldMode === "value";
+        // `.67.12`: Heatmap mode shows the HEXBIN fill (replacing the density heat).
+        show(SITE_FIELD_LAYER_ID, valueField);
+        show(SITE_HEX_LAYER_ID, heat);
+        show(SITE_POINTS_LAYER_ID, showSites && this.filters.cluster);
+        show(SITE_CLUSTER_LAYER_ID, showSites && this.filters.cluster);
+        show(SITE_PLAIN_POINTS_LAYER_ID, showSites && !this.filters.cluster);
+        show(AP_POINTS_LAYER_ID, showAps);
+        show(FANOUT_POINT_LAYER_ID, showAps);
+        show(SITE_LINK_LAYER_ID, links);
+        show(FANOUT_LINE_LAYER_ID, links);
+        this.applyMarkerStyles();
+        this.scheduleTextOverlaySync();
+    }
+
+    // `.67.4`: marker styling per render/field mode.
+    //   Lever 1 (R1) — in Heatmap VALUE-field mode the ambient AP markers become
+    //     tiny RING-LESS dots via a PAINT change (constant radius + stroke-width
+    //     0). The AP source is untouched, so `fieldPoints()` still sees every AP;
+    //     Z = AP_DECLUTTER_MIN_ZOOM (7) below which the dots are faded out — the
+    //     field feed is unchanged (it reads `latestRender`, not the layer). The
+    //     selection-gated FANOUT_POINT overlay is deliberately left as-is.
+    //   Lever 2 — sites are small, near-uniform, dark-ringed, opaque dots.
+    applyMarkerStyles() {
+        if (!this.map) {
+            return;
+        }
+        const set = (layerId, prop, value) => {
+            if (this.map.getLayer(layerId)) {
+                this.map.setPaintProperty(layerId, prop, value);
+            }
+        };
+        const valueField = this.renderMode === "heatmap" && this.fieldMode === "value";
+        const siteRing = markerPalette().siteStroke;
+
+        [SITE_POINTS_LAYER_ID, SITE_PLAIN_POINTS_LAYER_ID].forEach((layerId) => {
+            set(layerId, "circle-radius", ["get", "dotRadius"]);
+            set(layerId, "circle-opacity", SITE_DOT_OPACITY);
+            set(layerId, "circle-stroke-color", siteRing);
+            set(layerId, "circle-stroke-width", SITE_RING_WIDTH);
+            set(layerId, "circle-blur", 0);
+        });
+        set(SITE_CLUSTER_LAYER_ID, "circle-stroke-color", siteRing);
+
+        if (valueField) {
+            set(AP_POINTS_LAYER_ID, "circle-radius", AP_DECLUTTER_DOT_RADIUS);
+            set(AP_POINTS_LAYER_ID, "circle-opacity", [
+                "interpolate", ["linear"], ["zoom"],
+                AP_DECLUTTER_MIN_ZOOM - 1, 0,
+                AP_DECLUTTER_MIN_ZOOM, AP_DECLUTTER_DOT_OPACITY,
+                12, Math.min(1, AP_DECLUTTER_DOT_OPACITY + 0.2),
+            ]);
+            set(AP_POINTS_LAYER_ID, "circle-stroke-width", 0);
+            set(AP_POINTS_LAYER_ID, "circle-blur", 0);
+        } else {
+            const sparse = (this.latestRender?.apFeatures?.length || 0) < 24;
+            set(AP_POINTS_LAYER_ID, "circle-radius", ["get", "markerRadius"]);
+            set(AP_POINTS_LAYER_ID, "circle-opacity", sparse
+                ? ["interpolate", ["linear"], ["zoom"], 0, 0.02, 6, 0.22, 8, 0.78, 10, 0.92]
+                : ["interpolate", ["linear"], ["zoom"], 0, 0.0, 6, 0.18, 8, 0.82, 10, 0.96]);
+            set(AP_POINTS_LAYER_ID, "circle-stroke-width", 1.0);
+            set(AP_POINTS_LAYER_ID, "circle-blur", 0.05);
+        }
     }
 
     installSourcesAndLayers() {
@@ -868,6 +1118,15 @@ class SiteMapPage {
                 clusterMaxZoom: 12,
             });
         }
+        // `.67.1` (ii): the PARALLEL unclustered site source so the Cluster
+        // toggle can show individual points at low zoom (the clustered source
+        // emits only cluster features there).
+        if (!this.map.getSource(SITE_PLAIN_SOURCE_ID)) {
+            this.map.addSource(SITE_PLAIN_SOURCE_ID, {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] },
+            });
+        }
         if (!this.map.getSource(AP_SOURCE_ID)) {
             this.map.addSource(AP_SOURCE_ID, {
                 type: "geojson",
@@ -882,6 +1141,13 @@ class SiteMapPage {
         }
         if (!this.map.getSource(FANOUT_POINT_SOURCE_ID)) {
             this.map.addSource(FANOUT_POINT_SOURCE_ID, {
+                type: "geojson",
+                data: { type: "FeatureCollection", features: [] },
+            });
+        }
+        // `.67.12`: the hexbin GeoJSON (scaled hexagon polygons).
+        if (!this.map.getSource(SITE_HEX_SOURCE_ID)) {
+            this.map.addSource(SITE_HEX_SOURCE_ID, {
                 type: "geojson",
                 data: { type: "FeatureCollection", features: [] },
             });
@@ -917,16 +1183,66 @@ class SiteMapPage {
                 filter: ["!", ["has", "point_count"]],
                 paint: {
                     "circle-color": ["get", "metricColor"],
-                    "circle-radius": ["get", "markerRadius"],
-                    "circle-opacity": [
-                        "interpolate", ["linear"], ["zoom"],
-                        0, 0.86,
-                        6, 0.76,
-                        10, 0.62,
-                    ],
+                    // `.67.4` Lever 2: small, near-uniform, dark-ringed dots.
+                    "circle-radius": ["get", "dotRadius"],
+                    "circle-opacity": SITE_DOT_OPACITY,
                     "circle-stroke-color": markerPalette().siteStroke,
-                    "circle-stroke-width": 1.15,
-                    "circle-blur": 0.06,
+                    "circle-stroke-width": SITE_RING_WIDTH,
+                    "circle-blur": 0,
+                },
+            });
+        }
+
+        // `.67.12`: the HEXBIN fill, inserted via `beforeId` = the site POINTS
+        // layer so it sits UNDER the markers (and above the basemap). It REPLACES
+        // the native density heatmap (which had only ONE per-point weight, so
+        // blob size and color were the same channel).
+        if (!this.map.getLayer(SITE_HEX_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_HEX_LAYER_ID,
+                type: "fill",
+                source: SITE_HEX_SOURCE_ID,
+                paint: {
+                    "fill-color": ["get", "metricColor"],
+                    // `.67.13`: per-cell opacity (neutral cells are faint).
+                    "fill-opacity": ["get", "opacity"],
+                },
+            }, SITE_POINTS_LAYER_ID);
+        }
+        // `.67.13` R1: the THROUGHPUT GLOW/BLEED — a SEPARATE `line` layer. A
+        // `fill-outline-color` is a FIXED hairline (no data-driven width/blur), so
+        // it cannot glow; the in-repo `hexbinBorderAlpha` (0.3..0.9) drives BOTH
+        // the line width and opacity, and `line-blur` softens it into a bleed.
+        if (!this.map.getLayer(SITE_HEX_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_HEX_LAYER_ID,
+                type: "fill",
+                source: SITE_HEX_SOURCE_ID,
+                paint: {
+                    // `.67.14`: the per-site glow halo (fill only; the radius now
+                    // carries throughput, so the `.67.13` border glow was dropped).
+                    "fill-color": ["get", "metricColor"],
+                    "fill-opacity": ["get", "opacity"],
+                },
+            }, SITE_POINTS_LAYER_ID);
+        }
+
+        // `.67.1` (ii): the parallel UNCLUSTERED site points layer (same paint as
+        // the clustered site points). Shown only when the Cluster toggle is OFF.
+        if (!this.map.getLayer(SITE_PLAIN_POINTS_LAYER_ID)) {
+            this.map.addLayer({
+                id: SITE_PLAIN_POINTS_LAYER_ID,
+                type: "circle",
+                source: SITE_PLAIN_SOURCE_ID,
+                layout: { visibility: "none" },
+                paint: {
+                    "circle-color": ["get", "metricColor"],
+                    // `.67.4` Lever 2: small, near-uniform, dark-ringed dots.
+                    "circle-radius": ["get", "dotRadius"],
+                    "circle-opacity": SITE_DOT_OPACITY,
+                    "circle-stroke-color": markerPalette().siteStroke,
+                    "circle-stroke-width": SITE_RING_WIDTH,
+                    "circle-blur": 0,
                 },
             });
         }
@@ -1016,7 +1332,7 @@ class SiteMapPage {
     }
 
     installInteractions() {
-        const pointLayers = [SITE_POINTS_LAYER_ID, AP_POINTS_LAYER_ID, FANOUT_POINT_LAYER_ID];
+        const pointLayers = [SITE_POINTS_LAYER_ID, SITE_PLAIN_POINTS_LAYER_ID, AP_POINTS_LAYER_ID, FANOUT_POINT_LAYER_ID];
 
         pointLayers.forEach((layerId) => {
             this.map.on("mouseenter", layerId, () => {
@@ -1150,8 +1466,15 @@ class SiteMapPage {
                 const center = await requestOsmCenterFromBbox(siteLatLonPairs, 4000);
                 this.initMap([center.lon, center.lat], center.zoom);
             } catch (err) {
-                console.error("Site map bbox request failed; map not initialized.", err);
-                this.setStatus("Waiting for Insight map location", "warning");
+                // Offline-degradable: the Insight bbox endpoint (and its raster
+                // tiles) may be unreachable — e.g. a host whose DNS fails for
+                // the Insight domain.  Fall back to the sites' own bounding box
+                // so the map + site overlay still initialize; the tiles stay
+                // blank (the plain background is unchanged).
+                console.error("Site map bbox request failed; using local site bounds.", err);
+                const fallback = localBboxCenter(siteLatLonPairs);
+                this.setStatus("Map tiles unavailable", "warning");
+                this.initMap([fallback.lon, fallback.lat], fallback.zoom);
             } finally {
                 this.mapInitPromise = null;
             }
@@ -1331,8 +1654,10 @@ class SiteMapPage {
                 return;
             }
 
-            const metricValue = this.mode === "qoo" ? node.qooWorst : node.rttWorst;
-            const metricColor = metricColorForMode(this.mode, metricValue);
+            const metricValue = this.mode === "qoo"
+                ? node.qooWorst
+                : this.mode === "throughput" ? node.throughputCombined : node.rttWorst;
+            const metricColor = metricColorForMode(this.mode, metricValue, maxBitsPerSecond);
             const feature = {
                 type: "Feature",
                 geometry: {
@@ -1357,6 +1682,7 @@ class SiteMapPage {
                     rttDownMs: node.rttDownMs,
                     rttUpMs: node.rttUpMs,
                     markerRadius: throughputRadiusPx(node.throughputCombined, Math.max(maxBitsPerSecond, 1)),
+                    dotRadius: displayMarkerRadiusPx(throughputRadiusPx(node.throughputCombined, Math.max(maxBitsPerSecond, 1))),
                     metricColor,
                 },
             };
@@ -1442,7 +1768,9 @@ class SiteMapPage {
         // (503/429). The overlays only require the GeoJSON sources/layers to exist.
         if (!this.map.getSource(SITE_SOURCE_ID)
             || !this.map.getSource(AP_SOURCE_ID)
-            || !this.map.getSource(SITE_LINK_SOURCE_ID)) {
+            || !this.map.getSource(SITE_LINK_SOURCE_ID)
+            || !this.map.getSource(SITE_PLAIN_SOURCE_ID)
+            || !this.map.getSource(SITE_HEX_SOURCE_ID)) {
             return;
         }
         const aggregate = this.buildAggregates();
@@ -1460,39 +1788,299 @@ class SiteMapPage {
     }
 
     updateSources(aggregate) {
-        const siteSource = this.map.getSource(SITE_SOURCE_ID);
-        const apSource = this.map.getSource(AP_SOURCE_ID);
-        const linkSource = this.map.getSource(SITE_LINK_SOURCE_ID);
-        if (!siteSource || !apSource || !linkSource) {
-            return;
-        }
-        siteSource.setData({
-            type: "FeatureCollection",
-            features: aggregate.siteFeatures,
-        });
-        apSource.setData({
-            type: "FeatureCollection",
-            features: aggregate.apFeatures,
-        });
-        linkSource.setData({
-            type: "FeatureCollection",
-            features: aggregate.siteLinkFeatures ?? [],
-        });
+        // `.67.1`: sources are (re)built from the aggregate + the current filters
+        // and threshold range, so a filter/range change re-sources them too.
+        this.rebuildSources();
+        // `.67.3`: recompute the IDW value field on every snapshot refresh.
+        this.rebuildValueField();
+        // `.67.12`: recompute the flat 2D hexbin on every snapshot refresh.
+        this.rebuildHexbin();
 
-        const sparseApCoverage = aggregate.apFeatures.length < 24;
-        const siteOpacity = sparseApCoverage
-            ? ["interpolate", ["linear"], ["zoom"], 0, 0.86, 6, 0.76, 10, 0.62]
-            : ["interpolate", ["linear"], ["zoom"], 0, 0.86, 6, 0.72, 8, 0.28, 10, 0.12];
-        const apOpacity = sparseApCoverage
-            ? ["interpolate", ["linear"], ["zoom"], 0, 0.02, 6, 0.22, 8, 0.78, 10, 0.92]
-            : ["interpolate", ["linear"], ["zoom"], 0, 0.0, 6, 0.18, 8, 0.82, 10, 0.96];
-
-        this.map.setPaintProperty(SITE_POINTS_LAYER_ID, "circle-opacity", siteOpacity);
-        this.map.setPaintProperty(AP_POINTS_LAYER_ID, "circle-opacity", apOpacity);
+        // `.67.4`: marker styling (site dots + the field-mode AP de-clutter) is
+        // owned by `applyMarkerStyles`; the traffic-scaled opacities moved there.
+        this.applyMarkerStyles();
 
         this.syncFanoutOverlays();
         this.scheduleTextOverlaySync();
         this.syncMarkerSizeLegend(aggregate.maxBitsPerSecond);
+    }
+
+    // `.67.1`: (re)build the site / AP / plain / heat sources from the latest
+    // snapshot + the Data Filters. Mechanisms:
+    //   Site-Type  -> the HEAT source (APs => apFeatures) + the marker sources;
+    //   onlyIssues -> `rtt >= resolveRttThresholds().redMs` (heat + markers);
+    //   Cluster    -> a SEPARATE unclustered source/layer (not layer visibility).
+    rebuildSources() {
+        if (!this.map || !this.latestRender) {
+            return;
+        }
+        const aggregate = this.latestRender;
+        const siteSource = this.map.getSource(SITE_SOURCE_ID);
+        const apSource = this.map.getSource(AP_SOURCE_ID);
+        const linkSource = this.map.getSource(SITE_LINK_SOURCE_ID);
+        const plainSource = this.map.getSource(SITE_PLAIN_SOURCE_ID);
+        if (!siteSource || !apSource || !linkSource) {
+            return;
+        }
+        const issueRed = resolveRttThresholds().redMs;
+        const includeSites = this.filters.siteType !== "aps";
+        const includeAps = this.filters.siteType !== "sites";
+        const issueOk = (feature) => !this.filters.onlyIssues
+            || Number(feature?.properties?.rttWorst) >= issueRed;
+        const siteFeatures = includeSites ? (aggregate.siteFeatures || []).filter(issueOk) : [];
+        const apFeatures = includeAps ? (aggregate.apFeatures || []).filter(issueOk) : [];
+        siteSource.setData({ type: "FeatureCollection", features: siteFeatures });
+        if (plainSource) {
+            plainSource.setData({ type: "FeatureCollection", features: siteFeatures });
+        }
+        apSource.setData({ type: "FeatureCollection", features: apFeatures });
+        linkSource.setData({
+            type: "FeatureCollection",
+            features: includeSites ? (aggregate.siteLinkFeatures ?? []) : [],
+        });
+        // `.67.12`: the hexbin is rebuilt separately in `rebuildHexbin`.
+    }
+
+    // `.67.3`: the value-field points for the CURRENT metric (finite values only),
+    // honoring the Site-Type + only-issues filters (same predicate as the heat).
+    fieldPoints() {
+        if (!this.latestRender) {
+            return [];
+        }
+        const issueRed = resolveRttThresholds().redMs;
+        const includeSites = this.filters.siteType !== "aps";
+        const includeAps = this.filters.siteType !== "sites";
+        const out = [];
+        const add = (features) => {
+            for (const feature of features || []) {
+                const props = feature.properties || {};
+                if (this.filters.onlyIssues && !(Number(props.rttWorst) >= issueRed)) {
+                    continue;
+                }
+                const coords = feature.geometry?.coordinates || [];
+                const lng = Number(coords[0]);
+                const lat = Number(coords[1]);
+                if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+                    continue;
+                }
+                const value = this.metricValueFor(props);
+                if (!Number.isFinite(value)) {
+                    continue;
+                }
+                const throughput = Math.max(0, toNumber(props.throughputCombined, 0));
+                out.push({ lng, lat, value, throughput });
+            }
+        };
+        if (includeSites) {
+            add(this.latestRender.siteFeatures);
+        }
+        if (includeAps) {
+            add(this.latestRender.apFeatures);
+        }
+        // `.67.8`: per-point influence radius ∝ sqrt(live throughput / tpRef),
+        // clamped. tpRef = the max throughput among the plotted points (floor 1);
+        // rMin/rMax are fractions of the base falloff. A no-traffic point ⇒ the
+        // min clamp keeps it visible. Always on (no toggle); the smoothing
+        // length-scale stays global and the metric color is unchanged.
+        if (this.glowByThroughput && out.length > 0) {
+            const base = Math.max(1, Number(this.fieldFalloffKm) || 25);
+            const minKm = Math.max(0.5, base * GLOW_RADIUS_MIN_FRACTION);
+            const maxKm = Math.max(minKm + 0.5, base * GLOW_RADIUS_MAX_FRACTION);
+            // `reduce` (not a spread) so a huge point set cannot overflow the stack.
+            const tpRef = Math.max(1, out.reduce((acc, point) => Math.max(acc, point.throughput), 0));
+            for (const point of out) {
+                point.radiusKm = glowRadiusKm(point.throughput, tpRef, base, minKm, maxKm);
+            }
+        }
+        return out;
+    }
+
+    metricValueFor(props) {
+        const raw = this.mode === "qoo"
+            ? props.qooWorst
+            : this.mode === "throughput" ? props.throughputCombined : props.rttWorst;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : NaN;
+    }
+
+    #rgbForValue(value) {
+        if (this.mode === "qoo") {
+            return parseRgb(colorByQoqScore(value));
+        }
+        if (this.mode === "throughput") {
+            // Same scale the MARKERS use (the all-node max), so field <=> marker
+            // colors agree at the same place.
+            const max = Math.max(1, Number(this.latestRender?.maxBitsPerSecond) || 1);
+            return parseRgb(lerpGreenToRedViaOrange(value, max));
+        }
+        // VALUE mode uses the SAME config thresholds the MARKERS use
+        // (`resolveRttThresholds`), never the `.67.1` density handles.
+        return parseRgb(colorByRttMs(value));
+    }
+
+    // `.67.10`: rebuild the IDW value field into ONE persistent canvas and hand it
+    // to a MapLibre `canvas` source — NO `data:` URL, NO fetch, so the node-manager
+    // CSP `connect-src` cannot block it. IDW (k-nearest) over the data bbox; alpha
+    // fades with distance to the nearest site; color by the metric scale.
+    rebuildValueField() {
+        // `.67.12`: the Heatmap is the HEXBIN, so the value field is not shown —
+        // skip the O(grid x sites) raster + canvas upload entirely (it was wasted
+        // work on every snapshot refresh).
+        if (!this.map || this.fieldMode !== "value") {
+            return;
+        }
+        const points = this.fieldPoints();
+        const fieldSource = this.map.getSource(SITE_FIELD_SOURCE_ID);
+        if (points.length === 0) {
+            // `.67.9` R3: no plottable points (e.g. no finite RTT yet) — surface an
+            // explicit notice, NEVER a silent blank; log the cause. Clear the
+            // persistent canvas so no stale field lingers.
+            this.setFieldNotice(true);
+            console.warn("[site-map] value field empty — no plottable points", {
+                mode: this.mode,
+                sites: this.latestRender?.siteFeatures?.length || 0,
+                aps: this.latestRender?.apFeatures?.length || 0,
+            });
+            if (this.fieldCanvas) {
+                const ctx = this.fieldCanvas.getContext("2d");
+                ctx.clearRect(0, 0, this.fieldCanvas.width, this.fieldCanvas.height);
+            }
+            this.#refreshCanvasSource(fieldSource, null);
+            return;
+        }
+        this.setFieldNotice(false);
+        let west = Infinity;
+        let east = -Infinity;
+        let south = Infinity;
+        let north = -Infinity;
+        for (const p of points) {
+            west = Math.min(west, p.lng);
+            east = Math.max(east, p.lng);
+            south = Math.min(south, p.lat);
+            north = Math.max(north, p.lat);
+        }
+        const padX = Math.max(1e-4, (east - west) * 0.08);
+        const padY = Math.max(1e-4, (north - south) * 0.08);
+        const bbox = { west: west - padX, east: east + padX, south: south - padY, north: north + padY };
+        const canvas = this.#drawFieldCanvas(points, bbox);
+        const coordinates = [
+            [bbox.west, bbox.north],
+            [bbox.east, bbox.north],
+            [bbox.east, bbox.south],
+            [bbox.west, bbox.south],
+        ];
+        if (!fieldSource) {
+            // `.67.10`: add the `canvas` source ONCE (no fetch). `animate:false`
+            // keeps it static until `#refreshCanvasSource` explicitly updates it.
+            this.map.addSource(SITE_FIELD_SOURCE_ID, { type: "canvas", canvas, coordinates, animate: false });
+        } else {
+            this.#refreshCanvasSource(fieldSource, coordinates);
+        }
+        // `.67.9` R2: add the field layer INDEPENDENT of the marker layer (use a
+        // beforeId only when the marker layer exists, else append).
+        if (!this.map.getLayer(SITE_FIELD_LAYER_ID)) {
+            const beforeId = this.map.getLayer(SITE_POINTS_LAYER_ID) ? SITE_POINTS_LAYER_ID : undefined;
+            const layer = {
+                id: SITE_FIELD_LAYER_ID,
+                type: "raster",
+                source: SITE_FIELD_SOURCE_ID,
+                paint: {
+                    "raster-opacity": Number(this.fieldOpacity) || 0.85,
+                    "raster-fade-duration": 0,
+                },
+            };
+            if (beforeId) {
+                this.map.addLayer(layer, beforeId);
+            } else {
+                this.map.addLayer(layer);
+            }
+            this.applyRenderMode();
+        }
+    }
+
+    // `.67.12`: rebuild the flat 2D hexbin (per-cell color = the metric, size =
+    // throughput) into the native MapLibre `fill`. Pure JS — no worker/fetch; the
+    // same point set the value field uses (filters + metric honored).
+    rebuildHexbin() {
+        if (!this.map) {
+            return;
+        }
+        const source = this.map.getSource(SITE_HEX_SOURCE_ID);
+        if (!source) {
+            return;
+        }
+        const points = this.fieldPoints();
+        // `.67.15`: the fill colour = the CALLER's CONFIG scale (`colorByRttMs` via
+        // `#rgbForValue`) — the SAME scale the markers use (ONE scale; the `.67.3`
+        // agree-invariant restored). The domain is the config, NOT the data.
+        const { features } = planarHaloHexbin(points, {
+            colorFor: (value) => {
+                const [r, g, b] = this.#rgbForValue(value);
+                return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+            },
+        });
+        source.setData({ type: "FeatureCollection", features });
+    }
+
+    // `.67.10`: with `animate:false` the `canvas` source does NOT re-read the
+    // canvas on its own, so after a redraw force a one-shot texture upload
+    // (`play()` marks it live; `pause()` runs the `prepare()` that uploads, then
+    // stops) and an explicit repaint. `triggerRepaint()` alone would leave a
+    // STALE texture.
+    #refreshCanvasSource(source, coordinates) {
+        if (!source) {
+            return;
+        }
+        if (coordinates && typeof source.setCoordinates === "function") {
+            source.setCoordinates(coordinates);
+        }
+        if (typeof source.play === "function" && typeof source.pause === "function") {
+            source.play();
+            source.pause();
+        }
+        this.map.triggerRepaint();
+    }
+
+    // `.67.9` R3: the value-field notice element (shown when the field is empty).
+    setFieldNotice(visible) {
+        const el = document.getElementById("siteMapFieldNotice");
+        if (el) {
+            el.style.display = visible ? "" : "none";
+        }
+    }
+
+    // `.67.10`: draw the IDW field into the ONE persistent canvas (no `data:` URL).
+    // ★ The kernel builds grid ROWS in Mercator-y so the fixed-bbox `canvas` source
+    // lines the field up with the markers — a linear-in-latitude canvas would
+    // misplace a site's own cell in latitude. Residual error is within one grid
+    // cell. Cost is O(grid x sites) with no spatial index; the grid downsamples
+    // above FIELD_LARGE_POINT_COUNT (160x100).
+    #drawFieldCanvas(points, bbox) {
+        const large = points.length > FIELD_LARGE_POINT_COUNT;
+        const width = large ? FIELD_GRID_W_LARGE : FIELD_GRID_W;
+        const height = large ? FIELD_GRID_H_LARGE : FIELD_GRID_H;
+        if (!this.fieldCanvas) {
+            this.fieldCanvas = document.createElement("canvas");
+        }
+        const canvas = this.fieldCanvas;
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
+        const grid = buildFieldGrid(points, bbox, {
+            width,
+            height,
+            k: FIELD_IDW_K,
+            power: FIELD_IDW_POWER,
+            falloffKm: Math.max(1, Number(this.fieldFalloffKm) || 25),
+            smoothKm: Math.max(FIELD_SMOOTH_MIN_KM, Math.max(1, Number(this.fieldFalloffKm) || 25) * FIELD_SMOOTH_FRACTION),
+            colorFor: (value) => this.#rgbForValue(value),
+        });
+        const ctx = canvas.getContext("2d");
+        const image = ctx.createImageData(width, height);
+        image.data.set(grid.data);
+        ctx.putImageData(image, 0, 0);
+        return canvas;
     }
 
     syncMarkerSizeLegend(maxBitsPerSecond) {
@@ -1502,9 +2090,10 @@ class SiteMapPage {
         }
 
         const max = Math.max(1, toNumber(maxBitsPerSecond, 1));
-        // Match the actual marker sizing function by sampling at a few ratios.
+        // `.67.4` Lever 2: sample the DISPLAYED (damped) marker radius, so the
+        // legend cannot lie now that the traffic scaling is damped.
         const ratios = [0, 0.1, 1.0];
-        const diameters = ratios.map((ratio) => throughputRadiusPx(max * ratio, max) * 2);
+        const diameters = ratios.map((ratio) => displayMarkerRadiusPx(throughputRadiusPx(max * ratio, max)) * 2);
 
         const apply = (el, diameter) => {
             const sizePx = Math.max(10, Math.min(64, Math.round(toNumber(diameter, 12))));
@@ -1549,8 +2138,10 @@ class SiteMapPage {
                 center.y + (Math.sin(angle) * radiusPx),
             ];
             const lngLat = this.map.unproject(projected);
-            const metricValue = this.mode === "qoo" ? node.qooWorst : node.rttWorst;
-            const metricColor = metricColorForMode(this.mode, metricValue);
+            const metricValue = this.mode === "qoo"
+                ? node.qooWorst
+                : this.mode === "throughput" ? node.throughputCombined : node.rttWorst;
+            const metricColor = metricColorForMode(this.mode, metricValue, this.latestRender?.maxBitsPerSecond);
 
             lines.push({
                 type: "Feature",
@@ -1655,12 +2246,13 @@ class SiteMapPage {
         this.clearMarkerSet(this.clusterCountMarkers);
     }
 
+    // `.67.1`: labels prioritize the HIGHER-RTT sites (the card's "labels for the
+    // higher-RTT sites"), with the selected site pinned on top.
     siteLabelPriority(feature, selectedKey) {
         const props = feature?.properties || {};
-        const throughputCombined = toNumber(props.throughputCombined, 0);
-        const attachedCount = toNumber(props.attachedInheritedApCount, 0);
+        const rtt = toNumber(props.rttWorst, 0);
         const isSelected = props.key === selectedKey;
-        return (isSelected ? 1e18 : 0) + throughputCombined + (attachedCount * 5_000_000);
+        return (isSelected ? 1e18 : 0) + rtt;
     }
 
     estimateSiteLabelRect(feature, displayName, isSelected) {
@@ -1693,7 +2285,9 @@ class SiteMapPage {
     }
 
     syncClusterCountMarkers() {
-        if (!this.map || this.map.getZoom() < 0) {
+        // `.67.1`: the cluster count overlay is a DOM marker; gate on the Cluster
+        // filter (the clustered SOURCE is what emits clusters).
+        if (!this.map || this.map.getZoom() < 0 || !this.filters.cluster) {
             this.clearMarkerSet(this.clusterCountMarkers);
             return;
         }
@@ -1730,7 +2324,10 @@ class SiteMapPage {
     }
 
     syncSiteLabelMarkers() {
-        if (!this.map || !this.latestRender) {
+        // `.67.1` (c): the labels are a DOM overlay (`site-map-site-label-marker`,
+        // via scheduleTextOverlaySync), NOT a MapLibre layer — the "Show labels"
+        // toggle clears them.
+        if (!this.map || !this.latestRender || !this.filters.showLabels) {
             this.clearMarkerSet(this.siteLabelMarkers);
             return;
         }
@@ -1742,7 +2339,20 @@ class SiteMapPage {
 
         const candidates = [];
         if (zoom >= SITE_LABEL_MIN_ZOOM) {
-            const visibleFeatures = this.map.queryRenderedFeatures({ layers: [SITE_POINTS_LAYER_ID] }) || [];
+            // `.67.7`: in Heatmap mode the site/plain layers are hidden, so
+            // `queryRenderedFeatures` is empty — label from the data instead,
+            // limited to the current viewport (mirrors "rendered").
+            let visibleFeatures;
+            if (this.renderMode === "heatmap") {
+                const bounds = this.map.getBounds();
+                visibleFeatures = (this.latestRender.siteFeatures || []).filter(
+                    (feature) => feature.geometry?.coordinates
+                        && bounds.contains(feature.geometry.coordinates),
+                );
+            } else {
+                const siteLayer = this.filters.cluster ? SITE_POINTS_LAYER_ID : SITE_PLAIN_POINTS_LAYER_ID;
+                visibleFeatures = this.map.queryRenderedFeatures({ layers: [siteLayer] }) || [];
+            }
             visibleFeatures.forEach((feature) => {
                 const props = feature?.properties || {};
                 if (!props.key) {
@@ -1875,7 +2485,7 @@ class SiteMapPage {
                 <div class="text-muted mb-2">${escapeHtml(String(props.nodeType || "").toUpperCase())}</div>
                 <div><strong>Throughput:</strong> ${escapeHtml(formatBitsPerSecond(props.throughputCombined))}</div>
                 ${attachedApCount > 0 ? `<div><strong>Attached APs:</strong> ${escapeHtml(String(attachedApCount))}</div>` : ""}
-                <div><strong>${this.mode === "qoo" ? "QoO" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>
+                ${this.mode === "throughput" ? "" : `<div><strong>${this.mode === "qoo" ? "QoO" : "RTT"}:</strong> ${escapeHtml(this.mode === "qoo" ? formatPercent(Math.min(toNumber(props.qooDown, NaN), toNumber(props.qooUp, NaN))) : formatMs(Math.max(toNumber(props.rttDownMs, NaN), toNumber(props.rttUpMs, NaN))))}</div>`}
             </div>`;
     }
 
@@ -2026,18 +2636,90 @@ class SiteMapPage {
     }
 
     refreshLegend() {
-        if (this.mode === "qoo") {
-            this.legendGradient.style.background = isColorBlindMode()
+        const cvd = isColorBlindMode();
+        const heat = this.renderMode === "heatmap";
+        const value = heat && this.fieldMode === "value";
+        // REQUIRED-3 / card v3: ONE threshold source PER MODE.
+        //   VALUE   (the default) => `resolveRttThresholds()` (the CONFIG) for
+        //            the field, the markers, and this legend.
+        //   DENSITY => the `.67.1` three handles for the weight + this legend.
+        // The value legend must NOT read the handles, or a handle drag relabels
+        // it without recoloring any pixel.
+        // `.67.8`: the `.67.1` handles are gone — one CONFIG threshold source.
+        // `.67.9` R1: the legend reads `.greenMs/.yellowMs/.redMs`, so it must use
+        // `resolveRttThresholds()` (which returns those keys) — NOT
+        // `defaultHeatRange()` (which returns `{green,yellow,red}` and printed
+        // "undefined ms").
+        const thresholds = resolveRttThresholds();
+        const metricLabel = this.mode === "qoo" ? "QoO" : this.mode === "throughput" ? "Throughput" : "RTT";
+        if (this.legendTitle) {
+            this.legendTitle.textContent = heat
+                ? (value ? `${metricLabel} field (estimated · interpolated)` : `${metricLabel} hexbin`)
+                : `${metricLabel} markers`;
+        }
+        if (heat) {
+            // `.67.15`: the hexbin fill uses the CALLER's CONFIG scale — the SAME
+            // ramp + thresholds the markers use (ONE scale), so the legend gradient
+            // matches the marker legend, and low/high are the CONFIGURED ms.
+            this.legendGradient.style.background = cvd
+                ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"
+                : (this.mode === "qoo"
+                    ? "linear-gradient(90deg, #ff0000 0%, #bf4000 25%, #808000 50%, #40bf00 75%, #00ff00 100%)"
+                    : "linear-gradient(90deg, #61d26f 0%, #d7d86b 35%, #f0a44d 62%, #d94b5b 100%)");
+            if (this.mode === "qoo") {
+                this.legendLow.textContent = "Bad (0)";
+                this.legendHigh.textContent = "Good (100)";
+            } else if (this.mode === "throughput") {
+                this.legendLow.textContent = "0";
+                this.legendHigh.textContent = "max";
+            } else {
+                this.legendLow.textContent = `${thresholds.greenMs} ms`;
+                this.legendHigh.textContent = `${thresholds.redMs} ms`;
+            }
+        } else if (this.mode === "qoo") {
+            this.legendGradient.style.background = cvd
                 ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"
                 : "linear-gradient(90deg, #ff0000 0%, #bf4000 25%, #808000 50%, #40bf00 75%, #00ff00 100%)";
             this.legendLow.textContent = "Poor QoO";
             this.legendHigh.textContent = "Healthy QoO";
         } else {
-            this.legendGradient.style.background = isColorBlindMode()
+            this.legendGradient.style.background = cvd
                 ? "linear-gradient(90deg, #440154 0%, #3b528b 30%, #21918c 55%, #5ec962 78%, #fde725 100%)"
                 : "linear-gradient(90deg, #61d26f 0%, #d7d86b 35%, #f0a44d 62%, #d94b5b 100%)";
-            this.legendLow.textContent = "Low RTT";
-            this.legendHigh.textContent = "High RTT";
+            this.legendLow.textContent = this.mode === "throughput" ? "Low traffic" : "Low RTT";
+            this.legendHigh.textContent = this.mode === "throughput" ? "High traffic" : "High RTT";
+        }
+        if (this.legendCaveat) {
+            this.legendCaveat.style.display = heat && !value ? "" : "none";
+        }
+        if (this.fieldCaveat) {
+            this.fieldCaveat.style.display = value ? "" : "none";
+            if (value) {
+                // IDW is a weighted MEAN, so the label is "estimated
+                // (interpolated)", never "median".
+                this.fieldCaveat.textContent = `Estimated (interpolated) ${metricLabel} field — an IDW weighted MEAN of the ${FIELD_IDW_K} nearest sites (a model, not measured between them; not a median). Smoothed to a continuous surface (a length-scale damps the per-site peaks); coarse when sites are sparse. Each site's glow radius scales with its live throughput; the RTT color follows resolveRttThresholds(). Mercator-aligned to the markers (within one cell).`;
+            }
+        }
+        if (this.legendStops) {
+            if (!heat) {
+                this.legendStops.style.display = "none";
+            } else {
+                this.legendStops.style.display = "";
+                if (value) {
+                    this.legendStops.textContent = this.mode === "qoo"
+                        ? "interpolated QoO (0 bad · 100 good)"
+                        : this.mode === "throughput"
+                            ? "interpolated throughput (0 · max)"
+                            : `interpolated RTT: green ${thresholds.greenMs} · yellow ${thresholds.yellowMs} · red ${thresholds.redMs} ms`;
+                } else {
+                    // `.67.12`: the hexbin — color = metric, size = throughput.
+                    this.legendStops.textContent = this.mode === "qoo"
+                        ? "fill = QoO · halo radius = site throughput"
+                        : this.mode === "throughput"
+                            ? "fill = throughput · halo radius = site throughput"
+                            : "fill = RTT at the configured thresholds · halo radius = site throughput";
+                }
+            }
         }
     }
 }

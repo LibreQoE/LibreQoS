@@ -29,7 +29,6 @@ function defaultStormguardConfig() {
         decrease_cooldown_seconds: 3.75,
         decrease_fast_cooldown_seconds: 7.5,
         circuit_fallback_enabled: false,
-        circuit_fallback_persist: true,
         circuit_fallback_sqm: "fq_codel",
         delay_threshold_ms: 40,
         delay_threshold_ratio: 1.10,
@@ -417,7 +416,6 @@ function updateConfig() {
         decrease_cooldown_seconds: parseNumber('decreaseCooldownSeconds'),
         decrease_fast_cooldown_seconds: parseNumber('decreaseFastCooldownSeconds'),
         circuit_fallback_enabled: document.getElementById('circuitFallbackEnabled').checked,
-        circuit_fallback_persist: document.getElementById('circuitFallbackPersist').checked,
         circuit_fallback_sqm: document.getElementById('circuitFallbackSqm').value.trim() || 'fq_codel',
         delay_threshold_ms: parseNumber('delayThresholdMs'),
         delay_threshold_ratio: parseNumber('delayThresholdRatio'),
@@ -462,7 +460,6 @@ Promise.all([
     document.getElementById('decreaseCooldownSeconds').value = sg.decrease_cooldown_seconds;
     document.getElementById('decreaseFastCooldownSeconds').value = sg.decrease_fast_cooldown_seconds;
     document.getElementById('circuitFallbackEnabled').checked = sg.circuit_fallback_enabled;
-    document.getElementById('circuitFallbackPersist').checked = sg.circuit_fallback_persist;
     document.getElementById('circuitFallbackSqm').value = VALID_FALLBACK_SQMS.includes(sg.circuit_fallback_sqm)
         ? sg.circuit_fallback_sqm
         : 'fq_codel';

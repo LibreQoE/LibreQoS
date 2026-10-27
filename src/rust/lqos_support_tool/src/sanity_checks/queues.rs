@@ -30,7 +30,7 @@ fn check_queues(interface: &str) -> (i32, i32) {
 
 pub fn sanity_check_queues(results: &mut Vec<SanityCheck>) {
     if let Ok(cfg) = load_config() {
-        if cfg.on_a_stick_mode() {
+        if cfg.single_interface.is_some() {
             let counts = check_queues(&cfg.internet_interface());
             if counts.0 > 1 && counts.1 > 1 {
                 results.push(SanityCheck {

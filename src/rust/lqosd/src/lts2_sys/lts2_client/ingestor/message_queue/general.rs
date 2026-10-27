@@ -171,9 +171,6 @@ pub(crate) fn add_general(message: &mut IngestSession, queue: &mut Vec<IngestorC
                     msg.push(subnet);
                 }
             }
-            IngestorCommand::BlackboardJson(json) => {
-                message.blackboard_json = Some(json);
-            }
             IngestorCommand::FlowCount {
                 timestamp,
                 flow_count,

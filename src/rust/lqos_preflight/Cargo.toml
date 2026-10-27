@@ -1,0 +1,20 @@
+[package]
+name = "lqos_preflight"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-2.0-only"
+
+[dependencies]
+clap = { workspace = true }
+csv = { workspace = true }
+serde = { workspace = true }
+serde_yaml = "0.9"
+serde_json = { workspace = true }
+lqos_config = { path = "../lqos_config" }
+lqos_dataplane_types = { path = "../lqos_dataplane_types" }
+lqos_topology_compile = { path = "../lqos_topology_compile" }
+lqos_utils = { path = "../lqos_utils" }
+
+[[bin]]
+name = "libreqos-v3-preflight"
+path = "src/bin/libreqos-v3-preflight.rs"

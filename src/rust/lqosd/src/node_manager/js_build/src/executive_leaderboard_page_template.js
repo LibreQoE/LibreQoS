@@ -133,7 +133,7 @@ const configs = {
     },
     top_asns: {
         kind: "TopAsnsByTraffic",
-        empty: "No ASN heatmap data yet.",
+        empty: "No ASN heatmap data — the ASN aggregate feed is not available in this build.",
         columns: [
             {
                 header: "ASN",

@@ -1,5 +1,7 @@
 # Topology Data Flow
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page is the canonical reference for how topology and shaping data move through LibreQoS.
 
 It answers 3 questions:
@@ -28,14 +30,14 @@ flowchart LR
 
     subgraph Logical Topology
         L1[topology_canonical_state.json]
-        L2[topology_editor_state.json]
+        L2[canonical.to_editor_state projection]
         TM[Topology Manager]
     end
 
     subgraph Runtime Queue Topology
         R0[lqos_topology]
         R1[topology_effective_state.json]
-        R2[network.effective.json]
+        R2[topology_operator_view.json]
         R3[shaping_inputs.json]
     end
 
@@ -74,7 +76,7 @@ That split is what allows:
 ```{mermaid}
 flowchart TD
     A[Logical Topology] --> B[topology_canonical_state.json]
-    B --> C[topology_editor_state.json]
+    B --> C[canonical.to_editor_state projection]
     C --> D[Topology Manager]
 
     B --> E[lqos_topology]
@@ -82,7 +84,7 @@ flowchart TD
     E --> F[Runtime Queue Policy]
     F --> G[Static virtualization / root promotion]
     G --> H[Runtime squashing]
-    H --> I[network.effective.json]
+    H --> I[topology_operator_view.json]
     H --> J[shaping_inputs.json]
 
     I --> K[tree.html / Site Map / Sankey]
@@ -107,7 +109,7 @@ Operator-managed files remain the ingress contract.
 - `network.json` is the topology ingress file.
 - `ShapedDevices.csv` is the shaping ingress file.
 - `lqos_topology` still produces the same runtime outputs:
-  - `network.effective.json`
+  - `topology_operator_view.json`
   - `shaping_inputs.json`
 
 For DIY/manual deployments that expect the `Parent Node` column in `ShapedDevices.csv` to shape under named nodes from `network.json`, use a hierarchy-preserving topology mode such as:
@@ -124,7 +126,7 @@ flowchart LR
     A[Built-in Integration Mode] --> B[topology_import.json]
     B --> C[topology_canonical_state.json]
     C --> D[lqos_topology]
-    D --> E[network.effective.json]
+    D --> E[topology_operator_view.json]
     D --> F[shaping_inputs.json]
 
     G[DIY / Manual Mode] --> H[network.json]
@@ -141,9 +143,8 @@ flowchart LR
 | `network.json` | operator or external scripts | canonical import fallback / DIY ingress | DIY/manual topology ingress | No | Yes | Yes |
 | `ShapedDevices.csv` | operator or external scripts | shaping ingress | DIY/manual shaping ingress | No | Yes | Yes |
 | `topology_canonical_state.json` | compiler / runtime prep | `lqos_topology` | logical canonical topology | Internal source of truth | Internal source of truth | No |
-| `topology_editor_state.json` | compiler / runtime prep | Topology Manager | logical editable topology | Internal source of truth | Internal source of truth | No |
 | `topology_effective_state.json` | `lqos_topology` | runtime diagnostics | resolved logical/effective attachment state | Runtime output | Runtime output | No |
-| `network.effective.json` | `lqos_topology` | tree/UI/runtime consumers | queue-visible runtime topology | Yes | Yes | No |
+| `topology_operator_view.json` | `lqos_topology` | tree/UI/runtime consumers | queue-visible runtime topology | Yes | Yes | No |
 | `shaping_inputs.json` | `lqos_topology` | scheduler / Bakery / TC | shaping-ready runtime input | Yes | Yes | No |
 | `lqos_overrides.json` | operator / WebUI / CLI | scheduler / topology runtime | durable operator intent | Yes | Yes | Yes |
 | `topology_attachment_health_state.json` | topology probes | Topology Manager / debug pages | runtime attachment health | Runtime state | Runtime state | No |
@@ -158,8 +159,8 @@ This is different from explicit flat mode. If `shaping_inputs.json` shows `resol
 
 ```{mermaid}
 flowchart LR
-    A[topology_editor_state.json] --> B[Topology Manager]
-    C[network.effective.json] --> D[Network Tree Overview]
+    A[canonical.to_editor_state projection] --> B[Topology Manager]
+    C[topology_operator_view.json] --> D[Network Tree Overview]
     C --> E[Site Map]
     C --> F[Tree Overview Sankey]
     G[shaping_inputs.json] --> H[lqos_scheduler]
@@ -175,9 +176,9 @@ Topology Manager edits are overlay intent. They do not replace imported topology
 flowchart LR
     A[Topology Manager edit] --> B[lqos_overrides.json]
     B --> C[lqos_scheduler refresh]
-    C --> D[topology_editor_state.json]
+    C --> D[canonical.to_editor_state projection]
     C --> E[lqos_topology]
-    E --> F[network.effective.json]
+    E --> F[topology_operator_view.json]
     E --> G[shaping_inputs.json]
     G --> H[lqos_bakery]
     H --> I[Linux TC / HTB]
@@ -192,7 +193,7 @@ What this means:
 ## Key Rules
 
 - Topology Manager uses logical topology, not the queue tree.
-- `network.effective.json` is the queue-visible runtime tree.
+- `topology_operator_view.json` is the queue-visible runtime tree.
 - `shaping_inputs.json` is the shaping-ready runtime contract for scheduler/Bakery/TC.
 - Runtime consumers should prefer active runtime outputs such as `shaping_inputs.json`; ingress
   files such as `ShapedDevices.csv` and `topology_import.json` are upstream inputs and fallback
@@ -210,3 +211,34 @@ What this means:
 - [LibreQoS WebUI (Node Manager)](node-manager-ui.md)
 - [Advanced Configuration Reference](configuration-advanced.md)
 - [Troubleshooting](troubleshooting.md)
+
+> T5 rung 1 note: the `network.effective.json` interchange was RETIRED.
+> The topology manager now publishes `topology_operator_view.json` (E2,
+> the operator/tree view) alongside `dataplane_transaction.json` (E1,
+> the bridge wire). Docs above reflect the new artifact names.
+
+## Mutation Surface Contract
+
+Every topology/circuit mutation — operator UI, admin actions, or a machine
+actor (RADIUS, StormGuard) — is a WRITE TO A LAYER FILE, folded by the
+compile at the shaping-input position. Nothing mutates import artifacts,
+canonical state, or the dataplane transaction directly.
+
+- The layer files are `lqos_overrides.json` (operator) plus its
+  `.stormguard.json` / `.treeguard.json` siblings. Topology-manager
+  overrides live in the `topology` section of `lqos_overrides.json`
+  (the former `topology_overrides.json` was folded in and is never read
+  again).
+- The write discipline: cross-process file lock, validation at write,
+  temp-file + atomic rename, and the source-generation hash trigger
+  (`lqos_overrides.json` is hashed into `compute_topology_source_generation`),
+  so the runtime republishes on change.
+- The fold is regeneration-proof by position: base rows load first and
+  overrides fold in memory, so an integration regeneration cannot revert an
+  override.
+- `topology_editor_state.json` is never persisted; the editor view is always
+  `topology_canonical_state.json` projected via `to_editor_state()`.
+- Migration note for external operator tooling: on first load a legacy
+  `topology_overrides.json` is imported into the `topology` section, backed up
+  as `topology_overrides.json.migrated`, and never read again. Tools that read
+  the old path must switch to the `topology` section of `lqos_overrides.json`.

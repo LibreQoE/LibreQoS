@@ -1,5 +1,7 @@
 # LibreQoS WebUI (Node Manager)
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page documents key WebUI (Node Manager) views and operational behavior in the local WebUI. By default operators use `http://your_shaper_ip:9123`. If optional HTTPS with Caddy is enabled, operators use `https://your-hostname/` or `https://your-management-ip/` instead.
 
 For the full logical-topology versus queue-topology file flow, see [Topology Data Flow](topology-data-flow.md).
@@ -42,7 +44,7 @@ For the full logical-topology versus queue-topology file flow, see [Topology Dat
 - The tree page now shows topology override state as read-only summary only. Parent and attachment edits have moved to `Topology`, and the tree details panel links directly into Topology Manager for the selected node.
 - Runtime-selected attachment hops are collapsed out of the main tree hierarchy. When a site is currently using a specific backhaul or radio path, `Node Details` shows that as `Active Attachment` metadata on the site instead of exposing the attachment as its own branch node.
 - Inactive alternate PtP/wired backhaul attachment stubs are also pruned from the runtime tree. `tree.html` shows the effective path only; dormant alternates remain visible in Topology Manager rather than as standalone runtime nodes.
-- For integration-backed topology, `Network Tree Overview`, Tree Overview sankey views, and HTB queue planning all follow the squashed runtime-effective tree from `network.effective.json`. Topology Manager intentionally keeps the fuller canonical/editor topology so transport hops such as backhauls can still be managed there.
+- For integration-backed topology, `Network Tree Overview`, Tree Overview sankey views, and HTB queue planning all follow the squashed runtime-effective tree from `topology_operator_view.json`. Topology Manager intentionally keeps the fuller canonical/editor topology so transport hops such as backhauls can still be managed there.
 - Integration roots and large aggregation nodes can also be static virtual nodes. In that case `tree.html` still shows the node with the ghost virtual-state indicator, while HTB planning shapes through the nearest non-virtual ancestor/descendant path instead of building a real class for that node.
 - On the synthetic `Root` node, topology override still shows as not applicable rather than as a generic missing-node-ID warning.
 
@@ -91,7 +93,7 @@ Practical meaning:
 - In `Auto` attachment mode, Topology Manager uses probe results to suppress known-bad links, but it does not disqualify a link only because probing is disabled or unavailable. When multiple eligible links remain, Auto prefers integration-telemetry-backed attachment rates ahead of static fallback rates and then breaks ties by capacity.
 - UISP attachment rows now also classify the feed role, such as `PtP Backhaul`, `PtMP Uplink`, or `Wired Uplink`, so operators can tell a real backhaul path from an access/uplink path without inferring it from raw AP names.
 - The single runtime debug file for topology probes is `topology_attachment_health_state.json`. It now carries the probe pair ID plus attachment name/ID, child and parent node names/IDs, configured local/remote probe IPs, enable/probeable state, recent endpoint reachability, and current suppression/health counters. The Details panel links directly to probe debugging from `Attachment Health`.
-- Attachment Health now also exposes attachment-scoped rate overrides for editable attachments. These overrides are directional (`download` / `upload`), are stored in `topology_overrides.json`, and apply only to the selected `(child node, parent node, attachment)` path instead of behaving like a node-wide `AdjustSiteSpeed`.
+- Attachment Health now also exposes attachment-scoped rate overrides for editable attachments. These overrides are directional (`download` / `upload`), are stored in the `topology` section of `lqos_overrides.json`, and apply only to the selected `(child node, parent node, attachment)` path instead of behaving like a node-wide `AdjustSiteSpeed`.
 - Dynamic UISP radio-capacity attachments stay read-only in this editor. Static UISP attachments, manual attachment groups, and other non-dynamic attachment sources can expose `Attachment Rate` controls directly in the attachment row.
 - When UISP automatically transport-caps an attachment because the active or known Ethernet ports cannot carry the raw reported radio capacity, Attachment Health shows that cap reason inline so operators can see why a 2G or 2.7G radio exported as a lower effective topology rate.
 - Automatic probe targets for UISP-backed attachments come from the management IPs UISP reports for the two radios/devices in that pair. These topology probe IPs are no longer limited by shaping `allow_subnets`; they are treated as management-plane data rather than customer shaping addresses.
@@ -101,7 +103,7 @@ Practical meaning:
 - When UISP exposes multiple parallel links between the same two sites, Topology Manager groups them under one logical parent target and exposes the concrete radios/devices as explicit attachment preferences.
 - `tree.html` only squashes runtime-selected UISP attachments when the effective attachment role is a true backhaul-style path (`PtP Backhaul` or `Wired Uplink`). PtMP access/uplink APs remain visible in the runtime tree.
 - When a chosen parent exposes only one valid explicit attachment option, the UI auto-saves that override immediately.
-- Saved topology overrides are stored in `topology_overrides.json`.
+- Saved topology overrides are stored in the `topology` section of `lqos_overrides.json`.
 
 ### Topology Probes
 - Read-only debug page for system-wide topology probe troubleshooting, linked from Topology Manager rather than promoted as a primary sidebar destination.

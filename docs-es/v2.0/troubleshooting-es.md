@@ -193,7 +193,7 @@ Si el arranque del scheduler permanece demasiado tiempo en esa espera, o entra e
 
 ```bash
 cat /opt/libreqos/state/topology/topology_runtime_status.json
-ls -lh /opt/libreqos/state/topology/topology_effective_state.json /opt/libreqos/state/topology/network.effective.json /opt/libreqos/state/shaping/shaping_inputs.json
+ls -lh /opt/libreqos/state/topology/topology_effective_state.json /opt/libreqos/state/topology/topology_operator_view.json /opt/libreqos/state/shaping/shaping_inputs.json
 journalctl -u lqos_scheduler --since "30 minutes ago"
 journalctl -u lqosd --since "30 minutes ago"
 ```
@@ -250,7 +250,7 @@ Para moldear circuitos bajo los nombres de nodo de `network.json`, configure:
 compile_mode = "full"
 ```
 
-Después recargue o espere al scheduler para regenerar `network.effective.json` y `shaping_inputs.json`.
+Después recargue o espere al scheduler para regenerar `topology_operator_view.json` y `shaping_inputs.json`.
 
 ### Colisión de promoción de nodo virtual (`network.json`)
 

@@ -1,8 +1,7 @@
 import {clearDiv} from "./helpers/builders";
 import {colorByQoqScore, colorByRetransmitPct, colorByRttMs} from "./helpers/color_scales";
 import {isDarkMode} from "./helpers/dark_mode";
-import {openFlowRttExcludeWizard} from "./lq_js_common/helpers/flow_rtt_exclude_wizard";
-import {scaleNanos, scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
+import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {
     medianFromBlocks,
     pollExecutiveHeatmapPage,
@@ -12,7 +11,6 @@ import {
 import {get_ws_client} from "./pubsub/ws";
 
 const wsClient = get_ws_client();
-const EVIDENCE_ITEMS_PER_PAGE = 10;
 const TOP_LABEL_COUNT = 4;
 const TOP_ROW_LIMIT = 20;
 const HEATMAP_BLOCK_SECONDS = 60;
@@ -35,15 +33,8 @@ const state = {
     executiveRows: [],
     selectedAsn: null,
     asnList: [],
-    countryList: [],
-    protocolList: [],
     listCountsByAsn: new Map(),
-    evidenceScope: { type: "asn", value: null, label: "" },
-    evidenceSort: "bytes",
-    evidenceRows: [],
-    evidencePage: 0,
-    evidenceMinTime: Number.MAX_SAFE_INTEGER,
-    evidenceMaxTime: Number.MIN_SAFE_INTEGER,
+    leaderboardSort: { key: "traffic", dir: "desc" },
     lastExecutiveUpdate: null,
     liveClockTimer: null,
     bubbleChart: null,
@@ -51,14 +42,7 @@ const state = {
     retransmitChart: null,
     retransmitChartTheme: null,
     themeObserver: null,
-    activeEvidenceRequestToken: 0,
     executivePollHandles: [],
-};
-
-const SORT_OPTIONS = {
-    start: (a, b) => toNumber(b?.start, 0) - toNumber(a?.start, 0),
-    duration: (a, b) => toNumber(b?.duration_nanos, 0) - toNumber(a?.duration_nanos, 0),
-    bytes: (a, b) => totalFlowBytes(b) - totalFlowBytes(a),
 };
 
 function listenOnce(eventName, handler) {
@@ -67,10 +51,6 @@ function listenOnce(eventName, handler) {
         handler(msg);
     };
     wsClient.on(eventName, wrapped);
-}
-
-function totalFlowBytes(row) {
-    return toNumber(row?.total_bytes?.down, 0) + toNumber(row?.total_bytes?.up, 0);
 }
 
 function formatVolume(bytes) {
@@ -287,11 +267,42 @@ function visibleAsnRows() {
     return rows.slice(0, TOP_ROW_LIMIT);
 }
 
+function leaderboardSortValue(row, key) {
+    switch (key) {
+    case "asn":
+        return String(row.asnName || "").toLowerCase();
+    case "flows":
+        return toNumber(row.flowCount, 0);
+    case "rtt":
+        return Number.isFinite(row.medianRtt) ? row.medianRtt : null;
+    case "retrans":
+        return Number.isFinite(row.medianRetrans) ? row.medianRetrans : null;
+    case "qoo":
+        return Number.isFinite(row.qooScore) ? row.qooScore : null;
+    case "traffic":
+    default:
+        return toNumber(row.totalBytes, 0);
+    }
+}
+
 function sortedLeaderboardRows() {
     const rows = visibleAsnRows();
+    const { key, dir } = state.leaderboardSort;
     rows.sort((a, b) => {
-        if (b.totalBytes !== a.totalBytes) return b.totalBytes - a.totalBytes;
-        return b.impactScore - a.impactScore;
+        const left = leaderboardSortValue(a, key);
+        const right = leaderboardSortValue(b, key);
+        if (typeof left === "string" || typeof right === "string") {
+            const cmp = String(left).localeCompare(String(right));
+            return dir === "asc" ? cmp : -cmp;
+        }
+        const leftNull = left === null || left === undefined || !Number.isFinite(left);
+        const rightNull = right === null || right === undefined || !Number.isFinite(right);
+        if (leftNull && rightNull) return 0;
+        if (leftNull) return 1;
+        if (rightNull) return -1;
+        const cmp = left - right;
+        if (cmp === 0) return String(a.asnName || "").localeCompare(String(b.asnName || ""));
+        return dir === "asc" ? cmp : -cmp;
     });
     return rows;
 }
@@ -314,12 +325,8 @@ function ensureLiveClock() {
     state.liveClockTimer = window.setInterval(updateLiveClock, 1000);
 }
 
-function setSelectedAsn(asn, { resetEvidence = true } = {}) {
+function setSelectedAsn(asn) {
     state.selectedAsn = asn;
-    if (resetEvidence) {
-        state.evidenceScope = { type: "asn", value: asn, label: asnDisplayName(asn) };
-        loadEvidenceForScope(state.evidenceScope);
-    }
     renderLeaderboard();
     renderSelectedAsnSummary();
     renderBubbleChart();
@@ -335,25 +342,6 @@ function asnDisplayName(asn) {
     return `${row.asnName} (ASN ${row.asn})`;
 }
 
-function rankRationale(row) {
-    if (!row) {
-        return "Waiting for enough data to rank ASNs.";
-    }
-    const reasons = [];
-    if (row.retransSeverity >= row.rttSeverity && row.retransSeverity >= row.trafficSeverity) {
-        reasons.push("elevated retransmit");
-    }
-    if (row.trafficSeverity >= row.rttSeverity) {
-        reasons.push("high traffic impact");
-    }
-    if (row.rttSeverity > 0.25) {
-        reasons.push("higher RTT");
-    }
-    if (!reasons.length) {
-        reasons.push("balanced impact across current QoO signals");
-    }
-    return `Within the current top-20 traffic and throughput ASNs, this one stands out due to ${reasons.join(" + ")}.`;
-}
 
 function renderLeaderboard() {
     const tbody = document.getElementById("asnAnalysisLeaderboardBody");
@@ -364,23 +352,31 @@ function renderLeaderboard() {
 
     const rows = sortedLeaderboardRows();
     if (!rows.length) {
-        tbody.innerHTML = "<tr><td colspan='7' class='asn-analysis-empty'>No ASN heatmap data yet.</td></tr>";
+        tbody.innerHTML = "<tr><td colspan='7' class='asn-analysis-empty'>No ASN heatmap data — the ASN aggregate feed is not available in this build.</td></tr>";
         return;
     }
 
     rows.forEach((row, index) => {
         const tr = document.createElement("tr");
         tr.className = "asn-analysis-leaderboard-row";
+        tr.tabIndex = 0;
         if (row.asn === state.selectedAsn) {
             tr.classList.add("is-selected");
+            tr.setAttribute("aria-current", "true");
         }
         tr.addEventListener("click", () => setSelectedAsn(row.asn));
+        tr.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setSelectedAsn(row.asn);
+            }
+        });
 
         const badgeStyle = qooBadgeClass(row.qooScore);
         const trafficSummary = `${formatVolume(row.totalBytes)} · ${formatTrafficRateMbps(row.avgMbps)}`;
 
         tr.innerHTML = `
-            <td class="asn-analysis-leaderboard-rank">${index + 1}</td>
+            <td class="asn-analysis-leaderboard-rank"><span class="asn-analysis-rank-chip">${index + 1}</span></td>
             <td>
                 <div class="asn-analysis-asn-name">
                     <strong>${escapeHtml(row.asnName)}</strong>
@@ -403,66 +399,62 @@ function renderLeaderboard() {
 
 function renderSelectedAsnSummary() {
     const title = document.getElementById("asnAnalysisDetailTitle");
-    const subtitle = document.getElementById("asnAnalysisDetailSubtitle");
+    const qooBadge = document.getElementById("asnAnalysisQooBadge");
     const kpis = document.getElementById("asnAnalysisKpis");
-    const rationale = document.getElementById("asnAnalysisRationale");
 
-    if (!title || !subtitle || !kpis || !rationale) {
+    if (!title || !qooBadge || !kpis) {
         return;
     }
 
     const row = state.executiveRows.find((entry) => entry.asn === state.selectedAsn) || null;
     if (!row) {
-        title.innerText = "Selected ASN";
-        subtitle.innerText = "Choose an ASN from the leaderboard or bubble chart.";
+        title.innerText = "No ASN selected";
+        qooBadge.className = "asn-analysis-qoo-badge asn-analysis-qoo-badge--empty";
+        qooBadge.innerText = "—";
+        qooBadge.style.background = "";
+        qooBadge.style.color = "";
+        qooBadge.style.borderColor = "";
         kpis.innerHTML = `
-            <div class="asn-analysis-kpi"><label>Status</label><strong>—</strong><small>Waiting for selection</small></div>
-            <div class="asn-analysis-kpi"><label>Median RTT</label><strong>—</strong></div>
-            <div class="asn-analysis-kpi"><label>Retransmit</label><strong>—</strong></div>
-            <div class="asn-analysis-kpi"><label>Recent Flows</label><strong>—</strong></div>
-            <div class="asn-analysis-kpi"><label>Recent Traffic</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>Median RTT</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>Retransmit</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>Recent Flows</label><strong>—</strong></div>
+            <div class="asn-analysis-selected-metric"><label>Recent Traffic</label><strong>—</strong></div>
         `;
-        rationale.innerText = "Waiting for enough data to rank ASNs.";
         return;
     }
 
     title.innerText = `${row.asnName} (ASN ${row.asn})`;
-    subtitle.innerText = "Selection stays pinned across live refreshes until you click Refresh or choose another ASN from the current top-20 traffic and throughput set.";
 
     const badgeStyle = qooBadgeClass(row.qooScore);
+    qooBadge.className = "asn-analysis-qoo-badge";
+    qooBadge.innerText = `${row.qooStatus} · ${row.qooScore}`;
+    qooBadge.style.background = badgeStyle.background;
+    qooBadge.style.color = badgeStyle.color;
+    qooBadge.style.borderColor = badgeStyle.borderColor;
+
+    const rttValue = toNumber(row.medianRtt, 0);
+    const rttStyle = rttValue > 0 ? `color:${colorByRttMs(rttValue)}` : "";
+    const retransStyle = `color:${colorByRetransmitPct(toNumber(row.medianRetrans, 0))}`;
+
     kpis.innerHTML = `
-        <div class="asn-analysis-kpi">
-            <label>QoO Status</label>
-            <strong>
-                <span class="asn-analysis-qoo-badge" style="background:${badgeStyle.background};color:${badgeStyle.color};border-color:${badgeStyle.borderColor}">
-                    ${row.qooStatus} · ${row.qooScore}
-                </span>
-            </strong>
-            <small>Traffic-aware QoO impact score</small>
-        </div>
-        <div class="asn-analysis-kpi">
+        <div class="asn-analysis-selected-metric">
             <label>Median RTT</label>
-            <strong style="color:${colorByRttMs(toNumber(row.medianRtt, 0))}">${formatRttMs(row.medianRtt)}</strong>
-            <small>15-minute ASN heatmap median</small>
+            <strong style="${rttStyle}">${formatRttMs(row.medianRtt)}</strong>
         </div>
-        <div class="asn-analysis-kpi">
+        <div class="asn-analysis-selected-metric">
             <label>Retransmit</label>
-            <strong style="color:${colorByRetransmitPct(toNumber(row.medianRetrans, 0))}">${formatRetransPct(toNumber(row.medianRetrans, 0))}</strong>
-            <small>Median retransmit over recent heatmap blocks</small>
+            <strong style="${retransStyle}">${formatRetransPct(toNumber(row.medianRetrans, 0))}</strong>
         </div>
-        <div class="asn-analysis-kpi">
+        <div class="asn-analysis-selected-metric">
             <label>Recent Flows</label>
             <strong>${formatFlowCount(row.flowCount)}</strong>
-            <small>From recently finished two-way flows</small>
         </div>
-        <div class="asn-analysis-kpi">
+        <div class="asn-analysis-selected-metric">
             <label>Recent Traffic</label>
             <strong>${formatVolume(row.totalBytes)}</strong>
             <small>${formatTrafficRateMbps(row.avgMbps)}</small>
         </div>
     `;
-
-    rationale.innerText = rankRationale(row);
 }
 
 function ensureChart(domId, existingChart, themeKey) {
@@ -487,7 +479,9 @@ function renderBubbleChart() {
         return;
     }
 
-    const rows = sortedLeaderboardRows();
+    // The chart still describes the top-20 throughput set; table sorting is
+    // independent of the chart's label order.
+    const rows = visibleAsnRows();
     state.bubbleChart = ensureChart("asnAnalysisBubbleChart", state.bubbleChart, "bubbleChartTheme");
     if (!state.bubbleChart) {
         return;
@@ -522,10 +516,11 @@ function renderBubbleChart() {
         },
         itemStyle: {
             color: colorByQoqScore(row.qooScore),
-            borderColor: row.asn === state.selectedAsn ? (isDarkMode() ? "#ffffff" : "#0f172a") : "rgba(255,255,255,0.28)",
-            borderWidth: row.asn === state.selectedAsn ? 2.5 : 1,
-            shadowBlur: row.asn === state.selectedAsn ? 18 : 8,
-            shadowColor: row.asn === state.selectedAsn ? "rgba(96, 165, 250, 0.35)" : "rgba(15, 23, 42, 0.16)",
+            opacity: row.asn === state.selectedAsn ? 0.9 : 0.55,
+            borderColor: row.asn === state.selectedAsn ? (isDarkMode() ? "#ffffff" : "#0f172a") : "rgba(255,255,255,0.35)",
+            borderWidth: row.asn === state.selectedAsn ? 2 : 1,
+            shadowBlur: row.asn === state.selectedAsn ? 10 : 0,
+            shadowColor: row.asn === state.selectedAsn ? "rgba(96, 165, 250, 0.35)" : "rgba(0, 0, 0, 0)",
         },
         symbolSize: bubbleSizeForFlows(row.flowCount),
     }));
@@ -551,11 +546,15 @@ function renderBubbleChart() {
             },
         },
         xAxis: {
-            type: "value",
+            type: "log",
+            logBase: 10,
+            min: 1e6,
+            max: 2e11,
             name: "Traffic (15m total)",
             nameGap: 28,
             axisLabel: {
                 formatter: (value) => formatVolume(value),
+                hideOverlap: true,
             },
         },
         yAxis: {
@@ -569,6 +568,9 @@ function renderBubbleChart() {
         series: [{
             type: "scatter",
             data: seriesData,
+            labelLayout: {
+                hideOverlap: true,
+            },
             emphasis: {
                 focus: "series",
             },
@@ -585,7 +587,7 @@ function renderBubbleChart() {
 
 function bubbleSizeForFlows(flowCount) {
     const count = Math.max(1, toNumber(flowCount, 0));
-    return clamp(Math.sqrt(count) * 4, 14, 54);
+    return clamp(Math.sqrt(count) * 1.6, 8, 26);
 }
 
 function renderRetransmitChart() {
@@ -599,19 +601,22 @@ function renderRetransmitChart() {
         return;
     }
 
-    const rows = [...visibleAsnRows()].sort((a, b) => {
-        const retransmitDiff = toNumber(b.medianRetrans, 0) - toNumber(a.medianRetrans, 0);
-        if (retransmitDiff !== 0) return retransmitDiff;
-        return b.totalBytes - a.totalBytes;
-    });
+    const rows = [...visibleAsnRows()]
+        .filter((row) => toNumber(row.medianRetrans, 0) > 0)
+        .sort((a, b) => {
+            const retransmitDiff = toNumber(b.medianRetrans, 0) - toNumber(a.medianRetrans, 0);
+            if (retransmitDiff !== 0) return retransmitDiff;
+            return b.totalBytes - a.totalBytes;
+        })
+        .slice(0, 10);
     if (!rows.length) {
         state.retransmitChart.clear();
         state.retransmitChart.setOption({
             title: {
-                text: "Waiting for executive ASN heatmaps…",
+                text: "No retransmits in the current top 20",
                 left: "center",
                 top: "middle",
-                textStyle: { color: NEUTRAL_CHART_COLOR, fontSize: 14, fontWeight: 500 },
+                textStyle: { color: NEUTRAL_CHART_COLOR, fontSize: 13, fontWeight: 500 },
             },
         });
         return;
@@ -693,8 +698,6 @@ function renderRetransmitChart() {
 
 function requestLists() {
     requestAsnList();
-    requestCountryList();
-    requestProtocolList();
 }
 
 function requestAsnList() {
@@ -705,340 +708,6 @@ function requestAsnList() {
         renderAll();
     });
     wsClient.send({ AsnList: {} });
-}
-
-function renderDropdown({ targetId, buttonText, items, emptyText, itemRenderer }) {
-    const target = document.getElementById(targetId);
-    if (!target) return;
-    clearDiv(target);
-
-    const parent = document.createElement("div");
-    parent.className = "dropdown";
-    const button = document.createElement("button");
-    button.className = "btn btn-sm btn-outline-secondary dropdown-toggle";
-    button.type = "button";
-    button.innerText = buttonText;
-    button.setAttribute("data-bs-toggle", "dropdown");
-    button.setAttribute("aria-expanded", "false");
-    parent.appendChild(button);
-
-    const menu = document.createElement("ul");
-    menu.className = "dropdown-menu";
-    if (!items.length) {
-        const li = document.createElement("li");
-        li.className = "dropdown-item disabled";
-        li.setAttribute("aria-disabled", "true");
-        li.innerText = emptyText;
-        menu.appendChild(li);
-    } else {
-        items.forEach((item) => {
-            const rendered = itemRenderer(item);
-            if (rendered) {
-                menu.appendChild(rendered);
-            }
-        });
-    }
-    parent.appendChild(menu);
-    target.appendChild(parent);
-}
-
-function requestCountryList() {
-    listenOnce("CountryList", (msg) => {
-        state.countryList = (msg?.data || []).slice().sort((a, b) => toNumber(b?.count, 0) - toNumber(a?.count, 0));
-        renderDropdown({
-            targetId: "asnAnalysisCountryControl",
-            buttonText: "Country",
-            items: state.countryList,
-            emptyText: "No recent country flow data",
-            itemRenderer: (row) => {
-                const li = document.createElement("li");
-                li.className = "dropdown-item";
-                li.innerHTML = `<img alt="${escapeHtml(row.iso_code)}" src="flags/${row.iso_code.toLowerCase()}.svg" width="12" height="12" class="me-2"> ${escapeHtml(row.name)} (${row.count})`;
-                li.onclick = () => {
-                    state.evidenceScope = { type: "country", value: row.iso_code, label: row.name };
-                    loadEvidenceForScope(state.evidenceScope);
-                };
-                return li;
-            },
-        });
-    });
-    wsClient.send({ CountryList: {} });
-}
-
-function requestProtocolList() {
-    listenOnce("ProtocolList", (msg) => {
-        state.protocolList = (msg?.data || []).slice().sort((a, b) => toNumber(b?.count, 0) - toNumber(a?.count, 0));
-        renderDropdown({
-            targetId: "asnAnalysisProtocolControl",
-            buttonText: "Protocol",
-            items: state.protocolList,
-            emptyText: "No recent protocol flow data",
-            itemRenderer: (row) => {
-                const li = document.createElement("li");
-                li.className = "dropdown-item";
-                li.innerText = `${row.protocol} (${row.count})`;
-                li.onclick = () => {
-                    state.evidenceScope = { type: "protocol", value: row.protocol, label: row.protocol };
-                    loadEvidenceForScope(state.evidenceScope);
-                };
-                return li;
-            },
-        });
-    });
-    wsClient.send({ ProtocolList: {} });
-}
-
-function loadEvidenceForScope(scope) {
-    const token = ++state.activeEvidenceRequestToken;
-    state.evidencePage = 0;
-    renderFlowContext(`Loading ${scope.type === "asn" ? "selected ASN" : scope.type} flow evidence…`);
-    renderFlowRows([]);
-
-    if (!scope || scope.value === null || scope.value === undefined) {
-        return;
-    }
-
-    if (scope.type === "country") {
-        listenOnce("CountryFlowTimeline", (msg) => {
-            if (token !== state.activeEvidenceRequestToken) return;
-            state.evidenceRows = (msg?.data || []).slice();
-            renderFlowEvidence();
-        });
-        wsClient.send({ CountryFlowTimeline: { iso_code: scope.value } });
-        return;
-    }
-
-    if (scope.type === "protocol") {
-        listenOnce("ProtocolFlowTimeline", (msg) => {
-            if (token !== state.activeEvidenceRequestToken) return;
-            state.evidenceRows = (msg?.data || []).slice();
-            renderFlowEvidence();
-        });
-        wsClient.send({ ProtocolFlowTimeline: { protocol: scope.value } });
-        return;
-    }
-
-    listenOnce("AsnFlowTimeline", (msg) => {
-        if (token !== state.activeEvidenceRequestToken) return;
-        state.evidenceRows = (msg?.data || []).slice();
-        renderFlowEvidence();
-    });
-    wsClient.send({ AsnFlowTimeline: { asn: scope.value } });
-}
-
-function evidenceScopeLabel() {
-    if (state.evidenceScope.type === "country") {
-        return `Showing recent completed flows for country ${state.evidenceScope.label}.`;
-    }
-    if (state.evidenceScope.type === "protocol") {
-        return `Showing recent completed flows for protocol ${state.evidenceScope.label}.`;
-    }
-    const selectedLabel = state.selectedAsn ? asnDisplayName(state.selectedAsn) : "the selected ASN";
-    return `Showing recent completed flows for ${selectedLabel}.`;
-}
-
-function renderFlowContext(message = null) {
-    const target = document.getElementById("asnAnalysisFlowContext");
-    if (!target) return;
-    target.innerText = message || evidenceScopeLabel();
-}
-
-function renderFlowEvidence() {
-    const rows = [...state.evidenceRows];
-    rows.sort(SORT_OPTIONS[state.evidenceSort] || SORT_OPTIONS.bytes);
-    state.evidenceRows = rows;
-    renderFlowContext();
-    renderFlowRows(rows);
-}
-
-function renderFlowRows(allRows) {
-    const tbody = document.getElementById("asnAnalysisFlowTableBody");
-    const paginator = document.getElementById("asnAnalysisPaginator");
-    const prev = document.getElementById("asnAnalysisPrevPage");
-    const next = document.getElementById("asnAnalysisNextPage");
-    if (!tbody || !paginator || !prev || !next) {
-        return;
-    }
-
-    clearDiv(tbody);
-    const pageCount = Math.max(1, Math.ceil(allRows.length / EVIDENCE_ITEMS_PER_PAGE));
-    state.evidencePage = clamp(state.evidencePage, 0, pageCount - 1);
-    paginator.innerText = `Page ${state.evidencePage + 1} of ${pageCount}`;
-    prev.disabled = state.evidencePage === 0;
-    next.disabled = state.evidencePage >= pageCount - 1;
-
-    if (!allRows.length) {
-        tbody.innerHTML = "<tr><td colspan='6' class='asn-analysis-empty'>No recent flows match this evidence scope yet.</td></tr>";
-        state.evidenceMinTime = Number.MAX_SAFE_INTEGER;
-        state.evidenceMaxTime = Number.MIN_SAFE_INTEGER;
-        return;
-    }
-
-    const start = state.evidencePage * EVIDENCE_ITEMS_PER_PAGE;
-    const pageRows = allRows.slice(start, start + EVIDENCE_ITEMS_PER_PAGE);
-
-    state.evidenceMinTime = Math.min(...allRows.map((row) => toNumber(row.start, 0)));
-    state.evidenceMaxTime = Math.max(...allRows.map((row) => toNumber(row.end, 0)));
-
-    pageRows.forEach((row, index) => {
-        const tr = document.createElement("tr");
-        const remoteIp = String(row.remote_ip || "").trim();
-        const timelineId = `asnAnalysisFlowCanvas${state.evidencePage}_${index}`;
-        const bytesDown = scaleNumber(toNumber(row?.total_bytes?.down, 0), 0);
-        const bytesUp = scaleNumber(toNumber(row?.total_bytes?.up, 0), 0);
-        const rttDown = row?.rtt?.[0] ? scaleNanos(row.rtt[0].nanoseconds, 0) : "-";
-        const rttUp = row?.rtt?.[1] ? scaleNanos(row.rtt[1].nanoseconds, 0) : "-";
-        const circuitTitle = row.circuit_name || row.circuit_id || "Unmapped circuit";
-        const circuitHtml = row.circuit_id
-            ? `<a class="redactable" href="/circuit.html?id=${encodeURIComponent(row.circuit_id)}">${escapeHtml(circuitTitle)}</a>`
-            : `<span class="redactable">${escapeHtml(circuitTitle)}</span>`;
-        const startLabel = toNumber(row.start, 0) > 0 ? new Date(toNumber(row.start, 0) * 1000).toLocaleTimeString() : "Unknown";
-        const durationLabel = toNumber(row.duration_nanos, 0) > 0 ? scaleNanos(toNumber(row.duration_nanos, 0), 0) : "—";
-
-        tr.innerHTML = `
-            <td>
-                <div class="asn-analysis-flow-circuit">
-                    <strong>${circuitHtml}</strong>
-                    <span>${escapeHtml(row.circuit_id || "No circuit id")}</span>
-                </div>
-            </td>
-            <td class="redactable">
-                <div class="asn-analysis-flow-meta">
-                    <strong>${escapeHtml(remoteIp || "—")}</strong>
-                    <span>Started ${escapeHtml(startLabel)}</span>
-                </div>
-            </td>
-            <td>
-                <div class="asn-analysis-flow-meta">
-                    <strong>${escapeHtml(row.protocol || "—")}</strong>
-                    <span>Duration ${escapeHtml(durationLabel)}</span>
-                </div>
-            </td>
-            <td>
-                <div class="asn-analysis-flow-meta">
-                    <strong>${bytesDown} / ${bytesUp}</strong>
-                    <span>Down / Up bytes</span>
-                </div>
-            </td>
-            <td>
-                <div class="asn-analysis-flow-meta">
-                    <strong>${rttDown} / ${rttUp}</strong>
-                    <span>Down / Up RTT</span>
-                </div>
-            </td>
-            <td><canvas id="${timelineId}" data-flow-index="${start + index}"></canvas></td>
-        `;
-
-        const remoteCell = tr.children[1];
-        if (remoteIp) {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "btn btn-link btn-sm p-0 ms-2";
-            button.title = "Exclude RTT for this remote endpoint";
-            button.innerHTML = "<i class='fa fa-ban'></i>";
-            button.addEventListener("click", (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                openFlowRttExcludeWizard({ remoteIp, sourceLabel: "ASN Analysis" });
-            });
-            remoteCell.appendChild(button);
-        }
-
-        tbody.appendChild(tr);
-    });
-
-    requestAnimationFrame(() => {
-        window.setTimeout(drawEvidenceTimelines, 0);
-    });
-}
-
-function timeToCanvasX(time, width) {
-    const range = state.evidenceMaxTime - state.evidenceMinTime;
-    if (!Number.isFinite(range) || range <= 0) {
-        return 0;
-    }
-    return ((time - state.evidenceMinTime) / range) * width;
-}
-
-function drawEvidenceTimelines() {
-    const canvasNodes = document.querySelectorAll("#asnAnalysisFlowTableBody canvas");
-    if (!canvasNodes.length) {
-        return;
-    }
-    const style = getComputedStyle(document.body);
-    const regionBg = style.getPropertyValue("--bs-tertiary-bg") || "rgba(148,163,184,0.18)";
-    const axisColor = style.getPropertyValue("--bs-secondary-color") || "#94a3b8";
-    const lineColor = style.getPropertyValue("--bs-primary") || "#60a5fa";
-
-    canvasNodes.forEach((canvas) => {
-        const flowIndex = toNumber(canvas.dataset.flowIndex, -1);
-        const row = state.evidenceRows[flowIndex];
-        if (!row) return;
-
-        const { width, height } = canvas.getBoundingClientRect();
-        canvas.width = Math.max(1, Math.round(width));
-        canvas.height = Math.max(1, Math.round(height));
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        const startX = timeToCanvasX(toNumber(row.start, 0), canvas.width);
-        const endX = timeToCanvasX(toNumber(row.end, 0), canvas.width);
-        const spanWidth = Math.max(2, endX - startX);
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = regionBg.trim() || "rgba(148,163,184,0.18)";
-        ctx.fillRect(startX, 0, spanWidth, canvas.height);
-
-        ctx.strokeStyle = axisColor.trim() || "#94a3b8";
-        ctx.beginPath();
-        ctx.moveTo(startX, canvas.height / 2);
-        ctx.lineTo(endX, canvas.height / 2);
-        ctx.stroke();
-
-        ctx.strokeStyle = "#ef4444";
-        (row.retransmit_times_down || []).forEach((time) => {
-            const x = timeToCanvasX(toNumber(time, 0), canvas.width);
-            ctx.beginPath();
-            ctx.moveTo(x, canvas.height / 2);
-            ctx.lineTo(x, canvas.height);
-            ctx.stroke();
-        });
-        (row.retransmit_times_up || []).forEach((time) => {
-            const x = timeToCanvasX(toNumber(time, 0), canvas.width);
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, canvas.height / 2);
-            ctx.stroke();
-        });
-
-        const samples = row.throughput || [];
-        if (!samples.length) return;
-
-        const maxDown = Math.max(1, ...samples.map((entry) => toNumber(entry.down, 0)));
-        const maxUp = Math.max(1, ...samples.map((entry) => toNumber(entry.up, 0)));
-        const sampleWidth = spanWidth / Math.max(1, samples.length);
-
-        ctx.strokeStyle = lineColor.trim() || "#60a5fa";
-        ctx.beginPath();
-        let x = startX;
-        ctx.moveTo(x, canvas.height / 2);
-        samples.forEach((entry) => {
-            const y = (canvas.height / 2) - ((toNumber(entry.down, 0) / maxDown) * ((canvas.height - 4) / 2));
-            ctx.lineTo(x, y);
-            x += sampleWidth;
-        });
-        ctx.stroke();
-
-        ctx.beginPath();
-        x = startX;
-        ctx.moveTo(x, canvas.height / 2);
-        samples.forEach((entry) => {
-            const y = (canvas.height / 2) + ((toNumber(entry.up, 0) / maxUp) * ((canvas.height - 4) / 2));
-            ctx.lineTo(x, y);
-            x += sampleWidth;
-        });
-        ctx.stroke();
-    });
 }
 
 function escapeHtml(value) {
@@ -1069,43 +738,47 @@ function chooseDefaultSelection() {
     setSelectedAsn(top.asn);
 }
 
-function wireControls() {
-    const refreshButton = document.getElementById("asnAnalysisRefreshButton");
-    const evidenceAsnButton = document.getElementById("asnAnalysisEvidenceSelectedAsn");
-    const flowSort = document.getElementById("asnAnalysisFlowSort");
-    const prev = document.getElementById("asnAnalysisPrevPage");
-    const next = document.getElementById("asnAnalysisNextPage");
+const DEFAULT_SORT_DIR = {
+    traffic: "desc",
+    flows: "desc",
+    qoo: "desc",
+    asn: "asc",
+    rtt: "asc",
+    retrans: "asc",
+};
 
-    refreshButton?.addEventListener("click", () => {
-        requestLists();
-        state.executivePollHandles.forEach((handle) => handle?.refresh?.());
-        const top = sortedLeaderboardRows()[0];
-        if (top) {
-            setSelectedAsn(top.asn);
+function updateSortIndicators() {
+    document.querySelectorAll("[data-sort-th]").forEach((th) => {
+        const key = th.dataset.sortTh;
+        const active = state.leaderboardSort.key === key;
+        th.setAttribute("aria-sort", active
+            ? (state.leaderboardSort.dir === "asc" ? "ascending" : "descending")
+            : "none");
+        const arrow = th.querySelector(".asn-analysis-sort-arrow");
+        if (arrow) {
+            arrow.textContent = active
+                ? (state.leaderboardSort.dir === "asc" ? "▲" : "▼")
+                : "↕";
         }
-        renderAll();
+    });
+}
+
+function wireControls() {
+    document.querySelectorAll("[data-asn-sort]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const key = button.dataset.asnSort;
+            const current = state.leaderboardSort;
+            const dir = current.key === key
+                ? (current.dir === "desc" ? "asc" : "desc")
+                : (DEFAULT_SORT_DIR[key] || "desc");
+            state.leaderboardSort = { key, dir };
+            updateSortIndicators();
+            renderLeaderboard();
+            renderBubbleChart();
+        });
     });
 
-    evidenceAsnButton?.addEventListener("click", () => {
-        if (state.selectedAsn === null) return;
-        state.evidenceScope = { type: "asn", value: state.selectedAsn, label: asnDisplayName(state.selectedAsn) };
-        loadEvidenceForScope(state.evidenceScope);
-    });
-
-    flowSort?.addEventListener("change", () => {
-        state.evidenceSort = flowSort.value;
-        renderFlowEvidence();
-    });
-
-    prev?.addEventListener("click", () => {
-        state.evidencePage = Math.max(0, state.evidencePage - 1);
-        renderFlowRows(state.evidenceRows);
-    });
-
-    next?.addEventListener("click", () => {
-        state.evidencePage += 1;
-        renderFlowRows(state.evidenceRows);
-    });
+    updateSortIndicators();
 }
 
 function observeThemeAndResize() {

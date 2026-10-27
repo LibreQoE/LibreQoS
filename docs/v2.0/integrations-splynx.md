@@ -1,5 +1,7 @@
 # Splynx Integration
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 > **⚠️ Breaking Change Notice**: Prior to v1.5-RC-2, the default Splynx strategy was `full`. The recommended shared topology mode is now `ap_site` as the best default balance of structure and operator clarity. If you require the previous behavior, explicitly set `topology.compile_mode = "full"`.
 
 First, set the relevant parameters for Splynx (splynx_api_key, splynx_api_secret, etc.) in `/etc/lqos.conf`.

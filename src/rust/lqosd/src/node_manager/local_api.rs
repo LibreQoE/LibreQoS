@@ -2,16 +2,19 @@ pub(crate) mod circuit;
 pub(crate) mod circuit_activity;
 pub(crate) mod circuit_count;
 pub(crate) mod circuit_live;
+pub(crate) mod circuit_override;
 pub(crate) mod config;
-pub(crate) mod cpu_affinity;
+pub(crate) mod cpu_workers;
 pub(crate) mod dashboard_themes;
 pub(crate) mod device_counts;
 pub(crate) mod directories;
+pub(crate) mod dpdk_status;
 pub(crate) mod ethernet_caps;
 pub(crate) mod executive;
 pub(crate) mod executive_cache;
 pub(crate) mod flow_explorer;
 pub(crate) mod flow_map;
+pub(crate) mod flow_wire;
 pub(crate) mod local_api_keys;
 pub mod lts;
 pub(crate) mod network_mode;
@@ -46,6 +49,7 @@ pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) ->
             "/throughputAttributionDebug",
             get(throughput_attribution_debug::throughput_attribution_debug),
         )
+        .route("/cpu-workers", get(cpu_workers::get_cpu_workers))
         .route("/network-mode/status", get(network_mode::status))
         .route("/network-mode/inspect", post(network_mode::inspect))
         .route("/network-mode/apply", post(network_mode::apply))

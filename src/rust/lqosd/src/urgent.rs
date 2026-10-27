@@ -113,9 +113,20 @@ pub fn clear_all() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::failure_surfacing_test_lock;
+
+    /// The `URGENT` issue list is process-global; serialize the tests that
+    /// mutate it so one test's `clear_all()` cannot wipe another's entries.
+    /// Poison-tolerant so a test failure does not cascade into the rest.
+    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+        failure_surfacing_test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn clear_by_identity_removes_only_matching_issues() {
+        let _guard = test_lock();
         let code = "TEST_XDP_IP_MAPPING_APPLY_FAILED";
         let other_code = "TEST_OTHER";
         let other_dedupe = "TEST_XDP_IP_MAPPING_APPLY_FAILED_OTHER_DEDUPE";
@@ -156,6 +167,27 @@ mod tests {
         assert!(matching_issue_survived);
         assert_eq!(clear_by_identity(code, other_dedupe), 1);
         assert_eq!(clear_by_identity(other_code, code), 1);
+    }
+
+    #[test]
+    fn seam_replaced_urgent_clears_on_heal() {
+        let _guard = test_lock();
+        clear_all();
+        submit(
+            UrgentSource::System,
+            UrgentSeverity::Warning,
+            "BRIDGE_SEAM_REPLACED".to_string(),
+            "seam dead".to_string(),
+            None,
+            Some("bridge-broker:seam-replaced".to_string()),
+        );
+        assert!(list().iter().any(|i| i.code == "BRIDGE_SEAM_REPLACED"));
+        // The heal path (a generation APPLIED after re-attach) clears it.
+        assert_eq!(
+            clear_by_identity("BRIDGE_SEAM_REPLACED", "bridge-broker:seam-replaced"),
+            1
+        );
+        assert!(list().iter().all(|i| i.code != "BRIDGE_SEAM_REPLACED"));
     }
 
     #[test]

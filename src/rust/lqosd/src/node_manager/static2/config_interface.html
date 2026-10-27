@@ -34,7 +34,7 @@
 
             <div class="lqos-config-section">
                 <h6 class="lqos-config-section-title">Operating Mode</h6>
-                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs. XDP bridge mode remains manual.</div>
+                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs (on-a-stick).</div>
 
                 <div class="mb-3">
                     <div class="form-check">
@@ -55,13 +55,7 @@
             <section class="lqos-config-panel">
                 <div class="lqos-config-section">
                     <h6 class="lqos-config-section-title">Bridge Mode Configuration</h6>
-                    <div class="lqos-config-section-subtitle">Choose the two shaping interfaces. Linux bridge mode can manage Netplan; XDP mode leaves Netplan alone.</div>
-
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="useXdpBridge" aria-describedby="useXdpBridgeHelp">
-                        <label class="form-check-label" for="useXdpBridge">Use XDP Bridge</label>
-                        <div id="useXdpBridgeHelp" class="form-text">XDP does not write Netplan or apply Bridge MTU.</div>
-                    </div>
+                    <div class="lqos-config-section-subtitle">Choose the two shaping interfaces. Linux bridge mode can manage Netplan and apply the dataplane / jumbo MTU.</div>
 
                     <div class="mb-3">
                         <label for="toInternet" class="form-label">Internet-Facing Interface</label>
@@ -80,9 +74,9 @@
                     </div>
 
                     <div class="mb-2">
-                        <label for="bridgeMtu" class="form-label">Bridge MTU</label>
+                        <label for="bridgeMtu" class="form-label">Dataplane / Jumbo MTU</label>
                         <input type="number" class="form-control" id="bridgeMtu" aria-describedby="bridgeMtuHelp bridgeMtuError">
-                        <div id="bridgeMtuHelp" class="form-text">Applies to the bridge members and br0.</div>
+                        <div id="bridgeMtuHelp" class="form-text">Applies to the bridge members and br0. Use a jumbo value (for example 9000) only when every link on the path supports it.</div>
                         <div id="bridgeMtuError" class="invalid-feedback" role="alert"></div>
                     </div>
                     <div id="bridgeInterfaceHelp" class="small text-secondary"></div>
@@ -117,9 +111,9 @@
                     </div>
 
                     <div class="mb-0 mt-3">
-                        <label for="singleInterfaceMtu" class="form-label">Single Interface MTU</label>
+                        <label for="singleInterfaceMtu" class="form-label">Single Interface Dataplane / Jumbo MTU</label>
                         <input type="number" class="form-control" id="singleInterfaceMtu" aria-describedby="singleInterfaceMtuHelp singleInterfaceMtuError">
-                        <div id="singleInterfaceMtuHelp" class="form-text">Applies to the trunk interface.</div>
+                        <div id="singleInterfaceMtuHelp" class="form-text">Applies to the trunk interface. Use a jumbo value only when every link on the path supports it.</div>
                         <div id="singleInterfaceMtuError" class="invalid-feedback" role="alert"></div>
                     </div>
                     <div id="singleInterfaceHelp" class="small text-secondary mt-2"></div>

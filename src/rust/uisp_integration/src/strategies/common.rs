@@ -343,6 +343,65 @@ impl UispData {
             }
         }
 
+        // §2bis (`docs/topology_ptmp_ptp_attachment_card.md`, the DRIVER's steer):
+        // classify each OPAQUE radio (`role=wireless`, blackBox, no `wirelessMode`)
+        // by the CONNECTED SITE TYPE. own site endpoint => CPE/attachment; own
+        // site infra + connects an endpoint => AP/node; own site infra +
+        // infra<->infra => backhaul/attachment. (Explicit role/mode signals still
+        // FORCE in `device_is_link`.)
+        let client_site_ids: HashSet<&str> = sites
+            .iter()
+            .filter(|site| site.site_type == UispSiteType::Client)
+            .map(|site| site.id.as_str())
+            .collect();
+        let mut devices = devices;
+        for device in devices.iter_mut() {
+            let opaque_radio = device
+                .role
+                .as_deref()
+                .map(str::trim)
+                .map(str::to_ascii_lowercase)
+                .as_deref()
+                == Some("wireless");
+            if !opaque_radio {
+                continue;
+            }
+            if client_site_ids.contains(device.site_id.as_str()) {
+                // The radio's own site is a subscriber endpoint => CPE.
+                device.classifies_as_link = true;
+                continue;
+            }
+            // Own site is infra: an AP if it connects an endpoint (subscriber)
+            // site, else an infra<->infra backhaul.
+            let connects_client = data_link_indices_by_device_id
+                .get(&device.id)
+                .into_iter()
+                .flat_map(|indices| indices.iter())
+                .filter_map(|index| data_links_raw.get(*index))
+                .any(|link| {
+                    let from_id = link
+                        .from
+                        .device
+                        .as_ref()
+                        .map(|d| d.identification.id.as_str());
+                    let to_id = link
+                        .to
+                        .device
+                        .as_ref()
+                        .map(|d| d.identification.id.as_str());
+                    let peer_site = if from_id == Some(device.id.as_str()) {
+                        link.to.site.as_ref()
+                    } else if to_id == Some(device.id.as_str()) {
+                        link.from.site.as_ref()
+                    } else {
+                        None
+                    };
+                    peer_site
+                        .map(|site| client_site_ids.contains(site.identification.id.as_str()))
+                        .unwrap_or(false)
+                });
+            device.classifies_as_link = !connects_client;
+        }
         Self {
             sites_raw,
             devices_raw,

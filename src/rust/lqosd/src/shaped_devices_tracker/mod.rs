@@ -1,5 +1,4 @@
 use crate::node_manager::local_api::network_tree_lite::NetworkTreeLiteNode;
-use crate::treeguard::actor::is_runtime_virtualized_node;
 use anyhow::Result;
 use arc_swap::ArcSwap;
 use fxhash::{FxHashMap, FxHashSet};
@@ -7,11 +6,10 @@ use lqos_bus::{BusResponse, Circuit};
 #[cfg(test)]
 use lqos_config::load_active_runtime_shaping_inputs;
 use lqos_config::{
-    NetworkJsonNode, NetworkJsonTransport, TopologyRuntimeShapingPayloadIdentity,
+    NetworkJsonNode, NetworkJsonTransport, ShapedDevice, TopologyRuntimeShapingPayloadIdentity,
     TopologyRuntimeStatusFile, TopologyShapingInputsFile,
     load_active_runtime_shaping_inputs_from_status, load_config, topology_runtime_status_path,
 };
-use lqos_queue_tracker::EFFECTIVE_NODE_RATES;
 use lqos_utils::file_watcher::FileWatcher;
 use lqos_utils::hash_to_i64;
 use lqos_utils::rtt::{FlowbeeEffectiveDirection, RttBucket};
@@ -27,7 +25,7 @@ use tracing::{debug, error, info, warn};
 #[cfg(test)]
 use anyhow::Context;
 #[cfg(test)]
-use lqos_config::{ConfigShapedDevices, ShapedDevice};
+use lqos_config::ConfigShapedDevices;
 #[cfg(test)]
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -219,26 +217,6 @@ enum ShapedDevicesLoadSource {
 }
 
 #[cfg(test)]
-fn integration_ingress_enabled(config: &lqos_config::Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
-}
-
-#[cfg(test)]
 fn load_ready_runtime_shaping_inputs(
     config: &lqos_config::Config,
 ) -> Result<Option<TopologyShapingInputsFile>> {
@@ -257,25 +235,25 @@ fn load_shaped_devices_from_preferred_source(
         ));
     }
 
-    if integration_ingress_enabled(config) {
-        match lqos_topology_compile::TopologyImportFile::load(config) {
-            Ok(Some(topology_import)) => {
-                let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
-                if !shaped_devices.devices.is_empty() {
-                    return Ok((shaped_devices, ShapedDevicesLoadSource::TopologyImport));
-                }
-                debug!(
-                    "topology_import.json contained 0 shaped devices; falling back to ShapedDevices.csv"
-                );
+    // Phase C S4: the compiled import is the ONE source; the CSV is only the
+    // bootstrap fallback while the runtime materializes the import.
+    match lqos_topology_compile::TopologyImportFile::load(config) {
+        Ok(Some(topology_import)) => {
+            let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
+            if !shaped_devices.devices.is_empty() {
+                return Ok((shaped_devices, ShapedDevicesLoadSource::TopologyImport));
             }
-            Ok(None) => {
-                debug!("topology_import.json missing; falling back to ShapedDevices.csv");
-            }
-            Err(err) => {
-                debug!(
-                    "Unable to load topology_import.json ({err}); falling back to ShapedDevices.csv"
-                );
-            }
+            debug!(
+                "topology_import.json contained 0 shaped devices; falling back to ShapedDevices.csv"
+            );
+        }
+        Ok(None) => {
+            debug!("topology_import.json missing; falling back to ShapedDevices.csv");
+        }
+        Err(err) => {
+            debug!(
+                "Unable to load topology_import.json ({err}); falling back to ShapedDevices.csv"
+            );
         }
     }
 
@@ -288,6 +266,9 @@ fn load_topology_runtime_status_payload() {
         warn!("Unable to load LibreQoS config while loading topology runtime status");
         return;
     };
+    // Rung 1.5 §1.5: refresh the E2-backed effective-rate caches alongside the
+    // status payload (E2 is published in the same round).
+    crate::e2_rates::refresh(config.as_ref());
     let status = match TopologyRuntimeStatusFile::load(config.as_ref()) {
         Ok(status) => status,
         Err(err) => {
@@ -302,6 +283,34 @@ fn load_topology_runtime_status_payload() {
         debug!("Topology runtime status changed without shaping payload identity change");
         return;
     }
+    let custody = lqos_topology::verify_published_shaping_generation(config.as_ref());
+    let custody_ok = matches!(
+        &custody,
+        Ok(lqos_topology::ShapingGenerationVerification {
+            verified: Some(true),
+            ..
+        })
+    );
+    if !custody_ok {
+ // §0b; the implementer R1-R4): NAME the failing custody leg + the
+        // two compared values so the residual is attributable (measurement-only).
+        match &custody {
+            Ok(verification) => warn!(
+                "Topology custody verify failed (world/generation/artifact); failed_leg={} expected={:?} actual={:?}; keeping last-known-good effective parent cache",
+                verification
+                    .failed_leg
+                    .map(|leg| leg.as_str())
+                    .unwrap_or("none"),
+                verification.expected_value,
+                verification.actual_value,
+            ),
+            Err(err) => warn!(
+                "Topology custody verify failed (world/generation/artifact); failed_leg=verify_error ({err}); keeping last-known-good effective parent cache"
+            ),
+        }
+        remember_topology_status_identity(identity);
+        return;
+    }
     match load_active_runtime_shaping_inputs_from_status(config.as_ref(), &status) {
         Ok(Some(shaping_inputs)) => {
             debug!("Loaded shaping inputs from active runtime status");
@@ -309,18 +318,14 @@ fn load_topology_runtime_status_payload() {
             remember_topology_status_identity(identity);
         }
         Ok(None) => {
-            if lqos_config::integration_ingress_enabled(config.as_ref()) {
-                // Preserve the last known-good parent map so a transient publication race or
-                // temporary read failure does not blank topology overlays between runtime writes.
-                debug!(
-                    "No active runtime shaping inputs published; keeping last-known-good effective parent cache"
-                );
-                remember_topology_status_identity(identity);
-            } else {
-                debug!("Integration ingress disabled; clearing effective parent cache");
-                publish_shaping_inputs(TopologyShapingInputsFile::default());
-                remember_topology_status_identity(identity);
-            }
+            // Preserve the last known-good parent map so a transient publication
+            // race or temporary read failure does not blank topology overlays
+            // between runtime writes. Phase C S4: always preserve — the clear
+            // arm retired with the mode.
+            debug!(
+                "No active runtime shaping inputs published; keeping last-known-good effective parent cache"
+            );
+            remember_topology_status_identity(identity);
         }
         Err(err) => {
             warn!(
@@ -384,12 +389,17 @@ fn node_to_transport_with_summary(
     summary: NetworkTreeSummary,
 ) -> NetworkJsonTransport {
     let mut transport = node.clone_to_transit();
-    transport.runtime_virtualized = is_runtime_virtualized_node(&node.name);
     transport.configured_max_throughput = node.max_throughput;
-    transport.effective_max_throughput = EFFECTIVE_NODE_RATES.load().get(&node.name).copied();
+    // Rung 1.5 §1.5: the effective-rate overlay reads E2 (the Rust-native
+    // source) via the e2_rates cache, keyed on the E2 display name/id — the
+    // zero-CSV world now populates. The legacy queuingStructure.json
+    // effective-rate overlay was retired in K2 slice 0.
+    transport.effective_max_throughput = crate::e2_rates::node_rate(&node.name);
     transport.subtree_site_count = summary.subtree_site_count;
     transport.subtree_circuit_count = summary.subtree_circuit_count;
     transport.subtree_device_count = summary.subtree_device_count;
+    // §`lqos-74t.47.1.4`: unify the full tree QoQ onto `circuit_qoo` too.
+    transport.qoo = tree_node_qoo(node);
     transport
 }
 
@@ -457,13 +467,12 @@ pub fn get_one_network_map_layer(parent_idx: usize) -> BusResponse {
                     .enumerate()
                     .filter(|(_, node)| node.immediate_parent == Some(parent_idx))
                     .map(|(i, node)| {
-                        (
-                            i,
-                            node_to_transport_with_summary(
-                                node,
-                                summaries.get(i).copied().unwrap_or_default(),
-                            ),
-                        )
+                        let mut transport = node_to_transport_with_summary(
+                            node,
+                            summaries.get(i).copied().unwrap_or_default(),
+                        );
+                        crate::bridge_analytics::overlay_live_fields(i, &mut transport);
+                        (i, transport)
                     }),
             );
             BusResponse::NetworkMap(nodes)
@@ -482,19 +491,71 @@ pub fn full_network_map_snapshot() -> Vec<(usize, NetworkJsonTransport)> {
             .iter()
             .enumerate()
             .map(|(i, n)| {
-                (
-                    i,
-                    node_to_transport_with_summary(
-                        n,
-                        summaries.get(i).copied().unwrap_or_default(),
-                    ),
-                )
+                let mut transport = node_to_transport_with_summary(
+                    n,
+                    summaries.get(i).copied().unwrap_or_default(),
+                );
+                // T2b: E2 tree live-view overlay (current_* only, active
+                // actor only — see bridge_analytics::overlay_live_fields).
+                crate::bridge_analytics::overlay_live_fields(i, &mut transport);
+                (i, transport)
             })
             .collect()
     })
 }
 
-fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
+/// §`lqos-74t.47.1.4`: the tree node QoQ, read from the unified `circuit_qoo`
+/// snapshot (site/ancestor → `by_node` by name; circuit → `by_circuit` by its
+/// (normalized) id; root/global → `global_qoq`; absent → UNKNOWN). There is **no**
+/// device-kind tree row — a device's QoQ is its circuit's `by_circuit`.
+fn tree_node_qoo(node: &NetworkJsonNode) -> (Option<f32>, Option<f32>) {
+    crate::bridge_analytics::circuit_qoo_snapshot()
+        .map(|snapshot| tree_node_qoo_from(&snapshot, node))
+        .unwrap_or((None, None))
+}
+
+/// Pure mapping (unit-testable): `circuit_qoo` snapshot + node → tree `qoo`.
+fn tree_node_qoo_from(
+    snapshot: &crate::bridge_analytics::circuit_qoo::CircuitQooSnapshot,
+    node: &NetworkJsonNode,
+) -> (Option<f32>, Option<f32>) {
+    // §`lqos-74t.47.1.4` bounded: the synthetic ORPHAN umbrella is a non-entity —
+    // never read `global_qoq`/`by_node`; it stays UNKNOWN.
+    if node.id.as_deref() == Some(lqos_dataplane_types::ORPHANS_UMBRELLA_NODE_ID) {
+        return (None, None);
+    }
+    let latest = |blocks: &lqos_utils::qoq_heatmap::QoqHeatmapBlocks| {
+        let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
+        (latest(&blocks.download_total), latest(&blocks.upload_total))
+    };
+    // Circuit-typed node: the node's id (fallback name) is a circuit id.
+    for candidate in [node.id.as_deref(), Some(node.name.as_str())]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(blocks) = snapshot.by_circuit.get(candidate) {
+            return latest(blocks);
+        }
+        let normalized = lqos_utils::normalize_circuit_id_key(candidate);
+        if let Some(blocks) = snapshot.by_circuit.get(&normalized) {
+            return latest(blocks);
+        }
+    }
+    // Root / global node (no parent).
+    if node.immediate_parent.is_none() && node.parents.is_empty() {
+        return latest(&snapshot.global_qoq);
+    }
+    // Site / AP / ancestor node, keyed by name.
+    if let Some(blocks) = snapshot.by_node.get(&node.name) {
+        return latest(blocks);
+    }
+    (None, None)
+}
+
+fn node_to_transport_lite(
+    node: &NetworkJsonNode,
+    summary: NetworkTreeSummary,
+) -> NetworkTreeLiteNode {
     let download =
         node.rtt_buffer
             .percentile(RttBucket::Current, FlowbeeEffectiveDirection::Download, 50);
@@ -509,21 +570,13 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
         (Some(d), Some(u)) => vec![d.as_millis() as f32, u.as_millis() as f32],
     };
 
-    let qoo = node
-        .qoq_heatmap
-        .as_ref()
-        .map(|heatmap| {
-            let blocks = heatmap.blocks();
-            let latest = |values: &[Option<f32>]| values.iter().rev().find_map(|v| *v);
-            (latest(&blocks.download_total), latest(&blocks.upload_total))
-        })
-        .unwrap_or((None, None));
+    // §`lqos-74t.47.1.4`: the tree QoQ is READ from the unified `circuit_qoo`
+    // snapshot — the never-populated `node.qoq_heatmap` third engine is retired.
+    let qoo = tree_node_qoo(node);
 
     NetworkTreeLiteNode {
         name: node.name.clone(),
         id: node.id.clone(),
-        is_virtual: node.virtual_node,
-        runtime_virtualized: is_runtime_virtualized_node(&node.name),
         max_throughput: node.max_throughput,
         current_throughput: (
             node.current_throughput.get_down(),
@@ -548,6 +601,7 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
         node_type: node.node_type.clone(),
         latitude: node.latitude,
         longitude: node.longitude,
+        subtree_circuit_count: summary.subtree_circuit_count,
     }
 }
 
@@ -556,10 +610,24 @@ fn node_to_transport_lite(node: &NetworkJsonNode) -> NetworkTreeLiteNode {
 pub fn full_network_map_lite_snapshot() -> Vec<(usize, NetworkTreeLiteNode)> {
     lqos_network_devices::with_network_json_read(|net_json| {
         let nodes = net_json.get_nodes_when_ready();
+        // `.67.5`: attach the site's structural circuit footprint. The full
+        // transport already carries `subtree_circuit_count` via these summaries;
+        // the lite snapshot is what the Site Map consumes, so it must too.
+        // Bounded: the summaries + catalog are O(devices), recomputed per lite
+        // request (the full snapshot already pays it); caching is a follow-up.
+        let shaped_devices = lqos_network_devices::network_devices_catalog();
+        let summaries = build_network_tree_summaries(nodes, &shaped_devices);
         nodes
             .iter()
             .enumerate()
-            .map(|(i, n)| (i, node_to_transport_lite(n)))
+            .map(|(i, n)| {
+                let summary = summaries.get(i).copied().unwrap_or_default();
+                let mut node = node_to_transport_lite(n, summary);
+                // Cluster 5 (kernel_gating_audit_card §2.5): the lite tree
+                // payload overlays its live fields like the full transport.
+                crate::bridge_analytics::overlay_live_fields_lite(i, &mut node);
+                (i, node)
+            })
             .collect()
     })
 }
@@ -587,13 +655,14 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     .enumerate()
                     .filter(|(idx, node)| *idx != 0 && node.immediate_parent == Some(0))
                     .map(|(idx, node)| {
-                        (
-                            idx,
-                            node_to_transport_with_summary(
-                                node,
-                                summaries.get(idx).copied().unwrap_or_default(),
-                            ),
-                        )
+                        let mut transport = node_to_transport_with_summary(
+                            node,
+                            summaries.get(idx).copied().unwrap_or_default(),
+                        );
+                        // Cluster 5 (kernel_gating_audit_card §2.5): the
+                        // TopMapQueues bus arm overlays like the tree tickers.
+                        crate::bridge_analytics::overlay_live_fields(idx, &mut transport);
+                        (idx, transport)
                     }),
             );
             // Remove the top-level entry for root
@@ -644,8 +713,6 @@ pub fn get_top_n_root_queues(n_queues: usize) -> BusResponse {
                     NetworkJsonTransport {
                         name: "Others".into(),
                         id: None,
-                        is_virtual: false,
-                        runtime_virtualized: false,
                         max_throughput: (0.0, 0.0),
                         configured_max_throughput: (0.0, 0.0),
                         effective_max_throughput: None,
@@ -694,6 +761,11 @@ pub fn map_node_names(nodes: &[usize]) -> BusResponse {
 
 pub fn get_funnel(circuit_id: &str) -> BusResponse {
     lqos_network_devices::with_network_json_read(|net_json| {
+        // T4 amendment 4 audit: this name-keyed lookup is LOUD on
+        // miss — `BusResponse::Fail("Unknown Node")` (bus-fail), it
+        // never silently zeros. Post-T4 the tree names are the
+        // catalog human strings, so catalog-sourced circuit ids/names
+        // keep resolving natively.
         if let Some(index) = net_json.get_index_for_name(circuit_id) {
             // Reverse the scanning order and skip the last entry (the parent)
             let mut result = Vec::new();
@@ -703,10 +775,11 @@ pub fn get_funnel(circuit_id: &str) -> BusResponse {
                 .rev()
                 .skip(1)
             {
-                result.push((
-                    *idx,
-                    node_to_transport(&net_json.get_nodes_when_ready()[*idx]),
-                ));
+                let mut transport = node_to_transport(&net_json.get_nodes_when_ready()[*idx]);
+                // Cluster 5 (kernel_gating_audit_card §2.5): the funnel
+                // parent rows overlay like the tree tickers.
+                crate::bridge_analytics::overlay_live_fields(*idx, &mut transport);
+                result.push((*idx, transport));
             }
             return BusResponse::NetworkMap(result);
         }
@@ -923,14 +996,126 @@ fn resolve_pending_circuit_parents(pending: Vec<PendingCircuitParent>) -> Vec<Ci
     resolve_pending_circuit_parents_with(pending, |parent| resolved_parents.get(parent).cloned())
 }
 
+/// Identity rows from the shaped-devices catalog (CSV plan included); rates
+/// stay ZERO here — [`overlay_device_rates`] fills them from the analytics
+/// actor's by-IP join. Devices whose IP has no rate row this interval keep the
+/// honest zeros. Shared by the circuit WS/dashlet path and the bus arms.
+pub(crate) fn catalog_rows_to_circuits(devices: &[ShapedDevice]) -> Vec<Circuit> {
+    devices
+        .iter()
+        .map(|device| {
+            let ip = device
+                .ipv4
+                .first()
+                .map(|(ip, _)| std::net::IpAddr::V4(*ip))
+                .or_else(|| device.ipv6.first().map(|(ip, _)| std::net::IpAddr::V6(*ip)))
+                .unwrap_or_else(|| "0.0.0.0".parse().expect("ipv4 anyaddr parses"));
+            Circuit {
+                ip,
+                bytes_per_second: DownUpOrder::zeroed(),
+                actual_bytes_per_second: DownUpOrder::zeroed(),
+                median_latency: None,
+                rtt_current_p50_nanos: DownUpOrder::default(),
+                rtt_current_p95_nanos: DownUpOrder::default(),
+                rtt_total_p50_nanos: DownUpOrder::default(),
+                rtt_total_p95_nanos: DownUpOrder::default(),
+                qoo: DownUpOrder::default(),
+                tcp_retransmit_sample: down_up_retransmit_sample(
+                    DownUpOrder { down: 0, up: 0 },
+                    DownUpOrder { down: 0, up: 0 },
+                ),
+                circuit_id: Some(device.circuit_id.clone()),
+                device_id: Some(device.device_id.clone()),
+                parent_node: Some(device.parent_node.clone()),
+                circuit_name: Some(device.circuit_name.clone()),
+                device_name: Some(device.device_name.clone()),
+                plan: DownUpOrder {
+                    down: device.download_max_mbps,
+                    up: device.upload_max_mbps,
+                },
+                last_seen_nanos: 0,
+            }
+        })
+        .collect()
+}
+
+/// Per-device rates from the analytics actor's by-IP rows. Devices whose IP
+/// has no rate row this interval stay zero (honest idle).
+pub(crate) fn overlay_device_rates(
+    devices: &mut [Circuit],
+    by_ip: &FxHashMap<std::net::IpAddr, crate::bridge_analytics::IpLiveRow>,
+) {
+    for device in devices.iter_mut() {
+        let Some(row) = by_ip.get(&device.ip) else {
+            continue;
+        };
+        device.bytes_per_second = row.shaped_bytes_per_second;
+        device.actual_bytes_per_second = row.bytes_per_second;
+        device.tcp_retransmit_sample = down_up_retransmit_sample(
+            DownUpOrder {
+                down: row.tcp_retransmits,
+                up: row.tcp_retransmits,
+            },
+            DownUpOrder {
+                down: row.tcp_packets,
+                up: row.tcp_packets,
+            },
+        );
+    }
+}
+
+/// K2 slice-3 3a: the bridge-box circuit snapshot for the two bus arms. The
+/// kernel `raw_data` is never written post-K3, so identity + plan come from the
+/// shaped-devices catalog and the live rates from the analytics actor's by-IP
+/// overlay; the effective-parent resolution matches the kernel path.
+fn snapshot_circuits_from_catalog(desired_circuit_id: Option<&str>) -> Vec<PendingCircuitParent> {
+    let catalog = lqos_network_devices::shaped_devices_catalog();
+    let devices = match desired_circuit_id {
+        Some(circuit_id) => catalog.devices_for_circuit_id(circuit_id),
+        None => catalog.clone_all_devices(),
+    };
+    let mut rows = catalog_rows_to_circuits(&devices);
+    overlay_device_rates(&mut rows, &crate::bridge_analytics::snapshot().by_ip);
+    pending_from_catalog_rows(rows)
+}
+
+fn pending_from_catalog_rows(rows: Vec<Circuit>) -> Vec<PendingCircuitParent> {
+    rows.into_iter()
+        .map(|mut circuit| {
+            let configured_parent = match circuit.circuit_id.as_deref() {
+                Some(circuit_id) => match effective_parent_for_circuit(circuit_id) {
+                    Some(parent) => {
+                        circuit.parent_node = Some(parent.name);
+                        None
+                    }
+                    None => circuit.parent_node.take(),
+                },
+                None => circuit.parent_node.take(),
+            };
+            PendingCircuitParent {
+                circuit,
+                configured_parent,
+            }
+        })
+        .collect()
+}
+
 pub fn get_all_circuits() -> BusResponse {
-    BusResponse::CircuitData(resolve_pending_circuit_parents(snapshot_circuits(None)))
+    let pending = if crate::bridge_analytics::is_active() {
+        snapshot_circuits_from_catalog(None)
+    } else {
+        snapshot_circuits(None)
+    };
+    BusResponse::CircuitData(resolve_pending_circuit_parents(pending))
 }
 
 pub fn get_circuit_by_id(desired_circuit_id: String) -> BusResponse {
-    BusResponse::CircuitData(resolve_pending_circuit_parents(snapshot_circuits(Some(
-        &desired_circuit_id,
-    ))))
+    let pending = if crate::bridge_analytics::is_active() {
+        snapshot_circuits_from_catalog(Some(&desired_circuit_id))
+    } else {
+        snapshot_circuits(Some(&desired_circuit_id))
+    };
+    BusResponse::CircuitData(resolve_pending_circuit_parents(pending))
 }
 
 #[cfg(test)]
@@ -943,7 +1128,7 @@ mod tests {
     use lqos_config::{
         Config, ConfigShapedDevices, ShapedDevice, TOPOLOGY_RUNTIME_STATUS_FILENAME,
         TopologyShapingCircuitInput, TopologyShapingDeviceInput, TopologyShapingInputsFile,
-        compute_effective_network_file_generation, compute_shaping_inputs_file_generation,
+        compute_effective_network_file_generation,
     };
     use lqos_utils::XdpIpAddress;
     use std::cell::Cell;
@@ -1007,7 +1192,10 @@ mod tests {
             .expect("runtime status path should have a parent")
             .join("network.effective.json");
         fs::write(&effective_network_path, "{}\n").expect("effective network should write");
-        let shaping_generation = compute_shaping_inputs_file_generation(shaping_inputs_path)
+        let shaping_inputs = lqos_config::load_shaping_inputs_at_path(shaping_inputs_path)
+            .expect("shaping inputs should load");
+        let shaping_generation = shaping_inputs
+            .compute_shaping_generation_with_export(None)
             .expect("shaping generation should compute");
         let effective_generation =
             compute_effective_network_file_generation(&effective_network_path)
@@ -1020,6 +1208,7 @@ mod tests {
                 "ready": ready,
                 "shaping_inputs_path": shaping_inputs_path,
                 "effective_state_path": "",
+                "operator_view_path": effective_network_path,
                 "effective_network_path": effective_network_path,
                 "source_generation": source_generation,
                 "shaping_generation": shaping_generation,
@@ -1144,7 +1333,6 @@ mod tests {
             network_json.nodes = vec![NetworkJsonNode {
                 name: "Canonical Tower".to_string(),
                 id: Some("canonical-tower-id".to_string()),
-                virtual_node: false,
                 max_throughput: (0.0, 0.0),
                 current_throughput: DownUpOrder::default(),
                 current_packets: DownUpOrder::default(),
@@ -1164,7 +1352,6 @@ mod tests {
                 longitude: None,
                 active_attachment_name: Some("Tower Alias".to_string()),
                 heatmap: None,
-                qoq_heatmap: None,
             }];
         });
         let _raw_guard = replace_raw_throughput_for_test(
@@ -1445,5 +1632,185 @@ mod tests {
             loaded.devices[0].ipv6,
             vec![("2001:db8::44".parse::<Ipv6Addr>().expect("valid ipv6"), 128)]
         );
+    }
+}
+
+/// K2 slice-3 3a: field oracles for the catalog→`Circuit` mapping shared by the
+/// circuit WS/dashlet path and the GetAllCircuits/GetCircuitById bus arms.
+#[cfg(test)]
+mod bridge_catalog_tests {
+    use super::*;
+    use crate::bridge_analytics::IpLiveRow;
+    use std::net::IpAddr;
+
+    fn catalog_device(circuit_id: &str, ip_v4: &str) -> ShapedDevice {
+        ShapedDevice {
+            circuit_id: circuit_id.to_string(),
+            circuit_name: "Bench Client 1".to_string(),
+            device_id: "d1".to_string(),
+            device_name: "dev1".to_string(),
+            parent_node: "s10-a-ap0".to_string(),
+            ipv4: vec![(ip_v4.parse().expect("ipv4 fixture"), 32)],
+            ipv6: vec![],
+            download_max_mbps: 200.0,
+            upload_max_mbps: 100.0,
+            ..Default::default()
+        }
+    }
+
+    /// The catalog rows carry IDENTITY + plan and HONEST ZERO rates; the by_ip
+    /// overlay fills the live shaped headline + actual companion.
+    #[test]
+    fn catalog_rows_carry_identity_and_overlay_fills_rates() {
+        let mut rows = catalog_rows_to_circuits(&[catalog_device("c1", "100.97.0.1")]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].ip, "100.97.0.1".parse::<IpAddr>().unwrap());
+        assert_eq!(rows[0].circuit_id.as_deref(), Some("c1"));
+        assert_eq!(rows[0].device_id.as_deref(), Some("d1"));
+        assert_eq!(rows[0].device_name.as_deref(), Some("dev1"));
+        assert_eq!(rows[0].parent_node.as_deref(), Some("s10-a-ap0"));
+        assert_eq!(rows[0].plan.down, 200.0);
+        assert_eq!(rows[0].plan.up, 100.0);
+        assert_eq!(rows[0].bytes_per_second.down, 0, "honest zero before overlay");
+        assert_eq!(
+            rows[0].actual_bytes_per_second.up, 0,
+            "honest zero before overlay"
+        );
+
+        let mut by_ip = FxHashMap::default();
+        by_ip.insert(
+            "100.97.0.1".parse::<IpAddr>().unwrap(),
+            IpLiveRow {
+                bytes_per_second: DownUpOrder { down: 1000, up: 500 },
+                shaped_bytes_per_second: DownUpOrder { down: 800, up: 400 },
+                tcp_packets: 31_399,
+                tcp_retransmits: 0,
+                packets_per_second: DownUpOrder::zeroed(),
+                packets_sent_per_second: DownUpOrder::zeroed(),
+                rtt_current_p50_nanos: None,
+                last_seen_nanos: 0,
+                total_bytes: DownUpOrder::zeroed(),
+            },
+        );
+        overlay_device_rates(&mut rows, &by_ip);
+        assert_eq!(
+            rows[0].bytes_per_second.down, 800,
+            "shaped headline from by_ip"
+        );
+        assert_eq!(
+            rows[0].actual_bytes_per_second.down, 1000,
+            "actual companion from by_ip"
+        );
+        assert_eq!(rows[0].tcp_retransmit_sample.down.packets.get(), 31_399);
+        assert_eq!(rows[0].tcp_retransmit_sample.down.retransmits.get(), 0);
+
+        // An unknown-IP device keeps the honest zeros (no fabrication).
+        let mut unmapped = catalog_rows_to_circuits(&[catalog_device("c1", "0.0.0.0")]);
+        overlay_device_rates(&mut unmapped, &by_ip);
+        assert_eq!(unmapped[0].bytes_per_second.down, 0);
+    }
+
+    /// A catalog row with no effective parent hands its configured parent to
+    /// the resolution pass (the kernel path's shape) — the catalog path never
+    /// fabricates a resolved name.
+    #[test]
+    fn pending_catalog_rows_hand_the_configured_parent_to_resolution() {
+        let rows = catalog_rows_to_circuits(&[catalog_device("bridge-catalog-1", "100.97.0.9")]);
+        let pending = pending_from_catalog_rows(rows);
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].configured_parent.as_deref(), Some("s10-a-ap0"));
+        assert!(pending[0].circuit.parent_node.is_none());
+    }
+
+    /// §`lqos-74t.47.1.4`: the tree-node QoQ mapping (site → `by_node` by name;
+    /// circuit → `by_circuit` by id; root → `global_qoq`; absent → UNKNOWN). There
+    /// is no device-kind row; a device's QoQ is its circuit's `by_circuit`.
+    #[test]
+    fn tree_node_qoo_maps_site_circuit_root_and_unknown() {
+        use crate::bridge_analytics::circuit_qoo::CircuitQooSnapshot;
+        use lqos_utils::qoq_heatmap::QoqHeatmapBlocks;
+
+        let mut download = [None; 15];
+        download[14] = Some(90.0);
+        let mut upload = [None; 15];
+        upload[14] = Some(80.0);
+        let blocks = QoqHeatmapBlocks {
+            download_total: download,
+            upload_total: upload,
+        };
+        let mut snapshot = CircuitQooSnapshot::default();
+        snapshot.by_node.insert("Site A".to_string(), blocks.clone());
+        snapshot.by_circuit.insert("circ-1".to_string(), blocks.clone());
+        snapshot.global_qoq = blocks.clone();
+
+        let site = qoo_map_node("Site A", Some("site-a"), Some(0), vec![0]);
+        assert_eq!(
+            tree_node_qoo_from(&snapshot, &site),
+            (Some(90.0), Some(80.0)),
+            "site node reads by_node by name"
+        );
+        let circuit = qoo_map_node("Circuit 1", Some("circ-1"), Some(1), vec![1, 0]);
+        assert_eq!(
+            tree_node_qoo_from(&snapshot, &circuit),
+            (Some(90.0), Some(80.0)),
+            "circuit node reads by_circuit by id"
+        );
+        let root = qoo_map_node("Root", Some("root"), None, Vec::new());
+        assert_eq!(
+            tree_node_qoo_from(&snapshot, &root),
+            (Some(90.0), Some(80.0)),
+            "root reads global_qoq"
+        );
+        let unknown = qoo_map_node("Bogus", Some("bogus"), Some(2), vec![2]);
+        assert_eq!(
+            tree_node_qoo_from(&snapshot, &unknown),
+            (None, None),
+            "absent ⇒ UNKNOWN, never 0"
+        );
+        // Bounded: the ORPHAN umbrella is parentless — it must NOT read
+        // `global_qoq` via the root branch; it stays UNKNOWN.
+        let orphan = qoo_map_node(
+            "Orphans",
+            Some(lqos_dataplane_types::ORPHANS_UMBRELLA_NODE_ID),
+            None,
+            Vec::new(),
+        );
+        assert_eq!(
+            tree_node_qoo_from(&snapshot, &orphan),
+            (None, None),
+            "ORPHAN umbrella (parentless) ⇒ UNKNOWN, never global_qoq"
+        );
+    }
+
+    fn qoo_map_node(
+        name: &str,
+        id: Option<&str>,
+        immediate_parent: Option<usize>,
+        parents: Vec<usize>,
+    ) -> NetworkJsonNode {
+        let zeroed = lqos_utils::units::DownUpOrder::zeroed();
+        NetworkJsonNode {
+            name: name.to_string(),
+            id: id.map(str::to_string),
+            max_throughput: (0.0, 0.0),
+            current_throughput: zeroed,
+            current_packets: zeroed,
+            current_tcp_packets: zeroed,
+            current_udp_packets: zeroed,
+            current_icmp_packets: zeroed,
+            current_tcp_retransmits: zeroed,
+            current_tcp_retransmit_packets: zeroed,
+            current_rtt_flows: lqos_utils::units::DownUpOrder::<u32>::zeroed(),
+            current_marks: zeroed,
+            current_drops: zeroed,
+            rtt_buffer: lqos_utils::rtt::RttBuffer::default(),
+            parents,
+            immediate_parent,
+            node_type: None,
+            latitude: None,
+            longitude: None,
+            active_attachment_name: None,
+            heatmap: None,
+        }
     }
 }

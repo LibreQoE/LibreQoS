@@ -11,6 +11,7 @@ use tracing::{debug, warn};
 enum DirectoryReloadEvent {
     ShapedDevices,
     NetworkJson,
+    DataplaneTree,
 }
 
 pub(crate) fn start_network_devices_directory_watch() -> Result<()> {
@@ -94,9 +95,23 @@ fn classify_changed_path(path: &Path) -> Option<DirectoryReloadEvent> {
         | "ShapedDevices.insight.csv"
         | "topology_import.json"
         | "shaping_inputs.json" => Some(DirectoryReloadEvent::ShapedDevices),
-        "network.effective.json" | "network.insight.json" | "network.json" => {
-            Some(DirectoryReloadEvent::NetworkJson)
-        }
+        // K1 §1.1: a RADIUS dynamic-circuit store write (upsert/expiry) must
+        // re-fold the shaping inputs so the bridge picks it up.
+        "dynamic_circuits.json" => Some(DirectoryReloadEvent::ShapedDevices),
+        // T5 rung 1: network.effective.json is DEAD (the interchange
+        // retired) — it deliberately does NOT classify. A write to a
+        // dead file must not reload anything; a consumer that still
+        // needs it fails LOUD on the missing file instead.
+        "network.insight.json" | "network.json" => Some(DirectoryReloadEvent::NetworkJson),
+        // T1 (T5 rung 1 repoint): the E2 operator view drives the
+        // dashboard tree (the topology state dir is already watched).
+        "topology_operator_view.json" => Some(DirectoryReloadEvent::DataplaneTree),
+ // E3 retarget): the layered override files carry
+        // rate-class circuit adjustments — a change must re-fold the
+        // shaping inputs so the artifact (and the live bridge) picks
+        // it up. Covers UI, CLI, and machine writers alike.
+        "lqos_overrides.json"
+        | "lqos_overrides.stormguard.json" => Some(DirectoryReloadEvent::ShapedDevices),
         _ => None,
     }
 }
@@ -114,6 +129,9 @@ fn dispatch_reload(event: DirectoryReloadEvent) -> Result<()> {
             request_reload_shaped_devices("dirwatch:ShapedDevices.csv")
         }
         DirectoryReloadEvent::NetworkJson => request_reload_network_json("dirwatch:network.json"),
+        DirectoryReloadEvent::DataplaneTree => {
+            crate::request_reload_dataplane_tree("dirwatch:topology_operator_view.json")
+        }
     }
 }
 
@@ -132,6 +150,14 @@ mod tests {
     fn shaping_inputs_triggers_shaped_device_reload() {
         let event = classify_changed_path(&PathBuf::from("/tmp/shaping_inputs.json"));
         assert_eq!(event, Some(DirectoryReloadEvent::ShapedDevices));
+    }
+
+    #[test]
+    fn override_files_trigger_shaped_device_reload() {
+        for name in ["lqos_overrides.json", "lqos_overrides.stormguard.json"] {
+            let event = classify_changed_path(&PathBuf::from(format!("/tmp/{name}")));
+            assert_eq!(event, Some(DirectoryReloadEvent::ShapedDevices), "{name}");
+        }
     }
 
     #[test]

@@ -124,6 +124,11 @@ fn do_migration_14_to_15(
     migrate_lts(old_config, &mut new_config)?;
     migrate_ip_ranges(python_config, &mut new_config)?;
     migrate_integration_common(python_config, &mut new_config)?;
+    // §`lqos-74t.31` W2 (MIGRATE): the v2 UISP reporting period is a SECONDS
+    // cadence; v3 owns the poll as `integration_common.queue_refresh_interval_mins`
+    // (MINUTES). Overlay here (AFTER the python mapping) with a seconds->minutes
+    // conversion — see `migrate_uisp_reporting_interval`.
+    migrate_uisp_reporting_interval(old_config, &mut new_config);
     migrate_splynx(python_config, &mut new_config)?;
     migrate_uisp(python_config, &mut new_config)?;
     migrate_powercode(python_config, &mut new_config)?;
@@ -172,7 +177,7 @@ fn migrate_tunables(old_config: &EtcLqos, new_config: &mut Config) -> Result<(),
 }
 
 fn migrate_bridge(
-    old_config: &EtcLqos,
+    _old_config: &EtcLqos,
     python_config: &PythonMigration,
     new_config: &mut Config,
 ) -> Result<(), MigrationError> {
@@ -187,11 +192,6 @@ fn migrate_bridge(
     } else {
         new_config.single_interface = None;
         new_config.bridge = Some(BridgeConfig {
-            use_xdp_bridge: old_config
-                .bridge
-                .as_ref()
-                .ok_or(MigrationError::SerializeError)?
-                .use_xdp_bridge,
             to_internet: python_config.interface_b.clone(),
             to_network: python_config.interface_a.clone(),
             mtu: None,
@@ -213,9 +213,9 @@ fn migrate_queues(
             super::QueueMode::Shape
         });
     new_config.queues.uplink_bandwidth_mbps =
-        python_config.upstream_bandwidth_capacity_upload_mbps as u64;
+        python_config.upstream_bandwidth_capacity_upload_mbps as f64;
     new_config.queues.downlink_bandwidth_mbps =
-        python_config.upstream_bandwidth_capacity_download_mbps as u64;
+        python_config.upstream_bandwidth_capacity_download_mbps as f64;
     new_config.queues.generated_pn_upload_mbps = python_config.generated_pnupload_mbps as u64;
     new_config.queues.generated_pn_download_mbps = python_config.generated_pndownload_mbps as u64;
     new_config.queues.dry_run = !python_config.enable_actual_shell_commands;
@@ -235,8 +235,6 @@ fn migrate_lts(old_config: &EtcLqos, new_config: &mut Config) -> Result<(), Migr
         new_config.long_term_stats.gather_stats = lts.gather_stats;
         new_config.long_term_stats.collation_period_seconds = lts.collation_period_seconds;
         new_config.long_term_stats.license_key = lts.license_key.clone();
-        new_config.long_term_stats.uisp_reporting_interval_seconds =
-            lts.uisp_reporting_interval_seconds;
     } else {
         new_config.long_term_stats = super::v15::LongTermStats::default();
     }
@@ -261,6 +259,34 @@ fn migrate_integration_common(
         python_config.queue_refresh_interval_mins as u32;
     new_config.integration_common.use_mikrotik_ipv6 = python_config.find_ipv6using_mikrotik_api;
     Ok(())
+}
+
+/// §`lqos-74t.31` W2 (MIGRATE): map the v2 UISP reporting period onto v3's
+/// integration poll.
+///
+/// - The v2 `uisp_reporting_interval_seconds` is **SECONDS**; v3's
+///   `integration_common.queue_refresh_interval_mins` is **MINUTES** ⇒ convert
+///   (`seconds / 60`, rounded to nearest, clamped to `>= 1`). A direct assign
+///   would be a **60×** error (300 s -> 300 min).
+/// - **Overlay only when** the python-derived `queue_refresh_interval_mins` is
+///   still the default (an explicit python value wins).
+/// - **`None`** meant "UISP disabled" in v2, but v3's enable is
+///   `python_config.automatic_import_uisp` (not this key) ⇒ `None` does NOT
+///   overlay.
+fn migrate_uisp_reporting_interval(old_config: &EtcLqos, new_config: &mut Config) {
+    let Some(seconds) = old_config
+        .long_term_stats
+        .as_ref()
+        .and_then(|lts| lts.uisp_reporting_interval_seconds)
+    else {
+        return;
+    };
+    let default_mins = super::v15::IntegrationConfig::default().queue_refresh_interval_mins;
+    if new_config.integration_common.queue_refresh_interval_mins != default_mins {
+        return; // an explicit python poll wins — never override it
+    }
+    let minutes = ((seconds as f64) / 60.0).round().max(1.0) as u32;
+    new_config.integration_common.queue_refresh_interval_mins = minutes;
 }
 
 fn migrate_splynx(
@@ -367,5 +393,47 @@ mod tests {
         let migrated =
             do_migration_14_to_15(&old_config, &python_config).expect("Migration should succeed");
         assert!(migrated.tuning.set_cpu_governor_performance);
+    }
+
+    /// §`lqos-74t.31` W2: the v2 UISP reporting period is SECONDS; the v3 poll is
+    /// MINUTES. Guard the 60x conversion + the overlay precedence + the None case.
+    #[test]
+    fn uisp_reporting_interval_migrates_seconds_to_minutes() {
+        fn old_with(secs: Option<u64>) -> EtcLqos {
+            let lts = match secs {
+                Some(s) => format!(
+                    "gather_stats = true\ncollation_period_seconds = 60\n\
+                     uisp_reporting_interval_seconds = {s}\n"
+                ),
+                None => "gather_stats = true\ncollation_period_seconds = 60\n".to_string(),
+            };
+            let raw = format!(
+                "lqos_directory = '/tmp'\nqueue_check_period_ms = 1000\n\
+                 [long_term_stats]\n{lts}"
+            );
+            EtcLqos::load_from_string(&raw).expect("v2 config parses")
+        }
+
+        // 300 s -> 5 min (NOT 300); 90 s -> 2 min (rounded); 10 s -> 1 min (clamped).
+        for (secs, expected) in [(300u64, 5u32), (90, 2), (10, 1)] {
+            let mut new = Config::default();
+            migrate_uisp_reporting_interval(&old_with(Some(secs)), &mut new);
+            assert_eq!(
+                new.integration_common.queue_refresh_interval_mins, expected,
+                "uisp_reporting_interval_seconds={secs} must become {expected} minutes"
+            );
+        }
+        // An explicit python-derived poll wins (no overlay).
+        let mut explicit = Config::default();
+        explicit.integration_common.queue_refresh_interval_mins = 7;
+        migrate_uisp_reporting_interval(&old_with(Some(300)), &mut explicit);
+        assert_eq!(explicit.integration_common.queue_refresh_interval_mins, 7);
+        // None (v2 "UISP disabled") does NOT overlay — v3's enable owns that.
+        let mut none_case = Config::default();
+        migrate_uisp_reporting_interval(&old_with(None), &mut none_case);
+        assert_eq!(
+            none_case.integration_common.queue_refresh_interval_mins,
+            crate::etc::v15::IntegrationConfig::default().queue_refresh_interval_mins
+        );
     }
 }

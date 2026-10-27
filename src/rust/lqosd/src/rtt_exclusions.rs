@@ -4,7 +4,6 @@ use lqos_overrides::OverrideFile;
 use lqos_utils::hash_to_i64;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
-use tracing::warn;
 
 static EXCLUDED_CIRCUIT_HASHES: Lazy<ArcSwap<FxHashSet<i64>>> =
     Lazy::new(|| ArcSwap::from_pointee(FxHashSet::default()));
@@ -16,14 +15,6 @@ fn store_from_override_file(of: &OverrideFile) {
         set.insert(hash_to_i64(circuit_id));
     }
     EXCLUDED_CIRCUIT_HASHES.store(Arc::new(set));
-}
-
-/// Reload RTT exclusions from `lqos_overrides.json` (if present).
-pub fn refresh_from_disk() {
-    match OverrideFile::load() {
-        Ok(of) => store_from_override_file(&of),
-        Err(e) => warn!("Unable to load lqos_overrides.json for RTT exclusions: {e:?}"),
-    }
 }
 
 /// Returns true if this circuit hash is excluded from RTT aggregation/summarization.

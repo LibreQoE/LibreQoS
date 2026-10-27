@@ -1,5 +1,7 @@
 # Future Development Inputs
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page summarizes recurring operator feedback patterns reviewed for LibreQoS, supported by NLNet deliverable work.
 
 ## Scope and Method

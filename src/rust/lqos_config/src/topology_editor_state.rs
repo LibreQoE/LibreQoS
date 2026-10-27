@@ -2,16 +2,13 @@ use crate::{
     Config, TOPOLOGY_PARENT_CANDIDATES_FILENAME, TopologyCanonicalStateFile,
     TopologyParentCandidatesError, TopologyParentCandidatesFile,
     topology_canonical_state::{
-        current_topology_ingress_identity, legacy_id_for_name, quarantine_stale_topology_state,
+        current_topology_ingress_identity, legacy_id_for_name,
         topology_ingress_fingerprint_from_tokens,
     },
 };
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use thiserror::Error;
-use tracing::warn;
 
 /// Runtime filename carrying integration-provided topology editor state for UI editing.
 pub const TOPOLOGY_EDITOR_STATE_FILENAME: &str = "topology_editor_state.json";
@@ -66,19 +63,6 @@ pub enum TopologyAttachmentRole {
     Manual,
 }
 
-/// Baseline queue-visibility policy for a logical topology node.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TopologyQueueVisibilityPolicy {
-    /// The node remains visible unless automatic high-capacity branch rules hide it.
-    #[default]
-    QueueVisible,
-    /// The node remains logical-only for queueing and its children are promoted one level.
-    QueueHiddenPromoteChildren,
-    /// LibreQoS decides queue visibility from node role and configured capacity.
-    QueueAuto,
-}
-
 /// Errors returned while reading or writing topology editor snapshots.
 #[derive(Debug, Error)]
 pub enum TopologyEditorStateError {
@@ -91,6 +75,9 @@ pub enum TopologyEditorStateError {
     /// Reading the legacy parent-candidate snapshot failed.
     #[error("Unable to load legacy topology parent candidates: {0}")]
     Legacy(#[from] TopologyParentCandidatesError),
+    /// A named non-IO failure (e.g. a canonical-state validation reject).
+    #[error("{0}")]
+    Custom(String),
 }
 
 /// One concrete attachment choice available under a selected parent.
@@ -247,9 +234,6 @@ pub struct TopologyEditorNode {
     /// Ordered valid parent targets for this node.
     #[serde(default)]
     pub allowed_parents: Vec<TopologyAllowedParent>,
-    /// Baseline queue-visibility policy for runtime-effective topology export.
-    #[serde(default)]
-    pub queue_visibility_policy: TopologyQueueVisibilityPolicy,
     /// Stable attachment identifier preferred by operator intent, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_attachment_id: Option<String>,
@@ -288,19 +272,6 @@ fn default_topology_editor_schema_version() -> u32 {
     1
 }
 
-fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), TopologyEditorStateError> {
-    let raw = serde_json::to_string_pretty(value)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let temp_path = path.with_extension("tmp");
-    let mut file = File::create(&temp_path)?;
-    file.write_all(raw.as_bytes())?;
-    file.sync_all()?;
-    std::fs::rename(&temp_path, path)?;
-    Ok(())
-}
-
 /// Returns the path of the topology editor runtime file.
 ///
 /// This function is pure: it has no side effects.
@@ -309,46 +280,15 @@ pub fn topology_editor_state_path(config: &Config) -> PathBuf {
 }
 
 impl TopologyEditorStateFile {
-    /// Loads the topology editor snapshot if it exists.
+    /// Loads the topology editor view, derived from canonical state.
     ///
-    /// Side effects: reads `topology_editor_state.json` from `config.lqos_directory`.
-    pub fn load(config: &Config) -> Result<Self, TopologyEditorStateError> {
-        let path = topology_editor_state_path(config);
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let raw = std::fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
-    }
-
-    /// Loads the topology editor snapshot, falling back to the legacy UISP parent-candidate file.
+    /// Rung 1.5 §1.3: `topology_editor_state.json` is DEAD — the editor view is
+    /// always `canonical.to_editor_state()`. The legacy parent-candidate
+    /// fallback remains for rigs that predate canonical state.
     ///
-    /// Side effects: reads `topology_editor_state.json` and, if missing, may read
-    /// `topology_parent_candidates.json` from `config.lqos_directory`.
+    /// Side effects: reads `topology_canonical_state.json` and, if empty, may
+    /// read `topology_parent_candidates.json` from `config.lqos_directory`.
     pub fn load_with_legacy_fallback(config: &Config) -> Result<Self, TopologyEditorStateError> {
-        let state = Self::load(config)?;
-        if !state.nodes.is_empty() {
-            let is_current = match state.matches_current_ingress(config) {
-                Ok(is_current) => is_current,
-                Err(err) => {
-                    warn!(
-                        "Unable to validate topology editor state against current ingress; preserving existing state: {err}"
-                    );
-                    true
-                }
-            };
-            if is_current {
-                return Ok(state);
-            }
-            quarantine_stale_topology_state(
-                config,
-                &format!(
-                    "topology editor source '{}' does not match current topology ingress identity",
-                    state.source
-                ),
-            )?;
-        }
-
         let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config)?;
         if !canonical.nodes.is_empty() {
             return Ok(canonical.to_editor_state());
@@ -356,19 +296,9 @@ impl TopologyEditorStateFile {
 
         let legacy = TopologyParentCandidatesFile::load(config)?;
         if legacy.nodes.is_empty() {
-            return Ok(state);
+            return Ok(Self::default());
         }
         Ok(Self::from_legacy_parent_candidates(&legacy))
-    }
-
-    /// Saves the topology editor snapshot atomically.
-    ///
-    /// Side effects: writes `topology_editor_state.json` into `config.lqos_directory`.
-    pub fn save(&self, config: &Config) -> Result<(), TopologyEditorStateError> {
-        atomic_write_json(
-            &config.topology_state_file_path(TOPOLOGY_EDITOR_STATE_FILENAME),
-            self,
-        )
     }
 
     /// Returns a stable fingerprint of the topology ingress this editor state represents.
@@ -449,7 +379,6 @@ impl TopologyEditorStateFile {
                 current_attachment_name: None,
                 can_move: !allowed_parents.is_empty(),
                 allowed_parents,
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,

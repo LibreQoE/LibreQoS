@@ -111,13 +111,9 @@ function updateConfig() {
     // Update only the uisp_integration section
     // Parse comma-separated strings into arrays
     const existingUisp = { ...(window.config.uisp_integration || {}) };
-    delete existingUisp.enable_squashing;
 
     const excludeSites = document.getElementById("uispExcludeSites").value.trim();
     const excludeSitesArray = excludeSites ? excludeSites.split(',').map(s => s.trim()) : [];
-
-    const squashSites = document.getElementById("uispSquashSites").value.trim();
-    const squashSitesArray = squashSites ? squashSites.split(',').map(s => s.trim()) : null;
 
     const exceptionCpes = document.getElementById("uispExceptionCpes").value.trim();
     const exceptionCpesArray = exceptionCpes ? exceptionCpes.split(',').map(s => {
@@ -146,7 +142,6 @@ function updateConfig() {
         ignore_calculated_capacity: document.getElementById("uispIgnoreCalculatedCapacity").checked,
         insecure_ssl: document.getElementById("uispInsecureSsl").checked,
         exclude_sites: excludeSitesArray,
-        squash_sites: squashSitesArray && squashSitesArray.length > 0 ? squashSitesArray : null,
         exception_cpes: exceptionCpesArray,
         do_not_squash_sites: doNotSquashSitesArray && doNotSquashSitesArray.length > 0 ? doNotSquashSitesArray : null,
     };
@@ -183,7 +178,6 @@ loadConfig(() => {
 
         // New fields
         document.getElementById("uispExcludeSites").value = uisp.exclude_sites?.join(", ") || "";
-        document.getElementById("uispSquashSites").value = uisp.squash_sites?.join(", ") || "";
         document.getElementById("uispExceptionCpes").value = uisp.exception_cpes?.map(e => `${e.cpe}:${e.parent}`).join(", ") || "";
         document.getElementById("uispDoNotSquashSites").value = uisp.do_not_squash_sites?.join(", ") || "";
 

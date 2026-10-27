@@ -1,5 +1,7 @@
 # Troubleshooting
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 ## Start Here: Symptom Triage
 
 Use this table to jump to the first checks quickly.
@@ -198,7 +200,7 @@ If scheduler startup stays in that wait state for an unusually long time, or deg
 
 ```bash
 cat /opt/libreqos/state/topology/topology_runtime_status.json
-ls -lh /opt/libreqos/state/topology/topology_effective_state.json /opt/libreqos/state/topology/network.effective.json /opt/libreqos/state/shaping/shaping_inputs.json
+ls -lh /opt/libreqos/state/topology/topology_effective_state.json /opt/libreqos/state/topology/topology_operator_view.json /opt/libreqos/state/shaping/shaping_inputs.json
 journalctl -u lqos_scheduler --since "30 minutes ago"
 journalctl -u lqosd --since "30 minutes ago"
 ```
@@ -317,7 +319,7 @@ To shape circuits under the node names from `network.json`, set:
 compile_mode = "full"
 ```
 
-Then reload or wait for the scheduler to regenerate `network.effective.json` and `shaping_inputs.json`.
+Then reload or wait for the scheduler to regenerate `topology_operator_view.json` and `shaping_inputs.json`.
 
 ### Site Map appears blank or slow
 
@@ -326,7 +328,7 @@ Site Map has one extra dependency beyond normal WebUI data feeds: current builds
 If Site Map alone is blank or slow:
 1. Confirm `lqosd` is healthy.
 2. Confirm the box can reach `insight.libreqos.com` from its management network.
-3. Confirm runtime topology still carries coordinates for mapped Sites/APs in `network.effective.json`.
+3. Confirm runtime topology still carries coordinates for mapped Sites/APs in `topology_operator_view.json`.
 4. Wait briefly and reload the page; the map page retries tile requests automatically while cold tiles are being populated upstream.
 5. Check recent `lqosd` logs:
 ```

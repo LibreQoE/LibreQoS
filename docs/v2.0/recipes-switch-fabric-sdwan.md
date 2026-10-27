@@ -1,5 +1,7 @@
 # Recipe: Switch-Centric Fabric with Maintenance Bypass (SD-WAN Variant Included)
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this pattern when the network core is switch-centric, VLAN-driven, and you want shaped primary paths plus backup bypass paths for no-downtime LibreQoS maintenance.
 
 ## Fit

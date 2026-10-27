@@ -47,18 +47,41 @@ pub struct GeoTable {
     asn_lookup: FxHashMap<u32, String>,
 }
 
+#[cfg(test)]
+impl GeoTable {
+    /// K2 slice 1 oracle: builds a tiny fixture table from
+    /// `(v4 network, prefix, asn, organization)` rows so the ASN join can be
+    /// asserted without the process-global `geo2.bin`.
+    pub(crate) fn fixture(rows: &[(&str, u8, u32, &str)]) -> Self {
+        let mut asn_lookup = FxHashMap::default();
+        let mut asn_trie = ip_network_table::IpNetworkTable::<AsnEncoded>::new();
+        for (network, prefix, asn, organization) in rows {
+            let ip: IpAddr = network.parse().expect("fixture IP should parse");
+            let entry = AsnEncoded {
+                network: ip,
+                prefix: *prefix,
+                asn: *asn,
+                organization: (*organization).to_string(),
+            };
+            asn_lookup.insert(*asn, (*organization).to_string());
+            let (mapped, mapped_prefix) = match ip {
+                IpAddr::V4(ip) => (ip.to_ipv6_mapped(), *prefix + 96),
+                IpAddr::V6(ip) => (ip, *prefix),
+            };
+            if let Ok(net) = ip_network::Ipv6Network::new(mapped, mapped_prefix) {
+                asn_trie.insert(net, entry);
+            }
+        }
+        Self {
+            asn_trie,
+            geo_trie: ip_network_table::IpNetworkTable::new(),
+            asn_lookup,
+        }
+    }
+}
+
 impl GeoTable {
     const FILENAME: &'static str = "geo2.bin";
-
-    #[allow(dead_code)]
-    pub fn len(&self) -> (usize, usize, usize, usize) {
-        (
-            self.asn_trie.len().1,
-            self.geo_trie.len().1,
-            self.asn_lookup.len(),
-            self.asn_lookup.capacity(),
-        )
-    }
 
     fn file_path() -> anyhow::Result<std::path::PathBuf> {
         Ok(Path::new(&lqos_config::load_config()?.lqos_directory).join(Self::FILENAME))

@@ -6,8 +6,8 @@ use lqos_config::{
 };
 use lqos_overrides::{ManualAttachment, TopologyAttachmentMode, TopologyOverridesFile};
 use lqos_topology::{
-    build_effective_topology_artifacts_from_canonical, compute_effective_state,
-    merged_topology_state, publish_effective_topology_artifacts,
+    build_effective_topology_artifacts_from_canonical_with_runtime_queue_context,
+    compute_effective_state, merged_topology_state, publish_effective_topology_artifacts,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -188,7 +188,7 @@ fn publish_candidate_overrides(
 ) -> Result<(), StatusCode> {
     let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(config)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let artifacts = build_effective_topology_artifacts_from_canonical(
+    let artifacts = build_effective_topology_artifacts_from_canonical_with_runtime_queue_context(
         config,
         &canonical,
         candidate_overrides,
@@ -209,7 +209,7 @@ fn publish_candidate_overrides(
     let source_generation = compute_topology_source_generation(config)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if publish_effective_topology_artifacts(config, &artifacts, &source_generation).is_err() {
+    if publish_effective_topology_artifacts(config, &artifacts).is_err() {
         let _ = previous_overrides.save();
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
@@ -419,8 +419,11 @@ pub fn set_topology_manager_attachment_rate_override(
         .iter()
         .find(|entry| entry.attachment_id == update.attachment_id.trim())
         .ok_or(StatusCode::BAD_REQUEST)?;
-    if !option.can_override_rate || option.attachment_id == lqos_config::TOPOLOGY_ATTACHMENT_AUTO_ID
-    {
+    // An EXPLICIT operator override WINS over dynamic UISP telemetry for ANY
+    // non-AUTO attachment — `can_override_rate` is now a DynamicIntegration
+    // source MARKER (a UI hint), not a gate. The AUTO attachment is derived and
+    // stays non-overridable.
+    if option.attachment_id == lqos_config::TOPOLOGY_ATTACHMENT_AUTO_ID {
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -781,7 +784,7 @@ fn build_topology_manager_state_from_inputs(
                 ));
                 continue;
             };
-            let Some(option) = parent
+            let Some(_) = parent
                 .attachment_options
                 .iter()
                 .find(|entry| entry.attachment_id == rate_override.attachment_id)
@@ -792,16 +795,8 @@ fn build_topology_manager_state_from_inputs(
                 ));
                 continue;
             };
-            if !option.can_override_rate {
-                warnings.push(format!(
-                    "Saved attachment rate override for '{}' is currently ignored: {}",
-                    option.attachment_name,
-                    option
-                        .rate_override_disabled_reason
-                        .clone()
-                        .unwrap_or_else(|| "rate overrides are unavailable".to_string())
-                ));
-            }
+            // An explicit override now WINS over dynamic telemetry — no
+            // "ignored" warning. The UISP value stays visible via the UI hint.
         }
 
         let override_live = has_override

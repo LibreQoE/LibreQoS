@@ -345,7 +345,15 @@ pub async fn retry_shaping(
     })
     .await;
     match result {
-        Ok(Ok(response)) => (StatusCode::OK, Json(response)),
+        Ok(Ok(response)) => {
+            // An explicit operator recovery clears the latched shaping failure
+            // (`lqos-74t.35`): the "Retry Shaping" action is the success that
+            // releases the error `mark_active` is not allowed to clobber.
+            crate::shaping_runtime::mark_recovered(
+                "LibreQoS shaping retry accepted; the prior failure was cleared.",
+            );
+            (StatusCode::OK, Json(response))
+        }
         Ok(Err(err)) => helper_internal_error_response(err.to_string()),
         Err(err) => {
             helper_internal_error_response(format!("Network-mode helper task failed: {err}"))

@@ -21,7 +21,7 @@ El acceso solo a la API está disponible mediante el enlace **Try Insight** de l
 Use Swagger en su nodo como referencia completa y superficie de prueba para la versión instalada:
 
 - Puerto local directo de la API: `http://<node-ip>:9122/api-docs`
-- Si la WebUI usa HTTPS opcional con Caddy: `https://<hostname-o-ip-del-nodo>/api-docs/`
+- Si la WebUI usa HTTPS opcional con Caddy: `https://<hostname-o-ip-del-nodo>/api/v1/api-docs`
 
 En sistemas que usan HTTPS con Caddy gestionado, deje el listener de la API en loopback y acceda a la API mediante `/api/v1/`. `LQOS_API_LISTEN` es un override avanzado para despliegues que exponen intencionalmente el listener de la API en forma directa; no lo configure en sistemas con Caddy gestionado salvo que la exposición directa, el firewall, TLS y los controles de acceso de operadores se hayan planificado juntos.
 
@@ -121,11 +121,8 @@ Endpoints representativos:
 - `GET /search`
 - `GET /current_throughput`
 - `GET /queue_stats_total`
-- `GET /byte_counters`
 - `GET /warnings`
 - `GET /urgent`, `GET /urgent/status`
-
-`GET /byte_counters` devuelve contadores de bytes acumulados por nodo y por circuito cuando `[byte_counters] enabled = true` está configurado en `/etc/lqos.conf`. Los valores se acumulan desde que `lqosd` inició, incluyen el tráfico de los nodos descendientes y se reinician cuando `lqosd` se reinicia. Consulte [Configuración avanzada](configuration-advanced-es.md).
 
 ### 5) Operaciones de control y reload
 

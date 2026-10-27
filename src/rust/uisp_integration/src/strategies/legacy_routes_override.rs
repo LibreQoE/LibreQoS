@@ -3,7 +3,6 @@ use lqos_config::Config;
 use lqos_overrides::OverrideFile;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tracing::{info, warn};
 
 const LEGACY_UISP_ROUTES_FILE: &str = "integrationUISProutes.csv";
@@ -84,17 +83,3 @@ fn materialize_uisp_route_overrides(overrides: &OverrideFile) -> Vec<RouteOverri
         .collect()
 }
 
-#[allow(dead_code)]
-pub fn write_routing_overrides_template(
-    config: Arc<Config>,
-    natural_routes: &[RouteOverride],
-) -> anyhow::Result<()> {
-    let file_path = Path::new(&config.lqos_directory).join("integrationUISProutes.template.csv");
-    let mut writer = csv::Writer::from_path(file_path)?;
-    writer.write_record(["From Site", "To Site", "Cost"])?;
-    for route in natural_routes {
-        writer.write_record([&route.from_site, &route.to_site, &route.cost.to_string()])?;
-    }
-    writer.flush()?;
-    Ok(())
-}

@@ -1,6 +1,6 @@
 use crate::node_manager::local_api::network_tree;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 const DEFAULT_CIRCUIT_DIRECTORY_PAGE_SIZE: usize = 100;
 const MAX_CIRCUIT_DIRECTORY_PAGE_SIZE: usize = 250;
@@ -57,26 +57,11 @@ pub struct NodeDirectoryEntry {
     pub node_type: Option<String>,
 }
 
-/// Small TreeGuard summary used by dashboard/status panels.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct TreeGuardMetadataSummary {
-    pub total_nodes: usize,
-    pub total_circuits: usize,
-    pub virtualized_nodes: usize,
-    pub fq_codel_circuits: usize,
-}
-
 fn normalized_page_size(query: &CircuitDirectoryQuery) -> usize {
     query
         .page_size
         .unwrap_or(DEFAULT_CIRCUIT_DIRECTORY_PAGE_SIZE)
         .clamp(1, MAX_CIRCUIT_DIRECTORY_PAGE_SIZE)
-}
-
-fn has_fq_codel_override(raw: &str) -> bool {
-    raw.split('/')
-        .map(|part| part.trim().to_ascii_lowercase())
-        .any(|part| part == "fq_codel")
 }
 
 /// Returns one filtered, sorted page of circuit directory rows.
@@ -191,42 +176,3 @@ pub fn node_directory_data() -> Vec<NodeDirectoryEntry> {
     nodes
 }
 
-/// Returns a compact TreeGuard metadata summary without loading full device/node payloads into the browser.
-pub fn treeguard_metadata_summary() -> TreeGuardMetadataSummary {
-    let network = network_tree::network_tree_data();
-    let total_nodes = network
-        .iter()
-        .filter(|(_, node)| {
-            let name = node.name.trim();
-            !name.is_empty() && name != "Root"
-        })
-        .count();
-    let virtualized_nodes = network
-        .iter()
-        .filter(|(_, node)| {
-            let name = node.name.trim();
-            !name.is_empty() && name != "Root" && node.runtime_virtualized
-        })
-        .count();
-
-    let catalog = lqos_network_devices::network_devices_catalog();
-    let mut circuit_ids = BTreeSet::new();
-    let mut fq_codel_circuit_ids = BTreeSet::new();
-    for device in catalog.iter_all_devices() {
-        let circuit_id = device.circuit_id.trim().to_string();
-        if circuit_id.is_empty() {
-            continue;
-        }
-        circuit_ids.insert(circuit_id.clone());
-        if has_fq_codel_override(device.sqm_override.as_deref().unwrap_or("").trim()) {
-            fq_codel_circuit_ids.insert(circuit_id);
-        }
-    }
-
-    TreeGuardMetadataSummary {
-        total_nodes,
-        total_circuits: circuit_ids.len(),
-        virtualized_nodes,
-        fq_codel_circuits: fq_codel_circuit_ids.len(),
-    }
-}

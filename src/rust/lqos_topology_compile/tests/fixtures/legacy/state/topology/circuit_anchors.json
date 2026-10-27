@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "source": "libreqos_network",
+  "anchors": [
+    {
+      "circuit_id": "c1",
+      "circuit_name": "Circuit One",
+      "anchor_node_id": "ap1",
+      "anchor_node_name": "AP One"
+    },
+    {
+      "circuit_id": "c2",
+      "circuit_name": "Circuit Two",
+      "anchor_node_id": "ap1",
+      "anchor_node_name": "AP One"
+    }
+  ]
+}

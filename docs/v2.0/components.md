@@ -1,5 +1,7 @@
 # LibreQoS Software Components
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 ## Systemd Services
 
 ```{mermaid}
@@ -47,7 +49,7 @@ flowchart LR
 
 - `lqos_topology` continuously builds runtime-effective topology artifacts from current source inputs and attachment health.
 - Current builds keep two distinct topology views:
-  - `compatibility_network_json` remains the local compatibility tree used as the base for `network.effective.json`
+  - `compatibility_network_json` remains the local compatibility tree used as the base for `topology_operator_view.json`
   - Insight topology submission derives a separate logical-parent tree from canonical topology state so sites are grouped by logical site hierarchy rather than immediate attachment hops
   - For inspection, `lqosd` writes the exact Insight topology JSON it is about to serialize to `/opt/libreqos/src/network.insight.debug.json`
 - UISP ingest now deduplicates duplicate raw device rows by device ID before graph construction, and graph building defensively skips any residual duplicate device IDs.
@@ -55,7 +57,7 @@ flowchart LR
   - `source_generation`
   - `ready`
   - `generated_unix`
-  - artifact paths for `topology_effective_state.json`, `network.effective.json`, and `shaping_inputs.json`
+  - artifact paths for `topology_effective_state.json`, `topology_operator_view.json`, and `shaping_inputs.json`
   - `error` when the current generation failed
 - `lqos_scheduler` only calls `refreshShapers()` when that status file reports `ready: true` for the exact current generation of `network.json`, `ShapedDevices.csv`, `circuit_anchors.json` when present, and the active topology source state.
 - If the runtime status is missing, stale, or failed for the current generation, scheduler stays alive in degraded mode and retries automatically on later refreshes.

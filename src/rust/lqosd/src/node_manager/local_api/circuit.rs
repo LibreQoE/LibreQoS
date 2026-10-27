@@ -1,7 +1,6 @@
 use crate::node_manager::local_api::ethernet_caps::ethernet_advisory_for_circuit;
 use crate::shaped_devices_tracker::effective_parent_for_circuit;
 use lqos_config::{CircuitEthernetMetadata, ShapedDevice};
-use lqos_queue_tracker::EFFECTIVE_CIRCUIT_RATES;
 use lqos_utils::normalize_circuit_id_key;
 use lqos_utils::units::DownUpOrder;
 use serde::{Deserialize, Serialize};
@@ -13,6 +12,11 @@ pub struct CircuitParentNode {
     pub name: String,
     /// Optional stable node identifier from `network.json` metadata.
     pub id: Option<String>,
+    /// Optional tree index of the parent node (the `parent` query the
+    /// tree page needs to render the node directly). Present when the
+    /// parent was resolved through the circuit's own tree node.
+    #[serde(default)]
+    pub tree_index: Option<usize>,
 }
 
 /// Circuit-page queue-stats mode.
@@ -63,6 +67,7 @@ fn canonical_parent_node(devices: &mut [ShapedDevice]) -> Option<CircuitParentNo
             resolved_parent = Some(CircuitParentNode {
                 name: resolved.name.clone(),
                 id: resolved.id.clone(),
+                tree_index: None,
             });
         }
         device.parent_node = resolved.name;
@@ -72,17 +77,53 @@ fn canonical_parent_node(devices: &mut [ShapedDevice]) -> Option<CircuitParentNo
     resolved_parent
 }
 
+/// Driver demo finding (2026-09-08): when the CSV parent name does not
+/// resolve against the network json (the T1 tree names artifact-derived
+/// nodes by their stable id, so a NAME lookup for the legacy CSV name
+/// misses), fall back to the circuit's OWN tree node — the T1 tree
+/// carries a circuit-type node named by the circuit id, and its
+/// immediate parent IS the circuit's tree parent. The display name
+/// stays the human CSV name; the id + tree index make the tree link
+/// work.
+fn circuit_node_parent(
+    circuit_id: &str,
+    human_parent_name: Option<&str>,
+) -> Option<CircuitParentNode> {
+    lqos_network_devices::with_network_json_read(|net_json| {
+        let nodes = net_json.get_nodes_when_ready();
+        let circuit_node = nodes.iter().find(|node| {
+            node.node_type.as_deref() == Some("circuit")
+                && (node.name == circuit_id || node.id.as_deref() == Some(circuit_id))
+        })?;
+        let parent_index = circuit_node.immediate_parent?;
+        let parent = nodes.get(parent_index)?;
+        Some(CircuitParentNode {
+            name: human_parent_name
+                .map(str::to_string)
+                .unwrap_or_else(|| parent.name.clone()),
+            id: parent.id.clone(),
+            tree_index: Some(parent_index),
+        })
+    })
+}
+
 fn circuit_parent_node(
     circuit_id: &str,
     devices: &mut [ShapedDevice],
 ) -> Option<CircuitParentNode> {
     let canonical_parent = canonical_parent_node(devices);
+    let human_name = devices
+        .first()
+        .map(|device| device.parent_node.trim().to_string())
+        .filter(|name| !name.is_empty());
     effective_parent_for_circuit(circuit_id)
         .map(|parent| CircuitParentNode {
             name: parent.name,
             id: parent.id,
+            tree_index: None,
         })
         .or(canonical_parent)
+        .or_else(|| circuit_node_parent(circuit_id, human_name.as_deref()))
 }
 
 fn queue_stats_mode() -> CircuitQueueStatsMode {
@@ -93,13 +134,11 @@ fn effective_circuit_rate_mbps_for_key(circuit_key: &str) -> Option<DownUpOrder<
     if circuit_key.is_empty() {
         return None;
     }
-    EFFECTIVE_CIRCUIT_RATES
-        .load()
-        .get(circuit_key)
-        .map(|(down, up)| DownUpOrder {
-            down: *down as f32,
-            up: *up as f32,
-        })
+    // Rung 1.5 §1.5: E2 is the Rust-native effective-rate source.
+    crate::e2_rates::circuit_rate(circuit_key).map(|(down, up)| DownUpOrder {
+        down: down as f32,
+        up: up as f32,
+    })
 }
 
 pub fn circuit_by_id_data(id: &str) -> Option<CircuitByIdData> {
@@ -144,20 +183,27 @@ mod tests {
     static EFFECTIVE_RATE_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
     struct EffectiveRateSnapshot {
-        previous_rates: Arc<HashMap<String, (f64, f64)>>,
+        previous_nodes: HashMap<String, (f64, f64)>,
+        previous_circuits: HashMap<String, (f64, f64)>,
     }
 
     impl EffectiveRateSnapshot {
         fn replace(rates: HashMap<String, (f64, f64)>) -> Self {
-            let previous_rates = EFFECTIVE_CIRCUIT_RATES.load_full();
-            EFFECTIVE_CIRCUIT_RATES.store(Arc::new(rates));
-            Self { previous_rates }
+            let (previous_nodes, previous_circuits) =
+                crate::e2_rates::replace_for_test(HashMap::new(), rates);
+            Self {
+                previous_nodes,
+                previous_circuits,
+            }
         }
     }
 
     impl Drop for EffectiveRateSnapshot {
         fn drop(&mut self) {
-            EFFECTIVE_CIRCUIT_RATES.store(self.previous_rates.clone());
+            crate::e2_rates::restore_for_test(
+                std::mem::take(&mut self.previous_nodes),
+                std::mem::take(&mut self.previous_circuits),
+            );
         }
     }
 

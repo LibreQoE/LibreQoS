@@ -1,5 +1,5 @@
-import {isColorBlindMode} from "./colorblind";
-import {lerpColor, lerpGreenToRedViaOrange} from "./scaling";
+import {isColorBlindMode} from "./colorblind.js";
+import {lerpColor, lerpGreenToRedViaOrange} from "./scaling.js";
 
 // Viridis color scale interpolation (0..1)
 function lerpViridis(t) {
@@ -34,7 +34,7 @@ export function colorByRetransmitPct(pct0to10) {
     }
 }
 
-function resolveRttThresholds(scale) {
+export function resolveRttThresholds(scale) {
     const defaults = { greenMs: 0, yellowMs: 100, redMs: 200 };
 
     // Back-compat: if a number is provided, treat it as a cap (red point).

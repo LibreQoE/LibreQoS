@@ -100,11 +100,40 @@ pub fn start_version_check() -> Result<()> {
 }
 
 /// Returns true if a new version is available.
+///
+/// the sidebar UI-hygiene card: a NON-RELEASE build (dev/build-stamp version) and any build
+/// with `LIBREQOS_DISABLE_UPDATE_CHECK` set never advertise an update — the
+/// check is a release-channel feature.
 pub fn new_version_available() -> bool {
+    if update_check_suppressed() {
+        return false;
+    }
     if let Some(forced) = force_update_available() {
         return forced;
     }
     NEW_VERSION_AVAILABLE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Env knob that hides the update indicator entirely.
+const DISABLE_UPDATE_CHECK_ENV: &str = "LIBREQOS_DISABLE_UPDATE_CHECK";
+
+/// True when `version` is not a release identity: a `-`/`+` suffix, a
+/// build-date stamp (a fourth dot component), or an explicit `dev` marker.
+fn is_non_release_version(version: &str) -> bool {
+    let v = version.trim();
+    v.contains('-')
+        || v.contains('+')
+        || v.split('.').count() > 3
+        || v.to_ascii_lowercase().contains("dev")
+}
+
+/// True when the update check must be hidden (the disable env knob or a
+/// non-release build).
+fn update_check_suppressed() -> bool {
+    let disabled = std::env::var(DISABLE_UPDATE_CHECK_ENV)
+        .map(|raw| !raw.trim().is_empty())
+        .unwrap_or(false);
+    disabled || is_non_release_version(VERSION_STRING)
 }
 
 fn check_version(request: VersionCheckRequest) -> Result<bool> {
@@ -117,7 +146,21 @@ fn check_version(request: VersionCheckRequest) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_force_update_override;
+    use super::{is_non_release_version, parse_force_update_override};
+
+    #[test]
+    fn release_versions_are_checked() {
+        assert!(!is_non_release_version("3.0.7"));
+        assert!(!is_non_release_version(" 3.0.7 "));
+    }
+
+    #[test]
+    fn dev_stamps_suppress_the_update_check() {
+        assert!(is_non_release_version("3.0.7-beta"));
+        assert!(is_non_release_version("3.0.7+dev"));
+        assert!(is_non_release_version("3.0.7.202609201036"));
+        assert!(is_non_release_version("3.0.7-dev"));
+    }
 
     #[test]
     fn parses_truthy_force_update_values() {

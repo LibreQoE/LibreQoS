@@ -1,5 +1,7 @@
 # Deployment Scenarios
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 ## Standard Inline Deployment
 
 LibreQoS is placed inline at the edge of your network, usually between the network's border router (NAT, firewall) and the core distribution router / switch.

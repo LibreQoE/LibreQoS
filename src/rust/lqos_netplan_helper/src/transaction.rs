@@ -100,12 +100,8 @@ fn now_unix() -> Result<u64> {
 }
 
 fn mode_label(config: &Config) -> String {
-    if let Some(bridge) = &config.bridge {
-        if bridge.use_xdp_bridge {
-            "XDP Bridge".to_string()
-        } else {
-            "Linux Bridge".to_string()
-        }
+    if config.bridge.is_some() {
+        "Linux Bridge".to_string()
     } else if config.single_interface.is_some() {
         "Single Interface".to_string()
     } else {
@@ -654,7 +650,7 @@ fn normalize_pending_children(
 
 fn retry_shaping(paths: &HelperPaths) -> Result<()> {
     if let RetryShapingAction::LoadLibreQoS = paths.retry_shaping {
-        lqos_config::load_libreqos()
+        lqos_config::request_libreqos_reload("netplan-helper")
             .map(|_| ())
             .map_err(|err| anyhow!("Unable to retry LibreQoS shaping: {err}"))?;
     }
@@ -1057,7 +1053,6 @@ esac
         let (to_internet, to_network) = test_interfaces();
         Config {
             bridge: Some(lqos_config::BridgeConfig {
-                use_xdp_bridge: false,
                 to_internet,
                 to_network,
                 mtu: None,

@@ -3,22 +3,22 @@ mod network_json_transport;
 
 use allocative_derive::Allocative;
 use lqos_utils::{
-    qoo::{LossMeasurement, QoqScores, compute_qoq_scores},
-    qoq_heatmap::TemporalQoqHeatmap,
     rtt::{FlowbeeEffectiveDirection, RttBucket, RttBuffer},
     temporal_heatmap::{TemporalHeatmap, executive_retransmit_percent},
     units::DownUpOrder,
 };
 pub use network_json_node::NetworkJsonNode;
 pub use network_json_transport::NetworkJsonTransport;
+#[cfg(test)]
 use serde_json::{Map, Value};
 use std::{
     collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use thiserror::Error;
-use tracing::{debug, warn};
+#[cfg(test)]
+use tracing::debug;
+use tracing::warn;
 
 /// Holder for the network.json representation.
 /// This is condensed into a single level vector with index-based referencing
@@ -49,26 +49,14 @@ impl NetworkJson {
 
     /// Resolves the active `network.json` path for one concrete config snapshot.
     ///
-    /// When an integration-backed topology ingress is enabled, this prefers the
-    /// runtime-generated effective tree under `state/topology/`. When integration
-    /// ingress is disabled, this uses the operator-owned manual tree and ignores
-    /// any stale runtime effective export.
+    /// Phase C S4: the E2 operator view under `state/topology/` is the ONE
+    /// tree source for every world (the legacy manual tree and the
+    /// network.effective.json interchange both retired; the manual pair is
+    /// compiled into the import and published as the operator view).
     ///
     /// This function is pure: it has no side effects.
     pub fn path_for_config(cfg: &crate::Config) -> PathBuf {
-        let base_path = Path::new(&cfg.lqos_directory);
-        if crate::integration_ingress_enabled(cfg) {
-            cfg.topology_state_file_path("network.effective.json")
-        } else if cfg.long_term_stats.enable_insight_topology.unwrap_or(false) {
-            let tmp_path = base_path.join("network.insight.json");
-            if tmp_path.exists() {
-                tmp_path
-            } else {
-                base_path.join("network.json")
-            }
-        } else {
-            base_path.join("network.json")
-        }
+        cfg.topology_state_file_path(crate::topology_operator_view::TOPOLOGY_OPERATOR_VIEW_FILENAME)
     }
 
     /// The path to the current `network.json` file, determined
@@ -90,10 +78,19 @@ impl NetworkJson {
 
     /// Attempt to load network.json from disk
     pub fn load() -> Result<Self, NetworkJsonError> {
-        let mut nodes = vec![NetworkJsonNode {
+        // Phase C S4: the operator view (E2) owns the topology — the tree
+        // store populates from `topology_operator_view.json` via the T1
+        // builder, never from the (retired) dict-keyed interchange. Root-only
+        // here keeps the index-0 invariants until that build lands.
+        Ok(Self::root_only())
+    }
+
+    /// The structure-less root-only store (T5 rung 1 integration-mode
+    /// boot posture; index-0 invariants preserved).
+    fn root_only() -> Self {
+        let nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
             id: None,
-            virtual_node: false,
             max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
@@ -113,27 +110,8 @@ impl NetworkJson {
             longitude: None,
             active_attachment_name: None,
             heatmap: None,
-            qoq_heatmap: None,
         }];
-        if !Self::exists() {
-            return Err(NetworkJsonError::FileNotFound);
-        }
-        let path = Self::path()?;
-        let raw = fs::read_to_string(path).map_err(|_| NetworkJsonError::ConfigLoadError)?;
-        let json: Value =
-            serde_json::from_str(&raw).map_err(|_| NetworkJsonError::ConfigLoadError)?;
-
-        // Start reading from the top. We are at the root node.
-        let parents = vec![0];
-        if let Value::Object(map) = &json {
-            for (key, value) in map.iter() {
-                if let Value::Object(inner_map) = value {
-                    recurse_node(&mut nodes, key, inner_map, &parents, 0);
-                }
-            }
-        }
-
-        Ok(Self { nodes })
+        Self { nodes }
     }
 
     /// Find the index of a circuit_id
@@ -180,18 +158,15 @@ impl NetworkJson {
     /// this falls back to node name only when that name is unique in both trees to avoid
     /// attaching history to the wrong node after a reload.
     ///
-    /// Side effects: copies matched `heatmap` and `qoq_heatmap` values into `self`.
+    /// Side effects: copies matched `heatmap` values into `self`.
     pub fn carry_forward_heatmaps_from(&mut self, previous: &Self) {
-        let mut previous_by_id: HashMap<
-            String,
-            (&Option<TemporalHeatmap>, &Option<TemporalQoqHeatmap>),
-        > = HashMap::new();
+        let mut previous_by_id: HashMap<String, &Option<TemporalHeatmap>> = HashMap::new();
         let mut previous_name_counts: HashMap<String, usize> = HashMap::new();
         let mut current_name_counts: HashMap<String, usize> = HashMap::new();
 
         for node in &previous.nodes {
             if let Some(id) = node.id.as_deref() {
-                previous_by_id.insert(id.to_string(), (&node.heatmap, &node.qoq_heatmap));
+                previous_by_id.insert(id.to_string(), &node.heatmap);
             }
             *previous_name_counts.entry(node.name.clone()).or_default() += 1;
         }
@@ -200,14 +175,10 @@ impl NetworkJson {
             *current_name_counts.entry(node.name.clone()).or_default() += 1;
         }
 
-        let mut previous_by_unique_name: HashMap<
-            String,
-            (&Option<TemporalHeatmap>, &Option<TemporalQoqHeatmap>),
-        > = HashMap::new();
+        let mut previous_by_unique_name: HashMap<String, &Option<TemporalHeatmap>> = HashMap::new();
         for node in &previous.nodes {
             if previous_name_counts.get(&node.name) == Some(&1) {
-                previous_by_unique_name
-                    .insert(node.name.clone(), (&node.heatmap, &node.qoq_heatmap));
+                previous_by_unique_name.insert(node.name.clone(), &node.heatmap);
             }
         }
 
@@ -222,9 +193,8 @@ impl NetworkJson {
                         .and_then(|name| previous_by_unique_name.get(&name).copied())
                 });
 
-            if let Some((heatmap, qoq_heatmap)) = preserved {
+            if let Some(heatmap) = preserved {
                 node.heatmap = heatmap.clone();
-                node.qoq_heatmap = qoq_heatmap.clone();
             }
         }
     }
@@ -344,6 +314,16 @@ impl NetworkJson {
         }
     }
 
+    /// F3-B A1 (`docs/executive_rtt_rollup_card.md`): CLEAR every node's RTT
+    /// buffer before a re-accumulation cycle. `RttBuffer::accumulate` does NOT
+    /// rotate the `Current` window (only `push` does), so without this the tree
+    /// node would pool every cycle forever and read stale-high.
+    pub fn clear_rtt_buffers(&mut self) {
+        for node in self.nodes.iter_mut() {
+            node.rtt_buffer.clear();
+        }
+    }
+
     /// Record how many TCP flows contributed fresh RTT data in this cycle.
     pub fn add_rtt_flow_cycle(&mut self, targets: &[usize], flows: DownUpOrder<u32>) {
         for idx in targets {
@@ -396,12 +376,9 @@ impl NetworkJson {
         if !enable {
             self.nodes.iter_mut().for_each(|node| {
                 node.heatmap = None;
-                node.qoq_heatmap = None;
             });
             return;
         }
-
-        let qoo_profile = crate::active_qoo_profile().ok();
 
         for node in self.nodes.iter_mut() {
             let download_util =
@@ -447,30 +424,11 @@ impl NetworkJson {
                 retransmit_up,
             );
 
-            let loss_download = tcp_retransmit_loss_proxy(
-                node.current_tcp_retransmits.down,
-                node.current_tcp_retransmit_packets.down,
-            );
-            let loss_upload = tcp_retransmit_loss_proxy(
-                node.current_tcp_retransmits.up,
-                node.current_tcp_retransmit_packets.up,
-            );
-            let scores = if let Some(profile) = qoo_profile.as_ref() {
-                compute_qoq_scores(
-                    profile.as_ref(),
-                    &node.rtt_buffer,
-                    loss_download,
-                    loss_upload,
-                )
-            } else {
-                QoqScores::default()
-            };
-            let qoq_heatmap = node.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
-            qoq_heatmap.add_sample(scores.download_total_f32(), scores.upload_total_f32());
         }
     }
 }
 
+#[cfg(test)]
 fn json_to_mbps(val: Option<&Value>) -> f64 {
     val.and_then(|v| {
         v.as_f64()
@@ -480,6 +438,7 @@ fn json_to_mbps(val: Option<&Value>) -> f64 {
     .unwrap_or(0.0)
 }
 
+#[cfg(test)]
 fn json_to_coordinate(val: Option<&Value>, min: f32, max: f32) -> Option<f32> {
     val.and_then(|v| {
         v.as_f64()
@@ -489,6 +448,7 @@ fn json_to_coordinate(val: Option<&Value>, min: f32, max: f32) -> Option<f32> {
     .filter(|n| n.is_finite() && *n >= min && *n <= max)
 }
 
+#[cfg(test)]
 fn recurse_node(
     nodes: &mut Vec<NetworkJsonNode>,
     name: &str,
@@ -504,16 +464,6 @@ fn recurse_node(
     } else {
         nodes.len() - 1
     };
-    let virtual_node = json
-        .get("virtual")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-        || json
-            .get("type")
-            .and_then(|v| v.as_str())
-            .map(|s| s.eq_ignore_ascii_case("virtual"))
-            .unwrap_or(false);
-
     let node = NetworkJsonNode {
         id: json
             .get("id")
@@ -535,7 +485,6 @@ fn recurse_node(
         current_drops: DownUpOrder::zeroed(),
         current_marks: DownUpOrder::zeroed(),
         name: name.to_string(),
-        virtual_node,
         immediate_parent: Some(immediate_parent),
         rtt_buffer: RttBuffer::default(),
         node_type: json
@@ -548,7 +497,6 @@ fn recurse_node(
             .and_then(|v| v.as_str())
             .map(str::to_string),
         heatmap: None,
-        qoq_heatmap: None,
     };
 
     if node.name != "children" {
@@ -576,20 +524,6 @@ fn utilization_percent_bytes(bytes: u64, max_mbps: f64) -> Option<f32> {
     Some(((bits_per_second / capacity_bps) * 100.0) as f32)
 }
 
-fn tcp_retransmit_loss_proxy(retransmits: u64, packets: u64) -> Option<LossMeasurement> {
-    if packets == 0 {
-        return None;
-    }
-
-    let retransmit_fraction = (retransmits as f64 / packets as f64).clamp(0.0, 1.0);
-    const TCP_RETRANSMIT_CONFIDENCE_MAX: f64 = 0.05;
-    let confidence = (packets as f64 / 10_000.0).clamp(0.0, 1.0) * TCP_RETRANSMIT_CONFIDENCE_MAX;
-    Some(LossMeasurement::TcpRetransmitProxy {
-        retransmit_fraction,
-        confidence,
-    })
-}
-
 #[derive(Error, Debug)]
 pub enum NetworkJsonError {
     #[error("Unable to find or load network.json")]
@@ -607,7 +541,6 @@ mod test {
         let mut nodes = vec![NetworkJsonNode {
             name: "Root".to_string(),
             id: None,
-            virtual_node: false,
             max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
@@ -627,7 +560,6 @@ mod test {
             longitude: None,
             active_attachment_name: None,
             heatmap: None,
-            qoq_heatmap: None,
         }];
 
         let parents = vec![0];
@@ -640,63 +572,6 @@ mod test {
         }
 
         NetworkJson { nodes }
-    }
-
-    #[test]
-    fn parses_virtual_and_legacy_virtual_type() {
-        let raw = serde_json::json!({
-            "Site_1": {
-                "downloadBandwidthMbps": 1000,
-                "uploadBandwidthMbps": 1000,
-                "type": "Site",
-                "children": {
-                    "VirtNode": {
-                        "downloadBandwidthMbps": 500,
-                        "uploadBandwidthMbps": 500,
-                        "type": "AP",
-                        "virtual": true,
-                        "children": {}
-                    },
-                    "LegacyVirt": {
-                        "downloadBandwidthMbps": 400,
-                        "uploadBandwidthMbps": 400,
-                        "type": "virtual",
-                        "children": {}
-                    },
-                    "RealNode": {
-                        "downloadBandwidthMbps": 300,
-                        "uploadBandwidthMbps": 300,
-                        "children": {}
-                    }
-                }
-            }
-        });
-
-        let parsed = parse_network_json_from_value(raw);
-
-        let virt = parsed
-            .nodes
-            .iter()
-            .find(|n| n.name == "VirtNode")
-            .expect("VirtNode must be present");
-        assert!(virt.virtual_node);
-        assert!(virt.clone_to_transit().is_virtual);
-
-        let legacy = parsed
-            .nodes
-            .iter()
-            .find(|n| n.name == "LegacyVirt")
-            .expect("LegacyVirt must be present");
-        assert!(legacy.virtual_node);
-        assert!(legacy.clone_to_transit().is_virtual);
-
-        let real = parsed
-            .nodes
-            .iter()
-            .find(|n| n.name == "RealNode")
-            .expect("RealNode must be present");
-        assert!(!real.virtual_node);
-        assert!(!real.clone_to_transit().is_virtual);
     }
 
     #[test]
@@ -721,10 +596,8 @@ mod test {
         assert!(tiny.max_throughput.1 > 0.0);
 
         let transport = tiny.clone_to_transit();
-        assert!(!transport.runtime_virtualized);
         let encoded = serde_json::to_value(&transport).expect("transport must serialize");
         assert_eq!(encoded["max_throughput"], serde_json::json!([1.5, 0.5]));
-        assert_eq!(encoded["runtime_virtualized"], serde_json::json!(false));
     }
 
     #[test]
@@ -902,11 +775,6 @@ mod test {
             None,
             None,
         );
-        let qoq_heatmap = previous_site
-            .qoq_heatmap
-            .get_or_insert_with(TemporalQoqHeatmap::new);
-        qoq_heatmap.add_sample(Some(91.0), Some(82.0));
-
         next.carry_forward_heatmaps_from(&previous);
 
         let next_site = next
@@ -919,16 +787,9 @@ mod test {
             .as_ref()
             .expect("heatmap should carry forward")
             .blocks();
-        let qoq_blocks = next_site
-            .qoq_heatmap
-            .as_ref()
-            .expect("QoQ heatmap should carry forward")
-            .blocks();
 
         assert_eq!(blocks.download[14], Some(42.0));
         assert_eq!(blocks.upload[14], Some(24.0));
-        assert_eq!(qoq_blocks.download_total[14], Some(91.0));
-        assert_eq!(qoq_blocks.upload_total[14], Some(82.0));
     }
 
     #[test]
@@ -1072,7 +933,7 @@ mod test {
     }
 
     #[test]
-    fn path_for_config_prefers_runtime_effective_tree_for_integration_ingress() {
+    fn path_for_config_prefers_operator_view_for_integration_ingress() {
         let temp = unique_temp_dir("network-json-integration-effective");
         let mut config = crate::Config {
             lqos_directory: temp.display().to_string(),
@@ -1084,12 +945,16 @@ mod test {
         let selected = NetworkJson::path_for_config(&config);
         assert_eq!(
             selected,
-            config.topology_state_file_path("network.effective.json")
+            config
+                .topology_state_file_path(crate::topology_operator_view::TOPOLOGY_OPERATOR_VIEW_FILENAME)
         );
     }
 
     #[test]
-    fn path_for_config_uses_diy_network_json_when_integrations_are_disabled() {
+    fn path_for_config_uses_operator_view_for_every_world() {
+        // Phase C S4: the manual pair is compiled into the import and published
+        // as the operator view, so the path is the operator view for a
+        // manual-only config too.
         let temp = unique_temp_dir("network-json-diy");
         let config = crate::Config {
             lqos_directory: temp.display().to_string(),
@@ -1098,16 +963,23 @@ mod test {
         };
 
         let selected = NetworkJson::path_for_config(&config);
-        assert_eq!(selected, temp.join("network.json"));
+        assert_eq!(
+            selected,
+            config
+                .topology_state_file_path(crate::topology_operator_view::TOPOLOGY_OPERATOR_VIEW_FILENAME)
+        );
     }
 
     #[test]
-    fn path_for_config_prefers_runtime_effective_tree_over_other_tree_inputs() {
+    fn path_for_config_prefers_operator_view_over_other_tree_inputs() {
         let temp = unique_temp_dir("network-json-effective-priority");
         let state_topology = temp.join("state/topology");
         std::fs::create_dir_all(&state_topology).expect("state topology dir should exist");
-        std::fs::write(state_topology.join("network.effective.json"), "{}")
-            .expect("effective tree should write");
+        std::fs::write(
+            state_topology.join(crate::topology_operator_view::TOPOLOGY_OPERATOR_VIEW_FILENAME),
+            "{}",
+        )
+        .expect("operator view should write");
         std::fs::write(temp.join("network.insight.json"), "{}").expect("insight tree should write");
         std::fs::write(temp.join("network.json"), "{}").expect("legacy tree should write");
         let mut config = crate::Config {
@@ -1119,7 +991,10 @@ mod test {
         config.long_term_stats.enable_insight_topology = Some(true);
 
         let selected = NetworkJson::path_for_config(&config);
-        assert_eq!(selected, state_topology.join("network.effective.json"));
+        assert_eq!(
+            selected,
+            state_topology.join(crate::topology_operator_view::TOPOLOGY_OPERATOR_VIEW_FILENAME)
+        );
     }
 
     #[test]
@@ -1138,7 +1013,12 @@ mod test {
         };
 
         let selected = NetworkJson::path_for_config(&config);
-        assert_eq!(selected, temp.join("network.json"));
+        assert_eq!(
+            selected,
+            config
+                .topology_state_file_path(crate::topology_operator_view::TOPOLOGY_OPERATOR_VIEW_FILENAME)
+        );
+        assert_ne!(selected, temp.join("network.json"));
     }
 
     #[test]

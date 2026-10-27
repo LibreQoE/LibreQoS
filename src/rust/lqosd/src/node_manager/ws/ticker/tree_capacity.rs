@@ -18,7 +18,9 @@ pub async fn tree_capacity(channels: Arc<PubSub>) {
                 .iter()
                 .enumerate()
                 .map(|(id, node)| {
-                    let node = node_to_transport(node);
+                    let mut node = node_to_transport(node);
+                    // T2b: E2 tree live-view overlay (current_* only).
+                    crate::bridge_analytics::overlay_live_fields(id, &mut node);
                     let down = node.current_throughput.0 as f64 * 8.0 / 1_000_000.0;
                     let up = node.current_throughput.1 as f64 * 8.0 / 1_000_000.0;
                     let effective_max =

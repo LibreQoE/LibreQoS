@@ -33,6 +33,8 @@ pub(super) fn static_routes() -> Result<Router> {
         "tree.html",
         "topology_manager.html",
         "topology_probes.html",
+        "bridge.html",
+        "cpu_workers.html",
         "help.html",
         "unknown_ips.html",
         "circuit.html",
@@ -62,6 +64,7 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_rtt.html",
         "config_tuning.html",
         "config_queues.html",
+        "config_dataplane.html",
         "config_lts.html",
         "config_iprange.html",
         "config_flows.html",
@@ -81,11 +84,8 @@ pub(super) fn static_routes() -> Result<Router> {
         "config_users.html",
         "config_wispgate.html",
         "config_stormguard.html",
-        "config_treeguard.html",
         "stormguard_debug.html",
         "api.html",
-        "cpu_weights.html",
-        "cpu_tree.html",
     ];
 
     // Iterate through pages and construct the router

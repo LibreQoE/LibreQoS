@@ -26,7 +26,7 @@ El shaping por dispositivo eleva rapidamente la cantidad de circuitos. Valide:
 
 ```text
 Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm
-HTL-ROOM-1204,Room1204-Device,HTL-ROOM-1204,Room1204-DeviceA,Floor12,,100.70.12.44,,2,2,50,20,Hospitality per-device plan,cake
+HTL-ROOM-1204,Room1204-Device,HTL-ROOM-1204,Room1204-DeviceA,Floor12,,192.0.2.44,,2,2,50,20,Hospitality per-device plan,cake
 ```
 
 ## Checklist de Validacion

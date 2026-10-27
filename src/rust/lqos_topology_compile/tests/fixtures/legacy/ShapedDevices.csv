@@ -1,0 +1,3 @@
+Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment
+"c1","Circuit One","d1","d1","AP One","ap1","","aa:bb:cc:dd:ee:ff","192.0.2.10/32","",10,5,100,50,""
+"c2","Circuit Two","d2","d2","AP One","ap1","","aa:bb:cc:dd:ee:01","192.0.2.11/32","",20,10,200,100,""

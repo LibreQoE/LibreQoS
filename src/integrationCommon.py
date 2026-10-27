@@ -13,8 +13,6 @@ import json
 import os
 import time
 
-from atomic_io import atomic_write_text
-
 try:
 	from liblqos_python import get_libreqos_state_directory as _get_state_dir_native
 except Exception:
@@ -154,6 +152,15 @@ class NodeType(enum.IntEnum):
 	client = 4
 	clientWithChildren = 5
 	device = 6
+
+# Root-attached circuits (blank / unresolved / explicit "root" parent) must
+# attach to an explicit synthetic site. The v3 producer must never emit an
+# empty Parent Node ID: the bridge's boot gate treats that as a defective
+# transaction and holds forever. This is the shipped, integration-agnostic
+# equivalent of the former per-integration host hotfix.
+ROOT_SITE_ID = "libreqos:root"
+ROOT_SITE_NAME = "Unassigned / Root"
+
 
 def nodeTypeToString(integer):
 	string = ''
@@ -299,6 +306,79 @@ class NetworkGraph:
 			
 			# Invalidate cache
 			self._cache_valid = False
+
+	def _ensure_root_site(self):
+		"""Attach root-attached clients to an explicit synthetic root site.
+
+		A client whose nearest real topology parent is the fake root (blank
+		Parent Node, an unknown parent that reparenting sent to the root, or
+		an explicit ``root``/``Shaper Root`` alias) is a root-attached
+		circuit. Emitting an empty Parent Node ID deadlocks the v3 bridge
+		boot gate, so we materialise a real site node once and use its stable
+		networkJsonId. ``clientWithChildren`` is included because a relay
+		client is rewritten to that type during ``prepareTree``; calling this
+		before promotion keeps the generated relay site under the root site
+		instead of leaving a generated-site chain dangling at the fake root.
+		Idempotent; returns the site node when one is needed.
+		"""
+		if not self._cache_valid:
+			self._buildChildrenCache()
+
+		def is_root_attached(node) -> bool:
+			# Resolve by parentId, not parentIndex: before the reparent pass
+			# every freshly added node still has parentIndex 0.
+			parent_id = node.parentId
+			if parent_id in (None, "", "root", "Shaper Root"):
+				return True
+			return self._id_to_index.get(parent_id, 0) <= 0
+
+		root_clients = [
+			i for i, node in enumerate(self.nodes)
+			if i > 0
+			and node.type in (NodeType.client, NodeType.clientWithChildren)
+			and is_root_attached(node)
+		]
+		if not root_clients:
+			return None
+		idx = self._id_to_index.get(ROOT_SITE_ID)
+		if idx is None:
+			# Reuse an integration's existing "Unassigned / Root" site (the
+			# former per-integration hotfix) instead of creating a second node
+			# with the same displayName (network.json is keyed by displayName).
+			existing = self._name_to_index.get(ROOT_SITE_NAME)
+			if (
+				existing is not None
+				and existing > 0
+				and self.nodes[existing].type in (NodeType.site, NodeType.ap)
+			):
+				idx = existing
+				if not self.nodes[idx].networkJsonId:
+					self.nodes[idx].networkJsonId = ROOT_SITE_ID
+					self._id_to_index[ROOT_SITE_ID] = idx
+			else:
+				node = NetworkNode(
+					id=ROOT_SITE_ID,
+					displayName=ROOT_SITE_NAME,
+					type=NodeType.site,
+					download=upstream_bandwidth_capacity_download_mbps(),
+					upload=upstream_bandwidth_capacity_upload_mbps(),
+					networkJsonId=ROOT_SITE_ID,
+				)
+				node.parentIndex = 0
+				node.parentId = ""
+				idx = len(self.nodes)
+				# Add directly: this node is required for correctness and must not
+				# be dropped by an operator's exclude_sites list.
+				self.nodes.append(node)
+				self._id_to_index[ROOT_SITE_ID] = idx
+				self._name_to_index[ROOT_SITE_NAME] = idx
+				self._cache_valid = False
+				self._buildChildrenCache()
+		for i in root_clients:
+			self.nodes[i].parentIndex = idx
+			self.nodes[i].parentId = ROOT_SITE_ID
+		self._cache_valid = False
+		return self.nodes[idx]
 
 	def getErrors(self) -> List[str]:
 		return list(self.errors)
@@ -527,6 +607,11 @@ class NetworkGraph:
 		# functions in the right order. Unless you are doing
 		# something special, you can use this instead of
 		# calling the functions individually
+		# Materialise the synthetic root site before relay promotion/wrapping.
+		# A root-attached relay otherwise becomes a generated site at the fake
+		# root; buildShapedDevices would then fall back to libreqos:root while
+		# network.json never contains it (a dangling Parent Node ID).
+		self._ensure_root_site()
 		print("PrepareTree: Starting reparenting...")
 		self.__reparentById()
 		print("PrepareTree: Promoting clients with children...")
@@ -550,11 +635,14 @@ class NetworkGraph:
 		return self.nodes[index].type == NodeType.ap or self.nodes[index].type == NodeType.site or self.nodes[index].type == NodeType.clientWithChildren
 
 	def createNetworkJson(self):
+		import json
 		topLevelNode = self.buildNetworkJson()
-		atomic_write_text('network.json', json.dumps(topLevelNode, indent=4))
+		with open('network.json', 'w') as f:
+			json.dump(topLevelNode, f, indent=4)
 
 	def buildNetworkJson(self):
 		topLevelNode = {}
+		self._ensure_root_site()
 		self.__visited = []  # Protection against loops - never visit twice
 
 		if not self._cache_valid:
@@ -671,10 +759,14 @@ class NetworkGraph:
 
 	def createShapedDevices(self):
 		shaped_devices_csv, circuit_anchor_file = self.buildShapedDevicesArtifacts()
-		atomic_write_text('ShapedDevices.csv', shaped_devices_csv)
+		with open('ShapedDevices.csv', 'w', newline='') as csvfile:
+			csvfile.write(shaped_devices_csv)
 
 		anchor_path = _state_path("topology", "circuit_anchors.json")
-		atomic_write_text(anchor_path, json.dumps(circuit_anchor_file, indent=2) + '\n')
+		os.makedirs(os.path.dirname(anchor_path), exist_ok=True)
+		with open(anchor_path, 'w', encoding='utf-8') as anchorfile:
+			json.dump(circuit_anchor_file, anchorfile, indent=2)
+			anchorfile.write('\n')
 
 	def buildShapedDevicesArtifacts(self):
 		import csv
@@ -682,6 +774,7 @@ class NetworkGraph:
 		circuits = []
 		circuit_anchors = []
 		
+		self._ensure_root_site()
 		if not self._cache_valid:
 			self._buildChildrenCache()
 
@@ -698,11 +791,15 @@ class NetworkGraph:
 		for i, node in enumerate(self.nodes):
 			if node.type == NodeType.client:
 				parent_node = nearestRealTopologyParent(i)
-				parent = parent_node.displayName if parent_node is not None else ""
-				parent_id = parent_node.networkJsonId if parent_node is not None else ""
-				if parent == "Shaper Root": parent = ""
-				if parent == "":
-					parent_id = ""
+				if parent_node is None:
+					# Root-attached: _ensure_root_site() above attached it.
+					parent_node = self._ensure_root_site()
+				parent = parent_node.displayName if parent_node is not None else ROOT_SITE_NAME
+				parent_id = parent_node.networkJsonId if parent_node is not None else ROOT_SITE_ID
+				if parent == "Shaper Root" or not parent_id:
+					# Never emit an empty parent id (the v3 boot gate deadlock).
+					parent = ROOT_SITE_NAME
+					parent_id = ROOT_SITE_ID
 				
 				if circuit_name_use_address():
 					displayNameToUse = node.address
@@ -977,13 +1074,6 @@ class NetworkGraph:
 				"current_attachment_name": None,
 				"can_move": can_move,
 				"allowed_parents": allowed_parents,
-				"queue_visibility_policy": (
-					"queue_hidden_promote_children"
-					if parent_node is None
-					else "queue_auto"
-					if node.type == NodeType.site
-					else "queue_visible"
-				),
 				"preferred_attachment_id": None,
 				"preferred_attachment_name": None,
 				"effective_attachment_id": None,

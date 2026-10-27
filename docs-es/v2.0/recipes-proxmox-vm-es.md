@@ -117,10 +117,10 @@ network:
   ethernets:
     ens18:
       addresses:
-        - 100.99.0.10/24
+        - 192.0.2.10/24
       routes:
         - to: default
-          via: 100.99.0.1
+          via: 192.0.2.1
       nameservers:
         addresses: [1.1.1.1, 8.8.8.8]
     ens19:

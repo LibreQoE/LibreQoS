@@ -5,8 +5,9 @@ mod file_lock;
 mod overrides_file;
 mod topology_overrides;
 pub use overrides_file::{
-    CircuitAdjustment, NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore,
-    TopologyParentOverrideMode, UispOverrides, UispRouteOverride,
+    CircuitAdjustment, CircuitSpeedOverride, NetworkAdjustment, OverrideFile, OverrideLayer,
+    OverrideStore, SUSPEND_FLOOR_MBPS, TopologyParentOverrideMode, UispOverrides,
+    UispRouteOverride,
 };
 pub use topology_overrides::{
     AttachmentProbePolicy, ManualAttachment, ManualAttachmentGroup, TopologyAttachmentMode,

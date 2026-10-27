@@ -33,6 +33,9 @@ impl PubSub {
     pub(super) fn new() -> Arc<Self> {
         let mut channels = Vec::new();
         for c in PublishedChannels::iter() {
+            if c == PublishedChannels::Unknown {
+                continue;
+            }
             channels.push(PublisherChannel::new(c));
         }
 

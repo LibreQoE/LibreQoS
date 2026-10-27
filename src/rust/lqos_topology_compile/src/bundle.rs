@@ -1,7 +1,8 @@
 use lqos_config::{
     CircuitAnchorsFile, CircuitEthernetMetadata, Config, ConfigShapedDevices, ShapedDevice,
-    TopologyCanonicalStateFile, TopologyEditorStateFile, TopologyParentCandidatesFile,
-    topology_compiled_shaping_path, topology_import_path, topology_ingress_identity_from_tokens,
+    TopologyCanonicalIngressKind, TopologyCanonicalStateFile, TopologyCircuitMatchIndex,
+    TopologyEditorStateFile, TopologyParentCandidatesFile, topology_compiled_shaping_path,
+    topology_import_path, topology_ingress_identity_from_tokens,
 };
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -35,8 +36,6 @@ struct ImportedTopologySnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     native_canonical: Option<TopologyCanonicalStateFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    native_editor: Option<TopologyEditorStateFile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     parent_candidates: Option<TopologyParentCandidatesFile>,
     #[serde(default)]
     compatibility_network_json: serde_json::Value,
@@ -46,6 +45,8 @@ struct ImportedTopologySnapshot {
     circuit_anchors: CircuitAnchorsFile,
     #[serde(default)]
     ethernet_advisories: Vec<CircuitEthernetMetadata>,
+    #[serde(default)]
+    circuit_matches: TopologyCircuitMatchIndex,
 }
 
 impl ImportedTopologySnapshot {
@@ -55,12 +56,12 @@ impl ImportedTopologySnapshot {
             generated_unix: imported.generated_unix,
             ingress_identity: imported.ingress_identity(),
             native_canonical: imported.native_canonical.clone(),
-            native_editor: imported.native_editor.clone(),
             parent_candidates: imported.parent_candidates.clone(),
             compatibility_network_json: imported.compatibility_network_json.clone(),
             shaped_devices: imported.shaped_devices.devices.clone(),
             circuit_anchors: imported.circuit_anchors.clone(),
             ethernet_advisories: imported.ethernet_advisories.clone(),
+            circuit_matches: imported.circuit_matches.clone(),
         }
     }
 
@@ -72,12 +73,12 @@ impl ImportedTopologySnapshot {
             generated_unix: self.generated_unix,
             ingress_identity: self.ingress_identity,
             native_canonical: self.native_canonical,
-            native_editor: self.native_editor,
             parent_candidates: self.parent_candidates,
             compatibility_network_json: self.compatibility_network_json,
             shaped_devices,
             circuit_anchors: self.circuit_anchors,
             ethernet_advisories: self.ethernet_advisories,
+            circuit_matches: self.circuit_matches,
         }
     }
 }
@@ -104,6 +105,18 @@ pub struct TopologyCompiledShapingFile {
     shaped_devices: Vec<ShapedDevice>,
     #[serde(default)]
     circuit_anchors: CircuitAnchorsFile,
+    #[serde(default)]
+    circuit_matches: TopologyCircuitMatchIndex,
+}
+
+/// Runtime-ready artifacts extracted from a compiled-shaping file.
+pub struct CompiledShapingArtifacts {
+    /// Shaping-device rows for integration ingress.
+    pub shaped_devices: ConfigShapedDevices,
+    /// Circuit anchor rows for integration ingress.
+    pub circuit_anchors: Vec<lqos_config::CircuitAnchor>,
+    /// Phase C S3 per-circuit match identities keyed by circuit id.
+    pub circuit_matches: TopologyCircuitMatchIndex,
 }
 
 impl TopologyCompiledShapingFile {
@@ -122,6 +135,32 @@ impl TopologyCompiledShapingFile {
             ingress_identity: compiled.ingress_identity.clone(),
             shaped_devices: compiled.shaped_devices.devices.clone(),
             circuit_anchors: compiled.circuit_anchors.clone(),
+            circuit_matches: compiled.circuit_matches.clone(),
+        }
+    }
+
+    /// Phase C S4: builds the compiled-shaping artifact from a raw imported
+    /// bundle WITHOUT topology projection — the permanent manual pair's
+    /// tolerant contract. The manual topology is resolved by the runtime's
+    /// canonical/effective chain, so missing parents stay a downstream warning
+    /// and never block ingest. `ingress_identity` must match the sibling
+    /// [`TopologyImportFile`] so the runtime's identity cross-check holds.
+    ///
+    /// This function is pure: it has no side effects.
+    pub fn from_imported_manual(
+        imported: &ImportedTopologyBundle,
+        compile_mode: impl Into<String>,
+        ingress_identity: Option<String>,
+    ) -> Self {
+        Self {
+            schema_version: default_topology_import_schema_version(),
+            source: imported.source.clone(),
+            compile_mode: compile_mode.into(),
+            generated_unix: imported.generated_unix,
+            ingress_identity,
+            shaped_devices: imported.shaped_devices.devices.clone(),
+            circuit_anchors: imported.circuit_anchors.clone(),
+            circuit_matches: imported.circuit_matches.clone(),
         }
     }
 
@@ -147,13 +186,18 @@ impl TopologyCompiledShapingFile {
         )
     }
 
-    /// Returns the shaping-device rows and circuit anchors for integration ingress.
+    /// Returns the shaping-device rows, circuit anchors, and per-circuit match
+    /// identities for integration ingress.
     ///
     /// This function is pure: it has no side effects.
-    pub fn shaping_artifacts(self) -> (ConfigShapedDevices, Vec<lqos_config::CircuitAnchor>) {
+    pub fn shaping_artifacts(self) -> CompiledShapingArtifacts {
         let mut shaped_devices = ConfigShapedDevices::default();
         shaped_devices.replace_with_new_data(self.shaped_devices);
-        (shaped_devices, self.circuit_anchors.anchors)
+        CompiledShapingArtifacts {
+            shaped_devices,
+            circuit_anchors: self.circuit_anchors.anchors,
+            circuit_matches: self.circuit_matches,
+        }
     }
 }
 
@@ -189,8 +233,6 @@ pub struct ImportedTopologyBundle {
     pub ingress_identity: Option<String>,
     /// Rich canonical topology state, when the importer can provide it directly.
     pub native_canonical: Option<TopologyCanonicalStateFile>,
-    /// Rich editor/runtime topology state, when the importer can provide it directly.
-    pub native_editor: Option<TopologyEditorStateFile>,
     /// Legacy immediate-parent candidate snapshot, when available.
     pub parent_candidates: Option<TopologyParentCandidatesFile>,
     /// Compatibility topology tree used by legacy readers.
@@ -201,6 +243,8 @@ pub struct ImportedTopologyBundle {
     pub circuit_anchors: CircuitAnchorsFile,
     /// Ethernet advisories associated with the imported topology.
     pub ethernet_advisories: Vec<CircuitEthernetMetadata>,
+    /// Phase C S3 per-circuit match identities keyed by stable circuit id.
+    pub circuit_matches: TopologyCircuitMatchIndex,
 }
 
 /// Fully compiled topology outputs for one selected mode.
@@ -225,6 +269,8 @@ pub struct CompiledTopologyBundle {
     pub circuit_anchors: CircuitAnchorsFile,
     /// Ethernet advisories emitted to runtime metadata.
     pub ethernet_advisories: Vec<CircuitEthernetMetadata>,
+    /// Phase C S3 per-circuit match identities keyed by stable circuit id.
+    pub circuit_matches: TopologyCircuitMatchIndex,
 }
 
 impl ImportedTopologyBundle {
@@ -242,14 +288,10 @@ impl ImportedTopologyBundle {
         }
 
         let mut tokens = vec![format!("source:{}", self.source.trim())];
-        if let Some(editor) = &self.native_editor {
-            tokens.extend(
-                editor
-                    .nodes
-                    .iter()
-                    .map(|node| format!("editor-node:{}", node.node_id.trim())),
-            );
-        } else if let Some(canonical) = &self.native_canonical {
+        // Rung 1.5 §1.3: ingress identity is CANONICAL-derived only — the
+        // embedded editor payload is dead, so the `editor-node:` token class
+        // must never reappear (the #12-HIGH import-payload gate).
+        if let Some(canonical) = &self.native_canonical {
             tokens.extend(
                 canonical
                     .nodes
@@ -300,10 +342,6 @@ impl ImportedTopologyBundle {
             let loaded = TopologyCanonicalStateFile::load(config)?;
             (!loaded.nodes.is_empty()).then_some(loaded)
         };
-        let native_editor = {
-            let loaded = TopologyEditorStateFile::load(config)?;
-            (!loaded.nodes.is_empty()).then_some(loaded)
-        };
         let parent_candidates = {
             let loaded = TopologyParentCandidatesFile::load(config)?;
             (!loaded.nodes.is_empty()).then_some(loaded)
@@ -312,26 +350,20 @@ impl ImportedTopologyBundle {
             source: source.into(),
             generated_unix: native_canonical
                 .as_ref()
-                .and_then(|state| state.generated_unix)
-                .or(native_editor
-                    .as_ref()
-                    .and_then(|state| state.generated_unix)),
+                .and_then(|state| state.generated_unix),
             ingress_identity: native_canonical
                 .as_ref()
                 .and_then(|state| state.ingress_identity.clone())
-                .or(native_editor
-                    .as_ref()
-                    .and_then(|state| state.ingress_identity.clone()))
                 .or(parent_candidates
                     .as_ref()
                     .and_then(|state| state.ingress_identity.clone())),
             native_canonical,
-            native_editor,
             parent_candidates,
             compatibility_network_json,
             shaped_devices: ConfigShapedDevices::load_for_config(config)?,
             circuit_anchors: CircuitAnchorsFile::load(config)?,
             ethernet_advisories: Vec::new(),
+            circuit_matches: TopologyCircuitMatchIndex::new(),
         })
     }
 }
@@ -392,9 +424,56 @@ impl TopologyImportFile {
     }
 }
 
+/// Phase C S4: derives the manual world's canonical projection from the pair's
+/// `network.json`, tagged `NativeIntegration` and carrying the import's ingress
+/// identity, so the integration and manual worlds persist the SAME canonical
+/// shape and the runtime's import-only canonical loader validates it.
+fn manual_canonical(
+    imported: &ImportedTopologyBundle,
+    ingress_identity: Option<String>,
+) -> TopologyCanonicalStateFile {
+    let mut canonical =
+        TopologyCanonicalStateFile::from_legacy_network_json(&imported.compatibility_network_json);
+    canonical.ingress_kind = TopologyCanonicalIngressKind::NativeIntegration;
+    canonical.ingress_identity = ingress_identity;
+    canonical.source = imported.source.clone();
+    canonical
+}
+
+/// Phase C S4: the ONE manual producer. Persists the compiled ingest artifacts
+/// (`topology_import.json`, `topology_compiled_shaping.json`) AND the canonical
+/// projection (`topology_canonical_state.json`) from the permanent manual pair,
+/// so every downstream consumer reads materialized artifacts only.
+///
+/// Returns `false` when no manual pair exists.
+///
+/// Side effects: reads the manual pair and writes the three artifacts.
+pub fn materialize_manual_topology(config: &Config) -> anyhow::Result<bool> {
+    let network_present = config.legacy_runtime_file_path("network.json").exists();
+    let shaped_devices_present = lqos_config::ConfigShapedDevices::path_for_config(config).exists();
+    if !network_present && !shaped_devices_present {
+        return Ok(false);
+    }
+    let imported = ImportedTopologyBundle::from_legacy_artifacts(config, "legacy/manual")?;
+    let mode_name = config.shared_topology_compile_mode().unwrap_or("full");
+    let topology_import = TopologyImportFile::from_imported_bundle(&imported, mode_name);
+    let ingress_identity = topology_import.ingress_identity.clone();
+    let compiled_shaping = TopologyCompiledShapingFile::from_imported_manual(
+        &imported,
+        mode_name,
+        ingress_identity.clone(),
+    );
+    let canonical = manual_canonical(&imported, ingress_identity);
+    topology_import.save(config)?;
+    compiled_shaping.save(config)?;
+    canonical.save(config)?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lqos_config::TopologyCanonicalNode;
     use serde_json::json;
 
     fn imported_bundle_with_identity(identity: &str) -> ImportedTopologyBundle {
@@ -403,13 +482,53 @@ mod tests {
             generated_unix: Some(123),
             ingress_identity: Some(identity.to_string()),
             native_canonical: None,
-            native_editor: None,
             parent_candidates: None,
             compatibility_network_json: json!({}),
             shaped_devices: ConfigShapedDevices::default(),
             circuit_anchors: CircuitAnchorsFile::default(),
             ethernet_advisories: Vec::new(),
+            circuit_matches: Default::default(),
         }
+    }
+
+    /// Rung 1.5 §1.3 #12-HIGH gate: the persisted import carries NO editor
+    /// payload and ingress identity is canonical-derived (no `editor-node:`
+    /// tokens — a filename grep is blind to the embedded copy).
+    #[test]
+    fn topology_import_carries_no_editor_payload_and_identity_is_canonical_derived() {
+        let mut imported = imported_bundle_with_identity("import-base");
+        imported.ingress_identity = None;
+        imported.native_canonical = Some(TopologyCanonicalStateFile {
+            schema_version: 1,
+            source: "uisp/full2".to_string(),
+            generated_unix: Some(1),
+            ingress_identity: None,
+            ingress_kind: lqos_config::TopologyCanonicalIngressKind::NativeIntegration,
+            nodes: vec![TopologyCanonicalNode {
+                node_id: "uisp:site:alpha".to_string(),
+                node_name: "Alpha".to_string(),
+                ..TopologyCanonicalNode::default()
+            }],
+            compatibility_network_json: serde_json::json!({}),
+        });
+        let file = TopologyImportFile::from_imported_bundle(&imported, "full");
+        let json = serde_json::to_value(&file).expect("import should serialize");
+        assert!(
+            json.get("imported")
+                .and_then(|snapshot| snapshot.get("native_editor"))
+                .is_none(),
+            "topology_import.json must carry NO embedded editor payload: {json}"
+        );
+        let identity = imported.ingress_identity().expect("identity");
+        let expected = topology_ingress_identity_from_tokens([
+            "source:test/import".to_string(),
+            "canonical-node:uisp:site:alpha".to_string(),
+        ])
+        .expect("expected canonical-derived identity");
+        assert_eq!(
+            identity, expected,
+            "ingress identity must hash the canonical nodes (no editor tokens)"
+        );
     }
 
     #[test]
@@ -457,9 +576,20 @@ mod tests {
                 parent_hash: 0,
             }],
             circuit_anchors: CircuitAnchorsFile::default(),
+            circuit_matches: [(
+                "circuit-1".to_string(),
+                lqos_config::TopologyCircuitMatchIdentity::Vlan(64),
+            )]
+            .into_iter()
+            .collect(),
         };
-        let (shaped_devices, anchors) = file.shaping_artifacts();
-        assert_eq!(shaped_devices.devices.len(), 1);
-        assert!(anchors.is_empty());
+        let artifacts = file.shaping_artifacts();
+        assert_eq!(artifacts.shaped_devices.devices.len(), 1);
+        assert!(artifacts.circuit_anchors.is_empty());
+        assert_eq!(
+            artifacts.circuit_matches.get("circuit-1"),
+            Some(&lqos_config::TopologyCircuitMatchIdentity::Vlan(64)),
+            "the per-circuit match identity must survive the compiled-shaping file"
+        );
     }
 }

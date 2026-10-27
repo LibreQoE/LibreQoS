@@ -7,12 +7,18 @@ import {
     cakeHistoryWindow,
     cakeScatterSeries,
     cakeTooltip,
+    cakePerDirectionOption,
     formatCakePackets,
+    CAKE_TIN_LEGEND_PAIRS,
+    attachLegendPairMirror,
+    cakeTinIndexFor,
 } from "./cake_history";
 
 export class CakeDrops extends DashboardGraph {
     constructor(id) {
         super(id);
+        // `lqos-74t.53` (A): mirror a legend tin toggle to its paired `… Up` line.
+        attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
             title: cakeChartTitle("Shaper Drops", "Packets per sample"),
@@ -21,7 +27,7 @@ export class CakeDrops extends DashboardGraph {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
-                selectMode: false,
+                // do NOT set selectedMode:false — it disables the legend + the mirror
                 textStyle: {
                     color: '#aaa'
                 },
@@ -78,23 +84,24 @@ export class CakeDrops extends DashboardGraph {
 
     onThemeChange() {
         super.onThemeChange();
-        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
-        this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
-        this.option.legend.data[2].itemStyle.color = window.graphPalette[2];
-        this.option.legend.data[3].itemStyle.color = window.graphPalette[3];
-        this.option.series[0].itemStyle.color = window.graphPalette[0];
-        this.option.series[1].itemStyle.color = window.graphPalette[1];
-        this.option.series[2].itemStyle.color = window.graphPalette[2];
-        this.option.series[3].itemStyle.color = window.graphPalette[3];
-        this.option.series[4].itemStyle.color = window.graphPalette[0];
-        this.option.series[5].itemStyle.color = window.graphPalette[1];
-        this.option.series[6].itemStyle.color = window.graphPalette[2];
-        this.option.series[7].itemStyle.color = window.graphPalette[3];
+        const palette = window.graphPalette;
+        this.option.legend.data.forEach((entry, i) => {
+            entry.itemStyle.color = palette[i % palette.length];
+        });
+        this.option.series.forEach((series, i) => {
+            series.itemStyle.color = palette[i % palette.length];
+        });
         this.chart.setOption(this.option);
     }
 
     update(msg) {
         this.chart.hideLoading();
+
+        if (msg && msg.per_direction) {
+            this.option = cakePerDirectionOption(msg, "Shaper Drops (per-direction)", "drops", formatCakePackets);
+            this.chart.setOption(this.option, true);
+            return;
+        }
 
         for (let i=0; i<8; i++) {
             this.option.series[i].data = [];
@@ -106,8 +113,8 @@ export class CakeDrops extends DashboardGraph {
                     this.option.series[j+4].data.push(null);
                     continue;
                 }
-                this.option.series[j].data.push(sample[0].tins[j].drops);
-                this.option.series[j+4].data.push(0 - sample[1].tins[j].drops);
+                this.option.series[j].data.push(sample[0].tins[cakeTinIndexFor(j)].drops);
+                this.option.series[j+4].data.push(0 - sample[1].tins[cakeTinIndexFor(j)].drops);
             }
         }
 

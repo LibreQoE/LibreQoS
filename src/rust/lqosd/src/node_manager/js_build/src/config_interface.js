@@ -13,7 +13,6 @@ const RECONNECT_POLL_INTERVAL_MS = 2_000;
 const BRIDGE_MTU_HELP = "Applies to the bridge members and br0.";
 const SINGLE_INTERFACE_MTU_HELP = "Applies to the trunk interface.";
 const MTU_LOCKED_HELP = "MTU cannot be changed while a network-mode operation is pending.";
-const XDP_MTU_HELP = "XDP mode keeps this value for later, but LibreQoS will not apply it.";
 let currentHelperStatus = null;
 let currentInspection = null;
 let currentPendingOperation = null;
@@ -44,7 +43,6 @@ function cloneConfig(config) {
 }
 
 function configModeKind(config) {
-    if (config?.bridge?.use_xdp_bridge) return "xdp";
     if (config?.bridge) return "bridge";
     if (config?.single_interface) return "single";
     return "unknown";
@@ -133,19 +131,13 @@ function currentBridgeMtuValue() {
 }
 
 function updateBridgeMtuState() {
-    const useXdpBridge = document.getElementById("useXdpBridge")?.checked ?? false;
     const bridgeMtu = document.getElementById("bridgeMtu");
     const bridgeMtuHelp = document.getElementById("bridgeMtuHelp");
     if (!bridgeMtu || !bridgeMtuHelp) return;
     const editingLocked = Boolean(currentInspection?.editing_locked);
-    bridgeMtu.disabled = useXdpBridge || editingLocked;
+    bridgeMtu.disabled = editingLocked;
     if (editingLocked) {
         bridgeMtuHelp.textContent = MTU_LOCKED_HELP;
-        return;
-    }
-    if (useXdpBridge) {
-        clearMtuFieldError("bridgeMtu", "bridgeMtuError");
-        bridgeMtuHelp.textContent = XDP_MTU_HELP;
     } else {
         bridgeMtuHelp.textContent = BRIDGE_MTU_HELP;
     }
@@ -180,9 +172,7 @@ function validateConfig() {
             alert("Bridge mode requires two different interfaces");
             return false;
         }
-        if (document.getElementById("useXdpBridge").checked) {
-            clearMtuFieldError("bridgeMtu", "bridgeMtuError");
-        } else if (!validateMtuField("bridgeMtu", "bridgeMtuError", parseOptionalMtu)) {
+        if (!validateMtuField("bridgeMtu", "bridgeMtuError", parseOptionalMtu)) {
             return false;
         }
     } else if (document.getElementById("singleInterfaceMode").checked) {
@@ -218,7 +208,6 @@ function buildCandidateConfig() {
 
     if (document.getElementById("bridgeMode").checked) {
         next.bridge = {
-            use_xdp_bridge: document.getElementById("useXdpBridge").checked,
             to_internet: document.getElementById("toInternet").value.trim(),
             to_network: document.getElementById("toNetwork").value.trim(),
             mtu: currentBridgeMtuValue(),
@@ -351,7 +340,6 @@ function populateFormFromConfig(config) {
     renderInterfaceSelectors(config);
     if (config?.bridge) {
         document.getElementById("bridgeMode").checked = true;
-        document.getElementById("useXdpBridge").checked = config.bridge.use_xdp_bridge ?? true;
         document.getElementById("toInternet").value = config.bridge.to_internet ?? "";
         document.getElementById("toNetwork").value = config.bridge.to_network ?? "";
         document.getElementById("bridgeMtu").value = config.bridge.mtu ?? "";
@@ -685,7 +673,6 @@ function renderInspection(inspection) {
     [
         "bridgeMode",
         "singleInterfaceMode",
-        "useXdpBridge",
         "toInternet",
         "toNetwork",
         "bridgeMtu",
@@ -936,7 +923,6 @@ function wireActions() {
             renderInterfaceSelectors();
         });
     });
-    document.getElementById("useXdpBridge").addEventListener("change", updateMtuState);
     [
         "bridgeMtu",
         "singleInterfaceMtu",

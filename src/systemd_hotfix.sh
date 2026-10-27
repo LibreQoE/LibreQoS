@@ -150,9 +150,17 @@ resolved_hotfix_package_specs() {
     done < <(resolved_hotfix_package_names)
 }
 
+# NOTE (pipefail hazard): these helpers pipe `apt-cache policy` into `awk`.
+# With `set -o pipefail`, an awk that `exit`s before reading all of apt-cache's
+# output closes the pipe early; apt-cache then dies on SIGPIPE (141) and the
+# whole pipeline reports failure — even when awk matched successfully. The
+# match is therefore latched in a flag and awk reads to EOF (the END status is
+# the only exit), so apt-cache always completes and the pipeline stays 0.
 apt_candidate_version() {
     local package="$1"
-    LC_ALL=C apt-cache policy "$package" | awk '$1 == "Candidate:" { print $2; exit }'
+    LC_ALL=C apt-cache policy "$package" | awk '
+        $1 == "Candidate:" && !found { print $2; found = 1 }
+    '
 }
 
 apt_candidate_pin_priority() {
@@ -160,8 +168,8 @@ apt_candidate_pin_priority() {
     local version="$2"
 
     LC_ALL=C apt-cache policy "$package" | awk -v version="$version" '
-        $1 == "***" && $2 == version { print $3; found = 1; exit }
-        $1 == version { print $2; found = 1; exit }
+        $1 == "***" && $2 == version && !found { print $3; found = 1 }
+        $1 == version && !found { print $2; found = 1 }
         END { if (!found) exit 1 }
     '
 }
@@ -201,10 +209,11 @@ apt_candidate_has_hotfix_repo() {
             release_matches = 0
         }
 
+        # Latch the match; never `exit` here (the pipefail/SIGPIPE hazard
+        # above). awk reads to EOF and the END rule sets the final status.
         function accept_source() {
             if (source_matches && release_matches) {
                 found = 1
-                exit
             }
         }
 

@@ -1,5 +1,7 @@
 # Advanced Configuration Reference
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this page when you need CLI-driven configuration, direct file editing, or deep reference details.
 
 For the full topology/shaping pipeline and file-role diagrams, see [Topology Data Flow](topology-data-flow.md).
@@ -64,23 +66,6 @@ netflow_version = 5
 do_not_track_subnets = ["192.168.0.0/16"]
 ```
 
-#### Byte counters (optional)
-
-LibreQoS can keep cumulative byte counters per circuit and per network node for data-usage accounting, and expose them through `lqos_api`. The feature is disabled by default. To enable it, add the following section to `/etc/lqos.conf` and restart `lqosd`:
-
-```toml
-[byte_counters]
-enabled = true
-```
-
-- Values are actual transmitted bytes, not bytes dropped by shaping.
-- Values accumulate while `lqosd` runs and reset when `lqosd` restarts.
-- Node values include traffic from all descendant nodes.
-- Only circuits with recorded traffic are listed.
-- Circuits removed from `ShapedDevices.csv` keep contributing their accumulated bytes to their last known parent while `lqosd` runs.
-
-With the counters enabled, `GET /byte_counters` on the Node API returns the current values. See [LibreQoS Node API](api.md).
-
 #### On-a-stick mode queue mapping (single interface)
 
 When running on-a-stick mode, LibreQoS splits available TX queues in half:
@@ -123,7 +108,7 @@ With CPU binpacking enabled, flat mode preserves valid prior bucket assignments 
 Current builds separate logical topology from queue-visible topology.
 
 - Topology Manager keeps the full logical tree.
-- `network.effective.json`, `shaping_inputs.json`, `tree.html`, and HTB planning use the queue-visible runtime tree.
+- `topology_operator_view.json`, `shaping_inputs.json`, `tree.html`, and HTB planning use the queue-visible runtime tree.
 - Large aggregation nodes can be auto-virtualized for queueing while still remaining visible in the runtime tree and Topology Manager.
 
 The topology config now includes:

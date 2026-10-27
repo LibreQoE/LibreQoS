@@ -555,21 +555,33 @@ pub fn ignore_subnet(ip_string: String) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn submit_blackboard(bytes: &[u8]) -> anyhow::Result<()> {
-    let bytes = bytes.to_vec();
+/// `.2.2` Shape A: hand the ordered blackboard fragments to the ingestor. Each
+/// fragment becomes its own `IngestSession` (see
+/// `ingestor::message_queue::emit_blackboard_fragments`); the lts2 server
+/// byte-concatenates them within one arena batch and decodes one `Blackboard`.
+pub fn submit_blackboard_fragments(fragments: Vec<Vec<u8>>) -> anyhow::Result<()> {
+    if fragments.is_empty() {
+        return Ok(());
+    }
     if let Ok(tx) = client_commands::get_command_channel()
         && tx
             .send(LtsClientCommand::IngestData(
-                ingestor::commands::IngestorCommand::BlackboardJson(bytes),
+                ingestor::commands::IngestorCommand::BlackboardFragments(fragments),
             ))
             .is_err()
     {
-        error!("Failed to send blackboard JSON to LTS2 client");
+        error!("Failed to send blackboard fragments to LTS2 client");
         return Err(anyhow::anyhow!(
-            "Failed to send blackboard JSON to LTS2 client"
+            "Failed to send blackboard fragments to LTS2 client"
         ));
     }
     Ok(())
+}
+
+/// `.2.2` Shape A: the board split size (bytes), delegated to the ingestor which
+/// owns the session budget.
+pub(crate) fn blackboard_fragment_max_bytes() -> usize {
+    ingestor::blackboard_fragment_max_bytes()
 }
 
 pub fn flow_count(timestamp: u64, flow_count: u64) -> anyhow::Result<()> {

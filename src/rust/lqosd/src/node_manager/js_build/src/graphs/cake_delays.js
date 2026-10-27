@@ -8,11 +8,16 @@ import {
     cakeScatterSeries,
     cakeTooltip,
     formatCakeMillisecondsFromUs,
+    CAKE_TIN_LEGEND_PAIRS,
+    attachLegendPairMirror,
+    cakeTinIndexFor,
 } from "./cake_history";
 
 export class CakeDelays extends DashboardGraph {
     constructor(id) {
         super(id);
+        // `lqos-74t.53` (A): mirror a legend tin toggle to its paired `… Up` line.
+        attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
             title: cakeChartTitle("Delays", "Milliseconds"),
@@ -21,7 +26,7 @@ export class CakeDelays extends DashboardGraph {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
-                selectMode: false,
+                // do NOT set selectedMode:false — it disables the legend + the mirror
                 textStyle: {
                     color: '#aaa'
                 },
@@ -96,6 +101,15 @@ export class CakeDelays extends DashboardGraph {
     update(msg) {
         this.chart.hideLoading();
 
+ // Bridge modea): the per-tin value is the MEASURED p99
+        // queue sojourn (the bridge wire's `sojourn_p99_ns`), not Linux tc's
+        // cobalt base delay — label it honestly. The kernel path keeps the
+        // legacy "Delays" title (base_delay_us).
+        this.option.title = cakeChartTitle(
+            msg && msg.per_direction ? "Delay p99" : "Delays",
+            "Milliseconds",
+        );
+
         for (let i=0; i<8; i++) {
             this.option.series[i].data = [];
         }
@@ -106,8 +120,8 @@ export class CakeDelays extends DashboardGraph {
                     this.option.series[j+4].data.push(null);
                     continue;
                 }
-                this.option.series[j].data.push(sample[0].tins[j].base_delay_us);
-                this.option.series[j+4].data.push(0 - sample[1].tins[j].base_delay_us);
+                this.option.series[j].data.push(sample[0].tins[cakeTinIndexFor(j)].base_delay_us);
+                this.option.series[j+4].data.push(0 - sample[1].tins[cakeTinIndexFor(j)].base_delay_us);
             }
         }
 

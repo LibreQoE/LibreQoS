@@ -160,9 +160,16 @@ pub fn ip_policies(allow_subnets: &Vec<String>, ignore_subnets: &Vec<String>) ->
     Ok(())
 }
 
-pub fn blackboard(json: &[u8]) -> Result<()> {
-    lts2_client::submit_blackboard(json)?;
-    Ok(())
+/// `.2.2` Shape A: submit the serialized blackboard CBOR as ordered fragments.
+/// The lts2 server byte-concatenates them within one arena batch
+/// (`merge_ingest_sessions`) and decodes ONE `Blackboard`.
+pub fn blackboard_fragments(fragments: Vec<Vec<u8>>) -> Result<()> {
+    lts2_client::submit_blackboard_fragments(fragments)
+}
+
+/// `.2.2` Shape A: the max blackboard-fragment size (bytes).
+pub fn blackboard_fragment_max_bytes() -> usize {
+    lts2_client::blackboard_fragment_max_bytes()
 }
 
 pub fn flow_count(timestamp: u64, count: u64) -> Result<()> {

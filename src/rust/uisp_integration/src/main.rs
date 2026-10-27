@@ -99,4 +99,35 @@ mod test {
         let result = check_enabled_status(&cfg);
         assert!(result.is_ok());
     }
+
+    /// Rung 1.5 §1.4 deletion audit: the UISP adapter crate has no
+    /// ShapedDevices.csv / network.json writer outside tests. (Adapter-B's
+    /// `lqos_python` CSV echo and the DIY editor writer live in other crates
+    /// and are intentionally out of scope.)
+    #[test]
+    fn no_legacy_csv_or_network_json_writer_in_this_crate() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        collect_legacy_writers(&root, &mut offenders);
+        assert!(offenders.is_empty(), "legacy writers remain: {offenders:?}");
+    }
+
+    fn collect_legacy_writers(dir: &std::path::Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).expect("strategies dir should read") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                collect_legacy_writers(&path, out);
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                continue;
+            }
+            let src = std::fs::read_to_string(&path).expect("source should read");
+            if src.contains(concat!("join(", "\"ShapedDevices.csv\")"))
+                || src.contains(concat!("join(", "\"network.json\")"))
+            {
+                out.push(path.display().to_string());
+            }
+        }
+    }
 }

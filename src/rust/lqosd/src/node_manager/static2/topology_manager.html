@@ -447,7 +447,9 @@
     <div class="topology-manager-panel p-2 p-lg-3">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
             <div>
-                <h6 class="mb-0"><i class="fa fa-sitemap"></i> Hierarchy Summary</h6>
+                <h6 class="mb-0"><i class="fa fa-sitemap"></i> Hierarchy Summary
+                    <span class="topology-manager-help" title="Canonical = the desired topology (latest integration snapshot). Live = the runtime-effective path used for shaping. Saved = the operator override (shown as the state chip, not a path).">?</span>
+                </h6>
             </div>
             <span id="topologyManagerPendingBadge" class="badge rounded-pill text-bg-warning d-none">Pending</span>
         </div>
@@ -458,18 +460,18 @@
                 <div id="topologyManagerCanonicalHierarchy" class="topology-manager-path"></div>
             </div>
 
-            <div class="topology-manager-summary-row">
+            <div id="topologyManagerLiveHierarchyRow" class="topology-manager-summary-row d-none">
                 <div id="topologyManagerLiveHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label">Live</div>
                 <div id="topologyManagerLiveHierarchy" class="topology-manager-path"></div>
-            </div>
-
-            <div class="topology-manager-summary-row">
-                <div id="topologyManagerSavedHierarchyLabel" class="small text-uppercase text-body-secondary topology-manager-summary-label">Saved</div>
-                <div id="topologyManagerSavedHierarchy" class="topology-manager-path"></div>
             </div>
         </div>
 
         <div id="topologyManagerHierarchyMeta" class="d-none"></div>
+
+        <div id="topologyManagerSavedOverride" class="d-none mt-2">
+            <div class="small text-uppercase text-body-secondary topology-manager-summary-label">Saved override</div>
+            <div id="topologyManagerSavedOverridePath" class="topology-manager-path"></div>
+        </div>
     </div>
 
     <div class="row gx-3 align-items-stretch flex-fill">
@@ -525,9 +527,18 @@
                     </div>
                     <div class="topology-manager-details-header-actions">
                         <div id="topologyManagerPrimaryActions" class="topology-manager-primary-actions"></div>
-                        <button class="btn btn-sm btn-outline-secondary" id="topologyManagerClearSaved" type="button" disabled>
-                            <i class="fa fa-eraser"></i> Clear Saved
-                        </button>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" id="topologyManagerDetailsOverflow" data-bs-toggle="dropdown" aria-expanded="false" title="More actions">
+                                <i class="fa fa-ellipsis"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="topologyManagerDetailsOverflow">
+                                <li>
+                                    <button class="dropdown-item" id="topologyManagerClearSaved" type="button" disabled>
+                                        <i class="fa fa-eraser"></i> Clear Saved
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 

@@ -1,7 +1,7 @@
 //! Provides an Axum layer that applies templates to static HTML
 //! files.
 
-use crate::node_manager::auth::get_username;
+use crate::node_manager::auth::{get_role, get_username};
 use crate::node_manager::security_headers::apply_node_manager_security_headers;
 use crate::tool_status::is_api_available;
 use axum::body::{Body, to_bytes};
@@ -139,6 +139,10 @@ pub async fn apply_templates(
     // Update the displayed username
     let username = get_username(&jar).await;
     let template_text = template_text.replace("%%USERNAME%%", &username);
+    // E3: role surface for UI affordance gating (backend re-checks
+    // every write; this only hides buttons from read-only users).
+    let role = get_role(&jar).await;
+    let template_text = template_text.replace("%%ROLE%%", role);
 
     let res = next.run(req).await;
     let new_version = crate::version_checks::new_version_available();
@@ -185,6 +189,18 @@ pub async fn apply_templates(
             rtt_thresholds.red_ms,
         );
 
+        // The Site Map's configurable tile base (long_term_stats.lts_url) rides
+        // alongside the capability globals; site_map.js reads it (defaults to
+        // the historical Insight OSM cache when unset).
+        let insight_base = crate::node_manager::local_api::lts::normalize_insight_base_url(
+            config.long_term_stats.lts_url.as_deref(),
+        );
+        let lts_script = format!(
+            "<script>window.lqosInsightBaseUrl = {};</script>{}",
+            serde_json::to_string(&insight_base).unwrap_or_else(|_| "\"\"".to_string()),
+            lts_script
+        );
+
         let (mut res_parts, res_body) = res.into_parts();
         let bytes = to_bytes(res_body, 1_000_000)
             .await
@@ -214,40 +230,90 @@ pub async fn apply_templates(
         let chat_link = CHAT_LINK_ACTIVE;
         let byte_string = byte_string.replace("%%CHAT_LINK%%", chat_link);
 
+        // One sidebar status item structure (the sidebar UI-hygiene card): a single
+        // li/a/icon shape so Scheduler/Bridge/Urgent/Update cannot drift.
+        // `fa-fw` + the fixed-width `.nav-status-icon` slot keep icons aligned.
+        fn status_item_html(
+            li_id: &str,
+            link_id: &str,
+            hidden: bool,
+            extra_a: &str,
+            href: &str,
+            icon: &str,
+            label: &str,
+            badge: &str,
+        ) -> String {
+            format!(
+                r##"
+<li class="nav-item{hidden}" id="{li_id}">
+    <a class="nav-link {extra_a}" href="{href}" id="{link_id}">
+        <i class="fa fa-fw fa-centerline {icon} nav-status-icon"></i> {label}{badge}
+    </a>
+</li>
+"##,
+                hidden = if hidden { " d-none" } else { "" },
+            )
+        }
+
         // Replace SCHEDULER_STATUS with a simple placeholder for client-side rendering
         // The client JS will fetch status and populate this container.
-        let scheduler_placeholder = r##"
-<li class="nav-item" id="schedulerStatus">
-    <a class="nav-link" href="#" id="schedulerStatusLink">
-        <i class="fa fa-fw fa-centerline fa-circle-notch fa-spin"></i> Scheduler
-    </a>
-</li>
-"##;
-        let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", scheduler_placeholder);
+        let scheduler_placeholder = status_item_html(
+            "schedulerStatus",
+            "schedulerStatusLink",
+            false,
+            "",
+            "#",
+            "fa-circle-notch fa-spin",
+            "Scheduler",
+            "",
+        );
+        let byte_string = byte_string.replace("%%SCHEDULER_STATUS%%", &scheduler_placeholder);
+
+        // E2: bridge Supervisor health placeholder (client-side render;
+        // hidden entirely when the DPDK bridge is not configured).
+        // L4 §5b: the sidebar Bridge item LINKs to the new Bridge page.
+        let bridge_placeholder = status_item_html(
+            "bridgeStatus",
+            "bridgeStatusLink",
+            true,
+            "",
+            "bridge.html",
+            "fa-circle-notch fa-spin",
+            "Bridge",
+            "",
+        );
+        let byte_string = byte_string.replace("%%BRIDGE_STATUS%%", &bridge_placeholder);
 
         // Placeholder for urgent issues indicator
-        let urgent_placeholder = r##"
-<li class="nav-item" id="urgentStatus">
-    <a class="nav-link text-secondary" href="#" id="urgentStatusLink">
-        <i class="fa fa-fw fa-centerline fa-bell-slash"></i> Urgent Issues
-        <span id="urgentBadge" class="badge bg-danger d-none">0</span>
-    </a>
-</li>
-"##;
-        let byte_string = byte_string.replace("%%URGENT_STATUS%%", urgent_placeholder);
+        let urgent_placeholder = status_item_html(
+            "urgentStatus",
+            "urgentStatusLink",
+            false,
+            "text-secondary",
+            "#",
+            "fa-bell-slash",
+            "Alerts",
+            r#"<span id="urgentBadge" class="badge bg-danger d-none">0</span>"#,
+        );
+        let byte_string = byte_string.replace("%%URGENT_STATUS%%", &urgent_placeholder);
 
         let update_placeholder = if new_version {
-            r##"
-<li class="nav-item" id="updateStatus">
-    <a class="nav-link btn btn-link text-start w-100 p-0 border-0 text-warning" href="https://libreqos.readthedocs.io/en/latest/docs/v2.0/update.html" target="_blank" rel="noopener noreferrer" id="updateStatusLink" aria-label="Open LibreQoS update guide" title="Open LibreQoS update guide">
-        <i class="fa fa-fw fa-centerline fa-download"></i> Update Available
-    </a>
-</li>
-"##
+            status_item_html(
+                "updateStatus",
+                "updateStatusLink",
+                false,
+                "text-warning",
+                // the sidebar UI-hygiene card: the stale v2.0 update page is replaced by the
+                // documentation root until the v3 upgrade doc is published.
+                "https://libreqos.readthedocs.io/en/latest/",
+                "fa-download",
+                "Update Available",
+                "",
+            )
         } else {
-            ""
+            String::new()
         };
-        let byte_string = byte_string.replace("%%UPDATE_STATUS%%", update_placeholder);
+        let byte_string = byte_string.replace("%%UPDATE_STATUS%%", &update_placeholder);
 
         let byte_string = byte_string.replace("%CACHEBUSTERS%", &format!("?gh={}", GIT_HASH));
         if let Some(length) = res_parts.headers.get_mut("content-length") {
@@ -257,7 +323,10 @@ pub async fn apply_templates(
         res_parts
             .headers
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-        apply_node_manager_security_headers(&mut res_parts.headers);
+        let extra_host = crate::node_manager::security_headers::insight_csp_origin(
+            config.long_term_stats.lts_url.as_deref(),
+        );
+        apply_node_manager_security_headers(&mut res_parts.headers, extra_host.as_deref());
         let res = Response::from_parts(res_parts, Body::from(byte_string));
         Ok(res)
     } else {

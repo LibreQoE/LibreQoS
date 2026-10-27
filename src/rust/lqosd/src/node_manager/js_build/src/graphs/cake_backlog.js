@@ -8,11 +8,16 @@ import {
     cakeScatterSeries,
     cakeTooltip,
     formatCakeBytes,
+    CAKE_TIN_LEGEND_PAIRS,
+    attachLegendPairMirror,
+    cakeTinIndexFor,
 } from "./cake_history";
 
 export class CakeBacklog extends DashboardGraph {
     constructor(id) {
         super(id);
+        // `lqos-74t.53` (A): mirror a legend tin toggle to its paired `… Up` line.
+        attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
             title: cakeChartTitle("Backlog", "Bytes"),
@@ -21,7 +26,7 @@ export class CakeBacklog extends DashboardGraph {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
-                selectMode: false,
+                // do NOT set selectedMode:false — it disables the legend + the mirror
                 textStyle: {
                     color: '#aaa'
                 },
@@ -107,8 +112,8 @@ export class CakeBacklog extends DashboardGraph {
                     this.option.series[j+4].data.push(null);
                     continue;
                 }
-                this.option.series[j].data.push(sample[0].tins[j].backlog_bytes);
-                this.option.series[j+4].data.push(0 - sample[1].tins[j].backlog_bytes);
+                this.option.series[j].data.push(sample[0].tins[cakeTinIndexFor(j)].backlog_bytes);
+                this.option.series[j+4].data.push(0 - sample[1].tins[cakeTinIndexFor(j)].backlog_bytes);
             }
         }
 

@@ -724,7 +724,7 @@ mod tests {
 
         let response = handle_requests_with_deadline_for_duration(
             slow_mutating_handler,
-            vec![BusRequest::ClearHotCache],
+            vec![BusRequest::ReloadLibreQoS],
             "test",
             Duration::from_millis(5),
         )

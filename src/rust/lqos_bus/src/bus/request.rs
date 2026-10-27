@@ -1,48 +1,9 @@
 // SPDX-FileCopyrightText: 2025 LibreQoE support@libreqos.io
 // SPDX-License-Identifier: AGPL-3.0-or-later WITH LicenseRef-LibreQoS-Exception
 
-use crate::TcHandle;
 use allocative::Allocative;
 use lqos_config::Tunables;
 use serde::{Deserialize, Serialize};
-
-/// Override layer selected for a bus-backed override mutation.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Allocative)]
-pub enum OverrideLayerSelection {
-    /// Operator-owned overrides (`lqos_overrides.json`).
-    Operator,
-    /// StormGuard-owned overrides (`lqos_overrides.stormguard.json`).
-    Stormguard,
-    /// TreeGuard-owned overrides (`lqos_overrides.treeguard.json`).
-    Treeguard,
-}
-
-/// A single override mutation that `lqosd` should apply through its override writer actor.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
-pub enum OverrideMutation {
-    /// Remove node-virtual state for multiple node names in one load/save cycle.
-    ClearNodeVirtualBatch {
-        /// Exact node names from `network.json`.
-        node_names: Vec<String>,
-    },
-}
-
-/// Per-interface Bakery qdisc-budget report entry.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
-pub struct BakeryCapacityReportInterface {
-    /// Interface name, e.g. `ens19`.
-    pub name: String,
-    /// Planned qdisc count for the interface.
-    pub planned_qdiscs: usize,
-    /// Planned infrastructure qdiscs (`mq`, `htb`, etc.) for the interface.
-    pub infra_qdiscs: usize,
-    /// Planned `cake` leaf qdiscs for the interface.
-    pub cake_qdiscs: usize,
-    /// Planned `fq_codel` leaf qdiscs for the interface.
-    pub fq_codel_qdiscs: usize,
-    /// Estimated kernel memory cost for the interface's planned qdiscs.
-    pub estimated_memory_bytes: u64,
-}
 
 /// Source system for an urgent issue
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Allocative)]
@@ -83,6 +44,60 @@ pub struct SchedulerProgressReport {
     pub percent: u8,
     /// Unix timestamp when the progress state was last updated, if known.
     pub updated_unix: Option<u64>,
+}
+
+/// Cause class for the last integration import failure.
+///
+/// Classified at emission in `scheduler.py` (the layer holding the raw output)
+/// and forwarded verbatim by lqosd — no text archaeology at display time.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Allocative)]
+#[serde(rename_all = "snake_case")]
+pub enum IntegrationErrorClass {
+    /// The endpoint returned a redirect loop (e.g. UISP `too many redirects`).
+    RedirectLoop,
+    /// Authentication/authorization failure (HTTP 401/403).
+    Auth,
+    /// Host unreachable, timeout, or DNS failure.
+    Unreachable,
+    /// The subprocess exited non-zero with no recognized pattern.
+    ExitedUnknown,
+    /// No integration failure recorded.
+    None,
+}
+
+/// One bounded recent integration run for the System Health timeline.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
+pub struct SchedulerRun {
+    /// Unix timestamp of the run.
+    pub at: u64,
+    /// Whether the run succeeded.
+    pub ok: bool,
+    /// Duration in milliseconds, if known.
+    pub ms: Option<u64>,
+}
+
+/// Scheduler integration-sync status emitted by `scheduler.py`.
+///
+/// Carries the INTEGRATION health axis explicitly so the scheduler-error axis
+/// can mean loop/runtime errors only. The scheduler is the sole producer.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Allocative)]
+pub struct SchedulerIntegrationStatus {
+    /// The integration label that last ran (e.g. `UISP integration`).
+    pub integration_name: Option<String>,
+    /// Whether the last import completed successfully.
+    pub last_import_ok: Option<bool>,
+    /// Unix timestamp of the last import, if known.
+    pub last_import_at: Option<u64>,
+    /// Duration of the last import in milliseconds, if known.
+    pub last_import_ms: Option<u64>,
+    /// Consecutive failures since the last success (0 = healthy).
+    pub consecutive_failures: u32,
+    /// The classified cause of the last failure.
+    pub error_class: IntegrationErrorClass,
+    /// Stripped, actionable detail line(s) from the last failure.
+    pub error_detail: Option<String>,
+    /// The bounded recent-run ring (oldest first) for the timeline.
+    pub recent_runs: Vec<SchedulerRun>,
 }
 
 /// One or more `BusRequest` objects must be included in a `BusSession`
@@ -155,61 +170,6 @@ pub enum BusRequest {
     /// Retrieves current byte counters for all hosts.
     GetHostCounter,
 
-    /// Requests that the XDP back-end associate an IP address with a
-    /// TC (traffic control) handle, and CPU. The "upload" flag indicates
-    /// that this is a second channel applied to the SAME network interface,
-    /// used for "on-a-stick" mode upload channels.
-    MapIpToFlow {
-        /// The IP address to map, as a string. It can be IPv4 or IPv6,
-        /// and supports CIDR notation for subnets. "192.168.1.1",
-        /// "192.168.1.0/24", are both valid.
-        ip_address: String,
-
-        /// The TC Handle to which the IP address should be mapped.
-        tc_handle: TcHandle,
-
-        /// The CPU on which the TC handle should be shaped.
-        cpu: u32,
-
-        /// Hashed circuit identifier (from ShapedDevices.csv).
-        ///
-        /// This is required because lqosd treats kernel-provided hashes as the
-        /// authoritative source for circuit attribution.
-        circuit_id: u64,
-
-        /// Hashed device identifier (from ShapedDevices.csv).
-        ///
-        /// This is required because lqosd treats kernel-provided hashes as the
-        /// authoritative source for device attribution.
-        device_id: u64,
-
-        /// If true, this is a *second* flow for the same IP range on
-        /// the same NIC. Used for handling "on a stick" configurations.
-        upload: bool,
-    },
-
-    /// After a batch of `MapIpToFlow` requests, this command will
-    /// clear the hot cache, forcing the XDP program to re-read the
-    /// mapping table.
-    ClearHotCache,
-
-    /// Requests that the XDP program unmap an IP address/subnet from
-    /// the traffic management system.
-    DelIpFlow {
-        /// The IP address to unmap. It can be an IPv4, IPv6 or CIDR
-        /// subnet.
-        ip_address: String,
-
-        /// Should we delete a secondary mapping (for upload)?
-        upload: bool,
-    },
-
-    /// Clear all XDP IP/TC/CPU mappings.
-    ClearIpFlow,
-
-    /// Retreieve list of all current IP/TC/CPU mappings.
-    ListIpFlow,
-
     /// Simulate the previous version's `xdp_pping` command, returning
     /// RTT data for all mapped flows by TC handle.
     XdpPping,
@@ -278,6 +238,14 @@ pub enum BusRequest {
         requests: Vec<lqos_probe::ProbeRequest>,
         /// Maximum acceptable observation age in milliseconds.
         max_age_ms: u64,
+    },
+
+    /// K1b §4.6 pin 3: look up the bridge publish lifecycle for one minted
+    /// generation in the bridge broker's outcome ring. `None` when the
+    /// generation is not (or no longer) present.
+    BridgePublishStatus {
+        /// The minted generation to look up.
+        generation: String,
     },
 
     /// Request the full network tree
@@ -387,69 +355,6 @@ pub enum BusRequest {
     /// Finish a blackboard session
     BlackboardFinish,
 
-    // lqos_bakery requests
-    /// Start a bakery session
-    BakeryStart,
-    /// Request a bakery commit
-    BakeryCommit,
-    /// Setup the MQ top
-    BakeryMqSetup {
-        /// The number of queues available
-        queues_available: usize,
-        /// The "stick offset" calculated in LibreQoS.py
-        stick_offset: usize,
-    },
-    /// Add a site to the bakery
-    BakeryAddSite {
-        /// The site hash, which is a unique identifier for the site
-        site_hash: i64,
-        /// The parent class ID for the site
-        parent_class_id: TcHandle,
-        /// The upload parent class ID for the site
-        up_parent_class_id: TcHandle,
-        /// The class minor version for the site
-        class_minor: u16,
-        /// The minimum download bandwidth for the site
-        download_bandwidth_min: f32,
-        /// The minimum upload bandwidth for the site
-        upload_bandwidth_min: f32,
-        /// The maximum download bandwidth for the site
-        download_bandwidth_max: f32,
-        /// The maximum upload bandwidth for the site
-        upload_bandwidth_max: f32,
-    },
-    /// Add a circuit to the bakery
-    BakeryAddCircuit {
-        /// The circuit hash, which is a unique identifier for the circuit
-        circuit_hash: i64,
-        /// Human-readable circuit name when known at queue-build time.
-        circuit_name: Option<String>,
-        /// Human-readable parent site/node name when known at queue-build time.
-        site_name: Option<String>,
-        /// The parent class ID for the circuit
-        parent_class_id: TcHandle,
-        /// The upload parent class ID for the circuit
-        up_parent_class_id: TcHandle,
-        /// The class minor version for the circuit
-        class_minor: u16,
-        /// The minimum download bandwidth for the circuit
-        download_bandwidth_min: f32,
-        /// The minimum upload bandwidth for the circuit
-        upload_bandwidth_min: f32,
-        /// The maximum download bandwidth for the circuit
-        download_bandwidth_max: f32,
-        /// The maximum upload bandwidth for the circuit
-        upload_bandwidth_max: f32,
-        /// The class major version for the circuit
-        class_major: u16,
-        /// The upload class major version for the circuit
-        up_class_major: u16,
-        /// Concatenated list of IP addresses for the circuit
-        ip_addresses: String,
-        /// Optional per-circuit SQM override: "cake" or "fq_codel"
-        sqm_override: Option<String>,
-    },
-
     /// Get current Stormguard statistics
     GetStormguardStats,
 
@@ -458,68 +363,6 @@ pub enum BusRequest {
 
     /// Get current StormGuard lifecycle and dependency health.
     GetStormguardRuntimeStatus,
-
-    /// Get current Bakery statistics
-    GetBakeryStats,
-
-    /// Report the most recent Bakery qdisc-budget preflight result.
-    BakeryReportPreflight {
-        /// Whether the planned full reload fits within the current safe budget.
-        ok: bool,
-        /// Operator-facing summary of the preflight result.
-        message: String,
-        /// Safe operational budget used for the preflight.
-        safe_budget: usize,
-        /// Hard kernel limit for reference.
-        hard_limit: usize,
-        /// Estimated total kernel memory cost of the planned qdisc model.
-        estimated_total_memory_bytes: u64,
-        /// Current host memory available during preflight, if known.
-        memory_available_bytes: Option<u64>,
-        /// Memory floor that must remain available before the apply proceeds.
-        memory_guard_min_available_bytes: u64,
-        /// Whether the memory preflight passed.
-        memory_ok: bool,
-        /// Per-interface planned qdisc counts.
-        interfaces: Vec<BakeryCapacityReportInterface>,
-    },
-
-    /// Request a live Bakery runtime node virtualization or restore for a named node.
-    ///
-    /// This is intended for local daemon-side orchestration and tests that need a deterministic
-    /// runtime node operation without waiting for TreeGuard policy to fire.
-    TreeGuardSetNodeVirtual {
-        /// Exact node name from `network.json`.
-        node_name: String,
-        /// `true` to runtime-virtualize, `false` to restore.
-        virtualized: bool,
-    },
-
-    /// Request the latest Bakery runtime node-operation snapshot for a named node.
-    ///
-    /// This is intended for local daemon-side orchestration and tests that need to observe whether
-    /// a runtime node operation was deferred, is still applying, or failed after acceptance.
-    TreeGuardGetNodeVirtualStatus {
-        /// Exact node name from `network.json`.
-        node_name: String,
-    },
-
-    /// Request the latest Bakery runtime branch-state snapshot for a named node.
-    ///
-    /// This is intended for local daemon-side orchestration and tests that need to verify which
-    /// retained branch is active after a runtime virtualization or restore.
-    TreeGuardGetNodeVirtualBranchState {
-        /// Exact node name from `network.json`.
-        node_name: String,
-    },
-
-    /// Apply a batch of override mutations through the `lqosd` override writer actor.
-    ApplyOverrideMutationBatch {
-        /// Override layer to mutate.
-        layer: OverrideLayerSelection,
-        /// Mutations to apply in one load/save cycle.
-        mutations: Vec<OverrideMutation>,
-    },
 
     /// Announce that the API is ready
     ApiReady,
@@ -536,8 +379,16 @@ pub enum BusRequest {
     /// Announce informational scheduler output
     SchedulerOutput(String),
 
+    /// AVAIL 0(c) (CARD `v3_availability_hardening_card` §2): read the
+    /// broker's reconciliation convergence record (read-only; the broker is
+    /// the sole writer). The Python scheduler consumes this to drive re-mint.
+    GetConvergenceState,
+
     /// Announce scheduler startup or refresh progress metadata.
     SchedulerProgress(SchedulerProgressReport),
+
+    /// Announce the integration-sync status metadata (the integration axis).
+    SchedulerIntegrationStatus(SchedulerIntegrationStatus),
 
     /// Write an informational message to the lqosd logs
     LogInfo(String),
@@ -545,19 +396,6 @@ pub enum BusRequest {
     /// Check the scheduler status
     CheckSchedulerStatus,
 
-    /// Bakery: Change Site Speed
-    BakeryChangeSiteSpeedLive {
-        /// The hash of the site to target
-        site_hash: i64,
-        /// Commit download bandwidth in Mbps
-        download_bandwidth_min: f32,
-        /// Commit upload bandwidth in Mbps
-        upload_bandwidth_min: f32,
-        /// Ceiling download bandwidth in Mbps
-        download_bandwidth_max: f32,
-        /// Ceiling upload bandwidth in Mbps
-        upload_bandwidth_max: f32,
-    },
     /// Submit an urgent issue for high-priority operator visibility
     SubmitUrgentIssue {
         /// Source of the issue
@@ -633,9 +471,6 @@ pub enum BusRequest {
     /// Retrieve queue marks/drops totals
     GetQueueStatsTotal,
 
-    /// Retrieve cumulative byte counters for nodes and circuits.
-    GetByteCounters,
-
     /// Retrieve current top-level QoO history.
     GetQoo,
 
@@ -682,6 +517,12 @@ pub enum BusRequest {
     ///
     /// This variant is appended to preserve existing bincode discriminants.
     UpdateLqosdConfigPreserveApiCredentials(Box<lqos_config::Config>),
+
+    /// Read the read-only CPU & Workers snapshot assembled by the daemon
+    /// (bridge worker affinity, applied ownership/crossings, bridge placement
+    /// state, and moves availability). `lqos-74t.118.2`; the reply is a
+    /// versioned JSON document, so the bus crate stays free of broker types.
+    GetCpuWorkers,
 }
 
 impl BusRequest {
@@ -701,11 +542,6 @@ impl BusRequest {
             Self::GetWorstRetransmits { .. } => "GetWorstRetransmits",
             Self::GetBestRtt { .. } => "GetBestRtt",
             Self::GetHostCounter => "GetHostCounter",
-            Self::MapIpToFlow { .. } => "MapIpToFlow",
-            Self::ClearHotCache => "ClearHotCache",
-            Self::DelIpFlow { .. } => "DelIpFlow",
-            Self::ClearIpFlow => "ClearIpFlow",
-            Self::ListIpFlow => "ListIpFlow",
             Self::XdpPping => "XdpPping",
             Self::RttHistogram => "RttHistogram",
             Self::HostCounts => "HostCounts",
@@ -721,6 +557,7 @@ impl BusRequest {
             Self::ValidateShapedDevicesCsv => "ValidateShapedDevicesCsv",
             Self::GetNetworkMap { .. } => "GetNetworkMap",
             Self::ProbeBatch { .. } => "ProbeBatch",
+            Self::BridgePublishStatus { .. } => "BridgePublishStatus",
             Self::GetFullNetworkMap => "GetFullNetworkMap",
             Self::TopMapQueues(_) => "TopMapQueues",
             Self::GetNodeNamesFromIds(_) => "GetNodeNamesFromIds",
@@ -747,29 +584,19 @@ impl BusRequest {
             Self::BlackboardData { .. } => "BlackboardData",
             Self::BlackboardBlob { .. } => "BlackboardBlob",
             Self::BlackboardFinish => "BlackboardFinish",
-            Self::BakeryStart => "BakeryStart",
-            Self::BakeryCommit => "BakeryCommit",
-            Self::BakeryMqSetup { .. } => "BakeryMqSetup",
-            Self::BakeryAddSite { .. } => "BakeryAddSite",
-            Self::BakeryAddCircuit { .. } => "BakeryAddCircuit",
             Self::GetStormguardStats => "GetStormguardStats",
             Self::GetStormguardDebug => "GetStormguardDebug",
             Self::GetStormguardRuntimeStatus => "GetStormguardRuntimeStatus",
-            Self::GetBakeryStats => "GetBakeryStats",
-            Self::BakeryReportPreflight { .. } => "BakeryReportPreflight",
-            Self::TreeGuardSetNodeVirtual { .. } => "TreeGuardSetNodeVirtual",
-            Self::TreeGuardGetNodeVirtualStatus { .. } => "TreeGuardGetNodeVirtualStatus",
-            Self::TreeGuardGetNodeVirtualBranchState { .. } => "TreeGuardGetNodeVirtualBranchState",
-            Self::ApplyOverrideMutationBatch { .. } => "ApplyOverrideMutationBatch",
             Self::ApiReady => "ApiReady",
             Self::ChatbotReady => "ChatbotReady",
             Self::SchedulerReady => "SchedulerReady",
             Self::SchedulerError(_) => "SchedulerError",
             Self::SchedulerOutput(_) => "SchedulerOutput",
+            Self::GetConvergenceState => "GetConvergenceState",
             Self::SchedulerProgress(_) => "SchedulerProgress",
+            Self::SchedulerIntegrationStatus(_) => "SchedulerIntegrationStatus",
             Self::LogInfo(_) => "LogInfo",
             Self::CheckSchedulerStatus => "CheckSchedulerStatus",
-            Self::BakeryChangeSiteSpeedLive { .. } => "BakeryChangeSiteSpeedLive",
             Self::SubmitUrgentIssue { .. } => "SubmitUrgentIssue",
             Self::GetUrgentIssues => "GetUrgentIssues",
             Self::ClearUrgentIssue(_) => "ClearUrgentIssue",
@@ -786,7 +613,6 @@ impl BusRequest {
             Self::GetProtocolFlowTimeline { .. } => "GetProtocolFlowTimeline",
             Self::GetSchedulerDetails => "GetSchedulerDetails",
             Self::GetQueueStatsTotal => "GetQueueStatsTotal",
-            Self::GetByteCounters => "GetByteCounters",
             Self::GetCircuitCapacity => "GetCircuitCapacity",
             Self::GetTreeCapacity => "GetTreeCapacity",
             Self::GetRetransmitSummary => "GetRetransmitSummary",
@@ -801,6 +627,7 @@ impl BusRequest {
             Self::UpdateLqosdConfigPreserveApiCredentials(_) => {
                 "UpdateLqosdConfigPreserveApiCredentials"
             }
+            Self::GetCpuWorkers => "GetCpuWorkers",
         }
     }
 
@@ -821,7 +648,6 @@ impl BusRequest {
                 | Self::GetWorstRetransmits { .. }
                 | Self::GetBestRtt { .. }
                 | Self::GetHostCounter
-                | Self::ListIpFlow
                 | Self::XdpPping
                 | Self::RttHistogram
                 | Self::HostCounts
@@ -850,9 +676,6 @@ impl BusRequest {
                 | Self::GetStormguardStats
                 | Self::GetStormguardDebug
                 | Self::GetStormguardRuntimeStatus
-                | Self::GetBakeryStats
-                | Self::TreeGuardGetNodeVirtualStatus { .. }
-                | Self::TreeGuardGetNodeVirtualBranchState { .. }
                 | Self::CheckSchedulerStatus
                 | Self::GetUrgentIssues
                 | Self::GetDeviceCounts
@@ -866,7 +689,6 @@ impl BusRequest {
                 | Self::GetProtocolFlowTimeline { .. }
                 | Self::GetSchedulerDetails
                 | Self::GetQueueStatsTotal
-                | Self::GetByteCounters
                 | Self::GetCircuitCapacity
                 | Self::GetTreeCapacity
                 | Self::GetRetransmitSummary
@@ -875,6 +697,7 @@ impl BusRequest {
                 | Self::GetGlobalWarnings
                 | Self::GetLtsCapabilities
                 | Self::GetInsightLicenseSummary
+                | Self::GetCpuWorkers
         )
     }
 }
@@ -909,7 +732,7 @@ pub enum TopFlowType {
 
 #[cfg(test)]
 mod tests {
-    use super::{BusRequest, OverrideLayerSelection, OverrideMutation, TopFlowType};
+    use super::{BusRequest, TopFlowType};
 
     #[test]
     fn request_kind_omits_payload_details() {
@@ -926,19 +749,5 @@ mod tests {
             .kind(),
             "TopFlows"
         );
-    }
-
-    #[test]
-    fn override_write_request_kinds_and_timeout_classification_are_explicit() {
-        let batch_write_request = BusRequest::ApplyOverrideMutationBatch {
-            layer: OverrideLayerSelection::Treeguard,
-            mutations: vec![OverrideMutation::ClearNodeVirtualBatch {
-                node_names: vec!["Node A".to_string(), "Node B".to_string()],
-            }],
-        };
-
-        assert_eq!(batch_write_request.kind(), "ApplyOverrideMutationBatch");
-
-        assert!(!batch_write_request.can_fail_fast_on_timeout());
     }
 }

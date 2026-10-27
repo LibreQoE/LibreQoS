@@ -2,7 +2,6 @@
 
 use super::tuning::Tunables;
 use crate::etc::v15::stormguard;
-use crate::etc::v15::treeguard;
 use allocative::Allocative;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
@@ -150,20 +149,28 @@ pub struct Config {
     /// Packet capture time
     pub packet_capture_time: usize,
 
-    /// Queue refresh interval
-    pub queue_check_period_ms: u64,
-
     /// Tuning instructions
     pub tuning: Tunables,
 
     /// Bridge configuration
     pub bridge: Option<super::bridge::BridgeConfig>,
 
+    /// DPDK bridge dataplane settings (E2 stats + health). Optional so
+    /// kernel-dataplane configurations are untouched; the section's
+    /// presence activates the analytics polling actors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dataplane_bridge: Option<super::dataplane_bridge::DataplaneBridgeConfig>,
+
     /// Single-interface configuration
     pub single_interface: Option<super::bridge::SingleInterfaceConfig>,
 
     /// Queue Definition data (originally from ispConfig.py)
     pub queues: super::queues::QueueConfig,
+
+    /// Host CPU power posture (`[power] profile`; turbo is always off). The
+    /// section is optional and defaults to `balanced`.
+    #[serde(default)]
+    pub power: super::power::PowerConfig,
 
     /// Long-term stats configuration
     pub long_term_stats: super::long_term_stats::LongTermStats,
@@ -174,6 +181,13 @@ pub struct Config {
 
     /// IP Range definitions
     pub ip_ranges: super::ip_ranges::IpRanges,
+
+    /// The `[dataplane]` operator facts (card
+    /// `docs/lqos_conf_single_source_card.md` §3; `deny_unknown_fields` scoped to
+    /// that struct only). `None` = absent (a legacy box); the global v15 stays
+    /// tolerant.
+    #[serde(default)]
+    pub dataplane: Option<super::dataplane::DataplaneConfig>,
 
     /// Dynamic circuits configuration.
     ///
@@ -197,6 +211,10 @@ pub struct Config {
     /// Shared topology compiler settings.
     #[serde(default)]
     pub topology: super::topology::TopologyConfig,
+
+    /// `[maintenance_window]` (`lqos-8h8`) — the control-plane publish gate.
+    #[serde(default)]
+    pub maintenance_window: super::maintenance_window::MaintenanceWindowConfig,
 
     /// Dedicated Mikrotik IPv6 enrichment secrets/config path.
     #[serde(default)]
@@ -251,10 +269,6 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stormguard: Option<stormguard::StormguardConfig>,
 
-    /// TreeGuard intelligent node management.
-    #[serde(default)]
-    pub treeguard: treeguard::TreeguardConfig,
-
     /// Disable ICMP Ping Monitoring for Devices in the hosts view
     pub disable_icmp_ping: Option<bool>,
 
@@ -278,12 +292,13 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub enable_asn_heatmaps: bool,
 
-    /// Optional cumulative byte counters for nodes and circuits.
-    ///
-    /// The section is optional so older configuration files keep working
-    /// unchanged; counters are disabled when it is absent.
+    /// T1 named legacy escape (t1_tree_repoint_derivation T1b): when true,
+    /// the dashboard tree store is populated from the legacy `network.json`
+    /// instead of the v3 compiler artifact
+    /// (`state/topology/dataplane_transaction.json`). Default (unset/false):
+    /// the artifact is the only tree source — no implicit legacy fallback.
     #[serde(default)]
-    pub byte_counters: super::byte_counters::ByteCountersConfig,
+    pub legacy_network_json_tree: bool,
 }
 
 impl Config {
@@ -376,23 +391,30 @@ impl Config {
         }
         // Validate that default_sqm is not empty to prevent incomplete TC commands
         if self.queues.default_sqm.trim().is_empty() {
-            return Err("default_sqm cannot be empty. Please specify a qdisc type (e.g., 'cake diffserv4' or 'fq_codel')".to_string());
+            return Err("default_sqm cannot be empty. The v3 DPDK pipeline supports 'cake diffserv4'.".to_string());
         }
+        // NOTE: the bandwidth fields are NOT range-validated here. A
+        // non-positive / non-finite value means "no explicit root" — the engine's
+        // own semantics — and is IGNORED by `bandwidth_mbps()` (falling through
+        // [dataplane] -> [queues] -> the default). A control-plane-only reject
+        // would itself be the divergence (the engine is the shaping authority).
         if let Some(stormguard) = &self.stormguard {
             stormguard.validate()?;
         }
-        self.treeguard.validate()?;
         if let Some(dynamic_circuits) = &self.dynamic_circuits {
             dynamic_circuits.validate()?;
         }
         if let Some(radius_accounting) = &self.radius_accounting {
             radius_accounting.validate()?;
         }
+        self.maintenance_window.validate()?;
+        if let Some(flows) = &self.flows {
+            flows.validate()?;
+        }
         Ok(())
     }
 
-    /// Loads a config file from a string (used for testing only)
-    #[allow(dead_code)]
+    /// Loads and validates a config from a TOML string (the loader's parse step).
     pub fn load_from_string(s: &str) -> Result<Self, String> {
         let normalized = normalize_splynx_compat_keys(s)?;
         let config: Config =
@@ -457,15 +479,19 @@ impl Default for Config {
             rtt_thresholds: None,
             tuning: Tunables::default(),
             bridge: Some(super::bridge::BridgeConfig::default()),
+            dataplane_bridge: None,
             single_interface: None,
             queues: super::queues::QueueConfig::default(),
+            power: super::power::PowerConfig::default(),
             long_term_stats: super::long_term_stats::LongTermStats::default(),
             local_api: super::local_api::LocalApiConfig::default(),
             ip_ranges: super::ip_ranges::IpRanges::default(),
+            dataplane: None,
             dynamic_circuits: None,
             radius_accounting: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
             topology: super::topology::TopologyConfig::default(),
+            maintenance_window: super::maintenance_window::MaintenanceWindowConfig::default(),
             mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
             netzur_integration: Some(super::netzur_integration::NetzurIntegration::default()),
@@ -476,20 +502,18 @@ impl Default for Config {
             wispgate_integration: None,
             influxdb: None,
             packet_capture_time: 10,
-            queue_check_period_ms: 1000,
             flows: None,
             disable_webserver: None,
             webserver_listen: None,
             ssl: None,
             display_cobrand: false,
             stormguard: None,
-            treeguard: treeguard::TreeguardConfig::default(),
             disable_icmp_ping: Some(false),
             exclude_efficiency_cores: true,
             enable_circuit_heatmaps: true,
             enable_site_heatmaps: true,
             enable_asn_heatmaps: true,
-            byte_counters: super::byte_counters::ByteCountersConfig::default(),
+            legacy_network_json_tree: false,
         }
     }
 }
@@ -652,24 +676,49 @@ impl Config {
         }
     }
 
-    /// Are we in single-interface mode?
-    pub fn on_a_stick_mode(&self) -> bool {
-        self.bridge.is_none()
-    }
-
-    /// Get the VLANs for the stick interface
-    pub fn stick_vlans(&self) -> (u32, u32) {
-        if let Some(stick) = &self.single_interface {
-            (stick.network_vlan, stick.internet_vlan)
-        } else {
-            (0, 0)
-        }
+    /// The box's root shaper bandwidth `(download, upload)` in Mbps — the
+    /// SINGLE SOURCE for the CONTROL PLANE (card
+    /// `docs/lqos_conf_single_source_card.md` §3).
+    ///
+    /// Prefers the v3 `[dataplane]` (`download_mbps`/`upload_mbps`); falls back
+    /// to the legacy `[queues]` `downlink_bandwidth_mbps`/`uplink_bandwidth_mbps`
+    /// during the transition (a legacy box, or one the §7 fold has not yet
+    /// migrated). New code reads THIS, never the `[queues]` fields directly, so
+    /// the operator's single source is the one the control plane honours.
+    ///
+    /// Mirrors `bridge_rs::config::download_mbps()`/`upload_mbps()`'s resolution
+    /// (typed `bridge.conf` → lqos.conf → env → 1000): the control plane and the
+    /// engine must resolve the SAME fact. They fold TOGETHER — a control plane
+    /// that preferred `[dataplane]` while the engine still read `[queues]` would
+    /// diverge (the dashboard/spike guard vs the shaper).
+    pub fn bandwidth_mbps(&self) -> (f64, f64) {
+        // A non-positive / non-finite value means "no explicit root" — the
+        // engine's own semantics (`parse_mbps` + `as_bps() > 0`). IGNORE it and
+        // fall through [dataplane] -> [queues] -> the compiled default, per
+        // direction. This keeps the control plane and the engine on ONE
+        // resolution (a CP-only reject would BE the divergence), and the returned
+        // value is always valid so the integer consumers' casts are safe.
+        const DEFAULT_MBPS: f64 = 1_000.0;
+        let valid = |value: f64| value.is_finite() && value > 0.0;
+        let dataplane = self.dataplane.as_ref();
+        let download = dataplane
+            .map(|dataplane| dataplane.download_mbps)
+            .filter(|value| valid(*value))
+            .or_else(|| Some(self.queues.downlink_bandwidth_mbps).filter(|value| valid(*value)))
+            .unwrap_or(DEFAULT_MBPS);
+        let upload = dataplane
+            .map(|dataplane| dataplane.upload_mbps)
+            .filter(|value| valid(*value))
+            .or_else(|| Some(self.queues.uplink_bandwidth_mbps).filter(|value| valid(*value)))
+            .unwrap_or(DEFAULT_MBPS);
+        (download, upload)
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::super::bridge::{BridgeConfig, SingleInterfaceConfig};
+    use super::super::dataplane::DataplaneConfig;
     use super::{Config, RttThresholds, SslConfig, normalize_external_hostname};
 
     fn remove_sections(raw: &str, sections: &[&str]) -> String {
@@ -714,22 +763,149 @@ mod test {
     }
 
     #[test]
+    fn bandwidth_mbps_prefers_dataplane_then_falls_back_to_queues() {
+        // Legacy box (no [dataplane]): the [queues] values are the source.
+        let mut config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
+        config.dataplane = None;
+        config.queues.downlink_bandwidth_mbps = 8000.0;
+        config.queues.uplink_bandwidth_mbps = 5000.0;
+        assert_eq!(config.bandwidth_mbps(), (8000.0, 5000.0));
+
+        // v3 box ([dataplane] present): the v3 single source WINS.
+        config.dataplane = Some(DataplaneConfig {
+            download_mbps: 900.0,
+            upload_mbps: 450.0,
+        });
+        assert_eq!(config.bandwidth_mbps(), (900.0, 450.0));
+
+        // A decimal root rate survives the accessor (the engine accepts it too).
+        config.dataplane = Some(DataplaneConfig {
+            download_mbps: 12.5,
+            upload_mbps: 0.5,
+        });
+        assert_eq!(config.bandwidth_mbps(), (12.5, 0.5));
+    }
+
+    #[test]
+    fn a_nonpositive_or_nonfinite_bandwidth_falls_through_the_ladder() {
+        let mut config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
+        // A valid decimal [dataplane] wins.
+        config.dataplane = Some(DataplaneConfig {
+            download_mbps: 12.5,
+            upload_mbps: 0.5,
+        });
+        assert_eq!(config.bandwidth_mbps(), (12.5, 0.5));
+
+        // A non-positive / non-finite [dataplane] is IGNORED ⇒ the [queues]
+        // value applies (the engine's "no explicit root" semantics).
+        config.queues.downlink_bandwidth_mbps = 8000.0;
+        config.queues.uplink_bandwidth_mbps = 5000.0;
+        for bad in [-5.0, 0.0, f64::NAN, f64::INFINITY] {
+            config.dataplane = Some(DataplaneConfig {
+                download_mbps: bad,
+                upload_mbps: bad,
+            });
+            assert_eq!(
+                config.bandwidth_mbps(),
+                (8000.0, 5000.0),
+                "[dataplane] {bad} must fall through to [queues]"
+            );
+        }
+
+        // A bad [queues] value falls through to the compiled default (1000).
+        config.dataplane = None;
+        config.queues.downlink_bandwidth_mbps = 0.0;
+        config.queues.uplink_bandwidth_mbps = f64::NAN;
+        assert_eq!(config.bandwidth_mbps(), (1000.0, 1000.0));
+        // validate() does NOT reject the bandwidth fields (adopting the engine).
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn v2_netflow_config_names_load_unchanged() {
+        // The config-surface oracle for the netflow export unit: the v2
+        // `[flows]` knob names keep working, so a v2 `/etc/lqos.conf` loads
+        // without edits. The removed `flow_timeout_seconds` /
+        // `do_not_track_subnets` keys are tolerated (no `deny_unknown_fields`)
+        // but no longer populate any field.
+        let mut toml = include_str!("example.toml").to_string();
+        toml.push_str(
+            "\n[flows]\n\
+             flow_timeout_seconds = 45\n\
+             netflow_enabled = true\n\
+             netflow_port = 2055\n\
+             netflow_ip = \"192.0.2.10\"\n\
+             netflow_version = 9\n\
+             do_not_track_subnets = [\"10.0.0.0/8\"]\n",
+        );
+        let config = Config::load_from_string(&toml).expect("v2 netflow config must load");
+        let flows = config.flows.expect("[flows] must deserialize");
+        assert!(flows.netflow_enabled);
+        assert_eq!(flows.netflow_port, Some(2055));
+        assert_eq!(flows.netflow_ip.as_deref(), Some("192.0.2.10"));
+        assert_eq!(flows.netflow_version, Some(9));
+    }
+
+    #[test]
+    fn netflow_version_is_validated_at_load() {
+        // `lqos-b4w`: a `netflow_version` outside {5, 9} is a LOUD load error
+        // (never the historical silent upgrade to v9); 5 and 9 load.
+        let base = include_str!("example.toml");
+        let with_version = |v: &str| {
+            let mut toml = base.to_string();
+            toml.push_str(&format!(
+                "\n[flows]\nnetflow_enabled = true\nnetflow_port = 2055\n\
+                 netflow_ip = \"192.0.2.10\"\nnetflow_version = {v}\n"
+            ));
+            Config::load_from_string(&toml)
+        };
+        for v in ["5", "9"] {
+            let config = with_version(v).unwrap_or_else(|e| panic!("version {v} must load: {e}"));
+            assert_eq!(
+                config.flows.expect("[flows]").netflow_version,
+                v.parse::<u8>().ok()
+            );
+        }
+        assert!(
+            with_version("7").is_err(),
+            "netflow_version = 7 must fail config validation"
+        );
+    }
+
+    #[test]
+    fn removed_dead_keys_are_tolerated_on_load() {
+        // The §9.1 dead-key removal must not break an old `/etc/lqos.conf`
+        // that still carries them: v15 has no `deny_unknown_fields`, so the
+        // keys deserialize to nothing and the config still loads.
+        let mut toml = include_str!("example.toml").to_string();
+        toml = toml.replace("[bridge]\n", "[bridge]\nuse_xdp_bridge = true\n");
+        toml = toml.replace(
+            "[queues]\n",
+            "[queues]\nlazy_queues = \"Full\"\nlazy_expire_seconds = 30\nlazy_threshold_bytes = 1048576\n",
+        );
+        toml = toml.replace(
+            "[uisp_integration]\n",
+            "[uisp_integration]\nenable_squashing = true\nsquash_sites = [\"Site A\"]\n",
+        );
+        toml.push_str(
+            "\n[flows]\n\
+             netflow_enabled = false\n\
+             flow_timeout_seconds = 45\n\
+             do_not_track_subnets = [\"10.0.0.0/8\"]\n",
+        );
+        Config::load_from_string(&toml)
+            .expect("an old config carrying the removed dead keys must still load");
+    }
+
+    #[test]
     fn local_api_config_defaults_when_section_is_absent() {
         let legacy = remove_sections(include_str!("example.toml"), &["local_api"]);
         let config =
             Config::load_from_string(&legacy).expect("Cannot read config without local_api");
 
         assert_eq!(config.local_api, Default::default());
-    }
-
-    #[test]
-    fn byte_counters_config_defaults_when_section_is_absent() {
-        let legacy = remove_sections(include_str!("example.toml"), &["byte_counters"]);
-        let config =
-            Config::load_from_string(&legacy).expect("Cannot read config without byte_counters");
-
-        assert_eq!(config.byte_counters, Default::default());
-        assert!(!config.byte_counters.enabled);
     }
 
     #[test]
@@ -973,35 +1149,6 @@ mtu = 1500
     }
 
     #[test]
-    fn treeguard_defaults_match_default_on_rollout() {
-        let cfg = Config::default();
-        assert!(cfg.treeguard.enabled);
-        assert!(!cfg.treeguard.dry_run);
-        assert_eq!(
-            cfg.treeguard.cpu.mode,
-            crate::etc::v15::treeguard::TreeguardCpuMode::CpuAware
-        );
-        assert!(!cfg.treeguard.links.enabled);
-        assert!(cfg.treeguard.links.all_nodes);
-        assert!(!cfg.treeguard.links.top_level_auto_virtualize);
-        assert!(cfg.treeguard.circuits.enabled);
-        assert!(cfg.treeguard.circuits.all_circuits);
-        assert_eq!(cfg.topology.queue_auto_virtualize_threshold_mbps, 5_001);
-    }
-
-    #[test]
-    fn load_example_without_treeguard_section_uses_defaults() {
-        let stripped = remove_sections(include_str!("example.toml"), &["treeguard"]);
-        let config = Config::load_from_string(&stripped)
-            .expect("Config without treeguard should still deserialize");
-        assert!(config.treeguard.enabled);
-        assert!(!config.treeguard.dry_run);
-        assert!(config.treeguard.links.all_nodes);
-        assert!(!config.treeguard.links.enabled);
-        assert!(config.treeguard.circuits.all_circuits);
-    }
-
-    #[test]
     fn load_example_without_stormguard_section_deserializes() {
         let stripped = remove_sections(include_str!("example.toml"), &["stormguard"]);
         let config = Config::load_from_string(&stripped)
@@ -1066,19 +1213,6 @@ mtu = 1500
     }
 
     #[test]
-    fn treeguard_validation_rejects_invalid_thresholds() {
-        let mut cfg = Config::default();
-        cfg.treeguard.cpu.cpu_low_pct = 90;
-        cfg.treeguard.cpu.cpu_high_pct = 80;
-        assert!(cfg.validate().is_err());
-
-        cfg = Config::default();
-        cfg.treeguard.circuits.idle_util_pct = 10.0;
-        cfg.treeguard.circuits.upgrade_util_pct = 5.0;
-        assert!(cfg.validate().is_err());
-    }
-
-    #[test]
     fn stormguard_defaults_are_safe_and_off_by_default() {
         let cfg = crate::etc::v15::stormguard::StormguardConfig::default();
         assert!(!cfg.enabled);
@@ -1101,8 +1235,7 @@ mtu = 1500
         assert_eq!(cfg.decrease_cooldown_seconds, 3.75);
         assert_eq!(cfg.decrease_fast_cooldown_seconds, 7.5);
         assert!(!cfg.circuit_fallback_enabled);
-        assert!(cfg.circuit_fallback_persist);
-        assert_eq!(cfg.circuit_fallback_sqm, "fq_codel");
+        assert_eq!(cfg.circuit_fallback_sqm, "cake");
         assert_eq!(cfg.delay_threshold_ms, 40.0);
         assert_eq!(cfg.delay_threshold_ratio, 1.10);
         assert_eq!(cfg.baseline_alpha_up, 0.01);
@@ -1165,6 +1298,6 @@ minimum_upload_percentage = 0.5
         assert_eq!(stormguard.increase_fast_multiplier, 1.30);
         assert_eq!(stormguard.decrease_fast_cooldown_seconds, 7.5);
         assert!(!stormguard.circuit_fallback_enabled);
-        assert_eq!(stormguard.circuit_fallback_sqm, "fq_codel");
+        assert_eq!(stormguard.circuit_fallback_sqm, "cake");
     }
 }

@@ -1,5 +1,7 @@
 # LibreQoS Node API
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 ## Requirements
 
 Starting with LibreQoS 2.2, the `lqos_api` Node API follows the same mapped-circuit policy as base LibreQoS:
@@ -21,7 +23,7 @@ API-only access is available through the **Try Insight** link in the WebUI at ha
 Use Swagger on your node as the complete reference and test surface for your installed build:
 
 - Direct local API port: `http://<node-ip>:9122/api-docs`
-- If optional HTTPS with Caddy is enabled for the WebUI: `https://<hostname-or-node-ip>/api-docs/`
+- If optional HTTPS with Caddy is enabled for the WebUI: `https://<hostname-or-node-ip>/api/v1/api-docs`
 
 On systems using managed Caddy HTTPS, leave the API listener on loopback and access it through `/api/v1/`. `LQOS_API_LISTEN` is an advanced override for deployments that intentionally expose the API listener directly; do not set it on managed Caddy systems unless direct API exposure, firewalling, TLS, and operator access controls have been planned together.
 
@@ -121,11 +123,8 @@ Representative endpoints:
 - `GET /search`
 - `GET /current_throughput`
 - `GET /queue_stats_total`
-- `GET /byte_counters`
 - `GET /warnings`
 - `GET /urgent`, `GET /urgent/status`
-
-`GET /byte_counters` returns cumulative per-node and per-circuit byte counters when `[byte_counters] enabled = true` is set in `/etc/lqos.conf`. Values accumulate since `lqosd` started, node values include traffic from descendant nodes, and values reset when `lqosd` restarts. See [Advanced Configuration](configuration-advanced.md).
 
 ### 5) Control and Reload Operations
 

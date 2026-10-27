@@ -1,12 +1,7 @@
-binpacking
-flask
-flask_httpauth
-flask_restful
 ipaddress
 psutil
 requests
-schedule
-waitress
+urllib3
 setuptools >= 65.5.1
 apscheduler
 deepdiff

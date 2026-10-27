@@ -1,5 +1,7 @@
 # Recipe: Event WiFi with Subnet-Group Shaping
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this pattern for short-lived, high-density event networks where grouping client devices by subnet is operationally simpler than per-device lifecycle tracking.
 
 ## Fit

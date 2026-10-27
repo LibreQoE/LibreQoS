@@ -1,0 +1,20 @@
+[Unit]
+Description=LibreQoS first-run setup marker (the boot-ladder gate)
+After=local-fs.target
+
+[Service]
+# The setup-CLI switch: this unit is a MARKER, not the 9123 web wizard. While
+# first-run setup is incomplete the marker exits 1 — a VALID state, not a
+# failed unit (lqos-74t.37.10): `SuccessExitStatus=1` keeps `systemctl restart`
+# (the postinst's activate_setup) at exit 0, so dpkg configures the package.
+# The operator completes the interactive first-boot over SSH or a console
+# (`lqos_setup tui`: NIC pick/verify -> units -> activate-runtime), which
+# disables this marker and activates the runtime units. Direct CLI callers
+# still see the marker's exit 1.
+Type=oneshot
+RemainAfterExit=yes
+SuccessExitStatus=1
+ExecStart=/opt/libreqos/src/bin/lqos_setup first-run-marker
+
+[Install]
+WantedBy=multi-user.target

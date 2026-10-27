@@ -1,0 +1,42 @@
+<div class="lqos-config-page">
+    <div id="configMenuContainer"></div>
+
+    <form class="lqos-config-grid">
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
+                    <h5 class="lqos-config-panel-title">Dataplane Bandwidth</h5>
+                    <div class="lqos-config-panel-subtitle">Your box's total root shaper bandwidth for the DPDK pipeline.</div>
+                </div>
+            </div>
+
+            <div class="lqos-config-section">
+                <h6 class="lqos-config-section-title">Root Shaper Capacity</h6>
+                <div class="lqos-config-section-subtitle">The aggregate ceiling the DPDK shaping tree is built from. This is the single source the control plane and the bridge both read.</div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-12 col-xl-6">
+                        <label for="dataplaneDownload" class="form-label">Download Bandwidth (Mbps)</label>
+                        <input type="number" class="form-control" id="dataplaneDownload" min="0.01" step="any">
+                        <div class="form-text">Total downstream capacity.</div>
+                    </div>
+                    <div class="col-12 col-xl-6">
+                        <label for="dataplaneUpload" class="form-label">Upload Bandwidth (Mbps)</label>
+                        <input type="number" class="form-control" id="dataplaneUpload" min="0.01" step="any">
+                        <div class="form-text">Total upstream capacity.</div>
+                    </div>
+                </div>
+
+                <div class="lqos-config-note mt-3" role="note">
+                    These values are written to the <code>[dataplane]</code> section of <code>lqos.conf</code> and, during the transition, mirrored into the legacy <code>[queues]</code> keys so older readers stay consistent.
+                </div>
+            </div>
+
+            <div class="lqos-config-actions">
+                <button type="button" id="saveButton" class="btn btn-outline-primary">Save Changes</button>
+            </div>
+        </section>
+    </form>
+</div>
+
+<script src="config_dataplane.js%CACHEBUSTERS%"></script>

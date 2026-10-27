@@ -1,5 +1,7 @@
 # Recipe: Education / University Per-IP Shaping for Stable Real-Time Calls
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this pattern when a school, college, or university wants to reduce Zoom/Teams/WebRTC freezing and lag during busy windows by shaping per IP.
 
 ## Fit

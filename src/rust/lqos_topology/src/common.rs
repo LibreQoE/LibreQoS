@@ -171,11 +171,6 @@ fn atomic_write_json_value(path: &Path, value: &Value) -> Result<()> {
     Ok(())
 }
 
-fn read_json_value(path: &Path) -> Option<Value> {
-    let raw = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
-}
-
 fn effective_state_payload_equals(
     left: &TopologyEffectiveStateFile,
     right: &TopologyEffectiveStateFile,

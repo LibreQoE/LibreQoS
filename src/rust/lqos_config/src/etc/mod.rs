@@ -4,6 +4,7 @@ mod etclqos_migration;
 
 use self::migration::migrate_if_needed;
 pub use self::v15::Config;
+pub use self::v15::{DEFAULT_ANALYTICS_SOCKET, DataplaneBridgeConfig};
 use arc_swap::ArcSwap;
 pub use etclqos_migration::*;
 use once_cell::sync::Lazy;
@@ -19,21 +20,32 @@ mod python_migration;
 pub mod test_data;
 mod v15;
 pub use v15::{
-    BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig, LazyQueueMode,
-    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, QueueMode, RadiusAccountingClient,
+    BridgeConfig, DynamicCircuitRangeRule, DynamicCircuitsConfig, IntegrationConfig,
+    LocalApiKeyConfig, MAX_LOCAL_API_KEYS, MikrotikIpv6Config, PowerConfig, PowerProfile, QueueMode,
+    RadiusAccountingClient,
     RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
     RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
     RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
-    TopologyConfig, TreeguardCircuitsConfig, TreeguardConfig, TreeguardCpuConfig, TreeguardCpuMode,
-    TreeguardLinksConfig, TreeguardQooConfig, Tunables, normalize_external_hostname,
+    MaintenanceWindowConfig, TopologyConfig, Tunables, normalize_external_hostname,
     validate_rate_profile_mbps,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
-static TREEGUARD_CPU_MODE_MIGRATION_NOTICE: Lazy<std::sync::Mutex<Option<String>>> =
-    Lazy::new(|| std::sync::Mutex::new(None));
 
-/// Load the configuration from `/etc/lqos.conf`.
+/// The canonical v3 configuration path (`/etc/libreqos/lqos.conf`). The legacy
+/// v2 path `/etc/lqos.conf` is migrated here by the upgrade (the daemon unit
+/// pins `LQOS_CONFIG` to this path).
+pub const DEFAULT_CONFIG_PATH: &str = "/etc/libreqos/lqos.conf";
+
+/// Resolve the configuration path: `LQOS_CONFIG` when set, else
+/// [`DEFAULT_CONFIG_PATH`]. THE single resolver for read AND write, so the
+/// daemon and the setup flow cannot diverge (the split-brain the first
+/// repo-served upgrade exposed).
+pub fn config_path() -> String {
+    std::env::var("LQOS_CONFIG").unwrap_or_else(|_| DEFAULT_CONFIG_PATH.to_string())
+}
+
+/// Load the configuration from the resolved path.
 pub fn load_config() -> Result<Arc<Config>, LibreQoSConfigError> {
     // Fast path - just load the Arc
     if let Some(config) = CONFIG.load().as_ref().as_ref().cloned() {
@@ -55,29 +67,12 @@ pub fn clear_cached_config() {
     CONFIG.store(None.into());
 }
 
-/// Returns the current TreeGuard CPU-mode migration notice, if an automatic upgrade rewrite
-/// occurred during config load.
-pub fn treeguard_cpu_mode_migration_notice() -> Option<String> {
-    TREEGUARD_CPU_MODE_MIGRATION_NOTICE
-        .lock()
-        .ok()
-        .and_then(|notice| notice.clone())
-}
-
-fn treeguard_cpu_mode_migration_stamp_path(config_path: &str) -> String {
-    format!("{config_path}.treeguard_cpu_mode_migrated")
-}
-
 fn uisp_capacity_defaults_migration_stamp_path(config_path: &str) -> String {
     format!("{config_path}.uisp_capacity_defaults_migrated")
 }
 
 fn topology_compile_mode_migration_stamp_path(config_path: &str) -> String {
     format!("{config_path}.topology_compile_mode_migrated")
-}
-
-fn treeguard_links_virtualization_migration_stamp_path(config_path: &str) -> String {
-    format!("{config_path}.treeguard_links_virtualization_migrated")
 }
 
 fn enabled_table_string(
@@ -183,145 +178,6 @@ fn maybe_migrate_topology_compile_mode(
     Ok(migrated)
 }
 
-fn maybe_migrate_treeguard_cpu_mode(
-    config_location: &str,
-    raw: String,
-) -> Result<String, LibreQoSConfigError> {
-    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
-        path: config_location.to_string(),
-        details: format!("Error parsing config: {e}"),
-    })?;
-
-    let mode_item = doc
-        .get("treeguard")
-        .and_then(|section| section.as_table_like())
-        .and_then(|treeguard| treeguard.get("cpu"))
-        .and_then(|cpu| cpu.as_table_like())
-        .and_then(|cpu| cpu.get("mode"))
-        .and_then(|mode| mode.as_str());
-    if mode_item != Some("traffic_rtt_only") {
-        return Ok(raw);
-    }
-
-    let stamp_path = treeguard_cpu_mode_migration_stamp_path(config_location);
-    if Path::new(&stamp_path).exists() {
-        return Ok(raw);
-    }
-
-    let Some(cpu_table) = doc
-        .get_mut("treeguard")
-        .and_then(|section| section.as_table_like_mut())
-        .and_then(|treeguard| treeguard.get_mut("cpu"))
-        .and_then(|cpu| cpu.as_table_like_mut())
-    else {
-        return Ok(raw);
-    };
-
-    cpu_table.insert("mode", value("cpu_aware"));
-    let migrated = doc.to_string();
-
-    let config_path = Path::new(config_location);
-    if config_path.exists() {
-        let backup_path = format!("{config_location}.treeguard_cpu_mode_backup");
-        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
-            path: backup_path,
-            source: e,
-        })?;
-    }
-
-    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
-        path: config_location.to_string(),
-        source: e,
-    })?;
-    std::fs::write(&stamp_path, b"cpu_aware\n").map_err(|e| LibreQoSConfigError::CannotWrite {
-        path: stamp_path,
-        source: e,
-    })?;
-
-    let notice = "TreeGuard CPU mode was automatically migrated from traffic_rtt_only to cpu_aware during upgrade. CPU-aware mode is now the default and recommended virtualization policy.".to_string();
-    info!("{notice}");
-    if let Ok(mut slot) = TREEGUARD_CPU_MODE_MIGRATION_NOTICE.lock() {
-        *slot = Some(notice);
-    }
-
-    Ok(migrated)
-}
-
-fn maybe_migrate_treeguard_link_virtualization_defaults(
-    config_location: &str,
-    raw: String,
-) -> Result<String, LibreQoSConfigError> {
-    let stamp_path = treeguard_links_virtualization_migration_stamp_path(config_location);
-    if Path::new(&stamp_path).exists() {
-        return Ok(raw);
-    }
-
-    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
-        path: config_location.to_string(),
-        details: format!("Error parsing config: {e}"),
-    })?;
-
-    let links_enabled = doc
-        .get("treeguard")
-        .and_then(|section| section.as_table_like())
-        .and_then(|treeguard| treeguard.get("links"))
-        .and_then(|links| links.as_table_like())
-        .and_then(|links| links.get("enabled"))
-        .and_then(|value| value.as_bool());
-    let top_level_auto_virtualize = doc
-        .get("treeguard")
-        .and_then(|section| section.as_table_like())
-        .and_then(|treeguard| treeguard.get("links"))
-        .and_then(|links| links.as_table_like())
-        .and_then(|links| links.get("top_level_auto_virtualize"))
-        .and_then(|value| value.as_bool());
-
-    let already_disabled = links_enabled == Some(false) && top_level_auto_virtualize == Some(false);
-    if already_disabled {
-        std::fs::write(&stamp_path, b"disabled\n").map_err(|e| {
-            LibreQoSConfigError::CannotWrite {
-                path: stamp_path.clone(),
-                source: e,
-            }
-        })?;
-        return Ok(raw);
-    }
-
-    if !doc.as_table().contains_key("treeguard") {
-        doc["treeguard"] = Item::Table(Table::new());
-    }
-    if doc["treeguard"].get("links").is_none() {
-        doc["treeguard"]["links"] = Item::Table(Table::new());
-    }
-    doc["treeguard"]["links"]["enabled"] = value(false);
-    doc["treeguard"]["links"]["top_level_auto_virtualize"] = value(false);
-    let migrated = doc.to_string();
-
-    let config_path = Path::new(config_location);
-    if config_path.exists() {
-        let backup_path = format!("{config_location}.treeguard_links_virtualization_backup");
-        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
-            path: backup_path,
-            source: e,
-        })?;
-    }
-
-    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
-        path: config_location.to_string(),
-        source: e,
-    })?;
-    std::fs::write(&stamp_path, b"disabled\n").map_err(|e| LibreQoSConfigError::CannotWrite {
-        path: stamp_path,
-        source: e,
-    })?;
-
-    info!(
-        "TreeGuard link virtualization was automatically disabled during upgrade. Static queue policy is now the default baseline."
-    );
-
-    Ok(migrated)
-}
-
 fn maybe_migrate_uisp_capacity_defaults(
     config_location: &str,
     raw: String,
@@ -374,13 +230,265 @@ fn maybe_migrate_uisp_capacity_defaults(
     Ok(migrated)
 }
 
-fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
-    let config_location = if let Ok(lqos_config) = std::env::var("LQOS_CONFIG") {
-        info!("Overriding lqos.conf location from environment variable.");
-        lqos_config
-    } else {
-        "/etc/lqos.conf".to_string()
+fn default_sqm_migration_stamp_path(config_path: &str) -> String {
+    format!("{config_path}.default_sqm_migrated")
+}
+
+/// The only default SQM the v3 DPDK pipeline shapes with (the node UI's
+/// `SUPPORTED_DEFAULT_SQM`, `queues_hygiene.mjs`).
+const V3_DEFAULT_SQM: &str = "cake diffserv4";
+
+/// v2→v3: normalize the on-disk `[queues] default_sqm` to the one value the v3
+/// DPDK pipeline supports (`cake diffserv4`).
+///
+/// A v2 box's `fq_codel` (or the ack-filter CAKE variant, or an empty value)
+/// would otherwise compile **every override-less leaf to FIFO** at first boot
+/// (`dataplane_compiler::aqm_from_override`: a non-`cake` token ⇒
+/// `DataplaneLeafAqm::None`) — a silent drop of the SQM layer, because the UI
+/// only normalizes on SAVE. Backup + stamp + LOG. A value already equal to the
+/// supported one, or an ABSENT key (the v15 struct default already applies), is
+/// left byte-identical.
+fn maybe_migrate_default_sqm(
+    config_location: &str,
+    raw: String,
+) -> Result<String, LibreQoSConfigError> {
+    let stamp_path = default_sqm_migration_stamp_path(config_location);
+    if Path::new(&stamp_path).exists() {
+        return Ok(raw);
+    }
+
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+
+    let Some(current) = doc
+        .get("queues")
+        .and_then(|queues| queues.as_table_like())
+        .and_then(|queues| queues.get("default_sqm"))
+        .and_then(|sqm| sqm.as_str())
+        .map(str::trim)
+        .map(ToString::to_string)
+    else {
+        // Absent ⇒ the v15 `QueueConfig` default ("cake diffserv4") already
+        // applies; nothing to rewrite.
+        std::fs::write(&stamp_path, b"absent\n").map_err(|e| {
+            LibreQoSConfigError::CannotWrite {
+                path: stamp_path.clone(),
+                source: e,
+            }
+        })?;
+        return Ok(raw);
     };
+
+    if current == V3_DEFAULT_SQM {
+        std::fs::write(&stamp_path, format!("{current}\n")).map_err(|e| {
+            LibreQoSConfigError::CannotWrite {
+                path: stamp_path.clone(),
+                source: e,
+            }
+        })?;
+        return Ok(raw);
+    }
+
+    // An empty value would also FAIL the v15 validation ("default_sqm cannot be
+    // empty"), so migrating it is a fix, not just a normalization.
+    if !doc.as_table().contains_key("queues") {
+        doc["queues"] = Item::Table(Table::new());
+    }
+    doc["queues"]["default_sqm"] = value(V3_DEFAULT_SQM);
+    let migrated = doc.to_string();
+
+    let config_path = Path::new(config_location);
+    if config_path.exists() {
+        let backup_path = format!("{config_location}.default_sqm_backup");
+        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
+            path: backup_path,
+            source: e,
+        })?;
+    }
+    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: config_location.to_string(),
+        source: e,
+    })?;
+    std::fs::write(&stamp_path, format!("{V3_DEFAULT_SQM}\n")).map_err(|e| {
+        LibreQoSConfigError::CannotWrite {
+            path: stamp_path,
+            source: e,
+        }
+    })?;
+    info!(
+        "Default SQM '{current}' is unsupported by the v3 DPDK pipeline; migrated to '{V3_DEFAULT_SQM}'."
+    );
+    Ok(migrated)
+}
+
+fn bandwidth_dataplane_migration_stamp_path(config_path: &str) -> String {
+    format!("{config_path}.bandwidth_dataplane_migrated")
+}
+
+/// v2→v3: land the v2 `[queues] downlink/uplink_bandwidth_mbps` in the v3
+/// `[dataplane]` single source (`download_mbps`/`upload_mbps`) — card
+/// `docs/lqos_conf_single_source_card.md` §3.
+///
+/// The `[queues]` keys still resolve (the transition fallback in the control
+/// plane + the engine), so this is a **consistency** migration, not a bug fix —
+/// but it makes a v2 box's real root rate the one the v3 single source carries.
+/// Fires only when the `[dataplane]` section is ABSENT, the box is unstamped,
+/// and **BOTH** `[queues]` keys are present on disk (the v15 `DataplaneConfig`
+/// requires both; inventing a missing side would be wrong). Backup + stamp +
+/// LOG; byte-identical otherwise.
+fn maybe_migrate_bandwidth_to_dataplane(
+    config_location: &str,
+    raw: String,
+) -> Result<String, LibreQoSConfigError> {
+    let stamp_path = bandwidth_dataplane_migration_stamp_path(config_location);
+    if Path::new(&stamp_path).exists() {
+        return Ok(raw);
+    }
+
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+
+    let stamped = |reason: &str| -> Result<(), LibreQoSConfigError> {
+        std::fs::write(&stamp_path, format!("{reason}\n")).map_err(|e| {
+            LibreQoSConfigError::CannotWrite {
+                path: stamp_path.clone(),
+                source: e,
+            }
+        })
+    };
+
+    if doc.as_table().contains_key("dataplane") {
+        stamped("dataplane-present")?;
+        return Ok(raw);
+    }
+    let queues = doc.get("queues").and_then(|queues| queues.as_table_like());
+    // Accept an integer OR a decimal Mbps (the v3 decimal form).
+    let read_mbps = |item: Option<&Item>| -> Option<f64> {
+        let item = item?;
+        item.as_float()
+            .or_else(|| item.as_integer().map(|value| value as f64))
+    };
+    let download = read_mbps(queues.and_then(|queues| queues.get("downlink_bandwidth_mbps")));
+    let upload = read_mbps(queues.and_then(|queues| queues.get("uplink_bandwidth_mbps")));
+    let (Some(download), Some(upload)) = (download, upload) else {
+        // A missing side (or no [queues]) ⇒ the fallback still applies; do not
+        // invent a value.
+        stamped("queues-bandwidth-incomplete")?;
+        return Ok(raw);
+    };
+
+    doc["dataplane"] = Item::Table(Table::new());
+    doc["dataplane"]["download_mbps"] = value(download);
+    doc["dataplane"]["upload_mbps"] = value(upload);
+    let migrated = doc.to_string();
+
+    let config_path = Path::new(config_location);
+    if config_path.exists() {
+        let backup_path = format!("{config_location}.bandwidth_dataplane_backup");
+        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
+            path: backup_path,
+            source: e,
+        })?;
+    }
+    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: config_location.to_string(),
+        source: e,
+    })?;
+    stamped("migrated")?;
+    info!(
+        "Migrated [queues] bandwidth {download}/{upload} Mbps into the [dataplane] single source."
+    );
+    Ok(migrated)
+}
+
+/// `lqos-74t.55`: ensure an emitted `[bridge]` table carries the legacy
+/// `use_xdp_bridge` key for the **external** (V2) `lqos_api` consumer.
+///
+/// v3 removed `use_xdp_bridge` as a dead v2 key (`08af2da80`;
+/// `docs/config_surface_card.md:217` — it is NOT a v15 `BridgeConfig` field, so
+/// serde DROPS it). The downloaded `lqos_api` still deserializes it as a
+/// **required** `[bridge]` field, so a preserved (`--force-confold`) or
+/// v3-emitted config makes `libreqos-api` crash-loop
+/// (`missing field use_xdp_bridge at [bridge]`). We do **not** re-add the v15
+/// schema field (the config-surface record documents it is absent; the
+/// k3-retirement posture forbids kernel-mode config surfaces); we make the
+/// **emitted document** carry the key for the external consumer, as the
+/// `lqos-74t.55` acceptance requires.
+///
+/// Only injects when a `[bridge]` table exists and the key is absent, so an
+/// explicit operator value and a `[single_interface]`-only config are left
+/// untouched. Returns `true` when the document changed.
+fn ensure_bridge_use_xdp_bridge_compat(doc: &mut DocumentMut) -> bool {
+    let Some(bridge) = doc.get_mut("bridge").and_then(|item| item.as_table_like_mut()) else {
+        return false;
+    };
+    if bridge.contains_key("use_xdp_bridge") {
+        return false;
+    }
+    bridge.insert("use_xdp_bridge", value(false));
+    true
+}
+
+/// `lqos-74t.55` load-path emission: rewrite the on-disk config only when the
+/// `[bridge]` compat key is absent. No stamp — re-checked on every load so a
+/// WebUI `update_config` save (which serializes the v15 struct) cannot strand
+/// the key permanently.
+fn maybe_migrate_bridge_use_xdp_bridge_compat(
+    config_location: &str,
+    raw: String,
+) -> Result<String, LibreQoSConfigError> {
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+
+    if !ensure_bridge_use_xdp_bridge_compat(&mut doc) {
+        return Ok(raw);
+    }
+
+    let migrated = doc.to_string();
+    let config_path = Path::new(config_location);
+    if config_path.exists() {
+        let backup_path = format!("{config_location}.bridge_use_xdp_bridge_backup");
+        std::fs::copy(config_path, &backup_path).map_err(|e| LibreQoSConfigError::CannotWrite {
+            path: backup_path,
+            source: e,
+        })?;
+    }
+
+    std::fs::write(config_path, &migrated).map_err(|e| LibreQoSConfigError::CannotWrite {
+        path: config_location.to_string(),
+        source: e,
+    })?;
+    info!(
+        "Added [bridge] use_xdp_bridge = false for external lqos_api compatibility (lqos-74t.55)."
+    );
+    Ok(migrated)
+}
+
+/// `lqos-74t.55` write-path emission: apply the same compat key to the
+/// serialized v15 struct so `update_config` (the WebUI save) preserves it.
+fn with_bridge_use_xdp_bridge_compat(serialized: String) -> Result<String, LibreQoSConfigError> {
+    let mut doc: DocumentMut = serialized.parse().map_err(|e| {
+        error!("Unable to re-parse serialized configuration to TOML: {e:?}");
+        LibreQoSConfigError::SerializeError
+    })?;
+    if ensure_bridge_use_xdp_bridge_compat(&mut doc) {
+        Ok(doc.to_string())
+    } else {
+        Ok(serialized)
+    }
+}
+
+fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
+    let config_location = config_path();
+    if std::env::var("LQOS_CONFIG").is_ok() {
+        info!("Overriding lqos.conf location from environment variable.");
+    }
 
     debug!("Loading configuration file {config_location}");
     migrate_if_needed(&config_location).map_err(|e| {
@@ -414,10 +522,15 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
         }
     })?;
 
-    let raw = maybe_migrate_treeguard_cpu_mode(&config_location, raw)?;
-    let raw = maybe_migrate_treeguard_link_virtualization_defaults(&config_location, raw)?;
     let raw = maybe_migrate_uisp_capacity_defaults(&config_location, raw)?;
+    // v2→v3: an unsupported `[queues] default_sqm` (e.g. `fq_codel`) would
+    // otherwise compile every override-less leaf to FIFO. Runs BEFORE the v15
+    // parse (which rejects an empty `default_sqm`).
+    let raw = maybe_migrate_default_sqm(&config_location, raw)?;
+    // v2→v3: land the v2 [queues] root rate in the [dataplane] single source.
+    let raw = maybe_migrate_bandwidth_to_dataplane(&config_location, raw)?;
     let raw = maybe_migrate_topology_compile_mode(&config_location, raw)?;
+    let raw = maybe_migrate_bridge_use_xdp_bridge_compat(&config_location, raw)?;
 
     let mut final_config = Config::load_from_string(&raw).map_err(|e| {
         error!("Unable to parse {config_location}");
@@ -431,72 +544,38 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
         final_config.lqos_directory = lqos_dir;
     }
-    crate::runtime_state_migration::migrate_legacy_runtime_state(&final_config).map_err(|e| {
-        error!("Unable to migrate legacy runtime state: {e:?}");
-        LibreQoSConfigError::MigrationFailed {
-            path: final_config.lqos_directory.clone(),
-            details: e.to_string(),
-        }
-    })?;
-    crate::migrate_legacy_mikrotik_ipv6_credentials(&final_config).map_err(|e| {
-        error!("Unable to migrate legacy Mikrotik IPv6 credentials: {e:?}");
-        LibreQoSConfigError::MigrationFailed {
-            path: final_config
-                .resolved_mikrotik_ipv6_config_path()
-                .display()
-                .to_string(),
-            details: e.to_string(),
-        }
-    })?;
-
+    // Phase D: `load_config` is READ-ONLY. The writey legs (legacy runtime
+    // state migration, the stale-topology quarantine, the legacy credentials
+    // migration) moved to the explicit `repair_runtime_state` entry, called by
+    // the write path (lqosd startup; the scheduler's idempotent repair).
     debug!("Set cached version of config file");
     let new_config = Arc::new(final_config);
 
     Ok(new_config)
 }
 
-/*/// Enables LTS reporting in the configuration file.
-pub fn enable_long_term_stats(license_key: String) -> Result<(), LibreQoSConfigError> {
-    let mut config = load_config()?;
-    let mut lock = CONFIG.lock().unwrap();
-
-    config.long_term_stats.gather_stats = true;
-    config.long_term_stats.collation_period_seconds = 60;
-    config.long_term_stats.license_key = Some(license_key);
-    if config.uisp_integration.enable_uisp {
-        config.long_term_stats.uisp_reporting_interval_seconds = Some(300);
-    }
-
-    // Write the file
-    let raw = toml::to_string_pretty(&config).unwrap();
-    std::fs::write("/etc/lqos.conf", raw).map_err(|_| LibreQoSConfigError::CannotWrite)?;
-
-    // Write the lock
-    *lock = Some(config);
-
-    Ok(())
-}*/
-
 /// Update the configuration on disk
 pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     debug!("Updating stored configuration");
 
     // Does the configuration exist?
-    let config_path = Path::new("/etc/lqos.conf");
+    let config_path = std::path::PathBuf::from(config_path());
     if config_path.exists() {
-        let backup_path = Path::new("/etc/lqos.conf.webbackup");
-        std::fs::copy(config_path, backup_path).map_err(|e| {
+        let backup_path = std::path::PathBuf::from(format!("{}.webbackup", config_path.display()));
+        std::fs::copy(&config_path, &backup_path).map_err(|e| {
             error!("Unable to create backup configuration: {e:?}");
             LibreQoSConfigError::CannotCopy
         })?;
     }
 
-    // Serialize the new one
+    // Serialize the new one. `lqos-74t.55`: keep the `[bridge]` compat key so
+    // an external lqos_api keeps parsing the emitted config.
     let serialized = toml::to_string_pretty(new_config).map_err(|e| {
         error!("Unable to serialize new configuration to TOML: {e:?}");
         LibreQoSConfigError::SerializeError
     })?;
-    std::fs::write(config_path, serialized).map_err(|e| {
+    let serialized = with_bridge_use_xdp_bridge_compat(serialized)?;
+    std::fs::write(&config_path, serialized).map_err(|e| {
         error!("Unable to write new configuration: {e:?}");
         LibreQoSConfigError::CannotWrite {
             path: config_path.display().to_string(),
@@ -508,24 +587,6 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
     // failed write must not leave callers using credentials that never reached
     // disk and cannot be recovered after restart.
     CONFIG.store(Some(Arc::new(new_config.clone())).into());
-
-    Ok(())
-}
-
-/// Helper function that disables the XDP bridge in the LIVE, CACHED
-/// configuration --- it does NOT save the changes to disk. This is
-/// intended for use when the XDP bridge is disabled by pre-flight
-/// because of a Linux bridge.
-pub fn disable_xdp_bridge() -> Result<(), LibreQoSConfigError> {
-    let config = load_config()?;
-    let mut config = (*config).clone();
-
-    if let Some(bridge) = &mut config.bridge {
-        bridge.use_xdp_bridge = false;
-    }
-
-    // Write the lock
-    CONFIG.store(Some(Arc::new(config)).into());
 
     Ok(())
 }
@@ -561,10 +622,11 @@ pub enum LibreQoSConfigError {
 #[cfg(test)]
 mod tests {
     use super::{
-        maybe_migrate_topology_compile_mode, maybe_migrate_treeguard_link_virtualization_defaults,
+        bandwidth_dataplane_migration_stamp_path, default_sqm_migration_stamp_path,
+        maybe_migrate_bandwidth_to_dataplane, maybe_migrate_bridge_use_xdp_bridge_compat,
+        maybe_migrate_default_sqm, maybe_migrate_topology_compile_mode,
         maybe_migrate_uisp_capacity_defaults, topology_compile_mode_migration_stamp_path,
-        treeguard_links_virtualization_migration_stamp_path,
-        uisp_capacity_defaults_migration_stamp_path,
+        uisp_capacity_defaults_migration_stamp_path, with_bridge_use_xdp_bridge_compat,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -745,53 +807,226 @@ mod tests {
         fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
     }
 
+    /// `lqos-74t.55`: a preserved `[bridge]` without `use_xdp_bridge` gains the
+    /// key (DPDK posture `false`) so the external V2 `lqos_api` can parse it.
     #[test]
-    fn treeguard_link_virtualization_migration_disables_runtime_link_virtualization() {
+    fn bridge_use_xdp_bridge_compat_adds_key_to_preserved_bridge_config() {
         let test_dir = unique_test_dir();
-        let raw = "[treeguard]\nenabled = true\n\n[treeguard.links]\nenabled = true\ntop_level_auto_virtualize = true\n";
+        let raw = "version = \"1.5\"\n\n[bridge]\nto_internet = \"eth0\"\nto_network = \"eth1\"\n";
         let config_path = write_test_config(&test_dir, raw);
-
         let config_path_str = path_string(&config_path);
-        let migrated =
-            maybe_migrate_treeguard_link_virtualization_defaults(&config_path_str, raw.to_string())
-                .expect("migration should succeed");
 
-        assert!(migrated.contains("[treeguard.links]"));
-        assert!(migrated.contains("enabled = false"));
-        assert!(migrated.contains("top_level_auto_virtualize = false"));
-        assert!(
-            Path::new(&treeguard_links_virtualization_migration_stamp_path(
-                &config_path_str
-            ))
-            .exists()
+        let migrated =
+            maybe_migrate_bridge_use_xdp_bridge_compat(&config_path_str, raw.to_string())
+                .expect("compat emission should succeed");
+
+        assert!(migrated.contains("use_xdp_bridge = false"), "{migrated}");
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("config should be rewritten"),
+            migrated
+        );
+        assert_eq!(
+            fs::read_to_string(config_path.with_extension("conf.bridge_use_xdp_bridge_backup"))
+                .expect("backup should exist"),
+            raw
         );
 
         fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
     }
 
+    /// An explicit operator value is preserved (we never clobber it).
     #[test]
-    fn treeguard_link_virtualization_migration_stamps_when_already_disabled() {
+    fn bridge_use_xdp_bridge_compat_preserves_explicit_value() {
         let test_dir = unique_test_dir();
-        let raw = "[treeguard]\nenabled = true\n\n[treeguard.links]\nenabled = false\ntop_level_auto_virtualize = false\n";
+        let raw =
+            "version = \"1.5\"\n\n[bridge]\nuse_xdp_bridge = true\nto_internet = \"eth0\"\n";
         let config_path = write_test_config(&test_dir, raw);
-
         let config_path_str = path_string(&config_path);
+
         let migrated =
-            maybe_migrate_treeguard_link_virtualization_defaults(&config_path_str, raw.to_string())
-                .expect("migration should succeed");
+            maybe_migrate_bridge_use_xdp_bridge_compat(&config_path_str, raw.to_string())
+                .expect("compat emission should succeed");
 
         assert_eq!(migrated, raw);
-        assert_eq!(
-            fs::read_to_string(&config_path).expect("config should remain unchanged"),
-            raw
-        );
         assert!(
-            Path::new(&treeguard_links_virtualization_migration_stamp_path(
-                &config_path_str
-            ))
-            .exists()
+            !config_path
+                .with_extension("conf.bridge_use_xdp_bridge_backup")
+                .exists()
         );
 
         fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    /// A `[single_interface]`-only config is left untouched (no `[bridge]`
+    /// table is created for the external consumer).
+    #[test]
+    fn bridge_use_xdp_bridge_compat_ignores_single_interface_only() {
+        let test_dir = unique_test_dir();
+        let raw = "version = \"1.5\"\n\n[single_interface]\ninterface = \"eth0\"\n\
+                   internet_vlan = 2\nnetwork_vlan = 3\n";
+        let config_path = write_test_config(&test_dir, raw);
+        let config_path_str = path_string(&config_path);
+
+        let migrated =
+            maybe_migrate_bridge_use_xdp_bridge_compat(&config_path_str, raw.to_string())
+                .expect("compat emission should succeed");
+
+        assert_eq!(migrated, raw);
+        assert!(!migrated.contains("use_xdp_bridge"));
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    /// Re-checked on every load: once present, a second pass is a no-op.
+    #[test]
+    fn bridge_use_xdp_bridge_compat_is_idempotent_on_second_load() {
+        let test_dir = unique_test_dir();
+        let raw = "version = \"1.5\"\n\n[bridge]\nto_internet = \"eth0\"\nto_network = \"eth1\"\n";
+        let config_path = write_test_config(&test_dir, raw);
+        let config_path_str = path_string(&config_path);
+
+        let first = maybe_migrate_bridge_use_xdp_bridge_compat(&config_path_str, raw.to_string())
+            .expect("first pass should migrate");
+        let second =
+            maybe_migrate_bridge_use_xdp_bridge_compat(&config_path_str, first.clone())
+                .expect("second pass should be a no-op");
+
+        assert_eq!(second, first);
+        assert_eq!(
+            fs::read_to_string(&config_path).expect("config should remain"),
+            first
+        );
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    /// The `update_config` (WebUI save) emission path. A struct-serialized
+    /// `[bridge]` (the ONLY shape `update_config` can feed — `BridgeConfig` has
+    /// no `use_xdp_bridge` field) never carries the key, so the write path
+    /// ALWAYS emits the DPDK posture `false`. A struct-serialized
+    /// single-interface config has no `[bridge]` table, so nothing is added.
+    #[test]
+    fn update_config_compat_emission_adds_false_from_struct_serialized_bridge() {
+        let serialized = "[bridge]\nto_internet = \"eth0\"\nto_network = \"eth1\"\n".to_string();
+        let out = with_bridge_use_xdp_bridge_compat(serialized).expect("should emit");
+        assert!(out.contains("use_xdp_bridge = false"), "{out}");
+
+        let single = "[single_interface]\ninterface = \"eth0\"\n".to_string();
+        let out2 = with_bridge_use_xdp_bridge_compat(single.clone()).expect("should emit");
+        assert_eq!(out2, single);
+    }
+
+    /// A v2 `fq_codel` default is migrated to the supported v3 value (with a
+    /// backup + stamp) — otherwise every override-less leaf compiles to FIFO.
+    #[test]
+    fn default_sqm_migration_rewrites_fq_codel_and_backs_up() {
+        let test_dir = unique_test_dir();
+        let raw = "version = \"1.5\"\n[queues]\ndefault_sqm = \"fq_codel\"\n";
+        let config_path = write_test_config(&test_dir, raw);
+        let config_path_str = path_string(&config_path);
+
+        let migrated = maybe_migrate_default_sqm(&config_path_str, raw.to_string())
+            .expect("migration should succeed");
+        assert!(migrated.contains("default_sqm = \"cake diffserv4\""), "{migrated}");
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), migrated);
+        assert_eq!(
+            fs::read_to_string(config_path.with_extension("conf.default_sqm_backup")).unwrap(),
+            raw
+        );
+        assert!(Path::new(&default_sqm_migration_stamp_path(&config_path_str)).exists());
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    /// An empty value would FAIL v15 validation; the migration repairs it.
+    #[test]
+    fn default_sqm_migration_repairs_an_empty_value() {
+        let test_dir = unique_test_dir();
+        let raw = "version = \"1.5\"\n[queues]\ndefault_sqm = \"\"\n";
+        let config_path = write_test_config(&test_dir, raw);
+        let migrated = maybe_migrate_default_sqm(&path_string(&config_path), raw.to_string())
+            .expect("migration should succeed");
+        assert!(migrated.contains("default_sqm = \"cake diffserv4\""), "{migrated}");
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    /// The supported value and an ABSENT key are both no-ops (byte-identical).
+    #[test]
+    fn default_sqm_migration_is_a_noop_when_already_supported_or_absent() {
+        for raw in [
+            "version = \"1.5\"\n[queues]\ndefault_sqm = \"cake diffserv4\"\n",
+            "version = \"1.5\"\n[queues]\nqueue_mode = \"shape\"\n",
+        ] {
+            let test_dir = unique_test_dir();
+            let config_path = write_test_config(&test_dir, raw);
+            let out = maybe_migrate_default_sqm(&path_string(&config_path), raw.to_string())
+                .expect("migration should succeed");
+            assert_eq!(out, raw);
+            assert_eq!(fs::read_to_string(&config_path).unwrap(), raw);
+            fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+        }
+    }
+
+    /// Second pass after the stamp is a no-op even if the value regressed.
+    #[test]
+    fn default_sqm_migration_respects_the_stamp() {
+        let test_dir = unique_test_dir();
+        let raw = "version = \"1.5\"\n[queues]\ndefault_sqm = \"fq_codel\"\n";
+        let config_path = write_test_config(&test_dir, raw);
+        let config_path_str = path_string(&config_path);
+        maybe_migrate_default_sqm(&config_path_str, raw.to_string()).expect("first pass");
+        let second = maybe_migrate_default_sqm(&config_path_str, raw.to_string())
+            .expect("second pass");
+        assert_eq!(second, raw);
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    /// A v2 `[queues]` root rate lands in the `[dataplane]` single source once.
+    #[test]
+    fn bandwidth_migration_lands_queues_rate_in_dataplane() {
+        let test_dir = unique_test_dir();
+        let raw = "version = \"1.5\"\n[queues]\ndownlink_bandwidth_mbps = 8000\nuplink_bandwidth_mbps = 5000\n";
+        let config_path = write_test_config(&test_dir, raw);
+        let config_path_str = path_string(&config_path);
+
+        let migrated = maybe_migrate_bandwidth_to_dataplane(&config_path_str, raw.to_string())
+            .expect("migration should succeed");
+        assert!(migrated.contains("[dataplane]"), "{migrated}");
+        assert!(migrated.contains("download_mbps = 8000"), "{migrated}");
+        assert!(migrated.contains("upload_mbps = 5000"), "{migrated}");
+        // The [queues] facts are preserved (the transition fallback).
+        assert!(migrated.contains("downlink_bandwidth_mbps = 8000"));
+        assert_eq!(
+            fs::read_to_string(config_path.with_extension("conf.bandwidth_dataplane_backup"))
+                .unwrap(),
+            raw
+        );
+        assert!(Path::new(&bandwidth_dataplane_migration_stamp_path(&config_path_str)).exists());
+
+        // Idempotent.
+        let second =
+            maybe_migrate_bandwidth_to_dataplane(&config_path_str, migrated.clone()).unwrap();
+        assert_eq!(second, migrated);
+
+        fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+    }
+
+    /// Already-present `[dataplane]`, or a missing `[queues]` side, is a no-op.
+    #[test]
+    fn bandwidth_migration_is_a_noop_when_dataplane_present_or_incomplete() {
+        for raw in [
+            "[dataplane]\ndownload_mbps = 900\nupload_mbps = 450\n[queues]\ndownlink_bandwidth_mbps = 8000\nuplink_bandwidth_mbps = 5000\n",
+            "[queues]\ndownlink_bandwidth_mbps = 8000\n",
+            "[queues]\nqueue_mode = \"shape\"\n",
+        ] {
+            let test_dir = unique_test_dir();
+            let config_path = write_test_config(&test_dir, raw);
+            let out =
+                maybe_migrate_bandwidth_to_dataplane(&path_string(&config_path), raw.to_string())
+                    .expect("migration should succeed");
+            assert_eq!(out, raw);
+            assert_eq!(fs::read_to_string(&config_path).unwrap(), raw);
+            fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
+        }
     }
 }

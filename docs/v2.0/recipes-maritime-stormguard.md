@@ -1,5 +1,7 @@
 # Recipe: Maritime Variable WAN with StormGuard
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this pattern when WAN capacity changes materially over time (for example satellite backhaul under weather/load effects) and you need bounded adaptive queue tuning.
 
 ## Fit

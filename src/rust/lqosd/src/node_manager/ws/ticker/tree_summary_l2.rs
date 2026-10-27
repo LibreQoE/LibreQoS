@@ -35,7 +35,9 @@ pub async fn tree_summary_l2(channels: Arc<PubSub>) {
                     // For each child-of-child under this parent
                     for (c_idx, c_node) in nodes.iter().enumerate() {
                         if c_node.immediate_parent == Some(p_idx) {
-                            let t = node_to_transport(c_node);
+                            let mut t = node_to_transport(c_node);
+                            // T2b: E2 tree live-view overlay (current_* only).
+                            crate::bridge_analytics::overlay_live_fields(c_idx, &mut t);
                             let total = t.current_throughput.0 + t.current_throughput.1;
                             candidates.push((p_idx, c_idx, t, total));
                         }

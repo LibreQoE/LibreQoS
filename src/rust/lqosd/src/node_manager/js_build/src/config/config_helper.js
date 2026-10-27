@@ -118,15 +118,6 @@ function ensureOptionalConfigSections(config) {
     } else {
         topology.compile_mode = normalizeMode(topology.compile_mode) || "ap_site";
     }
-    if (!Number.isFinite(Number(topology.queue_auto_virtualize_threshold_mbps))
-        || Number(topology.queue_auto_virtualize_threshold_mbps) < 5001) {
-        topology.queue_auto_virtualize_threshold_mbps = 5001;
-    } else {
-        topology.queue_auto_virtualize_threshold_mbps = Math.trunc(
-            Number(topology.queue_auto_virtualize_threshold_mbps),
-        );
-    }
-
     return config;
 }
 
@@ -598,17 +589,6 @@ export function loadNodeDirectory(onComplete, onError) {
     );
 }
 
-export function loadTreeGuardMetadataSummary(onComplete, onError) {
-    sendWsRequest(
-        "TreeGuardMetadataSummary",
-        { TreeGuardMetadataSummary: {} },
-        (msg) => {
-            if (onComplete) onComplete(msg.data || null);
-        },
-        onError,
-    );
-}
-
 export function getUsers(onComplete, onError) {
     sendWsRequest(
         "GetUsers",
@@ -677,8 +657,8 @@ export function renderConfigMenu(currentPage) {
         { href: "config_tuning.html", icon: "fa-warning", text: "Tuning", id: "tuning" },
         { href: "config_interface.html", icon: "fa-chain", text: "Bridge & Interface Mode", id: "interface" },
         { href: "config_queues.html", icon: "fa-car", text: "Queues", id: "queues" },
+        { href: "config_dataplane.html", icon: "fa-tachometer", text: "Dataplane Bandwidth", id: "dataplane" },
         { href: "config_stormguard.html", icon: "fa-bolt", text: "StormGuard", id: "stormguard" },
-        { href: "config_treeguard.html", icon: "fa-shield-halved", text: "TreeGuard", id: "treeguard" },
         { href: "config_lts.html", icon: "fa-line-chart", text: "License & Services", id: "lts" },
         { href: "config_iprange.html", icon: "fa-address-card", text: "IP Ranges", id: "iprange" },
         { href: "config_flows.html", icon: "fa-arrow-circle-down", text: "Flow Tracking", id: "flows" },

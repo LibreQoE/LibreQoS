@@ -2,10 +2,9 @@ use lqos_bus::BusResponse;
 use tracing::info;
 
 pub fn reload_libre_qos() -> BusResponse {
-    let result = lqos_config::load_libreqos();
-    match result {
+    match lqos_config::request_libreqos_reload("admin") {
         Ok(message) => BusResponse::ReloadLibreQoS(message),
-        Err(..) => BusResponse::Fail("Unable to reload LibreQoS".to_string()),
+        Err(..) => BusResponse::Fail("Unable to request the LibreQoS reload".to_string()),
     }
 }
 

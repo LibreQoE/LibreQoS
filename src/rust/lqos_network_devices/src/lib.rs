@@ -8,6 +8,7 @@
 mod actor;
 mod catalog;
 mod combined_catalog;
+mod dataplane_tree;
 mod directory_watcher;
 mod dynamic;
 mod dynamic_store;
@@ -49,7 +50,6 @@ pub(crate) enum LoadedShapedDevicesSource {
         shaping_generation: String,
     },
     TopologyImport,
-    Csv,
 }
 
 pub(crate) struct LoadedShapedDevices {
@@ -88,82 +88,84 @@ pub fn start_daemon_mode(hooks: Option<Arc<dyn DaemonHooks>>) -> Result<()> {
 pub fn load_runtime_shaping_inputs_for_config(
     config: &Config,
 ) -> Result<Option<TopologyShapingInputsFile>> {
-    if !lqos_config::integration_ingress_enabled(config) {
-        return Ok(None);
-    }
+    // Phase C S4: the compiled import is the ONE source, so ready runtime
+    // inputs are always the first choice (no integration-ingress mode gate).
     runtime_inputs::load_ready_runtime_shaping_inputs(config)
 }
 
 fn load_shaped_devices_for_config(config: &lqos_config::Config) -> Result<LoadedShapedDevices> {
-    if lqos_config::integration_ingress_enabled(config) {
-        if let Some(shaping_inputs) = load_runtime_shaping_inputs_for_config(config)? {
-            let shaped_devices =
-                runtime_inputs::shaped_devices_from_runtime_inputs(&shaping_inputs);
+    if let Some(shaping_inputs) = load_runtime_shaping_inputs_for_config(config)? {
+        let shaped_devices = runtime_inputs::shaped_devices_from_runtime_inputs(&shaping_inputs);
+        if !shaped_devices.devices.is_empty() {
+            return Ok(LoadedShapedDevices {
+                shaped: shaped_devices,
+                source: LoadedShapedDevicesSource::RuntimeTopology {
+                    shaping_generation: shaping_inputs.shaping_generation,
+                },
+            });
+        }
+        debug!(
+            "Active runtime shaping inputs contained 0 shaped devices; checking other sources"
+        );
+    }
+    if !lqos_config::topology_import_has_shaped_devices(config) {
+        // T5 rung 1 / F10: the zero-CSV identity gate — before keeping the
+        // world empty, try the E2 operator view: its circuit nodes carry
+        // devices INLINE, so identity renders with no ShapedDevices.csv.
+        if let Ok(Some(view)) = runtime_inputs::load_operator_view(config) {
+            let shaped_devices = runtime_inputs::shaped_devices_from_operator_view(&view);
             if !shaped_devices.devices.is_empty() {
                 return Ok(LoadedShapedDevices {
                     shaped: shaped_devices,
                     source: LoadedShapedDevicesSource::RuntimeTopology {
-                        shaping_generation: shaping_inputs.shaping_generation,
+                        shaping_generation: view.source_generation,
                     },
                 });
             }
-            debug!(
-                "Active runtime shaping inputs contained 0 shaped devices; checking other integration sources"
-            );
         }
-        if !lqos_config::topology_import_has_shaped_devices(config) {
-            debug!(
-                "topology_import.json is missing or contains 0 shaped devices; keeping integration mode empty until topology is published"
-            );
-            return Ok(LoadedShapedDevices {
-                shaped: ConfigShapedDevices::default(),
-                source: LoadedShapedDevicesSource::TopologyImport,
-            });
-        }
-        match lqos_topology_compile::TopologyImportFile::load(config) {
-            Ok(Some(topology_import)) => {
-                let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
-                if !shaped_devices.devices.is_empty() {
-                    return Ok(LoadedShapedDevices {
-                        shaped: shaped_devices,
-                        source: LoadedShapedDevicesSource::TopologyImport,
-                    });
-                }
-                debug!(
-                    "topology_import.json advertised shaped devices but loaded empty; keeping integration mode empty until topology is published"
-                );
-            }
-            Ok(None) => {
-                debug!(
-                    "topology_import.json advertised shaped devices but loader returned no bundle; keeping integration mode empty until topology is published"
-                );
-            }
-            Err(err) => {
-                debug!(
-                    "Unable to load topology_import.json ({err}); keeping integration mode empty until topology is published"
-                );
-            }
-        }
+        debug!(
+            "topology_import.json is missing or contains 0 shaped devices; keeping the world empty until topology is published"
+        );
         return Ok(LoadedShapedDevices {
             shaped: ConfigShapedDevices::default(),
             source: LoadedShapedDevicesSource::TopologyImport,
         });
     }
+    match lqos_topology_compile::TopologyImportFile::load(config) {
+        Ok(Some(topology_import)) => {
+            let shaped_devices = topology_import.into_imported_bundle().shaped_devices;
+            if !shaped_devices.devices.is_empty() {
+                return Ok(LoadedShapedDevices {
+                    shaped: shaped_devices,
+                    source: LoadedShapedDevicesSource::TopologyImport,
+                });
+            }
+            debug!(
+                "topology_import.json advertised shaped devices but loaded empty; keeping the world empty until topology is published"
+            );
+        }
+        Ok(None) => {
+            debug!(
+                "topology_import.json advertised shaped devices but loader returned no bundle; keeping the world empty until topology is published"
+            );
+        }
+        Err(err) => {
+            debug!(
+                "Unable to load topology_import.json ({err}); keeping the world empty until topology is published"
+            );
+        }
+    }
     Ok(LoadedShapedDevices {
-        shaped: ConfigShapedDevices::load_for_config(config)
-            .context("Unable to load ShapedDevices.csv")?,
-        source: LoadedShapedDevicesSource::Csv,
+        shaped: ConfigShapedDevices::default(),
+        source: LoadedShapedDevicesSource::TopologyImport,
     })
 }
 
 fn load_source_shaped_devices_for_config(config: &Config) -> Result<ConfigShapedDevices> {
-    if lqos_config::integration_ingress_enabled(config) {
-        return Ok(TopologyImportFile::load(config)?
-            .map(|topology_import| topology_import.into_imported_bundle().shaped_devices)
-            .unwrap_or_default());
-    }
-
-    ConfigShapedDevices::load_for_config(config).context("Unable to load ShapedDevices.csv")
+    // Phase C S4: the compiled import is the ONE source (manual included).
+    Ok(TopologyImportFile::load(config)?
+        .map(|topology_import| topology_import.into_imported_bundle().shaped_devices)
+        .unwrap_or_default())
 }
 
 /// Loads shaped-device configuration from disk.
@@ -266,6 +268,13 @@ pub fn request_reload_network_json(reason: &str) -> Result<()> {
     actor::request_reload_network_json(reason)
 }
 
+/// Requests the runtime actor repopulate the dashboard tree from the
+/// E2 operator view (`topology_operator_view.json`, T5 rung 1). A
+/// no-op when the named legacy `network.json` tree mode is enabled.
+pub fn request_reload_dataplane_tree(reason: &str) -> Result<()> {
+    actor::request_reload_dataplane_tree(reason)
+}
+
 /// Publishes a caller-provided shaped-devices snapshot through the runtime actor.
 pub fn apply_shaped_devices_snapshot(
     reason: &str,
@@ -280,6 +289,16 @@ pub fn apply_shaped_devices_snapshot(
 /// This function is not pure: it sends a message to the runtime actor when running.
 pub fn report_observations(observations: &[CircuitObservation]) {
     actor::report_observations(observations)
+}
+
+/// K1 §1.4: reports the bridge's active dynamic-circuit ids — the liveness
+/// backstop for the RADIUS-interim-stall class. Only matching dynamic
+/// circuits have their `last_seen` refreshed; the kernel observation feed
+/// remains a separate (DPDK-inert) arm.
+///
+/// This function is not pure: it sends a message to the runtime actor.
+pub fn report_bridge_activity(circuit_ids: &[String]) {
+    actor::report_bridge_activity(circuit_ids)
 }
 
 /// Creates or updates a runtime-only dynamic circuit overlay entry.
@@ -302,6 +321,23 @@ pub fn upsert_dynamic_circuit(shaped_device: lqos_config::ShapedDevice) -> Resul
 /// This function does **not** mutate `ShapedDevices.csv`.
 pub fn remove_dynamic_circuit(circuit_id: &str) -> Result<bool> {
     actor::remove_dynamic_circuit(circuit_id)
+}
+
+/// Dynamic-ranges H2: replaces any dynamic circuit covering the same device
+/// IP(s) with `shaped_device` in ONE RMW (remove-by-IP + upsert-by-id). Used by
+/// the promotion scanner and the RADIUS in-place upgrade so a session-derived
+/// id cannot mint a duplicate row + Map.
+///
+/// This function does **not** mutate `ShapedDevices.csv`.
+pub fn replace_dynamic_circuit_by_ip(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+    actor::replace_dynamic_circuit_by_ip(shaped_device)
+}
+
+/// Dynamic-ranges §7: reports per-IP activity for in-range, catalog-unresolved
+/// hosts from the lqosd bridge analytics to the actor's promotion scanner. The
+/// actor owns the sustained-activity window, the cap, and the store write.
+pub fn report_range_host_activity(range_id: &str, samples: &[(std::net::IpAddr, u64, u64)]) {
+    actor::report_range_host_activity(range_id, samples)
 }
 
 /// Replaces the in-memory `ShapedDevices.csv` snapshot without involving the runtime actor.

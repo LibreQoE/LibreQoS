@@ -5,7 +5,7 @@
 //! diagnostic context while leaving restart decisions to system policy and
 //! operators.
 
-use crate::stats::{BUS_REQUESTS, HIGH_WATERMARK, TIME_TO_POLL_HOSTS};
+use crate::stats::{BUS_REQUESTS, TIME_TO_POLL_HOSTS};
 use crate::throughput_tracker::flow_data::live_active_flow_count;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -145,8 +145,6 @@ struct MemoryDiagnostics {
     flows_tracked: u64,
     bus_requests: u64,
     time_to_poll_hosts_us: u64,
-    high_watermark_down: u64,
-    high_watermark_up: u64,
 }
 
 impl MemoryDiagnostics {
@@ -155,8 +153,6 @@ impl MemoryDiagnostics {
             flows_tracked: live_active_flow_count(),
             bus_requests: BUS_REQUESTS.load(Ordering::Relaxed),
             time_to_poll_hosts_us: TIME_TO_POLL_HOSTS.load(Ordering::Relaxed),
-            high_watermark_down: HIGH_WATERMARK.get_down(),
-            high_watermark_up: HIGH_WATERMARK.get_up(),
         }
     }
 
@@ -164,15 +160,13 @@ impl MemoryDiagnostics {
         let flows_tracked = self.flows_tracked;
         let bus_requests = self.bus_requests;
         let time_to_poll_hosts_us = self.time_to_poll_hosts_us;
-        let high_watermark_down = self.high_watermark_down;
-        let high_watermark_up = self.high_watermark_up;
 
         match level {
             MemoryDiagnosticLevel::Warn => warn!(
-                "lqosd memory diagnostics: flows_tracked={flows_tracked} bus_requests={bus_requests} time_to_poll_hosts_us={time_to_poll_hosts_us} high_watermark_down={high_watermark_down} high_watermark_up={high_watermark_up}",
+                "lqosd memory diagnostics: flows_tracked={flows_tracked} bus_requests={bus_requests} time_to_poll_hosts_us={time_to_poll_hosts_us}",
             ),
             MemoryDiagnosticLevel::Error => error!(
-                "lqosd memory diagnostics: flows_tracked={flows_tracked} bus_requests={bus_requests} time_to_poll_hosts_us={time_to_poll_hosts_us} high_watermark_down={high_watermark_down} high_watermark_up={high_watermark_up}",
+                "lqosd memory diagnostics: flows_tracked={flows_tracked} bus_requests={bus_requests} time_to_poll_hosts_us={time_to_poll_hosts_us}",
             ),
         }
     }

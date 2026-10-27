@@ -132,6 +132,7 @@ mod tests {
             transport_cap_mbps: None,
             transport_cap_reason: None,
             attachment_rate_source: crate::uisp_types::UispAttachmentRateSource::Static,
+            classifies_as_link: false,
         }
     }
 

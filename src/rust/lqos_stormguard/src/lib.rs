@@ -9,23 +9,23 @@
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 
-use lqos_bakery::BakeryCommands;
 use lqos_bus::{StormguardDebugEntry, StormguardRuntimeSettings, StormguardRuntimeStatus};
 use lqos_config::NetworkJsonTransport;
 use lqos_probe::ProbeClient;
-use lqos_queue_tracker::QUEUE_STRUCTURE_CHANGED_STORMGUARD;
 use parking_lot::Mutex;
-use std::collections::HashSet;
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
 mod active_ping;
 mod adaptive_actions;
+mod bus;
 mod config;
 mod datalog;
-mod queue_structure;
 mod site_state;
+
+pub use bus::StormguardBusSender;
 
 const READING_ACCUMULATOR_SIZE: usize = 15;
 const MOVING_AVERAGE_BUFFER_SIZE: usize = 15;
@@ -80,10 +80,6 @@ fn requires_live_reset(
     active_mode == StormguardRuntimeMode::Live && requested_mode != StormguardRuntimeMode::Live
 }
 
-fn rebuild_occurred_since(observed: u64, current: u64, latest_rebuild: u64) -> bool {
-    observed < latest_rebuild && latest_rebuild <= current
-}
-
 fn clear_published_state() {
     STORMGUARD_STATS.lock().clear();
     STORMGUARD_DEBUG.lock().clear();
@@ -95,6 +91,45 @@ fn unix_time_ms() -> u64 {
         .unwrap_or_default()
         .as_millis()
         .min(u128::from(u64::MAX)) as u64
+}
+
+/// K1b startup decoupling §1.4: the bridge path has no queue-structure change
+/// signal; the canonical topology state is the watched-set source, so watch it.
+static CANONICAL_CHANGED: AtomicBool = AtomicBool::new(false);
+
+/// One WARN per process when the kernel/bakery arms are unavailable.
+static BAKERY_ABSENT_WARNED: AtomicBool = AtomicBool::new(false);
+
+fn warn_bakery_absent(context: &str) {
+    if !BAKERY_ABSENT_WARNED.swap(true, Ordering::Relaxed) {
+        warn!(
+            "StormGuard kernel/bakery arms are unavailable on this box (no kernel path); skipping {context}"
+        );
+    }
+}
+
+/// Spawns the canonical-state FileWatcher (cold path) that marks the watched
+/// set for re-derivation when the canonical topology changes.
+fn spawn_canonical_watcher(config: &lqos_config::Config) {
+    let path = lqos_config::topology_canonical_state_path(config);
+    let spawn = std::thread::Builder::new()
+        .name("stormguard-canonical-watch".to_string())
+        .spawn(move || {
+            let mut watcher = lqos_utils::file_watcher::FileWatcher::new(
+                lqos_config::TOPOLOGY_CANONICAL_STATE_FILENAME,
+                path,
+            );
+            watcher.set_file_created_callback(|| CANONICAL_CHANGED.store(true, Ordering::Relaxed));
+            watcher.set_file_changed_callback(|| CANONICAL_CHANGED.store(true, Ordering::Relaxed));
+            loop {
+                if let Err(error) = watcher.watch() {
+                    info!("StormGuard canonical-state watcher returned {error:?}");
+                }
+            }
+        });
+    if let Err(error) = spawn {
+        warn!("StormGuard could not start the canonical-state watcher: {error}");
+    }
 }
 
 static STORMGUARD_RUNTIME_STATUS: LazyLock<Mutex<StormguardRuntimeStatus>> = LazyLock::new(|| {
@@ -151,7 +186,7 @@ fn publish_runtime_status(
         configured_enabled: mode != StormguardRuntimeMode::Disabled,
         mode: mode.label().to_string(),
         phase: phase.to_string(),
-        bakery_ready: lqos_bakery::stormguard_bakery_ready(),
+        bakery_ready: false,
         cleanup_pending,
         strategy,
         active_ping_target,
@@ -176,16 +211,31 @@ pub static STORMGUARD_STATS: Mutex<Vec<(String, u64, u64)>> = Mutex::new(Vec::ne
 /// Debug snapshots of StormGuard evaluation state
 pub static STORMGUARD_DEBUG: Mutex<Vec<StormguardDebugEntry>> = Mutex::new(Vec::new());
 
+/// K2 slice 2 729b: the bridged passive-RTT provider — per-node p90 (ms)
+/// keyed by node name, from the bridge's RTT histogram. `None` on the kernel
+/// path (the `rtts` p50-based p90 stands).
+pub type BridgePassiveRttProvider =
+    fn() -> Option<std::collections::HashMap<String, f32>>;
+
 /// Launches the StormGuard component. Will exit if there's
 /// nothing to do.
 pub async fn start_stormguard(
-    bakery: crossbeam_channel::Sender<BakeryCommands>,
     network_map_provider: fn() -> Vec<(usize, NetworkJsonTransport)>,
+    bridge_rtt_p90_provider: BridgePassiveRttProvider,
     probe_client: ProbeClient,
+    bus_tx: bus::StormguardBusSender,
 ) -> anyhow::Result<()> {
     let _ = tokio::time::sleep(Duration::from_secs(1)).await;
 
     info!("Starting LibreQoS StormGuard...");
+
+    // K1b startup decoupling (stormguard_startup_decoupling_card.md §1.1): on a
+    // bridge-only box the kernel/bakery arms no-op. The site-clamp path
+    // (override layer + republish) runs regardless.
+    warn_bakery_absent("kernel/bakery arms");
+    if let Ok(config) = lqos_config::load_config() {
+        spawn_canonical_watcher(&config);
+    }
 
     // Initialize in "waiting" state - we'll configure when queue structure is available
     let mut config: Option<config::StormguardConfig> = None;
@@ -196,8 +246,6 @@ pub async fn start_stormguard(
     let mut active_ping = active_ping::ActivePingManager::new(probe_client);
     let mut inactive_reconciled = false;
     let mut live_reset_pending = false;
-    let mut observed_tree_generation = lqos_bakery::stormguard_tree_generation();
-    let mut retained_circuit_fallbacks = HashSet::new();
 
     // Main Cycle - use tokio interval instead of blocking TimerFd
     let mut interval = tokio::time::interval(Duration::from_secs(1));
@@ -219,75 +267,22 @@ pub async fn start_stormguard(
             continue;
         };
         let active_mode = active_runtime_mode(config.as_ref());
-        let dry_run_plan_changed = QUEUE_STRUCTURE_CHANGED_STORMGUARD
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
-            && active_mode == StormguardRuntimeMode::DryRun
-            && requested_mode == StormguardRuntimeMode::DryRun;
-        let current_tree_generation = lqos_bakery::stormguard_tree_generation();
-        let bakery_tree_changed = current_tree_generation != observed_tree_generation;
-        let bakery_tree_rebuilt = rebuild_occurred_since(
-            observed_tree_generation,
-            current_tree_generation,
-            lqos_bakery::stormguard_tree_rebuild_generation(),
-        );
-        if bakery_tree_changed {
-            if let Err(error) = lqos_queue_tracker::reload_queue_structure() {
-                warn!(
-                    "StormGuard could not load the queue structure for Bakery generation {current_tree_generation}; retrying: {error}"
-                );
-                publish_runtime_status(
-                    config.as_ref(),
-                    requested_mode,
-                    "degraded",
-                    false,
-                    Some("Refreshing the Bakery queue snapshot".to_string()),
-                    Some(error.to_string()),
-                );
-                continue;
-            }
-            if lqos_bakery::stormguard_tree_generation() != current_tree_generation {
-                debug!(
-                    "Bakery tree changed again while StormGuard refreshed its queue snapshot; retrying."
-                );
-                continue;
-            }
-            if bakery_tree_rebuilt
-                && let Err(error) =
-                    site_state::discard_bakery_adjustments(current_tree_generation, bakery.clone())
-                        .await
-            {
-                warn!("StormGuard rebuild reconciliation will retry: {error}");
-                publish_runtime_status(
-                    config.as_ref(),
-                    requested_mode,
-                    "cleanup_pending",
-                    true,
-                    Some("Reconciling a rebuilt shaping tree".to_string()),
-                    Some(error.to_string()),
-                );
-                continue;
-            }
-            inactive_reconciled = false;
+        // K1b §4.6 pin 1: drop lapsed machine-authored clamps from the layer in
+        // one RMW so the source-generation hash flips and the topology manager
+        // republishes the un-clamped rates. A dead detector's clamp is bounded
+        // by the TTL regardless of this loop's health.
+        if active_mode == StormguardRuntimeMode::Live
+            && let Err(error) = adaptive_actions::sweep_lapsed_site_overrides(unix_time_ms() / 1000)
+        {
+            warn!("StormGuard could not sweep lapsed clamp overrides; will retry: {error}");
         }
-        if active_mode != StormguardRuntimeMode::Live {
-            observed_tree_generation = current_tree_generation;
-        }
-        if active_mode == StormguardRuntimeMode::Live && bakery_tree_changed {
-            if bakery_tree_rebuilt {
-                retained_circuit_fallbacks.clear();
-            } else if let Some(tracker) = &site_state_tracker {
-                retained_circuit_fallbacks.extend(tracker.active_circuit_fallbacks());
-            }
-            observed_tree_generation = current_tree_generation;
-            config = None;
-            site_state_tracker = None;
-            log_sender = None;
-            logger_error = None;
-            last_application_error = None;
-            live_reset_pending = false;
-            clear_published_state();
-        }
-        if !bakery_tree_changed && requires_live_reset(active_mode, requested_mode) {
+        // K3-B: the kernel queue-structure change signal is retired; the
+        // canonical-state watcher is the bridge watched-set change signal.
+        let dry_run_plan_changed = false;
+        // K1b startup decoupling §1.4: on the bridge path the canonical-state
+        // watcher is the watched-set change signal.
+        let canonical_changed = CANONICAL_CHANGED.swap(false, Ordering::Relaxed);
+        if requires_live_reset(active_mode, requested_mode) {
             live_reset_pending = true;
         }
         if live_reset_pending {
@@ -304,7 +299,7 @@ pub async fn start_stormguard(
                 continue;
             };
             info!("StormGuard is restoring planned queue rates before reconfiguration.");
-            match tracker.reset_adjustments(bakery.clone()).await {
+            match tracker.reset_adjustments().await {
                 Ok(()) => {
                     config = None;
                     site_state_tracker = None;
@@ -337,30 +332,8 @@ pub async fn start_stormguard(
             clear_published_state();
         }
 
-        if requested_mode != StormguardRuntimeMode::Live && !retained_circuit_fallbacks.is_empty() {
-            if let Err(error) = site_state::clear_retained_circuit_fallbacks(
-                &retained_circuit_fallbacks,
-                current_tree_generation,
-                bakery.clone(),
-            )
-            .await
-            {
-                warn!("StormGuard retained circuit cleanup will retry: {error}");
-                publish_runtime_status(
-                    config.as_ref(),
-                    requested_mode,
-                    "cleanup_pending",
-                    true,
-                    Some("Clearing retained circuit fallbacks".to_string()),
-                    Some(error.to_string()),
-                );
-                continue;
-            }
-            retained_circuit_fallbacks.clear();
-        }
-
         if requested_mode != StormguardRuntimeMode::Live && !inactive_reconciled {
-            match site_state::reconcile_inactive_state(bakery.clone()).await {
+            match site_state::reconcile_inactive_state().await {
                 Ok(()) => inactive_reconciled = true,
                 Err(error) => {
                     warn!("StormGuard inactive-state cleanup will retry: {error}");
@@ -398,19 +371,10 @@ pub async fn start_stormguard(
             continue;
         }
 
-        if config.is_none() || bakery_tree_changed || dry_run_plan_changed {
-            let configuration_generation = lqos_bakery::stormguard_tree_generation();
+        if config.is_none() || canonical_changed || dry_run_plan_changed {
             // Try to (re)configure StormGuard
             match config::configure() {
                 Ok(new_config) => {
-                    if lqos_bakery::stormguard_tree_generation() != configuration_generation {
-                        debug!(
-                            "Bakery tree changed while StormGuard was configuring; retrying with the new generation."
-                        );
-                        config = None;
-                        site_state_tracker = None;
-                        continue;
-                    }
                     if new_config.is_empty() {
                         debug!("No StormGuard sites found in queue structure yet");
                         config = None;
@@ -441,30 +405,7 @@ pub async fn start_stormguard(
                                 }
                             }
                         }
-                        let mut tracker = site_state::SiteStateTracker::from_config(
-                            &new_config,
-                            configuration_generation,
-                        );
-                        if let Err(error) = tracker
-                            .replay_persisted_adjustments(&new_config, bakery.clone())
-                            .await
-                        {
-                            warn!("StormGuard persisted adjustment replay will retry: {error}");
-                            publish_runtime_status(
-                                Some(&new_config),
-                                requested_mode,
-                                "degraded",
-                                false,
-                                Some("Replaying persisted StormGuard adjustments".to_string()),
-                                Some(error.to_string()),
-                            );
-                            config = None;
-                            site_state_tracker = None;
-                            continue;
-                        }
-                        tracker.retain_active_circuit_fallbacks(std::mem::take(
-                            &mut retained_circuit_fallbacks,
-                        ));
+                        let tracker = site_state::SiteStateTracker::from_config(&new_config);
                         site_state_tracker = Some(tracker);
                         last_application_error = None;
                         config = Some(new_config);
@@ -512,6 +453,9 @@ pub async fn start_stormguard(
                 active_ping_sample,
                 active_ping_updated,
                 network_map_provider(),
+                // K2 slice 2 729b: bridge histogram p90 when available; the
+                // None case keeps the per-node rtts p50-based p90.
+                bridge_rtt_p90_provider().as_ref(),
             );
 
             // Check for state changes
@@ -521,7 +465,7 @@ pub async fn start_stormguard(
                 site_state::ApplicationReport::default()
             } else {
                 tracker
-                    .apply_recommendations(recommendations, cfg, bakery.clone())
+                    .apply_recommendations(recommendations, cfg, bus_tx.clone())
                     .await
             };
             if let Some(error) = application_report.errors.last() {
@@ -587,7 +531,7 @@ pub async fn start_stormguard(
 
 #[cfg(test)]
 mod tests {
-    use super::{StormguardRuntimeMode, rebuild_occurred_since, requires_live_reset, runtime_mode};
+    use super::{StormguardRuntimeMode, requires_live_reset, runtime_mode};
 
     #[test]
     fn runtime_mode_tracks_disabled_dry_run_and_live_states() {
@@ -617,9 +561,4 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn incremental_generation_preserves_bakery_ownership() {
-        assert!(!rebuild_occurred_since(4, 5, 4));
-        assert!(rebuild_occurred_since(4, 6, 5));
-    }
 }

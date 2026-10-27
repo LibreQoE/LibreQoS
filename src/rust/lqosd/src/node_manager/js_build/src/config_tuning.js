@@ -1,4 +1,5 @@
-import {saveConfig, loadConfig, renderConfigMenu} from "./config/config_helper";
+import {saveConfig, loadConfig, renderConfigMenu, sendWsRequest} from "./config/config_helper";
+import {normalizeDpdkStatus, normalizeWorkerCount} from "./config/dpdk_status.mjs";
 
 function validateConfig() {
     // Validate numeric fields
@@ -26,6 +27,12 @@ function validateConfig() {
         return false;
     }
 
+    const workers = normalizeWorkerCount(document.getElementById("dpdkWorkers").value);
+    if (!workers.ok) {
+        alert(workers.error);
+        return false;
+    }
+
     return true;
 }
 
@@ -45,6 +52,89 @@ function updateConfig() {
             .map(s => s.trim())
             .filter(s => s.length > 0)
     };
+
+    // The DPDK worker count lives in the [queues] section (the installer
+    // translates it to LIBREQOS_DPDK_WORKERS). Only touch this key so a save
+    // here never resets the rest of the queues configuration.
+    window.config.queues = window.config.queues && typeof window.config.queues === "object"
+        ? window.config.queues
+        : {};
+    window.config.queues.workers = normalizeWorkerCount(document.getElementById("dpdkWorkers").value).value;
+}
+
+function kindBadgeClass(label) {
+    switch (label) {
+        case "Running":
+            return "text-bg-success";
+        case "Effective":
+            return "text-bg-info";
+        case "Configured":
+            return "text-bg-secondary";
+        default:
+            return "text-bg-light";
+    }
+}
+
+function renderDpdkStatus(rows) {
+    const target = document.getElementById("dpdkStatusTable");
+    if (!target) {
+        return;
+    }
+    target.replaceChildren();
+    if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "text-secondary";
+        empty.textContent = "DPDK status is unavailable.";
+        target.appendChild(empty);
+        return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "d-flex flex-column gap-2";
+    rows.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "border rounded p-2";
+
+        const head = document.createElement("div");
+        head.className = "d-flex justify-content-between align-items-start gap-2";
+        const label = document.createElement("div");
+        label.className = "fw-semibold";
+        label.textContent = row.label;
+        const badge = document.createElement("span");
+        badge.className = `badge rounded-pill ${kindBadgeClass(row.kind)}`;
+        badge.textContent = row.kind;
+        head.append(label, badge);
+
+        const value = document.createElement("div");
+        value.textContent = row.value ?? "Unavailable";
+
+        const source = document.createElement("div");
+        source.className = "text-secondary";
+        source.textContent = row.source;
+
+        item.append(head, value, source);
+        if (row.note) {
+            const note = document.createElement("div");
+            note.className = "text-secondary fst-italic";
+            note.textContent = row.note;
+            item.appendChild(note);
+        }
+        list.appendChild(item);
+    });
+    target.appendChild(list);
+}
+
+function loadDpdkStatus() {
+    sendWsRequest(
+        "DpdkStatusResult",
+        {DpdkStatus: {}},
+        (msg) => {
+            renderDpdkStatus(normalizeDpdkStatus(msg && msg.data));
+        },
+        () => {
+            renderDpdkStatus([]);
+        },
+    );
 }
 
 // Render the configuration menu
@@ -70,8 +160,11 @@ loadConfig(() => {
         document.getElementById("txUsecs").value = tunables.tx_usecs ?? 8;
 
         // Array field (convert to space-separated string)
-        document.getElementById("disableOffload").value = 
+        document.getElementById("disableOffload").value =
             (tunables.disable_offload ?? ["gso", "tso", "lro", "sg", "gro"]).join(' ');
+
+        // DPDK worker count (stored in [queues]).
+        document.getElementById("dpdkWorkers").value = window.config.queues?.workers ?? "";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {
@@ -79,9 +172,12 @@ loadConfig(() => {
                 updateConfig();
                 saveConfig(() => {
                     alert("Configuration saved successfully!");
+                    loadDpdkStatus();
                 });
             }
         });
+
+        loadDpdkStatus();
     } else {
         console.error("Configuration not found in window.config");
     }

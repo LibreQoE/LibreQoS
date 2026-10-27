@@ -13,7 +13,7 @@ mod gate;
 mod health;
 mod probe;
 
-use gate::{RoundHints, RuntimeBuildGate, topology_overrides_generation};
+use gate::{RoundHints, RuntimeBuildGate};
 use health::{
     health_effective_signature, load_starting_health, mark_health_state_unobserved, now_unix,
     refresh_health_state,
@@ -22,9 +22,9 @@ use probe::probe_specs;
 
 use crate::{
     build_effective_topology_artifacts_from_canonical_with_runtime_queue_context,
-    load_canonical_topology_state, prepare_runtime_topology_editor_state_from_canonical,
-    probe_specs_from_state, publish_effective_topology_artifacts,
-    publish_topology_runtime_error_status,
+    load_canonical_topology_state, materialize_manual_topology_import,
+    prepare_runtime_topology_editor_state_from_canonical, probe_specs_from_state,
+    publish_effective_topology_artifacts, publish_topology_runtime_error_status,
 };
 
 type TopologyBusSender =
@@ -37,13 +37,17 @@ fn run_round(
     gate: &mut RuntimeBuildGate,
 ) -> Result<RoundHints> {
     let config = load_config().context("Unable to load config for topology runtime")?;
+    // Phase C S4 (producer unification): when no integration has produced the
+    // compiled ingest artifacts, materialize them from the permanent manual
+    // pair so every downstream consumer reads the import only. Fatal on a bad
+    // pair (validate on ingest, fail loud).
+    materialize_manual_topology_import(config.as_ref())
+        .context("Unable to materialize the manual topology import")?;
     let source_generation = compute_topology_source_generation(config.as_ref())
         .context("Unable to compute topology source generation")?;
-    let overrides_generation = topology_overrides_generation(config.as_ref());
     let source_changed = gate.last_source_generation.as_deref() != Some(source_generation.as_str());
-    let overrides_changed = gate.last_overrides_generation != Some(overrides_generation);
     let mut loaded_inputs: Option<(TopologyCanonicalStateFile, TopologyOverridesFile)> = None;
-    if source_changed || overrides_changed || gate.cached_probe_specs.is_empty() {
+    if source_changed || gate.cached_probe_specs.is_empty() {
         let canonical = load_canonical_topology_state(config.as_ref());
         let overrides =
             TopologyOverridesFile::load().context("Unable to load topology overrides file")?;
@@ -75,7 +79,6 @@ fn run_round(
         .is_some_and(|deadline| now_unix().is_some_and(|now| now >= deadline));
     let retry_pending = gate.next_error_retry_after_unix.is_some() && !retry_due;
     let source_or_health_changed = source_changed
-        || overrides_changed
         || gate.last_health_effective_signature.as_ref() != Some(&next_signature);
     let should_publish =
         source_or_health_changed || (!retry_pending && (!gate.publish_completed || retry_due));
@@ -106,7 +109,7 @@ fn run_round(
         )
     })?;
     if let Err(err) =
-        publish_effective_topology_artifacts(config.as_ref(), &artifacts, &source_generation)
+        publish_effective_topology_artifacts(config.as_ref(), &artifacts)
             .context("Unable to publish effective topology artifacts")
     {
         let formatted = format!("{err:#}");
@@ -122,13 +125,11 @@ fn run_round(
             .refresh_debounce_seconds
             .max(health.probe_interval_seconds.max(1));
         gate.last_source_generation = Some(source_generation.clone());
-        gate.last_overrides_generation = Some(overrides_generation);
         gate.last_health_effective_signature = Some(next_signature);
         gate.next_error_retry_after_unix = now_unix().map(|now| now.saturating_add(retry_delay));
         return Err(err);
     }
     gate.last_source_generation = Some(source_generation.clone());
-    gate.last_overrides_generation = Some(overrides_generation);
     gate.last_health_effective_signature = Some(next_signature);
     gate.publish_completed = true;
     gate.next_error_retry_after_unix = None;

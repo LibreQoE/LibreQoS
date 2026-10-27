@@ -4,7 +4,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("ShapedDevices.csv"),
@@ -29,6 +29,7 @@
         .expect("circuit_anchors.json should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -134,118 +135,28 @@
 
 
     #[test]
-    fn shaping_inputs_resolve_virtual_attachment_owner_to_exported_parent_queue() {
-        let lqos_directory = unique_temp_dir("lqos-topology-virtual-owner-anchor");
-        let config = Config {
-            lqos_directory: lqos_directory.to_string_lossy().to_string(),
-            state_directory: None,
-            ..Config::default()
-        };
-        fs::write(
-            lqos_directory.join("ShapedDevices.csv"),
-            concat!(
-                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
-                "\"circuit-1\",\"Glenn Tower Client Site\",\"device-1\",\"Device 1\",\"glenn-s1.streamitnet.com\",\"attachment-node\",\"attachment-node\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
-            ),
-        )
-        .expect("ShapedDevices.csv should write");
-
-        let artifacts = EffectiveTopologyArtifacts {
-            effective: TopologyEffectiveStateFile {
-                schema_version: 1,
-                generated_unix: Some(1),
-                canonical_generated_unix: Some(1),
-                health_generated_unix: Some(1),
-                nodes: vec![TopologyEffectiveNodeState {
-                    node_id: "site-pop".to_string(),
-                    logical_parent_node_id: "parent-switch".to_string(),
-                    preferred_attachment_id: Some("attachment-node".to_string()),
-                    effective_attachment_id: Some("attachment-node".to_string()),
-                    fallback_reason: None,
-                    all_attachments_suppressed: false,
-                    attachments: Vec::new(),
-                }],
-            },
-            ui_state: TopologyEditorStateFile {
-                schema_version: 1,
-                source: "test".to_string(),
-                generated_unix: Some(1),
-                ingress_identity: None,
-                nodes: vec![TopologyEditorNode {
-                    node_id: "site-pop".to_string(),
-                    node_name: "Glenn Fiber PoP".to_string(),
-                    allowed_parents: vec![TopologyAllowedParent {
-                        parent_node_id: "parent-switch".to_string(),
-                        parent_node_name: "Parent Switch".to_string(),
-                        attachment_options: vec![sample_attachment_option(
-                            "attachment-node",
-                            "glenn-s1.streamitnet.com",
-                        )],
-                        all_attachments_suppressed: false,
-                        has_probe_unavailable_attachments: false,
-                    }],
-                    effective_attachment_name: Some("glenn-s1.streamitnet.com".to_string()),
-                    ..TopologyEditorNode::default()
-                }],
-            },
-            effective_network: Some(json!({
-                "Parent Switch": {
-                    "id": "parent-switch",
-                    "name": "Parent Switch",
-                    "children": {
-                        "Glenn Fiber PoP": {
-                            "id": "site-pop",
-                            "name": "Glenn Fiber PoP",
-                            "virtual": true,
-                            "active_attachment_name": "glenn-s1.streamitnet.com",
-                            "children": {}
-                        }
-                    }
-                }
-            })),
-        };
-
-        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
-            .expect("shaping inputs should build")
-            .expect("shaping inputs should exist");
-        let circuit = shaping_inputs
-            .circuits
-            .iter()
-            .find(|circuit| circuit.circuit_id == "circuit-1")
-            .expect("expected circuit");
-
-        assert_eq!(circuit.effective_parent_node_id, "parent-switch");
-        assert_eq!(circuit.effective_parent_node_name, "Parent Switch");
-        assert_eq!(
-            circuit.effective_attachment_name.as_deref(),
-            Some("glenn-s1.streamitnet.com")
-        );
-        assert_eq!(
-            circuit.resolution_source,
-            lqos_config::TopologyShapingResolutionSource::TopologyAnchor
-        );
-    }
-
-
-    #[test]
     fn shaping_inputs_warn_and_keep_first_duplicate_circuit_shape() {
         let lqos_directory = unique_temp_dir("lqos-topology-duplicate-circuit-shape");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("ShapedDevices.csv"),
             concat!(
                 "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment,sqm\n",
                 "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Tower 1\",\"tower-1\",\"\",\"aa:bb:cc:dd:ee:01\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"first\",\"cake\"\n",
-                "\"circuit-1\",\"Circuit 1\",\"device-2\",\"Device 2\",\"Tower 1\",\"tower-1\",\"\",\"aa:bb:cc:dd:ee:02\",\"192.0.2.11/32\",\"\",\"20\",\"30\",\"200\",\"300\",\"second\",\"fq_codel\"\n",
+                // `none` (not `fq_codel`): the v2 `fq_codel` token reconciles to `cake`
+                // at parse (shaped_device.rs reconcile_v3_sqm), so it would NOT conflict
+                // with the first row's `cake`. `none` stays distinct => a real sqm conflict.
+                "\"circuit-1\",\"Circuit 1\",\"device-2\",\"Device 2\",\"Tower 1\",\"tower-1\",\"\",\"aa:bb:cc:dd:ee:02\",\"192.0.2.11/32\",\"\",\"20\",\"30\",\"200\",\"300\",\"second\",\"none\"\n",
             ),
         )
         .expect("ShapedDevices.csv should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -300,7 +211,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("ShapedDevices.csv"),
@@ -312,6 +223,7 @@
         .expect("ShapedDevices.csv should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -358,7 +270,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("ShapedDevices.csv"),
@@ -370,6 +282,7 @@
         .expect("ShapedDevices.csv should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -415,7 +328,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("network.json"),
@@ -446,8 +359,12 @@
         )
         .expect("ShapedDevices.csv should write");
 
+        // Phase C/D: the manual pair is materialized by the producer; the
+        // canonical loader is read-only.
+        crate::materialize_manual_topology_import(&config)
+            .expect("the manual pair should materialize");
         let canonical = TopologyCanonicalStateFile::load_with_legacy_fallback(&config)
-            .expect("manual runtime should import network.json");
+            .expect("manual runtime should load the materialized canonical");
         let globe_id = canonical
             .nodes
             .iter()
@@ -505,208 +422,12 @@
 
 
     #[test]
-    fn shaping_inputs_skip_virtual_effective_nodes_when_resolving_physical_parent() {
-        let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-virtual");
-        let config = Config {
-            lqos_directory: lqos_directory.to_string_lossy().to_string(),
-            state_directory: None,
-            ..Config::default()
-        };
-        fs::write(
-            lqos_directory.join("ShapedDevices.csv"),
-            concat!(
-                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
-                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Aggregation\",\"site-agg\",\"\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
-            ),
-        )
-        .expect("ShapedDevices.csv should write");
-
-        let artifacts = EffectiveTopologyArtifacts {
-            effective: TopologyEffectiveStateFile {
-                schema_version: 1,
-                generated_unix: Some(1),
-                canonical_generated_unix: Some(1),
-                health_generated_unix: Some(1),
-                nodes: vec![TopologyEffectiveNodeState {
-                    node_id: "site-agg".to_string(),
-                    logical_parent_node_id: "site-root".to_string(),
-                    preferred_attachment_id: None,
-                    effective_attachment_id: None,
-                    fallback_reason: None,
-                    all_attachments_suppressed: false,
-                    attachments: Vec::new(),
-                }],
-            },
-            ui_state: TopologyEditorStateFile {
-                schema_version: 1,
-                source: "test".to_string(),
-                generated_unix: Some(1),
-                ingress_identity: None,
-                nodes: vec![TopologyEditorNode {
-                    node_id: "site-agg".to_string(),
-                    node_name: "Aggregation".to_string(),
-                    current_parent_node_id: Some("site-root".to_string()),
-                    current_parent_node_name: Some("Core".to_string()),
-                    queue_visibility_policy:
-                        TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
-                    ..TopologyEditorNode::default()
-                }],
-            },
-            effective_network: Some(json!({
-                "Core": {
-                    "id": "site-root",
-                    "name": "Core",
-                    "children": {
-                        "Aggregation": {
-                            "id": "site-agg",
-                            "name": "Aggregation",
-                            "virtual": true,
-                            "children": {}
-                        }
-                    }
-                }
-            })),
-        };
-
-        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
-            .expect("shaping inputs should build")
-            .expect("shaping inputs should exist");
-        let circuit = shaping_inputs
-            .circuits
-            .iter()
-            .find(|circuit| circuit.circuit_id == "circuit-1")
-            .expect("expected circuit");
-
-        assert_eq!(circuit.effective_parent_node_id, "site-root");
-        assert_eq!(circuit.effective_parent_node_name, "Core");
-        assert_eq!(
-            circuit.resolution_source,
-            lqos_config::TopologyShapingResolutionSource::LegacyParent
-        );
-    }
-
-
-    #[test]
-    fn shaping_inputs_skip_nested_virtual_effective_nodes_when_resolving_physical_parent() {
-        let lqos_directory = unique_temp_dir("lqos-topology-legacy-parent-nested-virtual");
-        let config = Config {
-            lqos_directory: lqos_directory.to_string_lossy().to_string(),
-            state_directory: None,
-            ..Config::default()
-        };
-        fs::write(
-            lqos_directory.join("ShapedDevices.csv"),
-            concat!(
-                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
-                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Access\",\"site-access\",\"\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
-                "\"circuit-2\",\"Circuit 2\",\"device-2\",\"Device 2\",\"Access\",\"\",\"\",\"aa:bb:cc:dd:ee:00\",\"192.0.2.11/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
-            ),
-        )
-        .expect("ShapedDevices.csv should write");
-
-        let artifacts = EffectiveTopologyArtifacts {
-            effective: TopologyEffectiveStateFile {
-                schema_version: 1,
-                generated_unix: Some(1),
-                canonical_generated_unix: Some(1),
-                health_generated_unix: Some(1),
-                nodes: vec![
-                    TopologyEffectiveNodeState {
-                        node_id: "site-agg".to_string(),
-                        logical_parent_node_id: "site-root".to_string(),
-                        preferred_attachment_id: None,
-                        effective_attachment_id: None,
-                        fallback_reason: None,
-                        all_attachments_suppressed: false,
-                        attachments: Vec::new(),
-                    },
-                    TopologyEffectiveNodeState {
-                        node_id: "site-access".to_string(),
-                        logical_parent_node_id: "site-agg".to_string(),
-                        preferred_attachment_id: None,
-                        effective_attachment_id: None,
-                        fallback_reason: None,
-                        all_attachments_suppressed: false,
-                        attachments: Vec::new(),
-                    },
-                ],
-            },
-            ui_state: TopologyEditorStateFile {
-                schema_version: 1,
-                source: "test".to_string(),
-                generated_unix: Some(1),
-                ingress_identity: None,
-                nodes: vec![
-                    TopologyEditorNode {
-                        node_id: "site-agg".to_string(),
-                        node_name: "Aggregation".to_string(),
-                        current_parent_node_id: Some("site-root".to_string()),
-                        current_parent_node_name: Some("Core".to_string()),
-                        queue_visibility_policy:
-                            TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
-                        ..TopologyEditorNode::default()
-                    },
-                    TopologyEditorNode {
-                        node_id: "site-access".to_string(),
-                        node_name: "Access".to_string(),
-                        current_parent_node_id: Some("site-agg".to_string()),
-                        current_parent_node_name: Some("Aggregation".to_string()),
-                        queue_visibility_policy:
-                            TopologyQueueVisibilityPolicy::QueueHiddenPromoteChildren,
-                        ..TopologyEditorNode::default()
-                    },
-                ],
-            },
-            effective_network: Some(json!({
-                "Core": {
-                    "id": "site-root",
-                    "name": "Core",
-                    "children": {
-                        "Aggregation": {
-                            "id": "site-agg",
-                            "name": "Aggregation",
-                            "virtual": true,
-                            "children": {
-                                "Access": {
-                                    "id": "site-access",
-                                    "name": "Access",
-                                    "virtual": true,
-                                    "children": {}
-                                }
-                            }
-                        }
-                    }
-                }
-            })),
-        };
-
-        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
-            .expect("shaping inputs should build")
-            .expect("shaping inputs should exist");
-        for circuit_id in ["circuit-1", "circuit-2"] {
-            let circuit = shaping_inputs
-                .circuits
-                .iter()
-                .find(|circuit| circuit.circuit_id == circuit_id)
-                .expect("expected circuit");
-
-            assert_eq!(circuit.effective_parent_node_id, "site-root");
-            assert_eq!(circuit.effective_parent_node_name, "Core");
-            assert_eq!(
-                circuit.resolution_source,
-                lqos_config::TopologyShapingResolutionSource::LegacyParent
-            );
-        }
-    }
-
-
-    #[test]
     fn shaping_inputs_fallback_to_generated_parents_when_anchor_does_not_resolve() {
         let lqos_directory = unique_temp_dir("lqos-topology-missing-anchor");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("ShapedDevices.csv"),
@@ -731,6 +452,7 @@
         .expect("circuit_anchors.json should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -783,7 +505,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         let mut csv = String::from(
             "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
@@ -797,6 +519,7 @@
             .expect("ShapedDevices.csv should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -851,7 +574,7 @@
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         config.topology.compile_mode = "flat".to_string();
         config.queues.override_available_queues = Some(2);
@@ -866,6 +589,7 @@
         .expect("ShapedDevices.csv should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -901,7 +625,7 @@
 
     #[test]
     fn flat_mode_publishes_generated_parent_nodes_into_effective_network() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.topology.compile_mode = "flat".to_string();
         config.queues.override_available_queues = Some(3);
 
@@ -944,7 +668,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         let mut stale_canonical = TopologyCanonicalStateFile::from_legacy_network_json(&json!({
             "Globe": {
@@ -1075,7 +799,7 @@
 
     #[test]
     fn runtime_squashing_collapses_backhaul_pairs_after_attachment_selection() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
             "Parent Site": {
@@ -1149,7 +873,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -1202,7 +925,7 @@
 
     #[test]
     fn runtime_squashing_collapses_single_attachment_hops_into_site_metadata() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
             "Parent Site": {
@@ -1266,7 +989,6 @@
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -1317,7 +1039,7 @@
 
     #[test]
     fn runtime_squashing_fails_when_single_hop_would_overwrite_child_key() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
             "Parent Site": {
@@ -1417,5 +1139,48 @@
             errors
                 .iter()
                 .any(|error| error.contains("child key already exists"))
+        );
+    }
+
+    /// Phase C S3b: the compiled-shaping match map apply routes each identity
+    /// kind to exactly one circuit-input slot, and leaves absent circuits
+    /// untouched (the legacy and `ip`-mode behavior).
+    #[test]
+    fn shaping_inputs_resolve_circuit_match_identity_from_map() {
+        let index: BTreeMap<String, lqos_config::TopologyCircuitMatchIdentity> = [
+            (
+                "vxlan-c".to_string(),
+                lqos_config::TopologyCircuitMatchIdentity::Tunnel(TunnelIdentity {
+                    vni: 100,
+                    vlan: 64,
+                }),
+            ),
+            (
+                "vlan-c".to_string(),
+                lqos_config::TopologyCircuitMatchIdentity::Vlan(200),
+            ),
+            (
+                "mpls-c".to_string(),
+                lqos_config::TopologyCircuitMatchIdentity::Mpls(9001),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            resolve_circuit_match_identity(&index, "vxlan-c"),
+            (Some(TunnelIdentity { vni: 100, vlan: 64 }), None, None)
+        );
+        assert_eq!(
+            resolve_circuit_match_identity(&index, "vlan-c"),
+            (None, Some(200), None)
+        );
+        assert_eq!(
+            resolve_circuit_match_identity(&index, "mpls-c"),
+            (None, None, Some(9001))
+        );
+        assert_eq!(
+            resolve_circuit_match_identity(&index, "absent"),
+            (None, None, None)
         );
     }

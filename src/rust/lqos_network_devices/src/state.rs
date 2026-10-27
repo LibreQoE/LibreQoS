@@ -127,20 +127,46 @@ pub(crate) fn refresh_dynamic_circuits_last_seen_for_hashes(
     changed
 }
 
+/// K1 §1.4: the BRIDGE liveness feed. Touches `last_seen_unix` for dynamic
+/// circuits whose normalized circuit id appears in the bridge's active set.
+/// Distinct from the kernel-observation feed (inert on DPDK-bound NICs) and
+/// from the RADIUS upsert feed (interims).
+pub(crate) fn refresh_dynamic_circuits_last_seen_for_circuit_ids(
+    seen_circuit_ids: &HashSet<String>,
+    now_unix: u64,
+) -> bool {
+    let snapshot = dynamic_circuits_snapshot();
+    if snapshot.is_empty() || seen_circuit_ids.is_empty() {
+        return false;
+    }
+
+    let mut updated = snapshot.as_ref().clone();
+    let mut changed = false;
+    for circuit in updated.iter_mut() {
+        let key = lqos_utils::normalize_circuit_id_key(&circuit.shaped.circuit_id);
+        if seen_circuit_ids.contains(&key) && circuit.last_seen_unix != now_unix {
+            circuit.last_seen_unix = now_unix;
+            changed = true;
+        }
+    }
+
+    if changed {
+        publish_dynamic_circuits_snapshot(updated);
+    }
+
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::network_json_with_carried_runtime_state;
     use lqos_config::NetworkJsonNode;
-    use lqos_utils::{
-        qoq_heatmap::TemporalQoqHeatmap, rtt::RttBuffer, temporal_heatmap::TemporalHeatmap,
-        units::DownUpOrder,
-    };
+    use lqos_utils::{rtt::RttBuffer, temporal_heatmap::TemporalHeatmap, units::DownUpOrder};
 
     fn root_node() -> NetworkJsonNode {
         NetworkJsonNode {
             name: "Root".to_string(),
             id: None,
-            virtual_node: false,
             max_throughput: (0.0, 0.0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
@@ -160,7 +186,6 @@ mod tests {
             longitude: None,
             active_attachment_name: None,
             heatmap: None,
-            qoq_heatmap: None,
         }
     }
 
@@ -168,7 +193,6 @@ mod tests {
         NetworkJsonNode {
             name: name.to_string(),
             id: Some(id.to_string()),
-            virtual_node: false,
             max_throughput: (100.0, 100.0),
             current_throughput: DownUpOrder::zeroed(),
             current_packets: DownUpOrder::zeroed(),
@@ -188,7 +212,6 @@ mod tests {
             longitude: None,
             active_attachment_name: None,
             heatmap: None,
-            qoq_heatmap: None,
         }
     }
 
@@ -213,8 +236,6 @@ mod tests {
             Some(1.5),
             Some(2.5),
         );
-        let qoq_heatmap = site.qoq_heatmap.get_or_insert_with(TemporalQoqHeatmap::new);
-        qoq_heatmap.add_sample(Some(91.0), Some(82.0));
         site.current_throughput.down = 12_500_000;
         site.current_throughput.up = 6_250_000;
         site.current_tcp_retransmits.down = 15;
@@ -255,18 +276,10 @@ mod tests {
             .as_ref()
             .expect("site heatmap should carry forward")
             .blocks();
-        let qoq_blocks = site
-            .qoq_heatmap
-            .as_ref()
-            .expect("site qoq heatmap should carry forward")
-            .blocks();
-
         assert_eq!(blocks.download[14], Some(42.0));
         assert_eq!(blocks.upload[14], Some(24.0));
         assert_eq!(blocks.retransmit_down[14], Some(1.5));
         assert_eq!(blocks.retransmit_up[14], Some(2.5));
-        assert_eq!(qoq_blocks.download_total[14], Some(91.0));
-        assert_eq!(qoq_blocks.upload_total[14], Some(82.0));
         assert_eq!(site.current_throughput.down, 12_500_000);
         assert_eq!(site.current_throughput.up, 6_250_000);
         assert_eq!(site.current_tcp_retransmits.down, 15);
@@ -291,5 +304,70 @@ mod tests {
                 .map(|rtt| rtt.as_millis()),
             Some(30.0)
         );
+    }
+
+    /// K1 §1.4 #12-MED: the three liveness feeds are DISTINCT. The kernel
+    /// observation feed with zero observations does not advance `last_seen`;
+    /// the bridge feed advances only for matching circuit ids.
+    #[test]
+    fn bridge_feed_advances_last_seen_only_for_matching_circuit_ids() {
+        use std::collections::HashSet;
+        // Shared with tests.rs: one lock for every dynamic-circuits global
+        // mutator so parallel tests cannot replace the snapshot mid-assert.
+        let _guard = crate::tests::TEST_LOCK.lock();
+        super::publish_dynamic_circuits_snapshot(Vec::new());
+        let circuit = lqos_config::DynamicCircuit {
+            shaped: lqos_config::ShapedDevice {
+                circuit_id: "c1".to_string(),
+                ..Default::default()
+            },
+            last_seen_unix: 100,
+        };
+        super::publish_dynamic_circuits_snapshot(vec![circuit]);
+
+        // Kernel observation feed with NO observations: no advance.
+        assert!(!super::refresh_dynamic_circuits_last_seen_for_hashes(
+            &HashSet::new(),
+            &HashSet::new(),
+            200
+        ));
+        assert_eq!(super::dynamic_circuits_snapshot()[0].last_seen_unix, 100);
+
+        // Bridge feed: advances for the matching circuit id.
+        let ids: HashSet<String> = ["c1".to_string()].into_iter().collect();
+        assert!(super::refresh_dynamic_circuits_last_seen_for_circuit_ids(
+            &ids, 200
+        ));
+        assert_eq!(super::dynamic_circuits_snapshot()[0].last_seen_unix, 200);
+
+        // A non-matching id does not advance.
+        let other: HashSet<String> = ["c2".to_string()].into_iter().collect();
+        assert!(!super::refresh_dynamic_circuits_last_seen_for_circuit_ids(
+            &other, 300
+        ));
+        assert_eq!(super::dynamic_circuits_snapshot()[0].last_seen_unix, 200);
+    }
+
+    /// Stopping BOTH liveness feeds leaves `last_seen` at the last touch, so
+    /// the store's TTL prune expires the circuit.
+    #[test]
+    fn stopping_both_feeds_expires_at_ttl() {
+        let _guard = crate::tests::TEST_LOCK.lock();
+        super::publish_dynamic_circuits_snapshot(Vec::new());
+        let circuit = lqos_config::DynamicCircuit {
+            shaped: lqos_config::ShapedDevice {
+                circuit_id: "c-expire".to_string(),
+                ..Default::default()
+            },
+            last_seen_unix: 1_000,
+        };
+        super::publish_dynamic_circuits_snapshot(vec![circuit]);
+        // No feed touches last_seen; at ttl+1 the row is expired.
+        let expired = crate::dynamic::expired_dynamic_circuit_ids(
+            &super::dynamic_circuits_snapshot(),
+            1_000 + 60 + 1,
+            60,
+        );
+        assert_eq!(expired, vec!["c-expire".to_string()]);
     }
 }

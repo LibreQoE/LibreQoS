@@ -5,10 +5,11 @@ mod site;
 mod stormguard_state;
 
 use crate::active_ping::TimedRtt;
+use crate::bus::StormguardBusSender;
 use crate::adaptive_actions::{
-    CircuitFallbackOutcome, SiteOverrideUpdate, apply_circuit_fallback,
-    apply_site_override_updates, clear_circuit_fallback, clear_stormguard_override_layer,
-    load_persisted_circuit_fallbacks, wait_for_bakery_reply,
+    CircuitFallbackOutcome, SiteOverrideUpdate, apply_circuit_fallback_layer,
+    apply_site_override_updates, clear_circuit_fallback_layer, clear_stormguard_override_layer,
+    operator_owns_site_speed,
 };
 use crate::config::StormguardConfig;
 use crate::site_state::analysis::SaturationLevel;
@@ -20,31 +21,31 @@ use crate::site_state::site::{ActionAttempt, DirectionDecision, SiteState};
 use crate::site_state::stormguard_state::StormguardState;
 use crate::{MOVING_AVERAGE_BUFFER_SIZE, READING_ACCUMULATOR_SIZE};
 use anyhow::{Context, anyhow};
-use crossbeam_channel::Sender;
-use lqos_bakery::{BakeryCommands, StormGuardClassAdjustment, StormGuardRestoreAdjustment};
-use lqos_bus::{StormguardDebugDirection, StormguardDebugEntry, TcHandle};
+use lqos_bus::{BridgePublishStatus, StormguardDebugDirection, StormguardDebugEntry};
 use lqos_config::NetworkJsonTransport;
-use lqos_overrides::{NetworkAdjustment, OverrideFile, OverrideLayer, OverrideStore};
-use lqos_queue_tracker::QUEUE_STRUCTURE;
+use lqos_overrides::{OverrideFile, OverrideLayer, OverrideStore};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
 pub struct SiteStateTracker {
-    tree_generation: u64,
     sites: HashMap<String, SiteState>,
     active_circuit_fallbacks: HashSet<String>,
+    /// Sites already warned about an operator-owned refusal, so the loud WARN
+    /// fires once per episode rather than every tick (K1b drill log-storm nit).
+    operator_refusal_warned: HashSet<String>,
 }
 
 struct CircuitQueueRecommendationContext<'a> {
-    tree_generation: u64,
     active_circuit_fallbacks: &'a mut HashSet<String>,
     site: &'a mut SiteState,
     config: &'a StormguardConfig,
     recommendation: &'a Recommendation,
     circuit_id: &'a str,
     cooldown_secs: f32,
-    bakery_sender: Sender<BakeryCommands>,
+    bus_tx: StormguardBusSender,
+    ttl_seconds: u64,
+    publish_wait_seconds: u64,
 }
 
 #[derive(Default)]
@@ -59,6 +60,13 @@ fn unix_time_ms() -> u64 {
         .unwrap_or_default()
         .as_millis()
         .min(u128::from(u64::MAX)) as u64
+}
+
+fn unix_time_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn successful_application_outcome(dry_run: bool) -> &'static str {
@@ -80,251 +88,25 @@ fn active_rtt_source(
     }
 }
 
-async fn reset_bakery_adjustments(
-    tree_generation: u64,
-    adjustments: Vec<StormGuardRestoreAdjustment>,
-    restore_untracked: bool,
-    bakery_sender: Sender<BakeryCommands>,
-) -> anyhow::Result<()> {
-    let (reply_sender, reply_receiver) = std::sync::mpsc::channel();
-    bakery_sender
-        .send(BakeryCommands::ResetStormGuardAdjustments {
-            tree_generation,
-            adjustments,
-            restore_untracked,
-            reply: Some(reply_sender),
-        })
-        .context("failed to send StormGuard reset command to Bakery")?;
-
-    wait_for_bakery_reply(reply_receiver, "reset StormGuard adjustments").await
-}
-
-/// Discards class ownership cached against the previous shaping tree.
-///
-/// Side effects: clears Bakery's in-process StormGuard adjustment cache after acknowledgement.
-pub(crate) async fn discard_bakery_adjustments(
-    tree_generation: u64,
-    bakery_sender: Sender<BakeryCommands>,
-) -> anyhow::Result<()> {
-    let (reply_sender, reply_receiver) = std::sync::mpsc::channel();
-    bakery_sender
-        .send(BakeryCommands::DiscardStormGuardAdjustments {
-            tree_generation,
-            reply: Some(reply_sender),
-        })
-        .context("failed to send StormGuard discard command to Bakery")?;
-    wait_for_bakery_reply(reply_receiver, "discard stale StormGuard ownership").await
-}
-
-/// Clears circuit fallbacks retained across an incremental tracker reload.
-///
-/// Side effects: applies acknowledged Bakery circuit updates and removes any matching persisted
-/// StormGuard device overrides for each retained circuit.
-pub(crate) async fn clear_retained_circuit_fallbacks(
-    circuit_ids: &HashSet<String>,
-    tree_generation: u64,
-    bakery_sender: Sender<BakeryCommands>,
-) -> anyhow::Result<()> {
-    for circuit_id in circuit_ids {
-        match clear_circuit_fallback(circuit_id, false, tree_generation, bakery_sender.clone())
-            .await?
-        {
-            CircuitFallbackOutcome::Cleared { .. } | CircuitFallbackOutcome::Skipped { .. } => {}
-            outcome => {
-                return Err(anyhow!(
-                    "unexpected retained circuit cleanup outcome for {circuit_id}: {outcome:?}"
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Clears stale StormGuard replay and persistence state while StormGuard is inactive.
-///
-/// Side effects: asks Bakery to discard retained HTB replay entries, then empties the persisted
-/// StormGuard override layer. The persisted layer is unchanged if Bakery cannot acknowledge.
-pub async fn reconcile_inactive_state(bakery_sender: Sender<BakeryCommands>) -> anyhow::Result<()> {
-    let tree_generation = lqos_bakery::stormguard_tree_generation();
-    let override_snapshot = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-    let adjustments = persisted_restore_adjustments(&override_snapshot)?;
-    if lqos_bakery::stormguard_tree_generation() != tree_generation {
-        return Err(anyhow!(
-            "Bakery shaping tree changed while preparing inactive StormGuard reconciliation"
-        ));
-    }
-    reset_bakery_adjustments(tree_generation, adjustments, true, bakery_sender.clone()).await?;
-    let circuit_ids: Vec<String> = load_persisted_circuit_fallbacks()?.into_keys().collect();
-    for circuit_id in circuit_ids {
-        let outcome =
-            clear_circuit_fallback(&circuit_id, false, tree_generation, bakery_sender.clone())
-                .await;
-        let outcome = match outcome {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                restore_override_snapshot(
-                    &override_snapshot,
-                    "after inactive circuit cleanup failed",
-                )?;
-                return Err(error);
-            }
-        };
-        match outcome {
-            CircuitFallbackOutcome::Cleared { .. } | CircuitFallbackOutcome::Skipped { .. } => {}
-            outcome => {
-                restore_override_snapshot(
-                    &override_snapshot,
-                    "after unexpected inactive circuit cleanup outcome",
-                )?;
-                return Err(anyhow!(
-                    "unexpected inactive reset outcome for circuit {circuit_id}: {outcome:?}"
-                ));
-            }
-        }
-    }
-    ensure_generation_or_restore_overrides(
-        tree_generation,
-        &override_snapshot,
-        "before inactive StormGuard persistence cleanup",
-    )?;
+pub async fn reconcile_inactive_state() -> anyhow::Result<()> {
+    // K1b startup decoupling §1.3: the kernel class-handle restorations ran only
+    // where kernels attached; a bridge-only box restores via the fold after the
+    // layer clear below (no queue structure needed, no WARN storm).
     clear_stormguard_override_layer().context("failed to clear inactive StormGuard overrides")?;
-    ensure_generation_or_restore_overrides(
-        tree_generation,
-        &override_snapshot,
-        "during inactive StormGuard persistence cleanup",
-    )?;
     Ok(())
 }
 
-fn ensure_generation_or_restore_overrides(
-    expected_generation: u64,
-    snapshot: &OverrideFile,
-    context: &str,
-) -> anyhow::Result<()> {
-    if lqos_bakery::stormguard_tree_generation() == expected_generation {
-        return Ok(());
-    }
-    restore_override_snapshot(snapshot, &format!("after tree changed {context}"))?;
-    Err(anyhow!("Bakery shaping tree changed {context}"))
-}
-
-fn restore_override_snapshot(snapshot: &OverrideFile, context: &str) -> anyhow::Result<()> {
-    OverrideStore::save_layer(OverrideLayer::Stormguard, snapshot)
+pub(crate) fn restore_override_snapshot(snapshot: &OverrideFile, context: &str) -> anyhow::Result<()> {
+    // K1b §4.6 pin 1: a snapshot restore must not resurrect a clamp whose TTL
+    // lapsed while the restore was being prepared.
+    let mut filtered = snapshot.clone();
+    filtered.remove_lapsed_site_speed_overrides(unix_time_secs());
+    OverrideStore::save_layer(OverrideLayer::Stormguard, &filtered)
         .with_context(|| format!("failed to restore StormGuard ownership {context}"))
 }
 
-fn persisted_restore_adjustments(
-    overrides: &OverrideFile,
-) -> anyhow::Result<Vec<StormGuardRestoreAdjustment>> {
-    let site_adjustments: Vec<_> = overrides
-        .network_adjustments()
-        .iter()
-        .filter_map(|adjustment| match adjustment {
-            NetworkAdjustment::AdjustSiteSpeed {
-                site_name,
-                download_bandwidth_mbps,
-                upload_bandwidth_mbps,
-                ..
-            } => Some((
-                site_name.clone(),
-                *download_bandwidth_mbps,
-                *upload_bandwidth_mbps,
-            )),
-            _ => None,
-        })
-        .collect();
-    if site_adjustments.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let config = lqos_config::load_config()?;
-    let queue_snapshot = QUEUE_STRUCTURE.load();
-    let queues = queue_snapshot
-        .maybe_queues
-        .as_ref()
-        .ok_or_else(|| anyhow!("queue structure is unavailable for inactive StormGuard reset"))?;
-    let mut adjustments: HashMap<(String, TcHandle), (u64, u64)> = HashMap::new();
-
-    for (site_name, download_target, upload_target) in site_adjustments {
-        let Some(queue) = queues
-            .iter()
-            .find(|queue| queue.name.as_deref() == Some(site_name.as_str()))
-        else {
-            warn!(
-                "Skipping stale persisted StormGuard site {site_name}: its queue no longer exists"
-            );
-            continue;
-        };
-        let dependencies = crate::queue_structure::find_queue_dependents(&site_name)?;
-        for (direction, target) in [
-            (RecommendationDirection::Download, download_target),
-            (RecommendationDirection::Upload, upload_target),
-        ] {
-            let Some(target) = target else {
-                continue;
-            };
-            let interface = match direction {
-                RecommendationDirection::Download => config.isp_interface(),
-                RecommendationDirection::Upload => config.internet_interface(),
-            };
-            let planned_rate = match direction {
-                RecommendationDirection::Download => queue.download_bandwidth_mbps_min,
-                RecommendationDirection::Upload => queue.upload_bandwidth_mbps_min,
-            };
-            let planned_ceil = match direction {
-                RecommendationDirection::Download => queue.download_bandwidth_mbps,
-                RecommendationDirection::Upload => queue.upload_bandwidth_mbps,
-            };
-            adjustments.insert(
-                (interface.clone(), queue.class_id),
-                (planned_rate, planned_ceil),
-            );
-            for dependency in &dependencies {
-                let (dependency_rate, dependency_ceil) = match direction {
-                    RecommendationDirection::Download => (
-                        dependency.original_min_download_mbps,
-                        dependency.original_max_download_mbps,
-                    ),
-                    RecommendationDirection::Upload => (
-                        dependency.original_min_upload_mbps,
-                        dependency.original_max_upload_mbps,
-                    ),
-                };
-                if dependency_ceil >= target.max(0.0) as u64 {
-                    adjustments.insert(
-                        (interface.clone(), dependency.class_id),
-                        (dependency_rate, dependency_ceil),
-                    );
-                }
-            }
-        }
-    }
-
-    Ok(adjustments
-        .into_iter()
-        .map(
-            |((interface_name, class_id), (planned_rate, planned_ceil))| {
-                StormGuardRestoreAdjustment {
-                    interface_name,
-                    class_id,
-                    planned_rate,
-                    planned_ceil,
-                }
-            },
-        )
-        .collect())
-}
-
 impl SiteStateTracker {
-    pub(crate) fn active_circuit_fallbacks(&self) -> HashSet<String> {
-        self.active_circuit_fallbacks.clone()
-    }
-
-    pub(crate) fn retain_active_circuit_fallbacks(&mut self, circuit_ids: HashSet<String>) {
-        self.active_circuit_fallbacks.extend(circuit_ids);
-    }
-
-    pub fn from_config(config: &StormguardConfig, tree_generation: u64) -> Self {
+    pub fn from_config(config: &StormguardConfig) -> Self {
         let mut sites = HashMap::new();
         for (name, site) in &config.sites {
             let delay_probe = matches!(
@@ -380,164 +162,18 @@ impl SiteStateTracker {
             );
         }
         Self {
-            tree_generation,
             sites,
             active_circuit_fallbacks: HashSet::new(),
+            operator_refusal_warned: HashSet::new(),
         }
     }
 
-    pub async fn replay_persisted_adjustments(
-        &mut self,
-        config: &StormguardConfig,
-        bakery_sender: Sender<BakeryCommands>,
-    ) -> anyhow::Result<()> {
-        if config.dry_run {
-            return Ok(());
-        }
-
-        let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
-            info!("No queue structure - cannot replay StormGuard adjustments");
-            return Ok(());
-        };
-
-        let fallbacks = load_persisted_circuit_fallbacks()?;
-        for (circuit_id, fallback) in fallbacks {
-            match apply_circuit_fallback(
-                &circuit_id,
-                &fallback.sqm_override,
-                false,
-                false,
-                self.tree_generation,
-                bakery_sender.clone(),
-            )
-            .await?
-            {
-                CircuitFallbackOutcome::Applied { .. } => {
-                    self.active_circuit_fallbacks.insert(circuit_id.clone());
-                }
-                CircuitFallbackOutcome::Skipped { reason } => warn!(
-                    "Skipped persisted StormGuard circuit fallback for {circuit_id}: {reason}"
-                ),
-                outcome => {
-                    return Err(anyhow!(
-                        "unexpected persisted circuit replay outcome for {circuit_id}: {outcome:?}"
-                    ));
-                }
-            }
-        }
-
-        for (name, site) in &self.sites {
-            let Some(queue) = queues
-                .iter()
-                .find(|n| n.name.as_deref() == Some(name.as_str()))
-            else {
-                continue;
-            };
-
-            if queue.circuit_id.is_some() {
-                continue;
-            }
-
-            for direction in [
-                RecommendationDirection::Download,
-                RecommendationDirection::Upload,
-            ] {
-                let current_rate = Self::site_rate(site, direction);
-                let planned_rate = Self::planned_rate(&site.config, direction);
-                if current_rate == planned_rate {
-                    continue;
-                }
-
-                let interface_name = Self::interface_name(config, direction);
-                info!(
-                    "Replaying persisted StormGuard {} override for {}: {} -> {}",
-                    direction, name, planned_rate, current_rate
-                );
-                let adjustments = Self::site_adjustment_batch(
-                    &site.config,
-                    direction,
-                    planned_rate,
-                    current_rate,
-                    &interface_name,
-                    queue.class_id,
-                    Self::queue_minimum_rate(queue, direction),
-                );
-                Self::send_adjustment_batch_confirmed(
-                    self.tree_generation,
-                    config.dry_run,
-                    adjustments,
-                    bakery_sender.clone(),
-                )
-                .await?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Restores StormGuard-managed classes and circuit fallbacks to their planned state.
-    ///
-    /// Side effects: applies live Bakery commands and empties the persisted StormGuard override
-    /// layer. Persisted and replay state is cleared only after the live HTB reset succeeds.
-    pub async fn reset_adjustments(
-        &mut self,
-        bakery_sender: Sender<BakeryCommands>,
-    ) -> anyhow::Result<()> {
-        let override_snapshot = OverrideStore::load_layer(OverrideLayer::Stormguard)?;
-        reset_bakery_adjustments(
-            self.tree_generation,
-            Vec::new(),
-            false,
-            bakery_sender.clone(),
-        )
-        .await?;
-
-        let active_circuit_fallbacks: Vec<String> =
-            self.active_circuit_fallbacks.iter().cloned().collect();
-        for circuit_id in active_circuit_fallbacks {
-            match clear_circuit_fallback(
-                &circuit_id,
-                false,
-                self.tree_generation,
-                bakery_sender.clone(),
-            )
-            .await
-            {
-                Ok(CircuitFallbackOutcome::Cleared { .. }) => {}
-                Ok(CircuitFallbackOutcome::Skipped { reason }) => {
-                    warn!(
-                        "StormGuard circuit fallback for {circuit_id} no longer owns the live SQM setting: {reason}"
-                    );
-                }
-                Ok(outcome) => {
-                    restore_override_snapshot(
-                        &override_snapshot,
-                        "after unexpected circuit cleanup outcome",
-                    )?;
-                    return Err(anyhow!(
-                        "unexpected reset outcome for StormGuard circuit fallback {circuit_id}: {outcome:?}"
-                    ));
-                }
-                Err(error) => {
-                    restore_override_snapshot(&override_snapshot, "after circuit cleanup failed")?;
-                    return Err(error).with_context(|| {
-                        format!("failed to clear StormGuard circuit fallback {circuit_id}")
-                    });
-                }
-            }
-        }
-
-        ensure_generation_or_restore_overrides(
-            self.tree_generation,
-            &override_snapshot,
-            "before StormGuard persistence cleanup",
-        )?;
+    pub async fn reset_adjustments(&mut self) -> anyhow::Result<()> {
+        // K1b startup decoupling §1.3: the kernel class restorations + circuit
+        // fallback clears ran only where kernels attached; the layer clear below
+        // is the bridge-path restore (base rates return by construction).
         clear_stormguard_override_layer()
             .context("failed to clear persisted StormGuard adjustments")?;
-        ensure_generation_or_restore_overrides(
-            self.tree_generation,
-            &override_snapshot,
-            "during StormGuard persistence cleanup",
-        )?;
         self.active_circuit_fallbacks.clear();
         Ok(())
     }
@@ -548,6 +184,9 @@ impl SiteStateTracker {
         active_ping_sample: Option<TimedRtt>,
         active_ping_updated: bool,
         all_nodes: Vec<(usize, NetworkJsonTransport)>,
+        // K2 slice 2 729b: bridged per-node passive RTT p90 (ms), keyed by
+        // node name. `None` = kernel path (the rtts p50-based p90 stands).
+        bridge_rtt_p90_ms: Option<&std::collections::HashMap<String, f32>>,
     ) {
         for site in self.sites.values_mut() {
             site.current_throughput = (0.0, 0.0);
@@ -581,8 +220,14 @@ impl SiteStateTracker {
             target.retransmits_down.add(retransmits_down);
             target.retransmits_up.add(retransmits_up);
 
-            // Round-Trip Time
-            if !node_info.rtts.is_empty() {
+            // Round-Trip Time. K2 slice 2 729b source dispatch: on a bridge
+            // box the passive p90 comes from the bridge's RTT histogram
+            // (TreeLiveView); otherwise the per-node `rtts` p50-based p90
+            // (kernel path / bridge-inactive honest fallback).
+            if let Some(p90) = bridge_rtt_p90_ms.and_then(|map| map.get(&node_info.name).copied())
+            {
+                target.record_passive_rtt_sample(p90 as f64);
+            } else if !node_info.rtts.is_empty() {
                 let mut my_round_trip_times = node_info.rtts.clone();
                 my_round_trip_times.sort_by(|a, b| a.total_cmp(b));
                 let samples = my_round_trip_times.len();
@@ -838,31 +483,25 @@ impl SiteStateTracker {
         &mut self,
         recommendations: Vec<(Recommendation, String)>,
         config: &StormguardConfig,
-        bakery_sender: Sender<BakeryCommands>,
+        bus_tx: StormguardBusSender,
     ) -> ApplicationReport {
         let mut application_errors = Vec::new();
         let mut acknowledged_success = false;
-        // We'll need the queues to apply HTB commands
-        let Some(queues) = &QUEUE_STRUCTURE.load().maybe_queues else {
-            info!("No queue structure - cannot get stats");
-            application_errors.push(
-                "StormGuard cannot apply recommendations because queue state is unavailable"
-                    .to_string(),
-            );
-            for (recommendation, _) in recommendations {
-                if let Some(site) = self.sites.get_mut(&recommendation.site) {
-                    Self::record_skipped_application(
-                        site,
-                        &recommendation,
-                        "queue structure unavailable",
-                    );
-                }
-            }
-            return ApplicationReport {
-                errors: application_errors,
-                acknowledged_success,
-            };
-        };
+        // K1b §4.3: site clamps are batched into ONE override-layer write (=
+        // one mint = one transaction) after the per-recommendation loop.
+        let mut pending_clamps: Vec<(
+            String,
+            RecommendationDirection,
+            RecommendationAction,
+            u64,
+            f32,
+        )> = Vec::new();
+        // K1b startup decoupling §1.3: site-level recommendations need only the
+        // watched-site config + the override-layer machinery. The queue
+        // structure is required only for the kernel/phase-2 circuit branch.
+        // K3-B: the kernel queue structure is retired; there is no
+        // kernel-resolved circuit id on the bridge path.
+        let circuit_id: Option<String> = None;
 
         for (recommendation, _summary) in recommendations {
             // Find the Site Object
@@ -883,44 +522,29 @@ impl SiteStateTracker {
                 continue;
             };
 
-            // Find the Queue Object
-            let Some(queue) = queues.iter().find(|n| {
-                if let Some(q) = &n.name {
-                    *q == recommendation.site
-                } else {
-                    false
-                }
-            }) else {
-                info!("Queue {} not found in queue structure", recommendation.site);
-                Self::record_skipped_application(
-                    site,
-                    &recommendation,
-                    "watched queue is absent from the shaping tree",
-                );
-                application_errors.push(format!(
-                    "StormGuard watched queue {} is absent from the shaping tree",
-                    recommendation.site
-                ));
-                continue;
-            };
             let cooldown_secs = Self::cooldown_for_action(config, &recommendation.action);
             debug!(
                 "Cooldown for {:?} set to {:.1}s",
                 recommendation.action, cooldown_secs
             );
 
-            // Circuit queues host qdiscs; prefer the TreeGuard-style fallback path.
-            if let Some(circuit_id) = queue.circuit_id.as_deref() {
+            // Circuit queues host qdiscs; the LayerApply fallback path used the
+            // kernel queue structure to resolve the circuit id. K3-B retires
+            // that source; the site-level clamp path below is the bridge path.
+            if let Some(circuit_id) = circuit_id.clone() {
+                // K1b ph2 §9.3: the LayerApply strategy (layer entry + publish)
+                // is the only circuit-fallback path now that the kernel is gone.
                 if let Some(error) =
                     Self::handle_circuit_queue_recommendation(CircuitQueueRecommendationContext {
-                        tree_generation: self.tree_generation,
                         active_circuit_fallbacks: &mut self.active_circuit_fallbacks,
                         site,
                         config,
                         recommendation: &recommendation,
-                        circuit_id,
+                        circuit_id: &circuit_id,
                         cooldown_secs,
-                        bakery_sender: bakery_sender.clone(),
+                        bus_tx: bus_tx.clone(),
+                        ttl_seconds: config.override_ttl_seconds,
+                        publish_wait_seconds: config.publish_wait_seconds,
                     })
                     .await
                 {
@@ -937,13 +561,7 @@ impl SiteStateTracker {
                 continue;
             }
 
-            let interface_name = Self::interface_name(config, recommendation.direction);
-
-            // Find the TC class
-            let class_handle = queue.class_id;
-
             // Find the new bandwidth
-            let current_rate = Self::site_rate(site, recommendation.direction);
             let Some(new_rate) = site.decision(recommendation.direction).target_mbps else {
                 Self::record_skipped_application(
                     site,
@@ -963,93 +581,143 @@ impl SiteStateTracker {
                 continue;
             }
 
-            let adjustments = Self::site_adjustment_batch(
-                &site.config,
-                recommendation.direction,
-                current_rate,
-                new_rate,
-                &interface_name,
-                class_handle,
-                Self::queue_minimum_rate(queue, recommendation.direction),
-            );
-            let apply_result = Self::send_adjustment_batch_confirmed(
-                self.tree_generation,
-                config.dry_run,
-                adjustments.clone(),
-                bakery_sender.clone(),
-            )
-            .await;
-            if let Err(error) = apply_result {
-                Self::record_failed_application(
-                    site,
-                    recommendation.direction,
-                    recommendation.action,
-                    new_rate,
-                    error.to_string(),
-                );
-                warn!(
-                    "StormGuard {} adjustment for {} failed: {}",
-                    recommendation.direction, recommendation.site, error
-                );
-                application_errors.push(error.to_string());
-                continue;
-            }
-
-            if !config.dry_run {
-                let update = Self::site_override_update_with_target(
-                    site,
-                    recommendation.direction,
-                    new_rate,
-                );
-                if let Err(error) = apply_site_override_updates(&[update]) {
-                    let rollback_adjustments = adjustments
-                        .into_iter()
-                        .map(|adjustment| StormGuardClassAdjustment {
-                            new_rate: adjustment.previous_rate,
-                            previous_rate: adjustment.new_rate,
-                            ..adjustment
-                        })
-                        .collect();
-                    let rollback_error = Self::send_adjustment_batch_confirmed(
-                        self.tree_generation,
-                        false,
-                        rollback_adjustments,
-                        bakery_sender.clone(),
-                    )
-                    .await
-                    .err();
-                    let error = match rollback_error {
-                        Some(rollback_error) => format!(
-                            "failed to persist StormGuard rate: {error}; rollback failed: {rollback_error}"
-                        ),
-                        None => format!(
-                            "failed to persist StormGuard rate: {error}; live classes restored"
-                        ),
-                    };
-                    Self::record_failed_application(
-                        site,
-                        recommendation.direction,
-                        recommendation.action,
-                        new_rate,
-                        error.clone(),
-                    );
-                    warn!(
-                        "StormGuard persistence failed for {}: {error}",
+            // K1b §4.2 operator supremacy: refuse up-front to clamp an
+            // operator-owned site (loud, never a silent no-op drop).
+            match operator_owns_site_speed(site.config.node_id.as_deref(), &recommendation.site) {
+                Ok(true) => {
+                    let reason =
+                        "Operator site-speed override is present; StormGuard will not clamp it";
+                    if self.operator_refusal_warned.insert(recommendation.site.clone()) {
+                        warn!(
+                            "StormGuard refusing to clamp {}: {reason}",
+                            recommendation.site
+                        );
+                    }
+                    Self::record_skipped_application(site, &recommendation, reason);
+                    continue;
+                }
+                Ok(false) => {
+                    // Re-arm the one-shot WARN once the operator entry clears.
+                    self.operator_refusal_warned.remove(&recommendation.site);
+                }
+                Err(error) => {
+                    let error = format!(
+                        "could not read operator overrides before clamping {}: {error}",
                         recommendation.site
                     );
+                    warn!("{error}");
                     application_errors.push(error);
                     continue;
                 }
             }
-            Self::complete_successful_application(
-                site,
+
+            if config.dry_run {
+                Self::complete_successful_application(
+                    site,
+                    recommendation.direction,
+                    recommendation.action,
+                    new_rate,
+                    cooldown_secs,
+                    true,
+                );
+                acknowledged_success = true;
+                continue;
+            }
+
+            pending_clamps.push((
+                recommendation.site.clone(),
                 recommendation.direction,
                 recommendation.action,
                 new_rate,
                 cooldown_secs,
-                config.dry_run,
-            );
-            acknowledged_success = true;
+            ));
+        }
+
+        if !pending_clamps.is_empty() {
+            // Merge per-site updates so a pass that clamps both directions (or
+            // restores one while clamping the other) writes ONE coherent entry
+            // per site, matching the old immediate-apply semantics.
+            let mut merged: HashMap<String, SiteOverrideUpdate> = HashMap::new();
+            for (site_name, direction, _, target, _) in &pending_clamps {
+                let Some(site) = self.sites.get(site_name) else {
+                    continue;
+                };
+                let update = Self::site_override_update_with_target(site, *direction, *target);
+                let entry = merged
+                    .entry(site_name.clone())
+                    .or_insert_with(|| Self::site_override_update_from_state(site));
+                match direction {
+                    RecommendationDirection::Download => {
+                        entry.download_bandwidth_mbps = update.download_bandwidth_mbps;
+                    }
+                    RecommendationDirection::Upload => {
+                        entry.upload_bandwidth_mbps = update.upload_bandwidth_mbps;
+                    }
+                }
+            }
+            let updates: Vec<SiteOverrideUpdate> = merged.into_values().collect();
+            let snapshot = OverrideStore::load_layer(OverrideLayer::Stormguard).ok();
+            match apply_site_override_updates(&updates, config.override_ttl_seconds) {
+                Ok(_) => {
+                    if let Err(error) =
+                        publish_clamp_and_wait(&bus_tx, config.publish_wait_seconds).await
+                    {
+                        // K1b §4.6 pin 2: on REJECTED (or a timed-out/failed
+                        // wait) restore the pre-write snapshot so the bridge
+                        // never keeps an unconfirmed clamp.
+                        if let Some(snapshot) = &snapshot
+                            && let Err(restore_error) =
+                                restore_override_snapshot(snapshot, "after a rejected StormGuard clamp")
+                        {
+                            warn!("StormGuard could not restore overrides after a rejected clamp: {restore_error}");
+                        }
+                        let error = error.to_string();
+                        warn!("StormGuard clamp publish failed: {error}");
+                        for (site_name, direction, action, target, _) in &pending_clamps {
+                            if let Some(site) = self.sites.get_mut(site_name) {
+                                Self::record_failed_application(
+                                    site,
+                                    *direction,
+                                    *action,
+                                    *target,
+                                    error.clone(),
+                                );
+                            }
+                        }
+                        application_errors.push(error);
+                    } else {
+                        for (site_name, direction, action, target, cooldown) in &pending_clamps {
+                            if let Some(site) = self.sites.get_mut(site_name) {
+                                Self::complete_successful_application(
+                                    site,
+                                    *direction,
+                                    *action,
+                                    *target,
+                                    *cooldown,
+                                    false,
+                                );
+                            }
+                        }
+                        acknowledged_success = true;
+                    }
+                }
+                Err(error) => {
+                    let error = error.to_string();
+                    warn!("StormGuard clamp layer write failed: {error}");
+                    for (site_name, direction, action, target, _) in &pending_clamps {
+                        if let Some(site) = self.sites.get_mut(site_name) {
+                            Self::record_failed_application(
+                                site,
+                                *direction,
+                                *action,
+                                *target,
+                                error.clone(),
+                            );
+                        }
+                    }
+                    application_errors.push(error);
+                }
+            }
         }
 
         ApplicationReport {
@@ -1062,14 +730,15 @@ impl SiteStateTracker {
         ctx: CircuitQueueRecommendationContext<'_>,
     ) -> Option<String> {
         let CircuitQueueRecommendationContext {
-            tree_generation,
             active_circuit_fallbacks,
             site,
             config,
             recommendation,
             circuit_id,
             cooldown_secs,
-            bakery_sender,
+            bus_tx,
+            ttl_seconds,
+            publish_wait_seconds,
         } = ctx;
         let outcome = if !config.circuit_fallback_enabled {
             Ok(CircuitFallbackOutcome::Skipped {
@@ -1084,25 +753,27 @@ impl SiteStateTracker {
                 reason: "No active StormGuard circuit fallback to clear.".to_string(),
             })
         } else {
+            // K1b ph2 §9.3: LayerApply (layer entry + publish) is the only
+            // circuit-fallback path now that the kernel is gone.
             match recommendation.action {
                 RecommendationAction::Decrease | RecommendationAction::DecreaseFast => {
-                    apply_circuit_fallback(
+                    apply_circuit_fallback_layer(
                         circuit_id,
                         &config.circuit_fallback_sqm,
-                        config.circuit_fallback_persist,
                         config.dry_run,
-                        tree_generation,
-                        bakery_sender,
+                        ttl_seconds,
+                        publish_wait_seconds,
+                        bus_tx,
                     )
                     .await
                     .map_err(|error| format!("Fallback error: {error}"))
                 }
                 RecommendationAction::Increase | RecommendationAction::IncreaseFast => {
-                    clear_circuit_fallback(
+                    clear_circuit_fallback_layer(
                         circuit_id,
                         config.dry_run,
-                        tree_generation,
-                        bakery_sender,
+                        publish_wait_seconds,
+                        bus_tx,
                     )
                     .await
                     .map_err(|error| format!("Fallback clear error: {error}"))
@@ -1125,19 +796,6 @@ impl SiteStateTracker {
                     true,
                     "applied",
                     None,
-                )
-            }
-            Ok(CircuitFallbackOutcome::AppliedUnpersisted { error }) => {
-                active_circuit_fallbacks.insert(circuit_id.to_string());
-                warn!(
-                    "StormGuard circuit fallback is live but unhealthy for {} ({}): {}",
-                    recommendation.site, circuit_id, error
-                );
-                (
-                    format!("circuit_fallback=applied_unpersisted error={error}"),
-                    false,
-                    "failed",
-                    Some(error),
                 )
             }
             Ok(CircuitFallbackOutcome::Cleared { persisted }) => {
@@ -1242,23 +900,6 @@ impl SiteStateTracker {
         }
     }
 
-    fn queue_minimum_rate(
-        queue: &lqos_queue_tracker::QueueNode,
-        direction: RecommendationDirection,
-    ) -> u64 {
-        match direction {
-            RecommendationDirection::Download => queue.download_bandwidth_mbps_min,
-            RecommendationDirection::Upload => queue.upload_bandwidth_mbps_min,
-        }
-    }
-
-    fn interface_name(config: &StormguardConfig, direction: RecommendationDirection) -> String {
-        match direction {
-            RecommendationDirection::Download => config.download_interface.clone(),
-            RecommendationDirection::Upload => config.upload_interface.clone(),
-        }
-    }
-
     fn cooldown_for_action(config: &StormguardConfig, action: &RecommendationAction) -> f32 {
         match action {
             RecommendationAction::IncreaseFast => config.increase_fast_cooldown_seconds,
@@ -1289,68 +930,9 @@ impl SiteStateTracker {
         }
     }
 
-    fn site_adjustment_batch(
-        site: &crate::config::WatchingSite,
-        direction: RecommendationDirection,
-        previous_rate: u64,
-        new_rate: u64,
-        interface_name: &str,
-        site_class_id: TcHandle,
-        site_planned_rate: u64,
-    ) -> Vec<StormGuardClassAdjustment> {
-        let mut adjustments: Vec<StormGuardClassAdjustment> =
-            Self::dependent_adjustments(site, direction, new_rate)
-                .into_iter()
-                .map(
-                    |(class_id, planned_rate, planned_ceil, rate)| StormGuardClassAdjustment {
-                        interface_name: interface_name.to_string(),
-                        class_id,
-                        new_rate: rate,
-                        previous_rate: previous_rate.min(planned_ceil),
-                        planned_rate,
-                        planned_ceil,
-                    },
-                )
-                .collect();
-        adjustments.push(StormGuardClassAdjustment {
-            interface_name: interface_name.to_string(),
-            class_id: site_class_id,
-            new_rate,
-            previous_rate,
-            planned_rate: site_planned_rate,
-            planned_ceil: Self::planned_rate(site, direction),
-        });
-        adjustments
-    }
-
-    fn dependent_adjustments(
-        site: &crate::config::WatchingSite,
-        direction: RecommendationDirection,
-        target_rate: u64,
-    ) -> Vec<(TcHandle, u64, u64, u64)> {
-        site.dependent_nodes
-            .iter()
-            .map(|dependent| {
-                let original_rate = match direction {
-                    RecommendationDirection::Download => dependent.original_max_download_mbps,
-                    RecommendationDirection::Upload => dependent.original_max_upload_mbps,
-                };
-                let original_min_rate = match direction {
-                    RecommendationDirection::Download => dependent.original_min_download_mbps,
-                    RecommendationDirection::Upload => dependent.original_min_upload_mbps,
-                };
-                (
-                    dependent.class_id,
-                    original_min_rate,
-                    original_rate,
-                    target_rate.min(original_rate),
-                )
-            })
-            .collect()
-    }
-
     fn site_override_update_from_state(site: &SiteState) -> SiteOverrideUpdate {
         SiteOverrideUpdate {
+            node_id: site.config.node_id.clone(),
             site_name: site.config.name.clone(),
             download_bandwidth_mbps: (site.queue_download_mbps != site.config.max_download_mbps)
                 .then_some(site.queue_download_mbps as f32),
@@ -1466,23 +1048,34 @@ impl SiteStateTracker {
         debug!("Recommendation applied: entering cooldown");
         Self::enter_cooldown(site, direction, cooldown_secs, action);
     }
+}
 
-    async fn send_adjustment_batch_confirmed(
-        tree_generation: u64,
-        dry_run: bool,
-        adjustments: Vec<StormGuardClassAdjustment>,
-        bakery_sender: Sender<BakeryCommands>,
-    ) -> anyhow::Result<()> {
-        let (reply_sender, reply_receiver) = std::sync::mpsc::channel();
-        bakery_sender
-            .send(BakeryCommands::StormGuardAdjustmentBatch {
-                tree_generation,
-                dry_run,
-                adjustments,
-                reply: reply_sender,
-            })
-            .context("failed to send StormGuard adjustment batch to Bakery")?;
-        wait_for_bakery_reply(reply_receiver, "apply StormGuard adjustment batch").await
+/// K1b §4.6 pin 3: mints the generation the next topology publish will produce
+/// for the just-written clamp layer, then waits for the bridge to settle it. A
+/// clamp is only acknowledged once the bridge APPLIED it; a REJECTED or
+/// timed-out publish fails loud and the caller restores the pre-write snapshot.
+pub(crate) async fn publish_clamp_and_wait(
+    bus_tx: &StormguardBusSender,
+    publish_wait_seconds: u64,
+) -> anyhow::Result<()> {
+    let global = lqos_config::load_config()
+        .context("could not load config for the StormGuard clamp mint")?;
+    let generation = lqos_topology::mint_next_shaping_generation(&global)?
+        .ok_or_else(|| anyhow!("topology produced no shaping generation for the StormGuard clamp"))?;
+    match crate::bus::wait_for_publish(
+        bus_tx.clone(),
+        &generation,
+        Duration::from_secs(publish_wait_seconds.max(1)),
+    )
+    .await?
+    {
+        BridgePublishStatus::Applied => Ok(()),
+        BridgePublishStatus::Rejected { reason } => Err(anyhow!(
+            "bridge rejected the StormGuard clamp generation: {reason}"
+        )),
+        other => Err(anyhow!(
+            "unexpected settled StormGuard clamp publish state: {other:?}"
+        )),
     }
 }
 
@@ -1490,13 +1083,14 @@ impl SiteStateTracker {
 mod tests {
     use super::*;
     use crate::config::StormguardConfig as RuntimeStormguardConfig;
-    use crate::config::{WatchingSite, WatchingSiteDependency};
+    use crate::config::WatchingSite;
     use lqos_config::StormguardStrategy;
     use std::collections::HashMap;
 
     fn site_state(download: u64, upload: u64, max_down: u64, max_up: u64) -> SiteState {
         SiteState {
             config: WatchingSite {
+                node_id: None,
                 name: "Site A".to_string(),
                 max_download_mbps: max_down,
                 max_upload_mbps: max_up,
@@ -1558,7 +1152,6 @@ mod tests {
             decrease_cooldown_seconds: 3.75,
             decrease_fast_cooldown_seconds: 7.5,
             circuit_fallback_enabled: false,
-            circuit_fallback_persist: true,
             circuit_fallback_sqm: "fq_codel".to_string(),
             delay_threshold_ms: 40.0,
             delay_threshold_ratio: 1.10,
@@ -1570,6 +1163,8 @@ mod tests {
             active_ping_interval_seconds: 10.0,
             active_ping_weight: 0.70,
             active_ping_timeout_seconds: 1.0,
+            override_ttl_seconds: 300,
+            publish_wait_seconds: 30,
         }
     }
 
@@ -1587,44 +1182,6 @@ mod tests {
         let update = SiteStateTracker::site_override_update_from_state(&site);
         assert_eq!(update.download_bandwidth_mbps, Some(75.0));
         assert_eq!(update.upload_bandwidth_mbps, None);
-    }
-
-    #[test]
-    fn dependent_adjustment_carries_original_directional_rate_pair() -> anyhow::Result<()> {
-        let mut site = site_state(50, 50, 100, 100).config;
-        site.dependent_nodes.push(WatchingSiteDependency {
-            name: "Dependent A".to_string(),
-            class_id: TcHandle::from_string("1:2")?,
-            original_min_download_mbps: 7,
-            original_min_upload_mbps: 3,
-            original_max_download_mbps: 37,
-            original_max_upload_mbps: 19,
-        });
-        let download =
-            SiteStateTracker::dependent_adjustments(&site, RecommendationDirection::Download, 15);
-        let upload =
-            SiteStateTracker::dependent_adjustments(&site, RecommendationDirection::Upload, 15);
-        assert_eq!(download, [(TcHandle::from_string("1:2")?, 7, 37, 15)]);
-        assert_eq!(upload, [(TcHandle::from_string("1:2")?, 3, 19, 15)]);
-        Ok(())
-    }
-
-    #[test]
-    fn dependent_adjustment_restores_classes_only_to_their_planned_ceiling() -> anyhow::Result<()> {
-        let mut site = site_state(50, 50, 100, 100).config;
-        site.dependent_nodes.push(WatchingSiteDependency {
-            name: "Dependent A".to_string(),
-            class_id: TcHandle::from_string("1:2")?,
-            original_min_download_mbps: 7,
-            original_min_upload_mbps: 3,
-            original_max_download_mbps: 37,
-            original_max_upload_mbps: 19,
-        });
-        assert_eq!(
-            SiteStateTracker::dependent_adjustments(&site, RecommendationDirection::Download, 40,),
-            [(TcHandle::from_string("1:2")?, 7, 37, 37)]
-        );
-        Ok(())
     }
 
     #[test]
@@ -1842,46 +1399,4 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn acknowledged_batch_reply_propagates_success_and_failure() -> anyhow::Result<()> {
-        let adjustment = StormGuardClassAdjustment {
-            interface_name: "eth0".to_string(),
-            class_id: TcHandle::from_string("1:2")?,
-            new_rate: 50,
-            previous_rate: 60,
-            planned_rate: 10,
-            planned_ceil: 100,
-        };
-
-        for expected in [Ok(()), Err("synthetic failure".to_string())] {
-            let (sender, receiver) = crossbeam_channel::bounded(1);
-            let expected_reply = expected.clone();
-            let worker = std::thread::spawn(move || {
-                let BakeryCommands::StormGuardAdjustmentBatch { reply, .. } =
-                    receiver.recv().expect("batch command")
-                else {
-                    panic!("unexpected Bakery command");
-                };
-                reply.send(expected_reply).expect("batch reply");
-            });
-            let result = SiteStateTracker::send_adjustment_batch_confirmed(
-                1,
-                false,
-                vec![adjustment.clone()],
-                sender,
-            )
-            .await;
-            worker.join().expect("Bakery reply worker");
-            match expected {
-                Ok(()) => assert!(result.is_ok()),
-                Err(message) => assert!(
-                    result
-                        .expect_err("failure should propagate")
-                        .to_string()
-                        .contains(&message)
-                ),
-            }
-        }
-        Ok(())
-    }
 }

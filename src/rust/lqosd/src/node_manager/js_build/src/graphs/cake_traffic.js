@@ -9,11 +9,17 @@ import {
     cakeScatterSeries,
     cakeTooltip,
     formatCakeBitsPerSecond,
+    CAKE_TIN_LEGEND_PAIRS,
+    attachLegendPairMirror,
+    cakeTinIndexFor,
 } from "./cake_history";
 
 export class CakeTraffic extends DashboardGraph {
     constructor(id) {
         super(id);
+        // `lqos-74t.53` (A): mirror a legend tin toggle to its paired `… Up` line
+        // (ECharts toggles by series name; attach ONCE, not per `setOption`).
+        attachLegendPairMirror(this.chart, CAKE_TIN_LEGEND_PAIRS);
 
         this.option = {
             title: cakeChartTitle("Traffic", "Bits per second"),
@@ -22,7 +28,7 @@ export class CakeTraffic extends DashboardGraph {
                 orient: "horizontal",
                 right: 10,
                 top: "bottom",
-                selectMode: false,
+                // do NOT set selectedMode:false — it disables the legend + the mirror
                 textStyle: {
                     color: '#aaa'
                 },
@@ -107,8 +113,8 @@ export class CakeTraffic extends DashboardGraph {
                     this.option.series[j+4].data.push(null);
                     continue;
                 }
-                const downBits = toNumber(sample[0].tins[j].sent_bytes, 0) * 8;
-                const upBits = toNumber(sample[1].tins[j].sent_bytes, 0) * 8;
+                const downBits = toNumber(sample[0].tins[cakeTinIndexFor(j)].sent_bytes, 0) * 8;
+                const upBits = toNumber(sample[1].tins[cakeTinIndexFor(j)].sent_bytes, 0) * 8;
                 this.option.series[j].data.push(downBits);
                 this.option.series[j+4].data.push(0 - upBits);
             }

@@ -67,9 +67,14 @@ impl Default for ExecutiveCacheSnapshot {
                 global_qoq: TemporalQoqHeatmap::new().blocks(),
                 top_download: Vec::new(),
                 top_upload: Vec::new(),
+                top_download_sites: Vec::new(),
+                top_upload_sites: Vec::new(),
+                top_download_circuits: Vec::new(),
+                top_upload_circuits: Vec::new(),
                 top_retransmit: Vec::new(),
+                top_retransmit_sites: Vec::new(),
                 top_rtt: Vec::new(),
-                top_qoo: Vec::new(),
+                top_rtt_sites: Vec::new(),
                 oversubscribed_sites: Vec::new(),
                 top_asns: Vec::new(),
             },
@@ -124,7 +129,6 @@ impl ExecutiveCacheSnapshot {
                         download: array_to_vec(&entity.heatmap.retransmit_down),
                         upload: array_to_vec(&entity.heatmap.retransmit_up),
                     }),
-                    ExecutiveMetric::Qoo => entity.qoq_blocks.as_ref().map(qoq_to_split_blocks),
                     ExecutiveMetric::Download | ExecutiveMetric::Upload => {
                         Some(ExecutiveSplitBlocks {
                             download: array_to_vec(&entity.heatmap.download),
@@ -199,16 +203,8 @@ fn heatmap_scalar_blocks(
         ExecutiveMetric::Upload => Some(array_to_vec(&heatmap.upload)),
         ExecutiveMetric::Retransmit => Some(array_to_vec(&heatmap.retransmit)),
         ExecutiveMetric::Rtt => Some(array_to_vec(&heatmap.rtt)),
-        ExecutiveMetric::Qoo => None,
     }?;
     Some(ExecutiveScalarBlocks { values })
-}
-
-fn qoq_to_split_blocks(blocks: &QoqHeatmapBlocks) -> ExecutiveSplitBlocks {
-    ExecutiveSplitBlocks {
-        download: array_to_vec(&blocks.download_total),
-        upload: array_to_vec(&blocks.upload_total),
-    }
 }
 
 fn heatmap_to_rtt_blocks(blocks: &HeatmapBlocks) -> ExecutiveRttBlocks {
@@ -227,23 +223,6 @@ fn latest_value(values: &[Option<f32>]) -> Option<f32> {
 
 fn non_null_count(values: &[Option<f32>]) -> usize {
     values.iter().filter(|value| value.is_some()).count()
-}
-
-fn latest_qoo(blocks: Option<&QoqHeatmapBlocks>) -> Option<f32> {
-    let latest = blocks?.latest_values();
-    match (latest.down, latest.up) {
-        (Some(download), Some(upload)) => Some((download + upload) / 2.0),
-        (Some(download), None) => Some(download),
-        (None, Some(upload)) => Some(upload),
-        (None, None) => None,
-    }
-}
-
-fn qoo_sample_count(blocks: Option<&QoqHeatmapBlocks>) -> usize {
-    let Some(blocks) = blocks else {
-        return 0;
-    };
-    non_null_count(&blocks.download_total).max(non_null_count(&blocks.upload_total))
 }
 
 fn sort_score_for_metric(entity: &ExecutiveEntitySnapshot, metric: &ExecutiveMetric) -> f32 {
@@ -265,6 +244,9 @@ fn sort_score_for_metric(entity: &ExecutiveEntitySnapshot, metric: &ExecutiveMet
             latest + COUNT_WEIGHT * (count as f32 / 15.0) - penalty
         }
         ExecutiveMetric::Rtt => {
+            // `.64.2.4.2`: rank on the LATEST non-null value (like the other
+            // panels); a no-RTT row scores `-INF` and sorts LAST, so the panel
+            // fills to the limit without a filter.
             let latest = latest_value(&entity.heatmap.rtt).unwrap_or(f32::NEG_INFINITY);
             let count = non_null_count(&entity.heatmap.rtt);
             let penalty = if count < MIN_HEATMAP_SAMPLES {
@@ -273,16 +255,6 @@ fn sort_score_for_metric(entity: &ExecutiveEntitySnapshot, metric: &ExecutiveMet
                 0.0
             };
             latest + COUNT_WEIGHT * (count as f32 / 15.0) - penalty
-        }
-        ExecutiveMetric::Qoo => {
-            let latest = latest_qoo(entity.qoq_blocks.as_ref()).unwrap_or(f32::INFINITY);
-            let count = qoo_sample_count(entity.qoq_blocks.as_ref());
-            let penalty = if count < MIN_HEATMAP_SAMPLES {
-                1000.0
-            } else {
-                0.0
-            };
-            -latest + COUNT_WEIGHT * (count as f32 / 15.0) - penalty
         }
     }
 }
@@ -309,7 +281,6 @@ fn metric_row_from_entity(
                 download: array_to_vec(&entity.heatmap.retransmit_down),
                 upload: array_to_vec(&entity.heatmap.retransmit_up),
             }),
-            ExecutiveMetric::Qoo => entity.qoq_blocks.as_ref().map(qoq_to_split_blocks),
             ExecutiveMetric::Rtt => None,
         },
         rtt_blocks: match metric {
@@ -319,19 +290,42 @@ fn metric_row_from_entity(
     }
 }
 
+/// `.64.3.2`: the entity-kind scope for a ranked metric list. `Site` covers Sites
+/// AND APs (APs are `entity_kind=Site`); `Asn` is never included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MetricScope {
+    All,
+    Site,
+    Circuit,
+}
+
+fn scope_allows(scope: MetricScope, kind: &ExecutiveEntityKind) -> bool {
+    match scope {
+        MetricScope::All => matches!(
+            kind,
+            ExecutiveEntityKind::Site | ExecutiveEntityKind::Circuit
+        ),
+        MetricScope::Site => matches!(kind, ExecutiveEntityKind::Site),
+        MetricScope::Circuit => matches!(kind, ExecutiveEntityKind::Circuit),
+    }
+}
+
 fn top_metric_rows(
     entities: &[ExecutiveEntitySnapshot],
     metric: ExecutiveMetric,
+    scope: MetricScope,
     limit: usize,
 ) -> Vec<ExecutiveDashboardMetricRow> {
+    // `.64.2.4.2` PARITY: every dashboard metric list is UNFILTERED. The Rtt arm
+    // ranks on the latest non-null value with a `-INF` (rank-LAST) fallback, so
+    // the pool is every Site|Circuit entity and the panel yields
+    // `min(limit, count)` rows, with the no-RTT rows at the BOTTOM (blank cells).
+    // The Rtt arm keeps COUNT_WEIGHT + the sparse-sample penalty
+    // (retransmit-style; utilization has no penalty). It deliberately RE-ACCEPTS
+    // blank rows (parity over no-blanks — the DRIVER's call).
     let mut ranked = entities
         .iter()
-        .filter(|entity| {
-            matches!(
-                entity.entity_kind,
-                ExecutiveEntityKind::Site | ExecutiveEntityKind::Circuit
-            )
-        })
+        .filter(|entity| scope_allows(scope, &entity.entity_kind))
         .cloned()
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
@@ -857,7 +851,12 @@ pub(crate) fn rebuild_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> 
     let generated_at_unix_ms = current_unix_ms();
     let header = header_from_response(executive_summary_header());
     let global = heatmap_blocks_from_response(global_heatmap());
-    let global_qoq = THROUGHPUT_TRACKER.global_qoq_heatmap.lock().blocks();
+    // 3a fill: bridge boxes use the pooled-distribution global QoO.
+    let global_qoq = if let Some(snapshot) = crate::bridge_analytics::circuit_qoo_snapshot() {
+        snapshot.global_qoq.clone()
+    } else {
+        THROUGHPUT_TRACKER.global_qoq_heatmap.lock().blocks()
+    };
     let entities = entity_snapshots(
         circuit_heatmap_rows(),
         site_heatmap_rows(),
@@ -865,12 +864,28 @@ pub(crate) fn rebuild_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> 
     );
     let (site_entity_index, circuit_entity_index) = build_entity_indexes(&entities);
     let oversubscribed_sites = build_oversubscribed_sites(&entities);
-    let top_download = top_metric_rows(&entities, ExecutiveMetric::Download, EXECUTIVE_TOP_LIMIT);
-    let top_upload = top_metric_rows(&entities, ExecutiveMetric::Upload, EXECUTIVE_TOP_LIMIT);
+    let top_download =
+        top_metric_rows(&entities, ExecutiveMetric::Download, MetricScope::All, EXECUTIVE_TOP_LIMIT);
+    let top_upload =
+        top_metric_rows(&entities, ExecutiveMetric::Upload, MetricScope::All, EXECUTIVE_TOP_LIMIT);
     let top_retransmit =
-        top_metric_rows(&entities, ExecutiveMetric::Retransmit, EXECUTIVE_TOP_LIMIT);
-    let top_rtt = top_metric_rows(&entities, ExecutiveMetric::Rtt, EXECUTIVE_TOP_LIMIT);
-    let top_qoo = top_metric_rows(&entities, ExecutiveMetric::Qoo, EXECUTIVE_TOP_LIMIT);
+        top_metric_rows(&entities, ExecutiveMetric::Retransmit, MetricScope::All, EXECUTIVE_TOP_LIMIT);
+    let top_rtt =
+        top_metric_rows(&entities, ExecutiveMetric::Rtt, MetricScope::All, EXECUTIVE_TOP_LIMIT);
+    let top_retransmit_sites =
+        top_metric_rows(&entities, ExecutiveMetric::Retransmit, MetricScope::Site, EXECUTIVE_TOP_LIMIT);
+    let top_rtt_sites =
+        top_metric_rows(&entities, ExecutiveMetric::Rtt, MetricScope::Site, EXECUTIVE_TOP_LIMIT);
+    // `.64.3.2`: kind-scoped utilization lists for the dashboard widgets (Sites+APs
+    // share the `Site` kind; `Asn` is excluded).
+    let top_download_sites =
+        top_metric_rows(&entities, ExecutiveMetric::Download, MetricScope::Site, EXECUTIVE_TOP_LIMIT);
+    let top_upload_sites =
+        top_metric_rows(&entities, ExecutiveMetric::Upload, MetricScope::Site, EXECUTIVE_TOP_LIMIT);
+    let top_download_circuits =
+        top_metric_rows(&entities, ExecutiveMetric::Download, MetricScope::Circuit, EXECUTIVE_TOP_LIMIT);
+    let top_upload_circuits =
+        top_metric_rows(&entities, ExecutiveMetric::Upload, MetricScope::Circuit, EXECUTIVE_TOP_LIMIT);
     let top_asns = build_top_asn_rows(&entities);
     let leaderboard_rows = build_leaderboard_rows(&entities, &oversubscribed_sites);
 
@@ -883,9 +898,14 @@ pub(crate) fn rebuild_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> 
             global_qoq,
             top_download,
             top_upload,
+            top_download_sites,
+            top_upload_sites,
+            top_download_circuits,
+            top_upload_circuits,
             top_retransmit,
+            top_retransmit_sites,
             top_rtt,
-            top_qoo,
+            top_rtt_sites,
             oversubscribed_sites,
             top_asns,
         },
@@ -914,29 +934,15 @@ pub(crate) fn fresh_executive_cache_snapshot() -> Arc<ExecutiveCacheSnapshot> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutiveEntitySnapshot, latest_qoo, top_metric_rows};
+    use super::{ExecutiveEntitySnapshot, MetricScope, top_metric_rows};
     use crate::node_manager::local_api::executive::{ExecutiveEntityKind, ExecutiveMetric};
-    use lqos_utils::{qoq_heatmap::QoqHeatmapBlocks, temporal_heatmap::TemporalHeatmap};
+    use lqos_utils::temporal_heatmap::TemporalHeatmap;
 
-    fn qoo_blocks(
-        download_values: &[(usize, f32)],
-        upload_values: &[(usize, f32)],
-    ) -> QoqHeatmapBlocks {
-        let mut download_total = [None; 15];
-        let mut upload_total = [None; 15];
-        for &(idx, value) in download_values {
-            download_total[idx] = Some(value);
+    fn rtt_entity(label: &str, rtt_blocks: &[(usize, f32)]) -> ExecutiveEntitySnapshot {
+        let mut heatmap = TemporalHeatmap::new().blocks();
+        for &(idx, value) in rtt_blocks {
+            heatmap.rtt[idx] = Some(value);
         }
-        for &(idx, value) in upload_values {
-            upload_total[idx] = Some(value);
-        }
-        QoqHeatmapBlocks {
-            download_total,
-            upload_total,
-        }
-    }
-
-    fn qoo_entity(label: &str, blocks: QoqHeatmapBlocks) -> ExecutiveEntitySnapshot {
         ExecutiveEntitySnapshot {
             row_key: format!("site:{label}"),
             entity_kind: ExecutiveEntityKind::Site,
@@ -944,45 +950,119 @@ mod tests {
             circuit_id: None,
             asn: None,
             tree: None,
-            heatmap: TemporalHeatmap::new().blocks(),
-            qoq_blocks: Some(blocks),
+            heatmap,
+            qoq_blocks: None,
         }
     }
 
     #[test]
-    fn latest_qoo_averages_or_falls_back_to_available_direction() {
-        let both = qoo_blocks(&[(14, 90.0)], &[(14, 70.0)]);
-        let download_only = qoo_blocks(&[(14, 88.0)], &[]);
-        let upload_only = qoo_blocks(&[], &[(14, 66.0)]);
-        let empty = qoo_blocks(&[], &[]);
+    fn top_rtt_fills_to_the_limit_and_ranks_no_rtt_rows_last() {
+        // `.64.2.4.2` PARITY: the Median RTT panel has NO filter and fills to the
+        // limit like the other panels, even when fewer than `limit` entities have
+        // RTT. A no-RTT row is INCLUDED and ranked LAST (renders blank at the bottom).
+        //
+        // `.64.2.4.1` (R4): the >=limit-adjacent pool is IN-WINDOW-BUT-NOT-CURRENT
+        // (all at block 5). The OLD `current_rtt` filter required the CURRENT block
+        // and would DROP every one of these rows (and the no-RTT rows), starving
+        // the panel to 0 -- so `labels.len() == 10` FAILS under the old code and
+        // the fill assertion is non-vacuous.
+        let mut entities: Vec<ExecutiveEntitySnapshot> = Vec::new();
+        // 8 RTT-bearing rows, none in the current block.
+        for i in 0..8 {
+            entities.push(rtt_entity(&format!("In Window {i:02}"), &[(5, 10.0 + i as f32)]));
+        }
+        // 2 rows with NO RTT in the window (included, ranked last) -> total = limit.
+        for i in 0..2 {
+            entities.push(rtt_entity(&format!("No RTT {i}"), &[]));
+        }
 
-        assert_eq!(latest_qoo(Some(&both)), Some(80.0));
-        assert_eq!(latest_qoo(Some(&download_only)), Some(88.0));
-        assert_eq!(latest_qoo(Some(&upload_only)), Some(66.0));
-        assert_eq!(latest_qoo(Some(&empty)), None);
-        assert_eq!(latest_qoo(None), None);
+        let rows = top_metric_rows(&entities, ExecutiveMetric::Rtt, MetricScope::All, 10);
+
+        let labels: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
+        // FILLS to the limit: 8 in-window rows + 2 no-RTT rows = the limit. Under
+        // the OLD `current_rtt` filter the 8 non-current rows were dropped => this
+        // would be 0, not 10 (non-vacuous).
+        assert_eq!(labels.len(), 10, "the panel must fill to the limit: {labels:?}");
+        // The no-RTT rows are INCLUDED and sit at the BOTTOM.
+        assert!(labels[8].starts_with("No RTT"), "no-RTT rows must rank LAST: {labels:?}");
+        assert!(labels[9].starts_with("No RTT"), "no-RTT rows must rank LAST: {labels:?}");
+        // The highest-RTT in-window row ranks WORST-first.
+        assert_eq!(labels[0], "In Window 07");
+    }
+
+    fn util_entity(
+        label: &str,
+        kind: ExecutiveEntityKind,
+        download_blocks: &[(usize, f32)],
+        upload_blocks: &[(usize, f32)],
+    ) -> ExecutiveEntitySnapshot {
+        let mut heatmap = TemporalHeatmap::new().blocks();
+        for &(idx, value) in download_blocks {
+            heatmap.download[idx] = Some(value);
+        }
+        for &(idx, value) in upload_blocks {
+            heatmap.upload[idx] = Some(value);
+        }
+        ExecutiveEntitySnapshot {
+            row_key: format!("{kind:?}:{label}"),
+            entity_kind: kind,
+            label: label.to_string(),
+            circuit_id: None,
+            asn: None,
+            tree: None,
+            heatmap,
+            qoq_blocks: None,
+        }
     }
 
     #[test]
-    fn top_qoo_rows_rank_by_latest_qoo_with_sample_penalty() {
-        let sparse_low_qoo = qoo_entity("Sparse Low", qoo_blocks(&[(14, 10.0)], &[(14, 10.0)]));
-        let sampled_high_qoo = qoo_entity(
-            "Sampled High",
-            qoo_blocks(&[(12, 80.0), (13, 80.0), (14, 80.0)], &[]),
-        );
-        let sampled_low_qoo = qoo_entity(
-            "Sampled Low",
-            qoo_blocks(&[(12, 20.0), (13, 20.0), (14, 20.0)], &[]),
-        );
+    fn scoped_utilization_lists_fill_and_exclude_the_other_kind() {
+        // `.64.3.2`: the Site scope covers Sites (and APs, which are `Site`); the
+        // Circuit scope covers circuits. Each list fills to `min(limit, count)` and
+        // EXCLUDES the other kind.
+        let mut entities: Vec<ExecutiveEntitySnapshot> = Vec::new();
+        for i in 0..12 {
+            entities.push(util_entity(
+                &format!("Site {i:02}"),
+                ExecutiveEntityKind::Site,
+                &[(14, 10.0 + i as f32)],
+                &[(14, 5.0 + i as f32)],
+            ));
+        }
+        for i in 0..12 {
+            entities.push(util_entity(
+                &format!("Circuit {i:02}"),
+                ExecutiveEntityKind::Circuit,
+                &[(14, 100.0 + i as f32)],
+                &[(14, 50.0 + i as f32)],
+            ));
+        }
 
-        let rows = top_metric_rows(
-            &[sparse_low_qoo, sampled_high_qoo, sampled_low_qoo],
-            ExecutiveMetric::Qoo,
-            3,
-        );
+        let sites = top_metric_rows(&entities, ExecutiveMetric::Download, MetricScope::Site, 10);
+        let circuits =
+            top_metric_rows(&entities, ExecutiveMetric::Download, MetricScope::Circuit, 10);
 
-        assert_eq!(rows[0].label, "Sampled Low");
-        assert_eq!(rows[1].label, "Sampled High");
-        assert_eq!(rows[2].label, "Sparse Low");
+        // Each fills to the limit (>= limit entities of the kind).
+        assert_eq!(sites.len(), 10, "site list must fill to the limit");
+        assert_eq!(circuits.len(), 10, "circuit list must fill to the limit");
+        // Kinds are excluded (no cross-contamination).
+        assert!(sites.iter().all(|row| row.entity_kind == ExecutiveEntityKind::Site));
+        assert!(circuits.iter().all(|row| row.entity_kind == ExecutiveEntityKind::Circuit));
+        assert!(!sites.iter().any(|row| row.label.starts_with("Circuit")));
+        assert!(!circuits.iter().any(|row| row.label.starts_with("Site")));
+    }
+
+    #[test]
+    fn scoped_utilization_lists_fill_to_min_limit_count() {
+        // Fewer than `limit` sites => the site list is exactly the site count.
+        let entities = vec![
+            util_entity("Site A", ExecutiveEntityKind::Site, &[(14, 10.0)], &[]),
+            util_entity("Site B", ExecutiveEntityKind::Site, &[(14, 20.0)], &[]),
+            util_entity("Circuit X", ExecutiveEntityKind::Circuit, &[(14, 30.0)], &[]),
+        ];
+        let sites = top_metric_rows(&entities, ExecutiveMetric::Download, MetricScope::Site, 10);
+        assert_eq!(sites.len(), 2);
+        assert_eq!(sites[0].label, "Site B"); // highest download ranks first
+        assert_eq!(sites[1].label, "Site A");
     }
 }

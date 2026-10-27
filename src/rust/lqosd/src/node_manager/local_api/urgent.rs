@@ -81,30 +81,6 @@ pub struct UrgentList {
     pub items: Vec<UrgentItem>,
 }
 
-fn bakery_passthrough_issue() -> Option<UrgentItem> {
-    let status = lqos_bakery::bakery_status_snapshot();
-    if !status.reload_required || !status.passthrough_degraded {
-        return None;
-    }
-    Some(UrgentItem {
-        id: u64::MAX,
-        ts: status
-            .last_failure_unix
-            .or(status.current_action_started_unix)
-            .unwrap_or_default(),
-        source: "System".to_string(),
-        severity: "Error".to_string(),
-        code: "BAKERY_PASSTHROUGH_DEGRADED".to_string(),
-        message: status.passthrough_degraded_reason.unwrap_or_else(|| {
-            "Bakery full reload failed while pass-through mode was active. Traffic may be unshaped until a successful full reload clears the degraded state.".to_string()
-        }),
-        context: status.reload_required_reason.map(|reason| {
-            format!("Reload required reason: {reason}")
-        }),
-        clearable: false,
-    })
-}
-
 fn merged_urgent_items() -> Vec<UrgentItem> {
     let mut items: Vec<UrgentItem> = urgent::list()
         .into_iter()
@@ -119,9 +95,6 @@ fn merged_urgent_items() -> Vec<UrgentItem> {
             clearable: true,
         })
         .collect();
-    if let Some(issue) = bakery_passthrough_issue() {
-        items.push(issue);
-    }
     items.sort_by_key(|item| item.ts);
     items.reverse();
     items

@@ -1,0 +1,124 @@
+<style>
+    .bridge-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .bridge-stat {
+        border: 1px solid var(--lqos-border);
+        border-radius: var(--lqos-radius-md);
+        background: color-mix(in srgb, var(--lqos-surface-2) 86%, transparent);
+        padding: 0.85rem 0.9rem;
+    }
+
+    .bridge-stat-label {
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color);
+        margin-bottom: 0.28rem;
+    }
+
+    .bridge-stat-value {
+        font-size: 1.25rem;
+        line-height: 1.15;
+        font-weight: 700;
+        word-break: break-word;
+    }
+
+    .bridge-stat-note {
+        margin-top: 0.22rem;
+        font-size: 0.8rem;
+        color: var(--bs-secondary-color);
+    }
+</style>
+
+<div class="lqos-config-page">
+    <section class="lqos-config-panel">
+        <div class="lqos-config-panel-header">
+            <div>
+                <h5 class="lqos-config-panel-title"><i class="fa fa-circle-nodes me-2"></i>Bridge</h5>
+                <div class="lqos-config-panel-subtitle">
+                    Shaping control-plane health and convergence. The control plane never freezes
+                    the world: an unappliable change is held on its own while everything else keeps
+                    applying.
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="badge bg-secondary" id="bridgePageState">Loading…</span>
+                <span class="text-muted small" id="bridgePageUpdated">Waiting for data</span>
+            </div>
+        </div>
+
+        <div id="bridgePageStats" class="bridge-stats">
+            <div class="bridge-stat">
+                <div class="bridge-stat-label">Service</div>
+                <div class="bridge-stat-value" id="bridgePageService">—</div>
+                <div class="bridge-stat-note" id="bridgePageServiceNote">Bridge probe verdict</div>
+            </div>
+            <div class="bridge-stat">
+                <div class="bridge-stat-label">Convergence</div>
+                <div class="bridge-stat-value" id="bridgePageConvergenceState">—</div>
+                <div class="bridge-stat-note" id="bridgePageConvergenceNote">healthy / converging / held</div>
+            </div>
+            <div class="bridge-stat">
+                <div class="bridge-stat-label">Applied</div>
+                <div class="bridge-stat-value" id="bridgePageApplied">—</div>
+                <div class="bridge-stat-note" id="bridgePageAppliedNote">Last applied world</div>
+            </div>
+            <div class="bridge-stat">
+                <div class="bridge-stat-label">Held changes</div>
+                <div class="bridge-stat-value" id="bridgePageHeldCount">—</div>
+                <div class="bridge-stat-note">Quarantined, not blocking</div>
+            </div>
+        </div>
+
+        <div class="lqos-config-section">
+            <h6>Convergence</h6>
+            <div id="bridgePageConvergence" class="lqos-config-note lqos-config-note-info">
+                Waiting for the broker’s convergence state…
+            </div>
+        </div>
+
+        <div class="lqos-config-section">
+            <h6>Recent outcomes</h6>
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive lqos-table-wrap">
+                        <table class="lqos-table lqos-table-compact align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Generation</th>
+                                    <th>State</th>
+                                    <th>Updated</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bridgePageOutcomes">
+                                <tr>
+                                    <td colspan="3" class="text-muted">Loading bridge publish outcomes…</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="lqos-config-section">
+            <h6>Actions</h6>
+            <button id="bridgePageReload" class="btn btn-primary" type="button">
+                <i class="fa fa-rotate me-1"></i>Reload LibreQoS
+            </button>
+            <span class="text-muted small ms-2" id="bridgePageReloadResult"></span>
+            <div class="lqos-config-note lqos-config-note-warning mt-2">
+                Re-syncs the integration and applies the configuration now. There is no
+                “restart the bridge” action — the control plane holds and converges automatically.
+            </div>
+        </div>
+    </section>
+</div>
+
+<script src="bridge.js%CACHEBUSTERS%"></script>

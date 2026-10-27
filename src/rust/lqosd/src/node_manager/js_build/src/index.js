@@ -12,7 +12,7 @@ const defaultLayout = {
             id: "executive-summary",
             name: "Executive Summary",
             dashlets: [
-                { tag: "executiveSnapshot", size: 12 },
+                { tag: "throughputRing30", size: 12 },
                 { tag: "executiveGlobalHeatmap", size: 12 },
                 { tag: "executiveHeatmapDownload", size: 6 },
                 { tag: "executiveHeatmapUpload", size: 6 },
@@ -78,16 +78,6 @@ const defaultLayout = {
             ]
         },
         {
-            id: "treeguard",
-            name: "TreeGuard",
-            dashlets: [
-                { tag: "treeguardControlLoop", size: 4 },
-                { tag: "treeguardStateMix", size: 4 },
-                { tag: "treeguardDecisionImpact", size: 4 },
-                { tag: "treeguardActivity", size: 12 }
-            ]
-        },
-        {
             id: "stormguard",
             name: "StormGuard",
             dashlets: [
@@ -95,17 +85,6 @@ const defaultLayout = {
                 { tag: "stormguardSiteList", size: 4 },
                 { tag: "stormguardSiteDetail", size: 8 },
                 { tag: "stormguardRecentActivity", size: 12 }
-            ]
-        },
-        {
-            id: "bakery",
-            name: "Bakery",
-            dashlets: [
-                { tag: "bakeryPipeline", size: 3 },
-                { tag: "bakeryChangeMix", size: 3 },
-                { tag: "bakeryStatus", size: 3 },
-                { tag: "bakeryCapacity", size: 3 },
-                { tag: "bakeryActivity", size: 12 }
             ]
         }
     ]

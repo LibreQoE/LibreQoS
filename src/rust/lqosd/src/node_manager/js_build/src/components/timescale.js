@@ -12,12 +12,18 @@ class TimeControls {
             let button = document.createElement("button");
             button.id = "tp_" + period;
             button.innerText = period;
+            if (period === "Live") {
+                const dot = document.createElement("span");
+                dot.className = "time-live-dot";
+                dot.setAttribute("aria-hidden", "true");
+                button.prepend(dot);
+            }
             if (period === this.activePeriod) {
                 button.classList.add("btn-primary");
             } else {
                 button.classList.add("btn-outline-primary");
             }
-            button.classList.add("btn", "btn-sm", "me-1");
+            button.classList.add("btn", "btn-sm");
             button.onclick = () => {
                 if (period !== "Live" && !window.hasLts) {
                     createAndShowModal(

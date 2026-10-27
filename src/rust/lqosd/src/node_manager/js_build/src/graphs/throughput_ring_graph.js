@@ -5,47 +5,28 @@ import {
     scaleNumber,
 } from "../lq_js_common/helpers/scaling";
 
-const RING_SIZE = 60 * 5; // 5 Minutes
-
 function formatTime(ts) {
     const d = new Date(ts);
     return d.toLocaleTimeString('en-US', { hour12: false });
 }
 
 export class ThroughputRingBufferGraph extends DashboardGraph {
-    constructor(id) {
+    constructor(id, windowSeconds = 300) {
         super(id);
-        this.ringbuffer = new RingBuffer(RING_SIZE);
+        this.ringbuffer = new RingBuffer(windowSeconds);
 
         this.option = new GraphOptionsBuilder()
-            .withSequenceAxis(0, RING_SIZE)
+            .withSequenceAxis(0, windowSeconds)
             .withScaledAbsYAxis("Throughput (bps)", 40)
             .build();
 
-        this.option.legend = {
-            orient: "horizontal",
-            right: 10,
-            top: "bottom",
-            selectMode: false,
-            data: [
-                {
-                    name: "Mapped Traffic",
-                    icon: 'circle',
-                    itemStyle: {
-                        color: window.graphPalette[0]
-                    }
-                }, {
-                    name: "Unmapped Traffic",
-                    icon: 'circle',
-                    itemStyle: {
-                        color: window.graphPalette[1]
-                    }
-                }
-            ],
-            textStyle: {
-                color: '#aaa'
-            },
-        };
+        // `.64.2.3` (B): a TIGHT grid. ECharts' default (top:60/bottom:60) burned
+        // ~120px of the 250px container. `left: 52` reserves room for the rotated
+        // y-axis NAME (`withScaledAbsYAxis` nameGap:40) — `containLabel` covers the
+        // tick labels only, not the name.
+        this.option.grid = { left: 52, right: 8, top: 8, bottom: 4, containLabel: true };
+        // The Mapped/Unmapped legend moved OUT of the plot into the widget handle
+        // (the dashlet renders it) so it no longer steals plot height.
         this.option.series = [
             {
                 name: 'shaped0',
@@ -124,8 +105,6 @@ export class ThroughputRingBufferGraph extends DashboardGraph {
 
     onThemeChange() {
         super.onThemeChange();
-        this.option.legend.data[0].itemStyle.color = window.graphPalette[0];
-        this.option.legend.data[1].itemStyle.color = window.graphPalette[1];
         this.option.series[0].lineStyle.color = window.graphPalette[0];
         this.option.series[0].areaStyle.color = window.graphPalette[0];
         this.option.series[1].lineStyle.color = window.graphPalette[0];

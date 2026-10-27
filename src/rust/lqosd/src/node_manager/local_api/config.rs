@@ -189,6 +189,8 @@ pub struct ConfigView {
     #[serde(default)]
     pub shaping_status: ShapingRuntimeStatus,
     #[serde(default)]
+    pub tunnel_circuits_status: crate::tunnel_circuits_ingest::TunnelCircuitsIngestStatus,
+    #[serde(default)]
     pub network_mode_inspection: NetworkModeInspection,
     #[serde(default)]
     pub runtime_onboarding: RuntimeOnboardingState,
@@ -368,6 +370,7 @@ pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
             let secret_state = redact_config_secrets(&mut config);
             ConfigView {
                 shaping_status: crate::shaping_runtime::get_status(),
+                tunnel_circuits_status: crate::tunnel_circuits_ingest::get_status(),
                 network_mode_inspection:
                     crate::node_manager::local_api::network_mode::inspect_network_mode(&config),
                 runtime_onboarding:
@@ -688,7 +691,7 @@ fn validate_sqm_override(raw: &Option<String>) -> Result<(), String> {
     let Some(token) = normalize_sqm_override(raw) else {
         return Ok(());
     };
-    let valid = |value: &str| matches!(value, "" | "cake" | "fq_codel" | "none");
+    let valid = |value: &str| matches!(value, "" | "cake" | "none");
     if token.contains('/') {
         let mut parts = token.splitn(2, '/');
         let down = parts.next().unwrap_or("").trim();
@@ -700,7 +703,7 @@ fn validate_sqm_override(raw: &Option<String>) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "Invalid SQM override '{token}'. Allowed values: cake, fq_codel, none, or directional down/up tokens."
+        "Invalid SQM override '{token}'. Allowed values: cake, none, or directional down/up tokens."
     ))
 }
 
@@ -1501,5 +1504,62 @@ mod tests {
         let config = lqos_config::load_config().expect("load config");
         let path = cobrand_path(config.as_ref());
         assert_eq!(fs::read(path).expect("read cobrand"), png_body);
+    }
+}
+
+#[cfg(test)]
+mod e3_authz_tests {
+    // E3 gate: the admin-action write endpoints REJECT read-only
+    // sessions before any state is touched (the UI hides the
+    // affordances; the backend remains the authority).
+    use super::*;
+    use crate::node_manager::auth::LoginResult;
+
+    fn sample_device() -> ShapedDevice {
+        ShapedDevice {
+            circuit_id: "c1".to_string(),
+            circuit_name: "Bench Client 1".to_string(),
+            device_id: "dev1".to_string(),
+            device_name: "Bench Client 1".to_string(),
+            parent_node: String::new(),
+            parent_node_id: None,
+            anchor_node_id: None,
+            mac: String::new(),
+            ipv4: vec![],
+            ipv6: vec![],
+            download_min_mbps: 10.0,
+            upload_min_mbps: 5.0,
+            download_max_mbps: 100.0,
+            upload_max_mbps: 50.0,
+            comment: String::new(),
+            sqm_override: None,
+            circuit_hash: 0,
+            device_hash: 0,
+            parent_hash: 0,
+        }
+    }
+
+    #[test]
+    fn create_shaped_device_rejects_read_only() {
+        assert_eq!(
+            create_shaped_device_data(LoginResult::ReadOnly, sample_device()),
+            Err("Unauthorized".to_string())
+        );
+    }
+
+    #[test]
+    fn update_shaped_device_rejects_read_only() {
+        assert_eq!(
+            update_shaped_device_data(LoginResult::ReadOnly, "dev1".to_string(), sample_device()),
+            Err("Unauthorized".to_string())
+        );
+    }
+
+    #[test]
+    fn delete_shaped_device_rejects_read_only() {
+        assert_eq!(
+            delete_shaped_device_data(LoginResult::ReadOnly, "dev1".to_string()),
+            Err("Unauthorized".to_string())
+        );
     }
 }

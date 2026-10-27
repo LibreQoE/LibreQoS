@@ -15,7 +15,11 @@ pub struct IpRanges {
 impl Default for IpRanges {
     fn default() -> Self {
         Self {
-            ignore_subnets: vec![],
+            // v2 parity (`src/src/configMigrator.py:39` defaults
+            // `ignoreSubnets = ["192.168.0.0/16"]`). Consumed by the topology
+            // choke (`lqos_topology::build_shaping_inputs_with`): ignored device
+            // IPs never become `mapping_ops`.
+            ignore_subnets: vec!["192.168.0.0/16".to_string()],
             allow_subnets: vec![
                 "172.16.0.0/12".to_string(),
                 "10.0.0.0/8".to_string(),

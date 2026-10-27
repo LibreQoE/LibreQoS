@@ -2,6 +2,7 @@ use allocative_derive::Allocative;
 use serde::Serialize;
 use std::fmt::Display;
 
+#[cfg(test)]
 use lqos_sys::flowbee_data::FlowbeeKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Allocative)]
@@ -25,20 +26,28 @@ pub enum FlowProtocol {
 }
 
 impl FlowProtocol {
+    #[cfg(test)] // test-only fixture: gate to the test build.
     pub fn new(key: &FlowbeeKey) -> Self {
-        match key.ip_protocol {
-            6 => Self::tcp(key),
-            17 => Self::udp(key),
+        Self::from_parts(key.ip_protocol, key.src_port, key.dst_port)
+    }
+
+    /// Classify from raw parts (used by the bridge flow-history fold, which
+    /// has no kernel `FlowbeeKey` but the same protocol + server-port
+    /// inputs). `src_port` is the service-port analogue.
+    pub fn from_parts(ip_protocol: u8, src_port: u16, dst_port: u16) -> Self {
+        match ip_protocol {
+            6 => Self::tcp(ip_protocol, src_port, dst_port),
+            17 => Self::udp(ip_protocol, src_port, dst_port),
             _ => Self::Other {
-                proto: key.ip_protocol,
-                src_port: key.src_port,
-                dst_port: key.dst_port,
+                proto: ip_protocol,
+                src_port,
+                dst_port,
             },
         }
     }
 
-    fn tcp(key: &FlowbeeKey) -> Self {
-        match key.src_port {
+    fn tcp(ip_protocol: u8, src_port: u16, dst_port: u16) -> Self {
+        match src_port {
             25 => Self::Smtp,
             80 => Self::Http,
             443 => Self::Https,
@@ -50,21 +59,21 @@ impl FlowProtocol {
             53 => Self::Dns,
             110 => Self::Pop3,
             _ => Self::Other {
-                proto: key.ip_protocol,
-                src_port: key.src_port,
-                dst_port: key.dst_port,
+                proto: ip_protocol,
+                src_port,
+                dst_port,
             },
         }
     }
 
-    fn udp(key: &FlowbeeKey) -> Self {
-        match key.src_port {
+    fn udp(ip_protocol: u8, src_port: u16, dst_port: u16) -> Self {
+        match src_port {
             53 => Self::Dns,
             80 | 443 => Self::Quic,
             _ => Self::Other {
-                proto: key.ip_protocol,
-                src_port: key.src_port,
-                dst_port: key.dst_port,
+                proto: ip_protocol,
+                src_port,
+                dst_port,
             },
         }
     }

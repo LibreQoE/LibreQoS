@@ -1,3 +1,5 @@
+import { pruneTabsWithoutKnownDashlets } from "./layout_prune.mjs";
+
 const CURRENT_VERSION = 3;
 
 export class DashboardLayout {
@@ -67,6 +69,24 @@ export class DashboardLayout {
             }
         }
         this.persistActiveTabId();
+    }
+
+    /**
+     * Drops persisted tabs whose dashlets are all retired (see
+     * `layout_prune.mjs`), persisting the change.  Returns true if any tab was
+     * removed.  Never empties the dashboard (a no-op if every tab would go).
+     */
+    pruneRetiredTabs(knownTags) {
+        const pruned = pruneTabsWithoutKnownDashlets(this.tabs, knownTags);
+        if (pruned.length === 0 || pruned.length === this.tabs.length) {
+            return false;
+        }
+        this.tabs = pruned;
+        if (this.activeTab >= this.tabs.length) {
+            this.activeTab = this.tabs.length - 1;
+        }
+        this.save(this);
+        return true;
     }
 
     save(layoutData) {

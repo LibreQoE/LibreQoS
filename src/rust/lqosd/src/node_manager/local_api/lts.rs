@@ -69,7 +69,7 @@ pub fn lts_trial_config_data(login: LoginResult) -> Result<LtsTrialConfig, Statu
     })
 }
 
-fn normalize_insight_base_url(lts_url: Option<&str>) -> String {
+pub(crate) fn normalize_insight_base_url(lts_url: Option<&str>) -> String {
     let mut base_url = lts_url
         .map(str::trim)
         .filter(|value| !value.is_empty())

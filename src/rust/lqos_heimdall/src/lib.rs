@@ -4,29 +4,20 @@
 #![deny(clippy::unwrap_used)]
 #![warn(missing_docs)]
 
-mod config;
-/// Interface to the performance tracking system
-pub mod perf_interface;
+pub mod events;
 pub mod stats;
 
-pub use config::{HeimdalConfig, HeimdallMode};
+use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 use tracing::{debug, error, warn};
 mod timeline;
-pub use timeline::{hyperfocus_on_target, n_second_packet_dump, n_second_pcap};
+pub use timeline::{hyperfocus_on_target_bridge, n_second_packet_dump, n_second_pcap};
 mod pcap;
-mod watchlist;
 use anyhow::Result;
-pub use watchlist::{heimdall_expire, heimdall_watch_ip, set_heimdall_mode};
 
 use crate::timeline::expire_timeline;
-
-/// How long should Heimdall keep watching a flow after being requested
-/// to do so? Setting this to a long period increases CPU load after the
-/// client has stopped looking. Too short a delay will lead to missed
-/// collections if the client hasn't maintained the 1s request cadence.
-const EXPIRE_WATCHES_SECS: u64 = 5;
 
 /// How long should Heimdall retain packet timeline data?
 const TIMELINE_EXPIRE_SECS: u64 = 10;
@@ -34,11 +25,32 @@ const TIMELINE_EXPIRE_SECS: u64 = 10;
 /// How long should an analysis session remain in memory?
 const SESSION_EXPIRE_SECONDS: u64 = 600;
 
-/// Interface to running Heimdall (start this when lqosd starts)
-pub fn start_heimdall() -> Result<()> {
-    if set_heimdall_mode(HeimdallMode::WatchOnly).is_err() {
-        error!("Unable to set Heimdall Mode. Packet watching will be unavailable.");
-        anyhow::bail!("Unable to set Heimdall Mode.");
+/// The transport Heimdall watches through (heimdall_bridge_rederivation.md
+/// §1.4a). K3-A collapsed the dual selection: the kernel eBPF watch map +
+/// perf ring is gone, so the bridge analytics socket is the only transport.
+#[derive(Clone, Debug)]
+pub enum HeimdallTransport {
+    /// Bridge analytics socket: `SetWatchList` + `DrainCapture`.
+    Bridge {
+        /// The bridge's analytics unix-socket path.
+        socket: PathBuf,
+    },
+}
+
+static TRANSPORT: OnceLock<HeimdallTransport> = OnceLock::new();
+
+/// The transport selected by [`start_heimdall`], if it has run.
+pub fn transport() -> Option<&'static HeimdallTransport> {
+    TRANSPORT.get()
+}
+
+/// Interface to running Heimdall (start this when lqosd starts).
+///
+/// §1.4a(3): runs on BOTH kernel and bridge-only boxes; the caller selects
+/// the transport from the ph1 kernels/bridge posture.
+pub fn start_heimdall(transport: HeimdallTransport) -> Result<()> {
+    if TRANSPORT.set(transport).is_err() {
+        debug!("Heimdall transport already selected; ignoring duplicate start.");
     }
 
     let interval_ms = 1000; // 1 second
@@ -63,7 +75,6 @@ pub fn start_heimdall() -> Result<()> {
             );
 
             loop {
-                heimdall_expire();
                 expire_timeline();
 
                 let missed_ticks = tfd.read();

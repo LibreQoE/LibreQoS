@@ -9,12 +9,6 @@ pub struct NetworkTreeLiteNode {
     /// Optional stable node identifier from `network.json` metadata.
     #[serde(default)]
     pub id: Option<String>,
-    /// True if the node is virtual/logical-only.
-    #[serde(rename = "virtual", default)]
-    pub is_virtual: bool,
-    /// True if TreeGuard has runtime-virtualized this node in Bakery.
-    #[serde(default)]
-    pub runtime_virtualized: bool,
     /// Configured maximum throughput in Mbps.
     pub max_throughput: (f64, f64),
     /// Current throughput in bytes per second.
@@ -44,9 +38,42 @@ pub struct NetworkTreeLiteNode {
     /// Optional geographic longitude.
     #[serde(default)]
     pub longitude: Option<f32>,
+    /// Total number of unique circuits attached to this node or any descendant
+    /// node — the site's STRUCTURAL footprint (installed circuits, not live
+    /// load). Attached from `build_network_tree_summaries`. Consumers are
+    /// additive-only; `#[serde(default)]` lets a NEW reader accept an OLD/absent
+    /// payload (→ 0) — lqosd has no `deny_unknown_fields`, so an OLD reader
+    /// already tolerates the NEW field.
+    #[serde(default)]
+    pub subtree_circuit_count: u32,
 }
 
 /// Returns the current lightweight network tree snapshot for websocket/API consumers.
 pub fn network_tree_lite_data() -> Vec<(usize, NetworkTreeLiteNode)> {
     full_network_map_lite_snapshot()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NetworkTreeLiteNode;
+
+    // The fields without `#[serde(default)]`.
+    const REQUIRED: &str =
+        "\"name\":\"n\",\"max_throughput\":[0.0,0.0],\"current_throughput\":[0,0],\
+         \"current_tcp_packets\":[0,0],\"current_retransmits\":[0,0],\"rtts\":[],\"parents\":[]";
+
+    /// `.67.5` R2 + R3: an OLD/absent payload is tolerated by a NEW reader
+    /// (`#[serde(default)]` => 0; lqosd has no `deny_unknown_fields`), and the
+    /// field is genuinely READ in-crate (not merely written).
+    #[test]
+    fn subtree_circuit_count_defaults_when_absent_and_reads_when_present() {
+        let old: NetworkTreeLiteNode = serde_json::from_str(&format!("{{{REQUIRED}}}"))
+            .expect("an older payload without subtree_circuit_count should deserialize");
+        assert_eq!(old.subtree_circuit_count, 0);
+
+        let new: NetworkTreeLiteNode =
+            serde_json::from_str(&format!("{{{REQUIRED},\"subtree_circuit_count\":42}}"))
+                .expect("a payload with subtree_circuit_count should deserialize");
+        assert_eq!(new.subtree_circuit_count, 42);
+    }
 }

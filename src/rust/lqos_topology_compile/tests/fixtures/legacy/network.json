@@ -1,0 +1,17 @@
+{
+  "Site One": {
+    "children": {
+      "AP One": {
+        "children": {},
+        "id": "ap1",
+        "name": "AP One",
+        "type": "AP"
+      }
+    },
+    "id": "s1",
+    "name": "Site One",
+    "type": "Site",
+    "downloadBandwidthMbps": 1000,
+    "uploadBandwidthMbps": 1000
+  }
+}

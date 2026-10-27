@@ -8,15 +8,17 @@ use std::net::IpAddr;
 use tower_http::services::ServeFile;
 use tracing::warn;
 
+use crate::node_manager::LoginResult;
+
 #[derive(Debug, Serialize, Clone)]
 pub enum RequestAnalysisResult {
     Fail,
     Ok { session_id: usize, countdown: usize },
 }
 
-pub fn request_analysis_data(ip: &str) -> RequestAnalysisResult {
+pub fn request_analysis_data(ip: &str, login: LoginResult) -> RequestAnalysisResult {
     if let Ok(ip) = ip.parse::<IpAddr>()
-        && let Some((session_id, countdown)) = lqos_heimdall::hyperfocus_on_target(ip.into())
+        && let Some((session_id, countdown)) = crate::heimdall::start_analysis(login, ip)
     {
         return RequestAnalysisResult::Ok {
             session_id,

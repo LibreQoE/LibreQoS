@@ -97,6 +97,18 @@ pub(crate) fn request_reload_network_json(reason: &str) -> Result<()> {
     receive_actor_reply(reply_rx, "NetworkJson reload")
 }
 
+pub(crate) fn request_reload_dataplane_tree(reason: &str) -> Result<()> {
+    let (reply_tx, reply_rx) = bounded(1);
+    send_actor_command(
+        NetworkDevicesCommand::ReloadDataplaneTree {
+            reason: reason.to_string(),
+            reply: reply_tx,
+        },
+        "Dataplane tree reload",
+    )?;
+    receive_actor_reply(reply_rx, "Dataplane tree reload")
+}
+
 pub(crate) fn apply_shaped_devices_snapshot(
     reason: &str,
     shaped: lqos_config::ConfigShapedDevices,
@@ -128,6 +140,21 @@ pub(crate) fn report_observations(observations: &[CircuitObservation]) {
     });
 }
 
+/// K1 §1.4: report the bridge's active dynamic-circuit ids — the liveness
+/// backstop for the RADIUS-interim-stall class. Ids are normalized here; the
+/// state layer touches only matching dynamic circuits.
+pub fn report_bridge_activity(circuit_ids: &[String]) {
+    if circuit_ids.is_empty() {
+        return;
+    }
+    let Some(sender) = ACTOR_SENDER.get().cloned() else {
+        return;
+    };
+    let _ = sender.try_send(NetworkDevicesCommand::ReportBridgeActivity {
+        circuit_ids: circuit_ids.to_vec(),
+    });
+}
+
 pub(crate) fn upsert_dynamic_circuit(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
     let (reply_tx, reply_rx) = bounded(1);
     send_actor_command(
@@ -152,12 +179,49 @@ pub(crate) fn remove_dynamic_circuit(circuit_id: &str) -> Result<bool> {
     receive_actor_reply(reply_rx, "Remove dynamic circuit")
 }
 
+/// Dynamic-ranges H2: one RMW that removes every dynamic row covering any of
+/// the new device's IPs, then upserts the new row by normalized id. Used by the
+/// promotion scanner (idempotent) and RADIUS (the in-place plan upgrade) so a
+/// session-derived id can never mint a duplicate /32 row + Map.
+pub(crate) fn replace_dynamic_circuit_by_ip(shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+    let (reply_tx, reply_rx) = bounded(1);
+    send_actor_command(
+        NetworkDevicesCommand::ReplaceDynamicCircuitByIp {
+            shaped_device: Box::new(shaped_device),
+            reply: reply_tx,
+        },
+        "Replace dynamic circuit by IP",
+    )?;
+    receive_actor_reply(reply_rx, "Replace dynamic circuit by IP")
+}
+
+/// Dynamic-ranges §7 (the SIGNAL → DECISION split): the lqosd
+/// bridge_analytics signal reports per-IP activity for in-range,
+/// catalog-unresolved hosts. The actor owns the sustained-activity window, the
+/// provisioning cap, the no-real-circuit check, and the store write.
+pub fn report_range_host_activity(range_id: &str, samples: &[(std::net::IpAddr, u64, u64)]) {
+    if samples.is_empty() {
+        return;
+    }
+    let Some(sender) = ACTOR_SENDER.get().cloned() else {
+        return;
+    };
+    let _ = sender.try_send(NetworkDevicesCommand::ReportRangeHostActivity {
+        range_id: range_id.to_string(),
+        samples: samples.to_vec(),
+    });
+}
+
 enum NetworkDevicesCommand {
     ReloadShapedDevices {
         reason: String,
         reply: Sender<Result<()>>,
     },
     ReloadNetworkJson {
+        reason: String,
+        reply: Sender<Result<()>>,
+    },
+    ReloadDataplaneTree {
         reason: String,
         reply: Sender<Result<()>>,
     },
@@ -170,6 +234,9 @@ enum NetworkDevicesCommand {
     ReportObservations {
         observations: Vec<CircuitObservation>,
     },
+    ReportBridgeActivity {
+        circuit_ids: Vec<String>,
+    },
     UpsertDynamicCircuit {
         shaped_device: Box<lqos_config::ShapedDevice>,
         reply: Sender<Result<()>>,
@@ -178,19 +245,38 @@ enum NetworkDevicesCommand {
         circuit_id: String,
         reply: Sender<Result<bool>>,
     },
+    ReplaceDynamicCircuitByIp {
+        shaped_device: Box<lqos_config::ShapedDevice>,
+        reply: Sender<Result<()>>,
+    },
+    ReportRangeHostActivity {
+        range_id: String,
+        samples: Vec<(std::net::IpAddr, u64, u64)>,
+    },
 }
 
 fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonHooks>>) {
     debug!("lqos_network_devices actor starting");
     let mut active_shaped_key = None;
+    // T1: tracks whether an artifact-derived tree ever loaded (MEDIUM-4:
+    // keep-last-good applies only after the first good load).
+    let mut dataplane_tree_loaded = false;
+    // Dynamic-ranges §7: the scanner's sustained-activity windows + the cap.
+    let mut range_scanner = RangeScanner::default();
 
     if let Err(err) =
         reload_shaped_devices_inner("startup", hooks.as_deref(), &mut active_shaped_key)
     {
         warn!("Initial shaped-devices load failed: {err}");
     }
-    if let Err(err) = reload_network_json_inner("startup", hooks.as_deref()) {
-        warn!("Initial network-json load failed: {err}");
+    if tree_source_is_legacy() {
+        if let Err(err) = reload_network_json_inner("startup", hooks.as_deref()) {
+            warn!("Initial network-json load failed: {err}");
+        }
+    } else if let Err(err) =
+        reload_dataplane_tree_inner("startup", &mut dataplane_tree_loaded, hooks.as_deref())
+    {
+        warn!("Initial dataplane-tree load failed: {err}");
     }
     reload_dynamic_circuits_inner("startup");
     prune_dynamic_circuits_superseded_by_shaped_devices_inner(hooks.as_deref());
@@ -217,7 +303,33 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                         let _ = reply.send(result);
                     }
                     NetworkDevicesCommand::ReloadNetworkJson { reason, reply } => {
-                        let result = reload_network_json_inner(&reason, hooks.as_deref());
+                        let result = if tree_source_is_legacy() {
+                            reload_network_json_inner(&reason, hooks.as_deref())
+                        } else {
+                            // T1b: no implicit legacy parse in artifact mode.
+                            reload_dataplane_tree_inner(
+                                &reason,
+                                &mut dataplane_tree_loaded,
+                                hooks.as_deref(),
+                            )
+                        };
+                        let _ = reply.send(result);
+                    }
+                    NetworkDevicesCommand::ReloadDataplaneTree { reason, reply } => {
+                        let result = if tree_source_is_legacy() {
+                            // The named legacy escape owns the tree; the
+                            // artifact watcher event is a no-op there.
+                            debug!(
+                                "Ignoring dataplane-tree reload reason={reason}: legacy network.json tree mode is enabled"
+                            );
+                            Ok(())
+                        } else {
+                            reload_dataplane_tree_inner(
+                                &reason,
+                                &mut dataplane_tree_loaded,
+                                hooks.as_deref(),
+                            )
+                        };
                         let _ = reply.send(result);
                     }
                     NetworkDevicesCommand::ApplyShapedDevicesSnapshot {
@@ -239,6 +351,14 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                     NetworkDevicesCommand::ReportObservations { observations } => {
                         handle_observations(&observations, hooks.as_deref());
                     }
+                    NetworkDevicesCommand::ReportBridgeActivity { circuit_ids } => {
+                        let ids: std::collections::HashSet<String> = circuit_ids
+                            .iter()
+                            .map(|id| lqos_utils::normalize_circuit_id_key(id))
+                            .collect();
+                        let now = lqos_utils::unix_time::unix_now().unwrap_or(0);
+                        crate::state::refresh_dynamic_circuits_last_seen_for_circuit_ids(&ids, now);
+                    }
                     NetworkDevicesCommand::UpsertDynamicCircuit {
                         shaped_device,
                         reply,
@@ -249,6 +369,21 @@ fn actor_loop(rx: Receiver<NetworkDevicesCommand>, hooks: Option<Arc<dyn DaemonH
                     NetworkDevicesCommand::RemoveDynamicCircuit { circuit_id, reply } => {
                         let result = remove_dynamic_circuit_inner(&circuit_id);
                         let _ = reply.send(result);
+                    }
+                    NetworkDevicesCommand::ReplaceDynamicCircuitByIp {
+                        shaped_device,
+                        reply,
+                    } => {
+                        let result = replace_dynamic_circuit_by_ip_inner(*shaped_device);
+                        let _ = reply.send(result);
+                    }
+                    NetworkDevicesCommand::ReportRangeHostActivity { range_id, samples } => {
+                        handle_range_host_activity(
+                            &mut range_scanner,
+                            &range_id,
+                            &samples,
+                            hooks.as_deref(),
+                        );
                     }
                 }
             }
@@ -273,9 +408,6 @@ enum ShapedDevicesProvenanceKey {
         shaping_generation: String,
     },
     TopologyImport {
-        devices_fingerprint: u64,
-    },
-    Csv {
         devices_fingerprint: u64,
     },
     ExternalSnapshot {
@@ -361,9 +493,6 @@ fn shaped_devices_key_for_loaded(loaded: &LoadedShapedDevices) -> ShapedDevicesP
                 devices_fingerprint: shaped_devices_fingerprint(&loaded.shaped.devices),
             }
         }
-        LoadedShapedDevicesSource::Csv => ShapedDevicesProvenanceKey::Csv {
-            devices_fingerprint: shaped_devices_fingerprint(&loaded.shaped.devices),
-        },
     }
 }
 
@@ -498,6 +627,172 @@ fn remove_dynamic_circuit_inner(circuit_id: &str) -> Result<bool> {
     persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
     state::publish_dynamic_circuits_snapshot(updated);
     Ok(true)
+}
+
+/// H2 pure core: drop every dynamic row covering any of `shaped_device`'s
+/// IPs, then upsert `shaped_device` by normalized circuit id. This is the
+/// uniqueness guarantee — a session-derived RADIUS id and an IP-derived
+/// promotion id can never coexist as two rows (and therefore two /32 Maps)
+/// for the same subscriber IP. Exposed to the crate tests.
+pub(crate) fn merge_dynamic_circuits_replacing_by_ip(
+    snapshot: &[crate::DynamicCircuit],
+    shaped_device: lqos_config::ShapedDevice,
+    now_unix: u64,
+) -> Vec<crate::DynamicCircuit> {
+    let new_ips = device_ips(&shaped_device);
+    let mut updated: Vec<_> = snapshot
+        .iter()
+        .filter(|c| new_ips.is_empty() || device_ips(&c.shaped).is_disjoint(&new_ips))
+        .cloned()
+        .collect();
+    let key = normalize_circuit_id_key(&shaped_device.circuit_id);
+    if let Some(pos) = updated
+        .iter()
+        .position(|c| normalize_circuit_id_key(&c.shaped.circuit_id) == key)
+    {
+        updated[pos].shaped = shaped_device;
+        updated[pos].last_seen_unix = now_unix;
+    } else {
+        updated.push(crate::DynamicCircuit {
+            shaped: shaped_device,
+            last_seen_unix: now_unix,
+        });
+    }
+    updated
+}
+
+/// H2: one RMW — drop every dynamic row that covers any of `shaped_device`'s
+/// IPs, then upsert it by normalized circuit id.
+fn replace_dynamic_circuit_by_ip_inner(mut shaped_device: lqos_config::ShapedDevice) -> Result<()> {
+    recompute_hashes(&mut shaped_device);
+    let now_unix = lqos_utils::unix_time::unix_now().context("get unix time")?;
+    let snapshot = state::dynamic_circuits_snapshot();
+    let updated = merge_dynamic_circuits_replacing_by_ip(&snapshot, shaped_device, now_unix);
+    persist_dynamic_circuits_to_disk(&updated).context("persist dynamic circuits to disk")?;
+    state::publish_dynamic_circuits_snapshot(updated);
+    Ok(())
+}
+
+fn device_ips(device: &lqos_config::ShapedDevice) -> HashSet<std::net::IpAddr> {
+    device
+        .ipv4
+        .iter()
+        .map(|(ip, _)| std::net::IpAddr::V4(*ip))
+        .chain(
+            device
+                .ipv6
+                .iter()
+                .map(|(ip, _)| std::net::IpAddr::V6(*ip)),
+        )
+        .collect()
+}
+
+/// Dynamic-ranges §7: the scanner's per-(range, ip) sustained-activity windows
+/// and the per-range promotion timestamps (the cap).
+#[derive(Default)]
+struct RangeScanner {
+    windows: std::collections::HashMap<(String, std::net::IpAddr), RangeActivityWindow>,
+    promotions: std::collections::HashMap<String, std::collections::VecDeque<u64>>,
+}
+
+struct RangeActivityWindow {
+    first_unix: u64,
+    last_unix: u64,
+}
+
+/// Dynamic-ranges §7 (DECISION + WRITE): the actor owns the sustained-activity
+/// window, the cap, the no-real-circuit check, the plan class, and the store
+/// write via `replace_dynamic_circuit_by_ip_inner`.
+fn handle_range_host_activity(
+    scanner: &mut RangeScanner,
+    range_id: &str,
+    samples: &[(std::net::IpAddr, u64, u64)],
+    hooks: Option<&dyn DaemonHooks>,
+) {
+    let Ok(config) = lqos_config::load_config() else {
+        return;
+    };
+    let Some(dynamic_cfg) = config.dynamic_circuits.as_ref() else {
+        return;
+    };
+    if !dynamic_cfg.enabled || !dynamic_cfg.enable_unknown_ip_promotion {
+        return;
+    }
+    let Some(rule) = dynamic_cfg
+        .ranges
+        .iter()
+        .find(|rule| rule.name.trim() == range_id)
+    else {
+        return;
+    };
+    let min_bytes = dynamic_cfg.promotion_min_bytes_per_second;
+    let window = dynamic_cfg.promotion_window_seconds;
+    let cap = dynamic_cfg.promotion_cap_per_range_per_minute;
+    let now = lqos_utils::unix_time::unix_now().unwrap_or(0);
+    let catalog = state::shaped_devices_catalog();
+
+    for (ip, bytes_per_second, _packets) in samples {
+        let key = (range_id.to_string(), *ip);
+        if *bytes_per_second < min_bytes {
+            scanner.windows.remove(&key);
+            continue;
+        }
+        let entry = scanner
+            .windows
+            .entry(key.clone())
+            .or_insert(RangeActivityWindow {
+                first_unix: now,
+                last_unix: now,
+            });
+        if now.saturating_sub(entry.last_unix) > window {
+            entry.first_unix = now;
+        }
+        entry.last_unix = now;
+        if now.saturating_sub(entry.first_unix) < window {
+            continue; // not sustained yet
+        }
+        // No-real-circuit check: the catalog is the authority (the range leaf
+        // is transaction-stage and absent from it).
+        if catalog
+            .device_longest_match_for_ip(&lqos_utils::XdpIpAddress::from_ip(*ip))
+            .is_some()
+        {
+            scanner.windows.remove(&key);
+            continue;
+        }
+        // Provisioning cap (per range per minute).
+        let stamps = scanner.promotions.entry(range_id.to_string()).or_default();
+        while stamps
+            .front()
+            .is_some_and(|stamp| now.saturating_sub(*stamp) >= 60)
+        {
+            stamps.pop_front();
+        }
+        if stamps.len() as u32 >= cap {
+            continue;
+        }
+        let parent_node = resolve_unknown_promotion_parent(rule.attach_to.trim());
+        if parent_node.trim().is_empty() {
+            continue;
+        }
+        let label = format!("dynamic-range:{range_id}:{ip}");
+        let device = shaped_device_from_unknown_ip(&label, &parent_node, *ip, rule);
+        match replace_dynamic_circuit_by_ip_inner(device.clone()) {
+            Ok(()) => {
+                stamps.push_back(now);
+                scanner.windows.remove(&key);
+                if let Some(hooks) = hooks {
+                    hooks.on_unknown_ip_promoted(&device);
+                }
+            }
+            Err(err) => warn!(
+                "Unable to persist dynamic-range promotion for {ip} in range {range_id}: {err:?}"
+            ),
+        }
+    }
+    scanner
+        .windows
+        .retain(|_, entry| now.saturating_sub(entry.last_unix) <= window);
 }
 
 fn handle_observations(observations: &[CircuitObservation], hooks: Option<&dyn DaemonHooks>) {
@@ -867,6 +1162,132 @@ fn reload_network_json_inner(reason: &str, hooks: Option<&dyn DaemonHooks>) -> R
     unreachable!("reload loop must return");
 }
 
+/// T1 source selection (t1_tree_repoint_derivation T1b): the v3 compiler
+/// artifact is the only tree source unless the operator enabled the named
+/// legacy escape (`legacy_network_json_tree = true`). No implicit
+/// fallback to a stale `network.json` — that would recreate the drift
+/// class the artifact retires.
+fn tree_source_is_legacy() -> bool {
+    lqos_config::legacy_network_json_tree_enabled()
+}
+
+/// The MEDIUM-4 degrade decision, extracted pure for the gate tests:
+/// what should the tree store do given one artifact read outcome?
+pub(crate) enum TreeReadOutcome {
+    /// Parse + publish the artifact payload.
+    Build(String),
+    /// Missing/unreadable/unparseable AFTER a good load: keep the
+    /// last-known-good tree (a transient mid-write read must not blank a
+    /// working UI). `why` is logged.
+    KeepLastGood(&'static str),
+    /// Missing/unparseable and NOTHING has ever loaded: publish the
+    /// structure-less store (honest-empty posture), with a WARN.
+    PublishStructureless(&'static str),
+}
+
+fn decide_tree_read(
+    read: std::io::Result<String>,
+    parse: impl FnOnce(&str) -> Result<(), serde_json::Error>,
+    ever_loaded: bool,
+) -> TreeReadOutcome {
+    let raw = match read {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return if ever_loaded {
+                TreeReadOutcome::KeepLastGood("artifact missing after a good load")
+            } else {
+                TreeReadOutcome::PublishStructureless("artifact not present yet")
+            };
+        }
+        Err(_) => {
+            return if ever_loaded {
+                TreeReadOutcome::KeepLastGood("artifact unreadable after a good load")
+            } else {
+                TreeReadOutcome::PublishStructureless("artifact unreadable")
+            };
+        }
+    };
+    match parse(&raw) {
+        Ok(()) => TreeReadOutcome::Build(raw),
+        Err(_) if ever_loaded => {
+            TreeReadOutcome::KeepLastGood("artifact unparseable after a good load")
+        }
+        Err(_) => TreeReadOutcome::PublishStructureless("artifact unparseable at first load"),
+    }
+}
+
+/// Populates the tree store from the v3 compiler artifact
+/// (`state/topology/dataplane_transaction.json`).
+///
+/// Degrade posture (MEDIUM-4): a missing/unparseable artifact KEEPS the
+/// last-known-good tree once one has loaded; only the never-loaded case
+/// publishes a structure-less root-only store, with one named WARN.
+fn reload_dataplane_tree_inner(
+    reason: &str,
+    ever_loaded: &mut bool,
+    hooks: Option<&dyn DaemonHooks>,
+) -> Result<()> {
+    let config = lqos_config::load_config().context("Unable to load /etc/lqos.conf")?;
+    // T5 rung 1: the tree source is the E2 operator view (the T1
+    // transaction repoint is retired — never both transports live).
+    let path = lqos_config::topology_operator_view_path(&config);
+    let read = std::fs::read_to_string(&path);
+    let probe = |raw: &str| {
+        serde_json::from_str::<lqos_config::TopologyOperatorViewFile>(raw).map(|_| ())
+    };
+    let outcome = decide_tree_read(read, probe, *ever_loaded);
+    let tree = match outcome {
+        TreeReadOutcome::KeepLastGood(why) => {
+            warn!(
+                "{why}; keeping last-known-good tree (reason={reason})"
+            );
+            return Ok(());
+        }
+        TreeReadOutcome::PublishStructureless(why) => {
+            warn!(
+                "{why}; dashboard tree starts structure-less until a good publish (reason={reason})"
+            );
+            *ever_loaded = true;
+            crate::dataplane_tree::structureless_tree()
+        }
+        TreeReadOutcome::Build(raw) => {
+            let view: lqos_config::TopologyOperatorViewFile = serde_json::from_str(&raw)
+                .map_err(|err| anyhow!("Unable to parse {}: {err}", path.display()))?;
+            let device_parents: Vec<String> = state::shaped_devices_snapshot()
+                .devices
+                .iter()
+                .map(|device| device.parent_node.clone())
+                .collect();
+            let build = crate::dataplane_tree::build_tree_from_operator_view(&view, &device_parents);
+            if !build.skipped_nodes.is_empty() {
+                warn!(
+                    "Dataplane tree skipped {} node(s) (root-like/dangling/unreachable): {:?} (reason={reason})",
+                    build.skipped_nodes.len(),
+                    build.skipped_nodes
+                );
+            }
+            if !build.divergent_parent_nodes.is_empty() {
+                warn!(
+                    "Dataplane tree identity divergence: {} device parent_node(s) match no artifact node (those devices render zero live data): {:?} (reason={reason})",
+                    build.divergent_parent_nodes.len(),
+                    build.divergent_parent_nodes
+                );
+            }
+            *ever_loaded = true;
+            debug!(
+                "Dataplane tree populated from {} (reason={reason})",
+                path.display()
+            );
+            build.tree
+        }
+    };
+    state::publish_network_json(tree);
+    if let Some(hooks) = hooks {
+        hooks.on_network_json_updated();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::shaped_devices_fingerprint;
@@ -946,5 +1367,62 @@ mod tests {
             shaped_devices_fingerprint(&first),
             shaped_devices_fingerprint(&second)
         );
+    }
+}
+
+#[cfg(test)]
+mod tree_degrade_tests {
+    use super::decide_tree_read;
+    use super::TreeReadOutcome;
+
+    fn parse_ok(_raw: &str) -> Result<(), serde_json::Error> {
+        Ok(())
+    }
+
+    fn parse_err(_raw: &str) -> Result<(), serde_json::Error> {
+        Err(serde_json::from_str::<serde_json::Value>("not json").unwrap_err())
+    }
+
+    #[test]
+    fn good_read_builds_regardless_of_history() {
+        for ever_loaded in [false, true] {
+            assert!(matches!(
+                decide_tree_read(Ok("{\"generation\":\"g\"}".to_string()), parse_ok, ever_loaded),
+                TreeReadOutcome::Build(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn corrupt_after_good_keeps_last_good() {
+        // MEDIUM-4: a transient mid-write read must not blank a working UI.
+        assert!(matches!(
+            decide_tree_read(Ok("garbage".to_string()), parse_err, true),
+            TreeReadOutcome::KeepLastGood(_)
+        ));
+        assert!(matches!(
+            decide_tree_read(
+                Err(std::io::Error::new(std::io::ErrorKind::NotFound, "gone")),
+                parse_ok,
+                true
+            ),
+            TreeReadOutcome::KeepLastGood(_)
+        ));
+    }
+
+    #[test]
+    fn never_loaded_degrades_to_structureless_with_named_reasons() {
+        assert!(matches!(
+            decide_tree_read(Ok("garbage".to_string()), parse_err, false),
+            TreeReadOutcome::PublishStructureless(_)
+        ));
+        assert!(matches!(
+            decide_tree_read(
+                Err(std::io::Error::new(std::io::ErrorKind::NotFound, "gone")),
+                parse_ok,
+                false
+            ),
+            TreeReadOutcome::PublishStructureless(_)
+        ));
     }
 }

@@ -11,7 +11,6 @@ fn collect_exported_effective_nodes(
         let Some(map) = node.as_object() else {
             continue;
         };
-        let is_virtual = map.get("virtual").and_then(Value::as_bool).unwrap_or(false);
         let node_id = map
             .get("id")
             .and_then(Value::as_str)
@@ -21,7 +20,7 @@ fn collect_exported_effective_nodes(
             .and_then(Value::as_str)
             .and_then(optional_non_empty)
             .or_else(|| optional_non_empty(key));
-        if !is_virtual && let Some(node_name) = node_name {
+        if let Some(node_name) = node_name {
             if let Some(node_id) = node_id.clone() {
                 by_id.insert(node_id, node_name.clone());
             }
@@ -54,7 +53,6 @@ fn collect_exported_effective_aliases(
         let Some(map) = node.as_object() else {
             continue;
         };
-        let is_virtual = map.get("virtual").and_then(Value::as_bool).unwrap_or(false);
         let node_id = map
             .get("id")
             .and_then(Value::as_str)
@@ -68,8 +66,7 @@ fn collect_exported_effective_aliases(
             .get("active_attachment_name")
             .and_then(Value::as_str)
             .and_then(optional_non_empty);
-        if !is_virtual
-            && let (Some(alias), Some(node_id), Some(node_name)) =
+        if let (Some(alias), Some(node_id), Some(node_name)) =
                 (active_attachment_name, node_id, node_name)
         {
             aliases.entry(alias).or_insert((node_id, node_name));
@@ -349,29 +346,15 @@ fn ipv6_with_prefix_to_string(entry: &(std::net::Ipv6Addr, u32)) -> String {
     }
 }
 
-fn load_circuit_anchors(
-    config: &Config,
-    shaped_devices_mtime: Option<std::time::SystemTime>,
-) -> Vec<CircuitAnchor> {
-    let anchors_path = circuit_anchors_path(config);
-    let anchors_metadata = std::fs::metadata(&anchors_path).ok();
-    if let Some(shaped_devices_mtime) = shaped_devices_mtime
-        && let Some(anchors_mtime) = anchors_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.modified().ok())
-        && anchors_mtime < shaped_devices_mtime
-    {
-        return Vec::new();
-    }
-
-    CircuitAnchorsFile::load(config)
-        .map(|file| file.anchors)
-        .unwrap_or_default()
-}
-
 fn load_integration_shaping_artifacts(
     config: &Config,
-) -> Result<Option<(ConfigShapedDevices, Vec<CircuitAnchor>)>> {
+) -> Result<
+    Option<(
+        ConfigShapedDevices,
+        Vec<CircuitAnchor>,
+        lqos_config::TopologyCircuitMatchIndex,
+    )>,
+> {
     let topology_import = TopologyImportFile::load(config)
         .with_context(|| "Unable to load topology_import.json while validating shaping ingress")?;
     let Some(compiled_shaping) = TopologyCompiledShapingFile::load(config).with_context(
@@ -399,58 +382,210 @@ fn load_integration_shaping_artifacts(
             import_identity
         );
     }
-    Ok(Some(compiled_shaping.shaping_artifacts()))
+    Ok(Some({
+        let artifacts = compiled_shaping.shaping_artifacts();
+        (
+            artifacts.shaped_devices,
+            artifacts.circuit_anchors,
+            artifacts.circuit_matches,
+        )
+    }))
+}
+
+/// K1 §1.1/§1.2: fold the RADIUS dynamic-circuit store into the base rows at
+/// the DEVICE-ROW level (pre-circuit-loop), so the compiler emits per-IP
+/// `Map` ops. Returns LOUD warnings for rejected/deferred rows:
+/// - a `circuit_id` colliding with a provisioned circuit is REJECTED (a RADIUS
+///   circuit never shadows a provisioned one);
+/// - an unresolvable parent is `shaping_deferred` (kept in the store for the
+///   audit surface, never silently root-placed or dropped).
+///
+/// K1 §7 amendment: the deferral generalizes to the
+/// fallback-supplied parent/anchor ids. A RADIUS fallback that carries a
+/// literal node NAME (or any id that does not land an EXISTING effective node,
+/// attachment owner, or queue alias) is `shaping_deferred` — an empty-parent
+/// emission is never legal (the bridge rejects it as "parent does not exist in
+/// the applied tree").
+#[allow(clippy::too_many_arguments)]
+fn fold_dynamic_circuits_into_devices(
+    config: &Config,
+    shaped_devices: &mut ConfigShapedDevices,
+    exported_effective_nodes: &HashMap<String, String>,
+    exported_effective_names: &HashMap<String, Option<String>>,
+    exported_effective_aliases: &HashMap<String, (String, String)>,
+    attachment_owner_by_attachment_id: &HashMap<String, (String, String)>,
+    queue_aliases_by_id: &HashMap<String, (String, String)>,
+    queue_aliases_by_name: &HashMap<String, (String, String)>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let store = lqos_config::DynamicCircuitsFile::load(config);
+    if store.circuits.is_empty() {
+        return warnings;
+    }
+    let provisioned: HashSet<String> = shaped_devices
+        .devices
+        .iter()
+        .map(|device| lqos_utils::normalize_circuit_id_key(&device.circuit_id))
+        .collect();
+    let mut rows: Vec<lqos_config::ShapedDevice> = Vec::new();
+    for circuit in store.circuits {
+        let mut device = circuit.shaped;
+        let circuit_key = lqos_utils::normalize_circuit_id_key(&device.circuit_id);
+        if circuit_key.is_empty() {
+            warnings.push(
+                "a dynamic circuit with an empty circuit_id was ignored".to_string(),
+            );
+            continue;
+        }
+        if provisioned.contains(&circuit_key) {
+            warnings.push(format!(
+                "dynamic circuit '{}' collides with a provisioned circuit; rejected \
+                 (a RADIUS circuit never shadows a provisioned one)",
+                device.circuit_id
+            ));
+            continue;
+        }
+        // K1 §7: the fallback-supplied parent/anchor ids must land an existing
+        // effective node, attachment owner, or queue alias. A name/typo/stale
+        // id would otherwise emit an empty parent (the bridge's typed reject).
+        if !fallback_identity_resolves(
+            device.parent_node_id.as_deref(),
+            exported_effective_nodes,
+            attachment_owner_by_attachment_id,
+            queue_aliases_by_id,
+        ) || !fallback_identity_resolves(
+            device.anchor_node_id.as_deref(),
+            exported_effective_nodes,
+            attachment_owner_by_attachment_id,
+            queue_aliases_by_id,
+        ) {
+            warnings.push(format!(
+                "dynamic circuit '{}' has an unresolvable fallback parent/anchor id \
+                 (shaping_deferred; the store keeps it for the audit surface)",
+                device.circuit_id
+            ));
+            continue;
+        }
+        match resolve_legacy_parent_from_effective_tree(
+            device.parent_node.trim(),
+            device.parent_node_id.as_deref(),
+            exported_effective_nodes,
+            exported_effective_names,
+            exported_effective_aliases,
+            queue_aliases_by_id,
+            queue_aliases_by_name,
+        ) {
+            Some((parent_id, parent_name)) if !parent_id.trim().is_empty() => {
+                device.parent_node = parent_name;
+                device.parent_node_id = Some(parent_id);
+            }
+            _ => {
+                warnings.push(format!(
+                    "dynamic circuit '{}' has an unresolvable parent '{}' \
+                     (shaping_deferred; the store keeps it for the audit surface)",
+                    device.circuit_id, device.parent_node
+                ));
+                continue;
+            }
+        }
+        device.circuit_hash = lqos_utils::hash_to_i64(&device.circuit_id);
+        device.device_hash = lqos_utils::hash_to_i64(&device.device_id);
+        device.parent_hash = lqos_utils::hash_to_i64(&device.parent_node);
+        rows.push(device);
+    }
+    if !rows.is_empty() {
+        let mut all = shaped_devices.devices.clone();
+        all.extend(rows);
+        shaped_devices.replace_with_new_data(all);
+    }
+    warnings
+}
+
+/// K1 §7: a fallback-supplied identity (parent_node_id / anchor_node_id) is
+/// valid only when it resolves to an existing effective node, an attachment
+/// owner, or a queue alias — the same id classes the compile's anchor resolver
+/// accepts. `None`/blank is the name-only working shape and always passes.
+fn fallback_identity_resolves(
+    id: Option<&str>,
+    exported_effective_nodes: &HashMap<String, String>,
+    attachment_owner_by_attachment_id: &HashMap<String, (String, String)>,
+    queue_aliases_by_id: &HashMap<String, (String, String)>,
+) -> bool {
+    match id.map(str::trim).filter(|value| !value.is_empty()) {
+        None => true,
+        Some(id) => {
+            exported_effective_nodes.contains_key(id)
+                || attachment_owner_by_attachment_id.contains_key(id)
+                || queue_aliases_by_id.contains_key(id)
+        }
+    }
+}
+
+/// Phase C S3b: applies one circuit's resolved match identity (from the
+/// standard integration format, carried in the compiled-shaping map) to the
+/// three circuit-input identity slots. Absent entries leave all three `None`
+/// (the legacy and `ip`-mode behavior).
+fn resolve_circuit_match_identity(
+    index: &lqos_config::TopologyCircuitMatchIndex,
+    circuit_id: &str,
+) -> (
+    Option<lqos_config::TunnelIdentity>,
+    Option<u16>,
+    Option<u32>,
+) {
+    match index.get(circuit_id).copied() {
+        Some(lqos_config::TopologyCircuitMatchIdentity::Tunnel(identity)) => {
+            (Some(identity), None, None)
+        }
+        Some(lqos_config::TopologyCircuitMatchIdentity::Vlan(vlan)) => (None, Some(vlan), None),
+        Some(lqos_config::TopologyCircuitMatchIdentity::Mpls(label)) => (None, None, Some(label)),
+        None => (None, None, None),
+    }
 }
 
 fn build_shaping_inputs(
     config: &Config,
     artifacts: &EffectiveTopologyArtifacts,
 ) -> Result<Option<TopologyShapingInputsFile>> {
-    let integration_ingress = topology_import_ingress_enabled(config);
-    let (mut shaped_devices, circuit_anchor_rows) = if integration_ingress {
-        let Some((shaped_devices, circuit_anchors)) = load_integration_shaping_artifacts(config)?
-        else {
-            return Ok(None);
-        };
-        (shaped_devices, circuit_anchors)
-    } else {
-        let shaped_devices_path = ConfigShapedDevices::path_for_config(config);
-        if !shaped_devices_path.exists() {
-            return Ok(None);
-        }
+    build_shaping_inputs_with(config, artifacts, false)
+}
 
-        let shaped_devices_mtime = std::fs::metadata(&shaped_devices_path)
-            .ok()
-            .and_then(|metadata| metadata.modified().ok());
-        (
-            ConfigShapedDevices::load_for_config(config).with_context(
-                || "Unable to load ShapedDevices.csv while building shaping_inputs.json",
-            )?,
-            load_circuit_anchors(config, shaped_devices_mtime),
-        )
+fn build_shaping_inputs_with(
+    config: &Config,
+    artifacts: &EffectiveTopologyArtifacts,
+    read_only: bool,
+) -> Result<Option<TopologyShapingInputsFile>> {
+    // T-arc: the validated tunnel-circuits snapshot is an additional,
+    // device-less circuit source (spec v1.1 §4). It is read in BOTH ingress
+    // modes and can stand alone when no ShapedDevices.csv exists.
+    let tunnel_circuits = TunnelCircuitsFile::load_snapshot(config)
+        .with_context(|| "Unable to load the tunnel_circuits snapshot while building shaping_inputs.json")?;
+    // An accepted snapshot (even an explicit empty wipe) is a live source: it
+    // must yield a transaction so removals emit DelTunnel. Only the total
+    // absence of a snapshot lets shaping inputs collapse to None.
+    let tunnel_snapshot_present = tunnel_circuits.is_some();
+    // K1: a non-empty dynamic store is a live shaping source on its own.
+    let dynamic_store_present =
+        !lqos_config::DynamicCircuitsFile::load(config).circuits.is_empty();
+
+    // Phase C S4 (producer unification): ONE ingest contract. The runtime
+    // materializes the compiled artifacts from the permanent manual pair when
+    // an integration did not produce them, then reads the import only — the
+    // integration-ingress "mode" no longer reaches this consumer.
+    let imported_artifacts = match load_integration_shaping_artifacts(config)? {
+        Some(artifacts) => Some(artifacts),
+        None => {
+            materialize_manual_topology_import(config)?;
+            load_integration_shaping_artifacts(config)?
+        }
     };
-    if integration_ingress {
-        let effective_overrides = load_runtime_shaping_overrides(config).with_context(
-            || "Unable to load effective overrides while building shaping_inputs.json",
-        )?;
-        let runtime_devices = apply_runtime_shaped_device_overrides(
-            shaped_devices.devices.clone(),
-            &effective_overrides,
-        );
-        shaped_devices.replace_with_new_data(runtime_devices);
-    }
-    let flat_bucket_assignments = if runtime_flat_mode(config) {
-        Some(build_flat_bucket_assignments(
-            config,
-            &shaped_devices.devices,
-        ))
-    } else {
-        None
+    let (mut shaped_devices, circuit_anchor_rows, circuit_matches) = match imported_artifacts {
+        Some((shaped_devices, circuit_anchors, circuit_matches)) => {
+            (shaped_devices, circuit_anchors, circuit_matches)
+        }
+        None if !tunnel_snapshot_present && !dynamic_store_present => return Ok(None),
+        None => (ConfigShapedDevices::default(), Vec::new(), Default::default()),
     };
-    let circuit_anchors = circuit_anchor_rows
-        .into_iter()
-        .map(|anchor| (anchor.circuit_id.clone(), anchor))
-        .collect::<HashMap<_, _>>();
     let effective_by_node = artifacts
         .effective
         .nodes
@@ -483,13 +618,94 @@ fn build_shaping_inputs(
         &exported_effective_nodes,
     );
 
+    // K1 §1.1/§1.2: fold the RADIUS dynamic store at the DEVICE-ROW level,
+    // AFTER the base import and BEFORE the operator override fold (so an
+    // operator override on a dynamic circuit wins by existing precedence).
+    let dynamic_fold_warnings = fold_dynamic_circuits_into_devices(
+        config,
+        &mut shaped_devices,
+        &exported_effective_nodes,
+        &exported_effective_names,
+        &exported_effective_aliases,
+        &attachment_owner_by_attachment_id,
+        &queue_aliases_by_id,
+        &queue_aliases_by_name,
+    );
+
+    // Operator overrides fold into the shaped devices. Phase C S4: the ingest
+    // contract is ONE, so the FULL override set (persistent devices +
+    // adjustments — the UISP-regeneration-proof layer, E3 retarget
+ // `docs/e3_derivation.md` applies uniformly now that the manual
+    // pair is compiled through the same import. The old legacy-DIY rate-only
+    // scoping rail retired with the mode.
+    let effective_overrides = load_runtime_shaping_overrides(config, read_only).with_context(
+        || "Unable to load effective overrides while building shaping_inputs.json",
+    )?;
+    let runtime_devices = apply_runtime_shaped_device_overrides(
+        shaped_devices.devices.clone(),
+        &effective_overrides,
+    );
+    shaped_devices.replace_with_new_data(runtime_devices);
+    let flat_bucket_assignments = if runtime_flat_mode(config) {
+        Some(build_flat_bucket_assignments(
+            config,
+            &shaped_devices.devices,
+        ))
+    } else {
+        None
+    };
+    let circuit_anchors = circuit_anchor_rows
+        .into_iter()
+        .map(|anchor| (anchor.circuit_id.clone(), anchor))
+        .collect::<HashMap<_, _>>();
+
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
+    warnings.extend(dynamic_fold_warnings);
     let mut fallback_warning_summary = TopologyFallbackWarningSummary::default();
     let mut circuits = Vec::<TopologyShapingCircuitInput>::new();
     let mut circuits_by_id = HashMap::<String, usize>::new();
 
+    // U4 (v2-parity Ignored Subnets; `src/src/configMigrator.py:39` defaults
+    // `ignoreSubnets = ["192.168.0.0/16"]`): a device IP inside
+    // `ip_ranges.ignore_subnets` must never reach the compiler's `mapping_ops`.
+    // Build the ignored LPM once. A parse failure disables pruning with a
+    // warning rather than failing the publish (matches the unknown-IPs
+    // consumer). This prunes SHAPED-DEVICE circuits only — the device-less
+    // tunnel fold below is deliberately untouched.
+    let ignored_ips = match config.ip_ranges.ignored_network_table() {
+        Ok(table) => table,
+        Err(error) => {
+            warnings.push(format!(
+                "ip_ranges.ignore_subnets could not be parsed; ignored-subnet pruning is disabled: {error}"
+            ));
+            ip_network_table::IpNetworkTable::new()
+        }
+    };
+
     for device in &shaped_devices.devices {
+        // v2 `__pruneIgnoredCircuits` parity: keep only permitted addresses
+        // (`isIntegrationOutputIpAllowed` = NOT ignored; the allow list is not
+        // consulted). A device that HAD addresses and loses them all is dropped,
+        // and a circuit that never gains a permitted device is never created
+        // below. A device with no addresses to begin with (v3's model allows a
+        // mapping-less device) is left as-is — there is no ignored IP to remove.
+        let had_addresses = !device.ipv4.is_empty() || !device.ipv6.is_empty();
+        let filtered_ipv4: Vec<(std::net::Ipv4Addr, u32)> = device
+            .ipv4
+            .iter()
+            .copied()
+            .filter(|(ip, _)| ignored_ips.longest_match(*ip).is_none())
+            .collect();
+        let filtered_ipv6: Vec<(std::net::Ipv6Addr, u32)> = device
+            .ipv6
+            .iter()
+            .copied()
+            .filter(|(ip, _)| ignored_ips.longest_match(*ip).is_none())
+            .collect();
+        if had_addresses && filtered_ipv4.is_empty() && filtered_ipv6.is_empty() {
+            continue;
+        }
         let anchor_from_file = circuit_anchors.get(&device.circuit_id);
         let anchor_node_id = anchor_from_file
             .map(|anchor| anchor.anchor_node_id.trim().to_string())
@@ -655,6 +871,8 @@ fn build_shaping_inputs(
 
         let logical_parent_node_name = optional_non_empty(&device.parent_node);
         let logical_parent_node_id = optional_non_empty_owned(device.parent_node_id.clone());
+        let (tunnel_identity, vlan_identity, mpls_identity) =
+            resolve_circuit_match_identity(&circuit_matches, &device.circuit_id);
         let circuit_index = if let Some(index) = circuits_by_id.get(&device.circuit_id).copied() {
             let circuit = &mut circuits[index];
             if circuit.anchor_node_id != anchor_node_id {
@@ -702,6 +920,9 @@ fn build_shaping_inputs(
                 upload_max_mbps: device.upload_max_mbps,
                 comment: device.comment.clone(),
                 sqm_override: device.sqm_override.clone(),
+                tunnel_identity,
+                vlan_identity,
+                mpls_identity,
                 devices: Vec::new(),
             });
             index
@@ -713,11 +934,40 @@ fn build_shaping_inputs(
                 device_id: device.device_id.clone(),
                 device_name: device.device_name.clone(),
                 mac: device.mac.clone(),
-                ipv4: device.ipv4.iter().map(ipv4_with_prefix_to_string).collect(),
-                ipv6: device.ipv6.iter().map(ipv6_with_prefix_to_string).collect(),
+                ipv4: filtered_ipv4.iter().map(ipv4_with_prefix_to_string).collect(),
+                ipv6: filtered_ipv6.iter().map(ipv6_with_prefix_to_string).collect(),
                 comment: device.comment.clone(),
             });
     }
+
+    // T-arc §4: fold the device-less tunnel circuits in. They are keyed by
+    // (vni, vlan) at the bridge, so they carry no devices; the site node is
+    // written to canonical state by the ingestion adapter and must already be
+    // an exported effective node.
+    if let Some(tunnel) = tunnel_circuits.as_ref() {
+        for circuit in tunnel.to_shaping_circuits() {
+            if circuits_by_id.contains_key(&circuit.circuit_id) {
+                warnings.push(format!(
+                    "Tunnel circuit '{}' collides with a ShapedDevices-derived circuit id; the device-derived circuit is kept and the tunnel entry is ignored.",
+                    circuit.circuit_id
+                ));
+                continue;
+            }
+            if !exported_effective_nodes.contains_key(&circuit.effective_parent_node_id) {
+                warnings.push(format!(
+                    "Tunnel circuit '{}' references site '{}' which is not present in the effective topology; the circuit will not attach to a shaping node.",
+                    circuit.circuit_id, circuit.effective_parent_node_id
+                ));
+            }
+            circuits_by_id.insert(circuit.circuit_id.clone(), circuits.len());
+            circuits.push(circuit);
+        }
+    }
+
+    // K1b ph2: circuit-level SQM fallbacks (StormGuard `CircuitAdjustAqm`)
+    // are a POST-pass on the assembled circuit rows, so a legacy device-level
+    // `DeviceAdjustSqm` seed can never outvote them (§9.1-3).
+    apply_circuit_aqm_overrides(&mut circuits, &effective_overrides, &mut warnings);
 
     circuits.sort_unstable_by(|left, right| left.circuit_id.cmp(&right.circuit_id));
     for circuit in &mut circuits {
@@ -766,6 +1016,56 @@ fn build_shaping_inputs(
     }))
 }
 
+/// K1b ph2 (§9.1-3, §9.4): apply circuit-level AQM fallbacks as a POST-pass on
+/// the assembled circuit rows. The stormguard `CircuitAdjustAqm` token wins over
+/// any device-level `DeviceAdjustSqm` seed by construction (it runs after the
+/// device-row expansion and first-device seeding). It runs in BOTH ingress modes
+/// the variant is a machine-authored runtime fallback persisted
+/// in the layer file — unlike operator-authored `DeviceAdjustSqm`, whose
+/// integration-only rule guards the legacy CSV round-trip. An absent circuit
+/// WARNs loudly (§9.1-5).
+pub(crate) fn apply_circuit_aqm_overrides(
+    circuits: &mut [TopologyShapingCircuitInput],
+    overrides: &lqos_overrides::OverrideFile,
+    warnings: &mut Vec<String>,
+) {
+    let now_unix = now_unix_secs();
+    for adjustment in overrides.circuit_adjustments() {
+        let CircuitAdjustment::CircuitAdjustAqm {
+            circuit_id,
+            aqm_token,
+            expires_at_unix,
+        } = adjustment
+        else {
+            continue;
+        };
+        // §9.2 defense-in-depth: a lapsed entry must not apply even before the
+        // periodic sweep drops it from the layer file.
+        if expires_at_unix.is_some_and(|expires| expires <= now_unix) {
+            continue;
+        }
+        let Some(circuit) = circuits
+            .iter_mut()
+            .find(|circuit| circuit.circuit_id == *circuit_id)
+        else {
+            warnings.push(format!(
+                "stormguard_circuit_aqm_absent: circuit-level AQM fallback references circuit '{circuit_id}', which is absent from the assembled shaping rows; the entry was ignored."
+            ));
+            continue;
+        };
+        let token = aqm_token.trim();
+        circuit.sqm_override = if token.is_empty() || token.eq_ignore_ascii_case("none") {
+            None
+        } else {
+            Some(token.to_string())
+        };
+    }
+}
+
+/// The RATE-CLASS slice of the override fold (legacy-DIY mode):
+/// CircuitAdjustSpeed / DeviceAdjustSpeed replace rates in place.
+/// Persistent devices and removals are deliberately NOT folded here —
+/// see the fold-site comment in `build_shaping_inputs`.
 fn apply_runtime_shaped_device_overrides(
     base_devices: Vec<lqos_config::ShapedDevice>,
     overrides: &lqos_overrides::OverrideFile,
@@ -848,6 +1148,10 @@ fn apply_runtime_shaped_device_overrides(
                         .filter(|value| !value.is_empty());
                 }
             }
+            // K1b ph2: circuit-level AQM is a POST-pass on the assembled
+            // circuit rows (see `apply_circuit_aqm_overrides`), never a
+            // device-row mutation.
+            CircuitAdjustment::CircuitAdjustAqm { .. } => {}
             CircuitAdjustment::RemoveCircuit { circuit_id } => {
                 devices.retain(|device| device.circuit_id != *circuit_id);
             }

@@ -770,5 +770,175 @@ class TestGraph(unittest.TestCase):
             ["splynx:site:gateway-a", "splynx:site:gateway-b", "splynx:site:gateway-c"],
         )
 
+class TestRootAttachedCircuits(unittest.TestCase):
+    """Root-attached circuits must never emit an empty Parent Node ID.
+
+    The v3 boot gate holds forever on a transaction than carries a leaf with
+    an empty parent; the shipped integration therefore materialises the
+    synthetic "Unassigned / Root" site and points blank/unresolved/explicit
+    root parents at its stable networkJsonId.
+    """
+
+    def _export(self, parent_id):
+        import csv
+        import io
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        graph = NetworkGraph()
+        if parent_id == "Zone A":
+            graph.addRawNode(
+                NetworkNode("Zone A", type=NodeType.site, networkJsonId="zone:a")
+            )
+        graph.addRawNode(
+            NetworkNode(
+                "Cust 1",
+                parentId=parent_id,
+                type=NodeType.client,
+                networkJsonId="circuit:c1",
+            )
+        )
+        graph.addRawNode(
+            NetworkNode(
+                "dev 1",
+                parentId="Cust 1",
+                type=NodeType.device,
+                ipv4=["100.64.0.1"],
+            )
+        )
+        graph.prepareTree()
+        network = graph.buildNetworkJson()
+        csv_text, _anchors = graph.buildShapedDevicesArtifacts()
+        rows = list(csv.DictReader(io.StringIO(csv_text)))
+        return graph, network, rows
+
+    def _assert_synthetic_root(self, parent_id):
+        graph, network, rows = self._export(parent_id)
+        self.assertIn("Unassigned / Root", network)
+        self.assertEqual(network["Unassigned / Root"]["id"], "libreqos:root")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Parent Node"], "Unassigned / Root")
+        self.assertEqual(rows[0]["Parent Node ID"], "libreqos:root")
+        self.assertNotEqual(rows[0]["Parent Node ID"], "")
+        root = next(node for node in graph.nodes if node.id == "libreqos:root")
+        self.assertEqual(root.type.value, 2)  # site
+
+    def test_blank_parent_gets_explicit_synthetic_root(self):
+        self._assert_synthetic_root("")
+
+    def test_explicit_root_alias_gets_explicit_synthetic_root(self):
+        self._assert_synthetic_root("root")
+
+    def test_unresolved_parent_gets_explicit_synthetic_root(self):
+        self._assert_synthetic_root("Missing Site")
+
+    def test_normal_zone_parent_is_unchanged_and_adds_no_root_site(self):
+        graph, network, rows = self._export("Zone A")
+        self.assertNotIn("Unassigned / Root", network)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Parent Node"], "Zone A")
+        self.assertEqual(rows[0]["Parent Node ID"], "zone:a")
+        self.assertFalse(any(node.id == "libreqos:root" for node in graph.nodes))
+
+    def test_root_and_zone_circuits_coexist(self):
+        import csv
+        import io
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("Zone A", type=NodeType.site, networkJsonId="zone:a"))
+        graph.addRawNode(
+            NetworkNode("Zone Cust", parentId="Zone A", type=NodeType.client,
+                        networkJsonId="circuit:zone")
+        )
+        graph.addRawNode(
+            NetworkNode("Root Cust", parentId="", type=NodeType.client,
+                        networkJsonId="circuit:root")
+        )
+        for circuit_id, parent, ip in (
+            ("Zone Cust", "circuit:zone", "100.64.0.1"),
+            ("Root Cust", "circuit:root", "100.64.0.2"),
+        ):
+            graph.addRawNode(
+                NetworkNode(
+                    circuit_id + " dev",
+                    parentId=circuit_id,
+                    type=NodeType.device,
+                    ipv4=[ip],
+                )
+            )
+        graph.prepareTree()
+        network = graph.buildNetworkJson()
+        csv_text, _ = graph.buildShapedDevicesArtifacts()
+        rows = {row["Circuit ID"]: row for row in csv.DictReader(io.StringIO(csv_text))}
+        self.assertIn("Unassigned / Root", network)
+        self.assertIn("Zone A", network)
+        self.assertEqual(rows["Zone Cust"]["Parent Node ID"], "zone:a")
+        self.assertEqual(rows["Root Cust"]["Parent Node ID"], "libreqos:root")
+        self.assertFalse(any(not row["Parent Node ID"] for row in rows.values()))
+
+
+    def test_root_attached_relay_gets_explicit_root(self):
+        """A root-attached relay's generated site must resolve under the root.
+
+        The relay client is promoted to ``clientWithChildren`` and wrapped in a
+        generated site during prepareTree; without early root materialisation
+        that site sits at the fake root and the relay circuit's Parent Node ID
+        (libreqos:root) is absent from network.json.
+        """
+        import csv
+        import io
+        from integrationCommon import NetworkGraph, NetworkNode, NodeType
+
+        graph = NetworkGraph()
+        graph.addRawNode(NetworkNode("Relay R", type=NodeType.client))
+        graph.addRawNode(
+            NetworkNode("Cust R", parentId="Relay R", type=NodeType.client)
+        )
+        graph.addRawNode(
+            NetworkNode(
+                "relay dev",
+                parentId="Cust R",
+                type=NodeType.device,
+                ipv4=["100.64.0.9"],
+            )
+        )
+        graph.prepareTree()
+        network = graph.buildNetworkJson()
+
+        def collect_ids(node, ids):
+            if not isinstance(node, dict):
+                return
+            if "id" in node:
+                ids.add(node["id"])
+            for child in (node.get("children") or {}).values():
+                collect_ids(child, ids)
+
+        ids = set()
+        for top in network.values():
+            collect_ids(top, ids)
+        self.assertIn("libreqos:root", ids)
+        self.assertTrue(
+            any(node_id.startswith("libreqos:generated:graph:site:") for node_id in ids),
+            "the relay's generated site is exported",
+        )
+        root = network["Unassigned / Root"]
+        self.assertEqual(root["id"], "libreqos:root")
+        self.assertTrue(
+            any(
+                child.get("id", "").startswith("libreqos:generated:graph:site:")
+                for child in (root.get("children") or {}).values()
+            ),
+            "the generated relay site is nested under the synthetic root",
+        )
+
+        csv_text, _ = graph.buildShapedDevicesArtifacts()
+        rows = list(csv.DictReader(io.StringIO(csv_text)))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["Parent Node"], "Unassigned / Root")
+        self.assertEqual(rows[0]["Parent Node ID"], "libreqos:root")
+        self.assertIn(rows[0]["Parent Node ID"], ids)
+
+
 if __name__ == '__main__':
     unittest.main()
+

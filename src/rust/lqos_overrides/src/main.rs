@@ -99,16 +99,6 @@ enum AdjustmentsCommand {
 enum NetworkAdjustmentsCommand {
     /// Add site speed adjustment
     AddSiteSpeed(AddSiteSpeedArgs),
-    /// Set whether a node is virtual (logical-only) in network.json
-    SetVirtual {
-        node_name: String,
-        /// `true` marks the node as logical-only (omitted from the physical HTB tree).
-        /// If omitted, defaults to `true`.
-        #[arg(value_name = "VIRTUAL", default_value_t = true, action = clap::ArgAction::Set)]
-        virtual_node: bool,
-    },
-    /// Remove any virtual-node override for a specific node name
-    DeleteVirtual { node_name: String },
     /// Remove a network adjustment by index (see list)
     DeleteIndex {
         #[arg(long)]
@@ -275,19 +265,19 @@ fn normalize_sqm_override(raw: &str) -> Result<Option<String>> {
         let mut parts = token.splitn(2, '/');
         let down = parts.next().unwrap_or("").trim();
         let up = parts.next().unwrap_or("").trim();
-        let valid = |s: &str| matches!(s, "" | "cake" | "fq_codel" | "none");
+        let valid = |s: &str| matches!(s, "" | "cake" | "none");
         if !valid(down) || !valid(up) {
             return Err(anyhow!(
-                "invalid directional sqm override '{token}'. Allowed: 'cake', 'fq_codel', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/fq_codel', '/none')"
+                "invalid directional sqm override '{token}'. Allowed: 'cake', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/none', '/none')"
             ));
         }
         return Ok(Some(format!("{down}/{up}")));
     }
 
     match token.as_str() {
-        "cake" | "fq_codel" | "none" => Ok(Some(token)),
+        "cake" | "none" => Ok(Some(token)),
         _ => Err(anyhow!(
-            "invalid sqm override '{token}'. Allowed values: 'cake', 'fq_codel', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/fq_codel', '/none')"
+            "invalid sqm override '{token}'. Allowed values: 'cake', 'none', or 'down_sqm/up_sqm' (e.g. 'cake/none', '/none')"
         )),
     }
 }
@@ -481,30 +471,11 @@ fn main() -> Result<()> {
                             site_name: args.site_name,
                             download_bandwidth_mbps: args.download_bandwidth_mbps,
                             upload_bandwidth_mbps: args.upload_bandwidth_mbps,
+                            expires_at_unix: None,
                         };
                         overrides.add_network_adjustment(adj);
                         overrides.save()?;
                         println!("Added site speed adjustment; overrides saved.");
-                    }
-                    NetworkAdjustmentsCommand::SetVirtual {
-                        node_name,
-                        virtual_node,
-                    } => {
-                        overrides.set_network_node_virtual(node_name, virtual_node);
-                        overrides.save()?;
-                        println!("Set node virtual flag; overrides saved.");
-                    }
-                    NetworkAdjustmentsCommand::DeleteVirtual { node_name } => {
-                        let removed =
-                            overrides.remove_network_node_virtual_by_name_count(&node_name);
-                        if removed > 0 {
-                            overrides.save()?;
-                            println!(
-                                "Removed {removed} virtual override(s) for node '{node_name}'; overrides saved."
-                            );
-                        } else {
-                            println!("No virtual override found for node '{node_name}'.");
-                        }
                     }
                     NetworkAdjustmentsCommand::DeleteIndex { index } => {
                         let ok = overrides.remove_network_adjustment_by_index(index);
@@ -597,60 +568,4 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn set_virtual_defaults_to_true() {
-        let cli = Cli::try_parse_from([
-            "lqos_overrides",
-            "network-adjustments",
-            "set-virtual",
-            "CALVIN",
-        ])
-        .expect("CLI parse must succeed");
-
-        match cli.command {
-            Commands::NetworkAdjustments { command } => match command {
-                NetworkAdjustmentsCommand::SetVirtual {
-                    node_name,
-                    virtual_node,
-                } => {
-                    assert_eq!(node_name, "CALVIN");
-                    assert!(virtual_node);
-                }
-                other => panic!("unexpected network-adjustments command: {other:?}"),
-            },
-            other => panic!("unexpected top-level command: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn set_virtual_accepts_explicit_false() {
-        let cli = Cli::try_parse_from([
-            "lqos_overrides",
-            "network-adjustments",
-            "set-virtual",
-            "CALVIN",
-            "false",
-        ])
-        .expect("CLI parse must succeed");
-
-        match cli.command {
-            Commands::NetworkAdjustments { command } => match command {
-                NetworkAdjustmentsCommand::SetVirtual {
-                    node_name,
-                    virtual_node,
-                } => {
-                    assert_eq!(node_name, "CALVIN");
-                    assert!(!virtual_node);
-                }
-                other => panic!("unexpected network-adjustments command: {other:?}"),
-            },
-            other => panic!("unexpected top-level command: {other:?}"),
-        }
-    }
 }

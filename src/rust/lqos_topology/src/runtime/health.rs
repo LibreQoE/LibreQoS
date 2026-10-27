@@ -167,22 +167,21 @@ fn build_unobserved_health_entry(
         return health_entry_for_unprobeable_spec(spec, previous);
     }
 
-    let suppression_active = previous.is_some_and(|previous| {
-        previous.status == TopologyAttachmentHealthStatus::Suppressed
-            && previous
-                .suppressed_until_unix
-                .is_some_and(|deadline| now_unix().is_none_or(|now| now < deadline))
-    });
-    if suppression_active {
-        entry.status = TopologyAttachmentHealthStatus::Suppressed;
-        entry.reason = previous.and_then(|previous| previous.reason.clone());
-    } else {
+    // A probe-MANAGER failure is NOT an observation of the attachment: only the
+    // shared probe manager/bus is unavailable, so the endpoint may be perfectly
+    // healthy. HOLD the last-known status (hysteresis) so a bus timeout cannot
+    // flap the effective world into a recompile loop, and record the outage in
+    // `reason` (which is not part of the effective signature). A genuinely-down
+    // attachment is still observed on a completed round and downgrades through
+    // `build_health_entry`. Only a cold start with no prior observation reports
+    // ProbeUnavailable.
+    if previous.is_none() {
         entry.status = TopologyAttachmentHealthStatus::ProbeUnavailable;
-        entry.reason = Some(reason.to_string());
         entry.suppressed_until_unix = None;
+        entry.endpoint_status = Vec::new();
     }
+    entry.reason = Some(reason.to_string());
     entry.consecutive_successes = 0;
-    entry.endpoint_status = Vec::new();
     entry
 }
 
@@ -190,6 +189,7 @@ fn save_health_entries(
     config: &lqos_config::Config,
     health_state: &mut TopologyAttachmentHealthStateFile,
     mut new_entries: Vec<TopologyAttachmentHealthEntry>,
+    refresh_timestamp: bool,
 ) -> Result<bool> {
     new_entries
         .sort_unstable_by(|left, right| left.attachment_pair_id.cmp(&right.attachment_pair_id));
@@ -201,7 +201,7 @@ fn save_health_entries(
     previous_for_compare.generated_unix = None;
     let mut next_for_compare = next_state.clone();
     next_for_compare.generated_unix = None;
-    if previous_for_compare == next_for_compare {
+    if previous_for_compare == next_for_compare && !refresh_timestamp {
         return Ok(false);
     }
 
@@ -235,7 +235,7 @@ pub(super) fn refresh_health_state(
             )
         })
         .collect::<Vec<_>>();
-    save_health_entries(config, health_state, new_entries)
+    save_health_entries(config, health_state, new_entries, false)
 }
 
 pub(super) fn mark_health_state_unobserved(
@@ -259,7 +259,11 @@ pub(super) fn mark_health_state_unobserved(
             )
         })
         .collect::<Vec<_>>();
-    save_health_entries(config, health_state, new_entries)
+    // Refresh the timestamp even when the held statuses are byte-identical: a
+    // manager outage must keep the last-known health FRESH so it cannot age out
+    // (`is_health_state_fresh`) into a spurious effective-world change while
+    // probes are unavailable.
+    save_health_entries(config, health_state, new_entries, true)
 }
 
 fn hash_health_status(status: TopologyAttachmentHealthStatus, hasher: &mut impl Hasher) {
@@ -281,7 +285,10 @@ fn hash_health_effective_entry(entry: &TopologyAttachmentHealthEntry, hasher: &m
     hash_health_status(entry.status, hasher);
     entry.probeable.hash(hasher);
     entry.enabled.hash(hasher);
-    entry.suppressed_until_unix.hash(hasher);
+    // `suppressed_until_unix` is a hold-down DEADLINE, not a selection input:
+    // every miss round pushes it forward, and hashing it here would republish
+    // the effective world on each round of a sustained outage. Recovery changes
+    // `status`, which IS hashed, so the effective world still tracks it.
 }
 
 pub(super) fn health_effective_signature(health_state: &TopologyAttachmentHealthStateFile) -> u64 {
@@ -379,26 +386,38 @@ mod tests {
     }
 
     #[test]
-    fn unobserved_health_marks_probeable_pair_unavailable() {
+    fn unobserved_health_holds_the_last_known_status_without_flapping() {
+        let previous = health_entry();
         let entry = build_unobserved_health_entry(
             &probe_spec(),
-            Some(&health_entry()),
+            Some(&previous),
             "Probe unavailable: shared probe manager unavailable",
         );
 
         assert_eq!(
             entry.status,
-            TopologyAttachmentHealthStatus::ProbeUnavailable
+            TopologyAttachmentHealthStatus::Healthy,
+            "a probe-manager outage must not downgrade a healthy attachment"
         );
         assert_eq!(
             entry.reason.as_deref(),
             Some("Probe unavailable: shared probe manager unavailable")
         );
-        assert!(entry.endpoint_status.is_empty());
+        assert_eq!(
+            health_effective_signature(&TopologyAttachmentHealthStateFile {
+                attachments: vec![entry],
+                ..TopologyAttachmentHealthStateFile::default()
+            }),
+            health_effective_signature(&TopologyAttachmentHealthStateFile {
+                attachments: vec![previous],
+                ..TopologyAttachmentHealthStateFile::default()
+            }),
+            "the effective signature must be unchanged so no recompile is driven"
+        );
     }
 
     #[test]
-    fn unobserved_health_preserves_active_suppression() {
+    fn unobserved_health_holds_active_suppression() {
         let mut previous = health_entry();
         previous.status = TopologyAttachmentHealthStatus::Suppressed;
         previous.reason = Some("2 missed probes".to_string());
@@ -411,6 +430,45 @@ mod tests {
         );
 
         assert_eq!(entry.status, TopologyAttachmentHealthStatus::Suppressed);
-        assert_eq!(entry.reason.as_deref(), Some("2 missed probes"));
+        assert_eq!(entry.suppressed_until_unix, Some(u64::MAX));
+        assert_eq!(
+            entry.reason.as_deref(),
+            Some("Probe unavailable: shared probe manager unavailable")
+        );
+    }
+
+    #[test]
+    fn unobserved_health_cold_start_reports_probe_unavailable() {
+        let entry = build_unobserved_health_entry(
+            &probe_spec(),
+            None,
+            "Probe unavailable: shared probe manager unavailable",
+        );
+
+        assert_eq!(
+            entry.status,
+            TopologyAttachmentHealthStatus::ProbeUnavailable
+        );
+        assert!(entry.endpoint_status.is_empty());
+    }
+
+    #[test]
+    fn health_effective_signature_ignores_the_hold_down_deadline() {
+        let first = TopologyAttachmentHealthStateFile {
+            attachments: vec![health_entry()],
+            ..TopologyAttachmentHealthStateFile::default()
+        };
+        let mut bumped = health_entry();
+        bumped.suppressed_until_unix = Some(999);
+        let second = TopologyAttachmentHealthStateFile {
+            attachments: vec![bumped],
+            ..TopologyAttachmentHealthStateFile::default()
+        };
+
+        assert_eq!(
+            health_effective_signature(&first),
+            health_effective_signature(&second),
+            "a hold-down deadline extension alone must not republish"
+        );
     }
 }

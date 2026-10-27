@@ -1,5 +1,7 @@
 # Recipe: WISP/FISP with Built-In CRM/NMS Integration
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 Use this pattern when your operator workflow is already centered on a supported CRM/NMS (UISP, Splynx, Netzur, VISP, WISPGate, Powercode, or Sonar).
 
 ## Fit

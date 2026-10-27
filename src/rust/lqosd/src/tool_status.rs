@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use lqos_bus::SchedulerProgressReport;
+use lqos_bus::{SchedulerIntegrationStatus, SchedulerProgressReport};
 use lqos_utils::unix_time::unix_now;
 use parking_lot::Mutex;
 
@@ -10,6 +10,7 @@ static SCHEDULER_LAST_SEEN: AtomicU64 = AtomicU64::new(0);
 static SCHEDULER_ERROR: Mutex<Option<String>> = Mutex::new(None);
 static SCHEDULER_OUTPUT: Mutex<Option<String>> = Mutex::new(None);
 static SCHEDULER_PROGRESS: Mutex<Option<SchedulerProgressReport>> = Mutex::new(None);
+static SCHEDULER_INTEGRATION: Mutex<Option<SchedulerIntegrationStatus>> = Mutex::new(None);
 
 /// Updates the last seen timestamp for the API.
 pub fn api_seen() {
@@ -57,6 +58,12 @@ pub fn scheduler_output(output: Option<String>) {
 pub fn scheduler_progress(progress: Option<SchedulerProgressReport>) {
     let mut guard = SCHEDULER_PROGRESS.lock();
     *guard = progress;
+}
+
+/// Sets the latest integration-sync status metadata (the integration axis).
+pub fn scheduler_integration_status(status: Option<SchedulerIntegrationStatus>) {
+    let mut guard = SCHEDULER_INTEGRATION.lock();
+    *guard = status;
 }
 
 /// Checks if the API is available.
@@ -110,5 +117,15 @@ pub fn scheduler_progress_state() -> Option<SchedulerProgressReport> {
         parking_lot::RawMutex,
         Option<SchedulerProgressReport>,
     > = SCHEDULER_PROGRESS.lock();
+    guard.clone()
+}
+
+/// Returns the latest integration-sync status metadata, if any.
+pub fn scheduler_integration_status_state() -> Option<SchedulerIntegrationStatus> {
+    let guard: parking_lot::lock_api::MutexGuard<
+        '_,
+        parking_lot::RawMutex,
+        Option<SchedulerIntegrationStatus>,
+    > = SCHEDULER_INTEGRATION.lock();
     guard.clone()
 }

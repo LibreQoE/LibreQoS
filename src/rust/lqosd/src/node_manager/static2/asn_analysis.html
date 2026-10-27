@@ -100,6 +100,64 @@
         linear-gradient(180deg, color-mix(in srgb, var(--lqos-surface) 70%, transparent), transparent);
 }
 
+.asn-analysis-selected-header {
+    align-items: center;
+}
+
+.asn-analysis-selected-kicker {
+    margin-bottom: 2px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-selected-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    padding-top: 0.35rem;
+}
+
+.asn-analysis-selected-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+    padding: 0 0.9rem;
+    border-left: 1px solid color-mix(in srgb, var(--lqos-border) 74%, transparent);
+}
+
+.asn-analysis-selected-metric:first-child {
+    padding-left: 0;
+    border-left: 0;
+}
+
+.asn-analysis-selected-metric label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-selected-metric strong {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+}
+
+.asn-analysis-selected-metric small {
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color);
+}
+
+.asn-analysis-qoo-badge--empty {
+    opacity: 0.55;
+}
+
 .asn-analysis-card-header h3 {
     margin: 0;
     font-size: 1rem;
@@ -170,10 +228,67 @@
     border-color: color-mix(in srgb, var(--bs-primary) 28%, var(--lqos-border) 72%);
 }
 
+.asn-analysis-leaderboard-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--lqos-surface);
+    padding-top: 8px;
+}
+
+.asn-analysis-sort-button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+}
+
+.asn-analysis-sort-button:hover {
+    color: var(--bs-body-color);
+}
+
+.asn-analysis-sort-arrow {
+    font-size: 0.72rem;
+    line-height: 1;
+    opacity: 0.55;
+}
+
+.asn-analysis-leaderboard-table thead th[aria-sort="ascending"] .asn-analysis-sort-arrow,
+.asn-analysis-leaderboard-table thead th[aria-sort="descending"] .asn-analysis-sort-arrow {
+    opacity: 1;
+    color: var(--bs-primary);
+}
+
 .asn-analysis-leaderboard-rank {
     width: 44px;
     font-weight: 700;
     color: var(--bs-secondary-color);
+}
+
+.asn-analysis-rank-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--lqos-surface-2) 82%, var(--lqos-border));
+    color: var(--bs-secondary-color);
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.asn-analysis-leaderboard-row.is-selected .asn-analysis-rank-chip {
+    background: var(--bs-primary);
+    color: #fff;
 }
 
 .asn-analysis-asn-name {
@@ -374,11 +489,25 @@
     .asn-analysis-grid-bottom {
         grid-template-columns: 1fr;
     }
+
+    .asn-analysis-selected-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+    }
+
+    .asn-analysis-selected-metric {
+        padding: 0;
+        border-left: 0;
+    }
 }
 
 @media (max-width: 767.98px) {
     .asn-analysis-kpis {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .asn-analysis-selected-metrics {
+        grid-template-columns: 1fr;
     }
 
     .asn-analysis-card-header,
@@ -398,7 +527,7 @@
     <section class="asn-analysis-header">
         <div class="asn-analysis-title">
             <h2>ASN Live Analysis</h2>
-            <p>Live ASN QoE and flow analysis from recent finished flows and 15-minute executive ASN heatmaps.</p>
+            <p>Live ASN QoE, throughput, and retransmits from 15-minute heatmaps.</p>
         </div>
         <div class="asn-analysis-live">
             <span class="asn-analysis-live-pill"><i class="fa fa-signal"></i> Live</span>
@@ -407,17 +536,30 @@
         </div>
     </section>
 
+    <section class="asn-analysis-card asn-analysis-card--selected">
+        <div class="asn-analysis-card-header asn-analysis-selected-header">
+            <div>
+                <div class="asn-analysis-selected-kicker">Selected ASN</div>
+                <h3 id="asnAnalysisDetailTitle">No ASN selected</h3>
+            </div>
+            <span id="asnAnalysisQooBadge" class="asn-analysis-qoo-badge asn-analysis-qoo-badge--empty">—</span>
+        </div>
+        <div class="asn-analysis-card-body">
+            <div class="asn-analysis-selected-metrics" id="asnAnalysisKpis">
+                <div class="asn-analysis-selected-metric"><label>Median RTT</label><strong>—</strong></div>
+                <div class="asn-analysis-selected-metric"><label>Retransmit</label><strong>—</strong></div>
+                <div class="asn-analysis-selected-metric"><label>Recent Flows</label><strong>—</strong></div>
+                <div class="asn-analysis-selected-metric"><label>Recent Traffic</label><strong>—</strong></div>
+            </div>
+        </div>
+    </section>
+
     <section class="asn-analysis-row">
         <div class="asn-analysis-card">
             <div class="asn-analysis-card-header">
                 <div>
                     <h3>Top 20 ASNs</h3>
-                    <p>Shows the top 20 ASNs by recent traffic and throughput, ordered highest to lowest.</p>
-                </div>
-                <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-                    <button class="btn btn-sm btn-outline-secondary" type="button" id="asnAnalysisRefreshButton">
-                        <i class="fa fa-rotate-right me-1"></i>Refresh
-                    </button>
+                    <p>Top 20 ASNs by recent traffic.</p>
                 </div>
             </div>
             <div class="asn-analysis-card-body pt-2">
@@ -426,12 +568,12 @@
                         <thead>
                         <tr>
                             <th>#</th>
-                            <th>ASN</th>
-                            <th>Traffic</th>
-                            <th>Flows</th>
-                            <th>RTT</th>
-                            <th>Retrans</th>
-                            <th>QoO</th>
+                            <th data-sort-th="asn"><button type="button" class="asn-analysis-sort-button" data-asn-sort="asn">ASN <span class="asn-analysis-sort-arrow" aria-hidden="true">↕</span></button></th>
+                            <th data-sort-th="traffic"><button type="button" class="asn-analysis-sort-button" data-asn-sort="traffic">Traffic <span class="asn-analysis-sort-arrow" aria-hidden="true">↕</span></button></th>
+                            <th data-sort-th="flows"><button type="button" class="asn-analysis-sort-button" data-asn-sort="flows">Flows <span class="asn-analysis-sort-arrow" aria-hidden="true">↕</span></button></th>
+                            <th data-sort-th="rtt"><button type="button" class="asn-analysis-sort-button" data-asn-sort="rtt">RTT <span class="asn-analysis-sort-arrow" aria-hidden="true">↕</span></button></th>
+                            <th data-sort-th="retrans"><button type="button" class="asn-analysis-sort-button" data-asn-sort="retrans">Retrans <span class="asn-analysis-sort-arrow" aria-hidden="true">↕</span></button></th>
+                            <th data-sort-th="qoo"><button type="button" class="asn-analysis-sort-button" data-asn-sort="qoo">QoO <span class="asn-analysis-sort-arrow" aria-hidden="true">↕</span></button></th>
                         </tr>
                         </thead>
                         <tbody id="asnAnalysisLeaderboardBody">
@@ -449,7 +591,7 @@
                 <div class="asn-analysis-card-header">
                     <div>
                         <h3>Latency vs Traffic</h3>
-                        <p>Plots the same top-20 throughput ASNs. Bubble size reflects recent flow count.</p>
+                        <p>Top-20 ASNs by traffic; bubble size = recent flows.</p>
                     </div>
                 </div>
                 <div class="asn-analysis-card-body pt-2">
@@ -461,107 +603,11 @@
                 <div class="asn-analysis-card-header">
                     <div>
                         <h3>Retransmit Outliers</h3>
-                        <p>Same top-20 throughput ASN set, sorted by retransmit so operators can spot outliers quickly.</p>
+                        <p>Nonzero retransmits in the top 20.</p>
                     </div>
                 </div>
                 <div class="asn-analysis-card-body pt-2">
                     <div id="asnAnalysisRetransmitChart" class="asn-analysis-chart asn-analysis-chart--compact"></div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="asn-analysis-card asn-analysis-card--selected">
-        <div class="asn-analysis-card-header">
-            <div>
-                <h3 id="asnAnalysisDetailTitle">Selected ASN</h3>
-                <p id="asnAnalysisDetailSubtitle">Choose an ASN from the leaderboard or bubble chart.</p>
-            </div>
-        </div>
-        <div class="asn-analysis-card-body">
-            <div class="asn-analysis-kpis" id="asnAnalysisKpis">
-                <div class="asn-analysis-kpi">
-                    <label>Status</label>
-                    <strong>—</strong>
-                    <small>Waiting for selection</small>
-                </div>
-                <div class="asn-analysis-kpi">
-                    <label>Median RTT</label>
-                    <strong>—</strong>
-                </div>
-                <div class="asn-analysis-kpi">
-                    <label>Retransmit</label>
-                    <strong>—</strong>
-                </div>
-                <div class="asn-analysis-kpi">
-                    <label>Recent Flows</label>
-                    <strong>—</strong>
-                </div>
-                <div class="asn-analysis-kpi">
-                    <label>Recent Traffic</label>
-                    <strong>—</strong>
-                </div>
-            </div>
-            <p class="asn-analysis-rationale" id="asnAnalysisRationale">Waiting for enough data to rank ASNs.</p>
-        </div>
-    </section>
-
-    <section class="asn-analysis-grid-bottom">
-        <div class="asn-analysis-card">
-            <div class="asn-analysis-card-header">
-                <div>
-                    <h3>Flow Evidence</h3>
-                    <p>Recent completed flows for the selected ASN, with more room for the evidence table itself.</p>
-                </div>
-            </div>
-            <div class="asn-analysis-card-body">
-                <div class="asn-analysis-flow-controls">
-                    <div class="asn-analysis-flow-controls-left">
-                        <button class="btn btn-sm btn-primary" type="button" id="asnAnalysisEvidenceSelectedAsn">
-                            <i class="fa fa-fingerprint me-1"></i>Selected ASN
-                        </button>
-                        <span id="asnAnalysisCountryControl"><i class="fa fa-spin fa-spinner"></i> Loading countries…</span>
-                        <span id="asnAnalysisProtocolControl"><i class="fa fa-spin fa-spinner"></i> Loading protocols…</span>
-                    </div>
-                    <div class="asn-analysis-flow-controls-right">
-                        <label class="small text-secondary" for="asnAnalysisFlowSort">Sort by</label>
-                        <select class="form-select form-select-sm" id="asnAnalysisFlowSort" style="width:auto">
-                            <option value="bytes">Bytes</option>
-                            <option value="duration">Duration</option>
-                            <option value="start">Start Time</option>
-                        </select>
-                    </div>
-                </div>
-                <p class="asn-analysis-flow-context" id="asnAnalysisFlowContext">Flow evidence will follow the selected ASN.</p>
-                <div class="table-responsive">
-                    <table class="asn-analysis-flow-table">
-                        <thead>
-                        <tr>
-                            <th>Circuit</th>
-                            <th>Remote</th>
-                            <th>Protocol</th>
-                            <th>Bytes</th>
-                            <th>RTT</th>
-                            <th style="min-width: 250px;">Timeline</th>
-                        </tr>
-                        </thead>
-                        <tbody id="asnAnalysisFlowTableBody">
-                        <tr>
-                            <td colspan="6" class="asn-analysis-empty">Waiting for selection…</td>
-                        </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="asn-analysis-flow-actions">
-                    <div class="small text-secondary" id="asnAnalysisPaginator">Page 1 of 1</div>
-                    <div class="d-flex align-items-center gap-2">
-                        <button class="btn btn-sm btn-outline-secondary" type="button" id="asnAnalysisPrevPage">
-                            <i class="fa fa-arrow-left me-1"></i>Prev
-                        </button>
-                        <button class="btn btn-sm btn-outline-secondary" type="button" id="asnAnalysisNextPage">
-                            Next<i class="fa fa-arrow-right ms-1"></i>
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>

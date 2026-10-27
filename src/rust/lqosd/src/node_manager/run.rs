@@ -30,7 +30,12 @@ pub async fn spawn_webserver(
     control_tx: tokio::sync::mpsc::Sender<ControlChannelCommand>,
     probe_client: ProbeClient,
 ) -> Result<()> {
-    // Check that static content is available and set up the path
+    // Check that static content is available and set up the path.
+ // 3b: the webserver serves the RUNTIME directory
+    // `<lqos_directory>/bin/static2` — NOT the source `node_manager/static2`.
+    // A code change to the JS/HTML must be built (`js_build/esbuild.sh`) and
+    // COPIED into the served directory at the binary swap, or the old bundles
+    // are served regardless of the tree.
     let config = load_config()?;
     let static_path = Path::new(&config.lqos_directory)
         .join("bin")

@@ -25,7 +25,7 @@
         canonical: &TopologyCanonicalStateFile,
         ui_state: &TopologyEditorStateFile,
         effective: &TopologyEffectiveStateFile,
-        virtualization: &QueueVirtualizationContext,
+        virtualization: &DirectCircuitHosts,
     ) -> Value {
         try_apply_effective_topology_to_network_json_from_canonical(
             config,
@@ -34,6 +34,7 @@
             ui_state,
             effective,
             virtualization,
+            false,
         )
         .expect("effective topology export should succeed")
     }
@@ -43,7 +44,7 @@
         canonical: &TopologyCanonicalStateFile,
         ui_state: &TopologyEditorStateFile,
         effective: &TopologyEffectiveStateFile,
-        virtualization: &QueueVirtualizationContext,
+        virtualization: &DirectCircuitHosts,
     ) -> Value {
         try_apply_effective_topology_to_canonical_state(
             config,
@@ -51,6 +52,7 @@
             ui_state,
             effective,
             virtualization,
+            false,
         )
         .expect("effective topology export should succeed")
     }
@@ -68,14 +70,12 @@
             latitude: None,
             longitude: None,
             node_kind: "Site".to_string(),
-            is_virtual: false,
             current_parent_node_id: None,
             current_parent_node_name: None,
             current_attachment_id: None,
             current_attachment_name: None,
             can_move: true,
             allowed_parents: Vec::new(),
-            queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
             rate_input: TopologyCanonicalRateInput {
                 intrinsic_download_mbps: Some(download),
                 intrinsic_upload_mbps: Some(upload),
@@ -203,6 +203,58 @@
 
 
     #[test]
+    fn effective_child_rate_is_min_of_all_ancestors() {
+        let mut root = sample_effective_bandwidth_tree();
+        let canonical = TopologyCanonicalStateFile {
+            ingress_kind: TopologyCanonicalIngressKind::NativeIntegration,
+            nodes: vec![
+                canonical_node_with_rate_source(
+                    "site-hoodoo",
+                    "Hoodoo Hill",
+                    800,
+                    800,
+                    TopologyCanonicalRateInputSource::AttachmentMax,
+                ),
+                // The AP's own telemetry is intentionally ABOVE the parent:
+                // Effective Now must be the ancestor min (800), while the
+                // configured AP value remains 1050 upstream.
+                canonical_node_with_rate_source(
+                    "ap-thunderhill",
+                    "HoodooHill-Thunderhill",
+                    1050,
+                    1050,
+                    TopologyCanonicalRateInputSource::AttachmentMax,
+                ),
+            ],
+            ..Default::default()
+        };
+
+        super::recompile_effective_network_bandwidths(
+            &mut root,
+            &canonical,
+            &TopologyEditorStateFile::default(),
+            &TopologyEffectiveStateFile::default(),
+        );
+
+        let parent = root["Hoodoo Hill"].as_object().expect("parent");
+        assert_eq!(
+            super::node_bandwidth_mbps(parent, "downloadBandwidthMbps"),
+            Some(800)
+        );
+        let ap = parent["children"]["HoodooHill-Thunderhill"]
+            .as_object()
+            .expect("AP node should exist");
+        assert_eq!(
+            super::node_bandwidth_mbps(ap, "downloadBandwidthMbps"),
+            Some(800)
+        );
+        assert_eq!(
+            super::node_bandwidth_mbps(ap, "uploadBandwidthMbps"),
+            Some(800)
+        );
+    }
+
+    #[test]
     fn native_uisp_compatibility_export_rates_still_cap_ap_nodes() {
         let mut root = sample_effective_bandwidth_tree();
         let canonical = TopologyCanonicalStateFile {
@@ -310,8 +362,7 @@
         TopologyEditorStateFile,
         TopologyEffectiveStateFile,
     ) {
-        let mut config = Config::default();
-        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
+        let config = test_config();
         let editor_state = TopologyEditorStateFile {
             schema_version: 1,
             source: "splynx/ap_site".to_string(),
@@ -321,7 +372,6 @@
                 TopologyEditorNode {
                     node_id: "site-agg".to_string(),
                     node_name: "Aggregation".to_string(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     ..TopologyEditorNode::default()
                 },
                 TopologyEditorNode {
@@ -329,7 +379,6 @@
                     node_name: "AP One".to_string(),
                     current_parent_node_id: Some("site-agg".to_string()),
                     current_parent_node_name: Some("Aggregation".to_string()),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     ..TopologyEditorNode::default()
                 },
             ],
@@ -495,6 +544,7 @@
 
     fn sample_runtime_artifacts() -> EffectiveTopologyArtifacts {
         EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -538,7 +588,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         let generation = "generation-1";
 
@@ -558,10 +608,17 @@
         )
         .expect("ShapedDevices.csv should write");
 
-        publish_effective_topology_artifacts(&config, &sample_runtime_artifacts(), generation)
+        publish_effective_topology_artifacts(&config, &sample_runtime_artifacts())
             .expect("ready status should publish");
         let ready = TopologyRuntimeStatusFile::load(&config).expect("ready status should load");
-        assert_eq!(ready.source_generation, generation);
+        // The publish RECOMPUTES the source generation after writing the
+        // artifacts (a build moves the compiled-shaping input), so the stamped
+        // source is the current one, not the caller's pre-build token.
+        assert_eq!(
+            ready.source_generation,
+            lqos_config::compute_topology_source_generation(&config)
+                .expect("source generation should compute")
+        );
         assert!(ready.ready);
         assert_eq!(ready.error, None);
         assert!(!ready.shaping_generation.is_empty());
@@ -571,9 +628,10 @@
                 .to_string_lossy()
                 .to_string()
         );
+        // T5 rung 1 status fold: the field names the E2 operator view.
         assert_eq!(
             ready.effective_network_path,
-            topology_effective_network_path(&config)
+            topology_operator_view_path(&config)
                 .to_string_lossy()
                 .to_string()
         );
@@ -584,18 +642,20 @@
                 .to_string()
         );
         assert!(topology_effective_state_path(&config).exists());
-        assert!(topology_effective_network_path(&config).exists());
+        // T5 rung 1: the operator view exists; the interchange does not.
+        assert!(topology_operator_view_path(&config).exists());
+        assert!(!topology_effective_network_path(&config).exists());
         assert!(topology_shaping_inputs_path(&config).exists());
         assert!(topology_runtime_status_path(&config).exists());
     }
 
     #[test]
-    fn publish_runtime_status_hashes_existing_equal_effective_network_file() {
+    fn publish_status_hashes_the_operator_view_and_removes_stale_effective_network() {
         let lqos_directory = unique_temp_dir("lqos-topology-runtime-status-existing-network");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("ShapedDevices.csv"),
@@ -622,7 +682,9 @@
     "id": "tower-1",
     "name": "Tower 1",
     "downloadBandwidthMbps": 0.0,
+    "downloadBandwidthMbpsMin": 0,
     "uploadBandwidthMbps": 100.0,
+    "uploadBandwidthMbpsMin": 10,
     "children": {}
   }
 }"#;
@@ -638,19 +700,85 @@
         )
         .expect("existing effective network should write");
 
-        publish_effective_topology_artifacts(&config, &artifacts, "generation-1")
+        publish_effective_topology_artifacts(&config, &artifacts)
             .expect("ready status should publish");
         let ready = TopologyRuntimeStatusFile::load(&config).expect("ready status should load");
         assert!(ready.ready);
+        // T5 rung 1: the stale interchange is REMOVED (loud-dead) and the
+        // status hashes the E2 operator view instead.
+        assert!(!effective_network_path.exists(), "stale effective network should be removed");
+        let operator_view_path = topology_operator_view_path(&config);
+        assert!(operator_view_path.exists(), "operator view should publish");
         assert_eq!(
-            fs::read_to_string(&effective_network_path)
-                .expect("effective network should remain readable"),
-            existing_effective_network,
+            ready.effective_network_path,
+            operator_view_path.to_string_lossy().to_string(),
         );
-        let effective_network_generation =
-            compute_effective_network_file_generation(&effective_network_path)
-                .expect("effective network generation should compute from published file");
-        assert_eq!(ready.effective_generation, effective_network_generation);
+        let operator_view_generation =
+            compute_effective_network_file_generation(&operator_view_path)
+                .expect("operator view generation should compute from published file");
+        assert_eq!(ready.effective_generation, operator_view_generation);
+    }
+
+    #[test]
+    fn recompile_commits_derives_node_commit_from_circuit_mins() {
+        // Two sites. "Tower 1" has spare capacity (children commit less than its
+        // ceil) so its commit is the sum of descendant circuit mins. "Tower 2" is
+        // oversubscribed (children commit more than its ceil) so its commit is
+        // clamped to ceil and forced strictly below it.
+        let mut network = json!({
+            "Tower 1": {
+                "id": "tower-1",
+                "name": "Tower 1",
+                "downloadBandwidthMbps": 300.0,
+                "uploadBandwidthMbps": 50.0,
+                "children": {}
+            },
+            "Tower 2": {
+                "id": "tower-2",
+                "name": "Tower 2",
+                "downloadBandwidthMbps": 10.0,
+                "uploadBandwidthMbps": 10.0,
+                "children": {}
+            }
+        });
+        let shaping_inputs: TopologyShapingInputsFile = serde_json::from_value(json!({
+            "circuits": [
+                {
+                    "circuit_id": "c1", "circuit_name": "C1",
+                    "effective_parent_node_name": "Tower 1",
+                    "effective_parent_node_id": "tower-1",
+                    "download_min_mbps": 10.0, "upload_min_mbps": 5.0,
+                    "download_max_mbps": 100.0, "upload_max_mbps": 50.0
+                },
+                {
+                    "circuit_id": "c2", "circuit_name": "C2",
+                    "effective_parent_node_name": "Tower 1",
+                    "effective_parent_node_id": "tower-1",
+                    "download_min_mbps": 20.0, "upload_min_mbps": 10.0,
+                    "download_max_mbps": 100.0, "upload_max_mbps": 50.0
+                },
+                {
+                    "circuit_id": "c3", "circuit_name": "C3",
+                    "effective_parent_node_name": "Tower 2",
+                    "effective_parent_node_id": "tower-2",
+                    "download_min_mbps": 100.0, "upload_min_mbps": 100.0,
+                    "download_max_mbps": 200.0, "upload_max_mbps": 200.0
+                }
+            ]
+        }))
+        .expect("shaping inputs should deserialize");
+
+        recompile_effective_network_commits(&mut network, &shaping_inputs);
+
+        let tower_1 = network["Tower 1"].as_object().expect("Tower 1 node");
+        assert_eq!(tower_1["downloadBandwidthMbpsMin"].as_u64(), Some(30));
+        assert_eq!(tower_1["uploadBandwidthMbpsMin"].as_u64(), Some(15));
+
+        let tower_2 = network["Tower 2"].as_object().expect("Tower 2 node");
+        // Oversubscribed: sum (100) exceeds ceil (10), so commit is capped and
+        // forced strictly below ceil (10 - 1 = 9).
+        assert_eq!(tower_2["downloadBandwidthMbpsMin"].as_u64(), Some(9));
+        assert_eq!(tower_2["uploadBandwidthMbpsMin"].as_u64(), Some(9));
     }
 
 
@@ -660,7 +788,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         let shaping_inputs_path = topology_shaping_inputs_path(&config);
         fs::create_dir_all(
@@ -672,11 +800,17 @@
         fs::write(&shaping_inputs_path, "{\"previous\":\"stale\"}\n")
             .expect("stale shaping inputs should write");
 
-        publish_effective_topology_artifacts(&config, &sample_runtime_artifacts(), "generation-1")
+        publish_effective_topology_artifacts(&config, &sample_runtime_artifacts())
             .expect("runtime artifacts should publish without shaping inputs");
 
         let status = TopologyRuntimeStatusFile::load(&config).expect("status should load");
-        assert_eq!(status.source_generation, "generation-1");
+        // The publish recomputes the source generation after the artifact
+        // writes; assert against the current generation, not the caller token.
+        assert_eq!(
+            status.source_generation,
+            lqos_config::compute_topology_source_generation(&config)
+                .expect("source generation should compute")
+        );
         assert!(!status.ready);
         assert!(status.shaping_generation.is_empty());
         assert!(!status.effective_generation.is_empty());
@@ -686,7 +820,10 @@
         );
         assert!(!shaping_inputs_path.exists());
         assert!(topology_effective_state_path(&config).exists());
-        assert!(topology_effective_network_path(&config).exists());
+        // T5 rung 1: the operator view publishes even without shaping
+        // inputs; the interchange does not exist.
+        assert!(topology_operator_view_path(&config).exists());
+        assert!(!topology_effective_network_path(&config).exists());
     }
 
 
@@ -695,7 +832,7 @@
         let lqos_directory = unique_temp_dir("lqos-topology-effective-publish-lock");
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
-            ..Config::default()
+            ..test_config()
         };
         let lock_path = lqos_directory.join(super::TOPOLOGY_EFFECTIVE_PUBLISH_LOCK_FILENAME);
 
@@ -716,7 +853,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         let effective_state_path = topology_effective_state_path(&config);
         let effective_network_path = topology_effective_network_path(&config);
@@ -751,9 +888,7 @@
 
         let result = publish_effective_topology_artifacts(
             &config,
-            &sample_runtime_artifacts(),
-            "new-generation",
-        );
+            &sample_runtime_artifacts());
 
         assert!(result.is_err());
         assert_eq!(
@@ -777,7 +912,7 @@
         let config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         fs::write(
             lqos_directory.join("ShapedDevices.csv"),
@@ -802,6 +937,7 @@
         .expect("circuit_anchors.json should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -858,7 +994,7 @@
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         config.splynx_integration.enable_splynx = true;
         write_runtime_json_fixture(
@@ -985,6 +1121,7 @@
         .expect("override file should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -1029,12 +1166,135 @@
 
 
     #[test]
+    fn shaping_inputs_fold_all_overrides_uniformly() {
+        // Phase C S4: ONE ingest contract. The full override set (persistent
+        // devices + every adjustment, removals included) folds uniformly now
+        // that the manual pair is compiled through the same import; the old
+        // legacy-DIY rate-only scoping rail retired with the mode.
+        let lqos_directory = unique_temp_dir("lqos-topology-legacy-rate-overrides");
+        let mut config = Config {
+            lqos_directory: lqos_directory.to_string_lossy().to_string(),
+            state_directory: None,
+            ..test_config()
+        };
+        // No integration flags: config stays in legacy-DIY mode.
+        config.splynx_integration.enable_splynx = false;
+        fs::write(
+            lqos_directory.join("ShapedDevices.csv"),
+            concat!(
+                "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n",
+                "\"circuit-1\",\"Circuit 1\",\"device-1\",\"Device 1\",\"Tower 1\",\"\",\"100.64.0.1/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+                "\"circuit-2\",\"Circuit 2\",\"device-2\",\"Device 2\",\"Tower 1\",\"\",\"100.64.0.2/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
+            ),
+        )
+        .expect("ShapedDevices.csv should write");
+        fs::write(
+            lqos_directory.join("lqos_overrides.json"),
+            serde_json::to_string_pretty(&json!({
+                "persistent_devices": [
+                    {
+                        "circuit_id": "circuit-3",
+                        "circuit_name": "Circuit 3",
+                        "device_id": "device-3",
+                        "device_name": "Device 3",
+                        "parent_node": "Tower 1",
+                        "mac": "",
+                        "ipv4": [],
+                        "ipv6": [],
+                        "download_min_mbps": 5.0,
+                        "upload_min_mbps": 5.0,
+                        "download_max_mbps": 50.0,
+                        "upload_max_mbps": 50.0,
+                        "comment": "",
+                        "sqm_override": null
+                    }
+                ],
+                "circuit_adjustments": [
+                    {
+                        "type": "circuit_adjust_speed",
+                        "circuit_id": "circuit-1",
+                        "min_download_bandwidth": 0.01,
+                        "max_download_bandwidth": 0.01,
+                        "min_upload_bandwidth": 0.01,
+                        "max_upload_bandwidth": 0.01
+                    },
+                    {
+                        "type": "remove_circuit",
+                        "circuit_id": "circuit-2"
+                    }
+                ],
+                "network_adjustments": []
+            }))
+            .expect("override json should serialize"),
+        )
+        .expect("override file should write");
+
+        let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
+            effective: TopologyEffectiveStateFile {
+                schema_version: 1,
+                generated_unix: Some(1),
+                canonical_generated_unix: Some(1),
+                health_generated_unix: Some(1),
+                nodes: Vec::new(),
+            },
+            ui_state: TopologyEditorStateFile {
+                schema_version: 1,
+                source: "test".to_string(),
+                generated_unix: Some(1),
+                ingress_identity: None,
+                nodes: Vec::new(),
+            },
+            effective_network: Some(json!({
+                "Tower 1": {
+                    "id": "tower-1",
+                    "children": {}
+                }
+            })),
+        };
+
+        let shaping_inputs = build_shaping_inputs(&config, &artifacts)
+            .expect("shaping inputs should build")
+            .expect("shaping inputs should exist");
+
+        // circuit-1 folded the suspend-floor override.
+        let circuit_one = shaping_inputs
+            .circuits
+            .iter()
+            .find(|circuit| circuit.circuit_id == "circuit-1")
+            .expect("expected circuit-1");
+        assert_eq!(circuit_one.download_min_mbps, 0.01);
+        assert_eq!(circuit_one.download_max_mbps, 0.01);
+        assert_eq!(circuit_one.upload_min_mbps, 0.01);
+        assert_eq!(circuit_one.upload_max_mbps, 0.01);
+
+        // The removal adjustment folds: circuit-2 is gone under the unified
+        // contract.
+        assert!(
+            !shaping_inputs
+                .circuits
+                .iter()
+                .any(|circuit| circuit.circuit_id == "circuit-2"),
+            "the unified contract folds circuit removals"
+        );
+
+        // The persistent device materializes under the unified contract.
+        assert!(
+            shaping_inputs
+                .circuits
+                .iter()
+                .any(|circuit| circuit.circuit_id == "circuit-3"),
+            "the unified contract folds persistent devices"
+        );
+    }
+
+    #[test]
     fn shaping_inputs_reparent_override_clears_stale_csv_anchor() {
         let lqos_directory = unique_temp_dir("lqos-topology-reparent-clears-anchor");
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         config.splynx_integration.enable_splynx = true;
         let shaped_device = json!({
@@ -1115,6 +1375,7 @@
         .expect("override file should write");
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),
@@ -1168,7 +1429,7 @@
         let mut config = Config {
             lqos_directory: lqos_directory.to_string_lossy().to_string(),
             state_directory: None,
-            ..Config::default()
+            ..test_config()
         };
         config.uisp_integration.enable_uisp = true;
         write_runtime_json_fixture(
@@ -1254,6 +1515,7 @@
         );
 
         let artifacts = EffectiveTopologyArtifacts {
+            canonical: TopologyCanonicalStateFile::default(),
             effective: TopologyEffectiveStateFile {
                 schema_version: 1,
                 generated_unix: Some(1),

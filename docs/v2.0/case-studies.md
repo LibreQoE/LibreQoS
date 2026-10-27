@@ -1,5 +1,7 @@
 # Case Studies (Anonymized)
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page collects qualitative, anonymized operator stories for adoption guidance.
 
 Anonymization policy used here:

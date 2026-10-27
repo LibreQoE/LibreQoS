@@ -137,9 +137,9 @@ fn apply_attachment_rate_overrides(
                 ) else {
                     continue;
                 };
-                if !option.can_override_rate {
-                    continue;
-                }
+                // An EXPLICIT override WINS: apply it for ANY non-AUTO
+                // attachment (the MIN model then uses it over the telemetry).
+                // `can_override_rate` is a source marker, not an apply gate.
 
                 option.download_bandwidth_mbps = Some(rate_override.download_bandwidth_mbps);
                 option.upload_bandwidth_mbps = Some(rate_override.upload_bandwidth_mbps);

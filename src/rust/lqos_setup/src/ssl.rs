@@ -102,7 +102,7 @@ pub fn ssl_status(config: &Config, preferred_host: Option<&str>) -> SslStatus {
 /// - updates `/etc/lqos.conf`
 /// - runs the Caddy installer helper if needed
 /// - writes `/etc/caddy/Caddyfile`
-/// - schedules a delayed service switch that restarts `caddy.service`, `lqosd.service`, and `lqos_api.service`
+/// - schedules a delayed service switch that restarts `caddy.service`, `libreqos-lqosd.service`, and `libreqos-api.service`
 pub fn enable_runtime_ssl(
     external_hostname: Option<String>,
     preferred_host: Option<&str>,
@@ -149,7 +149,7 @@ pub fn enable_runtime_ssl(
 /// - updates `/etc/lqos.conf`
 /// - removes the managed `/etc/caddy/Caddyfile`
 /// - runs the Caddy disable helper when LibreQoS owns that setup
-/// - schedules a delayed service switch that restarts `lqosd.service` and `lqos_api.service`
+/// - schedules a delayed service switch that restarts `libreqos-lqosd.service` and `libreqos-api.service`
 pub fn disable_runtime_ssl(preferred_host: Option<&str>) -> Result<SslActionOutcome> {
     let existing = (*lqos_config::load_config()?).clone();
     let ssl = existing
@@ -547,7 +547,7 @@ fn render_managed_caddyfile(plan: &SslRuntimePlan) -> String {
     format!(
         "\
 {{\n    admin off\n}}\n\n\
-{site_address} {{{tls_block}\n    encode zstd gzip\n    @apidocs path /api-docs /api-docs/*\n    handle @apidocs {{\n        reverse_proxy {api_upstream}\n    }}\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {api_upstream}\n    }}\n    reverse_proxy {web_upstream}\n}}\n",
+{site_address} {{{tls_block}\n    encode zstd gzip\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {api_upstream}\n    }}\n    reverse_proxy {web_upstream}\n}}\n",
         site_address = plan.caddy_site_address,
         tls_block = tls_block,
         api_upstream = API_UPSTREAM,
@@ -556,7 +556,7 @@ fn render_managed_caddyfile(plan: &SslRuntimePlan) -> String {
 }
 
 fn enable_runtime_command() -> &'static str {
-    "systemctl enable caddy.service && systemctl restart caddy.service && systemctl restart lqosd.service && systemctl restart lqos_api.service"
+    "systemctl enable caddy.service && systemctl restart caddy.service && systemctl restart libreqos-lqosd.service && systemctl restart libreqos-api.service"
 }
 
 fn enable_setup_command() -> &'static str {
@@ -564,7 +564,7 @@ fn enable_setup_command() -> &'static str {
 }
 
 fn disable_runtime_command() -> &'static str {
-    "systemctl stop caddy.service || true; systemctl disable caddy.service || true; systemctl restart lqosd.service && systemctl restart lqos_api.service"
+    "systemctl stop caddy.service || true; systemctl disable caddy.service || true; systemctl restart libreqos-lqosd.service && systemctl restart libreqos-api.service"
 }
 
 fn schedule_delayed_runtime_switch(command: &str) -> Result<()> {
@@ -644,7 +644,7 @@ mod tests {
         let plan = build_runtime_plan(Some("libreqos.example.com".to_string()), None);
         let caddyfile = render_managed_caddyfile(&plan);
         let expected = format!(
-            "{{\n    admin off\n}}\n\nlibreqos.example.com {{\n    encode zstd gzip\n    @apidocs path /api-docs /api-docs/*\n    handle @apidocs {{\n        reverse_proxy {API_UPSTREAM}\n    }}\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {API_UPSTREAM}\n    }}\n    reverse_proxy {WEB_UPSTREAM}\n}}\n"
+            "{{\n    admin off\n}}\n\nlibreqos.example.com {{\n    encode zstd gzip\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {API_UPSTREAM}\n    }}\n    reverse_proxy {WEB_UPSTREAM}\n}}\n"
         );
         assert_eq!(caddyfile, expected);
     }
@@ -766,11 +766,11 @@ mod tests {
         let command = super::enable_runtime_command();
 
         assert!(command.contains("systemctl restart caddy.service"));
-        assert!(command.contains("systemctl restart lqosd.service"));
-        assert!(command.contains("systemctl restart lqos_api.service"));
+        assert!(command.contains("systemctl restart libreqos-lqosd.service"));
+        assert!(command.contains("systemctl restart libreqos-api.service"));
         assert!(
-            command.find("systemctl restart lqosd.service")
-                < command.find("systemctl restart lqos_api.service")
+            command.find("systemctl restart libreqos-lqosd.service")
+                < command.find("systemctl restart libreqos-api.service")
         );
     }
 
@@ -779,11 +779,11 @@ mod tests {
         let command = super::disable_runtime_command();
 
         assert!(command.contains("systemctl disable caddy.service"));
-        assert!(command.contains("systemctl restart lqosd.service"));
-        assert!(command.contains("systemctl restart lqos_api.service"));
+        assert!(command.contains("systemctl restart libreqos-lqosd.service"));
+        assert!(command.contains("systemctl restart libreqos-api.service"));
         assert!(
-            command.find("systemctl restart lqosd.service")
-                < command.find("systemctl restart lqos_api.service")
+            command.find("systemctl restart libreqos-lqosd.service")
+                < command.find("systemctl restart libreqos-api.service")
         );
     }
 }

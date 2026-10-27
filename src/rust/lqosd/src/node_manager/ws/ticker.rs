@@ -13,7 +13,6 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, warn};
 mod asn_top;
-mod bakery;
 mod cadence;
 mod circuit_capacity;
 mod endpoint_latlon;
@@ -34,7 +33,6 @@ mod top_flows;
 mod tree_capacity;
 mod tree_summary;
 mod tree_summary_l2;
-mod treeguard;
 
 use crate::system_stats::SystemStats;
 pub use network_tree::all_circuits;
@@ -529,16 +527,6 @@ async fn one_second_cadence(
             ticker_with_timeout(
                 "stormguard",
                 stormguard::stormguard_ticker(channels.clone(), bus_tx.clone())
-            ),
-            ticker_with_timeout("bakery_status", bakery::bakery_status(channels.clone())),
-            ticker_with_timeout("bakery_activity", bakery::bakery_activity(channels.clone())),
-            ticker_with_timeout(
-                "treeguard_status",
-                treeguard::treeguard_status(channels.clone())
-            ),
-            ticker_with_timeout(
-                "treeguard_activity",
-                treeguard::treeguard_activity(channels.clone())
             ),
             ticker_with_timeout(
                 "executive_dashboard_summary",

@@ -80,6 +80,78 @@
     -webkit-backdrop-filter: blur(10px);
 }
 
+/* `.67.1`: the right sidebar — Visual Settings + Data Filters + the full legend.
+   z-index below the details/unmapped overlays so a selection covers it. */
+.site-map-settings {
+    position: absolute;
+    z-index: 10;
+    right: 16px;
+    bottom: 16px;
+    width: min(340px, calc(100% - 32px));
+    max-height: min(70%, 420px);
+    padding: 12px 14px;
+    overflow-y: auto;
+    border: 1px solid var(--lqos-border);
+    background: color-mix(in srgb, var(--lqos-surface-solid) 92%, transparent);
+    border-radius: 14px;
+    box-shadow: var(--lqos-shadow-sm);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.site-map-section-title {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--bs-secondary-color);
+    margin: 12px 0 6px;
+}
+
+.site-map-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.82rem;
+    margin-bottom: 8px;
+}
+
+.site-map-field > span {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.site-map-field input[type="range"],
+.site-map-field input[type="number"],
+.site-map-field select {
+    width: 100%;
+}
+
+.site-map-field-row {
+    display: flex;
+    gap: 10px;
+}
+
+.site-map-field-row .site-map-field {
+    flex: 1 1 0;
+}
+
+.site-map-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82rem;
+    margin-bottom: 6px;
+}
+
+.site-map-legend-scale {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    color: var(--bs-secondary-color);
+    margin-top: 4px;
+}
+
 .site-map-mode-toggle {
     display: inline-flex;
     align-items: center;
@@ -329,12 +401,15 @@
         min-height: 460px;
     }
 
+    .site-map-settings,
     .site-map-legend,
     .site-map-details,
     .site-map-unmapped {
         position: static;
         width: 100%;
         margin-top: 10px;
+        bottom: auto;
+        overflow: visible;
     }
 
     .site-map-unmapped.is-open,
@@ -352,9 +427,10 @@
                 </div>
             </div>
         <div class="site-map-controls">
-            <div class="site-map-mode-toggle" role="group" aria-label="Site Map mode">
-                <button type="button" class="btn btn-sm btn-primary active" id="siteMapModeQoo">QoO</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="siteMapModeRtt">RTT</button>
+            <div class="site-map-mode-toggle" role="group" aria-label="Site Map render mode">
+                <button type="button" class="btn btn-sm btn-primary active" id="siteMapRenderHeatmap">Heatmap</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="siteMapRenderPoints">Points</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="siteMapRenderConnections">Connections</button>
             </div>
             <span class="site-map-divider" aria-hidden="true"></span>
             <span class="site-map-chip" id="siteMapStatusChip"><i class="fa fa-spinner fa-spin"></i> Waiting for data</span>
@@ -391,13 +467,21 @@
             <div class="site-map-metric-grid" id="siteMapDetailsGrid"></div>
         </div>
 
-        <div class="site-map-legend">
-            <div class="fw-semibold">Metric Gradient</div>
+        <div class="site-map-settings" id="siteMapSettings">
+            <div class="site-map-section-title">Legend</div>
+            <div class="fw-semibold" id="siteMapLegendTitle">RTT field (estimated · interpolated)</div>
             <div class="site-map-gradient" id="siteMapLegendGradient"></div>
-            <div class="site-map-legend-row">
-                <span id="siteMapLegendLow">Poor</span>
-                <span id="siteMapLegendHigh">Healthy</span>
+            <div class="site-map-legend-scale" id="siteMapLegendScale">
+                <span>Excellent</span><span>Good</span><span>Fair</span><span>High</span><span>Poor</span>
             </div>
+            <div class="site-map-legend-row">
+                <span id="siteMapLegendLow">Low</span>
+                <span id="siteMapLegendHigh">High</span>
+            </div>
+            <div class="text-muted" id="siteMapLegendStops" style="font-size:0.72rem;margin-top:4px;">fill = RTT at the configured thresholds · halo radius = site throughput</div>
+            <div class="site-map-empty mt-2" id="siteMapLegendCaveat">Halo size follows live throughput; a cell shows its nearest site's RTT. No halo = basemap.</div>
+            <div class="site-map-empty mt-2" id="siteMapFieldCaveat">Estimated (interpolated) RTT field — an IDW weighted MEAN of the 12 nearest sites (a model, not measured between them; not a median). Smoothed to a continuous surface (a length-scale damps the per-site peaks); coarse when sites are sparse. Each site's glow radius scales with its live throughput; the RTT color follows resolveRttThresholds(). Mercator-aligned to the markers (within one cell).</div>
+            <div class="site-map-empty mt-2" id="siteMapFieldNotice" style="display:none;">No value field — no site has a finite live latency sample yet. Showing labels only (the smoothed field needs at least one RTT).</div>
         </div>
     </div>
 </div>

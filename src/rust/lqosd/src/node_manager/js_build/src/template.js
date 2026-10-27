@@ -5,6 +5,9 @@ import {initColorBlind} from "./helpers/colorblind";
 import {listenOnceMatchingWithTimeout as listenWsOnceMatchingWithTimeout} from "./pubsub/listeners";
 import {get_ws_client} from "./pubsub/ws";
 import {clearOperationalNetworkModeStorage} from "./config/network_mode_storage.mjs";
+import {schedulerDegradedReason as renderDegradedReason} from "./scheduler_summary_reason.mjs";
+import {clampSchedulerPercent, schedulerProgressPercent, schedulerTimingParts} from "./scheduler_progress.mjs";
+import {isAdminRole} from "./circuit_admin_actions.mjs";
 
 const wsClient = get_ws_client();
 const listenOnce = (eventName, handler) => {
@@ -45,30 +48,22 @@ let schedulerModalInstance = null;
 let cachedSchedulerDetailsData = null;
 let cachedQueueModeConfig = null;
 
-function clampSchedulerPercent(value) {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.max(0, Math.min(100, Math.round(parsed)));
-}
-
-function schedulerProgressPercent(progress) {
-    if (!progress) return 0;
-    if (progress.percent !== undefined && progress.percent !== null) {
-        return clampSchedulerPercent(progress.percent);
+// `.63.1` (#4): the elapsed/expected readout, formatted with the local
+// `schedulerDurationText`. The creep/weight logic lives in `scheduler_progress.mjs`.
+function schedulerTimingText(progress, nowMs = Date.now()) {
+    const parts = schedulerTimingParts(progress, nowMs);
+    if (!parts) {
+        return "";
     }
-    const stepCount = Number(progress.step_count);
-    const stepIndex = Number(progress.step_index);
-    if (!Number.isFinite(stepCount) || stepCount <= 0 || !Number.isFinite(stepIndex)) {
-        return 0;
-    }
-    const boundedStep = Math.max(1, Math.min(stepCount, stepIndex));
-    const completedSteps = progress.active ? boundedStep - 1 : boundedStep;
-    return clampSchedulerPercent((completedSteps / stepCount) * 100);
+    const etaText = parts.elapsedMs < parts.expectedMs
+        ? ` · ~${schedulerDurationText(parts.expectedMs - parts.elapsedMs)} left`
+        : "";
+    return `elapsed ${schedulerDurationText(parts.elapsedMs)}${etaText}`;
 }
 
 function schedulerProgressSummary(progress) {
     if (!progress) return "";
-    const label = progress.phase_label || progress.phase || "Scheduler activity";
+    const label = progress.phase_label || progress.phase || "System Health activity";
     const percent = schedulerProgressPercent(progress);
     const stepIndex = Number(progress.step_index);
     const stepCount = Number(progress.step_count);
@@ -143,25 +138,20 @@ function schedulerTransportWarningText(message, data) {
 function schedulerStaleStatusLabel(data) {
     const updatedText = schedulerUpdatedText(data);
     if (updatedText === "Update time unavailable") {
-        return "Scheduler status is stale";
+        return "System Health is stale";
     }
-    return `Scheduler status is stale. ${updatedText}.`;
+    return `System Health is stale. ${updatedText}.`;
 }
 
-function schedulerLooksRecovered(data) {
-    const progress = data?.progress || null;
-    if (!data?.available || !progress || progress.active) {
-        return false;
+function schedulerSummarySeverity(data) {
+    // The served worst-of severity. The frontend never classifies; it only
+    // renders the served value.
+    const severity = String(data?.summary_severity || "").trim().toLowerCase();
+    if (severity === "healthy" || severity === "degraded" || severity === "down"
+        || severity === "running" || severity === "idle") {
+        return severity;
     }
-    return String(progress.phase || "").trim() === "ready";
-}
-
-function schedulerHasLiveError(data) {
-    const errorText = schedulerErrorText(data);
-    if (!errorText) {
-        return false;
-    }
-    return !schedulerLooksRecovered(data);
+    return data?.available ? "healthy" : "idle";
 }
 
 function schedulerWaitsForTopologyRuntime(data) {
@@ -172,34 +162,65 @@ function schedulerWaitsForTopologyRuntime(data) {
     return String(progress.phase || "").trim() === "waiting_for_topology_runtime";
 }
 
+function schedulerIntegrationLabel(data) {
+    const name = String(data?.integration_name || "").trim();
+    return name || "Integration";
+}
+
+function schedulerIntegrationSubtitle(data) {
+    const name = schedulerIntegrationLabel(data);
+    const failures = Number(data?.consecutive_failures) || 0;
+    const detail = String(data?.integration_error_detail || "").trim();
+    const cls = String(data?.integration_error_class || "").trim();
+    const parts = [];
+    if (failures > 0) parts.push(`${failures} consecutive failure(s)`);
+    if (cls && cls !== "none") parts.push(cls.replace(/_/g, " "));
+    if (detail) parts.push(detail);
+    return parts.join(" · ") || `${name} import failing`;
+}
+
+// Render the SERVED `summary_reason` (backend-produced, paired with the
+// severity) into the degraded title/subtitle. The frontend never re-derives
+// the axis — attributing a boot-world degrade to the import is the defect.
+function schedulerDegraded(data) {
+    return renderDegradedReason(
+        data?.summary_reason,
+        schedulerIntegrationLabel(data),
+        schedulerIntegrationSubtitle(data),
+    );
+}
+
+function schedulerShapingSubtitle(data) {
+    const detail = String(data?.error || "").trim();
+    return detail || "Shaping stopped — the scheduler has not run recently";
+}
+
+function schedulerHealthySubtitle(data) {
+    if (data?.last_import_ok === true) {
+        return `Shaping active · ${schedulerIntegrationLabel(data)} last import ok`;
+    }
+    return "Shaping active";
+}
+
 function schedulerStateDescriptor(data) {
     const progress = data?.progress || null;
-    const hasError = schedulerHasLiveError(data);
-    const available = !!data?.available;
-    const active = !!progress?.active;
     const setupRequired = !!data?.setup_required;
+    const severity = schedulerSummarySeverity(data);
     const topologyRuntimeWait = schedulerWaitsForTopologyRuntime(data);
 
-    if (hasError) {
+    if (setupRequired || severity === "idle") {
         return {
-            tone: "danger",
-            badgeClass: "text-bg-danger",
-            label: "Error",
-            title: "Scheduler reported an internal error",
-            subtitle: progress?.phase_label || progress?.phase || "Scheduler needs attention",
-            ringTone: "tone-danger",
-            icon: "fa-triangle-exclamation",
-        };
-    }
-    if (setupRequired) {
-        return {
-            tone: "warning",
-            badgeClass: "text-bg-warning",
-            label: "Setup Required",
-            title: "Choose a topology source",
-            subtitle: data?.setup_message || "LibreQoS needs subscriber data before the scheduler can run",
-            ringTone: "tone-warning",
-            icon: "fa-list-check",
+            tone: "secondary",
+            badgeClass: "text-bg-secondary",
+            label: "Idle",
+            title: setupRequired
+                ? (data?.setup_message || "Choose a topology source")
+                : "No integration configured",
+            subtitle: setupRequired
+                ? (data?.setup_message || "LibreQoS needs subscriber data before the scheduler can run")
+                : "No integration configured.",
+            ringTone: "tone-loading",
+            icon: "fa-pause",
         };
     }
     if (data?.stale) {
@@ -207,10 +228,21 @@ function schedulerStateDescriptor(data) {
             tone: "warning",
             badgeClass: "text-bg-warning",
             label: "Stale",
-            title: "Scheduler status is stale",
-            subtitle: "Showing the last scheduler snapshot older than five minutes",
+            title: "System Health is stale",
+            subtitle: "Showing the last snapshot older than five minutes",
             ringTone: "tone-warning",
             icon: "fa-clock",
+        };
+    }
+    if (severity === "down") {
+        return {
+            tone: "danger",
+            badgeClass: "text-bg-danger",
+            label: "Down",
+            title: progress?.phase_label || progress?.phase || "Shaping stopped",
+            subtitle: schedulerShapingSubtitle(data),
+            ringTone: "tone-danger",
+            icon: "fa-triangle-exclamation",
         };
     }
     if (topologyRuntimeWait) {
@@ -219,29 +251,41 @@ function schedulerStateDescriptor(data) {
             badgeClass: "text-bg-warning",
             label: "Deferred",
             title: progress?.phase_label || "Waiting for topology runtime",
-            subtitle: "Scheduler is waiting for topology runtime outputs",
+            subtitle: "Shaping is waiting for topology runtime outputs",
             ringTone: "tone-warning",
             icon: "fa-hourglass-half",
         };
     }
-    if (active) {
+    if (severity === "running") {
         return {
             tone: "info",
             badgeClass: "text-bg-info",
             label: "Running",
-            title: progress?.phase_label || progress?.phase || "Scheduler is running",
+            title: progress?.phase_label || progress?.phase || "Import in progress",
             subtitle: "Work is in progress right now",
             ringTone: "tone-progress",
             icon: "fa-arrows-rotate",
         };
     }
-    if (available) {
+    if (severity === "degraded") {
+        const degraded = schedulerDegraded(data);
+        return {
+            tone: "warning",
+            badgeClass: "text-bg-warning",
+            label: "Degraded",
+            title: degraded.title,
+            subtitle: degraded.subtitle,
+            ringTone: "tone-warning",
+            icon: "fa-triangle-exclamation",
+        };
+    }
+    if (severity === "healthy") {
         return {
             tone: "success",
             badgeClass: "text-bg-success",
-            label: "Idle",
-            title: progress?.phase_label || progress?.phase || "Scheduler ready",
-            subtitle: "No active scheduler work at the moment",
+            label: "Healthy",
+            title: "Shaping active",
+            subtitle: schedulerHealthySubtitle(data),
             ringTone: "tone-success",
             icon: "fa-check",
         };
@@ -250,8 +294,8 @@ function schedulerStateDescriptor(data) {
         tone: "warning",
         badgeClass: "text-bg-warning",
         label: "Starting",
-        title: "Scheduler is not ready yet",
-        subtitle: progress?.phase_label || progress?.phase || "Waiting for scheduler status",
+        title: "System Health is not ready yet",
+        subtitle: progress?.phase_label || progress?.phase || "Waiting for status",
         ringTone: "tone-warning",
         icon: "fa-clock",
     };
@@ -304,39 +348,216 @@ function schedulerActivityItems(output, error, data) {
         .reverse();
 }
 
+function schedulerAgeText(unixTs) {
+    const ts = Number(unixTs);
+    if (!Number.isFinite(ts) || ts <= 0) return "time unknown";
+    const now = Math.floor(Date.now() / 1000);
+    const delta = now - ts;
+    if (delta < 5) return "just now";
+    if (delta < 60) return `${delta}s ago`;
+    if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+    if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+    return `${Math.floor(delta / 86400)}d ago`;
+}
+
+function schedulerDurationText(ms) {
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n < 0) return "—";
+    if (n < 1000) return `${Math.round(n)}ms`;
+    return `${(n / 1000).toFixed(1)}s`;
+}
+
+function schedulerSummaryLine(data, descriptor) {
+    const severity = schedulerSummarySeverity(data);
+    if (severity === "degraded") {
+        return schedulerDegraded(data).subtitle;
+    }
+    if (severity === "down") {
+        return schedulerShapingSubtitle(data);
+    }
+    if (severity === "running") {
+        return "Import in progress";
+    }
+    if (severity === "idle") {
+        return data?.setup_required
+            ? (data?.setup_message || "Setup required")
+            : "No integration configured";
+    }
+    return schedulerHealthySubtitle(data);
+}
+
+function schedulerPanelRow(label, value) {
+    return `<div class="lqos-scheduler-panel-row d-flex justify-content-between py-1">
+        <span class="text-secondary">${escapeHtml(label)}</span>
+        <span class="text-end">${escapeHtml(value)}</span>
+    </div>`;
+}
+
+function schedulerShapingStateText(data) {
+    const severity = schedulerSummarySeverity(data);
+    if (severity === "down") return "Stopped";
+    if (severity === "running") return "Applying";
+    if (data?.topology_source === "last_known_good") return "Active (last-known-good)";
+    if (data?.topology_source === "fresh") return "Active (fresh topology)";
+    return "Active";
+}
+
+// AVAIL (CARD v3_availability_hardening_card §7 b4): the SEPARATE boot-world
+// tier the bridge reports (the world it is actually shaping). Independent of
+// `topology_source` (the import axis); "unknown" when no Supervisor report.
+function schedulerBootWorldTierText(data) {
+    switch (data?.boot_world_tier) {
+        case "fresh": return "Fresh";
+        case "last_known_good": return "Last-known-good";
+        case "bootstrap_trunk": return "Bootstrap trunk (degraded)";
+        case "pass_through": return "Pass-through (DEGRADED)";
+        default: return "unknown";
+    }
+}
+
+// The §7 b7(ii) latch names: they live on the bridge health report
+// (`degraded_subsystems`), surfaced via `WsRequest::BridgeHealthStatus` — this
+// is that JOIN, cached so the System Health modal can name the latch.
+function schedulerBootWorldLatchText() {
+    const degraded = lastBridgeHealthData?.report?.degraded_subsystems;
+    if (Array.isArray(degraded) && degraded.length) {
+        return degraded.join("/");
+    }
+    return "none";
+}
+
+function schedulerShapingPanelMarkup(data) {
+    const generation = String(data?.dataplane_generation || "").trim();
+    const genText = generation ? generation.slice(0, 12) : "unknown";
+    const leaves = Number(data?.leaf_count);
+    const leavesText = Number.isFinite(leaves) ? String(leaves) : "—";
+    const applied = data?.applied_at ? schedulerAgeText(data.applied_at) : "unknown";
+    return `
+        <div class="lqos-scheduler-panel border rounded p-3 h-100">
+            <h3 class="lqos-scheduler-section-title">SHAPING</h3>
+            ${schedulerPanelRow("State", schedulerShapingStateText(data))}
+            ${schedulerPanelRow("Boot world", schedulerBootWorldTierText(data))}
+            ${schedulerPanelRow("Latched", schedulerBootWorldLatchText())}
+            ${schedulerPanelRow("Generation", genText)}
+            ${schedulerPanelRow("Leaves", leavesText)}
+            ${schedulerPanelRow("Applied", applied)}
+        </div>`;
+}
+
+function schedulerIntegrationPanelMarkup(data) {
+    const name = schedulerIntegrationLabel(data);
+    const hasIntegration = !!data?.integration_name || data?.last_import_ok === true || data?.last_import_ok === false;
+    if (!hasIntegration) {
+        return `
+        <div class="lqos-scheduler-panel border rounded p-3 h-100">
+            <h3 class="lqos-scheduler-section-title">INTEGRATION</h3>
+            <p class="text-secondary mb-0">No integration configured.</p>
+        </div>`;
+    }
+    const ok = data?.last_import_ok;
+    const stateText = ok === true ? "Import ok" : ok === false ? "Import failing" : "No import yet";
+    const ageText = data?.last_import_at ? schedulerAgeText(data.last_import_at) : "—";
+    const durationText = schedulerDurationText(data?.last_import_ms);
+    const cls = String(data?.integration_error_class || "").trim();
+    const classText = cls && cls !== "none" ? cls.replace(/_/g, " ") : "none";
+    const failures = Number(data?.consecutive_failures) || 0;
+    return `
+        <div class="lqos-scheduler-panel border rounded p-3 h-100">
+            <h3 class="lqos-scheduler-section-title">INTEGRATION · ${escapeHtml(name)}</h3>
+            ${schedulerPanelRow("State", stateText)}
+            ${schedulerPanelRow("Last import", ageText)}
+            ${schedulerPanelRow("Duration", durationText)}
+            ${schedulerPanelRow("Consecutive failures", String(failures))}
+            ${schedulerPanelRow("Cause", classText)}
+        </div>`;
+}
+
+const SCHEDULER_ERROR_HINTS = {
+    redirect_loop: "The portal returned a redirect loop. Verify the portal URL in Configuration ▶ UISP.",
+    auth: "The portal rejected the credentials (401/403). Re-check the API token / credentials in Configuration ▶ UISP.",
+    unreachable: "The portal was unreachable (timeout/DNS). Check the URL, DNS, and reachability from this host.",
+    exited_unknown: "The integration exited with an unclassified error. Open the full log for the raw output.",
+    none: "No integration error is recorded.",
+};
+
+function schedulerWhatToCheckMarkup(data) {
+    const detail = String(data?.integration_error_detail || "").trim();
+    const cls = String(data?.integration_error_class || "").trim();
+    const runtimeError = String(data?.error || "").trim();
+    const failing = data?.last_import_ok === false;
+    if (!failing && !runtimeError) return "";
+    const hint = SCHEDULER_ERROR_HINTS[cls]
+        || (runtimeError ? "Shaping reported a runtime error. Open the full log for details." : "");
+    const detailMarkup = detail
+        ? `<pre class="lqos-scheduler-what-detail small mb-2">${escapeHtml(detail)}</pre>`
+        : "";
+    return `
+        <div class="lqos-scheduler-whatcard border rounded p-3 mt-3">
+            <h3 class="lqos-scheduler-section-title">WHAT TO CHECK</h3>
+            ${detailMarkup}
+            ${hint ? `<p class="mb-2">${escapeHtml(hint)}</p>` : ""}
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" disabled title="Retry is not available yet — the scheduler retries on its next cadence.">Retry import</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="schedulerOpenLog">Open full log</button>
+            </div>
+        </div>`;
+}
+
+function schedulerRecentRunsMarkup(data) {
+    const runs = Array.isArray(data?.recent_runs) ? data.recent_runs.slice().reverse() : [];
+    const body = runs.length
+        ? runs.map(run => {
+            const when = run?.at
+                ? new Date(Number(run.at) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                : "—";
+            const result = run?.ok ? "ok" : "failed";
+            const tone = run?.ok ? "text-success" : "text-danger";
+            return `<div class="lqos-scheduler-run-row d-flex justify-content-between py-1">
+                <span>${escapeHtml(when)}</span>
+                <span class="${tone}">${escapeHtml(result)}</span>
+                <span class="text-secondary">${escapeHtml(schedulerDurationText(run?.ms))}</span>
+            </div>`;
+        }).join("")
+        : `<p class="text-secondary mb-0">No runs recorded yet.</p>`;
+    return `
+        <div class="lqos-scheduler-runs-card border rounded p-3 mt-3">
+            <h3 class="lqos-scheduler-section-title">RECENT RUNS</h3>
+            ${body}
+        </div>`;
+}
+
+function schedulerIdleLine(data) {
+    if (data?.last_import_ms !== null && data?.last_import_ms !== undefined && Number.isFinite(Number(data.last_import_ms))) {
+        return `Last run completed in ${schedulerDurationText(data.last_import_ms)}.`;
+    }
+    return "No active scheduler work at the moment.";
+}
+
 function renderSchedulerDetails(data, options = {}) {
     const progress = data?.progress || null;
     const descriptor = schedulerStateDescriptor(data);
-    const liveError = schedulerHasLiveError(data) ? schedulerErrorText(data) : "";
-    const historicalError = !liveError ? schedulerErrorText(data) : "";
-    const percent = progress ? schedulerProgressPercent(progress) : (data?.available ? 100 : 0);
-    const phaseLabel = progress?.phase_label || progress?.phase || descriptor.title;
+    const liveError = schedulerErrorText(data);
+    const nowMs = Date.now();
+    const percent = progress ? schedulerProgressPercent(progress, nowMs) : (data?.available ? 100 : 0);
     const stepCount = Number(progress?.step_count);
     const stepIndex = Number(progress?.step_index);
     const stepText = Number.isFinite(stepIndex) && Number.isFinite(stepCount) && stepCount > 0
         ? `Step ${stepIndex} of ${stepCount}`
         : "No active step reported";
     const updatedText = schedulerUpdatedText(data);
-    const availabilityText = data?.setup_required
-        ? "Setup Required"
-        : data?.stale
-            ? "Stale"
-            : schedulerWaitsForTopologyRuntime(data)
-                ? "Deferred"
-            : (data?.available ? "Healthy" : "Unavailable");
-    const recentResult = schedulerSetupMessage(data) || summarizeSchedulerOutput(data?.output, historicalError || liveError);
-    const activity = schedulerActivityItems(data?.output, historicalError || liveError, data);
     let progressMeta = "Waiting for activity";
     if (options.transportWarning) {
-        progressMeta = "Showing cached scheduler details while the UI reconnects";
+        progressMeta = "Showing cached System Health while the UI reconnects";
     } else if (data?.setup_required) {
         progressMeta = "Complete runtime setup to enable scheduler work";
     } else if (schedulerWaitsForTopologyRuntime(data)) {
         progressMeta = "The next shaping update is waiting for topology runtime outputs";
     } else if (progress?.active) {
         progressMeta = `${percent}% complete`;
-    } else if (descriptor.label === "Idle") {
-        progressMeta = "Last run complete";
+        const timing = schedulerTimingText(progress, nowMs);
+        if (timing) {
+            progressMeta += ` · ${timing}`;
+        }
     }
     const setupAlert = data?.setup_required
         ? `<div class="alert alert-warning mt-3 mb-0" role="alert"><i class="fa fa-list-check me-2"></i>${escapeHtml(schedulerSetupMessage(data) || "Choose a topology source in Complete Setup before expecting scheduler activity.")}</div>`
@@ -347,13 +568,25 @@ function renderSchedulerDetails(data, options = {}) {
     const alertMarkup = liveError
         ? `<div class="alert alert-danger mt-3 mb-0" role="alert"><i class="fa fa-triangle-exclamation me-2"></i>${escapeHtml(liveError)}</div>`
         : "";
-    const activityMarkup = activity.length
-        ? activity.map(line => `
-            <div class="lqos-scheduler-activity-item">
-                <i class="fa fa-angle-right" aria-hidden="true"></i>
-                <div>${escapeHtml(line)}</div>
-            </div>`).join("")
-        : `<p class="lqos-scheduler-empty">No recent scheduler output recorded.</p>`;
+    const summaryLine = schedulerSummaryLine(data, descriptor);
+    const shapingPanel = schedulerShapingPanelMarkup(data);
+    const integrationPanel = schedulerIntegrationPanelMarkup(data);
+    const whatToCheck = schedulerWhatToCheckMarkup(data);
+    const runsMarkup = schedulerRecentRunsMarkup(data);
+    const progressMarkup = progress?.active
+        ? `<div class="lqos-scheduler-progress-card">
+            <div class="lqos-scheduler-progress-topline">
+                <div>
+                    <h3 class="lqos-scheduler-progress-title">${escapeHtml(stepText)}</h3>
+                    <p class="lqos-scheduler-progress-meta mb-0">${escapeHtml(progressMeta)}</p>
+                </div>
+                <div class="fw-semibold">${escapeHtml(`${percent}%`)}</div>
+            </div>
+            <div class="progress lqos-scheduler-progress-bar" role="progressbar" aria-label="Import progress" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar ${schedulerProgressBarClass(descriptor)}" style="width: ${percent}%"></div>
+            </div>
+        </div>`
+        : `<div class="lqos-scheduler-idle-line text-secondary small mt-3">${escapeHtml(schedulerIdleLine(data))}</div>`;
 
     return `
         <div class="lqos-scheduler-modal-summary">
@@ -365,49 +598,20 @@ function renderSchedulerDetails(data, options = {}) {
                     <span class="badge ${descriptor.badgeClass}">${escapeHtml(descriptor.label)}</span>
                     <h2 class="lqos-scheduler-modal-title">${escapeHtml(descriptor.title)}</h2>
                 </div>
-                <p class="lqos-scheduler-modal-subtitle">${escapeHtml(phaseLabel)}</p>
+                <p class="lqos-scheduler-modal-subtitle">${escapeHtml(summaryLine)}</p>
                 <div class="lqos-scheduler-modal-updated">${escapeHtml(updatedText)}</div>
             </div>
         </div>
         ${setupAlert}
         ${transportWarningMarkup}
         ${alertMarkup}
-        <div class="lqos-scheduler-progress-card">
-            <div class="lqos-scheduler-progress-topline">
-                <div>
-                    <h3 class="lqos-scheduler-progress-title">${escapeHtml(stepText)}</h3>
-                    <p class="lqos-scheduler-progress-meta mb-0">${escapeHtml(progressMeta)}</p>
-                </div>
-                <div class="fw-semibold">${escapeHtml(`${percent}%`)}</div>
-            </div>
-            <div class="progress lqos-scheduler-progress-bar" role="progressbar" aria-label="Scheduler progress" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
-                <div class="progress-bar ${schedulerProgressBarClass(descriptor)}" style="width: ${percent}%"></div>
-            </div>
-            <div class="lqos-scheduler-stat-grid">
-                <div class="lqos-scheduler-stat">
-                    <span class="lqos-scheduler-stat-label">Availability</span>
-                    <span class="lqos-scheduler-stat-value">${escapeHtml(availabilityText)}</span>
-                </div>
-                <div class="lqos-scheduler-stat">
-                    <span class="lqos-scheduler-stat-label">Current Phase</span>
-                    <span class="lqos-scheduler-stat-value">${escapeHtml(phaseLabel)}</span>
-                </div>
-                <div class="lqos-scheduler-stat">
-                    <span class="lqos-scheduler-stat-label">Progress</span>
-                    <span class="lqos-scheduler-stat-value">${escapeHtml(stepText)}</span>
-                </div>
-                <div class="lqos-scheduler-stat">
-                    <span class="lqos-scheduler-stat-label">Recent Result</span>
-                    <span class="lqos-scheduler-stat-value">${escapeHtml(recentResult)}</span>
-                </div>
-            </div>
+        <div class="row g-3 mt-1">
+            <div class="col-12 col-lg-6">${shapingPanel}</div>
+            <div class="col-12 col-lg-6">${integrationPanel}</div>
         </div>
-        <div class="lqos-scheduler-activity-card">
-            <h3 class="lqos-scheduler-section-title">Recent Activity</h3>
-            <div class="lqos-scheduler-activity-list">
-                ${activityMarkup}
-            </div>
-        </div>
+        ${whatToCheck}
+        ${runsMarkup}
+        ${progressMarkup}
         <details class="lqos-scheduler-debug-card">
             <summary class="lqos-scheduler-debug-toggle">Show raw scheduler details</summary>
             <pre class="lqos-scheduler-debug-pre">${escapeHtml(data?.details || "No raw scheduler details available.")}</pre>
@@ -425,20 +629,38 @@ function updateSchedulerModalBody(contentHtml) {
             details.open = true;
         }
     }
+    const openLog = body.querySelector('#schedulerOpenLog');
+    if (openLog) {
+        openLog.addEventListener('click', () => {
+            const details = body.querySelector('.lqos-scheduler-debug-card');
+            if (details) {
+                details.open = true;
+                details.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+        });
+    }
 }
 
 function renderSchedulerStatus(container, state, progress, labelOverride = null) {
     if (!container) return;
 
     let color = "text-secondary";
-    let label = "Scheduler status is loading";
-    const buttonText = "Scheduler";
+    let label = "System Health is loading";
+    const buttonText = "LibreQoS";
     let indicator = schedulerRingMarkup(12, "tone-loading", "fa-circle-notch fa-spin");
 
     if (state === "healthy") {
         color = "text-success";
-        label = "Scheduler is available";
+        label = "Shaping active and healthy";
         indicator = schedulerRingMarkup(100, "tone-success", "fa-check");
+    } else if (state === "degraded") {
+        color = "text-warning";
+        label = "Shaping active on last-known-good topology; integration failing";
+        indicator = schedulerRingMarkup(100, "tone-warning", "fa-triangle-exclamation");
+    } else if (state === "idle") {
+        color = "text-secondary";
+        label = "No integration configured";
+        indicator = schedulerRingMarkup(100, "tone-loading", "fa-pause");
     } else if (state === "progress") {
         color = "text-info";
         label = schedulerProgressSummary(progress);
@@ -449,19 +671,19 @@ function renderSchedulerStatus(container, state, progress, labelOverride = null)
         );
     } else if (state === "unavailable") {
         color = "text-warning";
-        label = "Scheduler is still unavailable";
+        label = "System Health is still unavailable";
         indicator = schedulerRingMarkup(100, "tone-warning", "fa-clock");
     } else if (state === "error") {
         color = "text-danger";
-        label = "Scheduler has an internal error";
+        label = "Shaping has an internal error";
         indicator = schedulerRingMarkup(100, "tone-danger", "fa-triangle-exclamation");
     } else if (state === "stale") {
         color = "text-warning";
-        label = "Scheduler status is stale";
+        label = "System Health is stale";
         indicator = schedulerRingMarkup(100, "tone-warning", "fa-clock");
     } else if (state === "deferred") {
         color = "text-warning";
-        label = labelOverride || "Scheduler is waiting for topology runtime";
+        label = labelOverride || "Shaping is waiting for topology runtime";
         indicator = schedulerRingMarkup(
             schedulerProgressPercent(progress),
             "tone-warning",
@@ -469,7 +691,7 @@ function renderSchedulerStatus(container, state, progress, labelOverride = null)
         );
     } else if (state === "setup") {
         color = "text-warning";
-        label = "Scheduler needs topology setup";
+        label = "System Health needs topology setup";
         indicator = schedulerRingMarkup(100, "tone-warning", "fa-list-check");
     }
     if (labelOverride) {
@@ -477,7 +699,7 @@ function renderSchedulerStatus(container, state, progress, labelOverride = null)
     }
 
     container.innerHTML = `
-        <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${color} lqos-scheduler-link" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
+        <button class="nav-link btn btn-link text-start w-100 border-0 ${color} lqos-scheduler-link" type="button" id="schedulerStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(label)}">
             ${indicator} <span>${escapeAttr(buttonText)}</span>
         </button>`;
 
@@ -519,7 +741,7 @@ function loadSchedulerStatus(force = false) {
                     container,
                     "stale",
                     cachedSchedulerStatusData.progress || null,
-                    schedulerTransportWarningText("Scheduler status response was empty.", cachedSchedulerStatusData)
+                    schedulerTransportWarningText("System Health response was empty.", cachedSchedulerStatusData)
                 );
             } else {
                 renderSchedulerStatus(container, "unavailable", null);
@@ -529,22 +751,21 @@ function loadSchedulerStatus(force = false) {
         }
         const data = msg.data;
         cachedSchedulerStatusData = data;
-        const hasError = schedulerHasLiveError(data);
-        const isHealthy = !!data.available && !hasError;
+        const severity = schedulerSummarySeverity(data);
         const progress = data.progress || null;
         const progressActive = !!(progress && progress.active);
         const setupRequired = !!data.setup_required;
         const stale = !!data.stale;
         const elapsed = schedulerStatusFirstRequestedAt === null ? 0 : (Date.now() - schedulerStatusFirstRequestedAt);
 
-        if (hasError) {
-            renderSchedulerStatus(container, "error", progress);
+        if (setupRequired) {
+            renderSchedulerStatus(container, "setup", progress);
             scheduleNextSchedulerStatusPoll();
             return;
         }
 
-        if (setupRequired) {
-            renderSchedulerStatus(container, "setup", progress);
+        if (severity === "down") {
+            renderSchedulerStatus(container, "error", progress);
             scheduleNextSchedulerStatusPoll();
             return;
         }
@@ -555,24 +776,36 @@ function loadSchedulerStatus(force = false) {
             return;
         }
 
+        if (severity === "degraded") {
+            renderSchedulerStatus(container, "degraded", progress, schedulerDegraded(data).title);
+            scheduleNextSchedulerStatusPoll();
+            return;
+        }
+
         if (schedulerWaitsForTopologyRuntime(data)) {
             renderSchedulerStatus(
                 container,
                 "deferred",
                 progress,
-                progress?.phase_label || "Scheduler is waiting for topology runtime"
+                progress?.phase_label || "Shaping is waiting for topology runtime"
             );
             scheduleNextSchedulerStatusPoll();
             return;
         }
 
-        if (progressActive) {
+        if (severity === "running" || progressActive) {
             renderSchedulerStatus(container, "progress", progress);
             scheduleNextSchedulerStatusPoll();
             return;
         }
 
-        if (isHealthy) {
+        if (severity === "idle") {
+            renderSchedulerStatus(container, "idle", progress);
+            scheduleNextSchedulerStatusPoll();
+            return;
+        }
+
+        if (severity === "healthy" && data.available) {
             renderSchedulerStatus(container, "healthy", progress);
         } else {
             if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
@@ -590,7 +823,7 @@ function loadSchedulerStatus(force = false) {
                 container,
                 "stale",
                 cachedSchedulerStatusData.progress || null,
-                schedulerTransportWarningText("Scheduler status refresh timed out.", cachedSchedulerStatusData)
+                schedulerTransportWarningText("System Health refresh timed out.", cachedSchedulerStatusData)
             );
         } else if (elapsed < SCHEDULER_STATUS_STARTING_GRACE_MS) {
             renderSchedulerStatus(container, "loading", null);
@@ -609,6 +842,112 @@ function restartSchedulerStatusPolling() {
         schedulerStatusPollTimer = null;
     }
     loadSchedulerStatus(true);
+}
+
+// ---------------------------------------------------------------------------
+// E2: bridge Supervisor health widget (verdict over the raw report).
+// Hidden entirely when the DPDK bridge is not configured (data null).
+// ---------------------------------------------------------------------------
+
+const BRIDGE_HEALTH_POLL_MS = 5000;
+const BRIDGE_HEALTH_TIMEOUT_MS = 2500;
+let bridgeHealthPollTimer = null;
+let bridgeHealthRequestInFlight = false;
+// Last bridge health payload (the boot-world tier + the §7 b7(ii) latched
+// subsystem names), so the System Health modal can name the latch without a
+// second fetch. Populated by `renderBridgeHealthStatus`.
+let lastBridgeHealthData = null;
+
+function bridgeHealthDetailText(data) {
+    const parts = [];
+    if (data.report) {
+        parts.push("status: " + (data.report.status || "?"));
+        if (data.report.version) parts.push("v" + data.report.version);
+        parts.push("uptime " + Math.round((data.report.uptime_ms || 0) / 1000) + "s");
+        const workers = Array.isArray(data.report.workers) ? data.report.workers.length : 0;
+        parts.push(workers + " worker(s)");
+        const ackDrops = data.report.channel ? (data.report.channel.ack_drops || 0) : 0;
+        parts.push("ack drops " + ackDrops);
+        // AVAIL (CARD v3_availability_hardening_card §7 R1/b4): NAME the
+        // latched degraded subsystems and the live boot world, so a degraded
+        // stats-collector/publish-driver is distinguishable by name.
+        const degraded = Array.isArray(data.report.degraded_subsystems)
+            ? data.report.degraded_subsystems : [];
+        if (degraded.length) parts.push("degraded: " + degraded.join("/"));
+        if (data.report.topology_tier) parts.push("boot world: " + data.report.topology_tier);
+    }
+    parts.push("fail streak " + (data.consecutive_failures || 0) + "/" + (data.fails_to_down || 3));
+    if (data.last_success_unix) parts.push("last ok " + new Date(data.last_success_unix * 1000).toLocaleTimeString());
+    return parts.join(", ");
+}
+
+function renderBridgeHealthStatus(container, data) {
+    lastBridgeHealthData = data || null;
+    if (!container) return;
+    if (!data) {
+        container.classList.add("d-none");
+        return;
+    }
+    container.classList.remove("d-none");
+    const verdict = String(data.verdict || "pending");
+    let color = "text-secondary";
+    let icon = "fa-circle-notch fa-spin";
+    let label = "Bridge status pending";
+    if (verdict === "healthy") {
+        color = "text-success";
+        icon = "fa-check";
+        label = "Bridge is healthy";
+    } else if (verdict === "starting") {
+        color = "text-info";
+        icon = "fa-hourglass-half";
+        label = "Bridge is starting";
+    } else if (verdict === "degraded") {
+        color = "text-warning";
+        icon = "fa-triangle-exclamation";
+        label = "Bridge is degraded";
+    } else if (verdict === "down") {
+        color = "text-danger";
+        icon = "fa-xmark";
+        label = "Bridge is down";
+    }
+    const detail = bridgeHealthDetailText(data);
+    // L4 (§5b): the sidebar Bridge item LINKS to the Bridge page. The server
+    // template emits href="bridge.html"; this client re-render (every health
+    // poll) MUST match, or it overrides the link with "#" and the button stops
+    // navigating.
+    container.innerHTML = `
+        <a class="nav-link" href="bridge.html" id="bridgeStatusLink" aria-label="${escapeAttr(label)}" title="${escapeAttr(detail)}">
+            <i class="fa fa-fw fa-centerline ${icon} ${color}"></i> <span class="${color}">Bridge</span>
+        </a>`;
+}
+
+function scheduleNextBridgeHealthPoll(delayMs = BRIDGE_HEALTH_POLL_MS) {
+    if (bridgeHealthPollTimer) {
+        clearTimeout(bridgeHealthPollTimer);
+    }
+    bridgeHealthPollTimer = setTimeout(() => {
+        bridgeHealthPollTimer = null;
+        loadBridgeHealthStatus();
+    }, delayMs);
+}
+
+function loadBridgeHealthStatus() {
+    const container = document.getElementById('bridgeStatus');
+    if (!container) return;
+    if (bridgeHealthRequestInFlight) {
+        return;
+    }
+    bridgeHealthRequestInFlight = true;
+    listenWsOnceMatchingWithTimeout(wsClient, "BridgeHealthStatus", BRIDGE_HEALTH_TIMEOUT_MS, () => true, (msg) => {
+        bridgeHealthRequestInFlight = false;
+        renderBridgeHealthStatus(container, msg && msg.data ? msg.data : null);
+        scheduleNextBridgeHealthPoll();
+    }, () => {
+        bridgeHealthRequestInFlight = false;
+        // On transport timeout keep the last render; retry.
+        scheduleNextBridgeHealthPoll();
+    });
+    wsClient.send({ BridgeHealthStatus: {} });
 }
 
 function isSchedulerModalOpen() {
@@ -680,7 +1019,7 @@ function refreshSchedulerModalDetails(showLoading = false) {
             if (cachedSchedulerDetailsData) {
                 updateSchedulerModalBody(renderSchedulerDetails(cachedSchedulerDetailsData, {
                     transportWarning: schedulerTransportWarningText(
-                        "Scheduler details response was empty.",
+                        "System Health details response was empty.",
                         cachedSchedulerDetailsData
                     ),
                 }));
@@ -706,7 +1045,7 @@ function refreshSchedulerModalDetails(showLoading = false) {
         if (cachedSchedulerDetailsData) {
             updateSchedulerModalBody(renderSchedulerDetails(cachedSchedulerDetailsData, {
                 transportWarning: schedulerTransportWarningText(
-                    "Scheduler details refresh timed out.",
+                    "System Health details refresh timed out.",
                     cachedSchedulerDetailsData
                 ),
             }));
@@ -941,13 +1280,6 @@ function setupSearch() {
     $("#searchResults").on('click', (e) => { e.stopPropagation(); });
 }
 
-function setupReload() {
-    let link = document.getElementById("lnkReloadLqos");
-    link.onclick = () => {
-        triggerReloadLibreQoS("Reloading LibreQoS...");
-    }
-}
-
 function inferQueueMode(config) {
     const queues = config && config.queues ? config.queues : {};
     if (queues.queue_mode === "observe" || queues.queue_mode === "shape") {
@@ -966,6 +1298,10 @@ function renderQueueModeState(mode, busy = false) {
     shapeBtn.disabled = busy || mode === "shape";
     observeBtn.className = `btn btn-sm ${mode === "observe" ? "btn-warning" : "btn-outline-secondary"}`;
     shapeBtn.className = `btn btn-sm ${mode === "shape" ? "btn-success" : "btn-outline-secondary"}`;
+    const summary = document.getElementById("queueModeSummary");
+    if (summary) {
+        summary.textContent = mode === "observe" ? "Observe" : "Shape";
+    }
 }
 
 function triggerReloadLibreQoS(loadingMessage) {
@@ -989,18 +1325,21 @@ function loadObserveShapeControl() {
     listenOnce("AdminCheck", (msg) => {
         if (!msg || !msg.ok) {
             nav.classList.add("d-none");
+            updateMaintenanceNav();
             return;
         }
 
         listenOnce("GetConfig", (cfgMsg) => {
             if (!cfgMsg || !cfgMsg.data || !cfgMsg.data.config) {
                 nav.classList.add("d-none");
+                updateMaintenanceNav();
                 return;
             }
             cachedQueueModeConfig = cfgMsg.data.config;
             const mode = inferQueueMode(cachedQueueModeConfig);
             nav.classList.remove("d-none");
             renderQueueModeState(mode, false);
+            updateMaintenanceNav();
         });
         wsClient.send({ GetConfig: {} });
     });
@@ -1020,8 +1359,8 @@ function saveQueueModeAndReload(nextMode) {
 
     const confirmed = window.confirm(
         nextMode === "observe"
-            ? "Switch LibreQoS to Observe mode? LibreQoS will reload without the active shaping tree so you can gather a true baseline. Traffic may briefly pause during the reload, typically for about 5 seconds."
-            : "Switch LibreQoS to Shape mode? This reload will apply the LibreQoS shaping tree and begin active shaping. It may briefly interrupt traffic."
+            ? "Switch LibreQoS to Observe mode? LibreQoS will reload without the active shaping tree so you can gather a true baseline. The bridge keeps shaping; traffic is not interrupted."
+            : "Switch LibreQoS to Shape mode? This reload will apply the LibreQoS shaping tree and begin active shaping. The bridge keeps shaping; traffic is not interrupted."
     );
     if (!confirmed) {
         return;
@@ -1133,8 +1472,8 @@ function initUrgentIssues() {
         const cls = count > 0 ? 'text-danger' : 'text-secondary';
         const icon = count > 0 ? 'fa-bell' : 'fa-bell-slash';
         cont.innerHTML = `
-            <button class="nav-link btn btn-link text-start w-100 p-0 border-0 ${cls}" type="button" id="${linkId}" aria-label="Urgent issues${count > 0 ? `: ${count} active` : ': none active'}" title="Urgent issues">
-                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> Urgent Issues
+            <button class="nav-link btn btn-link text-start w-100 border-0 ${cls}" type="button" id="${linkId}" aria-label="Alerts${count > 0 ? `: ${count} active` : ': none active'}" title="Alerts">
+                <i class="fa fa-fw fa-centerline ${icon}" aria-hidden="true"></i> Alerts
                 <span id="${badgeId}" class="badge bg-danger ${count>0?'':'d-none'}">${count}</span>
             </button>`;
         $("#" + containerId).off("click").on("click", `#${linkId}`, (e) => {
@@ -1372,7 +1711,7 @@ function initUrgentIssues() {
                 const items = msg && msg.data ? msg.data.items || [] : [];
                 clearUrgentBusyState(holder);
                 if (items.length === 0) {
-                    holder.innerHTML = '<div class="text-center text-success" role="status" aria-live="polite" tabindex="-1">No urgent issues.</div>';
+                    holder.innerHTML = '<div class="text-center text-success" role="status" aria-live="polite" tabindex="-1">No alerts.</div>';
                     attachPendingUrgentActionError(holder);
                     setClearControlsDisabled(true);
                     holder.querySelector('[role="status"]')?.focus();
@@ -1416,9 +1755,9 @@ function initUrgentIssues() {
                     startUrgentClear({
                         responseEvent: 'UrgentClearResult',
                         requestPayload: (requestId) => ({ UrgentClear: { id, request_id: requestId } }),
-                        busyMessage: 'Acknowledging urgent issue...',
-                        failureMessage: 'Unable to acknowledge urgent issue.',
-                        timeoutMessage: 'Timed out while acknowledging urgent issue.',
+                        busyMessage: 'Acknowledging alert...',
+                        failureMessage: 'Unable to acknowledge alert.',
+                        timeoutMessage: 'Timed out while acknowledging alert.',
                     });
                 });
                 setClearControlsDisabled(clearActionInFlight());
@@ -1433,7 +1772,7 @@ function initUrgentIssues() {
                     setClearControlsDisabled(clearActionInFlight());
                     return;
                 }
-                showUrgentRetryState('Unable to refresh urgent issues.');
+                showUrgentRetryState('Unable to refresh alerts.');
                 setClearControlsDisabled(true);
             }
         );
@@ -1454,9 +1793,9 @@ function initUrgentIssues() {
         startUrgentClear({
             responseEvent: 'UrgentClearAllResult',
             requestPayload: (requestId) => ({ UrgentClearAll: { request_id: requestId } }),
-            busyMessage: 'Acknowledging urgent issues...',
-            failureMessage: 'Unable to acknowledge urgent issues.',
-            timeoutMessage: 'Timed out while acknowledging urgent issues.',
+            busyMessage: 'Acknowledging alerts...',
+            failureMessage: 'Unable to acknowledge alerts.',
+            timeoutMessage: 'Timed out while acknowledging alerts.',
         });
     });
 
@@ -1482,6 +1821,56 @@ function initUrgentIssues() {
     setInterval(poll, 30000);
 }
 
+function updateMaintenanceNav() {
+    const nav = document.getElementById("maintenanceNav");
+    const reload = document.getElementById("reloadLibreQoSItem");
+    const queue = document.getElementById("observeShapeNav");
+    if (!nav) return;
+    const show = (reload && !reload.classList.contains("d-none"))
+        || (queue && !queue.classList.contains("d-none"));
+    nav.classList.toggle("d-none", !show);
+}
+
+function markActiveNav() {
+    const page = (window.location.pathname.split("/").pop() || "index.html").toLowerCase();
+    document.querySelectorAll(".sidebar .nav-link[href]").forEach((link) => {
+        if (link.classList.contains("lqos-brand-link")) {
+            return;
+        }
+        const href = (link.getAttribute("href") || "").split("?")[0].split("#")[0].toLowerCase();
+        if (href && href === page) {
+            link.classList.add("active");
+        }
+    });
+}
+
+function initReloadLibreQoS() {
+    // v2's explicit standalone "Reload LibreQoS" sidebar action (the queue-mode
+    // switch reloads too). It asks the scheduler — the single apply owner — to
+    // re-sync the integration and apply now; the DPDK bridge is never restarted
+    // and traffic is not interrupted. An ADMIN affordance: hidden for read-only
+    // roles (the backend re-checks).
+    const item = document.getElementById("reloadLibreQoSItem");
+    const link = document.getElementById("reloadLibreQoSLink");
+    if (!item || !link) {
+        return;
+    }
+    if (!isAdminRole(window.USER_ROLE)) {
+        item.classList.add("d-none");
+        updateMaintenanceNav();
+        return;
+    }
+    item.classList.remove("d-none");
+    updateMaintenanceNav();
+    link.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (!window.confirm("Reload LibreQoS? This re-syncs the integration and applies now. The bridge keeps shaping; traffic is not interrupted.")) {
+            return;
+        }
+        triggerReloadLibreQoS("Re-syncing integration and applying…");
+    });
+}
+
 function initSchedulerTooltips() {
     // Initialize Bootstrap tooltips for scheduler status elements
     const schedulerElements = document.querySelectorAll('[data-bs-toggle="tooltip"]');
@@ -1496,15 +1885,19 @@ initRedact();
 initColorBlind();
 getDeviceCounts();
 setupSearch();
-setupReload();
 initObserveShapeToggle();
 setupDynamicUrls();
+initReloadLibreQoS();
+markActiveNav();
+updateMaintenanceNav();
 window.lqosInitUrgentIssues = initUrgentIssues;
 initSchedulerTooltips();
 restartSchedulerStatusPolling();
+loadBridgeHealthStatus();
 
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
         restartSchedulerStatusPolling();
+        loadBridgeHealthStatus();
     }
 });

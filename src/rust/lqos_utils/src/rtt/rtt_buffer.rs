@@ -305,13 +305,29 @@ impl RttBuffer {
 
     const BUCKET_TIME_NANOS: u64 = 10_000_000_000; // 10 seconds
 
-    /// Push one RTT reading into the histogram.
+    /// Push one RTT reading into the histogram (weight 1).
     ///
     /// - Updates both `RttBucket::Current` (windowed) and `RttBucket::Total` (lifetime) buckets.
     /// - The current bucket is time-windowed (10s) based on `last_seen` and is cleared/rotated when
     ///   the window elapses.
     /// - Bucket counts saturate on overflow.
     pub fn push(&mut self, reading: RttData, direction: FlowbeeEffectiveDirection, last_seen: u64) {
+        self.push_weighted(reading, direction, last_seen, 1);
+    }
+
+    /// §`lqos-74t.47.1.2`: push one reading with an integral **weight** (e.g. a flow's
+    /// packet count). Counts stay integral (`u32`, saturating) so serialized snapshots and
+    /// their consumers are byte-unperturbed; downstream `sample_count`/`percentile` become
+    /// packet-weighted. `weight` clamps to ≥ 1. Mirrors `push`'s rollover/worst/best/
+    /// `has_new_data`.
+    pub fn push_weighted(
+        &mut self,
+        reading: RttData,
+        direction: FlowbeeEffectiveDirection,
+        last_seen: u64,
+        weight: u32,
+    ) {
+        let weight = weight.max(1);
         self.last_seen = last_seen;
         let target_bucket = self.pick_bucket_mut(direction);
 
@@ -326,9 +342,9 @@ impl RttBuffer {
 
         let bucket_idx = RttBufferBucket::bucket(reading);
         target_bucket.current_bucket[bucket_idx] =
-            target_bucket.current_bucket[bucket_idx].saturating_add(1);
+            target_bucket.current_bucket[bucket_idx].saturating_add(weight);
         target_bucket.total_bucket[bucket_idx] =
-            target_bucket.total_bucket[bucket_idx].saturating_add(1);
+            target_bucket.total_bucket[bucket_idx].saturating_add(weight);
         target_bucket.has_new_data = true;
 
         if let Some(other_max) = target_bucket.worst_rtt {
@@ -455,6 +471,37 @@ impl RttBuffer {
 #[cfg(test)]
 mod tests {
     use super::{FlowbeeEffectiveDirection, RttBucket, RttBuffer, RttData};
+
+    /// §`lqos-74t.47.1.2`: `push_weighted` adds an integral weight to both buckets;
+    /// weight 0 clamps to 1 (counts stay integral).
+    #[test]
+    fn push_weighted_adds_integral_weight_to_both_buckets() {
+        let mut buffer = RttBuffer::default();
+        buffer.push_weighted(
+            RttData::from_nanos(5_000_000),
+            FlowbeeEffectiveDirection::Download,
+            0,
+            7,
+        );
+        assert_eq!(
+            buffer.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Download),
+            7
+        );
+        assert_eq!(
+            buffer.sample_count(RttBucket::Current, FlowbeeEffectiveDirection::Download),
+            7
+        );
+        buffer.push_weighted(
+            RttData::from_nanos(5_000_000),
+            FlowbeeEffectiveDirection::Upload,
+            0,
+            0,
+        );
+        assert_eq!(
+            buffer.sample_count(RttBucket::Total, FlowbeeEffectiveDirection::Upload),
+            1
+        );
+    }
 
     #[test]
     fn accumulate_direction_only_affects_selected_direction() {

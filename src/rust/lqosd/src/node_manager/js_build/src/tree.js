@@ -17,6 +17,7 @@ import {enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {
+    ancestorNodesFromTree,
     buildNodeLimitSummary,
     configuredMax,
     effectiveMax,
@@ -533,20 +534,6 @@ function renderHeaderStatusIcons(node) {
     clearDiv(target);
     if (!node) {
         return;
-    }
-    if (node.virtual === true) {
-        target.appendChild(buildStatusIcon(
-            "fa-ghost",
-            "text-secondary",
-            "Virtual node (logical only; not shaped in HTB)."
-        ));
-    }
-    if (node.runtime_virtualized === true) {
-        target.appendChild(buildStatusIcon(
-            "fa-layer-group",
-            "text-warning",
-            "TreeGuard runtime-virtualized node (physically bypassed in Bakery while preserved in the logical hierarchy)."
-        ));
     }
     if (isStormguardNode(node)) {
         target.appendChild(buildStatusIcon(
@@ -1148,6 +1135,7 @@ function renderEffectiveNowValue(node) {
     const summary = buildNodeLimitSummary({
         node,
         parentNode: immediateParentNode(node),
+        ancestorNodes: ancestorNodesFromTree(tree, node),
         rateOverrideData: nodeRateOverrideState.data,
         topologyOverrideData: nodeTopologyOverrideState.data,
     });
@@ -1487,6 +1475,14 @@ function buildChildrenMap() {
         }
         let node = tree[i][1];
         if (node.immediate_parent !== null) {
+            // Circuits are LEAVES of the shaping hierarchy, not tree
+            // nodes: they render in the attached-circuits panel of
+            // their parent, never as expandable children (driver demo
+            // finding 2026-09-08: "c1 shows as a node, but it's
+            // actually a circuit").
+            if (node.type === "circuit") {
+                continue;
+            }
             if (!childrenByParentId.has(node.immediate_parent)) {
                 childrenByParentId.set(node.immediate_parent, []);
             }
@@ -1681,18 +1677,6 @@ function buildRow(i, depth=0) {
     const statusWrap = document.createElement("div");
     statusWrap.classList.add("lqos-tree-row-statuses");
     statusWrap.appendChild(buildTreeRowStatusIcon(
-        "fa-ghost",
-        node.virtual === true,
-        "Virtual node: Active",
-        "Virtual node: Inactive",
-    ));
-    statusWrap.appendChild(buildTreeRowStatusIcon(
-        "fa-layer-group",
-        node.runtime_virtualized === true,
-        "TreeGuard runtime virtualization: Active",
-        "TreeGuard runtime virtualization: Inactive",
-    ));
-    statusWrap.appendChild(buildTreeRowStatusIcon(
         "fa-cloud-bolt",
         isStormguardNode(node),
         "StormGuard: Active",
@@ -1854,8 +1838,6 @@ function treeUpdate(msg) {
                 || tree[nodeId][1].subtree_site_count !== node.subtree_site_count
                 || tree[nodeId][1].subtree_circuit_count !== node.subtree_circuit_count
                 || tree[nodeId][1].type !== node.type
-                || tree[nodeId][1].virtual !== node.virtual
-                || tree[nodeId][1].runtime_virtualized !== node.runtime_virtualized
                 || tree[nodeId][1].name !== node.name) {
                 needsRebuild = true;
             }

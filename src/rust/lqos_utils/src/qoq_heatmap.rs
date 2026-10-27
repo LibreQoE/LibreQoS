@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::units::DownUpOrder;
 
 /// Heatmap block medians for QoQ (0..100) scores.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Allocative)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, Allocative)]
 pub struct QoqHeatmapBlocks {
     /// Per-minute medians for the download-direction QoO/QoQ score.
     ///

@@ -1,5 +1,7 @@
 # High Availability and Failure Domains
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This page describes a practical active/backup model for LibreQoS.
 
 ## Scope and Assumptions

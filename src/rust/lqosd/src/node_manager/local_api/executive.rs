@@ -24,7 +24,6 @@ pub enum ExecutiveMetric {
     Upload,
     Retransmit,
     Rtt,
-    Qoo,
 }
 
 /// Server-side sort modes for executive heatmap detail pages.
@@ -129,9 +128,22 @@ pub struct ExecutiveDashboardSummary {
     pub global_qoq: QoqHeatmapBlocks,
     pub top_download: Vec<ExecutiveDashboardMetricRow>,
     pub top_upload: Vec<ExecutiveDashboardMetricRow>,
+    /// `.64.3.2`: kind-scoped utilization lists for the dashboard widgets
+    /// (Sites+APs share the `Site` kind; `Asn` is excluded).
+    #[serde(default)]
+    pub top_download_sites: Vec<ExecutiveDashboardMetricRow>,
+    #[serde(default)]
+    pub top_upload_sites: Vec<ExecutiveDashboardMetricRow>,
+    #[serde(default)]
+    pub top_download_circuits: Vec<ExecutiveDashboardMetricRow>,
+    #[serde(default)]
+    pub top_upload_circuits: Vec<ExecutiveDashboardMetricRow>,
+    #[serde(default)]
+    pub top_retransmit_sites: Vec<ExecutiveDashboardMetricRow>,
     pub top_retransmit: Vec<ExecutiveDashboardMetricRow>,
+    #[serde(default)]
+    pub top_rtt_sites: Vec<ExecutiveDashboardMetricRow>,
     pub top_rtt: Vec<ExecutiveDashboardMetricRow>,
-    pub top_qoo: Vec<ExecutiveDashboardMetricRow>,
     pub oversubscribed_sites: Vec<ExecutiveOversubscribedSiteRow>,
     pub top_asns: Vec<ExecutiveTopAsnRow>,
 }
@@ -334,16 +346,6 @@ fn latest_value(row: &ExecutiveHeatmapPageRow, metric: &ExecutiveMetric) -> Opti
             .scalar_blocks
             .as_ref()
             .and_then(|blocks| blocks.values.iter().rev().flatten().copied().next()),
-        ExecutiveMetric::Qoo => row.split_blocks.as_ref().and_then(|blocks| {
-            let download = blocks.download.iter().rev().flatten().copied().next();
-            let upload = blocks.upload.iter().rev().flatten().copied().next();
-            match (download, upload) {
-                (Some(download), Some(upload)) => Some((download + upload) / 2.0),
-                (Some(download), None) => Some(download),
-                (None, Some(upload)) => Some(upload),
-                (None, None) => None,
-            }
-        }),
         ExecutiveMetric::Rtt => row
             .rtt_blocks
             .as_ref()
@@ -357,18 +359,6 @@ fn sample_count(row: &ExecutiveHeatmapPageRow, metric: &ExecutiveMetric) -> usiz
             .scalar_blocks
             .as_ref()
             .map(|blocks| blocks.values.iter().filter(|value| value.is_some()).count())
-            .unwrap_or(0),
-        ExecutiveMetric::Qoo => row
-            .split_blocks
-            .as_ref()
-            .map(|blocks| {
-                blocks
-                    .download
-                    .iter()
-                    .filter(|value| value.is_some())
-                    .count()
-                    .max(blocks.upload.iter().filter(|value| value.is_some()).count())
-            })
             .unwrap_or(0),
         ExecutiveMetric::Rtt => row
             .rtt_blocks

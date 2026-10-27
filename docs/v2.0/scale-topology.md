@@ -1,5 +1,7 @@
 # Scale Planning and Topology Design
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 This guide focuses on designing `network.json` and integration strategy choices for stable performance at scale.
 
 ## Core Design Principles

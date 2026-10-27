@@ -5,14 +5,13 @@
 #![warn(missing_docs)]
 use csv::ReaderBuilder;
 use lqos_bus::{
-    BakeryCapacityReportInterface, BlackboardSystem, BusRequest, BusResponse,
-    SchedulerProgressReport, TcHandle, UrgentSeverity, UrgentSource,
+    BlackboardSystem, BusRequest, BusResponse, IntegrationErrorClass, SchedulerIntegrationStatus,
+    SchedulerProgressReport, SchedulerRun, UrgentSeverity, UrgentSource,
 };
 use lqos_topology_compile::{
     CompiledTopologyBundle, ImportedTopologyBundle, TopologyCompileMode,
-    TopologyCompiledShapingFile, TopologyImportFile, compile_topology,
+    TopologyCompiledShapingFile, TopologyImportFile, compile_topology, parse_libreqos_network,
 };
-use lqos_utils::hex_string::read_hex_string;
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use nix::libc::getpid;
 use pyo3::exceptions::PyOSError;
@@ -25,9 +24,8 @@ use std::{
     path::{Path, PathBuf},
 };
 mod blocking;
-use anyhow::{Error, Result};
+use anyhow::Result;
 use blocking::{run_query, run_query_wait_for_bus};
-use lqos_bakery::estimate_full_reload_auto_qdisc_budget;
 use sysinfo::System;
 mod device_weights;
 use base64::Engine as _;
@@ -899,11 +897,7 @@ fn write_compiled_topology_outputs(
             "Unable to write topology parent candidates snapshot: {e}"
         ))
     })?;
-    compiled.editor.save(config).map_err(|e| {
-        PyOSError::new_err(format!(
-            "Unable to write topology editor state snapshot: {e}"
-        ))
-    })?;
+    // Rung 1.5 §1.3: topology_editor_state.json is never persisted.
     compiled.canonical.save(config).map_err(|e| {
         PyOSError::new_err(format!(
             "Unable to write topology canonical state snapshot: {e}"
@@ -918,40 +912,46 @@ fn write_compiled_topology_outputs(
             anchors_path.display()
         )));
     }
-    if !config_uses_topology_import_ingress(config) {
-        compiled
-            .shaped_devices
-            .write_csv("ShapedDevices.csv")
-            .map_err(|e| PyOSError::new_err(format!("Unable to write ShapedDevices.csv: {e}")))?;
-    }
     Ok(())
+}
+
+/// Atomically persists the topology canonical state from a JSON payload
+/// (Phase C S1b).
+///
+/// The scheduler used to write `topology_canonical_state.json` with a bare
+/// Python `open()`, bypassing the atomic write and the node validation. This
+/// door keeps the runtime file owned by the Rust saver: parse → validate →
+/// atomic rename.
+#[pyfunction]
+fn persist_topology_canonical_state(canonical_state_json: String) -> PyResult<()> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Err(PyOSError::new_err("Unable to load configuration"));
+    };
+    let state: lqos_config::TopologyCanonicalStateFile =
+        serde_json::from_str(&canonical_state_json).map_err(|e| {
+            PyOSError::new_err(format!("Unable to parse topology canonical state: {e}"))
+        })?;
+    state.save(config.as_ref()).map_err(|e| {
+        PyOSError::new_err(format!("Unable to write topology canonical state: {e}"))
+    })
 }
 
 /// Defines the Python module exports.
 /// All exported functions have to be listed here.
 #[pymodule]
-fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    ensure_rustls_crypto_provider().map_err(|e| PyOSError::new_err(e.to_string()))?;
-    m.add_class::<PyIpMapping>()?;
-    m.add_class::<BatchedCommands>()?;
+fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {    ensure_rustls_crypto_provider().map_err(|e| PyOSError::new_err(e.to_string()))?;
     m.add_class::<PyExceptionCpe>()?;
     m.add_class::<device_weights::DeviceWeightResponse>()?;
     m.add_function(wrap_pyfunction!(is_lqosd_alive, m)?)?;
-    m.add_function(wrap_pyfunction!(list_ip_mappings, m)?)?;
-    m.add_function(wrap_pyfunction!(clear_ip_mappings, m)?)?;
     m.add_function(wrap_pyfunction!(sync_lqosd_config_from_disk, m)?)?;
-    m.add_function(wrap_pyfunction!(delete_ip_mapping, m)?)?;
-    m.add_function(wrap_pyfunction!(add_ip_mapping, m)?)?;
     m.add_function(wrap_pyfunction!(validate_shaped_devices, m)?)?;
     m.add_function(wrap_pyfunction!(wait_for_bus_ready, m)?)?;
-    m.add_function(wrap_pyfunction!(xdp_ip_mapping_ready, m)?)?;
     m.add_function(wrap_pyfunction!(is_libre_already_running, m)?)?;
     m.add_function(wrap_pyfunction!(create_lock_file, m)?)?;
     m.add_function(wrap_pyfunction!(free_lock_file, m)?)?;
     // Unified configuration items
     m.add_function(wrap_pyfunction!(check_config, m)?)?;
     m.add_function(wrap_pyfunction!(sqm, m)?)?;
-    m.add_function(wrap_pyfunction!(fast_queues_fq_codel, m)?)?;
     m.add_function(wrap_pyfunction!(
         upstream_bandwidth_capacity_download_mbps,
         m
@@ -972,7 +972,6 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generated_pn_upload_mbps, m)?)?;
     m.add_function(wrap_pyfunction!(queues_available_override, m)?)?;
     m.add_function(wrap_pyfunction!(on_a_stick, m)?)?;
-    m.add_function(wrap_pyfunction!(topology_import_ingress_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(migrate_legacy_site_bandwidth_csv, m)?)?;
     m.add_function(wrap_pyfunction!(allowed_subnets, m)?)?;
     m.add_function(wrap_pyfunction!(ignore_subnets, m)?)?;
@@ -997,6 +996,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(splynx_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(splynx_strategy, m)?)?;
     m.add_function(wrap_pyfunction!(sonar_strategy, m)?)?;
+    m.add_function(wrap_pyfunction!(repair_runtime_state, m)?)?;
     m.add_function(wrap_pyfunction!(
         write_compiled_topology_from_legacy_artifacts,
         m
@@ -1009,6 +1009,7 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
         write_compiled_topology_from_python_graph_payload,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(persist_topology_canonical_state, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_key, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_url, m)?)?;
     m.add_function(wrap_pyfunction!(netzur_api_timeout, m)?)?;
@@ -1080,27 +1081,18 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(insight_topology_role, m)?)?;
     m.add_function(wrap_pyfunction!(promote_to_root_list, m)?)?;
     m.add_function(wrap_pyfunction!(client_bandwidth_multiplier, m)?)?;
-    m.add_function(wrap_pyfunction!(calculate_hash, m)?)?;
-    m.add_function(wrap_pyfunction!(calculate_topology_source_generation, m)?)?;
     m.add_function(wrap_pyfunction!(validated_runtime_shaping_inputs_path, m)?)?;
-    m.add_function(wrap_pyfunction!(calculate_shaping_inputs_generation, m)?)?;
-    m.add_function(wrap_pyfunction!(calculate_effective_network_generation, m)?)?;
+    m.add_function(wrap_pyfunction!(verify_published_shaping_generation, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_shaping_runtime_hash, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_progress, m)?)?;
+    m.add_function(wrap_pyfunction!(scheduler_integration_status, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_alive, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_error, m)?)?;
     m.add_function(wrap_pyfunction!(scheduler_output, m)?)?;
     m.add_function(wrap_pyfunction!(submit_urgent_issue, m)?)?;
     m.add_function(wrap_pyfunction!(clear_urgent_issue_by_identity, m)?)?;
-    m.add_function(wrap_pyfunction!(xdp_ip_mapping_capacity, m)?)?;
     m.add_function(wrap_pyfunction!(is_insight_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(log_info, m)?)?;
-    m.add_function(wrap_pyfunction!(treeguard_set_node_virtual_live, m)?)?;
-    m.add_function(wrap_pyfunction!(treeguard_get_node_virtual_status, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        treeguard_get_node_virtual_branch_state,
-        m
-    )?)?;
     m.add_function(wrap_pyfunction!(hash_to_i64, m)?)?;
     // Planner remote fetch/store for Insight integration
     m.add_function(wrap_pyfunction!(fetch_planner_remote, m)?)?;
@@ -1110,7 +1102,6 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(plan_top_level_cpu_bins, m)?)?;
     m.add_function(wrap_pyfunction!(plan_class_identities, m)?)?;
 
-    m.add_class::<Bakery>()?;
     Ok(())
 }
 
@@ -1127,52 +1118,6 @@ fn is_lqosd_alive(_py: Python) -> PyResult<bool> {
         }
     }
     Ok(false)
-}
-
-/// Provides a representation of an IP address mapping
-/// Available through python by field name.
-#[pyclass]
-pub struct PyIpMapping {
-    /// IP address or CIDR prefix string assigned to the flow mapping.
-    #[pyo3(get)]
-    pub ip_address: String,
-    /// Prefix length associated with `ip_address`.
-    #[pyo3(get)]
-    pub prefix_length: u32,
-    /// Linux traffic-control handle as `(major, minor)`.
-    #[pyo3(get)]
-    pub tc_handle: (u16, u16),
-    /// CPU index assigned to process traffic for this mapping.
-    #[pyo3(get)]
-    pub cpu: u32,
-}
-
-/// Returns a list of all IP mappings
-#[pyfunction]
-fn list_ip_mappings(_py: Python) -> PyResult<Vec<PyIpMapping>> {
-    let mut result = Vec::new();
-    if let Ok(reply) = run_query(vec![BusRequest::ListIpFlow]) {
-        for resp in reply.iter() {
-            if let BusResponse::MappedIps(map) = resp {
-                for mapping in map.iter() {
-                    result.push(PyIpMapping {
-                        ip_address: mapping.ip_address.clone(),
-                        prefix_length: mapping.prefix_length,
-                        tc_handle: mapping.tc_handle.get_major_minor(),
-                        cpu: mapping.cpu,
-                    });
-                }
-            }
-        }
-    }
-    Ok(result)
-}
-
-/// Clear all IP address to TC/CPU mappings
-#[pyfunction]
-fn clear_ip_mappings(_py: Python) -> PyResult<()> {
-    run_query(vec![BusRequest::ClearIpFlow]).unwrap();
-    Ok(())
 }
 
 /// Reloads `/etc/lqos.conf` from disk in the current process and pushes the same
@@ -1200,198 +1145,6 @@ fn sync_lqosd_config_from_disk(_py: Python) -> PyResult<()> {
     }
     lqos_config::clear_cached_config();
     Ok(())
-}
-
-/// Deletes an IP to CPU/TC mapping.
-///
-/// ## Arguments
-///
-/// * `ip_address`: The IP address to unmap.
-/// * `upload`: `true` if this needs to be applied to the upload map (for a split/stick setup)
-#[pyfunction]
-fn delete_ip_mapping(_py: Python, ip_address: String) -> PyResult<()> {
-    run_query(vec![
-        BusRequest::DelIpFlow {
-            ip_address: ip_address.clone(),
-            upload: false,
-        },
-        BusRequest::DelIpFlow {
-            ip_address,
-            upload: true,
-        },
-    ])
-    .unwrap();
-    Ok(())
-}
-
-/// Internal function
-/// Converts IP address arguments into an IP mapping request.
-fn parse_add_ip(
-    ip: &str,
-    classid: &str,
-    cpu: &str,
-    upload: bool,
-    circuit_id: &str,
-    device_id: &str,
-) -> Result<BusRequest> {
-    if !classid.contains(':') {
-        return Err(Error::msg(format!(
-            "Class id must be in the format (major):(minor), e.g. 1:12. Provided string: {classid}"
-        )));
-    }
-    let circuit_id = circuit_id.trim();
-    if circuit_id.is_empty() {
-        return Err(Error::msg("circuit_id is required"));
-    }
-    let device_id = device_id.trim();
-    if device_id.is_empty() {
-        return Err(Error::msg("device_id is required"));
-    }
-    Ok(BusRequest::MapIpToFlow {
-        ip_address: ip.to_string(),
-        tc_handle: TcHandle::from_string(classid)?,
-        cpu: read_hex_string(cpu)?, // Force HEX representation
-        circuit_id: lqos_utils::hash_to_i64(circuit_id) as u64,
-        device_id: lqos_utils::hash_to_i64(device_id) as u64,
-        upload,
-    })
-}
-
-/// Adds an IP address mapping
-#[pyfunction(signature = (ip, classid, cpu, upload, circuit_id, device_id))]
-fn add_ip_mapping(
-    ip: String,
-    classid: String,
-    cpu: String, // In HEX
-    upload: bool,
-    circuit_id: String,
-    device_id: String,
-) -> PyResult<()> {
-    let request = parse_add_ip(&ip, &classid, &cpu, upload, &circuit_id, &device_id);
-    if let Ok(request) = request {
-        let responses = run_query(vec![request]).map_err(|e| PyOSError::new_err(e.to_string()))?;
-        for response in responses {
-            if let BusResponse::Fail(message) = response {
-                return Err(PyOSError::new_err(message));
-            }
-        }
-        Ok(())
-    } else {
-        Err(PyOSError::new_err(request.err().unwrap().to_string()))
-    }
-}
-
-fn summarize_failure_examples(failures: &BTreeMap<String, usize>) -> String {
-    const MAX_EXAMPLES: usize = 3;
-    failures
-        .iter()
-        .take(MAX_EXAMPLES)
-        .map(|(message, count)| {
-            if *count > 1 {
-                format!("{message} (x{count})")
-            } else {
-                message.clone()
-            }
-        })
-        .collect::<Vec<String>>()
-        .join("; ")
-}
-
-#[pyclass]
-/// Collects IP mapping commands so they can be submitted to `lqosd` in batches.
-pub struct BatchedCommands {
-    batch: Vec<BusRequest>,
-}
-
-#[pymethods]
-impl BatchedCommands {
-    #[new]
-    /// Creates an empty command batch.
-    pub fn new() -> PyResult<Self> {
-        Ok(Self { batch: Vec::new() })
-    }
-
-    #[pyo3(signature = (ip, classid, cpu, upload, circuit_id, device_id))]
-    /// Queues an IP-to-flow mapping request for later submission.
-    pub fn add_ip_mapping(
-        &mut self,
-        ip: String,
-        classid: String,
-        cpu: String,
-        upload: bool,
-        circuit_id: String,
-        device_id: String,
-    ) -> PyResult<()> {
-        let request = parse_add_ip(&ip, &classid, &cpu, upload, &circuit_id, &device_id);
-        if let Ok(request) = request {
-            self.batch.push(request);
-            Ok(())
-        } else {
-            Err(PyOSError::new_err(request.err().unwrap().to_string()))
-        }
-    }
-
-    /// Queues a cache clear after the batch has finished applying mappings.
-    pub fn finish_ip_mappings(&mut self) -> PyResult<()> {
-        let request = BusRequest::ClearHotCache;
-        self.batch.push(request);
-        Ok(())
-    }
-
-    /// Returns the number of queued requests.
-    pub fn length(&self) -> PyResult<usize> {
-        Ok(self.batch.len())
-    }
-
-    /// Prints queued requests to stdout for debugging.
-    pub fn log(&self) -> PyResult<()> {
-        self.batch.iter().for_each(|c| println!("{c:?}"));
-        Ok(())
-    }
-
-    /// Sends queued requests to `lqosd` in chunks and returns how many were submitted.
-    pub fn submit(&mut self) -> PyResult<usize> {
-        const MAX_BATH_SIZE: usize = 512;
-        let len = self.batch.len();
-        let mut failed_requests = 0usize;
-        let mut failure_examples: BTreeMap<String, usize> = BTreeMap::new();
-        while !self.batch.is_empty() {
-            let batch_size = usize::min(MAX_BATH_SIZE, self.batch.len());
-            let batch: Vec<BusRequest> = self.batch.drain(0..batch_size).collect();
-            let responses = run_query(batch).map_err(|e| {
-                PyOSError::new_err(format!("IP mapping batch transport failed: {e}"))
-            })?;
-            responses.into_iter().for_each(|response| {
-                if let BusResponse::Fail(message) = response {
-                    failed_requests += 1;
-                    *failure_examples.entry(message).or_insert(0) += 1;
-                }
-            });
-        }
-        if failed_requests > 0 {
-            let example_text = summarize_failure_examples(&failure_examples);
-            return Err(PyOSError::new_err(format!(
-                "IP mapping apply failed for {failed_requests} of {len} queued requests. Examples: {example_text}"
-            )));
-        }
-        Ok(len)
-    }
-}
-
-/// Returns the current XDP IP-mapping capacity.
-///
-/// If the live pinned map exists, this reflects its `max_entries`; otherwise it
-/// falls back to the compiled default capacity.
-#[pyfunction]
-fn xdp_ip_mapping_capacity() -> PyResult<usize> {
-    Ok(lqos_sys::ip_mapping_capacity())
-}
-
-/// Returns whether the pinned BPF maps required for XDP IP mapping updates are ready.
-#[pyfunction]
-fn xdp_ip_mapping_ready() -> PyResult<bool> {
-    lqos_sys::ip_mapping_subsystem_ready()
-        .map_err(|e| PyOSError::new_err(format!("Unable to inspect XDP IP mapping maps: {e}")))
 }
 
 /// Requests Rust-side validation of `ShapedDevices.csv`
@@ -1443,7 +1196,7 @@ fn wait_for_bus_ready(timeout_ms: u64) -> PyResult<bool> {
 /// maxUpload, comment, sqm.
 #[pyfunction]
 fn overrides_persistent_devices(py: Python<'_>) -> PyResult<Vec<PyObject>> {
-    let overrides = match lqos_overrides::OverrideFile::load() {
+    let overrides = match lqos_overrides::OverrideFile::load_read_only() {
         Ok(o) => o,
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
@@ -1506,10 +1259,9 @@ fn overrides_persistent_devices_effective(py: Python<'_>) -> PyResult<Vec<PyObje
         .stormguard
         .as_ref()
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
-    let apply_treeguard = config.treeguard.enabled;
 
     let overrides =
-        match lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard) {
+        match lqos_overrides::OverrideStore::load_effective_read_only(apply_stormguard) {
             Ok(o) => o,
             Err(e) => return Err(PyOSError::new_err(e.to_string())),
         };
@@ -1631,7 +1383,7 @@ fn persistent_devices_to_py(
 /// Returns the list of circuit adjustments as Python dicts.
 #[pyfunction]
 fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
-    let overrides = match lqos_overrides::OverrideFile::load() {
+    let overrides = match lqos_overrides::OverrideFile::load_read_only() {
         Ok(o) => o,
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
@@ -1694,6 +1446,18 @@ fn overrides_circuit_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
                     d.set_item("sqm_override", value.clone())?;
                 }
             }
+            lqos_overrides::CircuitAdjustment::CircuitAdjustAqm {
+                circuit_id,
+                aqm_token,
+                expires_at_unix,
+            } => {
+                d.set_item("type", "circuit_adjust_aqm")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                d.set_item("aqm_token", aqm_token.clone())?;
+                if let Some(value) = expires_at_unix {
+                    d.set_item("expires_at_unix", *value)?;
+                }
+            }
             lqos_overrides::CircuitAdjustment::RemoveCircuit { circuit_id } => {
                 d.set_item("type", "remove_circuit")?;
                 d.set_item("circuit_id", circuit_id.clone())?;
@@ -1727,10 +1491,9 @@ fn overrides_circuit_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
         .stormguard
         .as_ref()
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
-    let apply_treeguard = config.treeguard.enabled;
 
     let overrides =
-        match lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard) {
+        match lqos_overrides::OverrideStore::load_effective_read_only(apply_stormguard) {
             Ok(o) => o,
             Err(e) => return Err(PyOSError::new_err(e.to_string())),
         };
@@ -1791,6 +1554,18 @@ fn overrides_circuit_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
                 d.set_item("device_id", device_id.clone())?;
                 if let Some(value) = sqm_override {
                     d.set_item("sqm_override", value.clone())?;
+                }
+            }
+            lqos_overrides::CircuitAdjustment::CircuitAdjustAqm {
+                circuit_id,
+                aqm_token,
+                expires_at_unix,
+            } => {
+                d.set_item("type", "circuit_adjust_aqm")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                d.set_item("aqm_token", aqm_token.clone())?;
+                if let Some(value) = expires_at_unix {
+                    d.set_item("expires_at_unix", *value)?;
                 }
             }
             lqos_overrides::CircuitAdjustment::RemoveCircuit { circuit_id } => {
@@ -1890,6 +1665,18 @@ fn circuit_adjustments_to_py(
                     d.set_item("sqm_override", value.clone())?;
                 }
             }
+            lqos_overrides::CircuitAdjustment::CircuitAdjustAqm {
+                circuit_id,
+                aqm_token,
+                expires_at_unix,
+            } => {
+                d.set_item("type", "circuit_adjust_aqm")?;
+                d.set_item("circuit_id", circuit_id.clone())?;
+                d.set_item("aqm_token", aqm_token.clone())?;
+                if let Some(value) = expires_at_unix {
+                    d.set_item("expires_at_unix", *value)?;
+                }
+            }
             lqos_overrides::CircuitAdjustment::RemoveCircuit { circuit_id } => {
                 d.set_item("type", "remove_circuit")?;
                 d.set_item("circuit_id", circuit_id.clone())?;
@@ -1917,7 +1704,7 @@ fn circuit_adjustments_to_py(
 /// Returns the list of network adjustments as Python dicts.
 #[pyfunction]
 fn overrides_network_adjustments(py: Python<'_>) -> PyResult<Vec<PyObject>> {
-    let overrides = match lqos_overrides::OverrideFile::load() {
+    let overrides = match lqos_overrides::OverrideFile::load_read_only() {
         Ok(o) => o,
         Err(e) => return Err(PyOSError::new_err(e.to_string())),
     };
@@ -1934,10 +1721,9 @@ fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
         .stormguard
         .as_ref()
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
-    let apply_treeguard = config.treeguard.enabled;
 
     let overrides =
-        match lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard) {
+        match lqos_overrides::OverrideStore::load_effective_read_only(apply_stormguard) {
             Ok(o) => o,
             Err(e) => return Err(PyOSError::new_err(e.to_string())),
         };
@@ -1949,8 +1735,8 @@ fn overrides_network_adjustments_effective(py: Python<'_>) -> PyResult<Vec<PyObj
 ///
 /// This includes only operator-owned network adjustments.
 ///
-/// TreeGuard virtual-node decisions and StormGuard adaptive site-speed decisions are intentionally
-/// excluded so runtime automation does not overwrite the operator-authored topology/source-of-truth
+/// StormGuard adaptive site-speed decisions are intentionally excluded so runtime
+/// automation does not overwrite the operator-authored topology/source-of-truth
 /// file.
 #[pyfunction]
 fn overrides_network_adjustments_materialized(py: Python<'_>) -> PyResult<Vec<PyObject>> {
@@ -1985,7 +1771,7 @@ fn overrides_materialized(py: Python<'_>) -> PyResult<PyObject> {
 }
 
 fn load_materialized_overrides() -> PyResult<lqos_overrides::OverrideFile> {
-    lqos_overrides::OverrideStore::load_effective(false, false)
+    lqos_overrides::OverrideStore::load_effective_read_only(false)
         .map_err(|e| PyOSError::new_err(e.to_string()))
 }
 
@@ -2002,6 +1788,7 @@ fn network_adjustments_to_py(
                 site_name,
                 download_bandwidth_mbps,
                 upload_bandwidth_mbps,
+                expires_at_unix,
             } => {
                 d.set_item("type", "adjust_site_speed")?;
                 if let Some(node_id) = node_id {
@@ -2014,14 +1801,9 @@ fn network_adjustments_to_py(
                 if let Some(v) = upload_bandwidth_mbps {
                     d.set_item("upload_bandwidth_mbps", *v)?;
                 }
-            }
-            lqos_overrides::NetworkAdjustment::SetNodeVirtual {
-                node_name,
-                virtual_node,
-            } => {
-                d.set_item("type", "set_node_virtual")?;
-                d.set_item("node_name", node_name.clone())?;
-                d.set_item("virtual", *virtual_node)?;
+                if let Some(expires_at_unix) = expires_at_unix {
+                    d.set_item("expires_at_unix", *expires_at_unix)?;
+                }
             }
             lqos_overrides::NetworkAdjustment::TopologyParentOverride {
                 node_id,
@@ -2113,25 +1895,28 @@ fn sqm() -> PyResult<String> {
     Ok(config.queues.default_sqm.clone())
 }
 
-/// Returns the Mbps threshold at or above which (if no per-circuit override is set)
-/// fq_codel should be preferred to reduce overhead on very fast circuits.
-/// Defaults to 1000.0 Mbps if not configured.
-#[pyfunction]
-fn fast_queues_fq_codel() -> PyResult<f32> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.fast_queues_fq_codel.unwrap_or(1000.0) as f32)
+/// The configured upstream capacity pair `(download, upload)` in Mbps.
+/// `download` IS the down cap and `upload` IS the up cap — the mapping
+/// `Config::bandwidth_mbps()` owns ([dataplane] preferred, [queues] fallback),
+/// the SAME fact `throughput_tracker::stats_submission` passes to
+/// `bridge_spike_guard(shaped.down, shaped.up, ...)`. Extracted so the mapping is
+/// unit-testable without the global config (upstream #1151 returned the uplink
+/// for the download accessor).
+fn upstream_capacities_mbps(config: &lqos_config::Config) -> (u32, u32) {
+    let (download, upload) = config.bandwidth_mbps();
+    (download as u32, upload as u32)
 }
 
 #[pyfunction]
 fn upstream_bandwidth_capacity_download_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.uplink_bandwidth_mbps as u32)
+    Ok(upstream_capacities_mbps(&config).0)
 }
 
 #[pyfunction]
 fn upstream_bandwidth_capacity_upload_mbps() -> PyResult<u32> {
     let config = lqos_config::load_config().unwrap();
-    Ok(config.queues.uplink_bandwidth_mbps as u32)
+    Ok(upstream_capacities_mbps(&config).1)
 }
 
 #[pyfunction]
@@ -2216,8 +2001,10 @@ fn queues_available_override() -> PyResult<u32> {
 
 #[pyfunction]
 fn on_a_stick() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config.on_a_stick_mode())
+    // K3-B: single-interface (on-a-stick) mode is retired; the bridge is the
+    // only dataplane. Retained as a constant `false` so the Python shaper
+    // module imports cleanly while the kernel call sites are still present.
+    Ok(false)
 }
 
 #[pyfunction]
@@ -2398,68 +2185,59 @@ fn sonar_strategy() -> PyResult<String> {
     }
 }
 
+/// Phase C S4: the scheduler's manual producer. Materializes the compiled
+/// ingest artifacts AND the canonical projection from the permanent manual
+/// pair through the SAME producer the runtime uses, so the two stay symmetric.
+///
+/// The `source`/`compile_mode` arguments are retained for the Python call
+/// contract; the producer derives both from the config.
 #[pyfunction]
 fn write_compiled_topology_from_legacy_artifacts(
     source: String,
     compile_mode: String,
 ) -> PyResult<bool> {
+    let _ = (source, compile_mode);
     let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
-    let imported = ImportedTopologyBundle::from_legacy_artifacts(config.as_ref(), source.clone())
-        .map_err(|e| {
-        PyOSError::new_err(format!(
-            "Unable to load legacy topology artifacts for '{source}': {e}"
-        ))
+    lqos_topology_compile::materialize_manual_topology(config.as_ref()).map_err(|e| {
+        PyOSError::new_err(format!("Unable to materialize the manual topology: {e:#}"))
     })?;
-    let topology_import = TopologyImportFile::from_imported_bundle(&imported, compile_mode.clone());
-    let mode = parse_topology_compile_mode(&compile_mode)?;
-    let compiled = compile_topology(imported, mode).map_err(|e| {
-        PyOSError::new_err(format!(
-            "Unable to compile legacy topology artifacts for '{source}' using mode '{compile_mode}': {e}"
-        ))
-    })?;
-    let compiled_shaping =
-        TopologyCompiledShapingFile::from_compiled(&compiled, compile_mode.clone());
-    write_compiled_topology_outputs(
-        config.as_ref(),
-        &topology_import,
-        &compiled_shaping,
-        compiled,
-    )?;
     Ok(true)
+}
+
+/// Phase D: the scheduler's idempotent repair entry, run before materializing
+/// the ingest artifacts. lqosd startup is the primary repair owner; this is the
+/// maintenance call (the boot heals, the producer maintains).
+#[pyfunction]
+fn repair_runtime_state() -> PyResult<()> {
+    let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
+    lqos_config::repair_runtime_state(config.as_ref())
+        .map_err(|e| PyOSError::new_err(format!("runtime-state repair failed: {e}")))
+}
+
+/// Parses a standard `libreqos_network.json` payload into the imported bundle
+/// the compiler consumes (Phase C S3c).
+///
+/// The compatibility `network.json` shape retires from this door: the format
+/// reader is the new standard, and the legacy on-disk pair keeps
+/// [`ImportedTopologyBundle::from_legacy_artifacts`]. Pure: no side effects.
+fn imported_bundle_from_libreqos_network_payload(
+    source: &str,
+    libreqos_network_json: &str,
+) -> Result<ImportedTopologyBundle, String> {
+    let file = parse_libreqos_network(libreqos_network_json)
+        .map_err(|error| format!("Unable to parse libreqos_network.json payload: {error}"))?;
+    Ok(file.into_imported_bundle(source.to_string()))
 }
 
 #[pyfunction]
 fn write_compiled_topology_from_network_json_payload(
     source: String,
     compile_mode: String,
-    compatibility_network_json: String,
+    libreqos_network_json: String,
 ) -> PyResult<bool> {
     let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
-    let compatibility_network_json =
-        serde_json::from_str::<serde_json::Value>(&compatibility_network_json).map_err(|e| {
-            PyOSError::new_err(format!("Unable to parse topology payload JSON: {e}"))
-        })?;
-    let imported = ImportedTopologyBundle {
-        source: source.clone(),
-        generated_unix: None,
-        ingress_identity: None,
-        native_canonical: None,
-        native_editor: None,
-        parent_candidates: None,
-        compatibility_network_json,
-        shaped_devices: lqos_config::ConfigShapedDevices::load_for_config(config.as_ref())
-            .map_err(|e| {
-                PyOSError::new_err(format!(
-                    "Unable to load ShapedDevices.csv for '{source}': {e}"
-                ))
-            })?,
-        circuit_anchors: lqos_config::CircuitAnchorsFile::load(config.as_ref()).map_err(|e| {
-            PyOSError::new_err(format!(
-                "Unable to load circuit_anchors.json for '{source}': {e}"
-            ))
-        })?,
-        ethernet_advisories: Vec::new(),
-    };
+    let imported = imported_bundle_from_libreqos_network_payload(&source, &libreqos_network_json)
+        .map_err(PyOSError::new_err)?;
     let topology_import = TopologyImportFile::from_imported_bundle(&imported, compile_mode.clone());
     let mode = parse_topology_compile_mode(&compile_mode)?;
     let compiled = compile_topology(imported, mode).map_err(|e| {
@@ -2516,17 +2294,26 @@ fn write_compiled_topology_from_python_graph_payload(
             "Unable to parse native topology editor payload JSON: {e}"
         ))
     })?;
+    // Rung 1.5 §1.3: the editor payload is no longer a persisted domain
+    // object. The legacy Python graph payload still supplies one; project it
+    // into canonical (the ONLY persisted object) so compile_mode reads
+    // canonical-derived editor state.
+    let native_canonical = lqos_config::TopologyCanonicalStateFile::from_editor_and_network(
+        &native_editor,
+        &compatibility_network_json,
+        lqos_config::TopologyCanonicalIngressKind::NativeIntegration,
+    );
     let imported = ImportedTopologyBundle {
         source: source.clone(),
         generated_unix: None,
         ingress_identity: None,
-        native_canonical: None,
-        native_editor: Some(native_editor),
+        native_canonical: Some(native_canonical),
         parent_candidates: Some(parent_candidates),
         compatibility_network_json,
         shaped_devices,
         circuit_anchors,
         ethernet_advisories: Vec::new(),
+        circuit_matches: Default::default(),
     };
     let topology_import = TopologyImportFile::from_imported_bundle(&imported, compile_mode.clone());
     let mode = parse_topology_compile_mode(&compile_mode)?;
@@ -2905,31 +2692,6 @@ fn automatic_import_wispgate() -> PyResult<bool> {
     Ok(wisp_gate.enable_wispgate)
 }
 
-fn config_uses_topology_import_ingress(config: &lqos_config::Config) -> bool {
-    config.uisp_integration.enable_uisp
-        || config.splynx_integration.enable_splynx
-        || config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-        || config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-        || config.powercode_integration.enable_powercode
-        || config.sonar_integration.enable_sonar
-        || config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
-}
-
-#[pyfunction]
-fn topology_import_ingress_enabled() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config_uses_topology_import_ingress(config.as_ref()))
-}
-
 fn rename_legacy_site_bandwidth_csv_to_backup(file_path: &Path) -> Result<()> {
     let unix_secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3111,41 +2873,6 @@ fn insight_topology_role() -> PyResult<String> {
 }
 
 #[pyfunction]
-fn calculate_hash() -> PyResult<i64> {
-    let Ok(config) = lqos_config::load_config() else {
-        return Ok(0);
-    };
-    let nj_path = if config_uses_topology_import_ingress(config.as_ref()) {
-        config.topology_state_read_path("network.effective.json")
-    } else {
-        Path::new(&config.lqos_directory).join("network.json")
-    };
-    let sd_path = Path::new(&config.lqos_directory).join("ShapedDevices.csv");
-
-    let Ok(nj_as_string) = read_to_string(nj_path) else {
-        return Ok(0);
-    };
-    let Ok(sd_as_string) = read_to_string(sd_path) else {
-        return Ok(0);
-    };
-    let combined = format!("{}\n{}", nj_as_string, sd_as_string);
-    let hash = lqos_utils::hash_to_i64(&combined);
-
-    Ok(hash)
-}
-
-#[pyfunction]
-fn calculate_topology_source_generation() -> PyResult<Option<String>> {
-    let Ok(config) = lqos_config::load_config() else {
-        return Ok(None);
-    };
-    match lqos_config::compute_topology_source_generation(config.as_ref()) {
-        Ok(generation) => Ok(Some(generation)),
-        Err(_) => Ok(None),
-    }
-}
-
-#[pyfunction]
 fn validated_runtime_shaping_inputs_path() -> PyResult<Option<String>> {
     let Ok(config) = lqos_config::load_config() else {
         return Ok(None);
@@ -3159,22 +2886,33 @@ fn validated_runtime_shaping_inputs_path() -> PyResult<Option<String>> {
         })
 }
 
+/// Verifies the published runtime shaping generation against a fresh dry-run
+/// mint of the current world (K1b §4.8 content-addressed generation).
+///
+/// Returns `None` when the config cannot be loaded. Otherwise returns
+/// `(verified, generation, failed_leg)` where `verified` is `None` when the
+/// current world produces no shaping inputs (nothing to compare), `Some(true)`
+/// when the custody chain holds, and `Some(false)` when the published runtime is
+/// stale for the current world. `generation` is the current source-generation
+/// token. `failed_leg` names the custody leg that failed (§0b,
+/// and is `None` when `verified` is not `Some(false)`.
 #[pyfunction]
-fn calculate_shaping_inputs_generation(path: String) -> PyResult<String> {
-    lqos_config::compute_shaping_inputs_file_generation(Path::new(&path)).map_err(|err| {
-        PyOSError::new_err(format!(
-            "Unable to compute shaping inputs generation for {path}: {err}"
-        ))
-    })
-}
-
-#[pyfunction]
-fn calculate_effective_network_generation(path: String) -> PyResult<String> {
-    lqos_config::compute_effective_network_file_generation(Path::new(&path)).map_err(|err| {
-        PyOSError::new_err(format!(
-            "Unable to compute effective network generation for {path}: {err}"
-        ))
-    })
+fn verify_published_shaping_generation() -> PyResult<Option<(Option<bool>, String, Option<String>)>> {
+    let Ok(config) = lqos_config::load_config() else {
+        return Ok(None);
+    };
+    let outcome = lqos_topology::verify_published_shaping_generation(config.as_ref()).map_err(
+        |err| {
+            PyOSError::new_err(format!(
+                "Unable to verify the published shaping generation: {err}"
+            ))
+        },
+    )?;
+    Ok(Some((
+        outcome.verified,
+        outcome.generation,
+        outcome.failed_leg.map(|leg| leg.as_str().to_string()),
+    )))
 }
 
 fn shaping_runtime_sqm_fingerprint() -> Result<String> {
@@ -3183,9 +2921,8 @@ fn shaping_runtime_sqm_fingerprint() -> Result<String> {
         .stormguard
         .as_ref()
         .is_some_and(|sg| sg.enabled && !sg.dry_run);
-    let apply_treeguard = config.treeguard.enabled;
     let overrides =
-        lqos_overrides::OverrideStore::load_effective(apply_stormguard, apply_treeguard)?;
+        lqos_overrides::OverrideStore::load_effective_read_only(apply_stormguard)?;
 
     let mut sqm_entries: Vec<(String, String)> = overrides
         .circuit_adjustments()
@@ -3217,10 +2954,6 @@ fn shaping_runtime_sqm_fingerprint() -> Result<String> {
     }
 
     Ok(fingerprint)
-}
-
-fn first_existing_path<'a>(paths: &'a [&'a Path]) -> Option<&'a Path> {
-    paths.iter().copied().find(|path| path.exists())
 }
 
 fn state_or_legacy_path(
@@ -3261,7 +2994,9 @@ fn topology_runtime_shaping_generation(base_path: &Path, state_base_path: &Path)
     if !shaping_inputs.shaping_generation.is_empty() {
         Some(shaping_inputs.shaping_generation)
     } else {
-        shaping_inputs.compute_shaping_generation().ok()
+        shaping_inputs
+            .compute_shaping_generation_with_export(None)
+            .ok()
     }
 }
 
@@ -3284,86 +3019,35 @@ fn topology_runtime_effective_generation(
         return Some(status.effective_generation);
     }
 
-    let effective_path = state_or_legacy_path(
+    // Phase C S5: the E2 operator view is the runtime effective projection;
+    // network.effective.json retired. Fold the generation from the same
+    // artifact the publish path content-addresses.
+    let operator_view_path = state_or_legacy_path(
         base_path,
         state_base_path,
         "topology",
-        "network.effective.json",
+        lqos_config::TOPOLOGY_OPERATOR_VIEW_FILENAME,
     );
-    let effective_raw = read_to_string(&effective_path).ok()?;
-    let effective_network = serde_json::from_str::<serde_json::Value>(&effective_raw).ok()?;
-    lqos_config::compute_effective_network_generation(&effective_network).ok()
+    let operator_raw = read_to_string(&operator_view_path).ok()?;
+    let operator_view = serde_json::from_str::<serde_json::Value>(&operator_raw).ok()?;
+    lqos_config::compute_effective_network_generation(&operator_view).ok()
 }
 
 fn calculate_shaping_runtime_hash_for_base(
     base_path: &Path,
     state_base_path: &Path,
-    uses_topology_import_ingress: bool,
-    insight_topology_enabled: bool,
     runtime_sqm_fingerprint: &str,
 ) -> i64 {
-    if uses_topology_import_ingress {
-        let Some(shaping_generation) =
-            topology_runtime_shaping_generation(base_path, state_base_path)
-        else {
-            return 0;
-        };
-        let effective_generation =
-            topology_runtime_effective_generation(base_path, state_base_path).unwrap_or_default();
-        let combined =
-            format!("{shaping_generation}\n{effective_generation}\n{runtime_sqm_fingerprint}");
-        return lqos_utils::hash_to_i64(&combined);
-    }
-
-    let effective_path = state_or_legacy_path(
-        base_path,
-        state_base_path,
-        "topology",
-        "network.effective.json",
-    );
-    let network_json_path = base_path.join("network.json");
-    let network_insight_path = base_path.join("network.insight.json");
-    let shaping_inputs_path =
-        state_or_legacy_path(base_path, state_base_path, "shaping", "shaping_inputs.json");
-    let shaped_devices_path = base_path.join("ShapedDevices.csv");
-    let shaped_devices_insight_path = base_path.join("ShapedDevices.insight.csv");
-
-    let network_candidates: Vec<&Path> = if effective_path.exists() {
-        vec![effective_path.as_path()]
-    } else if insight_topology_enabled {
-        vec![network_insight_path.as_path(), network_json_path.as_path()]
-    } else {
-        vec![network_json_path.as_path()]
-    };
-
-    let shaping_candidates: Vec<&Path> = if shaping_inputs_path.exists() {
-        vec![shaping_inputs_path.as_path()]
-    } else if insight_topology_enabled {
-        vec![
-            shaped_devices_insight_path.as_path(),
-            shaped_devices_path.as_path(),
-        ]
-    } else {
-        vec![shaped_devices_path.as_path()]
-    };
-
-    let Some(network_path) = first_existing_path(&network_candidates) else {
+    // Phase C S4: the runtime generation artifacts are the ONE hash source;
+    // the legacy CSV/interchange hashing retired with the mode.
+    let Some(shaping_generation) = topology_runtime_shaping_generation(base_path, state_base_path)
+    else {
         return 0;
     };
-    let Some(shaping_path) = first_existing_path(&shaping_candidates) else {
-        return 0;
-    };
-    let Ok(network_payload) = read_to_string(network_path) else {
-        return 0;
-    };
-    let Ok(shaping_payload) = read_to_string(shaping_path) else {
-        return 0;
-    };
-
-    let combined = format!(
-        "{}\n{}\n{}",
-        network_payload, shaping_payload, runtime_sqm_fingerprint
-    );
+    let effective_generation =
+        topology_runtime_effective_generation(base_path, state_base_path).unwrap_or_default();
+    let combined =
+        format!("{shaping_generation}\n{effective_generation}\n{runtime_sqm_fingerprint}");
     lqos_utils::hash_to_i64(&combined)
 }
 
@@ -3380,462 +3064,8 @@ fn calculate_shaping_runtime_hash() -> PyResult<i64> {
     Ok(calculate_shaping_runtime_hash_for_base(
         base_path,
         state_base_path.as_path(),
-        config_uses_topology_import_ingress(config.as_ref()),
-        config
-            .long_term_stats
-            .enable_insight_topology
-            .unwrap_or(false),
         &runtime_sqm_fingerprint,
     ))
-}
-
-////////////////////////////// The Bakery class //////////////////////////////
-
-#[derive(Clone)]
-enum BakeryCommands {
-    StartBatch,
-    Commit,
-    MqSetup {
-        queues_available: usize,
-        stick_offset: usize,
-    },
-    AddSite {
-        site_hash: i64,
-        parent_class_id: TcHandle,
-        up_parent_class_id: TcHandle,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
-    },
-    AddCircuit {
-        circuit_hash: i64,
-        circuit_name: Option<String>,
-        site_name: Option<String>,
-        parent_class_id: TcHandle,
-        up_parent_class_id: TcHandle,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
-        class_major: u16,
-        up_class_major: u16,
-        ip_addresses: String,
-        sqm_override: Option<String>,
-    },
-}
-
-impl BakeryCommands {
-    fn as_runtime_command(&self) -> lqos_bakery::BakeryCommands {
-        match self {
-            BakeryCommands::StartBatch => lqos_bakery::BakeryCommands::StartBatch,
-            BakeryCommands::Commit => lqos_bakery::BakeryCommands::CommitBatch,
-            BakeryCommands::MqSetup {
-                queues_available,
-                stick_offset,
-            } => lqos_bakery::BakeryCommands::MqSetup {
-                queues_available: *queues_available,
-                stick_offset: *stick_offset,
-            },
-            BakeryCommands::AddSite {
-                site_hash,
-                parent_class_id,
-                up_parent_class_id,
-                class_minor,
-                download_bandwidth_min,
-                upload_bandwidth_min,
-                download_bandwidth_max,
-                upload_bandwidth_max,
-            } => lqos_bakery::BakeryCommands::AddSite {
-                site_hash: *site_hash,
-                parent_class_id: *parent_class_id,
-                up_parent_class_id: *up_parent_class_id,
-                class_minor: *class_minor,
-                download_bandwidth_min: *download_bandwidth_min,
-                upload_bandwidth_min: *upload_bandwidth_min,
-                download_bandwidth_max: *download_bandwidth_max,
-                upload_bandwidth_max: *upload_bandwidth_max,
-            },
-            BakeryCommands::AddCircuit {
-                circuit_hash,
-                circuit_name,
-                site_name,
-                parent_class_id,
-                up_parent_class_id,
-                class_minor,
-                download_bandwidth_min,
-                upload_bandwidth_min,
-                download_bandwidth_max,
-                upload_bandwidth_max,
-                class_major,
-                up_class_major,
-                ip_addresses,
-                sqm_override,
-            } => lqos_bakery::BakeryCommands::AddCircuit {
-                circuit_hash: *circuit_hash,
-                circuit_name: circuit_name.clone(),
-                site_name: site_name.clone(),
-                parent_class_id: *parent_class_id,
-                up_parent_class_id: *up_parent_class_id,
-                class_minor: *class_minor,
-                download_bandwidth_min: *download_bandwidth_min,
-                upload_bandwidth_min: *upload_bandwidth_min,
-                download_bandwidth_max: *download_bandwidth_max,
-                upload_bandwidth_max: *upload_bandwidth_max,
-                class_major: *class_major,
-                up_class_major: *up_class_major,
-                down_qdisc_handle: None,
-                up_qdisc_handle: None,
-                ip_addresses: ip_addresses.clone(),
-                sqm_override: sqm_override.clone(),
-            },
-        }
-    }
-}
-
-#[pyclass]
-/// Queues Bakery operations for batched submission to the LibreQoS daemon.
-pub struct Bakery {
-    queue: Vec<BakeryCommands>,
-}
-
-#[pymethods]
-impl Bakery {
-    #[new]
-    /// Creates an empty Bakery command queue.
-    pub fn new() -> PyResult<Self> {
-        Ok(Self { queue: Vec::new() })
-    }
-
-    /// Adds a batch-start marker to the queued Bakery commands.
-    pub fn start_batch(&mut self) -> PyResult<()> {
-        self.queue.push(BakeryCommands::StartBatch);
-        Ok(())
-    }
-
-    /// Sends the queued Bakery commands to `lqosd`.
-    pub fn commit(&mut self) -> PyResult<()> {
-        self.queue.push(BakeryCommands::Commit);
-
-        // Send the commands batched up to the bus
-        let queue = self.queue.clone();
-        let handle = std::thread::spawn(move || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(async {
-                    let Ok(mut bus) = lqos_bus::LibreqosBusClient::new().await else {
-                        eprintln!("Failed to connect to lqosd bus for Bakery commit");
-                        return;
-                    };
-                    let chunks = queue.chunks(1024);
-                    for chunk in chunks {
-                        let mut requests = Vec::new();
-                        for msg in chunk {
-                            match msg {
-                                BakeryCommands::StartBatch => {
-                                    requests.push(BusRequest::BakeryStart)
-                                }
-                                BakeryCommands::Commit => requests.push(BusRequest::BakeryCommit),
-                                BakeryCommands::MqSetup {
-                                    queues_available,
-                                    stick_offset,
-                                } => {
-                                    requests.push(BusRequest::BakeryMqSetup {
-                                        queues_available: *queues_available,
-                                        stick_offset: *stick_offset,
-                                    });
-                                }
-                                BakeryCommands::AddSite {
-                                    site_hash,
-                                    parent_class_id,
-                                    up_parent_class_id,
-                                    class_minor,
-                                    download_bandwidth_min,
-                                    upload_bandwidth_min,
-                                    download_bandwidth_max,
-                                    upload_bandwidth_max,
-                                } => {
-                                    let command = BusRequest::BakeryAddSite {
-                                        site_hash: *site_hash,
-                                        parent_class_id: *parent_class_id,
-                                        up_parent_class_id: *up_parent_class_id,
-                                        class_minor: *class_minor,
-                                        download_bandwidth_min: *download_bandwidth_min,
-                                        upload_bandwidth_min: *upload_bandwidth_min,
-                                        download_bandwidth_max: *download_bandwidth_max,
-                                        upload_bandwidth_max: *upload_bandwidth_max,
-                                    };
-                                    requests.push(command);
-                                }
-                                BakeryCommands::AddCircuit {
-                                    circuit_hash,
-                                    circuit_name,
-                                    site_name,
-                                    parent_class_id,
-                                    up_parent_class_id,
-                                    class_minor,
-                                    download_bandwidth_min,
-                                    upload_bandwidth_min,
-                                    download_bandwidth_max,
-                                    upload_bandwidth_max,
-                                    class_major,
-                                    up_class_major,
-                                    ip_addresses,
-                                    sqm_override,
-                                } => {
-                                    let command = BusRequest::BakeryAddCircuit {
-                                        circuit_hash: *circuit_hash,
-                                        circuit_name: circuit_name.clone(),
-                                        site_name: site_name.clone(),
-                                        parent_class_id: *parent_class_id,
-                                        up_parent_class_id: *up_parent_class_id,
-                                        class_minor: *class_minor,
-                                        download_bandwidth_min: *download_bandwidth_min,
-                                        upload_bandwidth_min: *upload_bandwidth_min,
-                                        download_bandwidth_max: *download_bandwidth_max,
-                                        upload_bandwidth_max: *upload_bandwidth_max,
-                                        class_major: *class_major,
-                                        up_class_major: *up_class_major,
-                                        ip_addresses: ip_addresses.clone(),
-                                        sqm_override: sqm_override.clone(),
-                                    };
-                                    requests.push(command);
-                                }
-                            }
-                        }
-                        if let Err(e) = bus.request(requests).await {
-                            eprintln!("Failed to send batch commands: {}", e);
-                        } else {
-                            println!("Sent a batch of commands to Bakery");
-                        }
-                    }
-                });
-        });
-        let _ = handle.join();
-
-        Ok(())
-    }
-
-    /// Estimates whether the queued full-reload batch fits within the per-interface qdisc budget.
-    pub fn estimate_qdisc_budget(&self, py: Python) -> PyResult<PyObject> {
-        let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
-        let queue: Vec<lqos_bakery::BakeryCommands> = self
-            .queue
-            .iter()
-            .map(BakeryCommands::as_runtime_command)
-            .collect();
-        let estimate = estimate_full_reload_auto_qdisc_budget(&config, &queue);
-        let is_ok = estimate.ok();
-        let interface_reports = estimate
-            .interface_details
-            .iter()
-            .map(|(name, detail)| BakeryCapacityReportInterface {
-                name: name.clone(),
-                planned_qdiscs: detail.planned_qdiscs,
-                infra_qdiscs: detail.infra_qdiscs,
-                cake_qdiscs: detail.cake_qdiscs,
-                fq_codel_qdiscs: detail.fq_codel_qdiscs,
-                estimated_memory_bytes: detail.estimated_memory_bytes,
-            })
-            .collect::<Vec<_>>();
-        let qdisc_counts_fit = estimate
-            .interfaces
-            .values()
-            .all(|count| *count <= estimate.safe_budget);
-        let preflight_status = if estimate.memory_warning_only {
-            "passed qdisc-count preflight; memory preflight is a non-blocking lazy-queue warning"
-        } else {
-            match (qdisc_counts_fit, estimate.memory_ok) {
-                (true, true) => "fits preflight",
-                (false, true) => "exceeds qdisc-count preflight",
-                (true, false) => "passed qdisc-count preflight but failed memory preflight",
-                (false, false) => "exceeds qdisc-count preflight and failed memory preflight",
-            }
-        };
-        let memory_summary = if let Some(snapshot) = estimate.memory_snapshot.as_ref() {
-            let required_available_bytes = estimate
-                .memory_guard_min_available_bytes
-                .saturating_add(estimate.estimated_total_memory_bytes);
-            format!(
-                "estimated qdisc memory {} bytes; available memory {} bytes; required minimum {} bytes (safety floor {} bytes plus estimate)",
-                estimate.estimated_total_memory_bytes,
-                snapshot.available_bytes,
-                required_available_bytes,
-                estimate.memory_guard_min_available_bytes
-            )
-        } else {
-            format!(
-                "estimated qdisc memory {} bytes; host memory snapshot unavailable",
-                estimate.estimated_total_memory_bytes
-            )
-        };
-        let summary = if interface_reports.is_empty() {
-            format!(
-                "Planned queue model {preflight_status}. No shaping interfaces were queued; {memory_summary}.",
-            )
-        } else {
-            let interface_summary = interface_reports
-                .iter()
-                .map(|entry| {
-                    let detail = estimate
-                        .interface_details
-                        .get(&entry.name)
-                        .expect("detail should exist for interface");
-                    format!(
-                        "{} estimated {} qdiscs (infra {}, cake {}, fq_codel {})",
-                        entry.name,
-                        entry.planned_qdiscs,
-                        detail.infra_qdiscs,
-                        detail.cake_qdiscs,
-                        detail.fq_codel_qdiscs
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!(
-                "Planned queue model {preflight_status}. {interface_summary}; safe budget {}, kernel limit {}; {memory_summary}.",
-                estimate.safe_budget, estimate.hard_limit,
-            )
-        };
-        let _ = run_query(vec![BusRequest::BakeryReportPreflight {
-            ok: is_ok,
-            message: summary.clone(),
-            safe_budget: estimate.safe_budget,
-            hard_limit: estimate.hard_limit,
-            estimated_total_memory_bytes: estimate.estimated_total_memory_bytes,
-            memory_available_bytes: estimate
-                .memory_snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.available_bytes),
-            memory_guard_min_available_bytes: estimate.memory_guard_min_available_bytes,
-            memory_ok: estimate.memory_ok,
-            interfaces: interface_reports,
-        }]);
-
-        let result = PyDict::new(py);
-        let interfaces = PyDict::new(py);
-        let interface_details = PyDict::new(py);
-
-        for (interface, count) in estimate.interfaces {
-            interfaces.set_item(interface, count)?;
-        }
-        for (interface, detail) in estimate.interface_details {
-            let detail_dict = PyDict::new(py);
-            detail_dict.set_item("planned_qdiscs", detail.planned_qdiscs)?;
-            detail_dict.set_item("infra_qdiscs", detail.infra_qdiscs)?;
-            detail_dict.set_item("cake_qdiscs", detail.cake_qdiscs)?;
-            detail_dict.set_item("fq_codel_qdiscs", detail.fq_codel_qdiscs)?;
-            detail_dict.set_item("estimated_memory_bytes", detail.estimated_memory_bytes)?;
-            interface_details.set_item(interface, detail_dict)?;
-        }
-
-        result.set_item("interfaces", interfaces)?;
-        result.set_item("interface_details", interface_details)?;
-        result.set_item("safe_budget", estimate.safe_budget)?;
-        result.set_item("hard_limit", estimate.hard_limit)?;
-        result.set_item(
-            "estimated_total_memory_bytes",
-            estimate.estimated_total_memory_bytes,
-        )?;
-        result.set_item("memory_ok", estimate.memory_ok)?;
-        result.set_item("memory_warning_only", estimate.memory_warning_only)?;
-        result.set_item(
-            "memory_guard_min_available_bytes",
-            estimate.memory_guard_min_available_bytes,
-        )?;
-        if let Some(snapshot) = estimate.memory_snapshot {
-            result.set_item("memory_total_bytes", snapshot.total_bytes)?;
-            result.set_item("memory_available_bytes", snapshot.available_bytes)?;
-        } else {
-            result.set_item("memory_total_bytes", py.None())?;
-            result.set_item("memory_available_bytes", py.None())?;
-        }
-        result.set_item("ok", is_ok)?;
-        result.set_item("summary", summary)?;
-        Ok(result.into())
-    }
-
-    /// Queues multi-queue setup for the target shaper.
-    pub fn setup_mq(&mut self, queues_available: usize, stick_offset: usize) -> PyResult<()> {
-        self.queue.push(BakeryCommands::MqSetup {
-            queues_available,
-            stick_offset,
-        });
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    /// Queues a site creation or update command for the Bakery pipeline.
-    pub fn add_site(
-        &mut self,
-        site_name: String,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
-    ) -> PyResult<()> {
-        let site_hash = lqos_utils::hash_to_i64(&site_name);
-        //println!("Name hash for site {site_name} is {site_hash}");
-        let command = BakeryCommands::AddSite {
-            site_hash,
-            parent_class_id: TcHandle::from_string(&parent_class_id).unwrap(),
-            up_parent_class_id: TcHandle::from_string(&up_parent_class_id).unwrap(),
-            class_minor,
-            download_bandwidth_min,
-            upload_bandwidth_min,
-            download_bandwidth_max,
-            upload_bandwidth_max,
-        };
-        self.queue.push(command);
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    /// Queues a circuit creation or update command for the Bakery pipeline.
-    pub fn add_circuit(
-        &mut self,
-        circuit_name: String,
-        site_name: Option<String>,
-        parent_class_id: String,
-        up_parent_class_id: String,
-        class_minor: u16,
-        download_bandwidth_min: f32,
-        upload_bandwidth_min: f32,
-        download_bandwidth_max: f32,
-        upload_bandwidth_max: f32,
-        class_major: u16,
-        up_class_major: u16,
-        ip_addresses: String,
-        sqm_override: Option<String>,
-    ) -> PyResult<()> {
-        let circuit_hash = lqos_utils::hash_to_i64(&circuit_name);
-        //println!("Name: {circuit_name}, hash: {circuit_hash}");
-        let command = BakeryCommands::AddCircuit {
-            circuit_hash,
-            circuit_name: Some(circuit_name),
-            site_name,
-            parent_class_id: TcHandle::from_string(&parent_class_id).unwrap(),
-            up_parent_class_id: TcHandle::from_string(&up_parent_class_id).unwrap(),
-            class_minor,
-            download_bandwidth_min,
-            upload_bandwidth_min,
-            download_bandwidth_max,
-            upload_bandwidth_max,
-            class_major,
-            up_class_major,
-            ip_addresses,
-            sqm_override,
-        };
-        self.queue.push(command);
-        Ok(())
-    }
 }
 
 /// Report that the scheduler is still alive
@@ -3897,6 +3127,56 @@ fn scheduler_progress(
         updated_unix: None,
     };
     if let Ok(reply) = run_query(vec![BusRequest::SchedulerProgress(report)]) {
+        for resp in reply.iter() {
+            if let BusResponse::Ack = resp {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Report the integration-sync status metadata (the integration health axis).
+///
+/// `error_class` is classified at emission in `scheduler.py`; the accepted
+/// strings are the `IntegrationErrorClass` snake_case names.
+#[pyfunction]
+#[pyo3(signature = (integration_name=None, last_import_ok=None, last_import_at=None, last_import_ms=None, consecutive_failures=0, error_class=None, error_detail=None, recent_runs=None))]
+#[allow(clippy::too_many_arguments)]
+fn scheduler_integration_status(
+    _py: Python,
+    integration_name: Option<String>,
+    last_import_ok: Option<bool>,
+    last_import_at: Option<u64>,
+    last_import_ms: Option<u64>,
+    consecutive_failures: u32,
+    error_class: Option<String>,
+    error_detail: Option<String>,
+    recent_runs: Option<Vec<(u64, bool, Option<u64>)>>,
+) -> PyResult<bool> {
+    let error_class = match error_class.as_deref() {
+        Some("redirect_loop") => IntegrationErrorClass::RedirectLoop,
+        Some("auth") => IntegrationErrorClass::Auth,
+        Some("unreachable") => IntegrationErrorClass::Unreachable,
+        Some("exited_unknown") => IntegrationErrorClass::ExitedUnknown,
+        _ => IntegrationErrorClass::None,
+    };
+    let recent_runs = recent_runs
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(at, ok, ms)| SchedulerRun { at, ok, ms })
+        .collect();
+    let status = SchedulerIntegrationStatus {
+        integration_name,
+        last_import_ok,
+        last_import_at,
+        last_import_ms,
+        consecutive_failures,
+        error_class,
+        error_detail,
+        recent_runs,
+    };
+    if let Ok(reply) = run_query(vec![BusRequest::SchedulerIntegrationStatus(status)]) {
         for resp in reply.iter() {
             if let BusResponse::Ack = resp {
                 return Ok(true);
@@ -4011,93 +3291,6 @@ fn log_info(_py: Python, message: String) -> PyResult<bool> {
     Ok(false)
 }
 
-/// Submit a live Bakery runtime node virtualization or restore intent for a named node.
-#[pyfunction]
-fn treeguard_set_node_virtual_live(
-    _py: Python,
-    node_name: String,
-    virtualized: bool,
-) -> PyResult<bool> {
-    if let Ok(reply) = run_query(vec![BusRequest::TreeGuardSetNodeVirtual {
-        node_name,
-        virtualized,
-    }]) {
-        for resp in reply.iter() {
-            if let BusResponse::Ack = resp {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
-}
-
-/// Fetch the latest Bakery runtime node-operation snapshot for a named node, if any.
-#[pyfunction]
-fn treeguard_get_node_virtual_status(
-    py: Python,
-    node_name: String,
-) -> PyResult<Option<Py<PyDict>>> {
-    let Ok(reply) = run_query(vec![BusRequest::TreeGuardGetNodeVirtualStatus {
-        node_name,
-    }]) else {
-        return Ok(None);
-    };
-    for resp in reply {
-        if let BusResponse::TreeGuardRuntimeNodeOperation(snapshot) = resp {
-            let Some(snapshot) = snapshot else {
-                return Ok(None);
-            };
-            let failure_reason = snapshot.failure_reason.clone();
-            let d = PyDict::new(py);
-            d.set_item("operation_id", snapshot.operation_id)?;
-            d.set_item("site_hash", snapshot.site_hash)?;
-            d.set_item("action", snapshot.action)?;
-            d.set_item("status", snapshot.status)?;
-            d.set_item("attempt_count", snapshot.attempt_count)?;
-            d.set_item("submitted_at_unix", snapshot.submitted_at_unix)?;
-            d.set_item("updated_at_unix", snapshot.updated_at_unix)?;
-            d.set_item("next_retry_at_unix", snapshot.next_retry_at_unix)?;
-            d.set_item("last_error", snapshot.last_error)?;
-            d.set_item("failure_reason", failure_reason)?;
-            return Ok(Some(d.unbind()));
-        }
-    }
-    Ok(None)
-}
-
-/// Fetch the latest Bakery runtime branch-state snapshot for a named node, if one is retained.
-#[pyfunction]
-fn treeguard_get_node_virtual_branch_state(
-    py: Python,
-    node_name: String,
-) -> PyResult<Option<Py<PyDict>>> {
-    let Ok(reply) = run_query(vec![BusRequest::TreeGuardGetNodeVirtualBranchState {
-        node_name,
-    }]) else {
-        return Ok(None);
-    };
-    for resp in reply {
-        if let BusResponse::TreeGuardRuntimeNodeBranch(snapshot) = resp {
-            let Some(snapshot) = snapshot else {
-                return Ok(None);
-            };
-            let d = PyDict::new(py);
-            d.set_item("site_hash", snapshot.site_hash)?;
-            d.set_item("active_branch", snapshot.active_branch)?;
-            d.set_item("lifecycle", snapshot.lifecycle)?;
-            d.set_item("pending_prune", snapshot.pending_prune)?;
-            d.set_item("next_prune_attempt_unix", snapshot.next_prune_attempt_unix)?;
-            d.set_item("active_site_hashes", snapshot.active_site_hashes)?;
-            d.set_item("saved_site_hashes", snapshot.saved_site_hashes)?;
-            d.set_item("prune_site_hashes", snapshot.prune_site_hashes)?;
-            d.set_item("qdisc_down_major", snapshot.qdisc_down_major)?;
-            d.set_item("qdisc_up_major", snapshot.qdisc_up_major)?;
-            return Ok(Some(d.unbind()));
-        }
-    }
-    Ok(None)
-}
-
 #[pyfunction]
 /// Returns whether Insight features are currently enabled in `lqosd`.
 pub fn is_insight_enabled() -> PyResult<bool> {
@@ -4120,31 +3313,18 @@ pub fn hash_to_i64(text: String) -> PyResult<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{calculate_shaping_runtime_hash_for_base, summarize_failure_examples};
-    use std::collections::BTreeMap;
+    use super::{
+        calculate_shaping_runtime_hash_for_base, imported_bundle_from_libreqos_network_payload,
+    };
     use std::fs;
     use tempfile::tempdir;
-
-    #[test]
-    fn summarize_failure_examples_limits_output() {
-        let mut failures = BTreeMap::new();
-        failures.insert("alpha".to_string(), 2);
-        failures.insert("beta".to_string(), 1);
-        failures.insert("delta".to_string(), 1);
-        failures.insert("gamma".to_string(), 1);
-
-        assert_eq!(
-            summarize_failure_examples(&failures),
-            "alpha (x2); beta; delta"
-        );
-    }
 
     #[test]
     fn shaping_runtime_hash_prefers_runtime_artifacts_without_csv() {
         let temp = tempdir().expect("tempdir should exist");
         let base = temp.path();
         fs::write(
-            base.join("network.effective.json"),
+            base.join("topology_operator_view.json"),
             r#"{"Root":{"children":{"Site A":{"id":"site-a"}}}}"#,
         )
         .expect("effective network should write");
@@ -4154,7 +3334,7 @@ mod tests {
         )
         .expect("shaping inputs should write");
 
-        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let first = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_ne!(first, 0);
 
         fs::write(
@@ -4162,7 +3342,7 @@ mod tests {
             r#"{"shaping_generation":"shape-b","circuits":[]}"#,
         )
         .expect("updated shaping inputs should write");
-        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let second = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_ne!(second, 0);
         assert_ne!(first, second);
     }
@@ -4181,7 +3361,7 @@ mod tests {
         )
         .expect("shaping inputs should write");
 
-        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let first = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_ne!(first, 0);
 
         fs::write(
@@ -4194,7 +3374,7 @@ mod tests {
         )
         .expect("updated shaping inputs should write");
 
-        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let second = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_eq!(first, second);
     }
 
@@ -4208,7 +3388,7 @@ mod tests {
         )
         .expect("shaping inputs should write");
         fs::write(
-            base.join("network.effective.json"),
+            base.join("topology_operator_view.json"),
             r#"{
                 "Root": {
                     "children": {
@@ -4223,11 +3403,11 @@ mod tests {
         )
         .expect("effective network should write");
 
-        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let first = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_ne!(first, 0);
 
         fs::write(
-            base.join("network.effective.json"),
+            base.join("topology_operator_view.json"),
             r#"{
                 "Root": {
                     "children": {
@@ -4242,7 +3422,7 @@ mod tests {
         )
         .expect("updated effective network should write");
 
-        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let second = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_ne!(second, 0);
         assert_ne!(first, second);
     }
@@ -4257,7 +3437,7 @@ mod tests {
         )
         .expect("shaping inputs should write");
         fs::write(
-            base.join("network.effective.json"),
+            base.join("topology_operator_view.json"),
             r#"{
                 "Root": {
                     "children": {
@@ -4274,11 +3454,11 @@ mod tests {
         )
         .expect("effective network should write");
 
-        let first = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let first = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_ne!(first, 0);
 
         fs::write(
-            base.join("network.effective.json"),
+            base.join("topology_operator_view.json"),
             r#"{
                 "Root": {
                     "uploadBandwidthMbps": 1000,
@@ -4295,24 +3475,8 @@ mod tests {
         )
         .expect("reordered effective network should write");
 
-        let second = calculate_shaping_runtime_hash_for_base(base, base, true, false, "");
+        let second = calculate_shaping_runtime_hash_for_base(base, base, "");
         assert_eq!(first, second);
-    }
-
-    #[test]
-    fn shaping_runtime_hash_falls_back_to_legacy_csv_when_runtime_inputs_missing() {
-        let temp = tempdir().expect("tempdir should exist");
-        let base = temp.path();
-        fs::write(base.join("network.json"), r#"{"Site A":{"children":{}}}"#)
-            .expect("network json should write");
-        fs::write(
-            base.join("ShapedDevices.csv"),
-            "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n\"c1\",\"Circuit 1\",\"d1\",\"Device 1\",\"Site A\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",\"10\",\"10\",\"100\",\"100\",\"\"\n",
-        )
-        .expect("shaped devices should write");
-
-        let hash = calculate_shaping_runtime_hash_for_base(base, base, false, false, "");
-        assert_ne!(hash, 0);
     }
 
     #[test]
@@ -4329,7 +3493,7 @@ mod tests {
         )
         .expect("shaping inputs should write");
         fs::write(
-            state.join("topology").join("network.effective.json"),
+            state.join("topology").join("topology_operator_view.json"),
             r#"{
                 "Root": {
                     "children": {
@@ -4344,7 +3508,69 @@ mod tests {
         )
         .expect("effective network should write");
 
-        let hash = calculate_shaping_runtime_hash_for_base(&base, &state, true, false, "");
+        let hash = calculate_shaping_runtime_hash_for_base(&base, &state, "");
         assert_ne!(hash, 0);
+    }
+
+    #[test]
+    fn libreqos_network_payload_door_builds_the_native_bundle() {
+        let payload = r#"{
+            "schema_version": 1,
+            "match": { "mode": "vxlan+vlan" },
+            "topology": [ { "id": "s1", "type": "site", "name": "Site 1" } ],
+            "circuits": [
+                { "id": "c1",
+                  "parent": "s1",
+                  "plan": { "commit_down_bps": 10000000, "commit_up_bps": 5000000, "ceil_down_bps": 100000000, "ceil_up_bps": 50000000 },
+                  "match": { "vni": 100, "vlan": 64 } }
+            ]
+        }"#;
+        let bundle = imported_bundle_from_libreqos_network_payload("libreqos_network", payload)
+            .expect("the standard format payload should import");
+        let canonical = bundle.native_canonical.expect("native canonical");
+        assert_eq!(canonical.nodes.len(), 1);
+        assert_eq!(
+            bundle.shaped_devices.devices.len(),
+            1,
+            "a device-less circuit synthesizes one IP-less row so its match survives"
+        );
+        assert_eq!(
+            bundle.circuit_matches.get("c1"),
+            Some(&lqos_config::TopologyCircuitMatchIdentity::Tunnel(
+                lqos_config::TunnelIdentity {
+                    vni: 100,
+                    vlan: 64
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn libreqos_network_payload_door_rejects_a_stale_compatibility_shape() {
+        let error = match imported_bundle_from_libreqos_network_payload(
+            "libreqos_network",
+            r#"{"Site A":{"children":{}}}"#,
+        ) {
+            Ok(_) => panic!("the compatibility network.json shape is no longer accepted"),
+            Err(error) => error,
+        };
+        assert!(error.contains("libreqos_network.json"), "{error}");
+    }
+
+    /// Upstream #1151 (`lqos-74t.45`): the download accessor returned the UPLINK
+    /// cap. Asymmetric guard — `downlink_bandwidth_mbps` -> download,
+    /// `uplink_bandwidth_mbps` -> upload — plus the swapped pair so a regression
+    /// in either direction fails.
+    #[test]
+    fn upstream_capacities_map_downlink_to_download_and_uplink_to_upload() {
+        let mut config = lqos_config::Config::default();
+        // `queues.{downlink,uplink}_bandwidth_mbps` are f64 since the decimal-Mbps
+        // change (PR #60); the accessor rounds/saturates to the integer caps.
+        config.queues.downlink_bandwidth_mbps = 500.0;
+        config.queues.uplink_bandwidth_mbps = 50.0;
+        assert_eq!(super::upstream_capacities_mbps(&config), (500, 50));
+        config.queues.downlink_bandwidth_mbps = 50.0;
+        config.queues.uplink_bandwidth_mbps = 500.0;
+        assert_eq!(super::upstream_capacities_mbps(&config), (50, 500));
     }
 }

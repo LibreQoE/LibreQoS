@@ -1,7 +1,0 @@
-[package]
-name = "lqos_map_perf"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-lqos_sys = { path = "../lqos_sys" }

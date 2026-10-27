@@ -8,9 +8,6 @@ use serde::{Deserialize, Serialize};
 /// Represents a two-interface bridge configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Allocative)]
 pub struct BridgeConfig {
-    /// Use the XDP-accelerated bridge?
-    pub use_xdp_bridge: bool,
-
     /// The name of the first interface, facing the Internet
     pub to_internet: String,
 
@@ -25,7 +22,6 @@ pub struct BridgeConfig {
 impl Default for BridgeConfig {
     fn default() -> Self {
         Self {
-            use_xdp_bridge: true,
             to_internet: "eth0".to_string(),
             to_network: "eth1".to_string(),
             mtu: None,

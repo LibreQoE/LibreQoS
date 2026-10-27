@@ -1,4 +1,4 @@
-export const WORLD_MAP_ENCODING_DESCRIPTION = "Larger points indicate more traffic, and point colors indicate RTT.";
+export const WORLD_MAP_ENCODING_DESCRIPTION = "Larger points indicate more traffic, and point colors indicate Internet RTT.";
 
 export function worldMapStatusText(pointCount) {
     const noun = pointCount === 1 ? "location" : "locations";

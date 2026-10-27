@@ -1,5 +1,7 @@
 # Configure LibreQoS
 
+> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+
 ## Page Purpose
 
 Use this page for daily operations and WebUI-based configuration.

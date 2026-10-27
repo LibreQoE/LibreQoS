@@ -1,4 +1,4 @@
-use crate::perf_interface::{HeimdallEvent, PACKET_OCTET_SIZE};
+use crate::events::{HeimdallEvent, PACKET_OCTET_SIZE};
 use std::time::Duration;
 use zerocopy::{Immutable, IntoBytes};
 

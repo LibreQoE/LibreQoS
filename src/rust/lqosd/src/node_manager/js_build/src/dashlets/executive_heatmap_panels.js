@@ -1,7 +1,7 @@
 import {BaseDashlet} from "../lq_js_common/dashboard/base_dashlet";
 import {disposeTooltipsWithin, enableTooltipsWithin} from "../lq_js_common/helpers/tooltips";
 import {colorByQoqScore, colorByRetransmitPct, colorByRttMs} from "../helpers/color_scales";
-import {badgeForEntityKind, linkToExecutiveMetricRow} from "../executive_utils";
+import {badgeForEntityKind, heatRowsCaption, linkToExecutiveMetricRow, typeMonoMarkup} from "../executive_utils";
 import {
     colorByCapacity,
     formatLatest,
@@ -99,8 +99,11 @@ function qoqRow(labelText, badge, blocks, colorFn, labelHtml = null) {
     const latestTop = latestValue(topValues);
     const latestBottom = latestValue(bottomValues);
     const formattedLatest = `
-        <div>${formatLatest(latestTop, "", 0)}</div>
-        <div>${formatLatest(latestBottom, "", 0)}</div>
+        <span class="exec-latest-pair" title="Upload / Download">
+            <span>${formatLatest(latestTop, "", 0)}</span>
+            <span class="exec-latest-sep">/</span>
+            <span>${formatLatest(latestBottom, "", 0)}</span>
+        </span>
     `;
     const labelTitle = escapeAttr(labelText);
     const visibleLabel = labelHtml ?? escapeHtml(labelText);
@@ -108,36 +111,10 @@ function qoqRow(labelText, badge, blocks, colorFn, labelHtml = null) {
     return `
         <div class="exec-heat-row" role="listitem" aria-label="${escapeAttr(`${labelText} ${badge || ""} latest ${latestLabel}`)}">
             <div class="exec-heat-label text-truncate" title="${labelTitle}">
-                <div class="fw-semibold text-truncate">${visibleLabel}</div>
-                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
+                ${typeMonoMarkup(badge)}<div class="fw-semibold text-truncate">${visibleLabel}</div>
             </div>
             <div class="exec-heat-cells" role="img" aria-label="${escapeAttr(`${labelText} heatmap history`)}">${qoqHeatmapRow(blocks, colorFn)}</div>
-            <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
-        </div>
-    `;
-}
-
-function qoqHeatRow(label, badge, blocks, link = null) {
-    const topValues = blocks?.upload_total || [];
-    const bottomValues = blocks?.download_total || [];
-    const latestTop = latestValue(topValues);
-    const latestBottom = latestValue(bottomValues);
-    const formattedLatest = `
-        <div>${formatLatest(latestTop, "", 0)}</div>
-        <div>${formatLatest(latestBottom, "", 0)}</div>
-    `;
-    const redactClass =
-        badge === "Site" || badge === "Circuit" ? " redactable" : "";
-    const labelMarkup = link ? `<a href="${link}">${label}</a>` : label;
-    const latestLabel = `${formatLatest(latestTop, "", 0)} / ${formatLatest(latestBottom, "", 0)}`;
-    return `
-        <div class="exec-heat-row" role="listitem" aria-label="${escapeAttr(`${label} ${badge || ""} latest ${latestLabel}`)}">
-            <div class="exec-heat-label text-truncate" title="${escapeAttr(label)}">
-                <div class="fw-semibold text-truncate${redactClass}">${labelMarkup}</div>
-                ${badge ? `<span class="badge bg-light text-secondary border">${badge}</span>` : ""}
-            </div>
-            <div class="exec-heat-cells" role="img" aria-label="${escapeAttr(`${label} heatmap history`)}">${qoqHeatmapRow(blocks, colorByQoqScore)}</div>
-            <div class="text-muted small text-end exec-latest split">${formattedLatest}</div>
+            <div class="text-muted small text-end exec-latest">${formattedLatest}</div>
         </div>
     `;
 }
@@ -150,13 +127,6 @@ function executiveSplitBlocks(row) {
     return {
         download: row?.split_blocks?.download || [],
         upload: row?.split_blocks?.upload || [],
-    };
-}
-
-function executiveQoqBlocks(row) {
-    return {
-        download_total: row?.split_blocks?.download || [],
-        upload_total: row?.split_blocks?.upload || [],
     };
 }
 
@@ -186,9 +156,23 @@ function latestUtilization(row) {
     );
 }
 
-function mergedUtilizationRows(summary) {
+function scopedUtilizationLists(summary, scope) {
+    // `.64.3.2`: the dashboard has a Site/AP widget (entity_kind=Site) and a
+    // Circuit widget (entity_kind=Circuit). The global lists are kept for other
+    // consumers; the widgets read their kind-scoped lists from the summary.
+    if (scope === "site") {
+        return [summary?.top_download_sites || [], summary?.top_upload_sites || []];
+    }
+    if (scope === "circuit") {
+        return [summary?.top_download_circuits || [], summary?.top_upload_circuits || []];
+    }
+    return [summary?.top_download || [], summary?.top_upload || []];
+}
+
+function mergedUtilizationRows(summary, scope) {
     const byKey = new Map();
-    [...(summary?.top_download || []), ...(summary?.top_upload || [])].forEach((row) => {
+    const [downloadRows, uploadRows] = scopedUtilizationLists(summary, scope);
+    [...downloadRows, ...uploadRows].forEach((row) => {
         if (!row?.row_key || byKey.has(row.row_key)) {
             return;
         }
@@ -253,11 +237,27 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
     title() { return "Global Heatmap"; }
     tooltip() { return "15 minutes of global metrics, newest on the right."; }
 
+    // `.64.3.1` (A2): the Network-Snapshot strip (throughput counters + Nc/Nd/Ns +
+    // the Insight badge) is REMOVED from the Global Heatmap; its down/up counters
+    // move to the Last-30-Seconds-Traffic handle (A3). The Global Heatmap now
+    // subscribes only to the dashboard summary.
+    subscribeTo() { return ["ExecutiveDashboardSummary"]; }
+
     buildContainer() {
         const container = super.buildContainer();
+        const handle = container.querySelector(".dashbox-title");
+        if (handle) {
+            const caption = document.createElement("span");
+            caption.className = "exec-heat-caption ms-auto";
+            caption.textContent = "15 minutes, newest on the right";
+            handle.appendChild(caption);
+        }
         this._contentId = `${this.id}_global`;
         const body = document.createElement("div");
         body.id = this._contentId;
+        // `.64.3.1` (A4): a SHARED explicit body height so the Global dashbox and
+        // the 30s Traffic dashbox have equal TOTAL heights (both = title + body).
+        body.classList.add("exec-widget-body", "global-heat-body");
         container.appendChild(body);
         return container;
     }
@@ -319,11 +319,7 @@ export class ExecutiveGlobalHeatmapDashlet extends ExecutiveHeatmapBase {
             .join("");
         const html = `
                 <div class="card shadow-sm border-0">
-                <div class="card-body py-3">
-                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                        <div class="exec-section-title mb-0"><i class="fas fa-thermometer-half me-2 text-warning"></i>Global Heatmap</div>
-                        <span class="text-muted small">15 minutes, newest on the right</span>
-                    </div>
+                <div class="card-body py-2">
                     <div class="exec-heat-rows" role="list">${body}</div>
                 </div>
             </div>
@@ -343,12 +339,64 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
         this.config = config;
     }
 
+    // `.64.2` (A/C, REQUIRED-1): the handle's info button is driven by
+    // `tooltip()`; the metric panels previously rendered their info in the body
+    // title. Own it here so the handle is the single chrome row.
+    tooltip() {
+        return this.config.tooltip || null;
+    }
+
     buildContainer() {
         const container = super.buildContainer();
         this._contentId = `${this.id}_metric`;
         const body = document.createElement("div");
         body.id = this._contentId;
+        body.className = "exec-metric-body";
         container.appendChild(body);
+        // `.64.2` (A/C): the handle (`.dashbox-title`) is the SINGLE title row —
+        // carry the icon + DERIVED caption + the info/zoom + pop-out there.
+        // `.64.2.1` (R2.3/R2.4): restore the per-panel icon and order it
+        // title (+icon) → caption adjacent, with the info/zoom/pop-out controls
+        // grouped on the right. The controls group carries the `margin-left:auto`
+        // (moved off `> span:first-of-type` in the CSS) so inserting the caption
+        // can never make IT the floated element.
+        const handle = container.querySelector(".dashbox-title");
+        if (handle) {
+            const titleText = handle.firstChild;
+            if (this.config.icon) {
+                const icon = document.createElement("i");
+                icon.className = `fas ${this.config.icon} me-1 text-primary`;
+                icon.setAttribute("aria-hidden", "true");
+                handle.insertBefore(icon, handle.firstChild);
+            }
+            // Group base_dashlet's direct-child control spans (info, and zoom when
+            // present) so the whole control group floats right together.
+            const controls = document.createElement("span");
+            controls.className = "dashbox-title-controls";
+            Array.from(handle.children).forEach((child) => {
+                if (child.tagName === "SPAN") {
+                    controls.appendChild(child);
+                }
+            });
+            this._captionEl = document.createElement("span");
+            this._captionEl.className = "exec-heat-caption";
+            if (titleText) {
+                handle.insertBefore(this._captionEl, titleText.nextSibling);
+            } else {
+                handle.appendChild(this._captionEl);
+            }
+            if (this.config.link) {
+                const link = document.createElement("a");
+                link.href = this.config.link;
+                link.className = "text-decoration-none";
+                link.title = "Open the full detail page";
+                link.setAttribute("aria-label", `${this.title()} detail page`);
+                link.innerHTML = `View all <i class="fas fa-chevron-right ms-1"></i>`;
+                link.classList.add("exec-view-all");
+                controls.appendChild(link);
+            }
+            handle.appendChild(controls);
+        }
         return container;
     }
 
@@ -379,6 +427,8 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                     this.config.colorFn,
                     this.config.formatFn,
                     link,
+                    null,
+                    { p50Only: true },
                 );
             }
             if (this.config.metricKey === "retransmit") {
@@ -401,14 +451,6 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                     link,
                 );
             }
-            if (this.config.metricKey === "qoo") {
-                return qoqHeatRow(
-                    row.label,
-                    badge,
-                    executiveQoqBlocks(row),
-                    link,
-                );
-            }
             return heatRow(
                 row.label,
                 badge,
@@ -418,22 +460,14 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
                 link,
             );
         }).join("");
-        const linkIcon = this.config.link
-            ? `<i class="fas fa-external-link-alt ms-2 small text-muted"></i>`
-            : "";
-        const isQooMetric = this.config.metricKey === "qoo";
-        const titleLabel = isQooMetric
-            ? `QoO${qooInfoIconHtml()} Heatmap`
-            : this.config.title;
-        const titleHtml = this.config.link
-            ? `<a class="text-decoration-none text-secondary" href="${this.config.link}"><i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}${linkIcon}</a>`
-            : `<i class="fas ${this.config.icon} me-2 text-primary"></i>${titleLabel}`;
+        const derivedCaption = heatRowsCaption(rows);
+        if (this._captionEl) {
+            const caption = this.config.caption || derivedCaption;
+            this._captionEl.textContent = caption ? `— ${caption}` : "";
+        }
         const html = `
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body py-3">
-                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                        <div class="exec-section-title mb-0">${titleHtml}</div>
-                    </div>
+            <div class="card shadow-sm border-0 h-100 exec-card-${this.config.metricKey}">
+                <div class="card-body py-2">
                     <div class="exec-heat-rows" role="list">${metricRows}</div>
                 </div>
             </div>
@@ -449,13 +483,22 @@ class ExecutiveMetricHeatmapBase extends ExecutiveHeatmapBase {
     summaryRows(summary) {
         switch (this.config.metricKey) {
         case "rtt":
-            return (summary?.top_rtt || []).slice(0, MAX_HEATMAP_ROWS);
-        case "retransmit":
-            return (summary?.top_retransmit || []).slice(0, MAX_HEATMAP_ROWS);
+            return (summary?.top_rtt_sites || summary?.top_rtt || []).slice(0, MAX_HEATMAP_ROWS);
+        case "retransmit": {
+            const rows = (summary?.top_retransmit_sites || summary?.top_retransmit || []).slice();
+            const maxLatest = (row) => {
+                const up = latestValue(row?.split_blocks?.upload || []);
+                const down = latestValue(row?.split_blocks?.download || []);
+                return Math.max(
+                    up ?? Number.NEGATIVE_INFINITY,
+                    down ?? Number.NEGATIVE_INFINITY,
+                );
+            };
+            rows.sort((a, b) => maxLatest(b) - maxLatest(a));
+            return rows.slice(0, MAX_HEATMAP_ROWS);
+        }
         case "utilization":
-            return mergedUtilizationRows(summary);
-        case "qoo":
-            return (summary?.top_qoo || []).slice(0, MAX_HEATMAP_ROWS);
+            return mergedUtilizationRows(summary, this.config.scope);
         default:
             return [];
         }
@@ -466,6 +509,7 @@ export class ExecutiveRttHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
             title: "Median RTT",
+            tooltip: "Median round-trip time (p50 only, upload over download) for the top sites and APs over the last 15 minutes.",
             icon: "fa-stopwatch",
             metricKey: "rtt",
             colorFn: (v) => colorByRttMs(v),
@@ -474,6 +518,7 @@ export class ExecutiveRttHeatmapDashlet extends ExecutiveMetricHeatmapBase {
             countWeight: 100,
             minSamples: 3,
             hideAsns: true,
+            caption: "sites & APs",
         });
     }
     title() { return "Median RTT"; }
@@ -483,6 +528,7 @@ export class ExecutiveRetransmitsHeatmapDashlet extends ExecutiveMetricHeatmapBa
     constructor(slot) {
         super(slot, {
             title: "TCP Retransmits",
+            tooltip: "TCP retransmit percentage for the top sites and APs over the last 15 minutes; the row shows the worse direction.",
             icon: "fa-undo-alt",
             metricKey: "retransmit",
             colorFn: (v) => colorByRetransmitPct(Math.min(10, Math.max(0, v || 0))),
@@ -491,6 +537,7 @@ export class ExecutiveRetransmitsHeatmapDashlet extends ExecutiveMetricHeatmapBa
             countWeight: 100,
             minSamples: 3,
             hideAsns: true,
+            caption: "sites & APs",
         });
     }
     title() { return "TCP Retransmits"; }
@@ -499,31 +546,35 @@ export class ExecutiveRetransmitsHeatmapDashlet extends ExecutiveMetricHeatmapBa
 export class ExecutiveDownloadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "Utilization",
+            title: "Circuit Utilization",
+            tooltip: "Shaped utilization (upload / download) for the top circuits over the last 15 minutes.",
             icon: "fa-chart-line",
             metricKey: "utilization",
+            scope: "circuit",
             colorFn: colorByCapacity,
             formatFn: (v) => formatLatest(v, "%"),
             link: "executive_heatmap_download.html",
             hideAsns: true,
+            caption: "circuits",
         });
     }
-    title() { return "Utilization"; }
+    title() { return "Circuit Utilization"; }
 }
 
 export class ExecutiveUploadHeatmapDashlet extends ExecutiveMetricHeatmapBase {
     constructor(slot) {
         super(slot, {
-            title: "QoO Heatmap",
-            icon: "fa-bullseye",
-            metricKey: "qoo",
-            colorFn: colorByQoqScore,
-            formatFn: (v) => formatLatest(v, "", 0),
-            link: null,
+            title: "Site / AP Utilization",
+            tooltip: "Shaped utilization (upload / download) for the top sites and access points over the last 15 minutes.",
+            icon: "fa-tower-broadcast",
+            metricKey: "utilization",
+            scope: "site",
+            colorFn: colorByCapacity,
+            formatFn: (v) => formatLatest(v, "%"),
+            link: "executive_heatmap_download.html",
             hideAsns: true,
-            countWeight: 100,
-            minSamples: 3,
+            caption: "sites & APs",
         });
     }
-    title() { return "QoO Heatmap"; }
+    title() { return "Site / AP Utilization"; }
 }

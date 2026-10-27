@@ -1,8 +1,7 @@
     #[test]
     fn queue_auto_top_level_site_below_threshold_stays_visible() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
-        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
 
         let editor_state = TopologyEditorStateFile {
             schema_version: 1,
@@ -21,7 +20,6 @@
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -38,7 +36,6 @@
                     current_attachment_name: None,
                     can_move: false,
                     allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -116,128 +113,8 @@
 
 
     #[test]
-    fn queue_auto_top_level_site_above_threshold_becomes_virtual() {
-        let mut config = Config::default();
-        config.uisp_integration.enable_uisp = true;
-        config.topology.queue_auto_virtualize_threshold_mbps = 5_000;
-
-        let editor_state = TopologyEditorStateFile {
-            schema_version: 1,
-            source: "uisp/full2".to_string(),
-            generated_unix: None,
-            ingress_identity: None,
-            nodes: vec![
-                TopologyEditorNode {
-                    node_id: "site-root".to_string(),
-                    node_name: "Root Aggregation".to_string(),
-                    latitude: None,
-                    longitude: None,
-                    current_parent_node_id: None,
-                    current_parent_node_name: None,
-                    current_attachment_id: None,
-                    current_attachment_name: None,
-                    can_move: false,
-                    allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueAuto,
-                    preferred_attachment_id: None,
-                    preferred_attachment_name: None,
-                    effective_attachment_id: None,
-                    effective_attachment_name: None,
-                },
-                TopologyEditorNode {
-                    node_id: "site-child".to_string(),
-                    node_name: "Edge".to_string(),
-                    latitude: None,
-                    longitude: None,
-                    current_parent_node_id: Some("site-root".to_string()),
-                    current_parent_node_name: Some("Root Aggregation".to_string()),
-                    current_attachment_id: None,
-                    current_attachment_name: None,
-                    can_move: false,
-                    allowed_parents: Vec::new(),
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
-                    preferred_attachment_id: None,
-                    preferred_attachment_name: None,
-                    effective_attachment_id: None,
-                    effective_attachment_name: None,
-                },
-            ],
-        };
-
-        let canonical = json!({
-            "Root Aggregation": {
-                "children": {
-                    "Edge": {
-                        "children": {},
-                        "downloadBandwidthMbps": 1000,
-                        "id": "site-child",
-                        "name": "Edge",
-                        "type": "Site",
-                        "uploadBandwidthMbps": 1000
-                    }
-                },
-                "downloadBandwidthMbps": 7000,
-                "id": "site-root",
-                "name": "Root Aggregation",
-                "type": "Site",
-                "uploadBandwidthMbps": 7000
-            }
-        });
-
-        let effective = TopologyEffectiveStateFile {
-            schema_version: 1,
-            generated_unix: None,
-            canonical_generated_unix: None,
-            health_generated_unix: None,
-            nodes: vec![
-                TopologyEffectiveNodeState {
-                    node_id: "site-root".to_string(),
-                    logical_parent_node_id: String::new(),
-                    preferred_attachment_id: None,
-                    effective_attachment_id: None,
-                    fallback_reason: None,
-                    all_attachments_suppressed: false,
-                    attachments: vec![],
-                },
-                TopologyEffectiveNodeState {
-                    node_id: "site-child".to_string(),
-                    logical_parent_node_id: "site-root".to_string(),
-                    preferred_attachment_id: None,
-                    effective_attachment_id: None,
-                    fallback_reason: None,
-                    all_attachments_suppressed: false,
-                    attachments: vec![],
-                },
-            ],
-        };
-
-        let effective_network = apply_effective_topology_to_network_json(
-            &config,
-            &canonical,
-            &editor_state,
-            &effective,
-        );
-        let root = effective_network
-            .as_object()
-            .expect("effective export should remain an object tree");
-        let root_node = root
-            .get("Root Aggregation")
-            .and_then(Value::as_object)
-            .expect("root node should remain exported");
-        assert_eq!(
-            root_node.get("virtual").and_then(Value::as_bool),
-            Some(true)
-        );
-        let children = root_node["children"]
-            .as_object()
-            .expect("root node should retain its logical children");
-        assert!(children.get("Edge").is_some());
-    }
-
-
-    #[test]
     fn runtime_squashing_respects_do_not_squash_sites() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         config.uisp_integration.do_not_squash_sites = Some(vec!["Child Site".to_string()]);
         let canonical = json!({
@@ -298,7 +175,7 @@
 
     #[test]
     fn runtime_squashing_keeps_ptmp_uplink_aps_visible() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
             "Parent Site": {
@@ -364,7 +241,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -412,7 +288,7 @@
 
     #[test]
     fn effective_export_keeps_logical_children_without_explicit_attachment() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
             "Parent Site": {
@@ -456,7 +332,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -495,7 +370,7 @@
 
     #[test]
     fn runtime_prunes_inactive_backhaul_attachment_stubs() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
             "Parent Site": {
@@ -599,7 +474,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -642,7 +516,7 @@
 
     #[test]
     fn cross_site_move_anchors_under_peer_attachment_not_child_owned_attachment() {
-        let mut config = Config::default();
+        let mut config = test_config();
         config.uisp_integration.enable_uisp = true;
         let canonical = json!({
             "Site Alpha": {
@@ -715,7 +589,6 @@
                         all_attachments_suppressed: false,
                         has_probe_unavailable_attachments: false,
                     }],
-                    queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                     preferred_attachment_id: None,
                     preferred_attachment_name: None,
                     effective_attachment_id: None,
@@ -808,7 +681,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -832,7 +704,7 @@
         };
 
         let errors = try_apply_effective_topology_to_network_json(
-            &Config::default(),
+            &test_config(),
             &canonical,
             &ui_state,
             &effective,
@@ -898,7 +770,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -922,7 +793,7 @@
         };
 
         let errors = try_apply_effective_topology_to_network_json(
-            &Config::default(),
+            &test_config(),
             &canonical,
             &ui_state,
             &effective,
@@ -1015,7 +886,6 @@
                     all_attachments_suppressed: false,
                     has_probe_unavailable_attachments: false,
                 }],
-                queue_visibility_policy: TopologyQueueVisibilityPolicy::QueueVisible,
                 preferred_attachment_id: None,
                 preferred_attachment_name: None,
                 effective_attachment_id: None,
@@ -1040,7 +910,7 @@
         };
 
         let moved = apply_effective_topology_to_network_json(
-            &Config::default(),
+            &test_config(),
             &canonical,
             &ui_state,
             &effective,
@@ -1060,7 +930,7 @@
         assert!(howard_children.get("Howard Loewen").is_none());
         assert!(howard_children.get("Howard AP").is_some());
         validate_effective_topology_network(
-            &Config::default(),
+            &test_config(),
             &canonical,
             &ui_state,
             &effective,

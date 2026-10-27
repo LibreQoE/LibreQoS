@@ -116,6 +116,7 @@ fn materialize_operator_site_bandwidth_overrides(
                 site_name,
                 download_bandwidth_mbps,
                 upload_bandwidth_mbps,
+                ..
             } => Some(BandwidthOverride {
                 node_id: node_id.clone(),
                 site_name: site_name.clone(),

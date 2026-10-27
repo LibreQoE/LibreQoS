@@ -79,12 +79,26 @@
                                         </th>
                                         <th style="min-width: 9rem;">Min Mbps</th>
                                         <th style="min-width: 9rem;">Max Mbps</th>
-                                        <th style="min-width: 11rem;">Attach To</th>
+                                        <th style="min-width: 11rem;">
+                                            Attach To
+                                            <span
+                                                class="ms-1 text-muted"
+                                                role="button"
+                                                tabindex="0"
+                                                aria-label="Attach To help"
+                                                data-bs-toggle="tooltip"
+                                                data-bs-placement="top"
+                                                title="Blank = root (the dataplane root node). A non-empty value must resolve to a network.json node."
+                                            ><i class="fas fa-info-circle"></i></span>
+                                        </th>
                                         <th style="min-width: 5rem;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="dynamicRangesBody"></tbody>
                             </table>
+                        </div>
+                        <div class="form-text">
+                            Attach To: blank attaches the range to the dataplane root (unclamped); a non-empty value must resolve to a network.json node.
                         </div>
                     </div>
                 </div>

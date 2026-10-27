@@ -22,7 +22,6 @@ disable_offload = [ "gso", "tso", "lro", "sg", "gro" ]
 
 # EITHER:
 [bridge]
-use_xdp_bridge = false
 to_internet = "eth0"
 to_network = "eth1"
 # mtu = 1500
@@ -48,8 +47,6 @@ dry_run = false
 sudo = false
 #override_available_queues = 12 # This can be omitted and be 0 for Python
 use_binpacking = false
-lazy_queues = "No"
-lazy_expire_seconds = 0
 
 [long_term_stats]
 gather_stats = false
@@ -63,16 +60,10 @@ allow_subnets = [ "172.16.0.0/12", "10.0.0.0/8", "100.64.0.0/10"]
 
 [flows]
 # You need to change the netflow_port, netflow_ip to your receiver (and uncomment them), and netflow_version must be either 5 (IPv4 only, faster) or 9 (IPv6 and 4, much larger packets)
-flow_timeout_seconds = 30
 netflow_enabled = false
 # netflow_port = 2055
 # netflow_ip = "127.0.0.1"
 # netflow_version = 9
-do_not_track_subnets = [ "192.168.66.0/24" ]
-
-[byte_counters]
-# Optional cumulative byte counters for nodes and circuits, exposed by lqos_api.
-enabled = false
 
 [integration_common]
 circuit_name_as_address = false
