@@ -57,15 +57,11 @@ impl NetplanReport {
 /// `single_interface`).
 pub fn pair_from_config(config: &lqos_config::Config) -> Vec<String> {
     if let Some(bridge) = &config.bridge {
-        let wan = bridge.to_internet.trim();
-        let lan = bridge.to_network.trim();
-        let mut pair: Vec<String> = Vec::new();
-        for name in [wan, lan] {
-            if !name.is_empty() && !pair.iter().any(|p| p == name) {
-                pair.push(name.to_string());
-            }
-        }
-        return pair;
+        return [bridge.to_internet.trim(), bridge.to_network.trim()]
+            .into_iter()
+            .filter(|name| !name.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
     }
     if let Some(single) = &config.single_interface {
         let name = single.interface.trim();
@@ -74,16 +70,6 @@ pub fn pair_from_config(config: &lqos_config::Config) -> Vec<String> {
         }
     }
     Vec::new()
-}
-
-/// On-a-stick from the typed `bridge.conf` JSON: `interface_topology.mode` is
-/// exactly `"stick"`. Unknown/malformed JSON is not a stick.
-pub fn on_a_stick_bridge_conf(body: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|value| value.get("interface_topology").cloned())
-        .and_then(|topology| topology.get("mode").and_then(|m| m.as_str()).map(str::to_owned))
-        .is_some_and(|mode| mode == "stick")
 }
 
 /// Scan the default netplan directory for bridges over `pair`.
@@ -342,13 +328,6 @@ mod tests {
         let report = check_at(&dir.0, &pair());
         assert!(!report.has_conflict());
         assert_eq!(report.bridges.len(), 1);
-    }
-
-    #[test]
-    fn interface_topology_mode_stick_is_on_a_stick() {
-        assert!(on_a_stick_bridge_conf(r#"{"interface_topology":{"mode":"stick"}}"#));
-        assert!(!on_a_stick_bridge_conf(r#"{"interface_topology":{"mode":"inline"}}"#));
-        assert!(!on_a_stick_bridge_conf("not json"));
     }
 
     #[test]

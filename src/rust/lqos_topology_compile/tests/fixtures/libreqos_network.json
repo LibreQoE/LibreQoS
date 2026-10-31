@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "match": { "mode": "ip" },
   "topology": [
     {
@@ -7,10 +7,10 @@
       "type": "site",
       "name": "Site One",
       "rate": {
-        "commit_down_bps": 0,
-        "commit_up_bps": 0,
-        "ceil_down_bps": 1000000000,
-        "ceil_up_bps": 1000000000
+        "commit_down_mbps": 0,
+        "commit_up_mbps": 0,
+        "ceil_down_mbps": 1000.0,
+        "ceil_up_mbps": 1000.0
       }
     },
     {
@@ -19,10 +19,10 @@
       "parent": "s1",
       "name": "AP One",
       "rate": {
-        "commit_down_bps": 0,
-        "commit_up_bps": 0,
-        "ceil_down_bps": 100000000,
-        "ceil_up_bps": 100000000
+        "commit_down_mbps": 0,
+        "commit_up_mbps": 0,
+        "ceil_down_mbps": 100.0,
+        "ceil_up_mbps": 100.0
       }
     }
   ],
@@ -32,10 +32,10 @@
       "parent": "ap1",
       "display_name": "Circuit One",
       "plan": {
-        "commit_down_bps": 10000000,
-        "commit_up_bps": 5000000,
-        "ceil_down_bps": 100000000,
-        "ceil_up_bps": 50000000
+        "commit_down_mbps": 10.0,
+        "commit_up_mbps": 5.0,
+        "ceil_down_mbps": 250.5,
+        "ceil_up_mbps": 50.0
       },
       "devices": [
         {
@@ -51,10 +51,10 @@
       "parent": "ap1",
       "display_name": "Circuit Two",
       "plan": {
-        "commit_down_bps": 20000000,
-        "commit_up_bps": 10000000,
-        "ceil_down_bps": 200000000,
-        "ceil_up_bps": 100000000
+        "commit_down_mbps": 20.0,
+        "commit_up_mbps": 10.0,
+        "ceil_down_mbps": 200.0,
+        "ceil_up_mbps": 100.0
       },
       "devices": [
         {

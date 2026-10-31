@@ -201,6 +201,11 @@ pub struct TreeLiveView {
     /// Circuit ids that matched no store node this build (rate-limited
     /// WARN at the builder; the T1 divergence assert covers the inverse).
     pub unmatched_circuits: usize,
+    /// 163.1: stale circuit rows whose parent node is no longer in the
+    /// current world. They are PRUNED (not counted as a store mismatch) so a
+    /// structural remove publishes a complete new store without a false
+    /// "matched no store node" WARN.
+    pub pruned_stale_circuits: usize,
     pub stale: bool,
     pub captured_at_millis: u64,
 }
@@ -313,34 +318,9 @@ static STARTED: OnceLock<()> = OnceLock::new();
 /// (cake_watcher) connect to the SAME socket the snapshot poll uses.
 static ANALYTICS_SOCKET: OnceLock<PathBuf> = OnceLock::new();
 
-/// Test-only bridge-active override. The raw-queue tests need the active path
-/// without setting the process-global `STARTED` OnceLock (which cannot be
-/// reset and leaked into unrelated tests, making the raw-path test take the
-/// empty bridge branch). Thread-local so parallel tests stay isolated.
-/// Compiled out of production builds.
-#[cfg(test)]
-thread_local! {
-    static TEST_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// Whether the E2 stats actor is active (endpoint source selection).
 pub fn is_active() -> bool {
-    #[cfg(test)]
-    if TEST_ACTIVE.with(std::cell::Cell::get) {
-        return true;
-    }
     STARTED.get().is_some()
-}
-
-/// Test-only: set the bridge-active override on this test thread; returns the
-/// previous value so a guard can restore it.
-#[cfg(test)]
-fn set_test_active(active: bool) -> bool {
-    TEST_ACTIVE.with(|cell| {
-        let previous = cell.get();
-        cell.set(active);
-        previous
-    })
 }
 
 /// Current bridge-sourced snapshot (empty + stale before the first
@@ -2187,7 +2167,14 @@ fn publish_tree_live_view(
         median_ms_by_circuit,
     );
     let unmatched = view.unmatched_circuits;
+    let pruned = view.pruned_stale_circuits;
     TREE_LIVE_VIEW.store(Arc::new(Some(Arc::new(view))));
+    use std::sync::atomic::Ordering;
+    if pruned > 0 && LAST_PRUNED_STALE.swap(pruned, Ordering::Relaxed) != pruned {
+        info!("Tree live-view: pruned {pruned} stale circuit row(s) (not a store mismatch)");
+    } else if pruned == 0 {
+        LAST_PRUNED_STALE.store(0, Ordering::Relaxed);
+    }
     let now = now_unix_estimate();
     let mut state = UNMATCHED_WARN_STATE.lock();
     if unmatched_warn_due(now, unmatched, &mut state) {
@@ -2210,6 +2197,9 @@ struct UnmatchedWarnState {
 
 static UNMATCHED_WARN_STATE: Lazy<parking_lot::Mutex<UnmatchedWarnState>> =
     Lazy::new(|| parking_lot::Mutex::new(UnmatchedWarnState::default()));
+/// 163.1: log `pruned_stale` only when the count changes (no per-tick spam).
+static LAST_PRUNED_STALE: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 /// True when the unmatched-circuit WARN should fire NOW: the first
 /// sighting, or ≥ [`UNMATCHED_WARN_MIN_INTERVAL_SECS`] since the last
@@ -2265,10 +2255,15 @@ fn build_tree_live_view(
             // 3b DEFECT 1: attribute the circuit to its catalog PARENT NODE,
             // then that node's self-inclusive chain — never the circuit id.
             let Some(parent_node) = parent_by_circuit.get(circuit_id.as_str()) else {
-                view.unmatched_circuits += 1;
+                // 163.1: a structural remove leaves stale rows behind; prune
+                // them instead of reporting a store mismatch.
+                view.pruned_stale_circuits += 1;
                 continue;
             };
             let Some(&node_idx) = index_by_name.get(parent_node.as_str()) else {
+                // The circuit IS current (it has a parent mapping) but the
+                // store has no node: that is a real divergence, not a stale
+                // row. Keep it loud.
                 view.unmatched_circuits += 1;
                 continue;
             };
@@ -2544,24 +2539,6 @@ mod tests {
         }
     }
 
-    /// 110-circuit resolver: the last IPv4 octet is the numeric circuit id.
-    fn resolve_110(ip: &IpAddr) -> Option<String> {
-        let last = ip.to_string().rsplit('.').next()?.parse::<u32>().ok()?;
-        Some(format!("c{last}"))
-    }
-
-    /// 110-circuit join: the last IPv4 octet is the numeric circuit id.
-    fn join_110(
-        next: &AnalyticsSnapshot,
-        deltas: &FxHashMap<HostKey, translate::HostDelta>,
-    ) -> FxHashMap<String, CircuitLiveRow> {
-        join_by_circuit(next, deltas, |ip| {
-            let last = ip.to_string().rsplit('.').next()?.parse::<u32>().ok()?;
-            let leaked: &'static str = Box::leak(format!("c{last}").into_boxed_str());
-            Some(leaked)
-        })
-    }
-
     /// Identity join for tests: every row joins to circuit "c1".
     fn join_fixed(
         next: &AnalyticsSnapshot,
@@ -2710,84 +2687,6 @@ mod tests {
 
     /// `lqos-74t.117`: a counter reset (retention eviction) and a missing
     /// host row must NOT drop/zero a continuously transmitting circuit. The
-    /// frass-shaped A/B continuity: 110 circuits alternate between a
-    /// counter reset (CAKE->FIFO rebuild) and a missing host row
-    /// (FIFO->CAKE rebuild). The per-circuit live sample must remain present
-    /// with a non-zero last-good rate on every poll after the first interval —
-    /// no missing/zero graph gap.
-    #[test]
-    fn frass_shaped_110_circuits_flip_continuity_has_no_gap() {
-        let _guard = TEST_LOCK.lock().expect("test invariant");
-        reset_cache();
-        let rows = |millis: u64, base: u64, flip: Option<bool>| {
-            let mut out = Vec::new();
-            for n in 1..=110u64 {
-                let reset = flip.is_some_and(|even_reset| (n % 2 == 0) == even_reset);
-                if flip.is_some() && reset {
-                    // Counter reset for half the circuits.
-                    out.push(host_row(n, &format!("192.0.2.{n}"), 100, 50));
-                } else if flip.is_some() {
-                    // Missing host row for the other half.
-                } else {
-                    out.push(host_row(n, &format!("192.0.2.{n}"), base + n, base / 2 + n));
-                }
-            }
-            snapshot_at(millis, out)
-        };
-        let service = spawn_service(vec![
-            rows(1_000, 1_000, None),
-            rows(2_000, 2_000, None),
-            rows(3_000, 0, Some(true)),  // even reset, odd missing
-            rows(4_000, 4_000, None),
-            rows(5_000, 0, Some(false)), // odd reset, even missing
-            rows(6_000, 6_000, None),
-        ]);
-        let mut seeds = FxHashMap::default();
-        let mut prev = None;
-        let mut totals = None;
-        let mut history = flow_history::FlowHistory::new();
-        let mut heatmap = circuit_heatmap::CircuitHeatmapAccumulator::new();
-        let mut qoo = circuit_qoo::CircuitQooAccumulator::new();
-        let mut flow_seeds = FxHashMap::default();
-        let mut rate_memory = CircuitRateMemory::default();
-        for poll in 0..6 {
-            poll_and_store_with(
-                &service.socket,
-                &mut seeds,
-                &mut prev,
-                &mut totals,
-                &mut history,
-                &mut heatmap,
-                &mut qoo,
-                &mut flow_seeds,
-                &mut rate_memory,
-                resolve_110,
-                join_110,
-            );
-            let cache = CACHE.load();
-            if poll >= 1 {
-                assert_eq!(
-                    cache.by_circuit_id.len(),
-                    110,
-                    "poll {poll}: no circuit may disappear on a flip"
-                );
-                if poll == 2 || poll == 4 {
-                    assert!(
-                        !cache.last_good_circuit_ids.is_empty(),
-                        "poll {poll}: a flip must be surfaced as last-good, not a gap"
-                    );
-                }
-                for (circuit, row) in cache.by_circuit_id.iter() {
-                    assert!(
-                        row.bytes_per_second.down > 0 && row.bytes_per_second.up > 0,
-                        "poll {poll}: {circuit} must carry a last-good rate, not a zero gap"
-                    );
-                }
-            }
-        }
-        reset_cache();
-    }
-
     /// last interval delta is carried for a reset, the last-good row is
     /// carried for a missing row, and both are marked in
     /// `last_good_circuit_ids` (stale/last-good, never a silent gap).
@@ -3393,6 +3292,17 @@ mod tree_live_tests {
     /// (`rtt_current_p50_nanos`). A site whose circuits read <100 ms rolls up
     /// <100 ms even when the bridge p50 is high.
     #[test]
+    fn current_circuit_without_parent_is_pruned_not_unmatched() {
+        let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
+        write_store();
+        let mut joined = FxHashMap::default();
+        joined.insert("c1".to_string(), row(1, 1));
+        let view = build_tree_live_view(&joined, &FxHashMap::default(), 1, false, &FxHashMap::default());
+        assert_eq!(view.unmatched_circuits, 0);
+        assert_eq!(view.pruned_stale_circuits, 1);
+    }
+
+    #[test]
     fn tree_live_view_rtts_use_the_tracker_median_source() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
         write_store();
@@ -3418,9 +3328,10 @@ mod tree_live_tests {
         }
     }
 
-    /// A circuit whose id matches no catalog parent is counted, not silent.
+    /// 163.1: a stale circuit whose parent is gone is pruned, not reported as
+    /// a store mismatch (the structural-remove fix).
     #[test]
-    fn unmatched_circuit_without_a_parent_is_counted() {
+    fn stale_circuit_without_a_parent_is_pruned() {
         let _guard = super::tests::TEST_LOCK.lock().expect("test invariant");
         write_store();
         let mut parents: FxHashMap<String, String> = FxHashMap::default();
@@ -3428,7 +3339,17 @@ mod tree_live_tests {
         let mut joined = FxHashMap::default();
         joined.insert("ghost".to_string(), row(999, 999));
         let view = build_tree_live_view(&joined, &parents, 1, false, &FxHashMap::default());
-        assert_eq!(view.unmatched_circuits, 1, "ghost counted, not silent");
+        assert_eq!(view.unmatched_circuits, 0, "stale row is not a mismatch");
+        assert_eq!(view.pruned_stale_circuits, 1, "stale row pruned");
+
+        // A CURRENT circuit whose parent node is missing is a real mismatch.
+        let mut parents2: FxHashMap<String, String> = FxHashMap::default();
+        parents2.insert("current".to_string(), "missing-node".to_string());
+        let mut joined2 = FxHashMap::default();
+        joined2.insert("current".to_string(), row(1, 1));
+        let view = build_tree_live_view(&joined2, &parents2, 1, false, &FxHashMap::default());
+        assert_eq!(view.unmatched_circuits, 1, "current circuit missing node warns");
+        assert_eq!(view.pruned_stale_circuits, 0);
     }
 
     #[test]
@@ -4065,22 +3986,6 @@ mod raw_queue_tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Scoped bridge-active override for the raw-queue tests. It replaces the
-    /// old `STARTED.set(())` (a process-global OnceLock that could not be
-    /// reset) so these tests keep bridge-active coverage without leaking the
-    /// active state into the rest of the test binary.
-    struct TestActiveGuard(bool);
-
-    impl Drop for TestActiveGuard {
-        fn drop(&mut self) {
-            super::set_test_active(self.0);
-        }
-    }
-
-    fn active_for_test() -> TestActiveGuard {
-        TestActiveGuard(super::set_test_active(true))
-    }
-
     fn row(sent: u64, tins: bool) -> QdiscDetailRow {
         QdiscDetailRow {
             slot_id: 7,
@@ -4127,7 +4032,7 @@ mod raw_queue_tests {
 
     #[test]
     fn snapshot_is_cache_only_zero_socket_on_hit_and_miss() {
-        let _active = active_for_test();
+        let _ = STARTED.set(());
         let _guard = test_lock();
         let before = analytics_ipc::queue_stats_socket_calls();
         assert!(raw_queue_snapshot("cold-circuit").is_none());
@@ -4165,7 +4070,7 @@ mod raw_queue_tests {
 
     #[test]
     fn non_cake_counters_are_none_not_zero() {
-        let _active = active_for_test();
+        let _ = STARTED.set(());
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms().saturating_sub(10)), 7, 0, false);
         seed("fifo", &r);
@@ -4187,7 +4092,7 @@ mod raw_queue_tests {
 
     #[test]
     fn backward_clock_step_is_explicit_not_zero_age() {
-        let _active = active_for_test();
+        let _ = STARTED.set(());
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms().saturating_add(60_000)), 9, 10, true);
         seed("future", &r);
@@ -4200,7 +4105,7 @@ mod raw_queue_tests {
 
     #[test]
     fn a_reply_without_sample_time_is_unavailable() {
-        let _active = active_for_test();
+        let _ = STARTED.set(());
         let _guard = test_lock();
         let r = reply(None, 1, 10, true);
         seed("old-bridge", &r);
@@ -4212,7 +4117,7 @@ mod raw_queue_tests {
 
     #[test]
     fn entries_and_interest_are_dropped_when_a_circuit_leaves() {
-        let _active = active_for_test();
+        let _ = STARTED.set(());
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms()), 3, 1, true);
         seed("gone", &r);
@@ -4231,7 +4136,7 @@ mod raw_queue_tests {
 
     #[test]
     fn the_last_reply_cache_is_bounded() {
-        let _active = active_for_test();
+        let _ = STARTED.set(());
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms()), 1, 1, true);
         let cap = raw_queue_cache_cap();

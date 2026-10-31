@@ -1,11 +1,10 @@
 //! Determines whether runtime topology onboarding is still required after
 //! `lqos_setup` has handed control to `lqosd`.
 
-use lqos_config::{Config, load_config};
+use lqos_config::{Config, TopologySource, load_config};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use crate::node_manager::local_api::config::active_topology_source_integrations;
 
 /// Describes the topology source family currently detected by `lqosd`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -15,6 +14,7 @@ pub(crate) enum RuntimeTopologySourceKind {
     None,
     Integration,
     ManualFiles,
+    LibreqosNetwork,
 }
 
 /// Reports whether the operator still needs to finish runtime topology setup.
@@ -46,65 +46,110 @@ fn topology_files_present(config: &Config) -> (bool, bool) {
     )
 }
 
+fn source_kind(source: Option<TopologySource>) -> RuntimeTopologySourceKind {
+    match source {
+        Some(source) if source.is_integration() => RuntimeTopologySourceKind::Integration,
+        Some(TopologySource::ShapedDevices) => RuntimeTopologySourceKind::ManualFiles,
+        Some(TopologySource::LibreqosNetwork) => RuntimeTopologySourceKind::LibreqosNetwork,
+        Some(_) => RuntimeTopologySourceKind::None,
+        None => RuntimeTopologySourceKind::None,
+    }
+}
+
 fn from_config(config: &Config) -> RuntimeOnboardingState {
-    let active_integrations = active_topology_source_integrations(config)
-        .into_iter()
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    let source = config.topology.source;
+    let active_integrations = source
+        .filter(|source| source.is_integration())
+        .map(|source| vec![source.display_name().to_string()])
+        .unwrap_or_default();
     let (network_json_present, shaped_devices_present) = topology_files_present(config);
 
-    if !active_integrations.is_empty() {
+    if let Some(conflict) = config.topology_source_runtime.conflict.as_ref() {
         return RuntimeOnboardingState {
-            required: false,
-            status_label: "Configured".to_string(),
-            summary: format!(
-                "Topology source is configured through {}. Topology data may still be publishing.",
-                active_integrations.join(", ")
-            ),
-            source_kind: RuntimeTopologySourceKind::Integration,
+            required: true,
+            status_label: "Source Conflict".to_string(),
+            summary: conflict.message.clone(),
+            source_kind: source_kind(source),
             active_integrations,
             network_json_present,
             shaped_devices_present,
-            status_severity: "info".to_string(),
+            status_severity: "danger".to_string(),
         };
     }
 
-    if network_json_present && shaped_devices_present {
-        return RuntimeOnboardingState {
-            required: false,
-            status_label: "Ready".to_string(),
-            summary: "Manual topology files are present.".to_string(),
-            source_kind: RuntimeTopologySourceKind::ManualFiles,
-            active_integrations,
-            network_json_present,
-            shaped_devices_present,
-            status_severity: "success".to_string(),
-        };
-    }
-
-    let source_kind = if network_json_present || shaped_devices_present {
-        RuntimeTopologySourceKind::ManualFiles
-    } else {
-        RuntimeTopologySourceKind::None
-    };
-    let summary = match (network_json_present, shaped_devices_present) {
-        (false, false) => {
-            "Choose a topology source before expecting scheduler activity.".to_string()
+    if let Some(source) = source {
+        match source {
+            TopologySource::ShapedDevices => {
+                if network_json_present && shaped_devices_present {
+                    return RuntimeOnboardingState {
+                        required: false,
+                        status_label: "Ready".to_string(),
+                        summary: "Manual topology files are present.".to_string(),
+                        source_kind: RuntimeTopologySourceKind::ManualFiles,
+                        active_integrations,
+                        network_json_present,
+                        shaped_devices_present,
+                        status_severity: "success".to_string(),
+                    };
+                }
+                let summary = match (network_json_present, shaped_devices_present) {
+                    (false, false) => {
+                        "Choose a topology source before expecting scheduler activity.".to_string()
+                    }
+                    (false, true) => {
+                        "ShapedDevices.csv exists, but network.json is still missing.".to_string()
+                    }
+                    (true, false) => {
+                        "network.json exists, but ShapedDevices.csv is still missing.".to_string()
+                    }
+                    (true, true) => unreachable!("handled by the ready branch"),
+                };
+                RuntimeOnboardingState {
+                    required: true,
+                    status_label: "Setup Required".to_string(),
+                    summary,
+                    source_kind: RuntimeTopologySourceKind::ManualFiles,
+                    active_integrations,
+                    network_json_present,
+                    shaped_devices_present,
+                    status_severity: "warning".to_string(),
+                }
+            }
+            TopologySource::LibreqosNetwork => RuntimeOnboardingState {
+                required: false,
+                status_label: "Configured".to_string(),
+                summary: "Topology source is the libreqos_network.json drop.".to_string(),
+                source_kind: RuntimeTopologySourceKind::LibreqosNetwork,
+                active_integrations,
+                network_json_present,
+                shaped_devices_present,
+                status_severity: "info".to_string(),
+            },
+            _ => RuntimeOnboardingState {
+                required: false,
+                status_label: "Configured".to_string(),
+                summary: format!(
+                    "Topology source is configured through {}. Topology data may still be publishing.",
+                    source.display_name()
+                ),
+                source_kind: RuntimeTopologySourceKind::Integration,
+                active_integrations,
+                network_json_present,
+                shaped_devices_present,
+                status_severity: "info".to_string(),
+            },
         }
-        (false, true) => "ShapedDevices.csv exists, but network.json is still missing.".to_string(),
-        (true, false) => "network.json exists, but ShapedDevices.csv is still missing.".to_string(),
-        (true, true) => unreachable!("handled above"),
-    };
-
-    RuntimeOnboardingState {
-        required: true,
-        status_label: "Setup Required".to_string(),
-        summary,
-        source_kind,
-        active_integrations,
-        network_json_present,
-        shaped_devices_present,
-        status_severity: "warning".to_string(),
+    } else {
+        RuntimeOnboardingState {
+            required: true,
+            status_label: "Setup Required".to_string(),
+            summary: "Choose a topology source before expecting scheduler activity.".to_string(),
+            source_kind: RuntimeTopologySourceKind::None,
+            active_integrations,
+            network_json_present,
+            shaped_devices_present,
+            status_severity: "warning".to_string(),
+        }
     }
 }
 
@@ -178,10 +223,11 @@ mod tests {
         fs::write(dir.join("ShapedDevices.csv"), "Circuit ID,Device ID\n")
             .expect("write shaped devices");
 
-        let config = Config {
+        let mut config = Config {
             lqos_directory: dir.to_string_lossy().into_owned(),
             ..Config::default()
         };
+        config.topology.source = Some(lqos_config::TopologySource::ShapedDevices);
 
         let state = from_config(&config);
 
@@ -200,7 +246,7 @@ mod tests {
             lqos_directory: dir.to_string_lossy().into_owned(),
             ..Config::default()
         };
-        config.splynx_integration.enable_splynx = true;
+        config.topology.source = Some(lqos_config::TopologySource::Splynx);
 
         let state = from_config(&config);
 
@@ -209,6 +255,50 @@ mod tests {
         assert_eq!(state.active_integrations, vec!["Splynx".to_string()]);
         assert_eq!(state.status_label, "Configured");
         assert_eq!(state.status_severity, "info");
+
+        fs::remove_dir_all(dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn libreqos_network_is_configured_without_a_scheduler_integration() {
+        let dir = test_dir("libreqos");
+        let mut config = Config {
+            lqos_directory: dir.to_string_lossy().into_owned(),
+            ..Config::default()
+        };
+        config.topology.source = Some(lqos_config::TopologySource::LibreqosNetwork);
+
+        let state = from_config(&config);
+
+        assert!(!state.required);
+        assert_eq!(state.source_kind, RuntimeTopologySourceKind::LibreqosNetwork);
+        assert!(state.active_integrations.is_empty());
+        assert_eq!(state.status_label, "Configured");
+
+        fs::remove_dir_all(dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn source_conflict_blocks_onboarding_and_names_the_conflict() {
+        let dir = test_dir("conflict");
+        let mut config = Config {
+            lqos_directory: dir.to_string_lossy().into_owned(),
+            ..Config::default()
+        };
+        config.topology.source = Some(lqos_config::TopologySource::Visp);
+        config.topology_source_runtime.conflict = Some(
+            lqos_config::TopologySourceConflict {
+                source: Some(lqos_config::TopologySource::Visp),
+                enabled: vec!["enable_uisp".to_string()],
+                message: "topology source conflict: enable_uisp is enabled".to_string(),
+            },
+        );
+
+        let state = from_config(&config);
+
+        assert!(state.required);
+        assert_eq!(state.status_label, "Source Conflict");
+        assert!(state.summary.contains("enable_uisp"));
 
         fs::remove_dir_all(dir).expect("remove temp dir");
     }

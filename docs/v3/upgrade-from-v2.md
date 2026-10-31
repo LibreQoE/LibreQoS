@@ -1,18 +1,12 @@
 # Upgrading from LibreQoS v2.0 to v3
 
-**Version: LibreQoS v3 beta 12 (pre-release).** This is the operator entry point
-for a v2.0 → v3 upgrade. The **consolidated, step-by-step guide** ships in the
-source tree at `packaging/UPGRADE.md`; this page is its summary.
+**Version: LibreQoS v3 (current).** This is the operator entry point for a
+v2.0 → v3 upgrade. The **consolidated, step-by-step guide** ships in the source
+tree at `packaging/UPGRADE.md`; this page is its summary.
 
 ```{note}
 The canonical consolidated guide is `packaging/UPGRADE.md`. This page mirrors its
 shape; where they differ, the packaging guide is authoritative.
-```
-
-```{note}
-Beta 12 is a pre-release. Keep a v2.0 rollback image/configuration and the
-[v2.0 documentation archive](../v2.0/index.md) available. Read
-[Known limitations](known-limitations.md) before upgrading.
 ```
 
 ## The path, in order

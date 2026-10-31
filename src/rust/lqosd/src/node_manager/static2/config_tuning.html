@@ -22,6 +22,11 @@
                             <div id="dpdkWorkersHelp" class="form-text">Applies after the next <code>libreqos-setup</code> run (the plan/env writer renders <code>[queues] workers</code> into <code>LIBREQOS_DPDK_WORKERS</code>) <strong>and</strong> a <code>libreqos-bridge</code> restart — not a restart alone. Leave blank to let the installer derive it.</div>
                         </div>
                         <div class="form-text">The EAL lcore set remains authoritative; this value sizes the worker pool and defaults the RX/TX queue counts. The panel's <em>boot</em> value (<code>LIBREQOS_DPDK_WORKERS</code>) is shown read-only and can legitimately differ from this configured value until the installer re-renders the environment.</div>
+                        <div class="mb-3">
+                            <label for="dpdkPlacementBudget" class="form-label">Placement Budget (Mbps, pre-headroom — <code>[tuning] placement_budget_mbps</code>)</label>
+                            <input type="number" class="form-control" id="dpdkPlacementBudget" min="1" step="1" aria-describedby="dpdkPlacementBudgetHelp">
+                            <div id="dpdkPlacementBudgetHelp" class="form-text">Blank = compiled default 2000 Mbps pre-headroom, which is 1500 Mbps effective at the default 25% headroom. This is the cold-placement per-worker budget; the bridge reads it directly from <code>lqos.conf</code> at startup.</div>
+                        </div>
                     </div>
 
                     <div class="col-12 col-xl-7">

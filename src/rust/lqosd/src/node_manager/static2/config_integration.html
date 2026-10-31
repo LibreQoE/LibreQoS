@@ -5,6 +5,29 @@
         <section class="lqos-config-panel">
             <div class="lqos-config-panel-header">
                 <div>
+                    <h5 class="lqos-config-panel-title">Topology Source</h5>
+                    <div class="lqos-config-panel-subtitle">One active source produces the topology. The selector is authoritative; the per-integration enable checkboxes are read-only displays.</div>
+                </div>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="lqos-config-section">
+                        <div class="mb-3">
+                            <label for="topologySource" class="form-label">Active Topology Source</label>
+                            <select class="form-select" id="topologySource"></select>
+                            <div class="form-text" id="topologySourceHelp"></div>
+                        </div>
+                        <div class="form-text" id="topologySourceStatus"></div>
+                        <div class="alert alert-warning d-none mt-3" id="topologySourceConflict" role="alert"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="lqos-config-panel">
+            <div class="lqos-config-panel-header">
+                <div>
                     <h5 class="lqos-config-panel-title">Integration Defaults</h5>
                     <div class="lqos-config-panel-subtitle">Set behavior shared across integrations, including topology compile mode, naming, DIY overwrite policy, queue-refresh timing, and bandwidth adjustments.</div>
                 </div>
@@ -21,7 +44,7 @@
                             <select class="form-select" id="topologyCompileMode">
                                 <option value="flat">Flat - Only shapes subscribers, no hierarchy</option>
                                 <option value="ap_only">AP Only - AP to clients</option>
-                                <option value="ap_site">AP Site - Site to AP to clients (Default)</option>
+                                <option value="ap_site">AP Site - Site to AP to clients</option>
                                 <option value="full">Full - Preserve the richest hierarchy</option>
                             </select>
                             <div class="form-text">Shared topology mode used by Topology Manager and the scheduler for integration-driven imports.</div>

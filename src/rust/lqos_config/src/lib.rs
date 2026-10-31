@@ -58,7 +58,9 @@ pub use etc::{
     RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
     RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
     RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
-    MaintenanceWindowConfig, TopologyConfig, Tunables, clear_cached_config, config_path,
+    MaintenanceWindowConfig, TopologyConfig, TopologySource, TopologySourceConflict,
+    TopologySourceOrigin, TopologySourceRuntime, Tunables, clear_cached_config, config_path,
+    topology_source_is, validate_topology_selection,
     load_config, normalize_external_hostname, update_config, validate_rate_profile_mbps,
 };
 pub use ethernet_port_limits::{

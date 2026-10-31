@@ -1,8 +1,7 @@
 # Operating LibreQoS v3
 
-**Version: LibreQoS v3 beta 12 (pre-release).** How to check, change, and
-support a running v3 host. See [Known limitations](known-limitations.md) for the
-beta scope.
+**Version: LibreQoS v3 (current).** How to check, change, and support a running
+v3 host.
 
 ## The units
 

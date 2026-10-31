@@ -1,4 +1,8 @@
-import { activeTopologySourceIntegrations, loadConfig } from "./config/config_helper";
+import {
+    activeTopologySourceIntegrations,
+    loadConfig,
+    topologySourceLabel,
+} from "./config/config_helper";
 
 function setText(id, text) {
     const element = document.getElementById(id);
@@ -26,9 +30,10 @@ function setStatusAlert(state) {
 
 function renderState(state) {
     const config = window.config || {};
+    const sourceLabel = topologySourceLabel(config?.topology?.source);
     const activeIntegrations = state?.active_integrations?.length
         ? state.active_integrations
-        : activeTopologySourceIntegrations(config);
+        : (sourceLabel ? [sourceLabel] : activeTopologySourceIntegrations(config));
 
     setStatusAlert(state);
     setText(

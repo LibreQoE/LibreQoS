@@ -638,6 +638,11 @@ pub fn queue_completed_flows_unretained(flows: &[FlowRow]) -> bool {
     ok
 }
 
+/// The current bounded NetFlow queue depth (0 when the exporter is disabled).
+pub fn queue_depth() -> usize {
+    EXPORTER.get().map(|handles| handles.sender.len()).unwrap_or(0)
+}
+
 /// The exporter task: bind the socket, then run the VERSION-dispatched encoder
 /// loop (`lqos-b4w`: v5 vs the existing v9). Both loops share the socket, the
 /// `flow_sequence`, and the stats handles; they differ ONLY in the record

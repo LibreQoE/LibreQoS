@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "match": { "mode": "ip" },
+  "topology": [
+    {
+      "id": "s1",
+      "type": "site",
+      "name": "Site One",
+      "rate": {
+        "commit_down_bps": 0,
+        "commit_up_bps": 0,
+        "ceil_down_bps": 1000000000,
+        "ceil_up_bps": 1000000000
+      }
+    },
+    {
+      "id": "ap1",
+      "type": "ap",
+      "parent": "s1",
+      "name": "AP One",
+      "rate": {
+        "commit_down_bps": 0,
+        "commit_up_bps": 0,
+        "ceil_down_bps": 100000000,
+        "ceil_up_bps": 100000000
+      }
+    }
+  ],
+  "circuits": [
+    {
+      "id": "c1",
+      "parent": "ap1",
+      "display_name": "Circuit One",
+      "plan": {
+        "commit_down_bps": 10000000,
+        "commit_up_bps": 5000000,
+        "ceil_down_bps": 100000000,
+        "ceil_up_bps": 50000000
+      },
+      "devices": [
+        {
+          "id": "d1",
+          "mac": "aa:bb:cc:dd:ee:ff",
+          "ipv4": ["192.0.2.10/32"]
+        }
+      ],
+      "match": { "prefixes": ["192.0.2.10/32"] }
+    }
+  ]
+}

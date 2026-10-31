@@ -14,6 +14,7 @@
 //! pure makes both unit-testable without touching `/etc`.
 
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The legacy operator env key carrying the download bandwidth (Mbps). This is
 /// the key read by `bridge_rs::config::download_mbps()`'s env rung and written
@@ -404,6 +405,120 @@ pub fn rollback_isp_fold_at(conf_path: &Path, env_path: &Path) -> std::io::Resul
     Ok(restored)
 }
 
+/// `lqos-74t.160`: the legacy worker key. The managed `50-ports.conf` also
+/// carries this key, but it is a one-time migration input only — never an
+/// ongoing override source.
+pub const ENV_WORKERS: &str = "LIBREQOS_DPDK_WORKERS";
+
+/// The one-time worker-adoption stamp. Its presence means the managed-W check
+/// already ran (adopted, ignored-equal, override-present, or absent), so a
+/// later rate/core change can never re-open it and adopt a stale managed W.
+pub const WORKER_ADOPTION_STAMP: &str = "/var/lib/libreqos-bridge/worker-override-migrated";
+
+fn unix_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Upserts `workers = N` into the `[queues]` section of an lqos.conf body.
+/// Existing key replaced in place; a missing section is appended. Pure — the
+/// caller writes the result atomically.
+pub fn upsert_queues_workers(conf: &str, workers: u32) -> String {
+    let mut lines: Vec<String> = conf.lines().map(str::to_owned).collect();
+    let header_idx = lines.iter().position(|l| l.trim() == "[queues]");
+    match header_idx {
+        Some(h) => {
+            let end = lines
+                .iter()
+                .enumerate()
+                .skip(h + 1)
+                .find(|(_, l)| l.trim_start().starts_with('['))
+                .map(|(i, _)| i)
+                .unwrap_or(lines.len());
+            let existing = (h + 1..end).find(|&i| {
+                lines[i]
+                    .split('#')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .split_once('=')
+                    .is_some_and(|(k, _)| k.trim() == "workers")
+            });
+            match existing {
+                Some(i) => lines[i] = format!("workers = {workers}"),
+                None => lines.insert(h + 1, format!("workers = {workers}")),
+            }
+        }
+        None => {
+            if !lines.is_empty() && !lines.last().is_some_and(|l| l.trim().is_empty()) {
+                lines.push(String::new());
+            }
+            lines.push("[queues]".to_owned());
+            lines.push(format!("workers = {workers}"));
+        }
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
+/// Stamp the one-time worker-adoption decision. `status` is
+/// `adopted` | `ignored-equal` | `override-present` | `absent`; the extra
+/// values are recorded for the operator/log and for the next-run audit.
+pub fn stamp_worker_adoption_at(
+    path: &Path,
+    status: &str,
+    workers: Option<u32>,
+    derived: Option<u32>,
+    origin: Option<&str>,
+) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut body = format!("status={status}\n");
+    if let Some(w) = workers {
+        body.push_str(&format!("workers={w}\n"));
+    }
+    if let Some(d) = derived {
+        body.push_str(&format!("derived={d}\n"));
+    }
+    if let Some(o) = origin {
+        body.push_str(&format!("origin={o}\n"));
+    }
+    body.push_str(&format!("checked_unix={}\n", unix_timestamp()));
+    std::fs::write(path, body)
+}
+
+/// The one-time adoption write: back up `lqos.conf`, upsert
+/// `[queues] workers = N`, atomically write it, then stamp the decision.
+pub fn adopt_workers_at(
+    conf_path: &Path,
+    stamp_path: &Path,
+    workers: u32,
+    origin: &str,
+) -> std::io::Result<()> {
+    let conf = std::fs::read_to_string(conf_path)?;
+    let permissions = std::fs::metadata(conf_path)?.permissions();
+    let backup = PathBuf::from(format!(
+        "{}.pre-160.{}",
+        conf_path.display(),
+        unix_timestamp()
+    ));
+    std::fs::copy(conf_path, &backup)?;
+    let updated = upsert_queues_workers(&conf, workers);
+    crate::port_class::write_managed_dropin_at(conf_path, &updated)?;
+    // lqos.conf may be 0600; the temp+rename must not widen/narrow its mode.
+    std::fs::set_permissions(conf_path, permissions)?;
+    stamp_worker_adoption_at(stamp_path, "adopted", Some(workers), None, Some(origin))
+}
+
+/// `true` when the one-time managed-W check already ran at `path`.
+pub fn worker_adoption_checked_at(path: &Path) -> bool {
+    path.exists()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -637,6 +752,83 @@ mod tests {
         assert!(run_isp_fold_at(&conf, &env, &root.join("nope")).unwrap().is_some());
         assert!(std::fs::read_to_string(&conf).unwrap().contains("download_mbps = 900"));
         assert!(!std::fs::read_to_string(&env).unwrap().contains("LIBREQOS_DPDK_DOWNLOAD_MBPS="));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn queues_workers_upsert_replaces_or_appends_without_touching_other_keys() {
+        let existing =
+            "[queues]\ndownlink_bandwidth_mbps = 2500\nworkers = 4\nuse_binpacking = true\n";
+        let out = upsert_queues_workers(existing, 8);
+        assert!(out.contains("workers = 8"), "{out}");
+        assert!(!out.contains("workers = 4"), "{out}");
+        assert!(out.contains("downlink_bandwidth_mbps = 2500"), "{out}");
+        assert!(out.contains("use_binpacking = true"), "{out}");
+
+        let no_section = "[dataplane]\ndownload_mbps = 2500\n";
+        let out = upsert_queues_workers(no_section, 8);
+        assert!(out.contains("[queues]\nworkers = 8"), "{out}");
+        assert!(out.contains("[dataplane]"), "{out}");
+
+        let no_key = "[queues]\nuse_binpacking = true\n";
+        let out = upsert_queues_workers(no_key, 8);
+        assert!(out.contains("workers = 8"), "{out}");
+        assert!(out.contains("use_binpacking = true"), "{out}");
+    }
+
+    #[test]
+    fn one_time_worker_adoption_writes_backup_and_stamp() {
+        let root = scratch("worker-adopt");
+        let conf = root.join("lqos.conf");
+        let stamp = root.join("worker-override-migrated");
+        std::fs::write(
+            &conf,
+            "[queues]\ndownlink_bandwidth_mbps = 2500\nuplink_bandwidth_mbps = 2500\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&conf, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        adopt_workers_at(&conf, &stamp, 8, "managed 50-ports").unwrap();
+        let body = std::fs::read_to_string(&conf).unwrap();
+        assert!(body.contains("workers = 8"), "{body}");
+        assert_eq!(
+            std::fs::metadata(&conf).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "the config mode must survive the atomic rewrite"
+        );
+        let stamp_body = std::fs::read_to_string(&stamp).unwrap();
+        assert!(stamp_body.contains("status=adopted"), "{stamp_body}");
+        assert!(stamp_body.contains("workers=8"), "{stamp_body}");
+        assert!(stamp_body.contains("origin=managed 50-ports"), "{stamp_body}");
+        // a pre-160 backup exists beside the config
+        let backups: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains(".pre-160."))
+            .collect();
+        assert_eq!(backups.len(), 1, "{backups:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_worker_stamp_records_ignored_equal_and_absence() {
+        let root = scratch("worker-stamp");
+        let stamp = root.join("worker-override-migrated");
+        assert!(!worker_adoption_checked_at(&stamp));
+        stamp_worker_adoption_at(
+            &stamp,
+            "ignored-equal",
+            Some(4),
+            Some(4),
+            Some("managed 50-ports"),
+        )
+        .unwrap();
+        assert!(worker_adoption_checked_at(&stamp));
+        let body = std::fs::read_to_string(&stamp).unwrap();
+        assert!(body.contains("status=ignored-equal"), "{body}");
+        assert!(body.contains("derived=4"), "{body}");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

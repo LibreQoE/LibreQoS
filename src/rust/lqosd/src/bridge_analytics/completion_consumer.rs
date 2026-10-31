@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use analytics_ipc::{
     CompletionBatch, CompletionEvent, DirectionalCounters, FlowRow, FlowState,
@@ -23,7 +23,11 @@ use analytics_ipc::{
 
 /// The card §2 batch bound (8192 events).
 pub(crate) const MAX_BATCH: usize = 8192;
-/// The drain cadence while idle / after a failed batch.
+/// The 163.2 adaptive drain poll: short while recent traffic exists, the old
+/// 250 ms only after a long idle. Never sleeps with a nonempty batch.
+const DRAIN_INTERVAL_ACTIVE: Duration = Duration::from_millis(20);
+const ACTIVE_WINDOW: Duration = Duration::from_secs(5);
+/// The legacy idle / error cadence (also the retry backoff seed).
 const DRAIN_INTERVAL: Duration = Duration::from_millis(250);
 /// The bounded retry (BOTH the one-sided and the both-failed paths):
 /// exponential backoff capped at `MAX_BACKOFF`; after `PARTIAL_RETRY_ATTEMPTS`
@@ -50,6 +54,140 @@ static OVERLAP: AtomicU64 = AtomicU64::new(0);
 /// The accepted loss when a side still fails after the BOUNDED retry.
 static FAILED_SIDE_LOSS: AtomicU64 = AtomicU64::new(0);
 static DEGRADED: AtomicBool = AtomicBool::new(false);
+
+/// 163.2 default-off sampled diagnostics (`LIBREQOS_COMPLETION_DIAG=1`).
+const DIAG_ENV: &str = lqos_dataplane_types::ENV_COMPLETION_DIAG;
+static DIAG_ON: AtomicBool = AtomicBool::new(false);
+static DIAG_BATCHES: AtomicU64 = AtomicU64::new(0);
+static DIAG_EVENTS: AtomicU64 = AtomicU64::new(0);
+static DIAG_EMPTY: AtomicU64 = AtomicU64::new(0);
+static DIAG_EMPTY_SLEEPS: AtomicU64 = AtomicU64::new(0);
+static DIAG_EMPTY_SLEEP_NS: AtomicU64 = AtomicU64::new(0);
+static DIAG_DRAIN_NS: AtomicU64 = AtomicU64::new(0);
+static DIAG_APPLY_NS: AtomicU64 = AtomicU64::new(0);
+static DIAG_NETFLOW_NS: AtomicU64 = AtomicU64::new(0);
+static DIAG_LTS2_NS: AtomicU64 = AtomicU64::new(0);
+static DIAG_ACK_NS: AtomicU64 = AtomicU64::new(0);
+static DIAG_LTS2_ERRORS: AtomicU64 = AtomicU64::new(0);
+static DIAG_CONFIG_LOAD_NS: AtomicU64 = AtomicU64::new(0);
+
+fn diag_on() -> bool {
+    DIAG_ON.load(Ordering::Relaxed)
+}
+
+fn diag_add(counter: &AtomicU64, started: Instant) {
+    if diag_on() {
+        counter.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+}
+
+fn diag_count(counter: &AtomicU64, count: u64) {
+    if diag_on() {
+        counter.fetch_add(count, Ordering::Relaxed);
+    }
+}
+
+/// The adaptive empty-batch sleep: 20 ms while a nonempty batch was seen within
+/// `ACTIVE_WINDOW`, 250 ms only after a real idle. Never selected for a
+/// nonempty batch (the caller drains immediately).
+fn empty_batch_sleep(last_nonempty: Instant, now: Instant) -> Duration {
+    if now.saturating_duration_since(last_nonempty) < ACTIVE_WINDOW {
+        DRAIN_INTERVAL_ACTIVE
+    } else {
+        DRAIN_INTERVAL
+    }
+}
+
+/// Sleep ONLY after an empty batch; a nonempty batch drains immediately.
+fn sleep_after_batch(
+    batch_is_empty: bool,
+    last_nonempty: Instant,
+    now: Instant,
+) -> Option<Duration> {
+    batch_is_empty.then(|| empty_batch_sleep(last_nonempty, now))
+}
+
+/// Per-batch config-load probe (diag only).
+fn diag_measure_config_load() {
+    if diag_on() {
+        let started = Instant::now();
+        let _ = lqos_config::load_config();
+        diag_add(&DIAG_CONFIG_LOAD_NS, started);
+    }
+}
+
+/// Thread CPU/nice from `/proc/self/task/<tid>/stat` (raw clock ticks).
+fn thread_cpu_nice() -> Option<(u64, u64, i64)> {
+    let tid = unsafe { libc::syscall(libc::SYS_gettid) };
+    let text = std::fs::read_to_string(format!("/proc/self/task/{tid}/stat")).ok()?;
+    let rest = text.rsplit_once(')')?.1;
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+    // rest[0] is state (field 3); utime=field 14 -> index 11, stime=15 -> 12,
+    // nice=19 -> 16.
+    let utime = fields.get(11)?.parse().ok()?;
+    let stime = fields.get(12)?.parse().ok()?;
+    let nice = fields.get(16)?.parse().ok()?;
+    Some((utime, stime, nice))
+}
+
+#[derive(Clone, Copy, Default)]
+struct DiagCounters {
+    batches: u64,
+    events: u64,
+    empty: u64,
+    empty_sleeps: u64,
+    empty_sleep_ns: u64,
+    drain_ns: u64,
+    apply_ns: u64,
+    netflow_ns: u64,
+    lts2_ns: u64,
+    ack_ns: u64,
+    lts2_errors: u64,
+}
+
+fn diag_counters() -> DiagCounters {
+    DiagCounters {
+        batches: DIAG_BATCHES.load(Ordering::Relaxed),
+        events: DIAG_EVENTS.load(Ordering::Relaxed),
+        empty: DIAG_EMPTY.load(Ordering::Relaxed),
+        empty_sleeps: DIAG_EMPTY_SLEEPS.load(Ordering::Relaxed),
+        empty_sleep_ns: DIAG_EMPTY_SLEEP_NS.load(Ordering::Relaxed),
+        drain_ns: DIAG_DRAIN_NS.load(Ordering::Relaxed),
+        apply_ns: DIAG_APPLY_NS.load(Ordering::Relaxed),
+        netflow_ns: DIAG_NETFLOW_NS.load(Ordering::Relaxed),
+        lts2_ns: DIAG_LTS2_NS.load(Ordering::Relaxed),
+        ack_ns: DIAG_ACK_NS.load(Ordering::Relaxed),
+        lts2_errors: DIAG_LTS2_ERRORS.load(Ordering::Relaxed),
+    }
+}
+
+fn diag_log(prev: DiagCounters, cur: DiagCounters) {
+    let d = |a: u64, b: u64| b.saturating_sub(a);
+    let ms = |ns: u64| ns as f64 / 1_000_000.0;
+    let nf = crate::netflow::stats();
+    let (utime, stime, nice) = thread_cpu_nice().unwrap_or((0, 0, 0));
+    tracing::info!(
+        batches = d(prev.batches, cur.batches),
+        events = d(prev.events, cur.events),
+        empty = d(prev.empty, cur.empty),
+        empty_sleeps = d(prev.empty_sleeps, cur.empty_sleeps),
+        empty_sleep_ms = ms(d(prev.empty_sleep_ns, cur.empty_sleep_ns)),
+        drain_ms = ms(d(prev.drain_ns, cur.drain_ns)),
+        apply_ms = ms(d(prev.apply_ns, cur.apply_ns)),
+        netflow_ms = ms(d(prev.netflow_ns, cur.netflow_ns)),
+        lts2_ms = ms(d(prev.lts2_ns, cur.lts2_ns)),
+        ack_ms = ms(d(prev.ack_ns, cur.ack_ns)),
+        lts2_errors = d(prev.lts2_errors, cur.lts2_errors),
+        config_load_ms = ms(DIAG_CONFIG_LOAD_NS.load(Ordering::Relaxed)),
+        netflow_queue_depth = crate::netflow::queue_depth(),
+        netflow_dropped = nf.records_dropped,
+        netflow_send_errors = nf.send_errors,
+        thread_utime_ticks = utime,
+        thread_stime_ticks = stime,
+        thread_nice = nice,
+        "completion diag (LIBREQOS_COMPLETION_DIAG=1)"
+    );
+}
 
 /// Q5: the lqosd-side drain health. `completion_loss` is the CONSUMER loss
 /// (`replay_lost + failed_side_loss`); `overwritten` is the bridge-side ring
@@ -282,8 +420,15 @@ impl RetryBudget {
 
 /// The first attempt: BOTH consumers, unconditionally.
 pub(crate) fn handoff(flows: &[FlowRow]) -> Handoff {
+    let nf_start = Instant::now();
     let netflow = crate::netflow::queue_completed_flows_unretained(flows);
+    diag_add(&DIAG_NETFLOW_NS, nf_start);
+    let lts_start = Instant::now();
     let lts2 = super::lts2_flow_export::export_ring_batch(flows);
+    diag_add(&DIAG_LTS2_NS, lts_start);
+    if !lts2 && diag_on() {
+        DIAG_LTS2_ERRORS.fetch_add(1, Ordering::Relaxed);
+    }
     Handoff { netflow, lts2 }
 }
 
@@ -291,17 +436,26 @@ pub(crate) fn handoff(flows: &[FlowRow]) -> Handoff {
 /// skipped ⇒ a persistent one-sided failure never re-sends it — no dup storm).
 pub(crate) fn retry_failed_side(flows: &[FlowRow], prior: Handoff) -> Handoff {
     let (netflow, lts2) = sides_to_retry(prior);
+    let nf_start = Instant::now();
+    let netflow_ok = if netflow {
+        crate::netflow::queue_completed_flows_unretained(flows)
+    } else {
+        true
+    };
+    diag_add(&DIAG_NETFLOW_NS, nf_start);
+    let lts_start = Instant::now();
+    let lts2_ok = if lts2 {
+        super::lts2_flow_export::export_ring_batch(flows)
+    } else {
+        true
+    };
+    diag_add(&DIAG_LTS2_NS, lts_start);
+    if !lts2_ok && diag_on() {
+        DIAG_LTS2_ERRORS.fetch_add(1, Ordering::Relaxed);
+    }
     Handoff {
-        netflow: if netflow {
-            crate::netflow::queue_completed_flows_unretained(flows)
-        } else {
-            true
-        },
-        lts2: if lts2 {
-            super::lts2_flow_export::export_ring_batch(flows)
-        } else {
-            true
-        },
+        netflow: netflow_ok,
+        lts2: lts2_ok,
     }
 }
 
@@ -332,6 +486,7 @@ pub(crate) fn ack_batch(
     cursor_path: &Path,
     batch: &CompletionBatch,
 ) {
+    let ack_start = Instant::now();
     if !HANDED_OVER.swap(true, Ordering::Relaxed) {
         OVERLAP.fetch_add(batch.events.len() as u64, Ordering::Relaxed);
     }
@@ -350,6 +505,7 @@ pub(crate) fn ack_batch(
         DEGRADED.store(true, Ordering::Relaxed);
     }
     let _ = cursor.save(cursor_path);
+    diag_add(&DIAG_ACK_NS, ack_start);
 }
 
 /// The bounded-retry terminal action (never false-healthy): ACK the batch,
@@ -387,7 +543,9 @@ pub(crate) fn process_batch_once(
         return BatchOutcome::Acked;
     }
     let block = super::do_not_track_table();
+    let apply_start = Instant::now();
     let flows = apply_batch(&batch.events, block.as_ref());
+    diag_add(&DIAG_APPLY_NS, apply_start);
     if flows.is_empty() {
         ack_batch(cursor, cursor_path, batch);
         return BatchOutcome::Acked;
@@ -430,7 +588,20 @@ pub(crate) fn spawn(socket: PathBuf, cursor_path: PathBuf) {
             let mut advertised = false;
             let mut ticks: u64 = 0;
             let mut pending: Option<(CompletionBatch, Vec<FlowRow>, Handoff, RetryBudget)> = None;
+            DIAG_ON.store(
+                std::env::var(DIAG_ENV).ok().as_deref() == Some("1"),
+                Ordering::Relaxed,
+            );
+            let mut last_nonempty = Instant::now();
+            let mut diag_last = Instant::now();
+            let mut diag_prev = diag_counters();
             loop {
+                if diag_on() && diag_last.elapsed() >= Duration::from_secs(5) {
+                    let cur = diag_counters();
+                    diag_log(diag_prev, cur);
+                    diag_prev = cur;
+                    diag_last = Instant::now();
+                }
                 if let Some((batch, flows, prior, mut budget)) = pending.take() {
                     match budget.next_delay() {
                         Some(delay) => {
@@ -457,13 +628,30 @@ pub(crate) fn spawn(socket: PathBuf, cursor_path: PathBuf) {
                         continue;
                     }
                 }
+                let drain_start = Instant::now();
                 match connect_drain_completions(&socket, cursor.epoch, cursor.seq, MAX_BATCH) {
                     Ok(batch) => {
+                        diag_add(&DIAG_DRAIN_NS, drain_start);
                         RING_ACTIVE.store(true, Ordering::Relaxed);
+                        diag_measure_config_load();
+                        if diag_on() {
+                            diag_count(&DIAG_BATCHES, 1);
+                            diag_count(&DIAG_EVENTS, batch.events.len() as u64);
+                        }
+                        if batch.events.is_empty() {
+                            diag_count(&DIAG_EMPTY, 1);
+                        } else {
+                            last_nonempty = Instant::now();
+                        }
                         match process_batch_once(&mut cursor, &cursor_path, &batch, handoff) {
                             BatchOutcome::Acked => {
-                                if batch.events.is_empty() {
-                                    std::thread::sleep(DRAIN_INTERVAL);
+                                if let Some(sleep_for) =
+                                    sleep_after_batch(batch.events.is_empty(), last_nonempty, Instant::now())
+                                {
+                                    diag_count(&DIAG_EMPTY_SLEEPS, 1);
+                                    let sleep_start = Instant::now();
+                                    std::thread::sleep(sleep_for);
+                                    diag_add(&DIAG_EMPTY_SLEEP_NS, sleep_start);
                                 }
                             }
                             BatchOutcome::Partial { flows, handoff } => {
@@ -490,6 +678,7 @@ pub(crate) fn spawn(socket: PathBuf, cursor_path: PathBuf) {
                         }
                     }
                     Err(_) => {
+                        diag_add(&DIAG_DRAIN_NS, drain_start);
                         advertised = false;
                         RING_ACTIVE.store(false, Ordering::Relaxed);
                         std::thread::sleep(DRAIN_INTERVAL);
@@ -936,6 +1125,54 @@ mod tests {
         );
         assert_eq!((c.epoch, c.seq, c.dropped), (9, 5, 3));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn adaptive_empty_sleep_is_short_while_recent_and_long_after_idle() {
+        let now = Instant::now();
+        assert_eq!(empty_batch_sleep(now, now), DRAIN_INTERVAL_ACTIVE);
+        assert_eq!(
+            empty_batch_sleep(now, now + Duration::from_secs(1)),
+            DRAIN_INTERVAL_ACTIVE
+        );
+        assert_eq!(
+            empty_batch_sleep(now, now + ACTIVE_WINDOW),
+            DRAIN_INTERVAL
+        );
+        assert_eq!(
+            empty_batch_sleep(now, now + ACTIVE_WINDOW + Duration::from_secs(1)),
+            DRAIN_INTERVAL
+        );
+    }
+
+    #[test]
+    fn diag_is_fully_off_by_default_and_on_only_when_enabled() {
+        let _g = serial();
+        DIAG_ON.store(false, Ordering::Relaxed);
+        let before = DIAG_BATCHES.load(Ordering::Relaxed);
+        diag_count(&DIAG_BATCHES, 1);
+        assert_eq!(DIAG_BATCHES.load(Ordering::Relaxed), before);
+        DIAG_ON.store(true, Ordering::Relaxed);
+        diag_count(&DIAG_BATCHES, 1);
+        assert_eq!(DIAG_BATCHES.load(Ordering::Relaxed), before + 1);
+        let load_before = DIAG_CONFIG_LOAD_NS.load(Ordering::Relaxed);
+        diag_measure_config_load();
+        assert!(DIAG_CONFIG_LOAD_NS.load(Ordering::Relaxed) >= load_before);
+        DIAG_ON.store(false, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn nonempty_batch_never_sleeps() {
+        let now = Instant::now();
+        assert_eq!(sleep_after_batch(false, now, now), None);
+        assert_eq!(
+            sleep_after_batch(true, now, now),
+            Some(DRAIN_INTERVAL_ACTIVE)
+        );
+        assert_eq!(
+            sleep_after_batch(true, now, now + ACTIVE_WINDOW),
+            Some(DRAIN_INTERVAL)
+        );
     }
 
 }

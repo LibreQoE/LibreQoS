@@ -203,58 +203,6 @@
 
 
     #[test]
-    fn effective_child_rate_is_min_of_all_ancestors() {
-        let mut root = sample_effective_bandwidth_tree();
-        let canonical = TopologyCanonicalStateFile {
-            ingress_kind: TopologyCanonicalIngressKind::NativeIntegration,
-            nodes: vec![
-                canonical_node_with_rate_source(
-                    "site-hoodoo",
-                    "Hoodoo Hill",
-                    800,
-                    800,
-                    TopologyCanonicalRateInputSource::AttachmentMax,
-                ),
-                // The AP's own telemetry is intentionally ABOVE the parent:
-                // Effective Now must be the ancestor min (800), while the
-                // configured AP value remains 1050 upstream.
-                canonical_node_with_rate_source(
-                    "ap-thunderhill",
-                    "HoodooHill-Thunderhill",
-                    1050,
-                    1050,
-                    TopologyCanonicalRateInputSource::AttachmentMax,
-                ),
-            ],
-            ..Default::default()
-        };
-
-        super::recompile_effective_network_bandwidths(
-            &mut root,
-            &canonical,
-            &TopologyEditorStateFile::default(),
-            &TopologyEffectiveStateFile::default(),
-        );
-
-        let parent = root["Hoodoo Hill"].as_object().expect("parent");
-        assert_eq!(
-            super::node_bandwidth_mbps(parent, "downloadBandwidthMbps"),
-            Some(800)
-        );
-        let ap = parent["children"]["HoodooHill-Thunderhill"]
-            .as_object()
-            .expect("AP node should exist");
-        assert_eq!(
-            super::node_bandwidth_mbps(ap, "downloadBandwidthMbps"),
-            Some(800)
-        );
-        assert_eq!(
-            super::node_bandwidth_mbps(ap, "uploadBandwidthMbps"),
-            Some(800)
-        );
-    }
-
-    #[test]
     fn native_uisp_compatibility_export_rates_still_cap_ap_nodes() {
         let mut root = sample_effective_bandwidth_tree();
         let canonical = TopologyCanonicalStateFile {

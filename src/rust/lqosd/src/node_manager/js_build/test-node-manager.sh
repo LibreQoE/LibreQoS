@@ -25,6 +25,7 @@ node --test \
   "${SCRIPT_DIR}/src/config/config_interface_mtu.test.mjs" \
   "${SCRIPT_DIR}/src/config/queues_hygiene.test.mjs" \
   "${SCRIPT_DIR}/src/config/dataplane_hygiene.test.mjs" \
+  "${SCRIPT_DIR}/src/config/tuning_hygiene.test.mjs" \
   "${SCRIPT_DIR}/src/config/dpdk_status.test.mjs" \
   "${SCRIPT_DIR}/src/config/local_api_token.test.mjs" \
   "${SCRIPT_DIR}/src/config/network_mode_storage.test.mjs" \

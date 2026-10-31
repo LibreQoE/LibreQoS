@@ -810,6 +810,16 @@ mod tests {
             compile_dataplane_transaction_with_ranges_and_sqm(&network, &inputs, &[], "none");
         assert_eq!(leaf_aqm(&tx, "008b8b44"), DataplaneLeafAqm::None);
     }
+
+    /// `lqos-74t.150`: the v2 parser preserves `250.5` Mbps to the circuit row as
+    /// `f32`; the dataplane then rounds to whole Mbps and encodes `u32` kbps.
+    /// `250.5` -> `251` Mbps -> `251_000` kbps.
+    #[test]
+    fn rate_pair_encodes_v2_decimal_ceiling_as_kbps() {
+        let pair = rate_pair(10.0, 250.5);
+        assert_eq!(pair.commit_kbps, 10_000);
+        assert_eq!(pair.ceil_kbps, 251_000);
+    }
 }
 
 

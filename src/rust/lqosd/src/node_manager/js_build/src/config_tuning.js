@@ -1,5 +1,10 @@
 import {saveConfig, loadConfig, renderConfigMenu, sendWsRequest} from "./config/config_helper";
 import {normalizeDpdkStatus, normalizeWorkerCount} from "./config/dpdk_status.mjs";
+import {
+    applyPlacementBudgetMbps,
+    parsePlacementBudgetInput,
+    readPlacementBudgetMbps,
+} from "./config/tuning_hygiene.mjs";
 
 function validateConfig() {
     // Validate numeric fields
@@ -33,6 +38,14 @@ function validateConfig() {
         return false;
     }
 
+    const placementBudget = parsePlacementBudgetInput(
+        document.getElementById("dpdkPlacementBudget").value,
+    );
+    if (!placementBudget.ok) {
+        alert(placementBudget.error);
+        return false;
+    }
+
     return true;
 }
 
@@ -52,6 +65,15 @@ function updateConfig() {
             .map(s => s.trim())
             .filter(s => s.length > 0)
     };
+
+    // A0: the optional [tuning] placement budget. Carry the whole tuning
+    // object (this function just replaced it above, preserving every existing
+    // field) and set/delete ONLY placement_budget_mbps: blank = delete =
+    // compiled 2.0G pre-headroom default.
+    const placementBudget = parsePlacementBudgetInput(
+        document.getElementById("dpdkPlacementBudget").value,
+    );
+    applyPlacementBudgetMbps(window.config, placementBudget.value);
 
     // The DPDK worker count lives in the [queues] section (the installer
     // translates it to LIBREQOS_DPDK_WORKERS). Only touch this key so a save
@@ -165,6 +187,11 @@ loadConfig(() => {
 
         // DPDK worker count (stored in [queues]).
         document.getElementById("dpdkWorkers").value = window.config.queues?.workers ?? "";
+
+        // Optional [tuning] placement budget (Mbps pre-headroom); blank =
+        // compiled default 2000 (effective 1500 at 25% headroom).
+        document.getElementById("dpdkPlacementBudget").value =
+            readPlacementBudgetMbps(window.config) ?? "";
 
         // Add save button click handler
         document.getElementById('saveButton').addEventListener('click', () => {

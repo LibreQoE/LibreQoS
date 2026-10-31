@@ -21,12 +21,12 @@ pub mod verdict;
 
 pub use bindplan::{BindMode, NicPlan};
 pub use circuits::count_shaped_devices;
-pub use hardware::{HardwareClass, HardwareVerdict, HugePages, virtio_qualified};
+pub use hardware::{HardwareClass, HardwareVerdict, HugePages};
 pub use install::{InstallIntegrityReport, INTEGRITY_SET};
-pub use netplan::{NetplanReport, on_a_stick_bridge_conf, pair_from_config};
+pub use netplan::{NetplanReport, pair_from_config};
 pub use os::{OsRelease, UBUNTU_FLOOR};
 pub use prereq::{DEFAULT_DATAPLANE_URL, FetchPrereq, RepoConfig, check_fetch, check_repo};
 pub use seam::{EXPECTED_PROTOCOL_VERSION, INSTALLED_LQOSD, SeamReport};
 pub use topology::{CompileReport, validate_pair, validate_pair_with_mode};
 pub use units::{LEGACY_V2_UNITS, UnitPresence, UnitRow, inventory};
-pub use verdict::{Severity, Verdict, compose, compose_with_fresh, compose_with_mode};
+pub use verdict::{Severity, Verdict, compose, compose_with_fresh};

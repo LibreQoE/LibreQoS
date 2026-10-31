@@ -5,7 +5,6 @@ import test from "node:test";
 import {fileURLToPath} from "node:url";
 
 import {
-    ancestorNodesFromTree,
     buildNodeLimitSummary,
     configuredMax,
     effectiveMax,
@@ -117,47 +116,6 @@ test("summary identifies parent-limited nodes", () => {
     assert.equal(summary.compactReason, "Est. Parent");
     assert.match(summary.title, /Download: inherited from parent 7232 Rochester at 294M\./);
     assert.match(summary.title, /Upload: inherited from parent 7232 Rochester at 60M\./);
-});
-
-test("summary names the true limiting ancestor instead of an inherited AP", () => {
-    const selected = node({name: "Circuit AP child", configured: [1050, 1050], effective: [800, 800]});
-    const ap = node({name: "AP 1050", configured: [1050, 1050]});
-    ap.effective_max_throughput = [800, 800];
-    ap.immediate_parent = 0;
-    const root = node({name: "Site 800", configured: [800, 800], effective: [800, 800]});
-    selected.immediate_parent = 1;
-    const tree = [
-        [0, root],
-        [1, ap],
-        [2, selected],
-    ];
-
-    const ancestors = ancestorNodesFromTree(tree, selected);
-    assert.deepEqual(ancestors.map((entry) => entry.name), ["AP 1050", "Site 800"]);
-    const summary = buildNodeLimitSummary({
-        node: selected,
-        parentNode: ap,
-        ancestorNodes: ancestors,
-    });
-
-    assert.equal(summary.label, "Parent");
-    assert.match(summary.title, /Download: inherited from ancestor Site 800 at 800M\./);
-    assert.match(summary.title, /Upload: inherited from ancestor Site 800 at 800M\./);
-    assert.doesNotMatch(summary.title, /inherited from (parent|ancestor) AP 1050/);
-});
-
-test("empty ancestor list falls back to the supplied immediate parent", () => {
-    const selected = node({configured: [500, 100], effective: [294, 60]});
-    const parent = node({name: "Fallback Parent", configured: [294, 60], effective: [294, 60]});
-
-    const summary = buildNodeLimitSummary({
-        node: selected,
-        parentNode: parent,
-        ancestorNodes: [],
-    });
-
-    assert.equal(summary.kind, "parent");
-    assert.match(summary.title, /inherited from parent Fallback Parent at 294M/);
 });
 
 test("summary notes active topology parent overrides", () => {

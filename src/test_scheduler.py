@@ -37,6 +37,9 @@ def install_scheduler_stubs():
     lqlib.automatic_import_uisp = lambda: False
     lqlib.automatic_import_splynx = lambda: False
     lqlib.queue_refresh_interval_mins = lambda: 30
+    lqlib.reload_config_from_disk = lambda: None
+    lqlib.topology_source_status = lambda: ("shaped_devices", None, "config")
+    lqlib.topology_compile_mode = lambda: "full"
     lqlib.automatic_import_powercode = lambda: False
     lqlib.automatic_import_sonar = lambda: False
     lqlib.influx_db_enabled = lambda: False
@@ -186,7 +189,7 @@ class TestSchedulerAffinity(unittest.TestCase):
     def test_post_integration_hook_remains_unpinned(self):
         result = types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        with patch.object(scheduler, "automatic_import_uisp", return_value=True):
+        with patch.object(scheduler, "_topology_source_for_tick", return_value="uisp"):
             # Test-only fake install root.
             with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result) as mock_run:
@@ -259,7 +262,7 @@ class TestSchedulerErrorReporting(unittest.TestCase):
     def test_import_from_crm_clears_error_and_keeps_success_output_non_error(self):
         result = types.SimpleNamespace(returncode=0, stdout="uisp info\n", stderr="")
 
-        with patch.object(scheduler, "automatic_import_uisp", return_value=True):
+        with patch.object(scheduler, "_topology_source_for_tick", return_value="uisp"):
             # Test-only fake install root.
             with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result):
@@ -285,7 +288,7 @@ class TestSchedulerErrorReporting(unittest.TestCase):
     def test_import_from_crm_reports_nonzero_exit_as_integration_status(self):
         result = types.SimpleNamespace(returncode=1, stdout="uisp info\n", stderr="")
 
-        with patch.object(scheduler, "automatic_import_uisp", return_value=True):
+        with patch.object(scheduler, "_topology_source_for_tick", return_value="uisp"):
             # Test-only fake install root.
             with patch.object(scheduler, "get_libreqos_directory", return_value="/tmp/libreqos"):  # nosec B108
                 with patch.object(scheduler, "run_integration_subprocess", return_value=result):
@@ -312,6 +315,89 @@ class TestSchedulerErrorReporting(unittest.TestCase):
         self.assertIn(
             "Full output saved to /tmp/lqos_scheduler_uisp_integration_",
             kwargs["error_message"],
+        )
+
+    def test_import_from_crm_calls_only_the_selected_python_producer(self):
+        with patch.object(scheduler, "_topology_source_for_tick", return_value="visp"):
+            with patch.object(scheduler, "run_python_integration") as mock_python:
+                with patch.object(scheduler, "run_integration_subprocess") as mock_subprocess:
+                    with patch.object(
+                        scheduler,
+                        "write_compiled_topology_from_legacy_artifacts",
+                    ) as mock_manual:
+                        with patch.object(scheduler, "apply_lqos_overrides"):
+                            with patch.object(scheduler.os.path, "isfile", return_value=False):
+                                with patch("builtins.print"):
+                                    scheduler.importFromCRM()
+
+        mock_python.assert_called_once_with(
+            "integrationVISP", "importFromVISP", label="VISP"
+        )
+        mock_subprocess.assert_not_called()
+        mock_manual.assert_not_called()
+
+    def test_import_from_crm_shaped_devices_is_the_only_manual_producer(self):
+        with patch.object(scheduler, "_topology_source_for_tick", return_value="shaped_devices"):
+            with patch.object(scheduler, "run_python_integration") as mock_python:
+                with patch.object(scheduler, "run_integration_subprocess") as mock_subprocess:
+                    with patch.object(
+                        scheduler,
+                        "write_compiled_topology_from_legacy_artifacts",
+                        return_value=True,
+                    ) as mock_manual:
+                        with patch.object(
+                            scheduler, "topology_compile_mode", return_value="ap_only"
+                        ):
+                            with patch.object(scheduler, "apply_lqos_overrides"):
+                                with patch.object(
+                                    scheduler.os.path, "isfile", return_value=False
+                                ):
+                                    with patch("builtins.print"):
+                                        scheduler.importFromCRM()
+
+        mock_python.assert_not_called()
+        mock_subprocess.assert_not_called()
+        mock_manual.assert_called_once_with("legacy/manual", "ap_only")
+
+    def test_import_from_crm_libreqos_network_runs_no_producer(self):
+        with patch.object(
+            scheduler, "_topology_source_for_tick", return_value="libreqos_network"
+        ):
+            with patch.object(scheduler, "run_python_integration") as mock_python:
+                with patch.object(scheduler, "run_integration_subprocess") as mock_subprocess:
+                    with patch.object(
+                        scheduler,
+                        "write_compiled_topology_from_legacy_artifacts",
+                    ) as mock_manual:
+                        with patch.object(scheduler, "apply_lqos_overrides") as mock_overrides:
+                            with patch.object(scheduler.os.path, "isfile", return_value=False):
+                                with patch("builtins.print"):
+                                    scheduler.importFromCRM()
+
+        mock_python.assert_not_called()
+        mock_subprocess.assert_not_called()
+        mock_manual.assert_not_called()
+        mock_overrides.assert_called_once()
+
+    def test_import_from_crm_guard_failure_runs_no_producer_or_repair(self):
+        with patch.object(scheduler, "_topology_source_for_tick", return_value=None):
+            with patch.object(scheduler, "repair_runtime_state") as mock_repair:
+                with patch.object(scheduler, "run_python_integration") as mock_python:
+                    with patch.object(scheduler, "run_integration_subprocess") as mock_subprocess:
+                        with patch.object(
+                            scheduler,
+                            "publish_scheduler_progress",
+                        ) as mock_progress:
+                            scheduler.importFromCRM()
+
+        mock_repair.assert_not_called()
+        mock_python.assert_not_called()
+        mock_subprocess.assert_not_called()
+        self.assertTrue(
+            any(
+                call.args[:2] == (False, "topology_source_error")
+                for call in mock_progress.call_args_list
+            )
         )
 
     def test_ready_progress_does_not_reassert_integration_failure(self):

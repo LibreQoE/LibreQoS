@@ -47,5 +47,8 @@ pub use radius_accounting::{
     RateProfileValidationError, validate_rate_profile_mbps,
 };
 pub use stormguard::{StormguardConfig, StormguardStrategy};
-pub use topology::{TopologyConfig, normalize_topology_compile_mode};
+pub use topology::{
+    TopologyConfig, TopologySource, TopologySourceConflict, TopologySourceOrigin,
+    TopologySourceRuntime, normalize_topology_compile_mode, validate_topology_selection,
+};
 pub use tuning::Tunables;

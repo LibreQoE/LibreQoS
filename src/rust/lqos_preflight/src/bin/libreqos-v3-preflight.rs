@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use lqos_preflight::{
-    Severity, UnitPresence, Verdict, check_fetch, check_repo, compose_with_mode, hardware,
+    Severity, UnitPresence, Verdict, check_fetch, check_repo, compose_with_fresh, hardware,
 };
 
 /// Qualify a v2 box for the v3 upgrade before installing.
@@ -20,11 +20,6 @@ struct Args {
     /// (`network.json` + `ShapedDevices.csv`, or `state/topology/`).
     #[arg(long)]
     pair_dir: Option<PathBuf>,
-
-    /// Pre-install/preinst mode: expected fresh facts are NOTE lines and do
-    /// not flip PASS to WARN. Also `LQOS_PREFLIGHT_PRE_INSTALL=1`.
-    #[arg(long)]
-    pre_install: bool,
 }
 
 /// Resolve the directory to check: an explicit `--pair-dir` wins; otherwise
@@ -99,35 +94,41 @@ fn print_verdict(verdict: &Verdict) {
             println!("  note: {note}");
         }
     }
-    if let Some(fetch) = &verdict.fetch
-        && let Some((host, port)) = &fetch.endpoint
-    {
-        println!("  dataplane fetch: {host}:{port} (reachability checked at install)");
+    if let Some(fetch) = &verdict.fetch {
+        match &fetch.endpoint {
+            Some((host, port)) => {
+                println!("  dataplane fetch: {host}:{port} (reachability checked at install)")
+            }
+            None => println!("  dataplane fetch: MISCONFIGURED ({})", fetch.url),
+        }
     }
-    if let Some(repo) = &verdict.repo
-        && let (Some(url), Some(suite)) = (&repo.url, &repo.suite)
-    {
-        println!(
-            "  apt archive: {url} {suite}{}",
-            repo.candidate
-                .as_deref()
-                .map(|c| format!(" (candidate {c})"))
-                .unwrap_or_default()
-        );
+    if let Some(repo) = &verdict.repo {
+        match (&repo.url, &repo.suite) {
+            (Some(url), Some(suite)) => println!(
+                "  apt archive: {url} {suite}{}",
+                repo.candidate
+                    .as_deref()
+                    .map(|c| format!(" (candidate {c})"))
+                    .unwrap_or_default()
+            ),
+            _ => println!("  apt archive: not configured ({})", repo.source_file),
+        }
     }
-    if let Some(install) = &verdict.install
-        && install.warning().is_none()
-    {
-        println!("  install integrity: supported (package-owned)");
+    if let Some(install) = &verdict.install {
+        match install.warning() {
+            Some(warning) => println!("  install integrity: UNSUPPORTED — {warning}"),
+            None => println!("  install integrity: supported (package-owned)"),
+        }
     }
-    if let Some(seam) = &verdict.seam
-        && seam.installed.is_some()
-        && seam.aligned
-    {
-        println!(
-            "  control seam: installed lqosd protocol {} aligned",
-            seam.expected
-        );
+    if let Some(seam) = &verdict.seam {
+        match seam.installed {
+            Some(installed) => println!(
+                "  control seam: installed lqosd protocol {installed} vs expected {} ({})",
+                seam.expected,
+                if seam.aligned { "aligned" } else { "SKEWED" }
+            ),
+            None => println!("  control seam: no readable installed lqosd"),
+        }
     }
     if let Some(netplan) = &verdict.netplan {
         match netplan.conflicting.first() {
@@ -152,9 +153,6 @@ fn print_verdict(verdict: &Verdict) {
                 "installed with the dataplane"
             }
         );
-    }
-    for note in &verdict.notes {
-        println!("  NOTE: {note}");
     }
     for warning in &verdict.warnings {
         println!("  WARN: {warning}");
@@ -184,52 +182,17 @@ fn load_host_config() -> Option<lqos_config::Config> {
     None
 }
 
-/// On-a-stick: one interface carries WAN and LAN (`single_interface`, or a
-/// bridge whose to_internet == to_network). One supported port is then a
-/// WARN/pass (with caveats), never the inline-pair BLOCK.
-/// `bridge.conf` sits beside the resolved config; its `interface_topology.mode`
-/// is the setup-written on-a-stick marker.
-fn bridge_conf_stick() -> bool {
-    let path = Path::new(&lqos_config::config_path())
-        .parent()
-        .map(|dir| dir.join("bridge.conf"))
-        .unwrap_or_else(|| PathBuf::from("/etc/libreqos/bridge.conf"));
-    std::fs::read_to_string(path)
-        .ok()
-        .is_some_and(|body| lqos_preflight::on_a_stick_bridge_conf(&body))
-}
-
-fn on_a_stick_from_config(config: &lqos_config::Config) -> bool {
-    if config.single_interface.is_some() {
-        return true;
-    }
-    config.bridge.as_ref().is_some_and(|bridge| {
-        let wan = bridge.to_internet.trim();
-        let lan = bridge.to_network.trim();
-        !wan.is_empty() && wan == lan
-    })
-}
-
 fn main() -> ExitCode {
     let args = Args::parse();
-    let config = load_host_config();
     // A fresh host has no config yet: the dataplane-pair hardware block is a
     // warning until setup chooses the ports. An upgrade keeps the strict gate.
-    let fresh_install = config.is_none()
-        && !Path::new("/etc/lqos.conf").exists()
+    let fresh_install = !Path::new("/etc/lqos.conf").exists()
         && !Path::new("/etc/libreqos/lqos.conf").exists();
-    let pre_install = args.pre_install
-        || std::env::var("LQOS_PREFLIGHT_PRE_INSTALL")
-            .ok()
-            .is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"));
-    let on_a_stick =
-        config.as_ref().is_some_and(on_a_stick_from_config) || bridge_conf_stick();
-    let mut verdict = compose_with_mode(
+    let mut verdict = compose_with_fresh(
         &resolve_pair_dir(args.pair_dir),
-        hardware::probe_with_policy(fresh_install, on_a_stick),
+        hardware::probe(),
         units_probe,
         fresh_install,
-        pre_install,
     )
     .with_os(lqos_preflight::os::check())
     .with_fetch(check_fetch())
@@ -246,7 +209,7 @@ fn main() -> ExitCode {
     ));
     // The netplan arm needs the dataplane pair from the host config; without a
     // readable config there is no pair to intersect, so the arm is skipped.
-    if let Some(config) = config {
+    if let Some(config) = load_host_config() {
         let pair = lqos_preflight::pair_from_config(&config);
         verdict = verdict
             .with_netplan(lqos_preflight::netplan::check(&pair))

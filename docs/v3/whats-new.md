@@ -1,22 +1,8 @@
 # What's new in LibreQoS v3
 
-**Version: LibreQoS v3 beta 12 (pre-release).** This page summarises the
-operator-visible differences between LibreQoS v2.0 and v3. It is the honest
-change list: sections that are still evolving say so.
-
-## Beta 12
-
-- **Auto-CAKE is off by default.** Dynamic CAKE is opt-in only
-  (`LIBREQOS_DPDK_DYNAMIC_CAKE=1`); the live kind-flip path is not supported in
-  beta 12.
-- **`net_e1000` is packaged** for the Intel e1000/igb/igc family. No
-  I210/I350/I225/I226 hardware claim is made yet; E810 is unchanged.
-- **The preflight** now separates expected fresh-install notes from actionable
-  warnings, treats qualified virtio as supported, and blocks an AF_XDP
-  dataplane by default.
-- **On-a-stick** is supported with a preflight warning; a configured inline
-  pair with only one supported port is blocked.
-- See [Known limitations](known-limitations.md) for the full beta list.
+**Version: LibreQoS v3 (current).** This page summarises the operator-visible
+differences between LibreQoS v2.0 and v3. It is the honest change list: sections
+that are still evolving say so.
 
 ## The datapath changed completely
 
@@ -48,20 +34,13 @@ change list: sections that are still evolving say so.
 ## Shaping and telemetry
 
 - **CAKE is the default** SQM (v2.0 defaulted to `fq_codel`).
-- **Dynamic (auto) CAKE allocation is OFF by default** and is **opt-in**:
-  set `LIBREQOS_DPDK_DYNAMIC_CAKE=1` to enable it. When enabled, idle circuits
-  hold a FIFO leaf and switch to CAKE when they carry traffic (the v2 pattern).
-  **Why it is off:** the canonical F3-B install still asserts a kind change on
-  existing circuits while the armer owns the materialized kind, so an ON world
-  can be refused by the worker's live-kind guard (`docs/74t143_armA_root_cause.md`).
-  The normal-lane kind ownership (`lqos-74t.144`) must land before this is
-  re-enabled by default. With auto CAKE OFF, every circuit materializes its
-  configured AQM (the CAKE default); the `.143` CAKE-lane isolation work is not
-  part of this release.
-  The **aggregate sub-gate** (`LIBREQOS_DPDK_DYNAMIC_CAKE_AGGREGATE_GATE`) is
-  default-off and inert without shard-tin. The load-bearing number is the
-  **concurrent-CAKE ceiling**, not the subscriber count, so this is **not** a
-  delivered-scale claim.
+- **Dynamic (auto) CAKE allocation is ON by default** (the GA flip;
+  `LIBREQOS_DPDK_DYNAMIC_CAKE`, set `=0` to disable): idle circuits hold a FIFO
+  leaf and switch to CAKE when they carry traffic (the v2 pattern). The
+  **aggregate sub-gate** (`LIBREQOS_DPDK_DYNAMIC_CAKE_AGGREGATE_GATE`) is the
+  default-off one, and it is inert without shard-tin. The load-bearing number is
+  the **concurrent-CAKE ceiling**, not the subscriber count, so this is **not** a
+  delivered-scale claim — the GA scale work (`.43`) gates how it is described.
 - **Per-direction RTT / retransmit / packet counters are back** end-to-end
   (flows, hosts, the heatmap percentiles, the live views), including the pooled
   QoO rollup returning to kernel semantics.

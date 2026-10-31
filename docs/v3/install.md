@@ -1,13 +1,8 @@
 # Installing LibreQoS v3
 
-**Version: LibreQoS v3 beta 12 (pre-release).** This page is the operator
-install path. The exact install targets and file modes are in
-`packaging/INSTALL.md` in the source tree; this page is the end-to-end summary.
-
-```{note}
-Beta 12: auto-CAKE is off by default and AF_XDP is not supported. Read
-[Known limitations](known-limitations.md) before installing.
-```
+**Version: LibreQoS v3 (current).** This page is the operator install path. The
+exact install targets and file modes are in `packaging/INSTALL.md` in the source
+tree; this page is the end-to-end summary.
 
 ## 1. Add the LibreQoS apt repo
 

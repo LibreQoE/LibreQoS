@@ -20,10 +20,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Shared test lock for the crate's process-global state. The dynamic-circuits
-/// snapshot is mutated by both this module's tests and `state::tests`; both
-/// must take this one lock (two different locks left the snapshot racy).
-pub(crate) static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn make_node(
     name: &str,

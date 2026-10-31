@@ -1,15 +1,7 @@
 # LibreQoS v3 Documentation
 
-```{warning}
-**Beta 12 — pre-release.** LibreQoS v3 is not yet GA. Auto-CAKE is **off by
-default**; AF_XDP is **not supported**. Read
-[Known limitations](known-limitations.md) before installing. The
-[v2.0 documentation archive](../v2.0/index.md) remains available for v2.0
-production.
-```
-
-**Version: LibreQoS v3 beta 12 (pre-release).** This documentation set covers
-LibreQoS **v3** only. For the previous release, see the
+**Version: LibreQoS v3 (current).** This documentation set covers LibreQoS **v3**
+only. For the previous release, see the
 [LibreQoS v2.0 documentation (archived, v2.0-only)](../v2.0/index.md).
 
 LibreQoS v3 is a **DPDK-bridge** deployment: the Linux `tc`/eBPF datapath of
@@ -26,7 +18,6 @@ Start here:
 :maxdepth: 1
 
 whats-new
-known-limitations
 install
 upgrade-from-v2
 operate
@@ -49,10 +40,3 @@ refresh engine, or the Flask `lqos_api`, it is **v2.0-only**. Those instructions
 are archived under [v2.0](../v2.0/index.md) and must not be followed on a v3
 host.
 ```
-
-## Beta support
-
-v3 beta is opt-in. Collect the support bundle with
-`sudo libreqos-support-bundle` and attach it to your support ticket; include the
-package version, the bridge build revision, the NIC/PMD and driver, and the
-failing step.

@@ -212,6 +212,11 @@ pub struct Config {
     #[serde(default)]
     pub topology: super::topology::TopologyConfig,
 
+    /// Runtime-only topology-source state (conflict/origin). Never serialized
+    /// to `lqos.conf`; `Config::load` populates it.
+    #[serde(skip, default)]
+    pub topology_source_runtime: super::topology::TopologySourceRuntime,
+
     /// `[maintenance_window]` (`lqos-8h8`) — the control-plane publish gate.
     #[serde(default)]
     pub maintenance_window: super::maintenance_window::MaintenanceWindowConfig,
@@ -313,6 +318,54 @@ impl Config {
         }
     }
 
+    /// The active source for producer routing. A degraded source conflict
+    /// returns `None` so no producer runs; the status view still exposes the
+    /// retained `topology.source` on rows 13/14.
+    pub fn active_topology_source(&self) -> Option<super::topology::TopologySource> {
+        if self.topology_source_runtime.conflict.is_some() {
+            None
+        } else {
+            self.topology.source
+        }
+    }
+
+    /// Display name for the selected source (retained on a row-13/14 conflict).
+    pub fn topology_source_label(&self) -> Option<&'static str> {
+        self.topology
+            .source
+            .map(super::topology::TopologySource::display_name)
+    }
+
+    /// Derive the legacy `enable_*` flags from `[topology].source`.
+    ///
+    /// An existing selected integration's flag is true; the two file sources
+    /// have all seven false. Option sections that are absent stay absent (the
+    /// flag is false); sections/credentials are never created or cleared.
+    pub fn normalize_topology_source_flags(&mut self) {
+        use super::topology::TopologySource;
+
+        let selected = self.topology.source;
+        self.uisp_integration.enable_uisp = selected == Some(TopologySource::Uisp);
+        self.splynx_integration.enable_splynx = selected == Some(TopologySource::Splynx);
+        self.powercode_integration.enable_powercode = selected == Some(TopologySource::Powercode);
+        self.sonar_integration.enable_sonar = selected == Some(TopologySource::Sonar);
+
+        // Option sections: normalise only an existing section. A missing
+        // section means its flag is false; never create a section here (the
+        // card requires sections/credentials to be untouched).
+        if let Some(integration) = self.netzur_integration.as_mut() {
+            integration.enable_netzur = selected == Some(TopologySource::Netzur);
+        }
+
+        if let Some(integration) = self.visp_integration.as_mut() {
+            integration.enable_visp = selected == Some(TopologySource::Visp);
+        }
+
+        if let Some(integration) = self.wispgate_integration.as_mut() {
+            integration.enable_wispgate = selected == Some(TopologySource::Wispgate);
+        }
+    }
+
     /// Test is a configuration is valid.
     pub fn validate(&self) -> Result<(), String> {
         if self.bridge.is_some() && self.single_interface.is_some() {
@@ -370,14 +423,10 @@ impl Config {
                     .to_string(),
             );
         }
-        if !self.topology.compile_mode.trim().is_empty()
-            && super::topology::normalize_topology_compile_mode(&self.topology.compile_mode)
-                .is_none()
-        {
-            return Err(
-                "topology.compile_mode must be one of flat, ap_only, ap_site, or full".to_string(),
-            );
-        }
+        super::topology::validate_topology_selection(
+            self.topology.source,
+            &self.topology.compile_mode,
+        )?;
         let airmax_flexible_frame_download_ratio =
             self.uisp_integration.airmax_flexible_frame_download_ratio;
         if !airmax_flexible_frame_download_ratio.is_finite()
@@ -491,6 +540,7 @@ impl Default for Config {
             radius_accounting: None,
             integration_common: super::integration_common::IntegrationConfig::default(),
             topology: super::topology::TopologyConfig::default(),
+            topology_source_runtime: super::topology::TopologySourceRuntime::default(),
             maintenance_window: super::maintenance_window::MaintenanceWindowConfig::default(),
             mikrotik_ipv6: super::mikrotik_ipv6::MikrotikIpv6Config::default(),
             splynx_integration: super::splynx_integration::SplynxIntegration::default(),
@@ -720,6 +770,7 @@ mod test {
     use super::super::bridge::{BridgeConfig, SingleInterfaceConfig};
     use super::super::dataplane::DataplaneConfig;
     use super::{Config, RttThresholds, SslConfig, normalize_external_hostname};
+    use crate::etc::v15::{TopologySource, TopologySourceConflict};
 
     fn remove_sections(raw: &str, sections: &[&str]) -> String {
         let mut output = Vec::new();
@@ -760,6 +811,130 @@ mod test {
         let config = Config::load_from_string(include_str!("example.toml"))
             .expect("Cannot read example toml file");
         assert_eq!(config.version, "1.5");
+        assert_eq!(
+            config.topology.source,
+            Some(TopologySource::ShapedDevices)
+        );
+    }
+
+    #[test]
+    fn example_declares_every_topology_source() {
+        let raw = include_str!("example.toml");
+        for source in TopologySource::INTEGRATION_SOURCES {
+            let section = source
+                .integration_section()
+                .expect("integration source has a section");
+            assert!(
+                raw.contains(&format!("[{section}]")),
+                "example.toml is missing [{section}] for {source:?}"
+            );
+        }
+
+        for source in TopologySource::ALL {
+            let mode = source.supported_compile_modes()[0];
+            let candidate = raw
+                .replacen(
+                    "source = \"shaped_devices\"",
+                    &format!("source = \"{}\"", source.as_str()),
+                    1,
+                )
+                .replacen(
+                    "compile_mode = \"ap_site\"",
+                    &format!("compile_mode = \"{mode}\""),
+                    1,
+                );
+            let parsed = Config::load_from_string(&candidate).unwrap_or_else(|error| {
+                panic!("example.toml does not parse for {source:?}: {error}")
+            });
+            assert_eq!(parsed.topology.source, Some(source));
+        }
+
+        let legacy = include_str!("../../../../../lqos.example");
+        for source in TopologySource::INTEGRATION_SOURCES {
+            let section = source
+                .integration_section()
+                .expect("integration source has a section");
+            assert!(
+                legacy.contains(&format!("[{section}]")),
+                "lqos.example is missing [{section}] for {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_flags_derives_the_selected_source_and_keeps_credentials() {
+        let mut config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
+        config.uisp_integration.token = "keep-uisp".to_string();
+        config.visp_integration.as_mut().unwrap().client_secret = "keep-visp".to_string();
+        config.uisp_integration.enable_uisp = true;
+        config.splynx_integration.enable_splynx = true;
+        config.sonar_integration.enable_sonar = true;
+
+        config.topology.source = Some(TopologySource::Visp);
+        config.normalize_topology_source_flags();
+        assert!(!config.uisp_integration.enable_uisp);
+        assert!(!config.splynx_integration.enable_splynx);
+        assert!(!config.sonar_integration.enable_sonar);
+        assert!(config.visp_integration.as_ref().unwrap().enable_visp);
+        assert_eq!(config.uisp_integration.token, "keep-uisp");
+        assert_eq!(
+            config.visp_integration.as_ref().unwrap().client_secret,
+            "keep-visp"
+        );
+
+        config.topology.source = Some(TopologySource::ShapedDevices);
+        config.normalize_topology_source_flags();
+        assert!(!config.uisp_integration.enable_uisp);
+        assert!(!config.splynx_integration.enable_splynx);
+        assert!(!config.powercode_integration.enable_powercode);
+        assert!(!config.sonar_integration.enable_sonar);
+        assert!(!config.netzur_integration.as_ref().unwrap().enable_netzur);
+        assert!(!config.visp_integration.as_ref().unwrap().enable_visp);
+    }
+
+    #[test]
+    fn normalize_does_not_create_missing_option_sections() {
+        let mut config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
+        config.netzur_integration = None;
+        config.visp_integration = None;
+        config.wispgate_integration = None;
+
+        for source in [
+            TopologySource::Netzur,
+            TopologySource::Visp,
+            TopologySource::Wispgate,
+        ] {
+            config.topology.source = Some(source);
+            config.normalize_topology_source_flags();
+            assert!(config.netzur_integration.is_none(), "{source:?}");
+            assert!(config.visp_integration.is_none(), "{source:?}");
+            assert!(config.wispgate_integration.is_none(), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn active_source_is_none_on_conflict_but_label_is_retained() {
+        let mut config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
+        config.topology.source = Some(TopologySource::Visp);
+        config.topology_source_runtime.conflict = Some(TopologySourceConflict {
+            source: Some(TopologySource::Visp),
+            enabled: vec!["enable_uisp".to_string()],
+            message: "topology source conflict".to_string(),
+        });
+        assert_eq!(config.active_topology_source(), None);
+        assert_eq!(config.topology_source_label(), Some("VISP"));
+    }
+
+    #[test]
+    fn validate_rejects_an_unsupported_source_mode_pair() {
+        let mut config = Config::load_from_string(include_str!("example.toml"))
+            .expect("Cannot read example toml file");
+        config.topology.source = Some(TopologySource::Visp);
+        config.topology.compile_mode = "flat".to_string();
+        assert!(config.validate().is_err());
     }
 
     #[test]

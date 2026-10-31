@@ -11,7 +11,7 @@
 //! netdevs and the world; everything here is DERIVED.
 
 use crate::nic_bind::BindMode;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The detected dataplane port class (§A decision table).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -253,15 +253,11 @@ pub fn beyond_measured_envelope(link_mbps: u64) -> bool {
             .unwrap_or(0)
 }
 
-/// The reserved cores (`physical_cores - 3`): OS/mgmt-IRQs + bridge-control/
-/// lqosd + >=1 headroom. UNTESTED ASSUMPTION (cell 2's optimum ran ALL cores
-/// with NO control plane) — label it; the physical/HT-collapsed count is the
-/// caller's input.
-pub const CORE_RESERVE: u32 = 3;
+/// The reserved cores (`physical_cores - 2`): OS/mgmt-IRQs + bridge-control/
+/// lqosd. The physical/HT-collapsed count is the caller's input.
+pub const CORE_RESERVE: u32 = 2;
 
-/// Which quantity bound the derived count checks 2/4):
-/// distinct LOUD lines are required when the CORES or the QUEUES cap BELOW the
-/// measured ceiling (the delivered at that capped W is UNMEASURED).
+/// Which quantity bound the derived count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CountBound {
     /// The measured ceiling met the demand (no cap below it).
@@ -272,7 +268,19 @@ pub enum CountBound {
     Queues,
 }
 
-/// Classify which quantity bound the derived count.
+/// The B target before the hard caps: the cell-2 table, raised for links above
+/// the W1 ceiling to at least `ceil(link/250)`. `<=1070` is unchanged.
+pub fn worker_target(link_mbps: u64) -> u32 {
+    let table = shaped_ceiling(link_mbps) as u64;
+    if link_mbps > CELL2_SHAPED_DELIVERED_MBPS[0].1 {
+        let anchor = link_mbps.div_ceil(250);
+        table.max(anchor).min(u32::MAX as u64) as u32
+    } else {
+        table.min(u32::MAX as u64) as u32
+    }
+}
+
+/// Classify which quantity bound the derived count (pre-existing table rule).
 pub fn count_bound(link_mbps: u64, physical_cores: u32, nic_queue_count: u32) -> CountBound {
     let ceiling = shaped_ceiling(link_mbps);
     let cores = physical_cores.saturating_sub(CORE_RESERVE).max(1);
@@ -286,21 +294,20 @@ pub fn count_bound(link_mbps: u64, physical_cores: u32, nic_queue_count: u32) ->
     }
 }
 
-/// The derived worker count, the ceiling-table form):
-/// `min(shaped_ceiling(link), physical_cores - CORE_RESERVE, nic_queue_count)`.
-/// The link demand picks the worker count off cell 2's shaped table; the CORES
-/// (`-3` = OS/mgmt + bridge-control + headroom) and the NIC/VM queue fact bound
-/// it. The small-job rule is INSIDE the table (1G ⇒ W=1).
+/// The derived worker count (B rule):
+/// `min(cores-2, queues, max(table, ceil(link/250)))` for link > 1070;
+/// `min(table, cores-2, queues)` below it. The small-job rule is INSIDE the
+/// table (1G ⇒ W=1).
 pub fn derived_workers(link_mbps: u64, physical_cores: u32, nic_queue_count: u32) -> u32 {
     let cores = physical_cores.saturating_sub(CORE_RESERVE).max(1);
     let queues = nic_queue_count.max(1);
-    shaped_ceiling(link_mbps).min(cores).min(queues).max(1)
+    worker_target(link_mbps).min(cores).min(queues).max(1)
 }
 
-/// The legacy WAS-only count (`max(1, min(rate_workers(link), cores-3))`),
+/// The legacy WAS-only count (`max(1, min(rate_workers(link), cores-2))`),
 /// retained for comparison/tests; [`derived_workers`] is what the writer uses.
 pub fn was_workers(link_mbps: u64, physical_cores: u32) -> u32 {
-    let reserve = physical_cores.saturating_sub(3).max(1);
+    let reserve = physical_cores.saturating_sub(CORE_RESERVE).max(1);
     rate_workers(link_mbps).min(reserve).max(1)
 }
 
@@ -341,22 +348,97 @@ pub fn virtio_worker_warning(class: PortClass, workers: u32) -> Option<&'static 
     )
 }
 
+/// `lqos-74t.160`: where the written worker count came from.
+///
+/// The managed `50-ports.conf` is never an ONGOING source: it is a one-time
+/// migration input only (see [`resolve_worker_source`]). A derived count must
+/// not freeze as an override just because an earlier render wrote it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkersSource {
+    /// Table/cores/queues; no operator key.
+    Derived,
+    /// `[queues] workers` in lqos.conf (the only ongoing operator key).
+    Override,
+    /// A legacy `LIBREQOS_DPDK_WORKERS` from the packaged `bridge.env`, or a
+    /// one-time adoption from the managed `50-ports.conf`.
+    LegacyEnv,
+}
+
+/// The one-time adoption outcome for this render.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkerAdoption {
+    /// No adoption attempted / not applicable.
+    None,
+    /// `[queues] workers=N` was written (or is being written) from a legacy
+    /// source; this render emits the adoption note.
+    Adopted,
+    /// The legacy W equalled the derived W and was ignored; the check stamp is
+    /// written so a later rate/core change cannot adopt it.
+    IgnoredEqual,
+    /// The legacy W was below the derived W and was ignored (B wins); the
+    /// check stamp is written.
+    IgnoredLower,
+}
+
+/// The pure provenance decision (unit-tested without touching `/etc`).
+///
+/// Inputs are the config key, the **main** `bridge.env` key, the managed
+/// `50-ports.conf` key, whether the one-time check already ran, and the W that
+/// would be derived now.
+pub fn resolve_worker_source(
+    config_workers: Option<u32>,
+    main_env_workers: Option<u32>,
+    managed_workers: Option<u32>,
+    adoption_checked: bool,
+    derived: u32,
+) -> (u32, WorkersSource, WorkerAdoption) {
+    fn positive(n: u32) -> Option<u32> {
+        (n > 0).then_some(n)
+    }
+    if let Some(w) = config_workers.and_then(positive) {
+        return (w, WorkersSource::Override, WorkerAdoption::None);
+    }
+    // Legacy sources are read ONLY before the one-time stamp exists. After it,
+    // a stale main/managed W can never lower (or raise) B.
+    if !adoption_checked {
+        let decide = |w: u32| {
+            if w > derived {
+                (w, WorkersSource::LegacyEnv, WorkerAdoption::Adopted)
+            } else if w == derived {
+                (derived, WorkersSource::Derived, WorkerAdoption::IgnoredEqual)
+            } else {
+                (derived, WorkersSource::Derived, WorkerAdoption::IgnoredLower)
+            }
+        };
+        if let Some(w) = main_env_workers.and_then(positive) {
+            return decide(w);
+        }
+        if let Some(w) = managed_workers.and_then(positive) {
+            return decide(w);
+        }
+    }
+    (derived, WorkersSource::Derived, WorkerAdoption::None)
+}
+
 /// The facts the wiring slice gathers (B.4.1): the link demand from lqos.conf's
 /// `max(downlink, uplink)` bandwidth keys, the HT-COLLAPSED physical core count,
-/// the A0 NIC/VM queue fact, and the operator's `[queues] workers` override.
+/// the A0 NIC/VM queue fact, and the resolved worker provenance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PortsPlanFacts {
-    /// The binding demand. The worker pool is SHARED across directions
-    /// (`worker_loop.rs:3107` shares one epoch across a worker's download+upload
-    /// trees), so a both-way busy box's demand is `downlink + uplink`; a
-    /// single-direction box is `max(down, uplink)` == its one direction.
+    /// The worker-sizing link: **`max(down, up)`**, not the sum. The 250-anchor
+    /// is a per-direction rule; a 2.5G/2.5G box sizes at 2.5G. The value is also
+    /// used for the warnings/log only.
     pub link_mbps: u64,
     /// HT-collapsed PHYSICAL cores.
     pub physical_cores: u32,
     /// The NIC/VM queue count (A0 multiqueue fact).
     pub nic_queue_count: u32,
-    /// The operator's explicit `[queues] workers = N` override, if set.
-    pub workers_override: Option<u32>,
+    /// The worker count to write.
+    pub workers: u32,
+    /// Where that count came from.
+    pub workers_source: WorkersSource,
+    /// The one-time adoption outcome for this render.
+    pub worker_adoption: WorkerAdoption,
     /// `false` when the cpu topology was unreadable (the caller WARNs).
     pub topology_ok: bool,
 }
@@ -368,6 +450,8 @@ pub struct ManagedPlanOutcome {
     pub workers: u32,
     /// `true` when the operator override won.
     pub overridden: bool,
+    /// The provenance of the written count.
+    pub source: WorkersSource,
 }
 
 /// The HT-COLLAPSED physical core count from sysfs (one per `topology/core_id`
@@ -462,13 +546,125 @@ pub fn iommu_present() -> bool {
         .unwrap_or(false)
 }
 
+/// Parse a positive worker count from an env-style value.
+fn parse_positive_u32(value: Option<String>) -> Option<u32> {
+    value
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|n| *n > 0)
+}
+
+/// Read one key from the MANAGED `50-ports.conf` only. This is the one-time
+/// migration input for worker provenance; it must never become a runtime
+/// source (the unit's drop-in glob is for the bridge, not for `lqos_setup`).
+fn managed_dropin_value_at(path: &Path, key: &str) -> Option<String> {
+    crate::bootstrap::env_file_value(path, key)
+}
+
+/// The file surfaces `gather_facts` reads. Production uses [`Default`]; unit
+/// tests inject temp paths (the live-W8 and dry-run no-write fixtures).
+#[derive(Clone, Debug)]
+pub struct GatherEnv {
+    /// Packaged `/etc/libreqos/bridge.env` (runtime LegacyEnv source).
+    pub main_env_path: PathBuf,
+    /// Managed `/etc/libreqos/bridge.env.d/50-ports.conf` (one-time input).
+    pub managed_path: PathBuf,
+    /// `dpdk-bind-originals.env` (persisted BDF/queue facts).
+    pub state_path: PathBuf,
+    /// The resolved `lqos.conf` path (`lqos_config::config_path()`).
+    pub conf_path: PathBuf,
+    /// The one-time worker-adoption stamp.
+    pub stamp_path: PathBuf,
+    /// Test-only physical-core override; production reads sysfs.
+    pub physical_cores_override: Option<u32>,
+}
+
+impl Default for GatherEnv {
+    fn default() -> Self {
+        Self {
+            main_env_path: PathBuf::from(crate::bootstrap::BRIDGE_ENV_PATH),
+            managed_path: PathBuf::from(MANAGED_DROPIN),
+            state_path: PathBuf::from(crate::bootstrap::BIND_ORIGINALS_STATE),
+            conf_path: PathBuf::from(lqos_config::config_path()),
+            stamp_path: PathBuf::from(crate::config_migrate::WORKER_ADOPTION_STAMP),
+            physical_cores_override: None,
+        }
+    }
+}
+
+/// Resolve the NIC/VM queue fact without requiring a post-bind netdev.
+///
+/// Precedence: explicit `--queues N` → persisted
+/// `LQOS_DPDK_NIC_QUEUES` (89's bind-time STATE) → the managed
+/// `LIBREQOS_DPDK_RX_QUEUES` once → live `nic_rx_queue_count`. The managed
+/// fallback is what lets the one-time W comparison run on an already-bound
+/// box, where `/sys/.../net` is gone.
+fn pick_queue_count(
+    queue_override: Option<u32>,
+    persisted: Option<u32>,
+    managed: Option<u32>,
+    live: Option<u32>,
+) -> Result<u32, String> {
+    queue_override
+        .filter(|q| *q > 0)
+        .or(persisted.filter(|q| *q > 0))
+        .or(managed.filter(|q| *q > 0))
+        .or(live.filter(|q| *q > 0))
+        .ok_or_else(|| {
+            "NIC queue count undetectable (the netdev is already bound?); pass --queues N"
+                .to_string()
+        })
+}
+
+fn resolve_queue_count(
+    wan: &str,
+    queue_override: Option<u32>,
+    env: &GatherEnv,
+) -> Result<u32, String> {
+    pick_queue_count(
+        queue_override,
+        parse_positive_u32(crate::bootstrap::state_value_at(
+            &env.state_path,
+            "LQOS_DPDK_NIC_QUEUES",
+        )),
+        parse_positive_u32(managed_dropin_value_at(
+            &env.managed_path,
+            "LIBREQOS_DPDK_RX_QUEUES",
+        )),
+        nic_rx_queue_count(wan),
+    )
+}
+
 /// THE ONE FACT GATHER (the implementer (1c)) shared by the CLI and the setup flow so
-/// they cannot drift. Precedence for the override: the config's live
-/// `[queues] workers` (B.4.1) then a pre-set managed `LIBREQOS_DPDK_WORKERS`
-/// (the pre-field fallback). A bound netdev is a NAMED error for the queue fact
-/// (the implementer (1b)) — NEVER a silent 1 (which would cap the workers at the W=1
-/// collapse).
-pub fn gather_facts(cfg: &lqos_config::Config, wan_bdf: &str) -> Result<PortsPlanFacts, String> {
+/// they cannot drift. Worker provenance is explicit (`WorkersSource`): the
+/// config's `[queues] workers` is the only ongoing operator key; a main
+/// `bridge.env` W is `LegacyEnv`; the managed `50-ports.conf` W is a ONE-TIME
+/// migration input (adopted only if it differs from the W derived now).
+///
+/// A bound netdev is a NAMED error for the queue fact (the implementer (1b)) — NEVER a
+/// silent 1 (which would cap the workers at the W=1 collapse) — unless the
+/// explicit/persisted/managed fallback above supplies it.
+pub fn gather_facts(
+    cfg: &lqos_config::Config,
+    wan_bdf: &str,
+    queue_override: Option<u32>,
+    apply_adoption: bool,
+) -> Result<PortsPlanFacts, String> {
+    gather_facts_with(
+        cfg,
+        wan_bdf,
+        queue_override,
+        apply_adoption,
+        &GatherEnv::default(),
+    )
+}
+
+fn gather_facts_with(
+    cfg: &lqos_config::Config,
+    wan_bdf: &str,
+    queue_override: Option<u32>,
+    apply_adoption: bool,
+    env: &GatherEnv,
+) -> Result<PortsPlanFacts, String> {
  // The WAN BDF is a PARAM (the implementer final #12): the CLI passes --wan and the
     // setup flow passes bridge.env's value, so the queue/driver facts are always
     // read from the SAME NIC the block is written for -- never a silent mismatch.
@@ -478,33 +674,120 @@ pub fn gather_facts(cfg: &lqos_config::Config, wan_bdf: &str) -> Result<PortsPla
     }
     let down = cfg.queues.downlink_bandwidth_mbps;
     let up = cfg.queues.uplink_bandwidth_mbps;
-    // The link rate is an integer Mbps (the ports-plan fact); a decimal config
-    // value rounds HERE only (the exact rate stays in lqos.conf).
+    // Worker sizing uses PER-DIRECTION max(down, up), not the sum. A decimal
+    // config value rounds HERE only (the exact rate stays in lqos.conf).
     let link_mbps = if down <= 0.0 && up <= 0.0 {
         return Err(
             "no bandwidth keys in lqos.conf; set downlink_bandwidth_mbps/uplink_bandwidth_mbps"
                 .into(),
         );
-    } else if down <= 0.0 {
-        up.round() as u64
-    } else if up <= 0.0 {
-        down.round() as u64
     } else {
-        (down + up).round() as u64
+        down.max(up).round() as u64
     };
-    let (physical_cores, topology_ok) =
-        physical_core_count_at(Path::new("/sys/devices/system/cpu"));
-    let nic_queue_count = nic_rx_queue_count(&wan)
-        .ok_or("NIC queue count undetectable (the netdev is already bound?); pass --queues N")?;
-    let workers_override = cfg.queues.workers.or_else(|| {
-        crate::bootstrap::bridge_env_value("LIBREQOS_DPDK_WORKERS")
-            .and_then(|v| v.trim().parse().ok())
-    });
+    let (physical_cores, topology_ok) = match env.physical_cores_override {
+        Some(cores) => (cores, true),
+        None => physical_core_count_at(Path::new("/sys/devices/system/cpu")),
+    };
+    let nic_queue_count = resolve_queue_count(&wan, queue_override, env)?;
+    let derived = derived_workers(link_mbps, physical_cores, nic_queue_count);
+
+    let checked = crate::config_migrate::worker_adoption_checked_at(&env.stamp_path);
+    let main_env_workers = parse_positive_u32(crate::bootstrap::bridge_env_value_main_at(
+        &env.main_env_path,
+        crate::config_migrate::ENV_WORKERS,
+    ));
+    let managed_workers = parse_positive_u32(managed_dropin_value_at(
+        &env.managed_path,
+        crate::config_migrate::ENV_WORKERS,
+    ));
+    let (workers, workers_source, mut worker_adoption) = resolve_worker_source(
+        cfg.queues.workers,
+        main_env_workers,
+        managed_workers,
+        checked,
+        derived,
+    );
+
+    // A dry-run previews the adoption but must not claim it wrote lqos.conf;
+    // emit the legacy note instead so the operator still sees the action.
+    if !apply_adoption && worker_adoption == WorkerAdoption::Adopted {
+        worker_adoption = WorkerAdoption::None;
+    }
+
+    let legacy_origin = if main_env_workers.is_some() {
+        "main bridge.env"
+    } else {
+        "managed 50-ports"
+    };
+
+    if apply_adoption {
+        match worker_adoption {
+            WorkerAdoption::Adopted => {
+                let origin = legacy_origin;
+                let conf_path = &env.conf_path;
+                let stamp_path = &env.stamp_path;
+                if let Err(err) =
+                    crate::config_migrate::adopt_workers_at(conf_path, stamp_path, workers, origin)
+                {
+                    eprintln!(
+                        "ports-plan: WARNING could not adopt legacy worker count {workers} from \
+                         {origin} into [queues] workers at {}: {err}; the legacy value is used \
+                         for this render and the adoption will be retried",
+                        conf_path.display()
+                    );
+                    worker_adoption = WorkerAdoption::None;
+                }
+            }
+            WorkerAdoption::IgnoredEqual | WorkerAdoption::IgnoredLower => {
+                let status = if worker_adoption == WorkerAdoption::IgnoredEqual {
+                    "ignored-equal"
+                } else {
+                    "ignored-lower"
+                };
+                if let Err(err) = crate::config_migrate::stamp_worker_adoption_at(
+                    &env.stamp_path,
+                    status,
+                    Some(workers),
+                    Some(derived),
+                    Some(legacy_origin),
+                ) {
+                    eprintln!(
+                        "ports-plan: WARNING could not write the worker-adoption stamp {}: {err}",
+                        env.stamp_path.display()
+                    );
+                }
+            }
+            WorkerAdoption::None => {
+                if !checked {
+                    let status = if workers_source == WorkersSource::Override {
+                        "override-present"
+                    } else {
+                        "absent"
+                    };
+                    if let Err(err) = crate::config_migrate::stamp_worker_adoption_at(
+                        &env.stamp_path,
+                        status,
+                        Some(workers),
+                        Some(derived),
+                        None,
+                    ) {
+                        eprintln!(
+                            "ports-plan: WARNING could not write the worker-adoption stamp {}: {err}",
+                            env.stamp_path.display()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     Ok(PortsPlanFacts {
         link_mbps,
         physical_cores,
         nic_queue_count,
-        workers_override,
+        workers,
+        workers_source,
+        worker_adoption,
         topology_ok,
     })
 }
@@ -546,7 +829,7 @@ pub fn write_plan_from_setup(
     let lan = bridge_env_value("LQOS_DPDK_LAN_BDF").filter(|v| !v.trim().is_empty());
     let (wan, lan) = plan_bdf_pair(wan, lan)?;
     let wan_bdf = wan.clone();
-    let facts = gather_facts(cfg, &wan_bdf)?;
+    let facts = gather_facts(cfg, &wan_bdf, None, true)?;
     // Post-bind the netdev is gone and `driver_of_bdf` reports uio/vfio. The
     // class comes from the pre-bind driver persisted beside the pair (the bind
     // script/Rust both record it); never silently default a bound virtio to
@@ -596,14 +879,13 @@ pub fn write_managed_ports_plan_at(
     lan_bdf: &str,
     facts: &PortsPlanFacts,
 ) -> std::io::Result<ManagedPlanOutcome> {
-    let workers = facts.workers_override.unwrap_or_else(|| {
-        derived_workers(facts.link_mbps, facts.physical_cores, facts.nic_queue_count)
-    });
+    let workers = facts.workers;
     let content = managed_env_block_with_workers(plan, wan_bdf, lan_bdf, facts, workers);
     write_managed_dropin_at(path, &content)?;
     Ok(ManagedPlanOutcome {
         workers,
-        overridden: facts.workers_override.is_some(),
+        overridden: facts.workers_source == WorkersSource::Override,
+        source: facts.workers_source,
     })
 }
 
@@ -649,7 +931,9 @@ pub fn managed_env_block(
             link_mbps,
             physical_cores,
             nic_queue_count,
-            workers_override: Some(workers),
+            workers,
+            workers_source: WorkersSource::Derived,
+            worker_adoption: WorkerAdoption::None,
             topology_ok: true,
         },
         workers,
@@ -665,10 +949,16 @@ pub fn managed_env_block_with_workers(
     workers: u32,
 ) -> String {
     let mut out = String::new();
-    out.push_str("# Managed by libreqos-setup (docs/zero_manual_ports_installer_card.md).\n");
-    out.push_str("# DERIVED from lqos.conf to_internet/to_network. Do not hand-edit;\n");
-    out.push_str("# rerun libreqos-setup to regenerate. Operator overrides belong in a\n");
-    out.push_str("# DIFFERENT bridge.env.d drop-in (sorted after this one so they win).\n");
+    let cfg_path = lqos_config::config_path();
+    out.push_str(&format!(
+        "# Managed by lqos_setup ports-plan from {cfg_path}.\n"
+    ));
+    out.push_str(&format!(
+        "# Do not hand-edit; regenerate with: sudo lqos_setup ports-plan \
+         --wan {wan_bdf} --lan {lan_bdf}\n"
+    ));
+    out.push_str("# Operator worker overrides belong in lqos.conf ([queues] workers).\n");
+    out.push_str("# Drop-ins sorted after this one still win.\n");
     out.push_str(&format!("LIBREQOS_DPDK_ENGINE={}\n", engine_key(plan)));
     out.push_str(&format!(
         "LIBREQOS_DPDK_EAL_ARGS={}\n",
@@ -694,6 +984,14 @@ pub fn managed_env_block_with_workers(
     let physical_cores = facts.physical_cores;
     let nic_queue_count = facts.nic_queue_count;
     let queues = nic_queue_count.max(1);
+
+    // `lqos-74t.160`: the only new note is the one-line adoption note on a write.
+    if facts.worker_adoption == WorkerAdoption::Adopted {
+        out.push_str(&format!(
+            "# NOTE: adopted legacy W={workers} into [queues] workers.\n"
+        ));
+    }
+
  // Loud beyond-envelope line (the implementer (2)): the min may cap BELOW the
     // table's W via the cores OR the queues, and cell 2's delivered at a
     // capped W is UNMEASURED (state it, never imply the table).
@@ -1302,12 +1600,25 @@ mod tests {
     fn derived_workers_min_of_ceiling_cores_and_queues() {
         // 1G/8c/8q: the table picks W=1 (the small-job rule, no special case)
         assert_eq!(derived_workers(1_000, 8, 8), 1);
-        // 10G/8c/8q: the table picks 8, the CORES bound it to 5
-        assert_eq!(derived_workers(10_000, 8, 8), 5);
-        // 100G/16c/16q: the table saturates (16), the cores bound to 13
-        assert_eq!(derived_workers(100_000, 16, 16), 13);
-        // 10G/4c: the cores bound to 1 (the undersized box)
-        assert_eq!(derived_workers(10_000, 4, 8), 1);
+        // 10G/8c/8q: target 40, the cores-2=6 bound it
+        assert_eq!(derived_workers(10_000, 8, 8), 6);
+        // 100G/16c/16q: target 400, the cores-2=14 bound it
+        assert_eq!(derived_workers(100_000, 16, 16), 14);
+        // 10G/4c: the cores-2=2 bound it (the undersized box)
+        assert_eq!(derived_workers(10_000, 4, 8), 2);
+        // the card matrix
+        assert_eq!(derived_workers(2_500, 12, 32), 10);
+        assert_eq!(derived_workers(2_500, 14, 32), 10);
+        assert_eq!(derived_workers(2_500, 8, 32), 6);
+        assert_eq!(derived_workers(2_500, 14, 6), 6);
+        assert_eq!(derived_workers(2_500, 14, 4), 4);
+        assert_eq!(derived_workers(1_200, 14, 32), 5);
+        assert_eq!(derived_workers(6_500, 14, 32), 12);
+        assert_eq!(derived_workers(10_000, 8, 32), 6);
+        assert_eq!(derived_workers(25_000, 14, 32), 12);
+        // asymmetric down/up is a gather_facts concern; the sizing link is max
+        assert_eq!(derived_workers(1_070, 14, 32), 1); // B inactive
+        assert_eq!(derived_workers(1_071, 14, 32), 5); // B active
         // the queues bound too
         assert_eq!(derived_workers(100_000, 16, 2), 2);
     }
@@ -1323,32 +1634,34 @@ mod tests {
         assert_eq!(was_workers(1_000, 4), 1);
         assert_eq!(was_workers(10_000, 8), 4);
         assert_eq!(was_workers(1_000, 8), 1); // never split a small job
-        assert_eq!(was_workers(10_000, 4), 1); // the box cannot field the link
+        assert_eq!(was_workers(10_000, 4), 2); // cores-2=2, the box cannot field the link
         assert_eq!(was_workers(10_000, 16), 4); // extra cores = headroom
     }
 
     #[test]
     fn count_bound_distinguishes_the_caps() {
-        // 8c/10G/8q: the ceiling is W=8 but cores-3=5 binds -> Cores
+        // pre-existing table rule (unchanged warnings): 8c/10G -> Cores
         assert_eq!(count_bound(10_000, 8, 8), CountBound::Cores);
-        // 100G/16c/2q: the queues bind below the ceiling -> Queues
+        // 100G/16c/2q -> Queues
         assert_eq!(count_bound(100_000, 16, 2), CountBound::Queues);
-        // 1G/8c/8q: the measured ceiling IS W=1 -> no cap
+        // 1G/8c/8q -> no cap
         assert_eq!(count_bound(1_000, 8, 8), CountBound::MeasuredCeiling);
- // the endpoint regressions (the implementer check 4): the dead clamp is gone
-        assert_eq!(derived_workers(1_000, 8, 8), 1);
-        assert_eq!(derived_workers(1_000, 16, 8), 1);
-        assert_eq!(derived_workers(10_000, 8, 8), 5);
-        // 100G/16c/16q: the ceiling saturates at W_MAX=16; the cores-3=13 reserve
- // binds -> 13 (the implementer's check-4 text says "16"; the reserve makes it 13 --
-        // flagged for the rule's owner, the reserve is the WAS -3).
-        assert_eq!(derived_workers(100_000, 16, 16), 13);
-        // the two loud lines are present and distinct
+        // 14c/2.5G/12c/1.2G -> the table ceiling is met
+        assert_eq!(count_bound(2_500, 14, 32), CountBound::MeasuredCeiling);
+        assert_eq!(count_bound(2_500, 12, 32), CountBound::MeasuredCeiling);
+        assert_eq!(count_bound(1_200, 14, 32), CountBound::MeasuredCeiling);
+        // 14c/6.5G q8 -> the table ceiling is met (no new warning)
+        assert_eq!(count_bound(6_500, 14, 8), CountBound::MeasuredCeiling);
+        // 25G/14c -> Cores (table 16, cores-2=12)
+        assert_eq!(count_bound(25_000, 14, 32), CountBound::Cores);
+        // tie: cores == queues below the table -> Cores
+        assert_eq!(count_bound(2_500, 4, 4), CountBound::Cores);
+        // the two loud lines are present and distinct, byte-identical to beta16
         let m = plan("mlx5_core", true).unwrap();
         let c = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 10_000, 8, 8);
-        assert!(c.contains("PHYSICAL cores"), "{c}");
+        assert!(c.contains("the PHYSICAL cores (minus the reserve)"), "{c}");
         let q = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 100_000, 16, 2);
-        assert!(q.contains("queue count caps"), "{q}");
+        assert!(q.contains("the NIC/VM queue count caps the worker count"), "{q}");
     }
 
     #[test]
@@ -1410,7 +1723,9 @@ mod tests {
             link_mbps: 1_000,
             physical_cores: 8,
             nic_queue_count: 8,
-            workers_override: None,
+            workers: 1,
+            workers_source: WorkersSource::Derived,
+            worker_adoption: WorkerAdoption::None,
             topology_ok: true,
         };
         let out = write_managed_ports_plan_at(&path, &plan, "0000:01:00.0", "0000:01:00.1", &facts)
@@ -1425,7 +1740,8 @@ mod tests {
         assert!(!path.with_extension("conf.tmp").exists());
         // the operator's lqos.conf override WINS
         let ov = PortsPlanFacts {
-            workers_override: Some(9),
+            workers: 9,
+            workers_source: WorkersSource::Override,
             ..facts
         };
         let out2 =
@@ -1467,21 +1783,24 @@ mod tests {
         assert!(low_worker_warning(10_000, 1).is_some());
         assert!(low_worker_warning(10_000, 2).is_some());
         assert!(low_worker_warning(10_000, 4).is_none());
+        assert!(low_worker_warning(10_000, 1)
+            .unwrap()
+            .ends_with("set LIBREQOS_DPDK_WORKERS explicitly."));
         // the env writer calls the WAS rule + tracks the NIC queue fact
         let m = plan("mlx5_core", true).unwrap();
         let b = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 10_000, 8, 8);
-        // the ceiling picks W=8 but cores-3=5 binds -> 5 + the cores-cap WARNING
-        assert!(b.contains("LIBREQOS_DPDK_WORKERS=5"), "{b}");
+        // target 40, cores-2=6 binds -> 6 + the cores-cap WARNING
+        assert!(b.contains("LIBREQOS_DPDK_WORKERS=6"), "{b}");
         assert!(b.contains("LIBREQOS_DPDK_RX_QUEUES=8"), "{b}");
         assert!(b.contains("LIBREQOS_DPDK_TX_QUEUES=8"), "{b}");
         assert!(b.contains("PHYSICAL cores"), "{b}");
         // a box whose ceiling the cores fully satisfy carries NO warning
         let ok = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 1_000, 8, 8);
         assert!(!ok.contains("WARNING"), "{ok}");
-        // an UNDERSIZED box (demand 10G but cores-3 = 1, so W=1 in the low band)
+        // an UNDERSIZED box (demand 10G but cores-2 = 2, W=2 in the low band)
         // carries the LOUD persistent warning inside the block
         let lo = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 10_000, 4, 8);
-        assert!(lo.contains("LIBREQOS_DPDK_WORKERS=1"), "{lo}");
+        assert!(lo.contains("LIBREQOS_DPDK_WORKERS=2"), "{lo}");
         assert!(lo.contains("LIBREQOS_DPDK_RX_QUEUES=8"), "{lo}");
         assert!(lo.contains("# WARNING"), "{lo}");
         // and a 1G box does NOT (W=1 is its correct count)
@@ -1785,4 +2104,322 @@ mod tests {
         assert_eq!(netdev_bdf(&net, "ens99"), None);
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn worker_source_is_explicit_and_higher_only_before_the_stamp() {
+        // config key wins over every legacy surface (including B)
+        let (w, s, a) = resolve_worker_source(Some(8), Some(4), Some(4), false, 10);
+        assert_eq!((w, s, a), (8, WorkersSource::Override, WorkerAdoption::None));
+        // main env matrix: W4 -> IgnoredLower, W10 -> IgnoredEqual, W12 -> Adopted
+        let (w, s, a) = resolve_worker_source(None, Some(4), None, false, 10);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::IgnoredLower));
+        let (w, s, a) = resolve_worker_source(None, Some(10), None, false, 10);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::IgnoredEqual));
+        let (w, s, a) = resolve_worker_source(None, Some(12), None, false, 10);
+        assert_eq!((w, s, a), (12, WorkersSource::LegacyEnv, WorkerAdoption::Adopted));
+        // after the stamp, main/managed are never read: stale W4 -> Derived 10
+        let (w, s, a) = resolve_worker_source(None, Some(4), Some(8), true, 10);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::None));
+        // managed matrix: W8 -> IgnoredLower, W10 -> IgnoredEqual, W12 -> Adopted
+        let (w, s, a) = resolve_worker_source(None, None, Some(8), false, 10);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::IgnoredLower));
+        let (w, s, a) = resolve_worker_source(None, None, Some(10), false, 10);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::IgnoredEqual));
+        let (w, s, a) = resolve_worker_source(None, None, Some(12), false, 10);
+        assert_eq!((w, s, a), (12, WorkersSource::LegacyEnv, WorkerAdoption::Adopted));
+        // main env wins over managed when both exist
+        let (w, s, a) = resolve_worker_source(None, Some(12), Some(8), false, 10);
+        assert_eq!((w, s, a), (12, WorkersSource::LegacyEnv, WorkerAdoption::Adopted));
+        // 0 is not a valid worker override
+        let (w, s, a) = resolve_worker_source(Some(0), Some(4), Some(8), false, 10);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::IgnoredLower));
+    }
+
+    #[test]
+    fn bound_queue_fact_prefers_persisted_then_managed_then_live() {
+        // explicit wins
+        assert_eq!(
+            pick_queue_count(Some(20), Some(32), Some(8), Some(4)),
+            Ok(20)
+        );
+        // post-bind: live is gone, persisted STATE supplies the fact
+        assert_eq!(
+            pick_queue_count(None, Some(32), Some(8), None),
+            Ok(32)
+        );
+        // no STATE: the managed RX_QUEUES is the one-time fallback
+        assert_eq!(pick_queue_count(None, None, Some(8), None), Ok(8));
+        // nothing at all is the named error, never a silent 1
+        assert!(pick_queue_count(None, None, None, None).is_err());
+        // N5b: managed W12 + RX_QUEUES=32, 14c, 2.5G -> B10, adopt W12
+        let derived = derived_workers(2_500, 14, 32);
+        assert_eq!(derived, 10);
+        let (w, s, a) = resolve_worker_source(None, None, Some(12), false, derived);
+        assert_eq!((w, s, a), (12, WorkersSource::LegacyEnv, WorkerAdoption::Adopted));
+        // live managed W8 vs B10 is ignored (lower)
+        let (w, s, a) = resolve_worker_source(None, None, Some(8), false, derived);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::IgnoredLower));
+    }
+
+    #[test]
+    fn managed_header_names_the_plan_writer_and_never_rerun_setup() {
+        let m = plan("mlx5_core", true).unwrap();
+        let b = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 1_000, 8, 8);
+        assert!(
+            b.contains("sudo lqos_setup ports-plan --wan 0000:01:00.0 --lan 0000:01:00.1"),
+            "{b}"
+        );
+        assert!(b.contains("Managed by lqos_setup ports-plan from "), "{b}");
+        assert!(b.contains(lqos_config::config_path().as_str()), "{b}");
+        assert!(!b.contains("rerun libreqos-setup"), "{b}");
+    }
+
+    #[test]
+    fn b_count_matrix_and_warning_text_regression() {
+        let m = plan("mlx5_core", true).unwrap();
+        // target reached: no new warning
+        let b = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 2_500, 14, 32);
+        assert!(b.contains("LIBREQOS_DPDK_WORKERS=10"), "{b}");
+        assert!(!b.contains("PHYSICAL cores"), "{b}");
+        assert!(!b.contains("queue count caps"), "{b}");
+        let b12 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 2_500, 12, 32);
+        assert!(b12.contains("LIBREQOS_DPDK_WORKERS=10"), "{b12}");
+        // B raises 8c/6c and the table-bound q8/6.5G: no new warning
+        let c8 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 2_500, 8, 32);
+        assert!(c8.contains("LIBREQOS_DPDK_WORKERS=6"), "{c8}");
+        assert!(!c8.contains("PHYSICAL cores"), "{c8}");
+        let c6 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 2_500, 6, 32);
+        assert!(c6.contains("LIBREQOS_DPDK_WORKERS=4"), "{c6}");
+        let q8 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 6_500, 14, 8);
+        assert!(q8.contains("LIBREQOS_DPDK_WORKERS=8"), "{q8}");
+        // hard caps keep the beta16 text
+        let c10 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 10_000, 8, 8);
+        assert!(c10.contains("LIBREQOS_DPDK_WORKERS=6"), "{c10}");
+        assert!(c10.contains("the PHYSICAL cores (minus the reserve)"), "{c10}");
+        let c25 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 25_000, 14, 32);
+        assert!(c25.contains("LIBREQOS_DPDK_WORKERS=12"), "{c25}");
+        assert!(c25.contains("the PHYSICAL cores (minus the reserve)"), "{c25}");
+        // 1.2G/14c and 1G: count only, no warning
+        let bw = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 1_200, 14, 32);
+        assert!(bw.contains("LIBREQOS_DPDK_WORKERS=5"), "{bw}");
+        assert!(!bw.contains("WARNING"), "{bw}");
+        let small = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 1_000, 14, 32);
+        assert!(small.contains("LIBREQOS_DPDK_WORKERS=1"), "{small}");
+        assert!(!small.contains("WARNING"), "{small}");
+        // 1070/1071 boundary
+        let b1070 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 1_070, 14, 32);
+        assert!(b1070.contains("LIBREQOS_DPDK_WORKERS=1"), "{b1070}");
+        let b1071 = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 1_071, 14, 32);
+        assert!(b1071.contains("LIBREQOS_DPDK_WORKERS=5"), "{b1071}");
+        // no override/legacy notes; the only note is an adoption write
+        let facts = PortsPlanFacts {
+            link_mbps: 2_500,
+            physical_cores: 14,
+            nic_queue_count: 32,
+            workers: 8,
+            workers_source: WorkersSource::Override,
+            worker_adoption: WorkerAdoption::None,
+            topology_ok: true,
+        };
+        let ov = managed_env_block_with_workers(&m, "0000:01:00.0", "0000:01:00.1", &facts, 8);
+        assert!(!ov.contains("explicit operator override"), "{ov}");
+        assert!(!ov.contains("adopted legacy"), "{ov}");
+        // beta16 warning strings restored byte-for-byte
+        assert!(low_worker_warning(10_000, 1)
+            .unwrap()
+            .ends_with("set LIBREQOS_DPDK_WORKERS explicitly."));
+        assert!(virtio_worker_warning(PortClass::Virtio, 4)
+            .unwrap()
+            .contains("(or LIBREQOS_DPDK_WORKERS)"));
+    }
+
+    fn gather_fixture(name: &str) -> (PathBuf, GatherEnv) {
+        let root = std::env::temp_dir().join(format!(
+            "lqos-gather-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let env = GatherEnv {
+            main_env_path: root.join("bridge.env"),
+            managed_path: root.join("50-ports.conf"),
+            state_path: root.join("dpdk-bind-originals.env"),
+            conf_path: root.join("lqos.conf"),
+            stamp_path: root.join("worker-override-migrated"),
+            physical_cores_override: Some(14),
+        };
+        std::fs::write(
+            &env.conf_path,
+            "[queues]\ndownlink_bandwidth_mbps = 2500\nuplink_bandwidth_mbps = 2500\n",
+        )
+        .unwrap();
+        std::fs::write(&env.main_env_path, "").unwrap();
+        std::fs::write(
+            &env.managed_path,
+            "LIBREQOS_DPDK_WORKERS=12\nLIBREQOS_DPDK_RX_QUEUES=32\n",
+        )
+        .unwrap();
+        (root, env)
+    }
+
+    fn cfg_2500() -> lqos_config::Config {
+        let mut cfg = lqos_config::Config::default();
+        cfg.queues.downlink_bandwidth_mbps = 2_500.0;
+        cfg.queues.uplink_bandwidth_mbps = 2_500.0;
+        cfg.queues.workers = None;
+        cfg
+    }
+
+    #[test]
+    fn gather_facts_adopts_a_higher_managed_w12_once() {
+        let (root, env) = gather_fixture("live-w12");
+        let mut cfg = cfg_2500();
+        let facts = gather_facts_with(&cfg, "0000:01:00.0", Some(32), true, &env).unwrap();
+        assert_eq!(facts.workers, 12, "{facts:?}");
+        assert_eq!(facts.workers_source, WorkersSource::LegacyEnv);
+        assert_eq!(facts.worker_adoption, WorkerAdoption::Adopted);
+        let conf = std::fs::read_to_string(&env.conf_path).unwrap();
+        assert!(conf.contains("workers = 12"), "{conf}");
+        let stamp = std::fs::read_to_string(&env.stamp_path).unwrap();
+        assert!(stamp.contains("status=adopted"), "{stamp}");
+
+        // second render: the config key is now the source; no re-adoption
+        cfg.queues.workers = Some(12);
+        let again = gather_facts_with(&cfg, "0000:01:00.0", Some(32), true, &env).unwrap();
+        assert_eq!(again.workers_source, WorkersSource::Override);
+        assert_eq!(again.worker_adoption, WorkerAdoption::None);
+        assert_eq!(
+            std::fs::read_to_string(&env.conf_path)
+                .unwrap()
+                .matches("workers = 12")
+                .count(),
+            1
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gather_facts_ignores_a_lower_managed_w8_and_stamps_it() {
+        let (root, env) = gather_fixture("live-w8-lower");
+        std::fs::write(
+            &env.managed_path,
+            "LIBREQOS_DPDK_WORKERS=8\nLIBREQOS_DPDK_RX_QUEUES=32\n",
+        )
+        .unwrap();
+        let cfg = cfg_2500();
+        let facts = gather_facts_with(&cfg, "0000:01:00.0", Some(32), true, &env).unwrap();
+        assert_eq!(facts.workers, 10, "{facts:?}");
+        assert_eq!(facts.workers_source, WorkersSource::Derived);
+        assert_eq!(facts.worker_adoption, WorkerAdoption::IgnoredLower);
+        assert!(!std::fs::read_to_string(&env.conf_path).unwrap().contains("workers ="));
+        let stamp = std::fs::read_to_string(&env.stamp_path).unwrap();
+        assert!(stamp.contains("status=ignored-lower"), "{stamp}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gather_facts_dry_run_does_not_write_the_config_or_stamp() {
+        let (root, env) = gather_fixture("dry-run");
+        let cfg = cfg_2500();
+        let facts = gather_facts_with(&cfg, "0000:01:00.0", Some(32), false, &env).unwrap();
+        assert_eq!(facts.workers, 12);
+        assert_eq!(facts.workers_source, WorkersSource::LegacyEnv);
+        // dry-run must not claim the adoption/write
+        assert_eq!(facts.worker_adoption, WorkerAdoption::None);
+        assert!(!std::fs::read_to_string(&env.conf_path).unwrap().contains("workers ="));
+        assert!(!env.stamp_path.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gather_facts_sizes_on_max_down_up_not_the_sum() {
+        let (root, env) = gather_fixture("asymmetric");
+        std::fs::write(&env.managed_path, "").unwrap();
+        for (down, up) in [(2_500.0, 1_000.0), (1_000.0, 2_500.0)] {
+            let mut cfg = cfg_2500();
+            cfg.queues.downlink_bandwidth_mbps = down;
+            cfg.queues.uplink_bandwidth_mbps = up;
+            let facts = gather_facts_with(&cfg, "0000:01:00.0", Some(32), false, &env).unwrap();
+            assert_eq!(facts.link_mbps, 2_500, "down={down} up={up}");
+            assert_eq!(facts.workers, 10, "down={down} up={up}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gather_facts_main_env_w4_is_ignored_lower() {
+        let (root, env) = gather_fixture("main-w4");
+        std::fs::write(&env.main_env_path, "LIBREQOS_DPDK_WORKERS=4\n").unwrap();
+        let cfg = cfg_2500();
+        let facts = gather_facts_with(&cfg, "0000:01:00.0", Some(32), true, &env).unwrap();
+        assert_eq!(facts.workers, 10, "{facts:?}");
+        assert_eq!(facts.workers_source, WorkersSource::Derived);
+        assert_eq!(facts.worker_adoption, WorkerAdoption::IgnoredLower);
+        assert!(!std::fs::read_to_string(&env.conf_path).unwrap().contains("workers ="));
+        assert!(std::fs::read_to_string(&env.stamp_path)
+            .unwrap()
+            .contains("status=ignored-lower"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    #[test]
+    fn warning_text_golden_is_beta16() {
+        let m = plan("mlx5_core", true).unwrap();
+        let c = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 10_000, 8, 8);
+        assert!(c.contains(
+            "the PHYSICAL cores (minus the reserve) cannot field the link's SHAPED need"
+        ), "{c}");
+        let q = managed_env_block(&m, "0000:01:00.0", "0000:01:00.1", 100_000, 16, 2);
+        assert!(q.contains(
+            "the NIC/VM queue count caps the worker count BELOW the measured ceiling"
+        ), "{q}");
+        assert!(low_worker_warning(10_000, 1)
+            .unwrap()
+            .ends_with("set LIBREQOS_DPDK_WORKERS explicitly."));
+        assert!(virtio_worker_warning(PortClass::Virtio, 4)
+            .unwrap()
+            .contains("(or LIBREQOS_DPDK_WORKERS)"));
+    }
+
+    #[test]
+    fn adoption_note_is_positive_only_on_a_write() {
+        let m = plan("mlx5_core", true).unwrap();
+        let facts = PortsPlanFacts {
+            link_mbps: 2_500,
+            physical_cores: 14,
+            nic_queue_count: 32,
+            workers: 12,
+            workers_source: WorkersSource::LegacyEnv,
+            worker_adoption: WorkerAdoption::Adopted,
+            topology_ok: true,
+        };
+        let b = managed_env_block_with_workers(&m, "0000:01:00.0", "0000:01:00.1", &facts, 12);
+        assert!(b.contains("# NOTE: adopted legacy W=12 into [queues] workers."), "{b}");
+        let ignored = PortsPlanFacts {
+            worker_adoption: WorkerAdoption::IgnoredLower,
+            ..facts
+        };
+        let b2 = managed_env_block_with_workers(&m, "0000:01:00.0", "0000:01:00.1", &ignored, 12);
+        assert!(!b2.contains("adopted legacy"), "{b2}");
+    }
+
+    #[test]
+    fn main_lower_is_ignored_even_when_managed_is_higher() {
+        let (w, s, a) = resolve_worker_source(None, Some(4), Some(12), false, 10);
+        assert_eq!((w, s, a), (10, WorkersSource::Derived, WorkerAdoption::IgnoredLower));
+    }
+
+    #[test]
+    fn warning_uses_the_max_down_up_link() {
+        let (root, env) = gather_fixture("warning-max");
+        std::fs::write(&env.managed_path, "").unwrap();
+        let mut cfg = cfg_2500();
+        cfg.queues.downlink_bandwidth_mbps = 1_000.0;
+        cfg.queues.uplink_bandwidth_mbps = 2_500.0;
+        let facts = gather_facts_with(&cfg, "0000:01:00.0", Some(32), false, &env).unwrap();
+        assert_eq!(facts.link_mbps, 2_500);
+        assert!(low_worker_warning(facts.link_mbps, 2).is_some());
+        assert!(low_worker_warning(1_000, 2).is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
 }

@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
 use toml_edit::{DocumentMut, Item, Table, value};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 mod migration;
 mod python_migration;
@@ -26,8 +26,9 @@ pub use v15::{
     RadiusAccountingConfig, RadiusClientSource, RadiusDynamicCircuitApplicationConfig,
     RadiusFallbackSpeedProfile, RadiusSharedSecretSource, RateProfileValidationError,
     RttThresholds, SingleInterfaceConfig, SslConfig, StormguardConfig, StormguardStrategy,
-    MaintenanceWindowConfig, TopologyConfig, Tunables, normalize_external_hostname,
-    validate_rate_profile_mbps,
+    MaintenanceWindowConfig, TopologyConfig, TopologySource, TopologySourceConflict,
+    TopologySourceOrigin, TopologySourceRuntime, Tunables, normalize_external_hostname,
+    validate_rate_profile_mbps, validate_topology_selection,
 };
 
 static CONFIG: Lazy<ArcSwap<Option<Arc<Config>>>> = Lazy::new(|| ArcSwap::from_pointee(None));
@@ -176,6 +177,262 @@ fn maybe_migrate_topology_compile_mode(
 
     info!("Topology compile mode was automatically migrated to '{selected}'.");
     Ok(migrated)
+}
+
+const TOPOLOGY_SOURCE_FLAGS: [(TopologySource, &str, &str); 7] = [
+    (TopologySource::Uisp, "uisp_integration", "enable_uisp"),
+    (TopologySource::Splynx, "splynx_integration", "enable_splynx"),
+    (TopologySource::Netzur, "netzur_integration", "enable_netzur"),
+    (TopologySource::Visp, "visp_integration", "enable_visp"),
+    (TopologySource::Sonar, "sonar_integration", "enable_sonar"),
+    (
+        TopologySource::Powercode,
+        "powercode_integration",
+        "enable_powercode",
+    ),
+    (TopologySource::Wispgate, "wispgate_integration", "enable_wispgate"),
+];
+
+fn topology_source_migration_stamp_path(config_path: &str) -> String {
+    format!("{config_path}.topology_source_migrated")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParsedTopologySource {
+    Absent,
+    Empty,
+    Value(TopologySource),
+}
+
+fn read_topology_source(
+    doc: &DocumentMut,
+    config_location: &str,
+) -> Result<ParsedTopologySource, LibreQoSConfigError> {
+    let Some(item) = doc
+        .get("topology")
+        .and_then(|section| section.as_table_like())
+        .and_then(|section| section.get("source"))
+    else {
+        return Ok(ParsedTopologySource::Absent);
+    };
+    let Some(raw) = item.as_str() else {
+        return Err(LibreQoSConfigError::MigrationFailed {
+            path: config_location.to_string(),
+            details: format!(
+                "topology.source must be a string; accepted values: {}",
+                TopologySource::accepted_list()
+            ),
+        });
+    };
+    if raw.trim().is_empty() {
+        return Ok(ParsedTopologySource::Empty);
+    }
+    TopologySource::from_value(raw)
+        .map(ParsedTopologySource::Value)
+        .ok_or_else(|| LibreQoSConfigError::MigrationFailed {
+            path: config_location.to_string(),
+            details: format!(
+                "unknown topology source '{}'; accepted values: {}",
+                raw.trim(),
+                TopologySource::accepted_list()
+            ),
+        })
+}
+
+fn read_topology_compile_mode(
+    doc: &DocumentMut,
+    config_location: &str,
+) -> Result<String, LibreQoSConfigError> {
+    let Some(item) = doc
+        .get("topology")
+        .and_then(|section| section.as_table_like())
+        .and_then(|section| section.get("compile_mode"))
+    else {
+        return Ok(String::new());
+    };
+    item.as_str()
+        .map(ToString::to_string)
+        .ok_or_else(|| LibreQoSConfigError::MigrationFailed {
+            path: config_location.to_string(),
+            details: "topology.compile_mode must be a string".to_string(),
+        })
+}
+
+fn topology_enabled_flags(doc: &DocumentMut) -> Vec<(TopologySource, &'static str)> {
+    TOPOLOGY_SOURCE_FLAGS
+        .iter()
+        .filter_map(|&(source, section, key)| {
+            let enabled = doc
+                .get(section)
+                .and_then(|table| table.as_table_like())
+                .and_then(|table| table.get(key))
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            enabled.then_some((source, key))
+        })
+        .collect()
+}
+
+fn topology_conflict_message(source: Option<TopologySource>, flags: &[String]) -> String {
+    let flag_list = flags.join(" and ");
+    match source {
+        Some(source) => format!(
+            "topology source conflict: [topology].source is \"{}\" but {} enabled; set [topology].source or disable all but one",
+            source.as_str(),
+            flag_list
+        ),
+        None => format!(
+            "topology source conflict: {} are enabled; set [topology].source or disable all but one",
+            flag_list
+        ),
+    }
+}
+
+fn write_topology_source_stamp(
+    config_location: &str,
+    stamp: &str,
+) -> Result<(), LibreQoSConfigError> {
+    let stamp_path = topology_source_migration_stamp_path(config_location);
+    std::fs::write(&stamp_path, format!("{stamp}\n")).map_err(|e| {
+        LibreQoSConfigError::CannotWrite {
+            path: stamp_path,
+            source: e,
+        }
+    })
+}
+
+/// D1/D2 source migration + stamp. Returns the (possibly rewritten) raw config
+/// and the runtime conflict/origin state. A source conflict is returned as
+/// `Ok` with `conflict` set (D11 degraded); unknown/missing-after-stamp are
+/// fail-stop errors.
+fn maybe_migrate_topology_source(
+    config_location: &str,
+    raw: String,
+) -> Result<(String, TopologySourceRuntime), LibreQoSConfigError> {
+    let stamp_path = topology_source_migration_stamp_path(config_location);
+    let stamp_exists = Path::new(&stamp_path).exists();
+    let mut doc: DocumentMut = raw.parse().map_err(|e| LibreQoSConfigError::ParseError {
+        path: config_location.to_string(),
+        details: format!("Error parsing config: {e}"),
+    })?;
+    let parsed_source = read_topology_source(&doc, config_location)?;
+    let compile_mode = read_topology_compile_mode(&doc, config_location)?;
+    let enabled = topology_enabled_flags(&doc);
+    let mut runtime = TopologySourceRuntime {
+        conflict: None,
+        origin: TopologySourceOrigin::Missing,
+    };
+
+    match parsed_source {
+        ParsedTopologySource::Value(source) => {
+            validate_topology_selection(Some(source), &compile_mode).map_err(|details| {
+                LibreQoSConfigError::MigrationFailed {
+                    path: config_location.to_string(),
+                    details,
+                }
+            })?;
+
+            let conflicting: Vec<String> = enabled
+                .iter()
+                .filter(|(enabled_source, _)| *enabled_source != source)
+                .map(|(_, key)| (*key).to_string())
+                .collect();
+            if !conflicting.is_empty() {
+                runtime.conflict = Some(TopologySourceConflict {
+                    source: Some(source),
+                    enabled: conflicting.clone(),
+                    message: topology_conflict_message(Some(source), &conflicting),
+                });
+                runtime.origin = TopologySourceOrigin::Config;
+                return Ok((raw, runtime));
+            }
+
+            if enabled.iter().any(|(enabled_source, _)| *enabled_source == source) {
+                warn!(
+                    "Legacy {} is redundant; [topology].source is authoritative.",
+                    source.enable_flag_key().unwrap_or("enable_*")
+                );
+            }
+            if !stamp_exists {
+                write_topology_source_stamp(
+                    config_location,
+                    &format!("settled:{}", source.as_str()),
+                )?;
+            }
+            runtime.origin = TopologySourceOrigin::Config;
+            Ok((raw, runtime))
+        }
+        ParsedTopologySource::Empty | ParsedTopologySource::Absent => {
+            if stamp_exists {
+                return Err(LibreQoSConfigError::MigrationFailed {
+                    path: config_location.to_string(),
+                    details:
+                        "no topology source selected; set [topology].source in lqos.conf".to_string(),
+                });
+            }
+
+            let selected = if enabled.is_empty() {
+                Some(TopologySource::ShapedDevices)
+            } else if enabled.len() == 1 {
+                Some(enabled[0].0)
+            } else {
+                None
+            };
+            let Some(source) = selected else {
+                let flags = enabled
+                    .iter()
+                    .map(|(_, key)| (*key).to_string())
+                    .collect::<Vec<_>>();
+                runtime.conflict = Some(TopologySourceConflict {
+                    source: None,
+                    enabled: flags.clone(),
+                    message: topology_conflict_message(None, &flags),
+                });
+                runtime.origin = TopologySourceOrigin::Missing;
+                return Ok((raw, runtime));
+            };
+
+            validate_topology_selection(Some(source), &compile_mode).map_err(|details| {
+                LibreQoSConfigError::MigrationFailed {
+                    path: config_location.to_string(),
+                    details,
+                }
+            })?;
+
+            if !doc.as_table().contains_key("topology") {
+                doc["topology"] = Item::Table(Table::new());
+            }
+            doc["topology"]["source"] = value(source.as_str());
+            let migrated = doc.to_string();
+
+            let config_path = Path::new(config_location);
+            if config_path.exists() {
+                let backup_path = format!("{config_location}.topology_source_backup");
+                std::fs::copy(config_path, &backup_path).map_err(|e| {
+                    LibreQoSConfigError::CannotWrite {
+                        path: backup_path,
+                        source: e,
+                    }
+                })?;
+            }
+            std::fs::write(config_path, &migrated).map_err(|e| {
+                LibreQoSConfigError::CannotWrite {
+                    path: config_location.to_string(),
+                    source: e,
+                }
+            })?;
+            write_topology_source_stamp(
+                config_location,
+                &format!("migrated:{}", source.as_str()),
+            )?;
+            info!(
+                "Topology source was automatically migrated to '{}'.",
+                source.as_str()
+            );
+            runtime.origin = TopologySourceOrigin::Migrated;
+            Ok((migrated, runtime))
+        }
+    }
 }
 
 fn maybe_migrate_uisp_capacity_defaults(
@@ -489,56 +746,70 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     if std::env::var("LQOS_CONFIG").is_ok() {
         info!("Overriding lqos.conf location from environment variable.");
     }
+    load_config_from_location(&config_location)
+}
 
+fn load_config_from_location(
+    config_location: &str,
+) -> Result<Arc<Config>, LibreQoSConfigError> {
     debug!("Loading configuration file {config_location}");
-    migrate_if_needed(&config_location).map_err(|e| {
+    migrate_if_needed(config_location).map_err(|e| {
         error!("Unable to migrate configuration: {:?}", e);
         match &e {
             migration::MigrationError::ReadError(io)
                 if io.kind() == std::io::ErrorKind::NotFound =>
             {
                 LibreQoSConfigError::NotFound {
-                    path: config_location.clone(),
+                    path: config_location.to_string(),
                 }
             }
             _ => LibreQoSConfigError::MigrationFailed {
-                path: config_location.clone(),
+                path: config_location.to_string(),
                 details: e.to_string(),
             },
         }
     })?;
 
-    let raw = std::fs::read_to_string(&config_location).map_err(|e| {
+    let raw = std::fs::read_to_string(config_location).map_err(|e| {
         error!("Unable to read {config_location}: {e:?}");
         if e.kind() == std::io::ErrorKind::NotFound {
             LibreQoSConfigError::NotFound {
-                path: config_location.clone(),
+                path: config_location.to_string(),
             }
         } else {
             LibreQoSConfigError::CannotRead {
-                path: config_location.clone(),
+                path: config_location.to_string(),
                 source: e,
             }
         }
     })?;
 
-    let raw = maybe_migrate_uisp_capacity_defaults(&config_location, raw)?;
+    let raw = maybe_migrate_uisp_capacity_defaults(config_location, raw)?;
     // v2→v3: an unsupported `[queues] default_sqm` (e.g. `fq_codel`) would
     // otherwise compile every override-less leaf to FIFO. Runs BEFORE the v15
     // parse (which rejects an empty `default_sqm`).
-    let raw = maybe_migrate_default_sqm(&config_location, raw)?;
+    let raw = maybe_migrate_default_sqm(config_location, raw)?;
     // v2→v3: land the v2 [queues] root rate in the [dataplane] single source.
-    let raw = maybe_migrate_bandwidth_to_dataplane(&config_location, raw)?;
-    let raw = maybe_migrate_topology_compile_mode(&config_location, raw)?;
-    let raw = maybe_migrate_bridge_use_xdp_bridge_compat(&config_location, raw)?;
+    let raw = maybe_migrate_bandwidth_to_dataplane(config_location, raw)?;
+    let (raw, topology_source_runtime) = maybe_migrate_topology_source(config_location, raw)?;
+    // A degraded source conflict must not let the legacy compile-mode migration
+    // introduce a mode the retained source does not support.
+    let raw = if topology_source_runtime.conflict.is_some() {
+        raw
+    } else {
+        maybe_migrate_topology_compile_mode(config_location, raw)?
+    };
+    let raw = maybe_migrate_bridge_use_xdp_bridge_compat(config_location, raw)?;
 
     let mut final_config = Config::load_from_string(&raw).map_err(|e| {
         error!("Unable to parse {config_location}");
         LibreQoSConfigError::ParseError {
-            path: config_location.clone(),
+            path: config_location.to_string(),
             details: e,
         }
     })?;
+
+    final_config.topology_source_runtime = topology_source_runtime;
 
     // Check for environment variable overrides
     if let Ok(lqos_dir) = std::env::var("LQOS_DIRECTORY") {
@@ -554,12 +825,87 @@ fn actually_load_from_disk() -> Result<Arc<Config>, LibreQoSConfigError> {
     Ok(new_config)
 }
 
-/// Update the configuration on disk
+/// One shared predicate for the 150 watcher and the 151 routing: true only
+/// when the selector is set to `source` and there is no degraded conflict.
+pub fn topology_source_is(config: &Config, source: TopologySource) -> bool {
+    config.active_topology_source() == Some(source)
+}
+
+/// Update the configuration on disk.
 pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
+    let config_location = config_path();
+    let persisted = update_config_at(&config_location, new_config)?;
+    // Publish the normalized snapshot only after persistence succeeds. A
+    // failed write must not leave callers using credentials that never reached
+    // disk and cannot be recovered after restart. A first-run setup config
+    // with no source is not cached as `Missing`; the next load performs the D1
+    // migration to `shaped_devices`.
+    if persisted.topology.source.is_some() {
+        CONFIG.store(Some(Arc::new(persisted)).into());
+    } else {
+        clear_cached_config();
+    }
+    Ok(())
+}
+
+fn update_config_at(
+    config_location: &str,
+    new_config: &Config,
+) -> Result<Config, LibreQoSConfigError> {
     debug!("Updating stored configuration");
 
+    let source = new_config.topology.source;
+    let mut config = new_config.clone();
+    if let Some(source) = source {
+        config.normalize_topology_source_flags();
+        validate_topology_selection(Some(source), &config.topology.compile_mode).map_err(
+            |details| LibreQoSConfigError::MigrationFailed {
+                path: config_location.to_string(),
+                details,
+            },
+        )?;
+        config.topology_source_runtime = TopologySourceRuntime {
+            conflict: None,
+            origin: TopologySourceOrigin::Config,
+        };
+    } else {
+        // First-run setup writes a source-less default; the next load performs
+        // the D1 migration. Do not let a stray enabled flag slip through.
+        validate_topology_selection(None, &config.topology.compile_mode).map_err(|details| {
+            LibreQoSConfigError::MigrationFailed {
+                path: config_location.to_string(),
+                details,
+            }
+        })?;
+        let any_flag = config.uisp_integration.enable_uisp
+            || config.splynx_integration.enable_splynx
+            || config.powercode_integration.enable_powercode
+            || config.sonar_integration.enable_sonar
+            || config
+                .netzur_integration
+                .as_ref()
+                .is_some_and(|integration| integration.enable_netzur)
+            || config
+                .visp_integration
+                .as_ref()
+                .is_some_and(|integration| integration.enable_visp)
+            || config
+                .wispgate_integration
+                .as_ref()
+                .is_some_and(|integration| integration.enable_wispgate);
+        if any_flag {
+            return Err(LibreQoSConfigError::MigrationFailed {
+                path: config_location.to_string(),
+                details:
+                    "no topology source selected but a legacy enable_* flag is true; set [topology].source"
+                        .to_string(),
+            });
+        }
+        config.topology_source_runtime = TopologySourceRuntime::default();
+    }
+
     // Does the configuration exist?
-    let config_path = std::path::PathBuf::from(config_path());
+    let config_path = std::path::PathBuf::from(config_location);
     if config_path.exists() {
         let backup_path = std::path::PathBuf::from(format!("{}.webbackup", config_path.display()));
         std::fs::copy(&config_path, &backup_path).map_err(|e| {
@@ -570,7 +916,7 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
 
     // Serialize the new one. `lqos-74t.55`: keep the `[bridge]` compat key so
     // an external lqos_api keeps parsing the emitted config.
-    let serialized = toml::to_string_pretty(new_config).map_err(|e| {
+    let serialized = toml::to_string_pretty(&config).map_err(|e| {
         error!("Unable to serialize new configuration to TOML: {e:?}");
         LibreQoSConfigError::SerializeError
     })?;
@@ -583,12 +929,14 @@ pub fn update_config(new_config: &Config) -> Result<(), LibreQoSConfigError> {
         }
     })?;
 
-    // Publish the new in-process snapshot only after persistence succeeds. A
-    // failed write must not leave callers using credentials that never reached
-    // disk and cannot be recovered after restart.
-    CONFIG.store(Some(Arc::new(new_config.clone())).into());
+    if let Some(source) = source {
+        write_topology_source_stamp(
+            config_location,
+            &format!("settled:{}", source.as_str()),
+        )?;
+    }
 
-    Ok(())
+    Ok(config)
 }
 
 #[derive(Debug, Error)]
@@ -623,10 +971,13 @@ pub enum LibreQoSConfigError {
 mod tests {
     use super::{
         bandwidth_dataplane_migration_stamp_path, default_sqm_migration_stamp_path,
-        maybe_migrate_bandwidth_to_dataplane, maybe_migrate_bridge_use_xdp_bridge_compat,
-        maybe_migrate_default_sqm, maybe_migrate_topology_compile_mode,
-        maybe_migrate_uisp_capacity_defaults, topology_compile_mode_migration_stamp_path,
-        uisp_capacity_defaults_migration_stamp_path, with_bridge_use_xdp_bridge_compat,
+        load_config_from_location, maybe_migrate_bandwidth_to_dataplane,
+        maybe_migrate_bridge_use_xdp_bridge_compat, maybe_migrate_default_sqm,
+        maybe_migrate_topology_compile_mode, maybe_migrate_uisp_capacity_defaults,
+        topology_compile_mode_migration_stamp_path, topology_source_is,
+        topology_source_migration_stamp_path, update_config_at,
+        uisp_capacity_defaults_migration_stamp_path, with_bridge_use_xdp_bridge_compat, Config,
+        TopologySource, TopologySourceConflict, TopologySourceOrigin,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -1029,4 +1380,367 @@ mod tests {
             fs::remove_dir_all(&test_dir).expect("should clean up temp dir");
         }
     }
+    fn base_config() -> Config {
+        let mut config = Config::default();
+        config.topology.compile_mode = "full".to_string();
+        config.topology.source = None;
+        config.normalize_topology_source_flags();
+        config
+    }
+
+    fn set_flag(config: &mut Config, source: TopologySource, enabled: bool) {
+        use TopologySource::*;
+        match source {
+            Uisp => config.uisp_integration.enable_uisp = enabled,
+            Splynx => config.splynx_integration.enable_splynx = enabled,
+            Netzur => {
+                config
+                    .netzur_integration
+                    .get_or_insert_with(Default::default)
+                    .enable_netzur = enabled
+            }
+            Visp => {
+                config
+                    .visp_integration
+                    .get_or_insert_with(Default::default)
+                    .enable_visp = enabled
+            }
+            Sonar => config.sonar_integration.enable_sonar = enabled,
+            Powercode => config.powercode_integration.enable_powercode = enabled,
+            Wispgate => {
+                config
+                    .wispgate_integration
+                    .get_or_insert_with(Default::default)
+                    .enable_wispgate = enabled
+            }
+            ShapedDevices | LibreqosNetwork => {}
+        }
+    }
+
+    fn write_model(base_dir: &Path, config: &Config) -> PathBuf {
+        let raw = toml::to_string_pretty(config).expect("serialize config");
+        write_test_config(base_dir, &raw)
+    }
+
+    fn load_model(path: &Path) -> Result<std::sync::Arc<Config>, super::LibreQoSConfigError> {
+        load_config_from_location(&path_string(path))
+    }
+
+    fn stamp_text(path: &Path) -> Option<String> {
+        fs::read_to_string(topology_source_migration_stamp_path(&path_string(path))).ok()
+    }
+
+    fn write_raw(base_dir: &Path, raw: &str) -> PathBuf {
+        write_test_config(base_dir, raw)
+    }
+
+    #[test]
+    fn topology_source_migration_matrix_rows_1_to_19() {
+        for (index, source) in TopologySource::INTEGRATION_SOURCES
+            .iter()
+            .copied()
+            .enumerate()
+        {
+            let dir = unique_test_dir().join(format!("row{}", index + 1));
+            let mut config = base_config();
+            set_flag(&mut config, source, true);
+            let path = write_model(&dir, &config);
+
+            let loaded = load_model(&path).expect("single enabled flag should migrate");
+            assert_eq!(loaded.topology.source, Some(source));
+            assert_eq!(loaded.topology_source_runtime.origin, TopologySourceOrigin::Migrated);
+            assert_eq!(
+                stamp_text(&path),
+                Some(format!("migrated:{}\n", source.as_str()))
+            );
+            assert!(
+                fs::read_to_string(&path)
+                    .unwrap()
+                    .contains(&format!("source = \"{}\"", source.as_str()))
+            );
+            fs::remove_dir_all(&dir).expect("cleanup");
+        }
+
+        // Row 8: two enabled flags is a loud, no-write conflict; after the fix
+        // the next load retries and migrates.
+        let dir = unique_test_dir().join("row8");
+        let mut config = base_config();
+        set_flag(&mut config, TopologySource::Uisp, true);
+        set_flag(&mut config, TopologySource::Visp, true);
+        let path = write_model(&dir, &config);
+        let loaded = load_model(&path).expect("source conflict is degraded, not fail-stop");
+        assert_eq!(loaded.topology.source, None);
+        assert_eq!(loaded.active_topology_source(), None);
+        let conflict = loaded
+            .topology_source_runtime
+            .conflict
+            .as_ref()
+            .expect("row 8 conflict");
+        assert_eq!(conflict.source, None);
+        assert!(conflict.enabled.iter().any(|flag| flag == "enable_uisp"));
+        assert!(conflict.enabled.iter().any(|flag| flag == "enable_visp"));
+        assert_eq!(loaded.topology_source_runtime.origin, TopologySourceOrigin::Missing);
+        assert!(
+            !Path::new(&topology_source_migration_stamp_path(&path_string(&path))).exists()
+        );
+        assert!(!fs::read_to_string(&path).unwrap().contains("source ="));
+        set_flag(&mut config, TopologySource::Visp, false);
+        write_model(&dir, &config);
+        let retried = load_model(&path).expect("fixed flags should migrate");
+        assert_eq!(retried.topology.source, Some(TopologySource::Uisp));
+        assert_eq!(
+            stamp_text(&path),
+            Some("migrated:uisp\n".to_string())
+        );
+        fs::remove_dir_all(&dir).expect("cleanup");
+
+        // Rows 9/10: no flags always migrates to shaped_devices; files are only
+        // onboarding state, never a source signal.
+        for (name, with_files) in [("row9", true), ("row10", false)] {
+            let dir = unique_test_dir().join(name);
+            let mut config = base_config();
+            let lqos_dir = dir.join("lqos");
+            fs::create_dir_all(&lqos_dir).expect("create lqos dir");
+            config.lqos_directory = lqos_dir.to_string_lossy().into_owned();
+            if with_files {
+                fs::write(lqos_dir.join("network.json"), "{}").unwrap();
+                fs::write(lqos_dir.join("ShapedDevices.csv"), "").unwrap();
+            }
+            let path = write_model(&dir, &config);
+            let loaded = load_model(&path).expect("D1 shaped_devices default");
+            assert_eq!(loaded.topology.source, Some(TopologySource::ShapedDevices));
+            assert_eq!(loaded.topology_source_runtime.origin, TopologySourceOrigin::Migrated);
+            assert_eq!(
+                stamp_text(&path),
+                Some("migrated:shaped_devices\n".to_string())
+            );
+            fs::remove_dir_all(&dir).expect("cleanup");
+        }
+
+        // Rows 11/12/17: a source already in the file is settled on first load.
+        for (name, source, matching_flag) in [
+            ("row11", TopologySource::Visp, false),
+            ("row12", TopologySource::Uisp, true),
+            ("row17", TopologySource::Splynx, false),
+        ] {
+            let dir = unique_test_dir().join(name);
+            let mut config = base_config();
+            config.topology.source = Some(source);
+            if matching_flag {
+                set_flag(&mut config, source, true);
+            }
+            let path = write_model(&dir, &config);
+            let loaded = load_model(&path).expect("source-set install should settle");
+            assert_eq!(loaded.topology.source, Some(source));
+            assert_eq!(loaded.topology_source_runtime.origin, TopologySourceOrigin::Config);
+            assert_eq!(
+                stamp_text(&path),
+                Some(format!("settled:{}\n", source.as_str()))
+            );
+            fs::remove_dir_all(&dir).expect("cleanup");
+        }
+
+        // Rows 13/14: a different/extra flag is a loud degraded conflict; the
+        // source is retained and no stamp is written.
+        for (name, extra) in [
+            ("row13", TopologySource::Visp),
+            ("row14", TopologySource::Sonar),
+        ] {
+            let dir = unique_test_dir().join(name);
+            let mut config = base_config();
+            config.topology.source = Some(TopologySource::Uisp);
+            set_flag(&mut config, TopologySource::Uisp, true);
+            set_flag(&mut config, extra, true);
+            if name == "row14" {
+                set_flag(&mut config, TopologySource::Netzur, true);
+            }
+            let path = write_model(&dir, &config);
+            let loaded = load_model(&path).expect("hand-edited conflict is degraded");
+            assert_eq!(loaded.topology.source, Some(TopologySource::Uisp));
+            assert_eq!(loaded.active_topology_source(), None);
+            let conflict = loaded
+                .topology_source_runtime
+                .conflict
+                .as_ref()
+                .expect("row 13/14 conflict");
+            assert_eq!(conflict.source, Some(TopologySource::Uisp));
+            assert!(
+                !Path::new(&topology_source_migration_stamp_path(&path_string(&path))).exists()
+            );
+            fs::remove_dir_all(&dir).expect("cleanup");
+        }
+
+        // Row 15a/15b: empty is absent only when unstamped.
+        let dir = unique_test_dir().join("row15a");
+        let raw = toml::to_string_pretty(&base_config())
+            .unwrap()
+            .replace("[topology]\n", "[topology]\nsource = \"\"\n");
+        let path = write_raw(&dir, &raw);
+        let loaded = load_model(&path).expect("unstamped empty migrates");
+        assert_eq!(loaded.topology.source, Some(TopologySource::ShapedDevices));
+        fs::remove_dir_all(&dir).expect("cleanup");
+
+        let dir = unique_test_dir().join("row15b");
+        let path = write_raw(&dir, &raw);
+        fs::write(
+            topology_source_migration_stamp_path(&path_string(&path)),
+            "settled:shaped_devices\n",
+        )
+        .unwrap();
+        let error = load_model(&path).expect_err("stamped empty must fail loud");
+        assert!(error.to_string().contains("no topology source selected"), "{error}");
+        fs::remove_dir_all(&dir).expect("cleanup");
+
+        // Row 16: unknown source fails with the accepted set.
+        let dir = unique_test_dir().join("row16");
+        let raw = toml::to_string_pretty(&base_config())
+            .unwrap()
+            .replace("[topology]\n", "[topology]\nsource = \"nope\"\n");
+        let path = write_raw(&dir, &raw);
+        let error = load_model(&path).expect_err("unknown source must fail");
+        assert!(error.to_string().contains("accepted values"), "{error}");
+        assert!(error.to_string().contains("shaped_devices"), "{error}");
+        fs::remove_dir_all(&dir).expect("cleanup");
+
+        // Row 18: stamped but missing source is fail-stop.
+        let dir = unique_test_dir().join("row18");
+        let path = write_model(&dir, &base_config());
+        fs::write(
+            topology_source_migration_stamp_path(&path_string(&path)),
+            "migrated:uisp\n",
+        )
+        .unwrap();
+        let error = load_model(&path).expect_err("stamped missing source must fail");
+        assert!(error.to_string().contains("no topology source selected"), "{error}");
+        fs::remove_dir_all(&dir).expect("cleanup");
+
+        // Row 19: an unsupported source x mode pair fails without a source stamp.
+        let dir = unique_test_dir().join("row19");
+        let mut config = base_config();
+        config.topology.source = Some(TopologySource::Visp);
+        config.topology.compile_mode = "flat".to_string();
+        let path = write_model(&dir, &config);
+        let error = load_model(&path).expect_err("cross-field mode must fail");
+        assert!(error.to_string().contains("not supported"), "{error}");
+        assert!(
+            !Path::new(&topology_source_migration_stamp_path(&path_string(&path))).exists()
+        );
+        fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn update_config_normalizes_flags_and_preserves_credentials() {
+        let dir = unique_test_dir();
+        let mut existing = base_config();
+        existing.topology.source = Some(TopologySource::Uisp);
+        let path = write_model(&dir, &existing);
+
+        let mut config = base_config();
+        config.topology.source = Some(TopologySource::Uisp);
+        set_flag(&mut config, TopologySource::Uisp, true);
+        set_flag(&mut config, TopologySource::Visp, true);
+        config
+            .visp_integration
+            .as_mut()
+            .expect("visp section")
+            .client_secret = "keep-me".to_string();
+        config.uisp_integration.token = "keep-uisp".to_string();
+
+        let saved = update_config_at(&path_string(&path), &config).expect("save");
+        assert_eq!(saved.topology.source, Some(TopologySource::Uisp));
+        assert!(saved.uisp_integration.enable_uisp);
+        assert!(!saved.visp_integration.as_ref().unwrap().enable_visp);
+        assert_eq!(
+            saved.visp_integration.as_ref().unwrap().client_secret,
+            "keep-me"
+        );
+        assert_eq!(saved.uisp_integration.token, "keep-uisp");
+        assert_eq!(saved.topology_source_runtime.origin, TopologySourceOrigin::Config);
+        assert_eq!(stamp_text(&path), Some("settled:uisp\n".to_string()));
+
+        let reloaded = Config::load_from_string(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(reloaded.uisp_integration.enable_uisp);
+        assert!(!reloaded.visp_integration.as_ref().unwrap().enable_visp);
+        fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn update_config_file_source_clears_all_flags() {
+        let dir = unique_test_dir();
+        let mut config = base_config();
+        config.topology.source = Some(TopologySource::ShapedDevices);
+        set_flag(&mut config, TopologySource::Uisp, true);
+        config.uisp_integration.token = "keep-uisp".to_string();
+        let path = write_model(&dir, &base_config());
+
+        let saved = update_config_at(&path_string(&path), &config).expect("save");
+        assert_eq!(saved.topology.source, Some(TopologySource::ShapedDevices));
+        assert!(!saved.uisp_integration.enable_uisp);
+        assert!(!saved.splynx_integration.enable_splynx);
+        assert!(!saved.powercode_integration.enable_powercode);
+        assert!(!saved.sonar_integration.enable_sonar);
+        assert!(!saved.netzur_integration.as_ref().unwrap().enable_netzur);
+        assert!(!saved.visp_integration.as_ref().unwrap().enable_visp);
+        assert!(saved.wispgate_integration.is_none());
+        assert_eq!(saved.uisp_integration.token, "keep-uisp");
+        assert_eq!(
+            stamp_text(&path),
+            Some("settled:shaped_devices\n".to_string())
+        );
+        fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn update_config_allows_first_run_source_less_default_without_stamp() {
+        let dir = unique_test_dir();
+        let path = write_model(&dir, &base_config());
+        let saved = update_config_at(&path_string(&path), &base_config()).expect("first run");
+        assert_eq!(saved.topology.source, None);
+        assert_eq!(saved.topology_source_runtime.origin, TopologySourceOrigin::Missing);
+        assert!(
+            !Path::new(&topology_source_migration_stamp_path(&path_string(&path))).exists()
+        );
+        fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn update_config_rejects_missing_source_with_flag_and_bad_mode() {
+        let dir = unique_test_dir();
+        let path = write_model(&dir, &base_config());
+
+        let mut conflicted = base_config();
+        set_flag(&mut conflicted, TopologySource::Uisp, true);
+        let error = update_config_at(&path_string(&path), &conflicted)
+            .expect_err("missing source + flag must reject");
+        assert!(error.to_string().contains("no topology source selected"), "{error}");
+
+        let mut bad_mode = base_config();
+        bad_mode.topology.source = Some(TopologySource::Visp);
+        bad_mode.topology.compile_mode = "flat".to_string();
+        let before = fs::read_to_string(&path).unwrap();
+        let error = update_config_at(&path_string(&path), &bad_mode)
+            .expect_err("unsupported mode must reject");
+        assert!(error.to_string().contains("not supported"), "{error}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), before);
+        assert!(
+            !Path::new(&topology_source_migration_stamp_path(&path_string(&path))).exists()
+        );
+        fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn shared_topology_source_predicate_honours_conflict() {
+        let mut config = base_config();
+        config.topology.source = Some(TopologySource::LibreqosNetwork);
+        assert!(topology_source_is(&config, TopologySource::LibreqosNetwork));
+        assert!(!topology_source_is(&config, TopologySource::Uisp));
+
+        config.topology_source_runtime.conflict = Some(TopologySourceConflict {
+            source: Some(TopologySource::LibreqosNetwork),
+            enabled: vec!["enable_uisp".to_string()],
+            message: "conflict".to_string(),
+        });
+        assert!(!topology_source_is(&config, TopologySource::LibreqosNetwork));
+    }
+
 }

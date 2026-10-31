@@ -650,14 +650,27 @@ fn compile_full_like(
     let ingress_identity = compiled_ingress_identity(&imported, mode);
     let mut editor = sanitized_editor_state(&source, imported.generated_unix, &imported);
     editor.ingress_identity = ingress_identity.clone();
+    let mut compatibility_network_json = imported.compatibility_network_json.clone();
     let mut canonical = TopologyCanonicalStateFile::from_editor_and_network(
         &editor,
-        &imported.compatibility_network_json,
+        &compatibility_network_json,
         TopologyCanonicalIngressKind::NativeIntegration,
     );
     canonical.source = source.clone();
     canonical.generated_unix = imported.generated_unix;
     canonical.ingress_identity = ingress_identity.clone();
+    // lqos-74t.150 #110 (re-applied after #109's split removed it): the v2
+    // format targets native_canonical and leaves the compatibility tree
+    // empty. Full mode must still export the canonical world, or its anchors
+    // cannot resolve.
+    if compatibility_network_json
+        .as_object()
+        .map(|map| map.is_empty())
+        .unwrap_or(true)
+    {
+        compatibility_network_json = canonical.insight_topology_network_json();
+        canonical.compatibility_network_json = compatibility_network_json.clone();
+    }
     let mut parent_candidates = imported
         .parent_candidates
         .unwrap_or_else(|| empty_parent_candidates(&source));
@@ -670,7 +683,7 @@ fn compile_full_like(
         canonical,
         editor,
         parent_candidates,
-        compatibility_network_json: imported.compatibility_network_json,
+        compatibility_network_json,
         shaped_devices: make_shaped_devices(imported.shaped_devices.devices),
         circuit_anchors: CircuitAnchorsFile {
             schema_version: imported.circuit_anchors.schema_version,

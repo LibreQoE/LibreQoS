@@ -43,10 +43,6 @@ pub struct Verdict {
     pub circuit_count: Option<usize>,
     /// The unlicensed mapped-circuit cap used for the comparison.
     pub circuit_limit: u64,
-    /// Notes: expected facts that do NOT flip the verdict (pre-install).
-    pub notes: Vec<String>,
-    /// True when composed for the pre-install/preinst surface.
-    pub pre_install: bool,
     /// Non-fatal advisories (the licensing over-cap warning, etc.).
     pub warnings: Vec<String>,
     /// Fatal errors; a non-empty list is a BLOCK.
@@ -72,28 +68,6 @@ pub struct Verdict {
 }
 
 impl Verdict {
-    /// Mark the verdict as pre-install: expected pre-install facts become
-    /// `NOTE:`s, never WARNs. Actionable failures keep their WARN/BLOCK.
-    pub fn pre_install(mut self, on: bool) -> Self {
-        self.pre_install = on;
-        self
-    }
-
-    fn note(&mut self, text: String) {
-        if !self.notes.iter().any(|n| n == &text) {
-            self.notes.push(text);
-        }
-    }
-
-    fn warn(&mut self, text: String) {
-        if !self.warnings.iter().any(|w| w == &text) {
-            self.warnings.push(text);
-        }
-        if matches!(self.severity, Severity::Pass) {
-            self.severity = Severity::Warn;
-        }
-    }
-
     /// True when the verdict blocks the upgrade.
     pub fn is_blocked(&self) -> bool {
         matches!(self.severity, Severity::Block)
@@ -151,26 +125,20 @@ impl Verdict {
     pub fn with_nic_plan(mut self, plan: NicPlan) -> Self {
         let mut warned = false;
         if plan.pair.len() < 2 {
-            let text = "the NIC plan could not resolve a dataplane pair from the host config; \
-                 check [bridge] to_internet/to_network (no dataplane ports can be bound)"
-                .to_string();
-            if self.pre_install {
-                self.note(text);
-            } else {
-                self.warnings.push(text);
-            }
-            warned = !self.pre_install;
+            self.warnings.push(
+                "the NIC plan could not resolve a dataplane pair from the host config; check \
+                 [bridge] to_internet/to_network (no dataplane ports can be bound)"
+                    .to_string(),
+            );
+            warned = true;
         } else if plan.bdfs.len() != 2 {
-            let text = "the dataplane pair could not be resolved to PCI BDFs (the NICs are \
-                 already bound, or are not PCI pair); the setup bind will re-derive them \
-                 pre-bind if possible"
-                .to_string();
-            if self.pre_install {
-                self.note(text);
-            } else {
-                self.warnings.push(text);
-            }
-            warned = !self.pre_install;
+            self.warnings.push(
+                "the dataplane pair could not be resolved to PCI BDFs (the NICs are already \
+                 bound, or are not PCI pair); the setup bind will re-derive them pre-bind if \
+                 possible"
+                    .to_string(),
+            );
+            warned = true;
         }
         if plan.mode.is_untested() {
             self.warnings.push(format!(
@@ -191,24 +159,12 @@ impl Verdict {
     /// inactive until a valid URL reaches the fetch hook.
     pub fn with_fetch(mut self, fetch: FetchPrereq) -> Self {
         if !fetch.is_configured() {
-            let unconfigured = fetch.url.trim().is_empty();
-            let text = if unconfigured {
-                "the dataplane artifact URL is not configured yet; the bridge will not fetch"
-                    .to_string()
-            } else {
-                format!(
-                    "the dataplane artifact URL is MALFORMED ('{}'); the bridge will not fetch",
-                    fetch.url
-                )
-            };
-            // F1 (malformed) is ACTIONABLE: keep WARN even pre-install.
-            if self.pre_install && unconfigured {
-                self.note(text);
-            } else {
-                self.warnings.push(text);
-                if matches!(self.severity, Severity::Pass) {
-                    self.severity = Severity::Warn;
-                }
+            self.warnings.push(format!(
+                "the dataplane artifact URL is not well-formed ('{}'); the bridge will not fetch",
+                fetch.url
+            ));
+            if matches!(self.severity, Severity::Pass) {
+                self.severity = Severity::Warn;
             }
         }
         self.fetch = Some(fetch);
@@ -221,32 +177,22 @@ impl Verdict {
     pub fn with_repo(mut self, repo: RepoConfig) -> Self {
         let mut warned = false;
         if !repo.is_configured() {
-            let text = format!(
+            self.warnings.push(format!(
                 "the LibreQoS archive is not configured ({}); the dataplane cannot be fetched \
                  and the bridge will stay inactive",
                 repo.source_file
-            );
-            if self.pre_install {
-                self.note(text);
-            } else {
-                self.warnings.push(text);
-                warned = true;
-            }
+            ));
+            warned = true;
         } else if repo
             .candidate
             .as_deref()
             .is_none_or(|candidate| candidate == "none")
         {
-            let text = format!(
+            self.warnings.push(format!(
                 "the dataplane package is not available from the {:?} suite",
                 repo.suite
-            );
-            if self.pre_install {
-                self.note(text);
-            } else {
-                self.warnings.push(text);
-                warned = true;
-            }
+            ));
+            warned = true;
         }
         if warned && matches!(self.severity, Severity::Pass) {
             self.severity = Severity::Warn;
@@ -277,18 +223,10 @@ impl Verdict {
     /// modified tree is a WARN "unsupported" — REPORT/health only; the box
     /// keeps shaping (never a BLOCK, §0/§7).
     pub fn with_install(mut self, report: InstallIntegrityReport) -> Self {
-        let not_owned = !report.package_owned;
-        let modified = report.package_owned && report.defined_set_intact == Some(false);
         if let Some(warning) = report.warning() {
-            // I1 (not package-owned) is an expected pre-install fact -> NOTE.
-            // I2 (package-owned but MODIFIED) is actionable -> WARN always.
-            if self.pre_install && not_owned && !modified {
-                self.note(warning);
-            } else {
-                self.warnings.push(warning);
-                if matches!(self.severity, Severity::Pass) {
-                    self.severity = Severity::Warn;
-                }
+            self.warnings.push(warning);
+            if matches!(self.severity, Severity::Pass) {
+                self.severity = Severity::Warn;
             }
         }
         self.install = Some(report);
@@ -319,46 +257,19 @@ pub fn compose_with_fresh(
     units_probe: impl Fn(&str) -> UnitPresence,
     fresh_install: bool,
 ) -> Verdict {
-    compose_with_mode(pair_dir, hardware, units_probe, fresh_install, false)
-}
-
-/// [`compose_with_fresh`] plus the pre-install output mode: expected
-/// pre-install facts become `NOTE:`s and never flip PASS to WARN.
-pub fn compose_with_mode(
-    pair_dir: &Path,
-    hardware: HardwareVerdict,
-    units_probe: impl Fn(&str) -> UnitPresence,
-    fresh_install: bool,
-    pre_install: bool,
-) -> Verdict {
     // `validate_pair` returns a WARNING (no source / half pair) or BLOCKs only
     // a PRESENT source that fails to compile (`lqos-74t.37.10`).
     let compile = validate_pair(pair_dir);
     let circuit_count = count_discovered_circuits(pair_dir);
     let circuit_limit = DEFAULT_MAPPED_CIRCUIT_LIMIT;
 
-    let mut warnings = Vec::new();
-    let mut notes = Vec::new();
-    for warning in hardware.warnings.iter().cloned() {
-        let expected_pre_install = warning.contains("no hugepages reserved")
-            || warning.contains("inline deployment needs a PAIR");
-        if pre_install && expected_pre_install {
-            notes.push(warning);
-        } else {
-            warnings.push(warning);
-        }
-    }
+    let mut warnings = hardware.warnings.clone();
     let mut blocks = Vec::new();
     for block in hardware.blocks.clone() {
         if fresh_install && block.contains("inline deployment needs a PAIR") {
-            let text = format!("{block} (fresh install: setup will configure the dataplane ports)");
-            if pre_install {
-                notes.push(text);
-            } else {
-                warnings.push(text);
-            }
-        } else if pre_install && block.contains("no hugepages reserved") {
-            notes.push(block);
+            warnings.push(format!(
+                "{block} (fresh install: setup will configure the dataplane ports)"
+            ));
         } else {
             blocks.push(block);
         }
@@ -367,13 +278,7 @@ pub fn compose_with_mode(
     if !compile.is_pass() {
         blocks.extend(compile.errors.iter().cloned());
     }
-    for warning in compile.warnings.iter().cloned() {
-        if pre_install && warning.contains("no topology source yet") {
-            notes.push(warning);
-        } else {
-            warnings.push(warning);
-        }
-    }
+    warnings.extend(compile.warnings.iter().cloned());
 
     match circuit_count {
         Some(count) if count as u64 > circuit_limit => {
@@ -387,14 +292,8 @@ pub fn compose_with_mode(
         }
         Some(_) => {}
         None => {
-            if !warnings.iter().any(|warning| warning.contains("no topology source yet"))
-                && !notes.iter().any(|note| note.contains("no topology source yet"))
-            {
-                if pre_install {
-                    notes.push(NO_TOPOLOGY_SOURCE.to_string());
-                } else {
-                    warnings.push(NO_TOPOLOGY_SOURCE.to_string());
-                }
+            if !warnings.iter().any(|warning| warning.contains("no topology source yet")) {
+                warnings.push(NO_TOPOLOGY_SOURCE.to_string());
             }
         }
     }
@@ -412,8 +311,6 @@ pub fn compose_with_mode(
         compile,
         circuit_count,
         circuit_limit,
-        notes,
-        pre_install,
         warnings,
         blocks,
         hardware,
@@ -519,130 +416,6 @@ mod tests {
         // An upgrade (fresh=false) keeps the strict pair block.
         let upgrade = compose(&dir.0, hardware.clone(), |_| UnitPresence::Absent);
         assert_eq!(upgrade.severity, Severity::Block);
-    }
-
-    #[test]
-    fn pre_install_turns_expected_facts_into_notes() {
-        use crate::hardware::{HardwareClass, HugePages};
-        let dir = Scratch::new();
-        let mut hardware = HardwareVerdict::all_ok();
-        hardware.class = HardwareClass::Blocked;
-        hardware.hugepages = HugePages::default();
-        hardware.warnings.push(
-            "no hugepages reserved — the installer will attempt automatic 2M allocation"
-                .to_string(),
-        );
-        hardware.blocks.push(
-            "inline deployment needs a PAIR of supported dataplane NICs; found 0".to_string(),
-        );
-        let fresh = compose_with_mode(
-            &dir.0,
-            hardware.clone(),
-            |_| UnitPresence::Absent,
-            true,
-            true,
-        );
-        assert_eq!(fresh.severity, Severity::Pass, "notes must not flip PASS");
-        assert!(fresh.blocks.is_empty());
-        assert!(fresh.warnings.is_empty(), "{:?}", fresh.warnings);
-        assert!(fresh.notes.iter().any(|n| n.contains("no hugepages reserved")));
-        assert!(fresh.notes.iter().any(|n| n.contains("PAIR")));
-        assert!(fresh.notes.iter().any(|n| n.contains("no topology source yet")));
-        // The SAME facts on an upgrade (not fresh) still BLOCK the pair.
-        let upgrade = compose_with_mode(
-            &dir.0,
-            hardware,
-            |_| UnitPresence::Absent,
-            false,
-            true,
-        );
-        assert_eq!(upgrade.severity, Severity::Block);
-    }
-
-    #[test]
-    fn pre_install_fetch_malformed_stays_warn_but_unconfigured_notes() {
-        let dir = Scratch::new();
-        let base = compose_with_mode(
-            &dir.0,
-            HardwareVerdict::all_ok(),
-            |_| UnitPresence::Absent,
-            true,
-            true,
-        );
-        let empty = base.clone().with_fetch(crate::prereq::FetchPrereq {
-            url: String::new(),
-            endpoint: None,
-        });
-        assert_eq!(empty.severity, Severity::Pass);
-        assert!(empty.notes.iter().any(|n| n.contains("not configured yet")));
-        let malformed = base.with_fetch(crate::prereq::FetchPrereq {
-            url: "not a url".to_string(),
-            endpoint: None,
-        });
-        assert_eq!(malformed.severity, Severity::Warn, "F1 is actionable");
-        assert!(malformed.warnings.iter().any(|w| w.contains("MALFORMED")));
-    }
-
-    #[test]
-    fn pre_install_install_i1_notes_but_i2_warns() {
-        let dir = Scratch::new();
-        let base = compose_with_mode(
-            &dir.0,
-            HardwareVerdict::all_ok(),
-            |_| UnitPresence::Absent,
-            true,
-            true,
-        );
-        let not_owned = base.clone().with_install(crate::install::InstallIntegrityReport {
-            package_owned: false,
-            defined_set_intact: None,
-            package: None,
-        });
-        assert_eq!(not_owned.severity, Severity::Pass, "I1 is a pre-install note");
-        assert!(not_owned.notes.iter().any(|n| n.contains("NOT package-owned")));
-        let modified = base.with_install(crate::install::InstallIntegrityReport {
-            package_owned: true,
-            defined_set_intact: Some(false),
-            package: Some("libreqos".to_string()),
-        });
-        assert_eq!(modified.severity, Severity::Warn, "I2 is actionable");
-        assert!(modified.warnings.iter().any(|w| w.contains("MODIFIED")));
-    }
-
-    #[test]
-    fn pre_install_keeps_actionable_warnings() {
-        let dir = Scratch::new();
-        dir.write("network.json", "{}"); // half pair: actionable, not "no source"
-        let verdict = compose_with_mode(
-            &dir.0,
-            HardwareVerdict::all_ok(),
-            |_| UnitPresence::Absent,
-            true,
-            true,
-        );
-        assert_eq!(verdict.severity, Severity::Warn);
-        assert!(!verdict.warnings.is_empty());
-    }
-
-    #[test]
-    fn pre_install_on_a_stick_warning_stays_actionable() {
-        use crate::hardware::HardwareClass;
-        let dir = Scratch::new();
-        let mut hardware = HardwareVerdict::all_ok();
-        hardware.class = HardwareClass::Fallback;
-        hardware.warnings.push(
-            "on-a-stick deployment: one supported dataplane port (1) carries both WAN and LAN"
-                .to_string(),
-        );
-        let verdict = compose_with_mode(
-            &dir.0,
-            hardware,
-            |_| UnitPresence::Absent,
-            true,
-            true,
-        );
-        assert_eq!(verdict.severity, Severity::Warn);
-        assert!(verdict.warnings.iter().any(|w| w.contains("on-a-stick")));
     }
 
     #[test]

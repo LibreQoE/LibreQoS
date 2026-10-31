@@ -13,7 +13,8 @@ mod file_lock;
 mod heimdall;
 #[cfg(feature = "equinix_tests")]
 mod lqos_daht_test;
-pub mod lts2_sys;
+mod libreqos_network_ingest;
+mod lts2_sys;
 mod memory_watchdog;
 pub mod netflow;
 mod network_devices_hooks;
@@ -311,6 +312,7 @@ fn main() -> Result<()> {
     // boxes are unchanged and bridge boxes gain both.
     shaped_devices_tracker::topology_runtime_status_watcher()?;
     tunnel_circuits_ingest::start_tunnel_circuits_watcher()?;
+    libreqos_network_ingest::start_libreqos_network_watcher()?;
     // K2 slice 1: the ASN GeoTable is mode-neutral data (the TopFlows ASN
     // join needs it on bridge boxes too); only the kernel flowbee feed stays
     // kernel-gated.

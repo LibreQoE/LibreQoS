@@ -8,7 +8,8 @@ use axum::http::StatusCode;
 use axum::http::header;
 use default_net::get_interfaces;
 use lqos_config::{
-    Config, ConfigShapedDevices, NetworkJson, ShapedDevice, UserRole, WebUser, WebUsers,
+    Config, ConfigShapedDevices, NetworkJson, ShapedDevice, TopologySource,
+    TopologySourceConflict, TopologySourceOrigin, UserRole, WebUser, WebUsers,
 };
 use lqos_utils::hash_to_i64;
 use serde::{Deserialize, Serialize};
@@ -31,35 +32,6 @@ enum CobrandUploadValidationError {
     TooLarge,
     TooWideForSidebar,
 }
-
-type TopologySourceIntegration = (&'static str, fn(&Config) -> bool);
-
-const TOPOLOGY_SOURCE_INTEGRATIONS: [TopologySourceIntegration; 7] = [
-    ("UISP", |config| config.uisp_integration.enable_uisp),
-    ("Splynx", |config| config.splynx_integration.enable_splynx),
-    ("Powercode", |config| {
-        config.powercode_integration.enable_powercode
-    }),
-    ("Sonar", |config| config.sonar_integration.enable_sonar),
-    ("Netzur", |config| {
-        config
-            .netzur_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_netzur)
-    }),
-    ("VISP", |config| {
-        config
-            .visp_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_visp)
-    }),
-    ("WispGate", |config| {
-        config
-            .wispgate_integration
-            .as_ref()
-            .is_some_and(|integration| integration.enable_wispgate)
-    }),
-];
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct UispSecretState {
@@ -190,10 +162,32 @@ pub struct ConfigView {
     pub shaping_status: ShapingRuntimeStatus,
     #[serde(default)]
     pub tunnel_circuits_status: crate::tunnel_circuits_ingest::TunnelCircuitsIngestStatus,
+    /// 150 watcher status; 151 PR3 consumes this producer (one type).
+    #[serde(default)]
+    pub libreqos_network_status: crate::libreqos_network_ingest::LibreqosNetworkIngestStatus,
     #[serde(default)]
     pub network_mode_inspection: NetworkModeInspection,
     #[serde(default)]
     pub runtime_onboarding: RuntimeOnboardingState,
+    /// 151 source status. A source conflict is degraded state, not a load error.
+    #[serde(default)]
+    pub topology_source: Option<TopologySource>,
+    #[serde(default)]
+    pub topology_source_label: Option<String>,
+    #[serde(default)]
+    pub topology_source_origin: TopologySourceOrigin,
+    #[serde(default)]
+    pub topology_source_conflict: Option<TopologySourceConflict>,
+    /// Integration sources: the scheduler's last import time. The manual
+    /// `shaped_devices` producer has no scheduler status, so this stays null;
+    /// for `libreqos_network`, the 150-owned `libreqos_network_status` block is
+    /// the projection (accepted/reject times and reason).
+    #[serde(default)]
+    pub topology_source_last_update: Option<u64>,
+    #[serde(default)]
+    pub topology_source_last_result: Option<String>,
+    #[serde(default)]
+    pub topology_source_reject_reason: Option<String>,
 }
 
 pub fn admin_check_data(login: LoginResult) -> bool {
@@ -360,6 +354,22 @@ fn apply_secret_updates(
     }
 }
 
+fn topology_source_view(
+    config: &Config,
+) -> (
+    Option<TopologySource>,
+    Option<String>,
+    TopologySourceOrigin,
+    Option<TopologySourceConflict>,
+) {
+    (
+        config.topology.source,
+        config.topology_source_label().map(str::to_string),
+        config.topology_source_runtime.origin,
+        config.topology_source_runtime.conflict.clone(),
+    )
+}
+
 pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
     if login != LoginResult::Admin {
         return Err(StatusCode::FORBIDDEN);
@@ -368,15 +378,48 @@ pub fn get_config_data(login: LoginResult) -> Result<ConfigView, StatusCode> {
         .map(|config| {
             let mut config = (*config).clone();
             let secret_state = redact_config_secrets(&mut config);
+            let (
+                topology_source,
+                topology_source_label,
+                topology_source_origin,
+                topology_source_conflict,
+            ) = topology_source_view(&config);
+            let scheduler_status =
+                crate::node_manager::local_api::scheduler::scheduler_status_data();
+            let (
+                topology_source_last_update,
+                topology_source_last_result,
+                topology_source_reject_reason,
+            ) = if topology_source.is_some_and(|source| source.is_integration()) {
+                (
+                    scheduler_status.last_import_at,
+                    scheduler_status
+                        .last_import_ok
+                        .map(|ok| if ok { "ok".to_string() } else { "error".to_string() }),
+                    scheduler_status.integration_error_detail.clone(),
+                )
+            } else {
+                // The scheduler does not poll file sources; the 150 ingest
+                // status (when present) carries the libreqos_network detail.
+                (None, None, None)
+            };
             ConfigView {
                 shaping_status: crate::shaping_runtime::get_status(),
                 tunnel_circuits_status: crate::tunnel_circuits_ingest::get_status(),
+                libreqos_network_status: crate::libreqos_network_ingest::get_status(),
                 network_mode_inspection:
                     crate::node_manager::local_api::network_mode::inspect_network_mode(&config),
                 runtime_onboarding:
                     crate::node_manager::runtime_onboarding::runtime_onboarding_state(),
                 config,
                 secret_state,
+                topology_source,
+                topology_source_label,
+                topology_source_origin,
+                topology_source_conflict,
+                topology_source_last_update,
+                topology_source_last_result,
+                topology_source_reject_reason,
             }
         })
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
@@ -568,23 +611,34 @@ pub fn all_shaped_devices_data() -> Vec<ShapedDevice> {
 /// Returns the enabled integration names that act as the source of truth for
 /// `network.json` and `ShapedDevices.csv`.
 pub fn active_topology_source_integrations(config: &Config) -> Vec<&'static str> {
-    TOPOLOGY_SOURCE_INTEGRATIONS
-        .iter()
-        .filter_map(|(name, enabled)| enabled(config).then_some(*name))
-        .collect()
+    config
+        .active_topology_source()
+        .filter(|source| source.is_integration())
+        .map(|source| vec![source.display_name()])
+        .unwrap_or_default()
+}
+
+fn topology_lock_message_for_config(config: &Config) -> Option<String> {
+    if let Some(conflict) = config.topology_source_runtime.conflict.as_ref() {
+        return Some(conflict.message.clone());
+    }
+    match config.topology.source {
+        Some(lqos_config::TopologySource::ShapedDevices) => None,
+        Some(lqos_config::TopologySource::LibreqosNetwork) => Some(
+            "Topology is produced by the libreqos_network.json drop.".to_string(),
+        ),
+        Some(source) if source.is_integration() => Some(format!(
+            "Topology is produced by {}. Change Topology Source to edit manually.",
+            source.display_name()
+        )),
+        Some(_) | None => Some("No topology source is selected.".to_string()),
+    }
 }
 
 fn topology_editor_lock_message() -> Result<Option<String>, String> {
     let config =
         lqos_config::load_config().map_err(|e| format!("Unable to load LibreQoS config: {e}"))?;
-    let integrations = active_topology_source_integrations(config.as_ref());
-    if integrations.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(format!(
-        "Editing is disabled because these integrations are the source of truth: {}.",
-        integrations.join(", ")
-    )))
+    Ok(topology_lock_message_for_config(config.as_ref()))
 }
 
 fn ensure_topology_editor_unlocked() -> Result<(), String> {
@@ -1058,7 +1112,9 @@ mod tests {
     use axum::Extension;
     use axum::body::Bytes;
     use axum::http::HeaderMap;
-    use lqos_config::{Config, LocalApiKeyConfig};
+    use lqos_config::{
+        Config, LocalApiKeyConfig, TopologySource, TopologySourceConflict, TopologySourceOrigin,
+    };
     use serde_json::json;
     use std::ffi::OsString;
     use std::fs;
@@ -1562,4 +1618,80 @@ mod e3_authz_tests {
             Err("Unauthorized".to_string())
         );
     }
+    #[test]
+    fn active_source_integrations_and_lock_matrix_are_source_driven() {
+        let mut config = Config::default();
+        config.topology.source = Some(TopologySource::Splynx);
+        assert_eq!(
+            super::active_topology_source_integrations(&config),
+            vec!["Splynx"]
+        );
+        assert!(super::topology_lock_message_for_config(&config)
+            .unwrap()
+            .contains("Splynx"));
+
+        config.topology.source = Some(TopologySource::ShapedDevices);
+        assert!(super::active_topology_source_integrations(&config).is_empty());
+        assert!(super::topology_lock_message_for_config(&config).is_none());
+
+        config.topology.source = Some(TopologySource::LibreqosNetwork);
+        assert!(super::active_topology_source_integrations(&config).is_empty());
+        assert!(super::topology_lock_message_for_config(&config)
+            .unwrap()
+            .contains("libreqos_network.json"));
+
+        config.topology.source = None;
+        assert!(super::topology_lock_message_for_config(&config)
+            .unwrap()
+            .contains("No topology source"));
+    }
+
+    #[test]
+    fn shaped_devices_conflict_is_locked_and_named() {
+        let mut config = Config::default();
+        config.topology.source = Some(TopologySource::ShapedDevices);
+        config.topology_source_runtime.conflict = Some(TopologySourceConflict {
+            source: Some(TopologySource::ShapedDevices),
+            enabled: vec!["enable_uisp".to_string()],
+            message: "topology source conflict: enable_uisp".to_string(),
+        });
+        let message = super::topology_lock_message_for_config(&config).expect("locked");
+        assert!(message.contains("enable_uisp"), "{message}");
+    }
+
+    #[test]
+    fn config_view_status_reports_retained_source_and_conflict() {
+        let mut config = Config::default();
+        config.topology.source = Some(TopologySource::Visp);
+        config.topology_source_runtime.conflict = Some(TopologySourceConflict {
+            source: Some(TopologySource::Visp),
+            enabled: vec!["enable_uisp".to_string()],
+            message: "topology source conflict".to_string(),
+        });
+        config.topology_source_runtime.origin = TopologySourceOrigin::Config;
+
+        let (source, label, origin, conflict) = super::topology_source_view(&config);
+        assert_eq!(source, Some(TopologySource::Visp));
+        assert_eq!(label.as_deref(), Some("VISP"));
+        assert_eq!(origin, TopologySourceOrigin::Config);
+        assert_eq!(
+            conflict.expect("conflict").source,
+            Some(TopologySource::Visp)
+        );
+    }
+
+    #[test]
+    fn config_view_status_is_null_for_a_missing_source() {
+        let mut config = Config::default();
+        config.topology.source = None;
+        config.topology_source_runtime.conflict = None;
+        config.topology_source_runtime.origin = TopologySourceOrigin::Missing;
+
+        let (source, label, origin, conflict) = super::topology_source_view(&config);
+        assert_eq!(source, None);
+        assert_eq!(label, None);
+        assert_eq!(origin, TopologySourceOrigin::Missing);
+        assert!(conflict.is_none());
+    }
+
 }

@@ -125,6 +125,7 @@ timeout_secs = 20
 #online_users_domain = ""
 
 [topology]
+source = "shaped_devices"
 compile_mode = "ap_site"
 
 [uisp_integration]
@@ -159,6 +160,11 @@ ltu_model_ids = [ "" ]
 active_status_ids = [ "" ]
 recurring_excluded_service_names = []
 recurring_service_rates = []
+
+[wispgate_integration]
+enable_wispgate = false
+wispgate_api_token = ""
+wispgate_api_url = ""
 
 [influxdb]
 enable_influxdb = false

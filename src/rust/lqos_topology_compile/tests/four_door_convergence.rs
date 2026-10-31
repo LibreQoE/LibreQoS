@@ -69,6 +69,7 @@ fn format_bundle() -> ImportedTopologyBundle {
     parse_libreqos_network(&format_payload())
         .expect("the standard-format fixture should validate")
         .into_imported_bundle("libreqos_network")
+        .expect("the standard-format fixture should project")
 }
 
 fn legacy_bundle() -> ImportedTopologyBundle {
@@ -184,7 +185,7 @@ fn expected_device_rows() -> Vec<DeviceRow> {
             ipv6: Vec::new(),
             download_min_mbps: 10.0,
             upload_min_mbps: 5.0,
-            download_max_mbps: 100.0,
+            download_max_mbps: 250.5,
             upload_max_mbps: 50.0,
         },
         DeviceRow {
@@ -208,11 +209,19 @@ fn expected_device_rows() -> Vec<DeviceRow> {
 #[test]
 fn format_fixture_reads_and_projects_into_native_canonical() {
     let file = parse_libreqos_network(&format_payload()).expect("fixture should validate");
-    assert_eq!(file.schema_version, 1);
+    assert_eq!(file.schema_version, 2);
     assert_eq!(file.topology.len(), 2);
     assert_eq!(file.circuits.len(), 2);
+    let c1_bps = file.circuits[0]
+        .plan
+        .to_bps("circuits[0].plan")
+        .expect("c1 plan should convert");
+    assert_eq!(c1_bps.commit_down_bps, 10_000_000);
+    assert_eq!(c1_bps.ceil_down_bps, 250_500_000);
 
-    let bundle = file.into_imported_bundle("libreqos_network");
+    let bundle = file
+        .into_imported_bundle("libreqos_network")
+        .expect("fixture should project");
     let canonical = bundle
         .native_canonical
         .expect("the format targets native_canonical");
@@ -227,7 +236,16 @@ fn format_fixture_reads_and_projects_into_native_canonical() {
     assert_eq!(ap.current_parent_node_name.as_deref(), Some("Site One"));
     assert_eq!(ap.rate_input.intrinsic_download_mbps, Some(100));
 
-    assert_eq!(device_rows(&compile_ap_only(format_bundle())).len(), 2);
+    let rows = device_rows(&compile_ap_only(format_bundle()));
+    assert_eq!(rows.len(), 2);
+    let c1 = rows
+        .iter()
+        .find(|row| row.circuit_id == "c1")
+        .expect("c1 should be projected");
+    assert_eq!(
+        c1.download_max_mbps, 250.5,
+        "the circuit row keeps f32 Mbps; the dataplane rate_pair then encodes 251 Mbps as 251_000 kbps"
+    );
     assert!(
         bundle.circuit_matches.is_empty(),
         "ip mode carries no per-circuit identity"

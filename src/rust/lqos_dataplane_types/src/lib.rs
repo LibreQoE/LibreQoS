@@ -682,6 +682,9 @@ pub fn churn_is_full_world_for(
 /// Baseline gate and the broker's routing) so they can never disagree.
 pub const BASELINE_MAX_CIRCUITS_ENV: &str = "LIBREQOS_DPDK_BASELINE_MAX_CIRCUITS";
 
+/// `lqos-74t.163.2`: default-off completion-feed phase instrumentation.
+pub const ENV_COMPLETION_DIAG: &str = "LIBREQOS_COMPLETION_DIAG";
+
 /// The measured per-circuit full-world swap pause (µs) — the Shape-1 coefficient
 /// (`docs/o1_pause_line_work_order.md`; ~762 µs/circuit at 926).
 pub const BASELINE_US_PER_CIRCUIT: u64 = 762;

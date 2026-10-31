@@ -219,6 +219,12 @@ pub struct TopologyImportFile {
     /// Stable identity of imported topology facts plus selected compile mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ingress_identity: Option<String>,
+    /// Producer that wrote this artifact (`api` or `watcher`), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writer: Option<String>,
+    /// SHA-256 of the source payload/file bytes, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_sha256: Option<String>,
     /// Imported topology facts before projection into a specific runtime shape.
     imported: ImportedTopologySnapshot,
 }
@@ -390,6 +396,8 @@ impl TopologyImportFile {
                 ])
                 .unwrap_or(identity)
             }),
+            writer: None,
+            source_sha256: None,
             imported: ImportedTopologySnapshot::from_bundle(imported),
         }
     }

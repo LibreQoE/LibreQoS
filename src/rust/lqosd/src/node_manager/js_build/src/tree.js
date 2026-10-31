@@ -17,7 +17,6 @@ import {enableTooltipsWithin} from "./lq_js_common/helpers/tooltips";
 import {scaleNumber, toNumber} from "./lq_js_common/helpers/scaling";
 import {get_ws_client, subscribeWS} from "./pubsub/ws";
 import {
-    ancestorNodesFromTree,
     buildNodeLimitSummary,
     configuredMax,
     effectiveMax,
@@ -1135,7 +1134,6 @@ function renderEffectiveNowValue(node) {
     const summary = buildNodeLimitSummary({
         node,
         parentNode: immediateParentNode(node),
-        ancestorNodes: ancestorNodesFromTree(tree, node),
         rateOverrideData: nodeRateOverrideState.data,
         topologyOverrideData: nodeTopologyOverrideState.data,
     });

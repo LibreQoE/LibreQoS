@@ -10,20 +10,16 @@ import sys
 import tempfile
 from io import StringIO
 from liblqos_python import (
-    automatic_import_uisp,
-    automatic_import_splynx,
     queue_refresh_interval_mins,
-    automatic_import_powercode,
-    automatic_import_sonar,
+    reload_config_from_disk,
+    topology_compile_mode,
+    topology_source_status,
     influx_db_enabled,
     get_libreqos_directory,
     blackboard_finish,
     blackboard_submit,
-    automatic_import_wispgate,
     enable_insight_topology,
     insight_topology_role,
-    automatic_import_netzur,
-    automatic_import_visp,
     calculate_shaping_runtime_hash,
     efficiency_core_ids,
     scheduler_alive as _scheduler_alive_native,
@@ -65,6 +61,18 @@ SCHEDULER_REFRESH_STEP_COUNT = 4
 # ~70 % of the bar. Each tuple weights the percent AT each step's completion
 # (so `percent` during step k = sum(weights[:k-1])). These are ESTIMATES and
 # never replace the truthful terminal publish.
+TOPOLOGY_SOURCE_LABELS = {
+    "uisp": "UISP",
+    "splynx": "Splynx",
+    "netzur": "Netzur",
+    "visp": "VISP",
+    "sonar": "Sonar",
+    "powercode": "Powercode",
+    "wispgate": "WispGate",
+    "shaped_devices": "Shaped devices",
+    "libreqos_network": "LibreQoS network",
+}
+
 SCHEDULER_STEP_WEIGHTS = {
     SCHEDULER_STARTUP_STEP_COUNT: (2, 70, 3, 15, 10),
     SCHEDULER_REFRESH_STEP_COUNT: (5, 70, 15, 10),
@@ -629,6 +637,38 @@ def run_python_integration(module_name: str, func_name: str, label: str = ""):
         print(err)
         publish_integration_status(friendly, ok=False, error_message=err)
 
+def _topology_source_for_tick():
+    """Reload lqos.conf and return the one active source, or None.
+
+    Runs before repair_runtime_state() and before any producer. A source
+    conflict or missing source is reported on the scheduler error/output axes;
+    no producer runs and the last-good world stands.
+    """
+    try:
+        reload_config_from_disk()
+        source, conflict, origin = topology_source_status()
+    except Exception as e:
+        message = f"Topology source configuration error: {e}"
+        print(message)
+        scheduler_error(message)
+        scheduler_output(message)
+        return None
+    if conflict:
+        message = f"Topology source conflict: {conflict}"
+        print(message)
+        scheduler_error(message)
+        scheduler_output(message)
+        return None
+    if not source:
+        message = "No topology source selected; no producer will run."
+        print(message)
+        scheduler_error(message)
+        scheduler_output(message)
+        return None
+    print(f"Topology source: {source} (origin={origin or 'unknown'})")
+    return source
+
+
 def importFromCRM(
     *,
     integration_phase="running_integration",
@@ -639,20 +679,38 @@ def importFromCRM(
     overrides_label="Applying overrides",
     overrides_step=3,
 ):
+    source = _topology_source_for_tick()
+    if source is None:
+        publish_scheduler_progress(
+            False,
+            "topology_source_error",
+            "Topology source configuration error",
+            integration_step,
+            progress_step_count,
+            percent=100,
+        )
+        return
+
+    source_label = TOPOLOGY_SOURCE_LABELS.get(source, source)
+
     # Phase D: the scheduler's idempotent repair-before-materialize (lqosd
     # startup is the primary owner; this maintains the invariants per tick).
+    # The config reload/guard above runs first, so a fail-stop config cannot
+    # fail before the no-producer guard.
     repair_runtime_state()
     clear_scheduler_error()
     clear_scheduler_output()
     publish_scheduler_progress(
         True,
         integration_phase,
-        integration_label,
+        f"{source_label} integration",
         integration_step,
         progress_step_count,
     )
-    # CRM Hooks
-    if automatic_import_uisp():
+
+    # One selected producer per tick; no fallthrough and no implicit manual
+    # fallback. Non-selected integrations are never called.
+    if source == "uisp":
         try:
             # Execute UISP integration in a subprocess and keep going on failure
             path = get_libreqos_directory() + "/bin/uisp_integration"
@@ -660,30 +718,44 @@ def importFromCRM(
                 [path],
                 capture_output=True,
                 text=True,
-                label="UISP integration",
+                label=f"{source_label} integration",
             )
-            _publish_integration_result("UISP integration", result)
+            _publish_integration_result(f"{source_label} integration", result)
             blackboard_finish()
         except Exception as e:
-            error_msg = f"Failed to run UISP integration: {str(e)}"
+            error_msg = f"Failed to run {source_label} integration: {str(e)}"
             print(error_msg)
-            publish_integration_status("UISP integration", ok=False, error_message=error_msg)
-    elif automatic_import_splynx():
-        run_python_integration("integrationSplynx", "importFromSplynx", label="Splynx")
-    elif automatic_import_visp():
-        run_python_integration("integrationVISP", "importFromVISP", label="VISP")
-    elif automatic_import_netzur():
-        run_python_integration("integrationNetzur", "importFromNetzur", label="Netzur")
-    elif automatic_import_powercode():
-        run_python_integration("integrationPowercode", "importFromPowercode", label="Powercode")
-    elif automatic_import_sonar():
-        run_python_integration("integrationSonar", "importFromSonar", label="Sonar")
-    elif automatic_import_wispgate():
-        run_python_integration("integrationWISPGate", "importFromWISPGate", label="WISPGate")
+            publish_integration_status(
+                f"{source_label} integration", ok=False, error_message=error_msg
+            )
+    elif source == "splynx":
+        run_python_integration("integrationSplynx", "importFromSplynx", label=source_label)
+    elif source == "visp":
+        run_python_integration("integrationVISP", "importFromVISP", label=source_label)
+    elif source == "netzur":
+        run_python_integration("integrationNetzur", "importFromNetzur", label=source_label)
+    elif source == "powercode":
+        run_python_integration("integrationPowercode", "importFromPowercode", label=source_label)
+    elif source == "sonar":
+        run_python_integration("integrationSonar", "importFromSonar", label=source_label)
+    elif source == "wispgate":
+        run_python_integration("integrationWISPGate", "importFromWISPGate", label=source_label)
+    elif source == "shaped_devices":
+        # The permanent manual pair is the producer only when selected.
+        write_compiled_topology_from_legacy_artifacts(
+            "legacy/manual", topology_compile_mode()
+        )
+    elif source == "libreqos_network":
+        # The .150 watcher owns topology production; the scheduler must not
+        # poll or overwrite it. Overrides/post-hooks still run below.
+        print("Topology source is libreqos_network; scheduler hands topology to the watcher.")
     else:
-        # Phase C/D: no integration is enabled — the permanent manual pair is
-        # the producer. Materialize the compiled ingest artifacts from it.
-        write_compiled_topology_from_legacy_artifacts("legacy/manual", "full")
+        message = f"Unsupported topology source '{source}'; no producer will run."
+        print(message)
+        scheduler_error(message)
+        scheduler_output(message)
+        return
+
     # Post-CRM Hooks
     path = get_libreqos_directory() + "/bin/post_integration_hook.sh"
     binPath = get_libreqos_directory() + "/bin"
@@ -1733,8 +1805,10 @@ def run_scheduler_main():
     set_scheduler_status_bus_enabled(True)
     scheduler_alive()
     publish_scheduler_progress(True, "waiting_for_bus", "Waiting for lqosd bus", 1, SCHEDULER_STARTUP_STEP_COUNT)
+    refresh_interval = 30
     try:
         startup_ready = importAndShapeFullReload()
+        refresh_interval = queue_refresh_interval_mins()
         if startup_ready:
             publish_ready_progress(False, "ready", "Scheduler ready", SCHEDULER_STARTUP_STEP_COUNT, SCHEDULER_STARTUP_STEP_COUNT, percent=100)
     except ValidationFailure as e:
@@ -1752,7 +1826,6 @@ def run_scheduler_main():
 
     print("Starting scheduler with jobs:")
     print(f"- not_dead_yet every 1 minute")
-    refresh_interval = queue_refresh_interval_mins()
     print(f"- topology_runtime_refresh_tick every {TOPOLOGY_RUNTIME_REFRESH_SECONDS} seconds")
     print(f"- importAndShapePartialReload every {refresh_interval} minutes")
     print(f"- reload_request_tick every {RELOAD_REQUEST_TICK_SECONDS} second")

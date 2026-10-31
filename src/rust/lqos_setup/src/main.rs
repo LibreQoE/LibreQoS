@@ -122,7 +122,7 @@ fn run_ports_plan(
             return 1;
         }
     };
-    let mut facts = match gather_facts(&cfg, wan) {
+    let facts = match gather_facts(&cfg, wan, queues, !dry_run) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("ports-plan: {e}");
@@ -136,9 +136,6 @@ fn run_ports_plan(
             facts.physical_cores
         );
     }
-    if let Some(q) = queues {
-        facts.nic_queue_count = q;
-    }
     let driver = driver
         .or_else(|| lqos_setup::bootstrap::bridge_env_value("LQOS_DPDK_ORIG_WAN_DRIVER"))
         .unwrap_or_else(|| "mlx5_core".to_string());
@@ -148,15 +145,9 @@ fn run_ports_plan(
         eprintln!("ports-plan: unsupported NIC driver '{driver}' (Tier 3: no managed plan)");
         return 1;
     };
- // (the implementer (4)) the dry-run takes the SAME override-aware path as the write,
-    // or it would print a different count than the file.
-    let workers = facts.workers_override.unwrap_or_else(|| {
-        lqos_setup::port_class::derived_workers(
-            facts.link_mbps,
-            facts.physical_cores,
-            facts.nic_queue_count,
-        )
-    });
+ // (the implementer (4)) the dry-run takes the SAME provenance-aware path as the
+    // write, or it would print a different count than the file.
+    let workers = facts.workers;
     // `lqos-74t.42`: the install-time VM/virtio warning on stderr (the persistent
     // copy lives in the managed block's `# WARNING` lines).
     if let Some(warn) = lqos_setup::port_class::virtio_worker_warning(plan.class, workers) {

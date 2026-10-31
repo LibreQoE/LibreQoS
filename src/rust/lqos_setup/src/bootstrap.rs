@@ -705,7 +705,12 @@ pub fn state_original_driver(which: &str) -> Option<String> {
 /// reader must take the same one. Used for the per-port drivers AND the
 /// pre-bind BDFs (the rollback fact when bridge.env is stale).
 pub fn state_value(key: &str) -> Option<String> {
-    let text = fs::read_to_string(BIND_ORIGINALS_STATE).ok()?;
+    state_value_at(Path::new(BIND_ORIGINALS_STATE), key)
+}
+
+/// The testable [`state_value`] over an explicit path.
+pub fn state_value_at(path: &Path, key: &str) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
     let needle = format!("{key}=");
     text.lines()
         .find_map(|line| line.strip_prefix(&needle))
@@ -724,12 +729,42 @@ pub const ENV_ORIG_LAN_DRIVER: &str = "LQOS_DPDK_ORIG_LAN_DRIVER";
 /// glob). A drop-in wins over the packaged `bridge.env`.
 pub const BRIDGE_ENV_DROPIN_DIR: &str = "/etc/libreqos/bridge.env.d";
 
+/// Read a `KEY=value` from one env-style file (first match wins).
+pub(crate) fn env_file_value(path: &Path, key: &str) -> Option<String> {
+    let text = fs::read_to_string(path).ok()?;
+    let prefix = format!("{key}=");
+    text.lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix(&prefix)?.trim();
+            (!rest.is_empty()).then(|| rest.to_string())
+        })
+        .last()
+}
+
+/// Read a `KEY=value` from the packaged **`/etc/libreqos/bridge.env` only**.
+///
+/// This is the `WorkersSource::LegacyEnv` runtime source (lqos-74t.160): the
+/// managed `bridge.env.d/50-ports.conf` must never freeze a derived worker
+/// count as an override. The one-time migration may read the managed file
+/// through its own explicit path, never through this reader.
+pub fn bridge_env_value_main(key: &str) -> Option<String> {
+    bridge_env_value_main_at(Path::new(BRIDGE_ENV_PATH), key)
+}
+
+/// The testable [`bridge_env_value_main`] over an explicit path.
+pub fn bridge_env_value_main_at(path: &Path, key: &str) -> Option<String> {
+    env_file_value(path, key)
+}
+
 /// Read a `KEY=value` from `bridge.env` + `bridge.env.d/*.conf` in systemd's
 /// order (lexical; the last definition wins). The bash bind script already
 /// reads this way — the Rust readers must agree, or a stale main-file pair
 /// can shadow the managed drop-in (the `.9` rollback trap).
+///
+/// NOTE: worker provenance must use [`bridge_env_value_main`]; this reader is
+/// for the BDF/driver/path facts that legitimately live in drop-ins.
 pub fn bridge_env_value(key: &str) -> Option<String> {
-    let mut files = vec![PathBuf::from(BRIDGE_ENV_PATH)];
+    let mut value = env_file_value(Path::new(BRIDGE_ENV_PATH), key);
     if let Ok(entries) = fs::read_dir(BRIDGE_ENV_DROPIN_DIR) {
         let mut dropins: Vec<PathBuf> = entries
             .flatten()
@@ -737,21 +772,9 @@ pub fn bridge_env_value(key: &str) -> Option<String> {
             .filter(|path| path.extension().is_some_and(|ext| ext == "conf"))
             .collect();
         dropins.sort();
-        files.extend(dropins);
-    }
-    let prefix = format!("{key}=");
-    let mut value = None;
-    for file in files {
-        let Ok(text) = fs::read_to_string(&file) else {
-            continue;
-        };
-        for line in text.lines() {
-            let line = line.trim();
-            if let Some(rest) = line.strip_prefix(&prefix) {
-                let rest = rest.trim();
-                if !rest.is_empty() {
-                    value = Some(rest.to_string());
-                }
+        for file in dropins {
+            if let Some(found) = env_file_value(&file, key) {
+                value = Some(found);
             }
         }
     }

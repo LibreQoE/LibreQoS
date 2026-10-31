@@ -309,12 +309,12 @@ mod tests {
     /// K1 §1.4 #12-MED: the three liveness feeds are DISTINCT. The kernel
     /// observation feed with zero observations does not advance `last_seen`;
     /// the bridge feed advances only for matching circuit ids.
+    static DYNAMIC_FEED_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn bridge_feed_advances_last_seen_only_for_matching_circuit_ids() {
         use std::collections::HashSet;
-        // Shared with tests.rs: one lock for every dynamic-circuits global
-        // mutator so parallel tests cannot replace the snapshot mid-assert.
-        let _guard = crate::tests::TEST_LOCK.lock();
+        let _guard = DYNAMIC_FEED_TEST_LOCK.lock().unwrap();
         super::publish_dynamic_circuits_snapshot(Vec::new());
         let circuit = lqos_config::DynamicCircuit {
             shaped: lqos_config::ShapedDevice {
@@ -352,7 +352,7 @@ mod tests {
     /// the store's TTL prune expires the circuit.
     #[test]
     fn stopping_both_feeds_expires_at_ttl() {
-        let _guard = crate::tests::TEST_LOCK.lock();
+        let _guard = DYNAMIC_FEED_TEST_LOCK.lock().unwrap();
         super::publish_dynamic_circuits_snapshot(Vec::new());
         let circuit = lqos_config::DynamicCircuit {
             shaped: lqos_config::ShapedDevice {

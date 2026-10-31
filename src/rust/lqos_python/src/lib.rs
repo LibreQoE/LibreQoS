@@ -9,8 +9,7 @@ use lqos_bus::{
     SchedulerProgressReport, SchedulerRun, UrgentSeverity, UrgentSource,
 };
 use lqos_topology_compile::{
-    CompiledTopologyBundle, ImportedTopologyBundle, TopologyCompileMode,
-    TopologyCompiledShapingFile, TopologyImportFile, compile_topology, parse_libreqos_network,
+    ImportedTopologyBundle, TopologyIngestError, TopologyWriteOrigin, parse_libreqos_network,
 };
 use lqos_utils::rustls::ensure_rustls_crypto_provider;
 use nix::libc::getpid;
@@ -865,56 +864,6 @@ fn store_planner_remote(py: Python, state: PyObject) -> PyResult<bool> {
 
 const LOCK_FILE: &str = "/run/lqos/libreqos.lock";
 
-fn parse_topology_compile_mode(mode: &str) -> PyResult<TopologyCompileMode> {
-    match mode.trim().to_lowercase().as_str() {
-        "flat" => Ok(TopologyCompileMode::Flat),
-        "ap_only" => Ok(TopologyCompileMode::ApOnly),
-        "ap_site" => Ok(TopologyCompileMode::ApSite),
-        "full" => Ok(TopologyCompileMode::Full),
-        "full2" => Ok(TopologyCompileMode::Full2),
-        _ => Err(PyOSError::new_err(format!(
-            "Unknown topology compile mode '{mode}'"
-        ))),
-    }
-}
-
-fn write_compiled_topology_outputs(
-    config: &lqos_config::Config,
-    topology_import: &TopologyImportFile,
-    compiled_shaping: &TopologyCompiledShapingFile,
-    compiled: CompiledTopologyBundle,
-) -> PyResult<()> {
-    topology_import
-        .save(config)
-        .map_err(|e| PyOSError::new_err(format!("Unable to write topology_import.json: {e}")))?;
-    compiled_shaping.save(config).map_err(|e| {
-        PyOSError::new_err(format!(
-            "Unable to write topology_compiled_shaping.json: {e}"
-        ))
-    })?;
-    compiled.parent_candidates.save(config).map_err(|e| {
-        PyOSError::new_err(format!(
-            "Unable to write topology parent candidates snapshot: {e}"
-        ))
-    })?;
-    // Rung 1.5 §1.3: topology_editor_state.json is never persisted.
-    compiled.canonical.save(config).map_err(|e| {
-        PyOSError::new_err(format!(
-            "Unable to write topology canonical state snapshot: {e}"
-        ))
-    })?;
-    let anchors_path = config.legacy_runtime_file_path(lqos_config::CIRCUIT_ANCHORS_FILENAME);
-    if let Err(err) = remove_file(&anchors_path)
-        && err.kind() != std::io::ErrorKind::NotFound
-    {
-        return Err(PyOSError::new_err(format!(
-            "Unable to remove stale duplicate circuit_anchors.json at {}: {err}",
-            anchors_path.display()
-        )));
-    }
-    Ok(())
-}
-
 /// Atomically persists the topology canonical state from a JSON payload
 /// (Phase C S1b).
 ///
@@ -1020,6 +969,10 @@ fn liblqos_python(m: &Bound<'_, PyModule>) -> PyResult<()> {    ensure_rustls_cr
     m.add_function(wrap_pyfunction!(visp_isp_id, m)?)?;
     m.add_function(wrap_pyfunction!(visp_online_users_domain, m)?)?;
     m.add_function(wrap_pyfunction!(visp_timeout_secs, m)?)?;
+    m.add_function(wrap_pyfunction!(active_topology_source, m)?)?;
+    m.add_function(wrap_pyfunction!(topology_compile_mode, m)?)?;
+    m.add_function(wrap_pyfunction!(reload_config_from_disk, m)?)?;
+    m.add_function(wrap_pyfunction!(topology_source_status, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_uisp, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_splynx, m)?)?;
     m.add_function(wrap_pyfunction!(automatic_import_netzur, m)?)?;
@@ -2223,10 +2176,27 @@ fn repair_runtime_state() -> PyResult<()> {
 fn imported_bundle_from_libreqos_network_payload(
     source: &str,
     libreqos_network_json: &str,
-) -> Result<ImportedTopologyBundle, String> {
-    let file = parse_libreqos_network(libreqos_network_json)
-        .map_err(|error| format!("Unable to parse libreqos_network.json payload: {error}"))?;
-    Ok(file.into_imported_bundle(source.to_string()))
+) -> Result<ImportedTopologyBundle, TopologyIngestError> {
+    let file = parse_libreqos_network(libreqos_network_json)?;
+    file.into_imported_bundle(source.to_string())
+        .map_err(TopologyIngestError::Parse)
+}
+
+fn write_compiled_topology_from_network_json_payload_to_config(
+    config: &lqos_config::Config,
+    source: &str,
+    compile_mode: &str,
+    libreqos_network_json: &str,
+) -> Result<(), TopologyIngestError> {
+    lqos_topology_compile::compile_and_write_libreqos_network_json(
+        config,
+        source,
+        libreqos_network_json,
+        compile_mode,
+        TopologyWriteOrigin::Api,
+        None,
+    )
+    .map(|_receipt| ())
 }
 
 #[pyfunction]
@@ -2236,24 +2206,94 @@ fn write_compiled_topology_from_network_json_payload(
     libreqos_network_json: String,
 ) -> PyResult<bool> {
     let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
-    let imported = imported_bundle_from_libreqos_network_payload(&source, &libreqos_network_json)
-        .map_err(PyOSError::new_err)?;
-    let topology_import = TopologyImportFile::from_imported_bundle(&imported, compile_mode.clone());
-    let mode = parse_topology_compile_mode(&compile_mode)?;
-    let compiled = compile_topology(imported, mode).map_err(|e| {
+    write_compiled_topology_from_network_json_payload_to_config(
+        config.as_ref(),
+        &source,
+        &compile_mode,
+        &libreqos_network_json,
+    )
+    .map_err(|error| {
         PyOSError::new_err(format!(
-            "Unable to compile topology payload for '{source}' using mode '{compile_mode}': {e}"
+            "Unable to compile/write topology payload for '{source}' using mode '{compile_mode}': {error}"
         ))
     })?;
-    let compiled_shaping =
-        TopologyCompiledShapingFile::from_compiled(&compiled, compile_mode.clone());
-    write_compiled_topology_outputs(
-        config.as_ref(),
-        &topology_import,
-        &compiled_shaping,
-        compiled,
-    )?;
     Ok(true)
+}
+
+fn imported_bundle_from_python_graph_payload(
+    source: &str,
+    compatibility_network_json: &str,
+    shaped_devices_csv: &str,
+    circuit_anchors_json: &str,
+    parent_candidates_json: &str,
+    native_editor_json: &str,
+) -> Result<ImportedTopologyBundle, String> {
+    let compatibility_network_json = serde_json::from_str::<serde_json::Value>(
+        compatibility_network_json,
+    )
+    .map_err(|e| format!("Unable to parse topology payload JSON: {e}"))?;
+    let shaped_devices = load_shaped_devices_from_csv_payload(shaped_devices_csv)
+        .map_err(|e| format!("Unable to parse shaped-device CSV payload: {e}"))?;
+    let circuit_anchors =
+        serde_json::from_str::<lqos_config::CircuitAnchorsFile>(circuit_anchors_json).map_err(
+            |e| format!("Unable to parse circuit anchor payload JSON: {e}"),
+        )?;
+    let parent_candidates =
+        serde_json::from_str::<lqos_config::TopologyParentCandidatesFile>(parent_candidates_json)
+            .map_err(|e| format!("Unable to parse topology parent-candidate payload JSON: {e}"))?;
+    let native_editor =
+        serde_json::from_str::<lqos_config::TopologyEditorStateFile>(native_editor_json)
+            .map_err(|e| format!("Unable to parse native topology editor payload JSON: {e}"))?;
+    // Rung 1.5 §1.3: the editor payload is no longer a persisted domain
+    // object. The legacy Python graph payload still supplies one; project it
+    // into canonical (the ONLY persisted object) so compile_mode reads
+    // canonical-derived editor state.
+    let native_canonical = lqos_config::TopologyCanonicalStateFile::from_editor_and_network(
+        &native_editor,
+        &compatibility_network_json,
+        lqos_config::TopologyCanonicalIngressKind::NativeIntegration,
+    );
+    Ok(ImportedTopologyBundle {
+        source: source.to_string(),
+        generated_unix: None,
+        ingress_identity: None,
+        native_canonical: Some(native_canonical),
+        parent_candidates: Some(parent_candidates),
+        compatibility_network_json,
+        shaped_devices,
+        circuit_anchors,
+        ethernet_advisories: Vec::new(),
+        circuit_matches: Default::default(),
+    })
+}
+
+fn write_compiled_topology_from_python_graph_payload_to_config(
+    config: &lqos_config::Config,
+    source: &str,
+    compile_mode: &str,
+    compatibility_network_json: &str,
+    shaped_devices_csv: &str,
+    circuit_anchors_json: &str,
+    parent_candidates_json: &str,
+    native_editor_json: &str,
+) -> Result<(), String> {
+    let imported = imported_bundle_from_python_graph_payload(
+        source,
+        compatibility_network_json,
+        shaped_devices_csv,
+        circuit_anchors_json,
+        parent_candidates_json,
+        native_editor_json,
+    )?;
+    lqos_topology_compile::compile_and_write_imported(
+        config,
+        imported,
+        compile_mode,
+        TopologyWriteOrigin::Api,
+        None,
+    )
+    .map(|_receipt| ())
+    .map_err(|error| error.to_string())
 }
 
 #[pyfunction]
@@ -2267,69 +2307,21 @@ fn write_compiled_topology_from_python_graph_payload(
     native_editor_json: String,
 ) -> PyResult<bool> {
     let config = lqos_config::load_config().map_err(|e| PyOSError::new_err(e.to_string()))?;
-    let compatibility_network_json =
-        serde_json::from_str::<serde_json::Value>(&compatibility_network_json).map_err(|e| {
-            PyOSError::new_err(format!("Unable to parse topology payload JSON: {e}"))
-        })?;
-    let shaped_devices =
-        load_shaped_devices_from_csv_payload(&shaped_devices_csv).map_err(|e| {
-            PyOSError::new_err(format!("Unable to parse shaped-device CSV payload: {e}"))
-        })?;
-    let circuit_anchors = serde_json::from_str::<lqos_config::CircuitAnchorsFile>(
+    write_compiled_topology_from_python_graph_payload_to_config(
+        config.as_ref(),
+        &source,
+        &compile_mode,
+        &compatibility_network_json,
+        &shaped_devices_csv,
         &circuit_anchors_json,
-    )
-    .map_err(|e| PyOSError::new_err(format!("Unable to parse circuit anchor payload JSON: {e}")))?;
-    let parent_candidates =
-        serde_json::from_str::<lqos_config::TopologyParentCandidatesFile>(&parent_candidates_json)
-            .map_err(|e| {
-                PyOSError::new_err(format!(
-                    "Unable to parse topology parent-candidate payload JSON: {e}"
-                ))
-            })?;
-    let native_editor = serde_json::from_str::<lqos_config::TopologyEditorStateFile>(
+        &parent_candidates_json,
         &native_editor_json,
     )
-    .map_err(|e| {
+    .map_err(|error| {
         PyOSError::new_err(format!(
-            "Unable to parse native topology editor payload JSON: {e}"
+            "Unable to compile/write topology payload for '{source}' using mode '{compile_mode}': {error}"
         ))
     })?;
-    // Rung 1.5 §1.3: the editor payload is no longer a persisted domain
-    // object. The legacy Python graph payload still supplies one; project it
-    // into canonical (the ONLY persisted object) so compile_mode reads
-    // canonical-derived editor state.
-    let native_canonical = lqos_config::TopologyCanonicalStateFile::from_editor_and_network(
-        &native_editor,
-        &compatibility_network_json,
-        lqos_config::TopologyCanonicalIngressKind::NativeIntegration,
-    );
-    let imported = ImportedTopologyBundle {
-        source: source.clone(),
-        generated_unix: None,
-        ingress_identity: None,
-        native_canonical: Some(native_canonical),
-        parent_candidates: Some(parent_candidates),
-        compatibility_network_json,
-        shaped_devices,
-        circuit_anchors,
-        ethernet_advisories: Vec::new(),
-        circuit_matches: Default::default(),
-    };
-    let topology_import = TopologyImportFile::from_imported_bundle(&imported, compile_mode.clone());
-    let mode = parse_topology_compile_mode(&compile_mode)?;
-    let compiled = compile_topology(imported, mode).map_err(|e| {
-        PyOSError::new_err(format!(
-            "Unable to compile topology payload for '{source}' using mode '{compile_mode}': {e}"
-        ))
-    })?;
-    let compiled_shaping =
-        TopologyCompiledShapingFile::from_compiled(&compiled, compile_mode.clone());
-    write_compiled_topology_outputs(
-        config.as_ref(),
-        &topology_import,
-        &compiled_shaping,
-        compiled,
-    )?;
     Ok(true)
 }
 
@@ -2433,48 +2425,112 @@ fn visp_timeout_secs() -> PyResult<u64> {
         .unwrap_or(20))
 }
 
+fn loaded_topology_source() -> Option<lqos_config::TopologySource> {
+    lqos_config::load_config()
+        .ok()
+        .and_then(|config| config.active_topology_source())
+}
+
+fn topology_source_selects(
+    source: Option<lqos_config::TopologySource>,
+    expected: lqos_config::TopologySource,
+) -> bool {
+    source == Some(expected)
+}
+
+fn topology_source_status_parts(
+    config: &lqos_config::Config,
+) -> (Option<String>, Option<String>, Option<String>) {
+    (
+        config
+            .topology
+            .source
+            .map(|source| source.as_str().to_string()),
+        config
+            .topology_source_runtime
+            .conflict
+            .as_ref()
+            .map(|conflict| conflict.message.clone()),
+        Some(config.topology_source_runtime.origin.as_str().to_string()),
+    )
+}
+
+#[pyfunction]
+fn reload_config_from_disk() -> PyResult<()> {
+    lqos_config::clear_cached_config();
+    lqos_config::load_config()
+        .map(|_| ())
+        .map_err(|error| PyOSError::new_err(error.to_string()))
+}
+
+#[pyfunction]
+fn topology_source_status() -> PyResult<(Option<String>, Option<String>, Option<String>)> {
+    let config =
+        lqos_config::load_config().map_err(|error| PyOSError::new_err(error.to_string()))?;
+    Ok(topology_source_status_parts(config.as_ref()))
+}
+
+#[pyfunction]
+fn active_topology_source() -> PyResult<Option<String>> {
+    Ok(loaded_topology_source().map(|source| source.as_str().to_string()))
+}
+
+#[pyfunction]
+fn topology_compile_mode() -> PyResult<String> {
+    let config =
+        lqos_config::load_config().map_err(|error| PyOSError::new_err(error.to_string()))?;
+    Ok(config
+        .shared_topology_compile_mode()
+        .unwrap_or("full")
+        .to_string())
+}
+
 #[pyfunction]
 fn automatic_import_uisp() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config.uisp_integration.enable_uisp)
+    Ok(topology_source_selects(
+        loaded_topology_source(),
+        lqos_config::TopologySource::Uisp,
+    ))
 }
 
 #[pyfunction]
 fn automatic_import_splynx() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config.splynx_integration.enable_splynx)
+    Ok(topology_source_selects(
+        loaded_topology_source(),
+        lqos_config::TopologySource::Splynx,
+    ))
 }
 
 #[pyfunction]
 fn automatic_import_netzur() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config
-        .netzur_integration
-        .as_ref()
-        .map(|cfg| cfg.enable_netzur)
-        .unwrap_or(false))
+    Ok(topology_source_selects(
+        loaded_topology_source(),
+        lqos_config::TopologySource::Netzur,
+    ))
 }
 
 #[pyfunction]
 fn automatic_import_visp() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config
-        .visp_integration
-        .as_ref()
-        .map(|cfg| cfg.enable_visp)
-        .unwrap_or(false))
+    Ok(topology_source_selects(
+        loaded_topology_source(),
+        lqos_config::TopologySource::Visp,
+    ))
 }
 
 #[pyfunction]
 fn queue_refresh_interval_mins() -> PyResult<u32> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config.integration_common.queue_refresh_interval_mins)
+    Ok(lqos_config::load_config()
+        .ok()
+        .map(|config| config.integration_common.queue_refresh_interval_mins)
+        .unwrap_or(30))
 }
 
 #[pyfunction]
 fn automatic_import_powercode() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config.powercode_integration.enable_powercode)
+    Ok(topology_source_selects(
+        loaded_topology_source(),
+        lqos_config::TopologySource::Powercode,
+    ))
 }
 
 #[pyfunction]
@@ -2493,8 +2549,10 @@ fn powercode_api_url() -> PyResult<String> {
 
 #[pyfunction]
 fn automatic_import_sonar() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    Ok(config.sonar_integration.enable_sonar)
+    Ok(topology_source_selects(
+        loaded_topology_source(),
+        lqos_config::TopologySource::Sonar,
+    ))
 }
 
 #[pyfunction]
@@ -2685,11 +2743,10 @@ pub fn blackboard_submit(subsystem: String, key: String, value: String) -> PyRes
 
 #[pyfunction]
 fn automatic_import_wispgate() -> PyResult<bool> {
-    let config = lqos_config::load_config().unwrap();
-    let Some(wisp_gate) = config.wispgate_integration.as_ref() else {
-        return Ok(false);
-    };
-    Ok(wisp_gate.enable_wispgate)
+    Ok(topology_source_selects(
+        loaded_topology_source(),
+        lqos_config::TopologySource::Wispgate,
+    ))
 }
 
 fn rename_legacy_site_bandwidth_csv_to_backup(file_path: &Path) -> Result<()> {
@@ -3315,8 +3372,18 @@ pub fn hash_to_i64(text: String) -> PyResult<i64> {
 mod tests {
     use super::{
         calculate_shaping_runtime_hash_for_base, imported_bundle_from_libreqos_network_payload,
+        imported_bundle_from_python_graph_payload, topology_source_selects,
+        topology_source_status_parts,
+        write_compiled_topology_from_network_json_payload_to_config,
+        write_compiled_topology_from_python_graph_payload_to_config,
     };
+    use lqos_config::{
+        TOPOLOGY_CANONICAL_STATE_FILENAME, TOPOLOGY_COMPILED_SHAPING_FILENAME,
+        TOPOLOGY_IMPORT_FILENAME, TOPOLOGY_PARENT_CANDIDATES_FILENAME,
+    };
+    use lqos_config::TopologySource;
     use std::fs;
+    use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
     #[test]
@@ -3515,13 +3582,13 @@ mod tests {
     #[test]
     fn libreqos_network_payload_door_builds_the_native_bundle() {
         let payload = r#"{
-            "schema_version": 1,
+            "schema_version": 2,
             "match": { "mode": "vxlan+vlan" },
             "topology": [ { "id": "s1", "type": "site", "name": "Site 1" } ],
             "circuits": [
                 { "id": "c1",
                   "parent": "s1",
-                  "plan": { "commit_down_bps": 10000000, "commit_up_bps": 5000000, "ceil_down_bps": 100000000, "ceil_up_bps": 50000000 },
+                  "plan": { "commit_down_mbps": 10.0, "commit_up_mbps": 5.0, "ceil_down_mbps": 100.0, "ceil_up_mbps": 50.0 },
                   "match": { "vni": 100, "vlan": 64 } }
             ]
         }"#;
@@ -3554,7 +3621,152 @@ mod tests {
             Ok(_) => panic!("the compatibility network.json shape is no longer accepted"),
             Err(error) => error,
         };
+        let error = error.to_string();
         assert!(error.contains("libreqos_network.json"), "{error}");
+    }
+
+    fn temp_core_config(path: &Path) -> lqos_config::Config {
+        lqos_config::Config {
+            lqos_directory: path.display().to_string(),
+            state_directory: Some(path.join("state").display().to_string()),
+            ..lqos_config::Config::default()
+        }
+    }
+
+    fn output_paths(config: &lqos_config::Config) -> [PathBuf; 4] {
+        [
+            config.topology_state_file_path(TOPOLOGY_IMPORT_FILENAME),
+            config.shaping_state_file_path(TOPOLOGY_COMPILED_SHAPING_FILENAME),
+            config.topology_state_file_path(TOPOLOGY_PARENT_CANDIDATES_FILENAME),
+            config.topology_state_file_path(TOPOLOGY_CANONICAL_STATE_FILENAME),
+        ]
+    }
+
+    #[test]
+    fn python_payload_door_and_shared_core_write_byte_identical_outputs() {
+        let payload = r#"{
+            "schema_version": 2,
+            "match": { "mode": "vxlan+vlan" },
+            "topology": [ { "id": "s1", "type": "site", "name": "Site 1" } ],
+            "circuits": [
+                { "id": "c1",
+                  "parent": "s1",
+                  "plan": { "commit_down_mbps": 10.0, "commit_up_mbps": 5.0, "ceil_down_mbps": 100.0, "ceil_up_mbps": 50.0 },
+                  "match": { "vni": 100, "vlan": 64 } }
+            ]
+        }"#;
+        let python_temp = tempdir().expect("python tempdir");
+        let core_temp = tempdir().expect("core tempdir");
+        let python_config = temp_core_config(python_temp.path());
+        let core_config = temp_core_config(core_temp.path());
+
+        write_compiled_topology_from_network_json_payload_to_config(
+            &python_config,
+            "libreqos_network",
+            "full",
+            payload,
+        )
+        .expect("the Python payload door should write");
+        let imported = imported_bundle_from_libreqos_network_payload("libreqos_network", payload)
+            .expect("the payload should import");
+        lqos_topology_compile::compile_and_write_imported(
+            &core_config,
+            imported,
+            "full",
+            lqos_topology_compile::TopologyWriteOrigin::Api,
+            None,
+        )
+        .expect("the shared core should write");
+
+        for (python_path, core_path) in output_paths(&python_config)
+            .into_iter()
+            .zip(output_paths(&core_config))
+        {
+            assert_eq!(
+                fs::read(&python_path).expect("python output"),
+                fs::read(&core_path).expect("core output"),
+                "{} and {} must be byte-identical",
+                python_path.display(),
+                core_path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn python_graph_door_and_shared_core_write_byte_identical_outputs() {
+        let compatibility = r#"{
+            "Site 1": {
+                "children": {},
+                "id": "s1",
+                "name": "Site 1",
+                "type": "Site",
+                "downloadBandwidthMbps": 1000.0,
+                "uploadBandwidthMbps": 1000.0
+            }
+        }"#;
+        let csv = "Circuit ID,Circuit Name,Device ID,Device Name,Parent Node,Parent Node ID,Anchor Node ID,MAC,IPv4,IPv6,Download Min Mbps,Upload Min Mbps,Download Max Mbps,Upload Max Mbps,Comment\n\"c1\",\"C1\",\"d1\",\"d1\",\"Site 1\",\"s1\",\"\",\"aa:bb:cc:dd:ee:ff\",\"192.0.2.10/32\",\"\",10,5,100,50,\"\"\n";
+        let anchors = r#"{
+            "schema_version": 1,
+            "source": "python/graph",
+            "anchors": [ {
+                "circuit_id": "c1",
+                "circuit_name": "C1",
+                "anchor_node_id": "s1",
+                "anchor_node_name": "Site 1"
+            } ]
+        }"#;
+        let parents = r#"{"source":"python/graph","nodes":[]}"#;
+        let editor = r#"{
+            "schema_version": 1,
+            "source": "python/graph",
+            "nodes": [ { "node_id": "s1", "node_name": "Site 1" } ]
+        }"#;
+        let door_temp = tempdir().expect("graph door tempdir");
+        let core_temp = tempdir().expect("graph core tempdir");
+        let door_config = temp_core_config(door_temp.path());
+        let core_config = temp_core_config(core_temp.path());
+
+        write_compiled_topology_from_python_graph_payload_to_config(
+            &door_config,
+            "python/graph",
+            "full",
+            compatibility,
+            csv,
+            anchors,
+            parents,
+            editor,
+        )
+        .expect("the Python graph door should write");
+        let imported = imported_bundle_from_python_graph_payload(
+            "python/graph",
+            compatibility,
+            csv,
+            anchors,
+            parents,
+            editor,
+        )
+        .expect("the graph payload should import");
+        lqos_topology_compile::compile_and_write_imported(
+            &core_config,
+            imported,
+            "full",
+            lqos_topology_compile::TopologyWriteOrigin::Api,
+            None,
+        )
+        .expect("the shared core should write");
+
+        for (door_path, core_path) in output_paths(&door_config)
+            .into_iter()
+            .zip(output_paths(&core_config))
+        {
+            assert_eq!(
+                fs::read(&door_path).expect("graph door output"),
+                fs::read(&core_path).expect("graph core output"),
+                "{} and {} must be byte-identical",
+                door_path.display(),
+                core_path.display()
+            );
+        }
     }
 
     /// Upstream #1151 (`lqos-74t.45`): the download accessor returned the UPLINK
@@ -3573,4 +3785,65 @@ mod tests {
         config.queues.uplink_bandwidth_mbps = 500.0;
         assert_eq!(super::upstream_capacities_mbps(&config), (50, 500));
     }
+    #[test]
+    fn automatic_import_shims_follow_the_selector_not_the_legacy_flags() {
+        for (source, expected) in [
+            (TopologySource::Uisp, TopologySource::Uisp),
+            (TopologySource::Splynx, TopologySource::Splynx),
+            (TopologySource::Netzur, TopologySource::Netzur),
+            (TopologySource::Visp, TopologySource::Visp),
+            (TopologySource::Sonar, TopologySource::Sonar),
+            (TopologySource::Powercode, TopologySource::Powercode),
+            (TopologySource::Wispgate, TopologySource::Wispgate),
+        ] {
+            assert!(topology_source_selects(Some(source), expected));
+            for other in TopologySource::ALL {
+                if other != expected {
+                    assert!(
+                        !topology_source_selects(Some(source), other),
+                        "{source:?} must not select {other:?}"
+                    );
+                }
+            }
+        }
+        assert!(!topology_source_selects(None, TopologySource::Uisp));
+    }
+
+    #[test]
+    fn topology_source_status_distinguishes_missing_conflict_and_source() {
+        let mut config = lqos_config::Config::default();
+        config.topology.source = None;
+        config.topology_source_runtime.origin = lqos_config::TopologySourceOrigin::Missing;
+        assert_eq!(
+            topology_source_status_parts(&config),
+            (None, None, Some("missing".to_string()))
+        );
+
+        config.topology.source = Some(TopologySource::Visp);
+        config.topology_source_runtime.origin = lqos_config::TopologySourceOrigin::Config;
+        assert_eq!(
+            topology_source_status_parts(&config),
+            (
+                Some("visp".to_string()),
+                None,
+                Some("config".to_string())
+            )
+        );
+
+        config.topology_source_runtime.conflict =
+            Some(lqos_config::TopologySourceConflict {
+                source: Some(TopologySource::Visp),
+                enabled: vec!["enable_uisp".to_string()],
+                message: "topology source conflict".to_string(),
+            });
+        assert_eq!(
+            topology_source_status_parts(&config),
+            (
+                Some("visp".to_string()),
+                Some("topology source conflict".to_string()),
+                Some("config".to_string())
+            )
+        );
+    }
+
 }

@@ -466,9 +466,7 @@ done
 
 CHECKER="${LQOS_PREFLIGHT_CHECKER:-/usr/libexec/libreqos/libreqos-v3-preflight}"
 if [ -x "$CHECKER" ]; then
-    # `lqos-74t.147`: the preinst is the PRE-INSTALL surface — expected fresh
-    # facts are NOTE lines and must not flip PASS to WARN.
-    ARGS=(--pre-install)
+    ARGS=()
     if [ -n "${LQOS_PREFLIGHT_PAIR_DIR:-}" ]; then
         ARGS+=(--pair-dir "$LQOS_PREFLIGHT_PAIR_DIR")
     fi

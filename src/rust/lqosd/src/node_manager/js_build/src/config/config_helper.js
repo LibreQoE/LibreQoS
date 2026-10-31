@@ -1,4 +1,15 @@
 import { get_ws_client } from "../pubsub/ws";
+import {
+    TOPOLOGY_SOURCES,
+    activeTopologySourceIntegrations,
+    buildTopologyConfigUpdate,
+    topologyEditorsLocked,
+    topologyEditorsLockMessage,
+    topologySource,
+    topologySourceDefinition,
+    topologySourceLabel,
+} from "./topology_source";
+
 
 const wsClient = get_ws_client();
 const secretBindings = [];
@@ -108,45 +119,59 @@ function ensureOptionalConfigSections(config) {
         }
         return ["flat", "ap_only", "ap_site", "full"].includes(lowered) ? lowered : "";
     };
-    if (typeof topology.compile_mode !== "string" || topology.compile_mode.length === 0) {
-        topology.compile_mode = normalizeMode(topology.compile_mode)
-            || normalizeMode(config.uisp_integration?.strategy)
+    const rawTopologyMode = typeof topology.compile_mode === "string"
+        ? topology.compile_mode.trim()
+        : "";
+    if (rawTopologyMode.length === 0) {
+        topology.compile_mode = normalizeMode(config.uisp_integration?.strategy)
             || normalizeMode(splynx.strategy)
             || (config.uisp_integration?.enable_uisp ? "full" : "")
             || (splynx.enable_splynx ? "ap_site" : "")
-            || "ap_site";
+            || "full";
     } else {
-        topology.compile_mode = normalizeMode(topology.compile_mode) || "ap_site";
+        // Keep an unsupported value visible so the selector UI can require an
+        // explicit valid choice instead of silently resetting it.
+        topology.compile_mode = normalizeMode(rawTopologyMode) || rawTopologyMode;
     }
     return config;
 }
 
-const TOPOLOGY_SOURCE_INTEGRATIONS = [
-    { name: "UISP", enabled: (config) => !!config?.uisp_integration?.enable_uisp },
-    { name: "Splynx", enabled: (config) => !!config?.splynx_integration?.enable_splynx },
-    { name: "Powercode", enabled: (config) => !!config?.powercode_integration?.enable_powercode },
-    { name: "Sonar", enabled: (config) => !!config?.sonar_integration?.enable_sonar },
-    { name: "Netzur", enabled: (config) => !!config?.netzur_integration?.enable_netzur },
-    { name: "VISP", enabled: (config) => !!config?.visp_integration?.enable_visp },
-    { name: "WispGate", enabled: (config) => !!config?.wispgate_integration?.enable_wispgate },
-];
+export {
+    TOPOLOGY_SOURCES,
+    activeTopologySourceIntegrations,
+    buildTopologyConfigUpdate,
+    topologyEditorsLocked,
+    topologyEditorsLockMessage,
+    topologySource,
+    topologySourceDefinition,
+    topologySourceLabel,
+};
 
-export function activeTopologySourceIntegrations(config) {
-    return TOPOLOGY_SOURCE_INTEGRATIONS.filter((entry) => entry.enabled(config)).map(
-        (entry) => entry.name,
-    );
-}
-
-export function topologyEditorsLocked(config) {
-    return activeTopologySourceIntegrations(config).length > 0;
-}
-
-export function topologyEditorsLockMessage(config) {
-    const active = activeTopologySourceIntegrations(config);
-    if (active.length === 0) {
-        return "";
+/**
+ * Make the per-integration enable_* checkbox a read-only display of the
+ * selector. Missing sections are left absent (the flag is false); this helper
+ * never writes window.config.
+ */
+export function applyTopologySourceCheckboxState(config) {
+    const source = topologySource(config);
+    for (const definition of TOPOLOGY_SOURCES) {
+        if (!definition.integration || !definition.domId) continue;
+        const input = document.getElementById(definition.domId);
+        if (!input) continue;
+        input.disabled = true;
+        input.checked = source === definition.value;
+        const wrapper = input.closest(".form-check");
+        if (!wrapper) continue;
+        let note = wrapper.querySelector(".topology-source-note");
+        if (!note) {
+            note = document.createElement("div");
+            note.className = "form-text topology-source-note";
+            wrapper.appendChild(note);
+        }
+        note.textContent = source === definition.value
+            ? "Selected by Topology Source."
+            : "Not the active topology source.";
     }
-    return `Editing is disabled because these integrations are the source of truth: ${active.join(", ")}.`;
 }
 
 export function loadConfig(onComplete, onError) {
@@ -156,9 +181,11 @@ export function loadConfig(onComplete, onError) {
         (msg) => {
             const payload = msg && msg.data ? msg.data : {};
             window.config = ensureOptionalConfigSections(payload.config || {});
+            window.configView = payload;
             window.configSecretState = payload.secret_state || {};
             window.configSecretClears = {};
             if (onComplete) onComplete(msg);
+            setTimeout(() => applyTopologySourceCheckboxState(window.config), 0);
         },
         onError,
     );
