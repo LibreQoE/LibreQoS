@@ -2,29 +2,32 @@ use crate::node_manager::auth::auth_layer;
 use crate::node_manager::template::apply_templates;
 use anyhow::{Result, bail};
 use axum::Router;
-use lqos_config::load_config;
 use std::path::Path;
 use tower_http::services::{ServeDir, ServeFile};
 
-pub(super) fn vendor_route() -> Result<Router> {
-    let config = load_config()?;
-    let vendor_path = Path::new(&config.lqos_directory)
-        .join("bin")
-        .join("static2")
-        .join("vendor");
+/// Returns the static file service that serves vendored assets from
+/// `<static_root>/vendor`, for mounting with `Router::nest_service`.
+///
+/// Fails when the vendor directory is missing, so a deployment with an
+/// incomplete `static2` tree is reported at startup rather than served empty.
+pub(super) fn vendor_service(static_root: &Path) -> Result<ServeDir> {
+    let vendor_path = static_root.join("vendor");
 
     if !vendor_path.exists() {
-        bail!("Vendor path not found for webserver (bin/static2/vendor/");
+        bail!(
+            "Vendor path not found for webserver ({})",
+            vendor_path.display()
+        );
     }
 
-    let router = Router::new().nest_service("/", ServeDir::new(vendor_path));
-
-    Ok(router)
+    Ok(ServeDir::new(vendor_path))
 }
 
-pub(super) fn static_routes() -> Result<Router> {
-    let config = load_config()?;
-
+/// Builds the router that serves the templated HTML pages from `static_root`.
+///
+/// Authentication and templating are applied as route layers, so only the
+/// pages listed here receive them. Fails when a listed page is missing.
+pub(super) fn static_routes(static_root: &Path) -> Result<Router> {
     // Add HTML pages to serve directly to this list, otherwise
     // they won't have template + authentication applied to them.
     let html_pages = [
@@ -91,10 +94,7 @@ pub(super) fn static_routes() -> Result<Router> {
     // Iterate through pages and construct the router
     let mut router = Router::new();
     for page in html_pages.iter() {
-        let path = Path::new(&config.lqos_directory)
-            .join("bin")
-            .join("static2")
-            .join(page);
+        let path = static_root.join(page);
 
         if !path.exists() {
             bail!("Missing webpage: {page}");
@@ -105,10 +105,7 @@ pub(super) fn static_routes() -> Result<Router> {
 
     // Backwards compatible alias for historical misspelling.
     // This route is included in the templated/authenticated router so bookmarks keep working.
-    let splynx_path = Path::new(&config.lqos_directory)
-        .join("bin")
-        .join("static2")
-        .join("config_splynx.html");
+    let splynx_path = static_root.join("config_splynx.html");
     router = router.route_service("/config_spylnx.html", ServeFile::new(splynx_path));
 
     router = router

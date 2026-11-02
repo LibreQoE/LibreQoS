@@ -125,7 +125,7 @@ pub fn mint_next_shaping_generation_read_only(config: &Config) -> Result<Option<
     Ok(mint_next_shaping_inputs_read_only(config)?.map(|inputs| inputs.shaping_generation))
 }
 
-/// The custody LEG that failed (the deriver ``; the implementer `` R1-R2).
+/// The custody LEG that failed (the coordinator `rev 2996`; the reviewer `rev 2999` R1-R2).
 ///
 /// Every `verified: Some(false)` verdict names exactly ONE leg; `None` is
 /// reserved for `verified: None` (no inputs) and `Some(true)`. The 6
@@ -343,7 +343,7 @@ pub fn verify_published_shaping_generation(
     };
     if !on_disk.semantic_equals(&expected) {
         let file_generation = on_disk.shaping_generation.trim().to_string();
- // TWO-TIER (review: a blanket fresh-tolerate would let a
+        // TWO-TIER (review rev 4294/4295): a blanket fresh-tolerate would let a
         // FRESH TAMPERED artifact load. So:
         //  (i) EXACT when the WORLDS MATCH (`generation == status.source_generation`):
         //      the on-disk artifact MUST equal the fresh mint's content — a tamper
@@ -484,7 +484,7 @@ fn diagnose_operator_view_generation(
     effective_generation: &str,
     write_skipped: bool,
 ) {
- // log the STATUS's own operator-view path + generation, so a
+    // the coordinator rev 3043: log the STATUS's own operator-view path + generation, so a
     // 2nd-writer / path mismatch is distinguishable from a round-trip
     // non-identity. And the IN-MEMORY round-trip hash: if it equals
     // `effective_generation` while the FILE does not, the file was written from
@@ -523,7 +523,7 @@ fn diagnose_operator_view_generation(
         .ok()
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok());
     let Some(disk) = on_disk.as_ref() else {
- // R2: an unreadable/unparseable on-disk file has NO
+        // the reviewer rev 3029 R2: an unreadable/unparseable on-disk file has NO
         // diff — a distinct verdict, never a misleading "keys equal".
         tracing::warn!(
             "Topology operator-view diag: file generation MISMATCH (status={effective_generation} file={file_generation} roundtrip={roundtrip_generation:?}) — on-disk operator view unreadable/unparseable; diff unavailable; skipped_write={write_skipped}, file_mtime_unix={mtime_unix:?}, diag_path={path:?}, status_operator_view_path={status_path:?}, status_effective={status_effective:?}"
@@ -538,7 +538,7 @@ fn diagnose_operator_view_generation(
     );
 }
 
-/// R1/R2; a BOUNDED recursive diff of the
+/// R1/R2 (the reviewer rev 3043; the coordinator rev 3043): a BOUNDED recursive diff of the
 /// operator-view `nodes` array — PATHS only (`nodes[*].<field>` / `nodes[<i>]`),
 /// first <= 8 distinct + a total count — plus a deep `nodes` equality bool. A
 /// 925-node recursive value dump would flood the journal/capture.
@@ -554,7 +554,7 @@ fn operator_view_nodes_diff(in_memory: &Value, on_disk: &Value) -> (bool, Vec<St
     ) else {
         return (false, vec!["nodes".to_string()], 1);
     };
- // `zip` stops at the shorter array, so a LENGTH-only
+    // the reviewer rev 3047: `zip` stops at the shorter array, so a LENGTH-only
     // difference would log `nodes_equal=false` yet no paths/count. Name it.
     let length_only = a.len() != b.len();
     let mut fields: Vec<String> = Vec::new();
@@ -838,7 +838,7 @@ pub fn publish_effective_topology_artifacts(    config: &Config,
     // Status fold (the #12 HIGH): the readiness chain must never name
     // a dead file — `operator_view_path` names the E2 operator view and
     // `effective_generation` is its content hash.
- // (b) /: `effective_generation` is the
+    // (b) the coordinator rev 3054 / the reviewer rev 3055: `effective_generation` is the
     // CONTENT hash of the PERSISTED operator view. `serde_json::to_value` of an
     // f32 field does NOT round-trip through JSON (a 1-ULP loss), so hash EXACTLY
     // the serialized form — the SAME form `atomic_write_json_value` writes and
@@ -851,7 +851,7 @@ pub fn publish_effective_topology_artifacts(    config: &Config,
         .with_context(|| {
             "Unable to compute the operator view generation".to_string()
         })?;
- // R1-R3 DIAG; the operator-view
+    // R1-R3 DIAG (the coordinator rev 3020; the reviewer rev 3019): the operator-view
     // serialization asymmetry left a PERSISTENT `effective_mismatch` (Leg 3).
     // After the (possibly skipped) write, compare the ON-DISK semantic
     // generation against the in-memory status hash using the EXISTING file-gen

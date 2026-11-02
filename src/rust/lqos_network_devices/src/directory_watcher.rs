@@ -106,7 +106,7 @@ fn classify_changed_path(path: &Path) -> Option<DirectoryReloadEvent> {
         // T1 (T5 rung 1 repoint): the E2 operator view drives the
         // dashboard tree (the topology state dir is already watched).
         "topology_operator_view.json" => Some(DirectoryReloadEvent::DataplaneTree),
- // E3 retarget): the layered override files carry
+        // E3 (rev 426 retarget): the layered override files carry
         // rate-class circuit adjustments — a change must re-fold the
         // shaping inputs so the artifact (and the live bridge) picks
         // it up. Covers UI, CLI, and machine writers alike.

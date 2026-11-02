@@ -213,12 +213,12 @@ pub fn current_throughput() -> BusResponse {
     // the owner — read the bridge's own top-level interval counters.
     // 3b §1.1: the pps series folds the actor's per-IP SENT rows (all
     // transports), and the tcp/udp/icmp splits come from the per-flow packet
- // delta seed ruling c) — CLASSIFIED-only, so the split sum tracks
+    // delta seed (rev 834 ruling c) — CLASSIFIED-only, so the split sum tracks
     // the total up to the Unknown-transport residual.
     if crate::bridge_analytics::is_active() {
         let snapshot = crate::bridge_analytics::snapshot();
         let protocol = snapshot.protocol_packets_per_second;
- // 3b display semantics: customer-facing throughput = the
+        // 3b display semantics (rev 846): customer-facing throughput = the
         // DELIVERED (shaped) rate everywhere; the pre-shaping ingress demand is
         // a separate labeled metric, never this headline.
         return BusResponse::CurrentThroughput {
@@ -257,7 +257,7 @@ pub fn host_counters() -> BusResponse {
     // in the actor cache; the kernel tracker is never written post-K3.
     if crate::bridge_analytics::is_active() {
         let snapshot = crate::bridge_analytics::snapshot();
- // 3b demand-source sweep: the host rate map reports the
+        // 3b (rev 861) demand-source sweep: the host rate map reports the
         // DELIVERED (shaped) series.
         let result = snapshot
             .by_ip
@@ -339,7 +339,7 @@ fn bridge_ip_rows() -> Vec<BridgeIpRow> {
                 .unwrap_or((None, String::new()));
             BridgeIpRow {
                 ip: *ip,
- // 3b demand-source sweep: ranked/displayed throughput
+                // 3b (rev 861) demand-source sweep: ranked/displayed throughput
                 // is the DELIVERED (shaped) series.
                 bytes: live.shaped_bytes_per_second,
                 packets: live.packets_per_second,
@@ -409,7 +409,7 @@ pub fn top_n(start: u32, end: u32) -> BusResponse {
             .iter()
             .filter(|(ip, _)| !ip.is_loopback())
             .collect();
- // 3b demand-source sweep: rank + report the DELIVERED
+        // 3b (rev 861) demand-source sweep: rank + report the DELIVERED
         // (shaped) series; `bytes_per_second` is the pre-shaping demand.
         rows.sort_by_key(|(_, row)| std::cmp::Reverse(row.shaped_bytes_per_second.down));
         let result = rows
@@ -1634,7 +1634,7 @@ fn flow_row_to_summary(
         ip_protocol: flow.id.protocol.into(),
         start_time: flow.first_seen_millis,
         last_seen: flow.last_seen_millis,
- // 3b: `bytes_sent` reports the DELIVERED (shaped) per-flow
+        // 3b (rev 866): `bytes_sent` reports the DELIVERED (shaped) per-flow
         // series — naming parity (sent != enqueued); `actual` is the demand.
         bytes_sent: DownUpOrder {
             down: flow.shaped.download_bytes,
@@ -2168,7 +2168,7 @@ mod compatibility_tests {
                 remote_port: 443,
                 protocol: 6,
             },
- // 3b sweep-fixture guard: demand != delivered.
+            // 3b rev 866 sweep-fixture guard: demand != delivered.
             actual: analytics_ipc::DirectionalCounters {
                 download_bytes: 999,
                 upload_bytes: 999,
@@ -2721,6 +2721,9 @@ mod compatibility_tests {
 
     #[test]
     fn circuit_current_qoo_reads_from_shared_circuit_heatmap() {
+        // The bridge snapshot wins when the actor is live; this test covers the
+        // pre-bridge fallback, so it pins the fallback side of that split.
+        let _mode = crate::bridge_analytics::with_bridge_mode(false);
         let mut heatmap = TemporalQoqHeatmap::new();
         heatmap.add_sample(Some(88.0), Some(77.0));
 

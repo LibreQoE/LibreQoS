@@ -1991,7 +1991,7 @@ fn oracle1_live_corpus_covers_generated_shapes_and_attachments() {
 /// (3b) GENERATED HOLDS: a changed `libreqos:generated:*` subtree is held by
 /// the producer (no live generated move — the `.12` invariant). The held
 /// transition is still a REAL change: the R3/bundle rebuild (the compiled
-/// desired world) is the world the lane converges to.
+/// desired world) is the world the implementer converges to.
 #[test]
 fn oracle1_live_corpus_generated_changes_now_flow() {
     // P7/B3 RETIRED (R3 card §2; DRIVER (b)): a changed `libreqos:generated:*`

@@ -2,7 +2,7 @@
 Description=LibreQoS scheduler (the integration hub)
 Wants=network-online.target
 After=network-online.target systemd-resolved.service libreqos-lqosd.service
-# Q4: the scheduler's bus peer is lqosd; the bridge relationship is
+# Q4 (rev 1104): the scheduler's bus peer is lqosd; the bridge relationship is
 # lqosd's concern. The scheduler runs in BOTH postures.
 Requires=libreqos-lqosd.service
 

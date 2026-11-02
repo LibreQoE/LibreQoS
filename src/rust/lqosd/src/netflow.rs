@@ -1,5 +1,5 @@
 //! 3a group-1: the bridge NetFlow exporter (docs/netflow_on_bridge_derivation.md
-//! §2-§4). F-A EXPORT-AS-IS: the exporter is a cold-path v3-side
+//! §2-§4). F-A EXPORT-AS-IS (rev 784): the exporter is a cold-path v3-side
 //! consumer of the retained bridge flow rows; the dataplane NEVER exports, so
 //! there are ZERO bridge lines. The format is version 9 (template-based).
 //!
@@ -878,7 +878,7 @@ mod tests {
         }
     }
 
- /// The IN_PKTS fill, ruling i): each directional record
+    /// The IN_PKTS fill (rev 826, rev 807 ruling i): each directional record
     /// carries that direction's all-protocol sent packets — dir 0 (upload)
     /// reads `sent_pkts_up`, dir 1 (download) reads `sent_pkts_down`.
     #[test]

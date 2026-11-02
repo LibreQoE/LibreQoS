@@ -125,16 +125,14 @@ const RUNTIME_UNITS: &[&str] = &[
     "libreqos-lqosd.service",
     "libreqos-bridge.service",
     "libreqos-scheduler.service",
-    "libreqos-api.service",
 ];
 
 /// Stops setup and starts the runtime services immediately.
 ///
 /// Side effects: disables and stops `libreqos-first-run.service`, then enables and
-/// restarts `libreqos-lqosd.service`, `libreqos-bridge.service`,
-/// `libreqos-scheduler.service`, and `libreqos-api.service` in that order (lqosd
-/// first for the v2→v3 migration; the scheduler/analytics attach to a live
-/// dataplane).
+/// restarts `libreqos-lqosd.service`, `libreqos-bridge.service`, and
+/// `libreqos-scheduler.service` in that order (lqosd first for the v2→v3
+/// migration; the scheduler/analytics attach to a live dataplane).
 pub(crate) fn activate_runtime_services() -> Result<String> {
     // The legacy v2 config path is the only one on a v2 box, while the runtime
     // units pin `LQOS_CONFIG` to the canonical v3 path; migrate (copy-only)
@@ -220,7 +218,7 @@ pub(crate) fn activate_runtime_services() -> Result<String> {
     switch_service_mode(
         &["libreqos-first-run.service"],
         RUNTIME_UNITS,
-        "Activated runtime services: libreqos-lqosd, libreqos-bridge, libreqos-scheduler, and libreqos-api.",
+        "Activated runtime services: libreqos-lqosd, libreqos-bridge, and libreqos-scheduler.",
     )
 }
 
@@ -230,11 +228,7 @@ pub(crate) fn activate_runtime_services() -> Result<String> {
 /// `libreqos-scheduler.service`, then enables and restarts `libreqos-first-run.service`.
 pub(crate) fn activate_setup_service() -> Result<String> {
     switch_service_mode(
-        &[
-            "libreqos-lqosd.service",
-            "libreqos-scheduler.service",
-            "libreqos-api.service",
-        ],
+        &["libreqos-lqosd.service", "libreqos-scheduler.service"],
         &["libreqos-first-run.service"],
         "Activated first-run setup service: libreqos-first-run.",
     )
@@ -248,21 +242,21 @@ pub(crate) fn activate_setup_service() -> Result<String> {
 pub(crate) fn schedule_runtime_handoff() -> Result<HandoffNotice> {
     if std::env::var_os("INVOCATION_ID").is_none() {
         return Ok(HandoffNotice {
-            message: "Setup saved. Start libreqos-lqosd, libreqos-scheduler, and libreqos-api manually because this setup run is not being managed by systemd.".to_string(),
+            message: "Setup saved. Start libreqos-lqosd and libreqos-scheduler manually because this setup run is not being managed by systemd.".to_string(),
             automatic: false,
         });
     }
 
     if unsafe { libc::geteuid() } != 0 {
         return Ok(HandoffNotice {
-            message: "Setup saved. Start libreqos-lqosd, libreqos-scheduler, and libreqos-api manually because the current setup process is not running as root.".to_string(),
+            message: "Setup saved. Start libreqos-lqosd and libreqos-scheduler manually because the current setup process is not running as root.".to_string(),
             automatic: false,
         });
     }
 
     if !std::path::Path::new(SYSTEMD_RUN_BIN).exists() {
         return Ok(HandoffNotice {
-            message: "Setup saved. Start libreqos-lqosd, libreqos-scheduler, and libreqos-api manually because systemd-run is not available on this host.".to_string(),
+            message: "Setup saved. Start libreqos-lqosd and libreqos-scheduler manually because systemd-run is not available on this host.".to_string(),
             automatic: false,
         });
     }
@@ -289,7 +283,7 @@ pub(crate) fn schedule_runtime_handoff() -> Result<HandoffNotice> {
 
     Ok(HandoffNotice {
         message: format!(
-            "Scheduled runtime handoff via transient unit {unit_name}. LibreQoS setup will stop and libreqos-lqosd/libreqos-scheduler/libreqos-api will start shortly."
+            "Scheduled runtime handoff via transient unit {unit_name}. LibreQoS setup will stop and libreqos-lqosd/libreqos-scheduler will start shortly."
         ),
         automatic: true,
     })
@@ -307,10 +301,8 @@ mod tests {
         let lqosd = pos("libreqos-lqosd.service").expect("lqosd present");
         let bridge = pos("libreqos-bridge.service").expect("bridge present");
         let scheduler = pos("libreqos-scheduler.service").expect("scheduler present");
-        let api = pos("libreqos-api.service").expect("api present");
         assert!(lqosd < bridge, "lqosd (migration) must precede the bridge");
         assert!(bridge < scheduler, "the scheduler attaches to a live dataplane");
-        assert!(scheduler < api, "api follows the scheduler");
     }
 
     #[test]

@@ -4,7 +4,7 @@ pub const OLD_CONFIG: &str = "
 # Change the values to match your setup.
 
 # Where is LibreQoS installed?
-lqos_directory = '/opt/libreqos/src'
+lqos_directory = '/home/libreqos/Rust/LibreQoS/libreqos/LibreQoS/src'
 queue_check_period_ms = 1000
 packet_capture_time = 10 # Number of seconds to capture packets in an analysis session
 node_id = \"aee0eb53606ef621d386ef5fcfa0d72a5ba64fccd36df2997695dfb6d418c64b\"

@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 const CONFIG_BUS_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const KEY_NAME_MAX_CHARS: usize = 64;
-const KEY_RANDOM_BYTES: usize = 32;
+pub(crate) const KEY_RANDOM_BYTES: usize = 32;
 const KEY_ID_GENERATION_ATTEMPTS: usize = 8;
 const KEY_PREFIX: &str = "lqos_api_";
 static CONFIG_UPDATE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
@@ -43,7 +43,7 @@ fn normalize_name(name: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
-fn bytes_to_lower_hex(bytes: &[u8]) -> String {
+pub(super) fn bytes_to_lower_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -65,7 +65,7 @@ fn valid_record(key: &LocalApiKeyConfig) -> bool {
     valid_id && valid_name && valid_digest && key.created_at_unix > 0
 }
 
-fn build_key(
+pub(crate) fn build_key(
     config: &Config,
     name: &str,
     id: Uuid,

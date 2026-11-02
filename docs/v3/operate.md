@@ -12,15 +12,16 @@ v3 host.
 | `libreqos-bridge` | the DPDK dataplane (shaping) | after lqosd (`Requires=` setup) |
 | `libreqos-scheduler` | integrations hub (incl. UISP) | after lqosd |
 | `libreqos-power` | power-profile helper | on demand |
-| `libreqos-api` | the local HTTP API (enabled on a successful install-time fetch) | at install |
 
-The `libreqos` control-plane package provides setup/lqosd/scheduler/power/api;
+The `libreqos` control-plane package provides setup/lqosd/scheduler/power; it also
+serves the node API at `/api/v3`, which is part of `lqosd` rather than a unit of
+its own;
 **`libreqos-bridge` (and its binary + DPDK runtime) comes from the separate
 `libreqos-dataplane` artifact** (`update_bridge.sh`; see
 [Installing v3](install.md)).
 
 ```bash
-systemctl status libreqos-setup libreqos-lqosd libreqos-bridge libreqos-scheduler libreqos-power libreqos-api
+systemctl status libreqos-setup libreqos-lqosd libreqos-bridge libreqos-scheduler libreqos-power
 ```
 
 **Control-plane independence:** stopping `lqosd` does **not** stop traffic

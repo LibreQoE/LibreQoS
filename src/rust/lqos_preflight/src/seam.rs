@@ -1,4 +1,4 @@
-//! The control-seam alignment assert.
+//! The control-seam alignment assert (the coordinator rev 1481/1513).
 //!
 //! An installed `lqosd` built against a different wire `PROTOCOL_VERSION` than
 //! the dataplane artifact rejects the bridge at attach — the observed

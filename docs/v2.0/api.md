@@ -1,78 +1,65 @@
 # LibreQoS Node API
 
-> **Version: LibreQoS v2.0 (archived, v2.0-only).** For current releases see the [LibreQoS v3 documentation](../v3/index.md).
+> **Documents the shipped v3 API.** The API is part of `lqosd`; it is not a
+> separate service or package. See the [v3 documentation](../v3/index.md) for the
+> rest of the product.
 
-## Requirements
+## What It Is
 
-Starting with LibreQoS 2.2, the `lqos_api` Node API follows the same mapped-circuit policy as base LibreQoS:
+`lqosd` links the API as a library and serves it at `/api/v3` on the node
+manager's listener (default `:9123`). There is nothing extra to install, enable,
+download or update:
 
-- Networks with 1,000 or fewer valid mapped circuits can use the API without an Insight subscription.
-- Networks with more than 1,000 valid mapped circuits require a valid API or Insight entitlement.
-- The count is based on unique configured circuit mappings, not recent traffic. Multiple devices in one circuit count once, and rows without an IP mapping do not count.
-- A valid live license or locally cached signed grant can authorize API access above the free limit.
+- API base path: `/api/v3`
+- Interactive documentation (Swagger UI): `/api/v3/docs`
+- Machine-readable specification: `/api/v3/openapi.json`
+- Bind address, TLS and the listener itself: the node manager's (see
+  [operate](../v3/operate.md))
 
-This is the same population used for the base shaping limit:
-- `ShapedDevices.csv` can contain unlimited entries.
-- Without a valid entitled license/grant, LibreQoS admits only the first 1,000 valid mapped circuits into active shaping state.
-- Higher mapped-circuit counts depend on an entitled API or Insight license.
-
-API-only access is available through the **Try Insight** link in the WebUI at half the price of full Insight.
-
-## Source of Truth and Testing
-
-Use Swagger on your node as the complete reference and test surface for your installed build:
-
-- Direct local API port: `http://<node-ip>:9122/api-docs`
-- If optional HTTPS with Caddy is enabled for the WebUI: `https://<hostname-or-node-ip>/api/v1/api-docs`
-
-On systems using managed Caddy HTTPS, leave the API listener on loopback and access it through `/api/v1/`. `LQOS_API_LISTEN` is an advanced override for deployments that intentionally expose the API listener directly; do not set it on managed Caddy systems unless direct API exposure, firewalling, TLS, and operator access controls have been planned together.
-
-Use this page as a capability map. Use Swagger for full endpoint inventory, request/response schemas, and live testing.
-
-Need definitions for persistence and runtime-impact terms? See the [Glossary](glossary.md).
-
-## Install and Enable
-
-If installed via `.deb` (recommended), `lqos_api` is included at:
-
-- `/opt/libreqos/src/bin/lqos_api`
-
-Enable service:
-
-```bash
-sudo cp /opt/libreqos/src/bin/lqos_api.service.example /etc/systemd/system/lqos_api.service
-sudo systemctl daemon-reload
-sudo systemctl enable lqos_api
-sudo systemctl start lqos_api
-```
-
-The shipped `lqos_api.service.example` waits for `network-online.target`, so the API does not start before DNS and the default route are ready.
-
-Update only the API binary:
-
-```bash
-cd /opt/libreqos/src
-./update_api.sh
-```
-
-Verify service state:
-
-```bash
-sudo systemctl status lqos_api
-```
+Because the API shares the node manager's listener, exposing the node manager
+exposes the API. Keep that listener on trusted management networks.
 
 ## Authentication
 
-Most endpoints require:
+Every request needs a local API key in the `x-bearer` header:
 
-- Header: `x-bearer`
-- Value: a named local API key from **License & Services**, the legacy local bearer token, or your Insight/API-only license key
+```bash
+curl -sS -H "x-bearer: $LQOS_API_KEY" http://<node-ip>:9123/api/v3/health
+```
 
-Local API keys authenticate callers; they do not bypass the mapped-circuit licensing limit. Administrators can create up to 16 named keys in **License & Services**. LibreQoS displays each generated key once, stores only its SHA-256 digest and non-secret metadata in `/etc/lqos.conf`, and cannot recover it later. Copy the complete `lqos_api_...` value into the client immediately and treat it like a password.
+Create keys in the WebUI under **License & Services → Local API Keys**.
+Administrators can generate up to 16 named keys. LibreQoS displays each key once,
+stores only its SHA-256 digest and non-secret metadata in `/etc/lqos.conf`, and
+cannot recover it later, so copy the complete `lqos_api_...` value into the client
+immediately and treat it like a password.
 
-Named keys do not expire automatically. Revoke keys that are no longer needed; creation and revocation may take up to 30 seconds to reach `lqos_api`. Existing license keys and the older single `local_api.bearer_token` remain compatible. The UI labels the older value as **Legacy local API key** and lets an administrator remove it after clients have moved to named keys.
+Named keys do not expire automatically; revoke the ones you no longer need. The
+verifier reads the current configuration on every request, so a creation or a
+revoke takes effect immediately — no restart. The older single
+`local_api.bearer_token` still works and is labelled **Legacy local API key** in
+the UI; remove it once your clients have moved to named keys.
+
+There is no license requirement, no circuit-count limit and no subscription gate
+on API access: a valid key is the whole requirement.
+
+## Source of Truth and Testing
+
+Swagger on your own node is the complete reference and test surface for the build
+you are running:
+
+- Direct: `http://<node-ip>:9123/api/v3/docs`
+- Behind the optional Caddy HTTPS proxy (which proxies the node manager):
+  `https://<hostname>/api/v3/docs`
+
+Use this page as a capability map. Use Swagger for the full endpoint inventory,
+request and response schemas, and live testing.
+
+Need definitions for persistence and runtime-impact terms? See the
+[Glossary](glossary.md).
 
 ## What ISPs Can Do with the API
+
+All paths below are relative to `/api/v3`.
 
 ### 1) Subscriber/Circuit Lifecycle
 
@@ -105,11 +92,20 @@ Inspect and update shaping/topology files used by runtime workflows.
 
 - `GET /network_json/json`
 - `GET /network_json/text`
-- `POST /network_json/update`
-- `POST /network_json/set_site_speed`
-- `POST /network_json/set_site_speed_batch`
 - `GET /shaped_devices`
 - `POST /shaped_devices/update`
+
+`POST /network_json/set_site_speed` and `POST /network_json/set_site_speed_batch`
+were removed in v3: they answer a JSON `404` with a key (`401` without) and are
+not part of the mount. Use `POST /overrides/network_adjustments/site_speed`
+(max bandwidth only) instead. The v3 API manual
+(`src/src/rust/lqos_api/manual/`, generated into `/api/v3/openapi.json`) is the
+single endpoint reference of record; this page is the operator summary.
+
+The legacy topology writes (`/network_json/update`, `/network_json/node`,
+`/network/reparent_site`) are retired: they answer `409` and point at the
+LibreQoS Topology Manager. Reparent and site-speed changes belong in the overrides
+endpoints.
 
 ### 4) Monitoring and Diagnostics
 
@@ -117,6 +113,7 @@ Read health, scheduler, throughput, flow, queue, and circuit status.
 
 Representative endpoints:
 - `GET /health`
+- `GET /version`
 - `GET /status_snapshot`
 - `GET /scheduler_status`
 - `GET /circuit/{circuit_id}`
@@ -131,7 +128,6 @@ Representative endpoints:
 Trigger operational control actions when needed.
 
 - `POST /reload_libreqos`
-- `POST /clear_hot_cache`
 
 Treat these as higher-risk actions in production.
 
@@ -140,8 +136,11 @@ Treat these as higher-risk actions in production.
 Not all writes persist the same way:
 
 - `overrides/*`: persistent policy state.
-- `network_json/set_site_speed*`: transient edits.
-- `network_json/update` and `shaped_devices/update`: direct file replacement, often integration-overwritable.
+- `shaped_devices/update`: direct file replacement, often integration-overwritable.
+
+The v2 `network_json/set_site_speed*` writes do not exist in v3 (JSON `404`);
+site-speed changes are persistent override state via
+`POST /overrides/network_adjustments/site_speed`.
 
 If integrations are enabled, integration refresh cycles may overwrite direct file edits.
 
@@ -149,14 +148,14 @@ If integrations are enabled, integration refresh cycles may overwrite direct fil
 
 1. Validate endpoint behavior and payload schema in Swagger.
 2. Apply the smallest change needed.
-3. Verify result with read-only checks (`/health`, `/scheduler_status`, circuit/throughput views).
+3. Verify the result with read-only checks (`/health`, `/scheduler_status`,
+   circuit/throughput views).
 4. Keep rollback snapshots for config/data-changing operations.
 
 ## Deployment Hardening
 
 - Keep API access limited to trusted management networks.
-- Do not expose the API directly to the public Internet.
-- If remote access is needed, use a reverse proxy with TLS and authentication.
+- Do not expose the node manager listener directly to the public Internet.
+- If remote access is needed, use a reverse proxy with TLS (see
+  [Optional HTTPS With Caddy](https-caddy.md)).
 - Restrict inbound access with firewall allowlists.
-
-If you want the WebUI and API docs on one HTTPS origin, see [Optional HTTPS With Caddy](https-caddy.md).

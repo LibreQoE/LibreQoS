@@ -32,6 +32,7 @@ lqos_setup = { path = "../lqos_setup" }
 tokio = { version = "1", features = [ "full" ] }
 once_cell = { workspace = true}
 lqos_bus = { path = "../lqos_bus" }
+lqos_api = { path = "../lqos_api" }
 signal-hook = "0.3"
 serde_json = { workspace = true }
 serde = { workspace = true }
@@ -52,8 +53,8 @@ ip_network_table = {  workspace = true }
 ip_network = { workspace = true }
 zerocopy = { workspace = true }
 fxhash = "0.2.1"
-axum = { version = "0.7.7", features = ["ws"] }
-axum-extra = {  version = "0.9.4", features = ["cookie", "cookie-private"] }
+axum = { version = "0.8.9", features = ["ws"] }
+axum-extra = {  version = "0.10.3", features = ["cookie", "cookie-private"] }
 tower-http = { version = "0.6.1", features = ["fs"] }
 strum = {  version = "0.26.3", features = ["derive"] }
 default-net = {  workspace = true }
@@ -87,5 +88,6 @@ allocative_derive.workspace = true
 futures-util = "0.3.31"
 
 [dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
 tokio = { version = "1", features = [ "full", "test-util" ] }
 toml = { workspace = true }

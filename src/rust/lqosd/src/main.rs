@@ -262,7 +262,7 @@ fn main() -> Result<()> {
         network_devices_hooks::LqosdNetworkDevicesHooks,
     )))?;
     // The system-usage actor is started BEFORE the bridge analytics actor so
- // its sender can ride the LTS/Insight submission trigger.
+    // its sender can ride the LTS/Insight submission trigger (rev 828).
     let system_usage_tx = system_stats::start_system_stats()?;
     // E1 (bridge broker): owns the bridge control seam — watches the
     // published dataplane transaction and emits semantic deltas.
@@ -304,7 +304,7 @@ fn main() -> Result<()> {
     // There is no kernel shaper sender, so StormGuard starts with `None` and
     // runs its bridge arms. K3-B retires the kernel flowbee feed entirely;
     // bridge flow history is the flow-analysis source.
- // K2 defect-fix: both file watchers are mode-neutral.
+    // K2 defect-fix (the coordinator rev 694/695): both file watchers are mode-neutral.
     // The kernel-attach branch never runs on a bridge-only box, so spawning
     // them there left bridge deployments without the E2 effective-rate refresh
     // (topology_runtime_status.json) and without the tunnel_circuits.json
@@ -1079,7 +1079,7 @@ fn circuit_capacity_data() -> Vec<lqos_bus::CircuitCapacityRow> {
                     .iter_devices()
                     .find(|device| device.circuit_id == *circuit_id)
                     .map(|device| {
- // 3b demand-source sweep: capacity headroom
+                        // 3b (rev 861) demand-source sweep: capacity headroom
                         // is read against the DELIVERED (shaped) rate.
                         let down_mbps =
                             (row.shaped_bytes_per_second.down as f64 * 8.0) / 1_000_000.0;
@@ -1276,6 +1276,7 @@ mod tests {
 
     #[test]
     fn bus_clear_urgent_issue_by_identity_reaches_urgent_store() {
+        let _guard = urgent::test_lock();
         let code = "TEST_BUS_XDP_IP_MAPPING_APPLY_FAILED";
         urgent::clear_by_identity(code, code);
         urgent::submit(

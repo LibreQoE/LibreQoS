@@ -47,7 +47,11 @@ members = [
     "lqos_support_tool", # Support/sanity-check CLI for gathering and submitting support dumps.
     "lqos_netplan_helper", # Managed netplan inspection/transaction helper.
     "lqos_preflight", # The v2->v3 pre-install qualification core (pure, shared by the standalone checker + the deb preinst).
+    "lqos_api", # Node API library (GPL-2.0-only), mounted by lqosd at /api/v3.
 ]
+
+# The API smoke-test CLI is a standalone package with its own lockfile.
+exclude = ["lqos_api/api_test"]
 
 [dependencies]
 

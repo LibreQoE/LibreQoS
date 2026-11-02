@@ -52,7 +52,7 @@ if [ "$REPO_SUITE" = "stable" ]; then
 fi
 RESTART_SERVICE="${LQOS_DATAPLANE_RESTART_SERVICE:-1}"
 PACKAGE="libreqos-dataplane"
-BRIDGE_BIN="/usr/libexec/libreqos/bridge_rs"
+BRIDGE_BIN="${LQOS_BRIDGE_BIN:-/usr/libexec/libreqos/bridge_rs}"
 
 usage() {
   cat <<EOF
@@ -87,6 +87,32 @@ not_fetched() {
   echo "dataplane: NOT FETCHED — $1; the bridge stays inactive" >&2
   exit 0
 }
+
+# beta18 (P0, lqos-74t.37.30): in a THREE-deb apt transaction the dataplane
+# package is already unpacked/installed when the control postinst runs. Do not
+# try to fetch it from the archive (which prints a misleading NOT FETCHED and
+# leaves the bridge inactive on a fresh/offline install). Skip when the package
+# is present at the SAME version as the control plane; that is the matched-set
+# contract. An older dataplane still takes the fetch/upgrade path.
+installed_state="$(dpkg-query -W -f='${Status}' "$PACKAGE" 2>/dev/null || true)"
+installed_version="$(dpkg-query -W -f='${Version}' "$PACKAGE" 2>/dev/null || true)"
+control_version="$(dpkg-query -W -f='${Version}' libreqos 2>/dev/null || true)"
+matched_set=0
+case "$installed_state" in
+  "install ok installed"|"install ok unpacked"|"install ok half-configured") matched_set=1 ;;
+esac
+if [ "$matched_set" = 1 ] && [ -n "$installed_version" ] \
+   && { [ -z "$control_version" ] || [ "$installed_version" = "$control_version" ]; } \
+   && [ -x "$BRIDGE_BIN" ]; then
+  echo "dataplane: $PACKAGE is already present at $installed_version ($installed_state) — skipping the archive fetch"
+  /bin/systemctl enable libreqos-bridge.service >/dev/null 2>&1 || true
+  if [[ "$RESTART_SERVICE" == "1" ]]; then
+    /bin/systemctl restart libreqos-bridge.service 2>/dev/null || true
+  else
+    echo "Skipping the bridge service restart."
+  fi
+  exit 0
+fi
 
 # The archive must be signed; without the keyring we cannot trust a fetch.
 [[ -e "$KEYRING" ]] || not_fetched "the LibreQoS archive keyring ($KEYRING) is absent"

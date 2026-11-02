@@ -1207,7 +1207,7 @@ def topology_runtime_readiness_detail():
             "Topology runtime source generation is unavailable for current inputs.",
             None,
         )
- # §0b: the custody door now also NAMES the failing leg
+    # §0b (the coordinator rev 2996): the custody door now also NAMES the failing leg
     # (3-tuple). Accept both shapes so older mocks/consumers keep working.
     outcome = tuple(outcome)
     verified = outcome[0] if len(outcome) > 0 else None

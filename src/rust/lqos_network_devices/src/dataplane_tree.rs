@@ -222,7 +222,7 @@ pub(crate) fn build_tree_from_operator_view(
         new_node.immediate_parent = Some(parent_idx);
         new_node.max_throughput = (record.download_mbps, record.upload_mbps);
         new_node.node_type = record.node_type.clone();
- // Site-map coordinates: carried through the canonical
+        // Site-map coordinates (the coordinator rev 1208): carried through the canonical
         // model → E2 operator view → here, so the site_map consumes them via
         // the existing tracker mapping. Producer-agnostic.
         new_node.latitude = record.latitude;
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn build_tree_carries_site_coordinates_from_the_operator_view() {
- // the site map's coordinates must survive the
+        // the coordinator rev 1208: the site map's coordinates must survive the
         // canonical -> E2 operator view -> T1 tree chain (the tracker then
         // maps them to the map). Producer-agnostic field carriage.
         let mut site = view_node(SITE_ID, "Tower A", None, "site", 100.0, 100.0);
@@ -366,7 +366,7 @@ mod tests {
         );
         assert_eq!(child.node_type.as_deref(), Some("site"));
 
- // the implementer `#12` R7: assert on the EXACT served payload the WS `NetworkMap`
+        // the reviewer `#12` R7: assert on the EXACT served payload the WS `NetworkMap`
         // ships — `NetworkJsonTransport`, whose kind field is `node_type`
         // (serde `"type"`). The link must be ABSENT (no link renders ANY type);
         // the SITE still serializes `type=site` and the AP `type=ap`.

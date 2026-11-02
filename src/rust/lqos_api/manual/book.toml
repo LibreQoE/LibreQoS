@@ -1,0 +1,5 @@
+[book]
+authors = ["Herbert Wolverson"]
+language = "en"
+src = "src"
+title = "LibreQoS API Guide"

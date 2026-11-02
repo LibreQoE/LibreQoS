@@ -1379,7 +1379,7 @@ async fn shaper_snapshot_streaming(
     request_id: u64,
     reply: tokio::sync::mpsc::Sender<Message>,
 ) -> anyhow::Result<()> {
- // 3b: the fourth K3-orphan — this live responder read the KERNEL
+    // 3b (rev 857): the fourth K3-orphan — this live responder read the KERNEL
     // globals, which a bridge box never feeds, so the gateway timed out. On a
     // bridge box read the actor snapshot (the same source the batch path uses);
     // the kernel path is the inactive fallback. Field names are historical;
@@ -1551,7 +1551,7 @@ async fn circuit_snapshot_streaming(
     let mut aggregates: std::collections::HashMap<i64, DeviceTrafficAggregate> =
         std::collections::HashMap::new();
 
- // 3b: the fifth orphan-class repoint — on a bridge box the
+    // 3b (rev 871): the fifth orphan-class repoint — on a bridge box the
     // per-circuit live view folds the ACTOR's per-IP rows (the DELIVERED
     // shaped series per ruling 2); the kernel raw table is the inactive
     // fallback and is never written post-K3 (the gateway `circuit_live`
@@ -1945,6 +1945,9 @@ mod tests {
 
     #[tokio::test]
     async fn circuit_snapshot_streaming_aggregates_only_fresh_raw_device_rows() {
+        // The bridge snapshot wins when the actor is live; this test covers the
+        // raw-throughput fallback, so it pins the fallback side of that split.
+        let _mode = crate::bridge_analytics::with_bridge_mode(false);
         let _ctx = ActiveFlowSnapshotTestContext::with_shaped_devices(
             "streaming-circuit-raw-test",
             vec![ShapedDevice {

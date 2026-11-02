@@ -464,7 +464,7 @@ mod tests {
     }
 
     /// Drop-guard: a panicking capture-session thread must still release the
- /// single-session latch (the latent leak named). Without the
+    /// single-session latch (the latent leak the coordinator rev 689 named). Without the
     /// guard, the latch stays true and every later session is rejected forever.
     #[test]
     fn hyperfocus_latch_guard_releases_on_unwind() {

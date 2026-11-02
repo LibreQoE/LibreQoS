@@ -19,7 +19,7 @@ pub struct QueueStoreTransit {
     pub kind_down: String,
     /// Queue kind for uplink (e.g., "cake" or "fq_codel")
     pub kind_up: String,
- /// Bridge mode (K2 slice 2 §7 /a): the bridge wire carries drops
+    /// Bridge mode (K2 slice 2 §7 / rev 729a): the bridge wire carries drops
     /// and marks per DIRECTION, not per tin. When true the marks/drops graphs
     /// render one down + one up aggregate series from
     /// [`CakeDiffTransit::drops`] / [`CakeDiffTransit::marks`] with the

@@ -4,25 +4,13 @@
     <div>
       <i class="fa fa-code me-2 text-secondary"></i>
       <strong>Local API Docs</strong>
-      <span class="text-secondary">— served from the API service</span>
+      <span class="text-secondary">— served by this node at /api/v3/docs</span>
     </div>
-    <a id="openNew" class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener">
+    <a id="openNew" class="btn btn-outline-secondary btn-sm" href="/api/v3/docs/" target="_blank" rel="noopener">
       <i class="fa fa-up-right-from-square me-1"></i>Open in new tab
     </a>
   </div>
   <div class="ratio ratio-16x9" style="min-height: 70vh;">
-    <iframe id="apiFrame" src="about:blank" style="width:100%; height:100%; border:0;" title="LibreQoS API Docs"></iframe>
+    <iframe id="apiFrame" src="/api/v3/docs/" style="width:100%; height:100%; border:0;" title="LibreQoS API Docs"></iframe>
   </div>
 </div>
-
-<script>
-(function(){
-  const url = window.location.protocol === "https:"
-    ? "/api/v1/api-docs"
-    : `${window.location.protocol}//${window.location.hostname}:9122/api-docs`;
-  const f = document.getElementById('apiFrame');
-  const btn = document.getElementById('openNew');
-  f.src = url;
-  btn.href = url;
-})();
-</script>

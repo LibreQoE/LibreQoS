@@ -1,0 +1,12 @@
+/target
+/api_test/target
+/rag_index/
+/dist/
+/api.zip
+/api2.zip
+/manual/book/
+/.idea/
+/ENDPOINTS.md
+/lts2
+/tmp_link_to_libreqos
+/vendor/

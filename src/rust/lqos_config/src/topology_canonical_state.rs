@@ -1421,7 +1421,7 @@ impl TopologyCanonicalStateFile {
 
         let mut entries = HashMap::<String, InsightLogicalNodeEntry>::new();
         for node in &self.nodes {
- // the implementer `#12` R3: the SECOND `"" -> "Site"` home
+            // the reviewer `#12` R3: the SECOND `"" -> "Site"` home
             // (`normalized_insight_node_kind`). A DEVICE canonical node with an
             // EMPTY kind is an attachment-only link (no network.json source); it
             // must not be fabricated as a `Site` in the compat/Insight network.

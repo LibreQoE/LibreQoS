@@ -1,6 +1,6 @@
 //! 3a cluster-1: the circuit/site temporal-heatmap accumulator — the
 //! bridge-native replacement for the deleted kernel `TemporalHeatmap` feed
-//! (docs/circuit_heatmap_accumulator_derivation.md, amended §1-§3 +
+//! (docs/circuit_heatmap_accumulator_derivation.md, amended rev 792 §1-§3 +
 //! §6). Rides the analytics poll thread; no hot-path work.
 //!
 //! Per poll tick the accumulator differences its OWN raw per-circuit
@@ -15,7 +15,7 @@
 //! RTT are percent-utilization and milliseconds, retransmit is percent. The
 //! current per-second-MEDIAN semantics become exact per-minute accounting —
 //! DISCLOSED in the PR body. `p90` RTT fields stay honest-empty (the bridge
-//! row carries only p50); `qoq_blocks` is honest-empty until the QoO
+//! row carries only p50); `qoq_blocks` is honest-empty until the rev 785 QoO
 //! port lands.
 //!
 //! Increment 1 (this module): the mechanism + oracles, DECLARED-NOT-WIRED.

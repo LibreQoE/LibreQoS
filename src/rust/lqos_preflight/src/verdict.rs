@@ -283,7 +283,7 @@ pub fn compose_with_fresh(
     match circuit_count {
         Some(count) if count as u64 > circuit_limit => {
             // The raw row count is a LOWER BOUND on the mapped-circuit count,
- // so this can only over-warn — the safe direction.
+            // so this can only over-warn — the safe direction (the coordinator rev 1507).
             warnings.push(format!(
                 "at least {count} circuits; the unlicensed cap is {circuit_limit} — \
                  v3 leaves the beyond-cap circuits unshaped until a license is installed \

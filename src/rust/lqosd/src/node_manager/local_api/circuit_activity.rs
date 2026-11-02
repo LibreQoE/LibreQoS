@@ -322,7 +322,7 @@ fn flow_snapshot_rows(circuit_id: &str) -> Vec<CircuitFlowSnapshotRow> {
     rows
 }
 
-/// 3a cluster-3 pin): the bridge active-flow rows for the circuit
+/// 3a cluster-3 (rev 795 pin): the bridge active-flow rows for the circuit
 /// tabs. The subscriber IP resolves to the product circuit id via the catalog
 /// (the same IP join `join_by_circuit` performs); ASN/country/lat/lon ride the
 /// GeoTable join. The bridge wire is per-direction for BYTES; every
@@ -1111,7 +1111,7 @@ mod tests {
     }
 }
 
-/// 3a cluster-3 field oracles: the pinned bridge `FlowRow` mapping.
+/// 3a cluster-3 field oracles: the pinned bridge `FlowRow` mapping (rev 795).
 #[cfg(test)]
 mod bridge_active_flow_tests {
     use super::*;

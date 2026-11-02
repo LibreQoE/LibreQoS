@@ -299,7 +299,7 @@ fn k1_dynamic_fold_defers_unresolvable_parent() {
     );
 }
 
-/// K1 §7: a fallback-supplied parent/anchor id set to the
+/// K1 §7 (the coordinator rev 594): a fallback-supplied parent/anchor id set to the
 /// literal node NAME (the drill's misconfiguration) must defer loudly, never
 /// emit an empty effective parent the bridge would reject. Name-only fallback
 /// (the working shape) is covered by `k1_dynamic_fold_emits_device_rows_and_map_ops`.

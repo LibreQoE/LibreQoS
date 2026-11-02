@@ -37,7 +37,7 @@ pub mod flow_history;
 /// repoints are increment 2.
 pub mod circuit_heatmap;
 
-/// 3a group-1: the bridge QoO/QoQ port pin). Increment 1
+/// 3a group-1: the bridge QoO/QoQ port (rev 785 pin). Increment 1
 /// (mechanism + oracles, declared-not-wired); the poll fold + the consumer
 /// repoints are increment 2.
 pub mod circuit_qoo;
@@ -52,7 +52,7 @@ use crate::system_stats::SystemStats;
 use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -140,7 +140,7 @@ pub struct BridgeStatsSnapshot {
     /// legacy COMBINED `flow_bytes_per_second` map it superseded — its only
     /// reader was the circuit page — is retired with the U=0 fix.)
     pub flow_bytes_per_second_directional: FxHashMap<analytics_ipc::FlowId, DownUpOrder<u64>>,
- /// 3b §1.1 ruling c): per-protocol SENT packets/second,
+    /// 3b §1.1 (rev 834 ruling c): per-protocol SENT packets/second,
     /// differenced per flow by the same seed pattern. `GetCurrentThroughput`
     /// reads these so the tcp/udp/icmp splits are true rates. CLASSIFIED-only:
     /// non-6/17/1 transports are counted in the all-protocol pps fold but not
@@ -313,15 +313,62 @@ fn apply_live_fields_lite(view: &TreeLiveView, idx: usize, node: &mut NetworkTre
 
 pub(crate) static CACHE: Lazy<ArcSwap<BridgeStatsSnapshot>> =
     Lazy::new(|| ArcSwap::new(Arc::new(BridgeStatsSnapshot::default())));
-static STARTED: OnceLock<()> = OnceLock::new();
+/// Set once the E2 stats actor owns the live series for this process.
+///
+/// An `AtomicBool` rather than a `OnceLock` so the mode can be SCOPED in tests:
+/// the pre-bridge fallback paths (`circuit_current_qoo`, the raw-throughput
+/// circuit snapshot, ...) are only reached when this is false, and a test that
+/// starts the actor must not silently flip every later test onto the bridge
+/// path. Production sets it exactly once in [`start_bridge_analytics`].
+static STARTED: AtomicBool = AtomicBool::new(false);
 /// The analytics socket the actor pinned at start; QueueStats callers
 /// (cake_watcher) connect to the SAME socket the snapshot poll uses.
 static ANALYTICS_SOCKET: OnceLock<PathBuf> = OnceLock::new();
 
 /// Whether the E2 stats actor is active (endpoint source selection).
 pub fn is_active() -> bool {
-    STARTED.get().is_some()
+    STARTED.load(Ordering::SeqCst)
 }
+
+#[cfg(test)]
+mod bridge_mode_for_test {
+    use std::sync::atomic::Ordering;
+    use std::sync::{Mutex, MutexGuard};
+
+    static MODE_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Declares which side of the bridge/fallback split a test runs on, for as
+    /// long as the guard lives.
+    ///
+    /// The lock serialises every test that cares about the split, so a parallel
+    /// test never observes a mode it did not ask for; the guard restores the
+    /// previous mode on drop (including during unwinding).
+    pub(crate) fn with_bridge_mode(active: bool) -> BridgeModeGuard {
+        let lock = MODE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = super::STARTED.swap(active, Ordering::SeqCst);
+        BridgeModeGuard {
+            _lock: lock,
+            previous,
+        }
+    }
+
+    /// Scoped bridge-mode declaration; see [`with_bridge_mode`].
+    pub(crate) struct BridgeModeGuard {
+        _lock: MutexGuard<'static, ()>,
+        previous: bool,
+    }
+
+    impl Drop for BridgeModeGuard {
+        fn drop(&mut self) {
+            super::STARTED.store(self.previous, Ordering::SeqCst);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) use bridge_mode_for_test::with_bridge_mode;
 
 /// Current bridge-sourced snapshot (empty + stale before the first
 /// successful poll).
@@ -356,7 +403,7 @@ pub(crate) fn total_enqueued_packets_per_second(
     })
 }
 
-/// 3b: the live streaming-shaper rates from the bridge snapshot —
+/// 3b (rev 857): the live streaming-shaper rates from the bridge snapshot —
 /// the fourth K3-orphan's bridge source. The headline is the DELIVERED (shaped)
 /// bits/s (display semantics); packets are the enqueued fold (the batch's
 /// companion). PURE.
@@ -371,7 +418,7 @@ pub(crate) fn live_shaper_rates(
     )
 }
 
-/// 3b: one circuit's per-device live rates from the actor's per-IP
+/// 3b (rev 871): one circuit's per-device live rates from the actor's per-IP
 /// rows, keyed by device hash. `bytes` is the DELIVERED (shaped) series (ruling
 /// 2); `tcp_packets`/`tcp_retries` use the bridge down-only convention; `rtts`
 /// are the per-IP RTT p50 samples (ms). The fifth orphan-class repoint (the
@@ -410,7 +457,7 @@ pub(crate) fn circuit_device_delivered_rates(
     out
 }
 
-/// 3b §1.1 ruling c): per-protocol SENT packets/second, differenced
+/// 3b §1.1 (rev 834 ruling c): per-protocol SENT packets/second, differenced
 /// per flow with the same FlowId-keyed seed pattern as the byte rates. Only the
 /// three CLASSIFIED transports are bucketed: TCP (6), UDP (17), ICMP (1). Every
 /// other transport (e.g. ICMPv6, GRE, ESP, SCTP) is dropped here and reaches the
@@ -505,7 +552,7 @@ fn resolve_circuit_id_for_host(ip: &IpAddr) -> Option<String> {
         .filter(|id| !id.trim().is_empty())
 }
 
-/// 3b DEFECT 1: the shared circuit→parent-node attribution. The
+/// 3b DEFECT 1 (rev 840): the shared circuit→parent-node attribution. The
 /// catalog keys circuits by `circuit_id` (`c1`), but the network.json tree keys
 /// nodes by NAME (`s10-a-ap0`); joining on the circuit id silently never
 /// matches, which emptied the tree live-view, the site/global heatmaps, and the
@@ -645,7 +692,7 @@ pub(crate) fn node_circuits_by_index<'a>(
 }
 
 /// The per-FlowId cumulative seed for the interval deltas: the DELIVERED
-/// (shaped) byte counters (the tab rate; 3b plus the sent packet
+/// (shaped) byte counters (the tab rate; 3b rev 866) plus the sent packet
 /// counters (the 3b protocol splits).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct FlowSeed {
@@ -670,7 +717,7 @@ fn per_second(delta: u64, elapsed_ms: u64) -> u64 {
 /// widgets AND the circuit page Top-ASN/Flows tabs read this; first sight / a
 /// counter reset yields no rate and a reader falls back to the lifetime
 /// average), and the per-protocol packets/second aggregate (the
-/// `GetCurrentThroughput` splits; ruling c — the same seed pattern, so
+/// `GetCurrentThroughput` splits; rev 834 ruling c — the same seed pattern, so
 /// the CLASSIFIED split sum tracks the all-protocol sent pps fold up to the
 /// Unknown-transport residual). Absent flows drop their seed.
 fn compute_flow_rates(
@@ -687,7 +734,7 @@ fn compute_flow_rates(
     let mut fresh: FxHashMap<analytics_ipc::FlowId, FlowSeed> = FxHashMap::default();
     for flow in flows {
         let current = FlowSeed {
- // 3b: difference the DELIVERED (shaped) per-flow bytes —
+            // 3b (rev 866): difference the DELIVERED (shaped) per-flow bytes —
             // the rate column/tab read delivered; `actual` is the demand.
             download_bytes: flow.shaped.download_bytes,
             upload_bytes: flow.shaped.upload_bytes,
@@ -753,7 +800,7 @@ pub fn analytics_socket_path(config: &lqos_config::DataplaneBridgeConfig) -> Pat
 }
 
 /// The SINGLE OWNER of the "is the analytics socket active, and where" predicate
-/// (the implementer `` R1): active iff `[dataplane_bridge]` is present OR
+/// (the reviewer `rev 4765` R1): active iff `[dataplane_bridge]` is present OR
 /// `LIBREQOS_ANALYTICS_SOCKET` is set; the env wins for the path. The broker, the
 /// analytics actor, and the supervisor MUST all use this so their gates cannot
 /// diverge again (the broker once skipped the env case ⇒ the adopt never ran).
@@ -792,12 +839,12 @@ pub fn start_bridge_analytics(
     config: &lqos_config::Config,
     system_usage_tx: crossbeam_channel::Sender<tokio::sync::oneshot::Sender<SystemStats>>,
 ) {
- // R1: the SINGLE shared active/socket predicate.
+    // R1 (the reviewer rev 4765): the SINGLE shared active/socket predicate.
     let Some(socket) = analytics_socket_path_if_active(config) else {
         debug!("Bridge analytics actor inactive: no [dataplane_bridge] config");
         return;
     };
-    if STARTED.set(()).is_err() {
+    if STARTED.swap(true, Ordering::SeqCst) {
         return;
     }
     let settings = config.dataplane_bridge.clone().unwrap_or_default();
@@ -815,7 +862,7 @@ pub fn start_bridge_analytics(
             .stats_poll_interval_ms
             .max(MIN_POLL_INTERVAL.as_millis() as u64),
     );
- // 3a LTS trigger: the periodic Insight throughput submission
+    // 3a LTS trigger (rev 828): the periodic Insight throughput submission
     // was orphaned when K3-A deleted the kernel throughput loop. Re-home it on
     // this cold-path actor at the configured collation cadence, guarded by
     // gather_stats + is_active() (the payload builders already re-check the
@@ -1432,6 +1479,36 @@ struct CircuitRateMemory {
     rows: FxHashMap<String, (CircuitLiveRow, u64)>,
 }
 
+/// Re-joins the last-good rows for circuits this poll did not produce, and
+/// returns the ids that were carried.
+///
+/// A remembered row's `last_seen_nanos` was computed at the last poll in which
+/// its circuit was FRESH. Re-inserting it unchanged froze the age: a circuit
+/// that stopped 25 s ago kept reporting whatever age it had when it stopped, so
+/// every activity window would call it freshly active. The carried row's age
+/// therefore grows by the wall time since that last fresh poll (`captured -
+/// seen_at`), which keeps it an honest AGE for as long as the row is retained.
+fn carry_last_good_rows(
+    joined: &mut FxHashMap<String, CircuitLiveRow>,
+    remembered: &FxHashMap<String, (CircuitLiveRow, u64)>,
+    captured_millis: u64,
+) -> FxHashSet<String> {
+    let mut carried: FxHashSet<String> = FxHashSet::default();
+    for (circuit_id, (row, seen_at)) in remembered.iter() {
+        let idle_millis = captured_millis.saturating_sub(*seen_at);
+        if idle_millis > LAST_GOOD_WINDOW_MS || joined.contains_key(circuit_id) {
+            continue;
+        }
+        let mut carried_row = row.clone();
+        carried_row.last_seen_nanos = carried_row
+            .last_seen_nanos
+            .saturating_add(idle_millis.saturating_mul(1_000_000));
+        joined.insert(circuit_id.clone(), carried_row);
+        carried.insert(circuit_id.clone());
+    }
+    carried
+}
+
 fn actor(socket: PathBuf, interval: Duration, mut lts_trigger: LtsSubmitTrigger) {
     // `.115`: the cache refresh bound is the actor poll interval.
     RAW_QUEUE_REFRESH_MS.store(
@@ -1625,15 +1702,11 @@ fn poll_and_store_with(
                     last_good_ids.insert(circuit_id.to_string());
                 }
             }
-            for (circuit_id, (row, seen_at)) in rate_memory.rows.iter() {
-                if captured.saturating_sub(*seen_at) > LAST_GOOD_WINDOW_MS {
-                    continue;
-                }
-                if !joined.contains_key(circuit_id) {
-                    joined.insert(circuit_id.clone(), row.clone());
-                    last_good_ids.insert(circuit_id.clone());
-                }
-            }
+            last_good_ids.extend(carry_last_good_rows(
+                &mut joined,
+                &rate_memory.rows,
+                captured,
+            ));
             for (circuit_id, row) in &joined {
                 if !last_good_ids.contains(circuit_id) {
                     rate_memory
@@ -1857,7 +1930,7 @@ fn poll_and_store_with(
 
 /// Converts a cumulative-counter delta over `elapsed_ms` into BYTES/second.
 ///
-/// 3b correction: this used to multiply by 8 and feed a
+/// 3b correction (rev 834): this used to multiply by 8 and feed a
 /// bytes-named field, so the LTS spike guard (which multiplies by 8 again)
 /// fired at ~1/8 link and `to_bits_from_bytes` (×8) made the sparkline read
 /// 8×. Bytes/second is the one unit every consumer agrees on.
@@ -2355,7 +2428,7 @@ mod tests {
     use std::sync::mpsc::Receiver;
     use std::thread;
 
- /// R4 /: serialize the env-mutating tests.
+    /// R4 (the reviewer rev 4768 / the coordinator rev 4768): serialize the env-mutating tests.
     static ENV_SOCKET_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// R4 (1): with `[dataplane_bridge]` ABSENT and `LIBREQOS_ANALYTICS_SOCKET`
@@ -2787,7 +2860,7 @@ mod tests {
 
     #[test]
     fn interval_bytes_per_second_scales_counter_deltas_over_the_window() {
- // K2 slice 1 top-level series; 3b: BYTES/second (the
+        // K2 slice 1 top-level series; 3b rev 834: BYTES/second (the
         // sparkline calls to_bits_from_bytes, the LTS fields are bytes).
         assert_eq!(
             interval_bytes_per_second(1_000, 0, 1_000),
@@ -2877,7 +2950,7 @@ mod tests {
         );
     }
 
- /// the LTS/Insight trigger fires on the collation cadence, is
+    /// rev 828: the LTS/Insight trigger fires on the collation cadence, is
     /// armed (not fired) on its first tick, and never fires while disabled
     /// (the `gather_stats` + `is_active()` guard).
     #[test]
@@ -2954,7 +3027,7 @@ mod tests {
         );
     }
 
- /// 3b (the fourth K3-orphan): the live streaming-shaper rates come
+    /// 3b rev 857 (the fourth K3-orphan): the live streaming-shaper rates come
     /// from the bridge snapshot when the actor is active — headline = the
     /// DELIVERED (shaped) bits/s, packets = the enqueued fold.
     #[test]
@@ -2982,7 +3055,7 @@ mod tests {
         );
     }
 
- /// 3b (the fifth orphan-class repoint): the gateway `circuit_live`
+    /// 3b rev 871 (the fifth orphan-class repoint): the gateway `circuit_live`
     /// responder folds the bridge's per-IP rows into per-device DELIVERED
     /// rates (demand != delivered in the fixture).
     #[test]
@@ -3032,12 +3105,12 @@ mod tests {
         );
     }
 
- /// 3b §1.1 ruling c): the protocol splits are per-second deltas
+    /// 3b §1.1 (rev 834 ruling c): the protocol splits are per-second deltas
     /// from the per-FlowId packet seed — not a lifetime tally — and their sum
     /// conserves against the all-protocol sent pps fold.
     #[test]
     fn flow_packet_seed_differences_protocol_rates_and_conserves() {
- // 3b sweep-fixture guard: the DEMAND is deliberately larger
+        // 3b rev 866 sweep-fixture guard: the DEMAND is deliberately larger
         // than the DELIVERED series, so a per-flow rate built from `actual`
         // would fail the byte-rate assertion below.
         let flow = |protocol: u8, sent_down: u64, sent_up: u64| analytics_ipc::FlowRow {
@@ -3884,6 +3957,100 @@ mod tree_live_tests {
 }
 
 #[cfg(test)]
+mod last_good_age_tests {
+    use super::*;
+    use lqos_utils::units::{DownUpOrder, TcpRetransmitSample};
+
+    fn measured_row(age_nanos: u64) -> CircuitLiveRow {
+        CircuitLiveRow {
+            bytes_per_second: DownUpOrder::zeroed(),
+            shaped_bytes_per_second: DownUpOrder::zeroed(),
+            rtt_current_p50_nanos: DownUpOrder::default(),
+            rtt_histogram: Default::default(),
+            tcp_retransmit_sample: DownUpOrder {
+                down: TcpRetransmitSample::default(),
+                up: TcpRetransmitSample::default(),
+            },
+            last_seen_nanos: age_nanos,
+            bridge_circuit_id: 1,
+        }
+    }
+
+    fn age_of(joined: &FxHashMap<String, CircuitLiveRow>, id: &str) -> u64 {
+        joined.get(id).expect("carried row").last_seen_nanos
+    }
+
+    /// The carried row's age must GROW with idleness. A frozen age made a circuit
+    /// that stopped 20 s ago look freshly active for every window.
+    #[test]
+    fn a_carried_row_age_grows_with_idleness() {
+        let mut joined: FxHashMap<String, CircuitLiveRow> = FxHashMap::default();
+        // Remembered at t = 1_000 ms with an age of 2 s; carried at t = 21_000 ms.
+        let remembered = FxHashMap::from_iter([(
+            "addr1".to_string(),
+            (measured_row(2_000_000_000), 1_000_u64),
+        )]);
+
+        let carried = carry_last_good_rows(&mut joined, &remembered, 21_000);
+
+        assert!(carried.contains("addr1"));
+        assert_eq!(
+            age_of(&joined, "addr1"),
+            22_000_000_000,
+            "20 s of idleness must be added to the remembered 2 s age"
+        );
+    }
+
+    /// The API's activity horizon and this module's retention are ONE fact.
+    ///
+    /// The API answers activity windows from these rows, so its
+    /// `ACTIVITY_WINDOW_SECS` and this `LAST_GOOD_WINDOW_MS` must agree: a window
+    /// wider than the retention cannot be answered, and a retention shorter than
+    /// the advertised window would silently drop rows inside it. They live in
+    /// different crates with no shared constant, so this tripwire is the link —
+    /// moving either alone fails here, and the failure names both values.
+    #[test]
+    fn the_api_activity_horizon_matches_the_last_good_retention() {
+        assert_eq!(
+            LAST_GOOD_WINDOW_MS,
+            lqos_api::services::ACTIVITY_WINDOW_SECS * 1_000,
+            "the API's activity horizon and the daemon's retention disagree"
+        );
+    }
+
+    /// A row is carried only inside the retention window, and a circuit this poll
+    /// produced keeps its FRESH age (its row is never overwritten).
+    #[test]
+    fn carry_stops_at_the_retention_horizon_and_never_overwrites_a_fresh_row() {
+        let remembered = FxHashMap::from_iter([
+            ("stale".to_string(), (measured_row(1_000_000_000), 0_u64)),
+            ("fresh".to_string(), (measured_row(9_000_000_000), 0_u64)),
+        ]);
+
+        let mut joined: FxHashMap<String, CircuitLiveRow> = FxHashMap::default();
+        joined.insert("fresh".to_string(), measured_row(0));
+
+        let carried = carry_last_good_rows(&mut joined, &remembered, LAST_GOOD_WINDOW_MS + 1);
+
+        assert!(
+            carried.is_empty(),
+            "nothing may be carried past the retention horizon"
+        );
+        assert_eq!(
+            age_of(&joined, "fresh"),
+            0,
+            "a fresh row must keep its own (fresh) age"
+        );
+        assert!(!joined.contains_key("stale"), "expired row must not return");
+
+        // Inside the horizon the same stale row is carried.
+        let mut joined: FxHashMap<String, CircuitLiveRow> = FxHashMap::default();
+        let carried = carry_last_good_rows(&mut joined, &remembered, LAST_GOOD_WINDOW_MS);
+        assert!(carried.contains("stale"));
+    }
+}
+
+#[cfg(test)]
 mod w1_do_not_track_tests {
     use super::build_do_not_track_table;
     use std::net::IpAddr;
@@ -4032,7 +4199,7 @@ mod raw_queue_tests {
 
     #[test]
     fn snapshot_is_cache_only_zero_socket_on_hit_and_miss() {
-        let _ = STARTED.set(());
+        let _mode = with_bridge_mode(true);
         let _guard = test_lock();
         let before = analytics_ipc::queue_stats_socket_calls();
         assert!(raw_queue_snapshot("cold-circuit").is_none());
@@ -4070,7 +4237,7 @@ mod raw_queue_tests {
 
     #[test]
     fn non_cake_counters_are_none_not_zero() {
-        let _ = STARTED.set(());
+        let _mode = with_bridge_mode(true);
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms().saturating_sub(10)), 7, 0, false);
         seed("fifo", &r);
@@ -4092,7 +4259,7 @@ mod raw_queue_tests {
 
     #[test]
     fn backward_clock_step_is_explicit_not_zero_age() {
-        let _ = STARTED.set(());
+        let _mode = with_bridge_mode(true);
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms().saturating_add(60_000)), 9, 10, true);
         seed("future", &r);
@@ -4105,7 +4272,7 @@ mod raw_queue_tests {
 
     #[test]
     fn a_reply_without_sample_time_is_unavailable() {
-        let _ = STARTED.set(());
+        let _mode = with_bridge_mode(true);
         let _guard = test_lock();
         let r = reply(None, 1, 10, true);
         seed("old-bridge", &r);
@@ -4117,7 +4284,7 @@ mod raw_queue_tests {
 
     #[test]
     fn entries_and_interest_are_dropped_when_a_circuit_leaves() {
-        let _ = STARTED.set(());
+        let _mode = with_bridge_mode(true);
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms()), 3, 1, true);
         seed("gone", &r);
@@ -4136,7 +4303,7 @@ mod raw_queue_tests {
 
     #[test]
     fn the_last_reply_cache_is_bounded() {
-        let _ = STARTED.set(());
+        let _mode = with_bridge_mode(true);
         let _guard = test_lock();
         let r = reply(Some(unix_now_ms()), 1, 1, true);
         let cap = raw_queue_cache_cap();

@@ -184,7 +184,7 @@ pub(crate) fn surface(
                 // typed reason + the offending identity name the op exactly.
                 // (Supersedes the R3 CAUSE-NEUTRAL copy: that was written when the
                 // ack carried NO reason; U1 now CARRIES the typed reason, so the
- // copy is cause-ACCURATE — the implementer ``/``.)
+                // copy is cause-ACCURATE — the reviewer `rev 4803`/`rev 4819`.)
                 format!(
                     "Bridge refused generation {generation} with {name} [{reason_txt}{id_txt}]: \
                      one site-layer change is not appliable yet (for example a multi-add, a \
@@ -292,6 +292,7 @@ mod tests {
     /// identity.
     #[test]
     fn structural_urgent_dedupes_and_heals_by_identity() {
+        let _guard = crate::urgent::test_lock();
         urgent::clear_by_identity("BRIDGE_PUBLISH_REJECTED", "bridge-broker:structural");
         surface(
             PublishOutcome::Rejected("REJECTED_STRUCTURAL_OP"),
@@ -329,6 +330,7 @@ mod tests {
     /// and the heal-clear removes it.
     #[test]
     fn rebuild_required_urgent_dedupes_and_heals_by_identity() {
+        let _guard = crate::urgent::test_lock();
         urgent::clear_by_identity("BRIDGE_REBUILD_REQUIRED", "bridge-broker:rebuild");
         surface(PublishOutcome::RebuildRequired, "gen-A", 1, None, "", None);
         surface(PublishOutcome::RebuildRequired, "gen-B", 2, None, "", None);

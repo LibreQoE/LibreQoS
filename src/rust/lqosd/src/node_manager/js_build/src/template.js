@@ -1411,22 +1411,9 @@ function initObserveShapeToggle() {
 }
 
 function setupDynamicUrls() {
-    const apiUrl = window.location.protocol === "https:"
-        ? "/api/v1/api-docs/"
-        : `${window.location.protocol}//${window.location.hostname}:9122/api-docs/`;
-
     // Construct Chat URL (port 9121)
     const chatUrl = "chatbot.html";
 
-    // Update API link only if it has the placeholder
-    const apiLink = document.getElementById('apiLink');
-    if (apiLink) {
-        const hrefAttr = apiLink.getAttribute('href');
-        if (hrefAttr === '%%API_URL%%') {
-            apiLink.href = apiUrl;
-        }
-    }
-    
     // Update Chat link if it exists (only created when chatbot is available)
     const chatLink = document.getElementById('chatLink');
     if (chatLink) {

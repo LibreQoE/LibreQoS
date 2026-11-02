@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-script smoke.
+"""Build-script smoke (rev 884).
 
 Every crate referenced by the packaging/build scripts (`build_rust.sh`,
 `build_dpkg.sh`) must be a current workspace member. K3-A deleted

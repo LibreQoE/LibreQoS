@@ -1,4 +1,4 @@
-//! #4 (`docs/control_plane_simplification_card.md` §4c; the implementer
+//! #4 (`docs/control_plane_simplification_card.md` §4c; the reviewer
 //! `docs/resolved_posture_spec.md`): the RESOLVED-POSTURE surface.
 //!
 //! Every §2 SEMANTIC knob with its RESOLVED value, emitted at boot AND via
@@ -198,7 +198,7 @@ pub(crate) fn log_posture(posture: &[(&'static str, String)]) {
 mod tests {
     use super::*;
 
- /// the implementer's spec §3: the field SET is PINNED — a dropped/added field fails
+    /// the reviewer's spec §3: the field SET is PINNED — a dropped/added field fails
     /// here (the surface cannot silently drift from the spec).
     #[test]
     fn the_resolved_posture_field_set_matches_the_spec() {
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(keys, sorted, "the emitted fields must be sorted");
     }
 
- /// the implementer N3: the field set is pinned to the SPEC FILE
+    /// the reviewer N3: the field set is pinned to the SPEC FILE
     /// (`resolved_posture_fields.txt`, the authoritative list) — NOT to the
     /// impl's own `POSTURE_FIELDS` — so the surface cannot drift from the spec.
     #[test]

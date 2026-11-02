@@ -400,7 +400,7 @@ fn load_integration_shaping_artifacts(
 /// - an unresolvable parent is `shaping_deferred` (kept in the store for the
 ///   audit surface, never silently root-placed or dropped).
 ///
-/// K1 §7 amendment: the deferral generalizes to the
+/// K1 §7 amendment (the coordinator rev 594): the deferral generalizes to the
 /// fallback-supplied parent/anchor ids. A RADIUS fallback that carries a
 /// literal node NAME (or any id that does not land an EXISTING effective node,
 /// attachment owner, or queue alias) is `shaping_deferred` — an empty-parent
@@ -635,7 +635,7 @@ fn build_shaping_inputs_with(
     // Operator overrides fold into the shaped devices. Phase C S4: the ingest
     // contract is ONE, so the FULL override set (persistent devices +
     // adjustments — the UISP-regeneration-proof layer, E3 retarget
- // `docs/e3_derivation.md` applies uniformly now that the manual
+    // `docs/e3_derivation.md` rev 426) applies uniformly now that the manual
     // pair is compiled through the same import. The old legacy-DIY rate-only
     // scoping rail retired with the mode.
     let effective_overrides = load_runtime_shaping_overrides(config, read_only).with_context(
@@ -1020,7 +1020,7 @@ fn build_shaping_inputs_with(
 /// the assembled circuit rows. The stormguard `CircuitAdjustAqm` token wins over
 /// any device-level `DeviceAdjustSqm` seed by construction (it runs after the
 /// device-row expansion and first-device seeding). It runs in BOTH ingress modes
-/// the variant is a machine-authored runtime fallback persisted
+/// (the coordinator rev 640): the variant is a machine-authored runtime fallback persisted
 /// in the layer file — unlike operator-authored `DeviceAdjustSqm`, whose
 /// integration-only rule guards the legacy CSV round-trip. An absent circuit
 /// WARNs loudly (§9.1-5).

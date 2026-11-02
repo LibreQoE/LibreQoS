@@ -15,7 +15,7 @@ pub struct AsnAggregate {
     pub bytes: DownUpOrder<u64>,
     pub packets: DownUpOrder<u64>,
     pub retransmits: DownUpOrder<u64>,
- /// Additive RTT WINDOW numerics: count + sum (⇒ mean
+    /// Additive RTT WINDOW numerics (the coordinator rev 1121): count + sum (⇒ mean
     /// [sic]) + min/max per direction, folded from each flow's current 8-slot
     /// tail every tick (no differencing; residence-weighted per the heatmap
     /// precedent).  `count == 0` = no samples; `min == 0` = no sample.  RTT is
@@ -83,7 +83,7 @@ impl AsnHeatmapStore {
                 last_updated_cycle: current_cycle,
             });
             entry.last_updated_cycle = current_cycle;
- // UNIT CONVENTION: the store's rtt slots are
+            // UNIT CONVENTION (the coordinator rev 1205): the store's rtt slots are
             // MILLISECONDS (v2's contract — tracking_data.rs combined rtt_ms).
             // The fold's true percentiles are in MICROSECONDS (the wire unit,
             // FlowRow.rtt_samples_*_us), so convert exactly ONCE here at the

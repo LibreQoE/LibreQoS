@@ -57,7 +57,7 @@ pub enum NicTier {
     },
     /// **Tier 3** — a kernel netdev with NO DPDK PMD: the compatibility engine
     /// (AF_XDP/af_packet) with a PROMINENT warning. Never chosen for a Tier-1/2
- /// NIC (the shared host AF_XDP lesson).
+    /// NIC (the production-host AF_XDP lesson).
     Tier3,
     /// **REFUSE** — no dataplane path exists.
     Refuse(RefuseReason),
@@ -134,7 +134,7 @@ impl NicTier {
 }
 
 /// A0: a VM's virtio multiqueue count must equal the vCPU count (the doc's
-/// note). A mismatch is a WARN (the shared host box was 8/8).
+/// note). A mismatch is a WARN (the production-host box was 8/8).
 pub fn multiqueue_matches(rx_queues: usize, vcpus: usize) -> bool {
     rx_queues == vcpus
 }
@@ -174,7 +174,7 @@ impl CompatEngine {
 }
 
 /// The boot assert (E2 condition 4b): a Tier-1/2 NIC must NEVER be on the
-/// compatibility engine. Errors with the fix — the shared host bug cannot recur.
+/// compatibility engine. Errors with the fix — the production-host bug cannot recur.
 pub fn assert_tier12_not_compat(tier: NicTier, on_compat: bool) -> Result<(), String> {
     if on_compat && tier.class().is_some() {
         return Err(
@@ -192,7 +192,7 @@ pub fn purge_stale_compat_for(tier: NicTier) -> bool {
     tier.class().is_some()
 }
 
-/// WAS — worker auto-sizing (docs/worker_autosizing_card.md, the
+/// WAS — worker auto-sizing (docs/worker_autosizing_card.md, rev 447): the
 /// link-speed band. This is the sizing AUTHORITY (in shape); the env writer
 /// calls it so the operator never hand-writes `--workers`.
 pub fn rate_workers(link_mbps: u64) -> u32 {
@@ -229,7 +229,7 @@ pub fn shaped_ceiling(link_mbps: u64) -> u32 {
 /// `true` when the link demand lies strictly BETWEEN two adjacent measured
 /// ceilings: the chosen W is the next MEASURED point and a LOWER unmeasured W
 /// (2/3/5/6/7/9..15) may be the true optimum — extrapolated, never computed
-/// (the implementer pin 1). An exact measured demand is NOT a gap.
+/// (the reviewer pin 1). An exact measured demand is NOT a gap.
 pub fn demand_in_measured_gap(link_mbps: u64) -> bool {
     let mut prev = 0u64;
     for (_, g) in CELL2_SHAPED_DELIVERED_MBPS {
@@ -634,13 +634,13 @@ fn resolve_queue_count(
     )
 }
 
-/// THE ONE FACT GATHER (the implementer (1c)) shared by the CLI and the setup flow so
+/// THE ONE FACT GATHER (the reviewer (1c)) shared by the CLI and the setup flow so
 /// they cannot drift. Worker provenance is explicit (`WorkersSource`): the
 /// config's `[queues] workers` is the only ongoing operator key; a main
 /// `bridge.env` W is `LegacyEnv`; the managed `50-ports.conf` W is a ONE-TIME
 /// migration input (adopted only if it differs from the W derived now).
 ///
-/// A bound netdev is a NAMED error for the queue fact (the implementer (1b)) — NEVER a
+/// A bound netdev is a NAMED error for the queue fact (the reviewer (1b)) — NEVER a
 /// silent 1 (which would cap the workers at the W=1 collapse) — unless the
 /// explicit/persisted/managed fallback above supplies it.
 pub fn gather_facts(
@@ -665,7 +665,7 @@ fn gather_facts_with(
     apply_adoption: bool,
     env: &GatherEnv,
 ) -> Result<PortsPlanFacts, String> {
- // The WAN BDF is a PARAM (the implementer final #12): the CLI passes --wan and the
+    // The WAN BDF is a PARAM (the reviewer final #12): the CLI passes --wan and the
     // setup flow passes bridge.env's value, so the queue/driver facts are always
     // read from the SAME NIC the block is written for -- never a silent mismatch.
     let wan = wan_bdf.trim().to_string();
@@ -992,7 +992,7 @@ pub fn managed_env_block_with_workers(
         ));
     }
 
- // Loud beyond-envelope line (the implementer (2)): the min may cap BELOW the
+    // Loud beyond-envelope line (the reviewer (2)): the min() may cap BELOW the
     // table's W via the cores OR the queues, and cell 2's delivered at a
     // capped W is UNMEASURED (state it, never imply the table).
     if beyond_measured_envelope(link_mbps) {
@@ -1033,7 +1033,7 @@ pub fn managed_env_block_with_workers(
             out.push('\n');
         }
     }
- // (the implementer (1)) Emit DISTINCT MANAGED keys, NOT an APP_ARGS blob: the blob
+    // (the reviewer (1)) Emit DISTINCT MANAGED keys, NOT an APP_ARGS blob: the blob
     // would shadow a packaged-bridge.env operator APP_ARGS (later-wins) and make
     // the precedence undetectable. The wrapper MERGES these; an operator
     // APP_ARGS (a DIFFERENT file) is identifiable by provenance.
@@ -1355,7 +1355,7 @@ pub fn validate_single_device_at(sysfs: &Path, bdf: &str) -> Result<(), String> 
 /// ⚠ The WAN-first order IS the orientation (lqos-74t.4.1): the retired
 /// `LIBREQOS_DPDK_SWAP_PORTS` hatch is gone, and the runtime's no-explicit-pair
 /// positional default now aligns with this order. Reordering here without moving
-/// that default silently mis-orients the classifier (the shared host trap).
+/// that default silently mis-orients the classifier (the production-host trap).
 /// The private PMD dir the package ships and the 25.11 meson prefix bakes.
 pub const PRIVATE_PMD_PATH: &str = "/usr/libexec/libreqos/pmds";
 

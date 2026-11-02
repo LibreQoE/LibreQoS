@@ -79,7 +79,7 @@ fn topology_node_ethernet_advisory(device: &UispDevice) -> Option<CircuitEtherne
     })
 }
 
-/// 3b rate fix(ii)): the base `(download, upload)` Mbps for a
+/// 3b rate fix (rev 889(ii)): the base `(download, upload)` Mbps for a
 /// plan-less site. The CLIENT devices' UISP service plan wins; the site/PN
 /// `generated_pn_*` sentinel is only the last resort (the compiler leaf clamp
 /// caps it to the parent's effective ceil). PURE.
@@ -634,7 +634,7 @@ async fn build_imported_full2_bundle_from_data(
     }
 
     // Cull the APs that have no clients or only one link — EXCEPT a role-keyed
- // link/station radio (the implementer `#12` R5). The cull is structural /
+    // link/station radio (the reviewer `#12` R5). The cull is structural /
     // client-count; the link decision is ROLE-keyed and must never depend on a
     // node this cull removes. A clientless single-link PtMP station client would
     // otherwise be removed before the attachment decision, so it could never be
@@ -705,7 +705,7 @@ async fn build_imported_full2_bundle_from_data(
     // device that is a site's attachment is NOT a tree node (the site attaches
     // to the serving AP; the link is only the attachment). Keyed on the device
     // ROLE (`device_is_link`), never structure — a chained AP is structurally
- // identical (the implementer `#12` PIN-1).
+    // identical (the reviewer `#12` PIN-1).
     // `docs/topology_ptp_link_site_attachment_work_order.md` (DRIVER): EVERY
     // PTP/backhaul LINK device (by ROLE) is an ATTACHMENT — NOT a node of any
     // kind (no `ap`, no `site`) — regardless of POSITION (root-level or nested)
@@ -1088,7 +1088,7 @@ async fn build_imported_full2_bundle_from_data(
         );
     }
 
- // the synthetic `Orphans` parent must be EMITTED as a real
+    // the coordinator rev 1717: the synthetic `Orphans` parent must be EMITTED as a real
     // root child. When a path-less site is attached to it, the canonical-state
     // write otherwise rejects the WHOLE import (`dangling parent
     // libreqos:generated:uisp:site:orphans`) and no topology ever publishes.
@@ -1126,7 +1126,7 @@ async fn build_imported_full2_bundle_from_data(
     // so the umbrella must ALSO be an editor node — otherwise the canonical
     // validator rejects the whole import with
     // `node <site> has dangling parent libreqos:generated:uisp:site:orphans`.
- // The fix covered `parents`; this covers the editor/canonical
+    // The rev 1717 fix covered `parents`; this covers the editor/canonical
     // representation the same fact has a second home in.
     if !topology_editor_nodes
         .iter()
@@ -1248,7 +1248,7 @@ async fn build_imported_full2_bundle_from_data(
                 } else if site.suspended && config.uisp_integration.suspended_strategy == "slow" {
                     (0.1, 0.1, 0.1, 0.1)
                 } else {
- // 3b rate fix(ii)): a plan-less site takes its
+                    // 3b rate fix (rev 889(ii)): a plan-less site takes its
                     // rate from the CLIENT devices' UISP service plan — NEVER
                     // the whole-network `generated_pn_*` sentinel (the 100G
                     // "unlimited PN", appropriate only for the parent SITE/PN
@@ -1773,7 +1773,7 @@ fn topology_site_neighbor_for_access_point(
 
 /// TRUE when a UISP device is a LINK/PTP device (the station side of a
 /// point-to-point backhaul) rather than a serving Access Point. Keyed on the
-/// device ROLE / wireless mode (the implementer `#12` PIN-1) — never structure, since a
+/// device ROLE / wireless mode (the reviewer `#12` PIN-1) — never structure, since a
 /// chained AP is structurally identical to a link.
 fn device_is_link(device: &UispDevice) -> bool {
     let role = device.role.as_deref().unwrap_or("").to_ascii_lowercase();
@@ -2855,7 +2855,7 @@ mod topology_override_tests {
         }
     }
 
- /// 3b rate fix(ii), the plan-less-client oracle): a site carrying
+    /// 3b rate fix (rev 889(ii), the plan-less-client oracle): a site carrying
     /// the whole-network PN sentinel but a client device plan uses the DEVICE
     /// plan, never the generated-PN 100G.
     #[test]
@@ -3138,7 +3138,7 @@ mod topology_override_tests {
 
     /// A path-less site is parented to the synthetic Orphans umbrella. The
     /// umbrella must exist in BOTH representations the same fact lives in:
- /// `parents`/network.json (the fix) AND the editor/canonical
+    /// `parents`/network.json (the rev 1717 fix) AND the editor/canonical
     /// nodes (`from_editor_and_network`) — otherwise the canonical validator
     /// rejects the whole import (`node <site> has dangling parent
     /// libreqos:generated:uisp:site:orphans`) and no topology publishes on
@@ -3761,7 +3761,7 @@ mod topology_override_tests {
         );
     }
 
- /// the implementer `#12` PIN-1 (the NON-link fixture): a CHAINED AP (an AP under
+    /// the reviewer `#12` PIN-1 (the NON-link fixture): a CHAINED AP (an AP under
     /// another AP) is structurally identical to a link but is NOT one by ROLE ⇒
     /// the site keeps the nearest-site parent and the intermediate AP is NOT
     /// dropped/re-parented to the grandparent.
@@ -3918,7 +3918,7 @@ mod topology_override_tests {
             Some("uisp:device:device-link"),
             "the link/station radio IS the site's attachment"
         );
- // the implementer `#12` R2: the radio's RATE must survive the radio leaving the
+        // the reviewer `#12` R2: the radio's RATE must survive the radio leaving the
         // node list — it rides its ATTACHMENT OPTION (so the site's shaped rate
         // is unchanged while the tree looks right).
         let child_editor = editor
@@ -3961,7 +3961,7 @@ mod topology_override_tests {
         assert_link_attachment_shape(&canonical);
     }
 
- /// `docs/topology_ptmp_ptp_attachment_card.md` §2 + §7 (the implementer acceptance):
+    /// `docs/topology_ptmp_ptp_attachment_card.md` §2 + §7 (the reviewer acceptance):
     /// ONE union predicate covering BOTH shapes — a PtMP station client / CPE
     /// (`sta-ptmp`, the DRIVER's 'Wave Long-Range') AND a PTP/backhaul radio,
     /// EITHER end (`ap-ptp`/`sta-ptp`). A sector AP (`ap-ptmp`) and a plain

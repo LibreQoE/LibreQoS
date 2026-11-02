@@ -292,7 +292,7 @@ fn load_topology_runtime_status_payload() {
         })
     );
     if !custody_ok {
- // §0b; the implementer R1-R4): NAME the failing custody leg + the
+        // §0b (the coordinator rev 2996; the reviewer R1-R4): NAME the failing custody leg + the
         // two compared values so the residual is attributable (measurement-only).
         match &custody {
             Ok(verification) => warn!(
@@ -1271,6 +1271,9 @@ mod tests {
 
     #[test]
     fn circuit_bus_readers_release_raw_data_before_resolving_parents() {
+        // These readers branch on `is_active()`; this test asserts the raw-tracker
+        // path, so it pins the fallback side of that split.
+        let _mode = crate::bridge_analytics::with_bridge_mode(false);
         let _runtime_guard = runtime_config_test_lock()
             .lock()
             .expect("runtime config test lock should not be poisoned");

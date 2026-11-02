@@ -6,7 +6,7 @@
 //! bounded <=1-batch duplicate on an lqosd crash is accepted — no idempotency
 //! key, **no Insight schema change**.
 //!
-//! Re-`#12` rework: Q2 health gate, Q3 retention bypass on the ring
+//! Re-`#12` rework (rev 8903): Q2 health gate, Q3 retention bypass on the ring
 //! path, Q4 SENT-packet mapping, Q5 health counters + `batch.dropped`, Q6 a
 //! deterministic handover, Q7 a `next_seq` regression guard, Q8 the missing
 //! tests. **Q1 (durable commit / at-most-once) is HELD for the DRIVER** — the
@@ -532,7 +532,7 @@ pub(crate) fn process_batch_once(
     batch: &CompletionBatch,
     attempt: impl FnOnce(&[FlowRow]) -> Handoff,
 ) -> BatchOutcome {
-    // (a) An EPOCH CHANGE is a RE-BASE signal (flash_1 returns next_seq=0 on a
+    // (a) An EPOCH CHANGE is a RE-BASE signal (the epoch source returns next_seq=0 on a
     // cursor/epoch mismatch): adopt the new epoch at seq 0 and IGNORE this
     // batch (its events + next_seq); the new epoch's FIRST real batch advances.
     if batch.epoch != cursor.epoch {
@@ -1090,7 +1090,7 @@ mod tests {
             dropped: 5,
             replay_lost: 0,
         };
-        // (1) the epoch-change signal (flash_1's next_seq=0 mismatch) ⇒ re-base.
+        // (1) the epoch-change signal (the epoch source's next_seq=0 mismatch) ⇒ re-base.
         let rebase = CompletionBatch {
             epoch: 9,
             events: vec![event(1, 10, 20)],

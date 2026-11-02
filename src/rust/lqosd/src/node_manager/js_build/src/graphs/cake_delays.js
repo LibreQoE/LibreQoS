@@ -101,7 +101,7 @@ export class CakeDelays extends DashboardGraph {
     update(msg) {
         this.chart.hideLoading();
 
- // Bridge modea): the per-tin value is the MEASURED p99
+        // Bridge mode (rev 729a): the per-tin value is the MEASURED p99
         // queue sojourn (the bridge wire's `sojourn_p99_ns`), not Linux tc's
         // cobalt base delay — label it honestly. The kernel path keeps the
         // legacy "Delays" title (base_delay_us).

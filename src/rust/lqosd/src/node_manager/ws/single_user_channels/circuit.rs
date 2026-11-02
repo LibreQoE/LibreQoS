@@ -44,7 +44,7 @@ fn summarize_from_bridge_row(
     row: &crate::bridge_analytics::translate::CircuitLiveRow,
     active_flow_ips: &fxhash::FxHashSet<std::net::IpAddr>,
 ) -> CircuitSummaryData {
- // 3b display semantics: the summary's customer-facing
+    // 3b (rev 851) display semantics: the summary's customer-facing
     // `bytes_per_second` is the E2 row's DELIVERED (shaped) series; the
     // pre-shaping ingress demand is the separate `actual_bytes_per_second`
     // (`CircuitLiveRow.bytes_per_second` is that demand).
@@ -188,7 +188,7 @@ pub async fn circuit_devices_snapshot(
         BusRequest,
     )>,
 ) -> Vec<Circuit> {
- // T2a correction (driver live-demo finding, the kernel
+    // T2a correction (driver live-demo finding, rev 389): the kernel
     // device list is EMPTY on the v3 bridge path — `snapshot_circuits`
     // iterates `THROUGHPUT_TRACKER.raw_data` (§5.3: kernel XDP, empty
     // by construction), so the old all_circuits+overlay shape left
@@ -367,7 +367,7 @@ mod t2a_tests {
         overlay_device_rates(&mut devices, &by_ip_map);
 
         let row = crate::bridge_analytics::translate::CircuitLiveRow {
- // 3b: `bytes_per_second` is the enqueued DEMAND,
+            // 3b (rev 851): `bytes_per_second` is the enqueued DEMAND,
             // `shaped_bytes_per_second` the DELIVERED series.
             bytes_per_second: DownUpOrder { down: 1400, up: 700 },
             shaped_bytes_per_second: DownUpOrder { down: 1250, up: 625 },

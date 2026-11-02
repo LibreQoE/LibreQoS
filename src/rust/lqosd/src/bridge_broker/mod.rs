@@ -441,7 +441,7 @@ fn terminal_fenced(fence: Option<&str>, desired_structural: &str) -> bool {
     fence.is_some_and(|f| f == desired_structural)
 }
 
-/// #4 (`docs/control_plane_simplification_card.md` §4c; the implementer's
+/// #4 (`docs/control_plane_simplification_card.md` §4c; the reviewer's
 /// `docs/resolved_posture_spec.md`): resolve + EMIT the RESOLVED semantic
 /// posture at boot. OBSERVE BEFORE COLLAPSE — this lands + runs on `.12` before
 /// any knob is collapsed. The field set is pinned by `posture::tests`.
@@ -518,7 +518,7 @@ pub fn start_bridge_broker(config: &lqos_config::Config) {
     // R3 (remove_lpm_completeness_card §R3): the analytics socket path —
     // the attach-baseline report rides the same socket the analytics
     // actor and the Supervisor already use (env wins, then config).
- // AUDIT FIX: the BROKER must be ENV-AWARE like the actor
+    // AUDIT FIX (the coordinator rev 4766): the BROKER must be ENV-AWARE like the actor
     // (`bridge_analytics/mod.rs:621`) and the supervisor (`bridge_supervisor.rs:99`)
     // — `analytics_socket_path` reads LIBREQOS_ANALYTICS_SOCKET FIRST, so build
     // settings even when `[dataplane_bridge]` is absent (jackrabbit sets only
@@ -526,7 +526,7 @@ pub fn start_bridge_broker(config: &lqos_config::Config) {
     // the attach reset the base to None, the full world re-emitted, and the
     // bridge refused the live multi-add. None only when NEITHER the section NOR
     // the env is present (the adopt is inert anyway).
- // R1: use the SINGLE shared owner so the broker, the
+    // R1 (the reviewer rev 4765): use the SINGLE shared owner so the broker, the
     // analytics actor, and the supervisor gates cannot diverge again.
     let socket_path = crate::bridge_analytics::analytics_socket_path_if_active(config);
     // #4 (`docs/control_plane_simplification_card.md`): the RESOLVED semantic
@@ -1657,7 +1657,7 @@ fn classify_slot_order(
     let Some(order) = slot_order else {
         return SlotOrderClass::Absent;
     };
- // the matrix classifies on the COMPOSED universe — the
+    // rev 322: the matrix classifies on the COMPOSED universe — the
     // same order source semantic_diff walks (table ++ baseline tail).
     // At adoption the baseline IS the report tx, so the tail contributes
     // nothing new; composition here keeps the classifier and the walker
@@ -1772,8 +1772,8 @@ fn reconcile_from_report(state: &mut BrokerState, cadence: bool) -> bool {
             slot_order
         }
         SlotOrderClass::Absent => {
- // Absent-branch adopt MUST still carry the BASE_ADOPT marker (the implementer
- // REQUIRED): the named degrade is the slot order, not the base.
+            // Absent-branch adopt MUST still carry the BASE_ADOPT marker (the reviewer
+            // rev 4757 REQUIRED): the named degrade is the slot order, not the base.
             warn!(
                 "BRIDGE_SLOT_ORDER_ABSENT: the report carries no slot table — drains/views \
                  key on the fold order (one named degrade)"
@@ -2100,7 +2100,7 @@ fn step(artifact: &PathBuf, state: &mut BrokerState) {
                     // baseline — RESET the belief (A3 owner) and re-reconcile.
                     state.applied.reset();
                     clear_cpu_workers_snapshot();
- // AUDIT GAP 3: the base SETTER marker — a
+                    // AUDIT GAP 3 (the reviewer rev 4754): the base SETTER marker — a
                     // re-attach RESET to None (the third setter; R2b covers the ack
                     // fold, the adopt is marker 2).
                     info!(
@@ -5175,7 +5175,7 @@ mod ghost_segment_tests {
 mod posture_surface_tests {
     use super::*;
 
- /// NON-VACUOUS (#4, `posture:log_posture` actually EMITS
+    /// NON-VACUOUS (#4, the coordinator rev 4845): `posture::log_posture` actually EMITS
     /// the `RESOLVED_POSTURE` event carrying the resolved fields — a
     /// commit-message claim is not a surface. A regression that drops the log
     /// FAILS here.

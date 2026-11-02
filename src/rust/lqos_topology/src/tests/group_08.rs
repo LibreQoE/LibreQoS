@@ -608,7 +608,7 @@ fn stormguard_circuit_aqm_fallback_folds_as_a_post_pass() {
 
 #[test]
 fn stormguard_circuit_aqm_applies_in_both_ingress_modes() {
- // (§9.4): the circuit-AQM post-pass is NOT integration-only —
+    // the coordinator rev 640 (§9.4): the circuit-AQM post-pass is NOT integration-only —
     // it is a machine-authored runtime fallback, so it applies in legacy-DIY
     // mode too (the ph1 site-clamp precedent). No mode-gated WARN.
     use lqos_overrides::CircuitAdjustment;
@@ -937,7 +937,7 @@ fn verify_published_shaping_generation_round_trip_and_stale_override() {
 
 #[test]
 fn verify_published_shaping_generation_is_read_only() {
- // Card v2: the readiness verifier runs per tick FOREVER and
+    // Card v2 (rev 1186): the readiness verifier runs per tick FOREVER and
     // must never write — no override-file create/migrate, no quarantine.
     // NON-flat config: exercises the validation-export override load (a write
     // site found by the #12) — flat mode bypasses it.
@@ -1158,7 +1158,7 @@ fn verify_published_shaping_generation_rejects_a_churned_world_tampered_artifact
     );
 }
 
-/// Leg 2 POSITIVE (the churn — the deriver ``): a FRESH status whose on-disk
+/// Leg 2 POSITIVE (the churn — the coordinator `rev 4291`): a FRESH status whose on-disk
 /// artifact lags the fresh mint by one churn (the world moved without a
 /// republish) must be TOLERATED, so the tracker's effective-parent cache loads
 /// (the UI-0 fix). A stale mismatch still fails (the edited-artifact test).
@@ -1208,13 +1208,13 @@ fn verify_published_shaping_generation_tolerates_a_fresh_artifact_lag() {
     );
 }
 
-/// Leg 2 FRESH-TAMPER NEGATIVE (review ``): a tampered artifact on a
+/// Leg 2 FRESH-TAMPER NEGATIVE (review `rev 4294`): a tampered artifact on a
 /// FRESH status with the SAME world (`generation == status.source_generation`)
 /// must FAIL — the exact same-world check is NOT freshness-gated. (This is the
 /// security teeth the blanket fresh-tolerate removed.)
 #[test]
 fn verify_published_shaping_generation_rejects_a_fresh_tampered_artifact() {
- // Card v2 i-a: readiness is the complete custody check
+    // Card v2 i-a (rev 1188): readiness is the complete custody check
     // world ↔ generation ↔ artifact. An on-disk shaping_inputs.json that
     // diverges from the fresh mint must FAIL, even when the world is unchanged
     // (the relocated payload-tamper teeth).
@@ -1249,7 +1249,7 @@ fn verify_published_shaping_generation_rejects_a_fresh_tampered_artifact() {
         .expect("tampered shaping inputs should save");
     // The WORLD is UNCHANGED (only the artifact is edited) and the status is
     // FRESH: the EXACT same-world check must catch the tamper (a fresh-tamper
- // negative — review.
+    // negative — review rev 4294).
     let tampered = crate::verify_published_shaping_generation(&config).expect("verify should run");
     assert_eq!(
         tampered.verified,
@@ -1339,7 +1339,7 @@ fn verify_published_shaping_generation_rejects_edited_operator_view() {
 
 #[test]
 fn operator_view_diff_classifies_key_vs_scalar() {
- // R2: the operator-view diag must distinguish a
+    // R2 (the reviewer rev 3019): the operator-view diag must distinguish a
     // top-level KEY difference from a scalar-only difference — a key-only diff
     // is SILENT in a value comparison and must not read as "no diff".
     use crate::operator_view_diff;
@@ -1371,7 +1371,7 @@ fn operator_view_diff_classifies_key_vs_scalar() {
 
 #[test]
 fn operator_view_nodes_diff_names_bounded_paths() {
- // R1/R2: the deeper `nodes` diff names PATHS (bounded,
+    // R1/R2 (the reviewer rev 3043): the deeper `nodes` diff names PATHS (bounded,
     // first <= 8) + a count, and reports a deep `nodes_equal` bool.
     use crate::operator_view_nodes_diff;
     let in_memory = serde_json::json!({
@@ -1400,7 +1400,7 @@ fn operator_view_nodes_diff_names_bounded_paths() {
     assert!(!equal);
     assert_eq!(count, 20);
     assert!(paths.len() <= 8, "paths bounded to <= 8: {paths:?}");
- // a LENGTH-only difference must be named (zip hides it).
+    // the reviewer rev 3047: a LENGTH-only difference must be named (zip hides it).
     let short = serde_json::json!({ "nodes": [{"id": "c-1"}] });
     let long = serde_json::json!({ "nodes": [{"id": "c-1"}, {"id": "c-2"}] });
     let (equal, paths, count) = operator_view_nodes_diff(&short, &long);
@@ -1414,7 +1414,7 @@ fn operator_view_nodes_diff_names_bounded_paths() {
 
 #[test]
 fn published_effective_generation_matches_the_serialized_operator_view_file() {
- // (b) /: `effective_generation` must be the
+    // (b) the coordinator rev 3054 / the reviewer rev 3055: `effective_generation` must be the
     // CONTENT hash of the PERSISTED operator view (status == file) — the f32
     // non-identity made the in-memory `to_value` hash diverge from the file.
     let config = flat_test_config("lqos-topology-effective-gen-file", 2);

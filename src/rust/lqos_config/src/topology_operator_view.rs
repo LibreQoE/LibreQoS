@@ -101,7 +101,7 @@ pub struct OperatorViewNode {
     /// model so the site map renders. Producer-agnostic: uisp + the python
     /// integration family + the legacy import all supply it upstream.
     ///
- /// (a) /: `f64`, NOT `f32` — an f32 in a
+    /// (a) the coordinator rev 3054 / the reviewer rev 3055: `f64`, NOT `f32` — an f32 in a
     /// serde_json `Value` does not round-trip through JSON (a 1-ULP loss), which
     /// made `to_value(view)` hash != the persisted file hash (the persistent
     /// `effective_mismatch`). f64 is JSON-exact; the builder widens losslessly.
@@ -303,7 +303,7 @@ mod operator_view_round_trip_tests {
         }
     }
 
- /// R3; the EXACT publish pipeline is
+    /// R3 (the reviewer rev 3043; the coordinator rev 3044): the EXACT publish pipeline is
     /// `to_value(&view) -> to_string_pretty -> from_str::<Value>` then the
     /// content hash. A non-identity here NAMES the lossy `nodes` sub-field
     /// OFF-box, before any `.12` re-run. PASS => the file != operator_view_value
@@ -326,7 +326,7 @@ mod operator_view_round_trip_tests {
         );
     }
 
- /// R-GUARD (the implementer ``, binding): the persisted form's hash MUST
+    /// R-GUARD (the reviewer `rev 3055`, binding): the persisted form's hash MUST
     /// equal the in-memory `to_value` hash — FAILS-CLOSED if a future lossy type
     /// (e.g. an `f32` field) enters. The view carries a ULP-FAILING f32
     /// magnitude widened to f64: as an `f32` field it is non-identity under

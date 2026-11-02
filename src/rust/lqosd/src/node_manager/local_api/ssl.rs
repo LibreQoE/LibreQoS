@@ -1,7 +1,8 @@
 //! Local authenticated HTTPS/Caddy setup endpoints for the node manager.
 
 use crate::node_manager::auth::LoginResult;
-use axum::{Extension, Json, extract::Host, http::StatusCode};
+use axum::{Extension, Json, http::StatusCode};
+use axum_extra::extract::Host;
 use lqos_setup::ssl::{SslActionOutcome, SslStatus};
 use serde::Deserialize;
 

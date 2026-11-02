@@ -369,7 +369,7 @@ function currentDirectionValue(pair, direction, fallback = 0) {
 }
 
 function currentQueuingActivitySnapshot() {
- // 3b: customer-facing "Throughput" = the DELIVERED (shaped)
+    // 3b (rev 851): customer-facing "Throughput" = the DELIVERED (shaped)
     // rate; "Enqueued" = the pre-shaping ingress DEMAND — both labeled, and
     // §`lqos-74t.46` (#1159): BOTH directions at once (no toggle). Flows is a
     // circuit-level scalar, NOT per-direction.
@@ -1329,7 +1329,7 @@ function applyCircuitSummary(summary) {
         excludeRttToggle.checked = excludeRttLastValue;
     }
     if (speedometer) {
- // 3b display semantics: customer-facing throughput = the
+        // 3b display semantics (rev 846): customer-facing throughput = the
         // DELIVERED (shaped, `bytes_per_second`) rate — the ingress demand is a
         // separate labeled overlay, never the headline.
         speedometer.update(

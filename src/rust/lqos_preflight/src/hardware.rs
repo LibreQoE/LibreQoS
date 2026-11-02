@@ -86,7 +86,7 @@ impl HardwareVerdict {
 /// hugepages and nothing pre-flighted it).
 pub fn hugepages_persistent(kernel_cmdline: &str, grub_cfg: &str, sysctl: &str) -> bool {
     /// Drop inline comments, then a fully-commented line becomes empty and is
- /// SKIPPED — a COMMENTED-OUT declaration is NOT persistent (the implementer #12).
+    /// SKIPPED — a COMMENTED-OUT declaration is NOT persistent (the reviewer #12).
     fn uncommented(line: &str) -> &str {
         line.split('#').next().unwrap_or("").trim()
     }
@@ -458,7 +458,7 @@ mod tests {
         ));
         assert!(hugepages_persistent("", "", "vm.nr_hugepages = 2048"));
         assert!(!hugepages_persistent("quiet splash", "", ""));
- // A COMMENTED-OUT declaration is NOT persistent (the implementer #12).
+        // A COMMENTED-OUT declaration is NOT persistent (the reviewer #12).
         assert!(!hugepages_persistent(
             "",
             "# GRUB_CMDLINE_LINUX=\"hugepages=2048\"",

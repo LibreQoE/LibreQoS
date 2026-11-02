@@ -4,7 +4,7 @@
 //! The EMITTER (`publish_effective_topology_artifacts`) stamps the compiled
 //! `DataplaneTransaction.circuit_capacity` with
 //! `max(next_power_of_two(n_circuits), FLOOR, carried)`. The bridge reads that
-//! value as its slot/array bound (flash_1 §8 (a)); the LKG inherits it because
+//! value as its slot/array bound (review §8 (a)); the LKG inherits it because
 //! the LKG stores the transaction.
 //!
 //! `carried` is the value the running bridge already applied. The bridge

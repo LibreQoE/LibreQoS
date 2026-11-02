@@ -663,14 +663,17 @@ fn maybe_migrate_bandwidth_to_dataplane(
 }
 
 /// `lqos-74t.55`: ensure an emitted `[bridge]` table carries the legacy
-/// `use_xdp_bridge` key for the **external** (V2) `lqos_api` consumer.
+/// `use_xdp_bridge` key for the **V2** API consumer.
 ///
 /// v3 removed `use_xdp_bridge` as a dead v2 key (`08af2da80`;
 /// `docs/config_surface_card.md:217` — it is NOT a v15 `BridgeConfig` field, so
-/// serde DROPS it). The downloaded `lqos_api` still deserializes it as a
-/// **required** `[bridge]` field, so a preserved (`--force-confold`) or
-/// v3-emitted config makes `libreqos-api` crash-loop
-/// (`missing field use_xdp_bridge at [bridge]`). We do **not** re-add the v15
+/// serde DROPS it). A v2 `lqos_api` process, if one is still pointed at this
+/// file, still deserializes it as a **required** `[bridge]` field and fails to
+/// start (`missing field use_xdp_bridge at [bridge]`). The v3 API is a library
+/// inside `lqosd` and reads the config through `lqos_config`, so only a
+/// still-running v2 binary is affected; we make the **emitted document** carry
+/// the key for that consumer, as the `lqos-74t.55` acceptance requires. We do
+/// **not** re-add the v15
 /// schema field (the config-surface record documents it is absent; the
 /// k3-retirement posture forbids kernel-mode config surfaces); we make the
 /// **emitted document** carry the key for the external consumer, as the

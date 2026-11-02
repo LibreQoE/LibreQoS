@@ -11,17 +11,16 @@ shape; where they differ, the packaging guide is authoritative.
 
 ## The path, in order
 
-0. **Add the new apt repo** — you are on the **legacy** `repo.libreqos.com`
-   archive, which does not carry v3 (its `beta` is frozen and its `stable` is
-   absent). Add the key + a **`beta`** sources entry for
+0. **Add the new apt repo, keep the legacy one** — you are on the **legacy**
+   `repo.libreqos.com` archive, which does not carry v3 (its `beta` is frozen
+   and its `stable` is absent). Add the v3 key + a **`beta`** sources entry for
    `packages.libreqos.com` (see [Installing v3 §1](install.md)) **before**
-   installing — `beta` carries the current release candidate, and the suite
-   word becomes `stable` at GA; if an existing
-   `/etc/apt/sources.list.d/libreqos.list` points at
-   the legacy host, **replace** it. The v2 systemd-hotfix entry
-   (`libreqos-systemd-hotfix.list`) and its key
-   `/usr/share/keyrings/libreqos-archive-keyring.gpg` are **independent** — keep
-   the key; the rollback (step 8) needs the legacy `archive` suite.
+   installing. **Do not delete the legacy source or its key**: the rollback
+   (step 8) resolves from the legacy `archive` suite and needs both. Put the v3
+   entry in a separate `libreqos-v3.list` (or pin the v3 source above the
+   legacy archive) rather than replacing the v2 entry. Keep
+   `/usr/share/keyrings/libreqos-archive-keyring.gpg` and the v2 systemd-hotfix
+   entry until the rollback window closes.
 1. **Preflight — before installing the packages.** The v3 `libreqos` `preinst`
    **stops the old daemons** and then runs the checker, refusing the install on
    a **BLOCK**. Run the checker first: install only the static checker package
@@ -29,9 +28,12 @@ shape; where they differ, the packaging guide is authoritative.
    then run `libreqos-v3-preflight`. Read PASS/WARN/BLOCK; a **BLOCK** means
    stop here. Watch the netplan adoption line and any `OPERATOR-CONSOLE
    REQUIRED`.
-2. **Install LibreQoS v3** — the control plane + the separate dataplane artifact
-   (see [Installing v3](install.md)); `lqos_setup` runs the `bridge.conf`
-   migration and `lqosd` migrates the runtime state to schema 3.
+2. **Install LibreQoS v3** — the three packages at **one version**
+   (`libreqos-preflight`, `libreqos`, `libreqos-dataplane`; see
+   [Installing v3](install.md)). The node API is served by `lqosd` at
+   `/api/v3`; there is no separate `libreqos-api` package or unit. `lqos_setup`
+   runs the `bridge.conf` migration and `lqosd` migrates the runtime state to
+   schema 3.
 3. **Adopt the Linux bridge** (netplan) — transactional; note the **backup id**;
    verify management still answers; never proceed remotely without console access
    when management rides the bridge.

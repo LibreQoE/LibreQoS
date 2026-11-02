@@ -1,4 +1,4 @@
-//! 3a group-1: the bridge QoO/QoQ port — the pin; §`lqos-74t.47.1.2`
+//! 3a group-1: the bridge QoO/QoQ port — the rev 785 pin; §`lqos-74t.47.1.2`
 //! repointed the latency source to a per-flow, packet-weighted pool.
 //!
 //! The deleted kernel `update_flow_qoo` scored per-flow over the kernel RTT

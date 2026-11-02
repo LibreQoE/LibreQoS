@@ -197,7 +197,7 @@ struct Accumulators {
     protocol: FxHashMap<String, ClassSlot>,
     /// The per-ASN heatmap aggregate for the ASN store: bytes + per-direction
     /// packets + retransmits, plus the WINDOW-SEMANTICS RTT count/sum/min/max
- /// folded from each flow's current latency-ring tail; RTT is
+    /// folded from each flow's current latency-ring tail (rev 1121; RTT is
     /// NOT under the byte conservation identity).  Keyed by the KNOWN ASN only
     /// (`None`/`0` are dropped by the store), so the ASN conservation identity
     /// is over known-ASN flows (disclosed).
@@ -238,8 +238,8 @@ impl Accumulators {
         }
     }
 
- /// Fold one flow's CURRENT RTT tail into the per-ASN window numerics (the deriver
- /// each tick adds the tail's count/sum/min/max per direction —
+    /// Fold one flow's CURRENT RTT tail into the per-ASN window numerics (the coordinator
+    /// rev 1121): each tick adds the tail's count/sum/min/max per direction —
     /// NOT a delta (the source is a bounded 8-slot ring, not a cumulative
     /// counter).  Residence-weighted: a sample counts once per tick it stays in
     /// the ring (disclosed).  RTT is NOT under the byte conservation identity.
@@ -588,7 +588,7 @@ impl FlowHistory {
             if fresh.contains_key(&key) {
                 continue;
             }
- // 3b: the flow-history/ASN/timeline buckets difference
+            // 3b (rev 866): the flow-history/ASN/timeline buckets difference
             // the DELIVERED (shaped) series (the per-ASN current rate the
             // window caught reading demand).
             let cur = DownUpOrder::new(row.shaped.download_bytes, row.shaped.upload_bytes);
@@ -663,7 +663,7 @@ impl FlowHistory {
                 state: row.state,
                 first_seen_millis: row.first_seen_millis,
                 last_seen_millis: row.last_seen_millis,
- // 3b: the retained flow bytes are the DELIVERED
+                // 3b (rev 866): the retained flow bytes are the DELIVERED
                 // (shaped) series — the demand stays the labeled Enqueued KPI.
                 bytes: DownUpOrder::new(row.shaped.download_bytes, row.shaped.upload_bytes),
                 // The cumulative per-direction SENT packets (the ether summary's
@@ -792,7 +792,7 @@ mod tests {
                 remote_port: 80,
                 protocol,
             },
- // 3b sweep-fixture guard: demand != delivered.
+            // 3b rev 866 sweep-fixture guard: demand != delivered.
             actual: DirectionalCounters {
                 download_bytes: down + 10_000,
                 upload_bytes: up + 10_000,

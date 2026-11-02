@@ -22,10 +22,10 @@ that are still evolving say so.
 
 ## The control plane
 
-- **`lqosd`** provides the control plane, the local WebUI/dashboard, the local
-  API, and the bridge broker. The retired Flask `lqos_api` is replaced by
-  `libreqos-api` (fetched at install time; a failed fetch does not brick the
-  install).
+- **`lqosd`** provides the control plane, the local WebUI/dashboard, the node
+  API at `/api/v3`, and the bridge broker. The retired Flask `lqos_api` service
+  is replaced by that in-daemon API: no separate binary, package, unit or
+  install-time fetch exists for it.
 - **The Python refresh engine is retired.** The v3 transaction compiler produces
   the shaping world; there is no Python scheduling loop.
 - **UISP** runs through `libreqos-scheduler` (the standalone UISP unit/timer is

@@ -77,7 +77,7 @@ CP_SOURCE_FILES=(
   network.example.json pythonCheck.py qoo_profiles.json scheduler.py
   ShapedDevices.example.csv shaping_skip_report.py systemd_hotfix.sh
   install_caddy.sh disable_caddy.sh manualNetwork.template.csv
-  ../requirements.txt update_api.sh update_bridge.sh libreqos-apt-source.sh
+  ../requirements.txt update_bridge.sh libreqos-apt-source.sh
 )
 # Install payload mirrors the packaged control-plane bin file set.
 CP_BIN_SOURCE_FILES=(
@@ -401,9 +401,9 @@ install_plan() {
   log "  backup:  $(rooted "$BACKUP_ROOT")/<timestamp>"
   if [ "$NO_RESTART" -eq 0 ]; then
     if [ "$WITH_DATAPLANE" -eq 1 ]; then
-      log "  restart: libreqos-lqosd -> libreqos-bridge -> libreqos-scheduler -> libreqos-api"
+      log "  restart: libreqos-lqosd -> libreqos-bridge -> libreqos-scheduler"
     else
-      log "  restart: libreqos-lqosd -> libreqos-scheduler -> libreqos-api"
+      log "  restart: libreqos-lqosd -> libreqos-scheduler"
     fi
   else
     log "  restart: none (--no-restart)"
@@ -544,7 +544,7 @@ install_local() {
         log "WARNING: $rebuild_cmd absent; venv not rebuilt."
       fi
     fi
-    for unit in libreqos-lqosd libreqos-bridge libreqos-scheduler libreqos-api; do
+    for unit in libreqos-lqosd libreqos-bridge libreqos-scheduler; do
       [ "$unit" = "libreqos-bridge" ] && [ "$WITH_DATAPLANE" -eq 0 ] && continue
       if $SYSTEMCTL list-unit-files "${unit}.service" >/dev/null 2>&1; then
         if ! $SUDO $SYSTEMCTL restart "$unit"; then

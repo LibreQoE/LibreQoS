@@ -2951,7 +2951,7 @@ fn validated_runtime_shaping_inputs_path() -> PyResult<Option<String>> {
 /// current world produces no shaping inputs (nothing to compare), `Some(true)`
 /// when the custody chain holds, and `Some(false)` when the published runtime is
 /// stale for the current world. `generation` is the current source-generation
-/// token. `failed_leg` names the custody leg that failed (§0b,
+/// token. `failed_leg` names the custody leg that failed (§0b, the coordinator rev 2996)
 /// and is `None` when `verified` is not `Some(false)`.
 #[pyfunction]
 fn verify_published_shaping_generation() -> PyResult<Option<(Option<bool>, String, Option<String>)>> {

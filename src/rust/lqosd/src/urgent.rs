@@ -9,6 +9,19 @@ use lqos_utils::unix_time::unix_now;
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 static URGENT: Mutex<VecDeque<UrgentIssue>> = Mutex::new(VecDeque::new());
 
+/// Serialises tests that read or mutate the process-global registry.
+#[cfg(test)]
+static URGENT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Takes the registry test lock.
+///
+/// The registry outlives every test, so a test that submits an issue and then
+/// counts it must not race a test that calls [`clear_all`].
+#[cfg(test)]
+pub(crate) fn test_lock() -> parking_lot::MutexGuard<'static, ()> {
+    URGENT_TEST_LOCK.lock()
+}
+
 const MAX_ISSUES: usize = 100;
 const TTL_SECONDS: u64 = 24 * 60 * 60; // 24h
 const DEDUPE_WINDOW_SECONDS: u64 = 300; // 5 minutes
@@ -116,6 +129,7 @@ mod tests {
 
     #[test]
     fn clear_by_identity_removes_only_matching_issues() {
+        let _guard = test_lock();
         let code = "TEST_XDP_IP_MAPPING_APPLY_FAILED";
         let other_code = "TEST_OTHER";
         let other_dedupe = "TEST_XDP_IP_MAPPING_APPLY_FAILED_OTHER_DEDUPE";
@@ -160,6 +174,7 @@ mod tests {
 
     #[test]
     fn seam_replaced_urgent_clears_on_heal() {
+        let _guard = test_lock();
         clear_all();
         submit(
             UrgentSource::System,

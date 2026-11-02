@@ -5,12 +5,12 @@ The <=10-minute first experience: a 16-circuit shaping tree running through the
 DPDK `net_af_packet` engine on a local veth pair, with the v3 `lqosd` web UI
 serving live statistics. No second NIC and no production install are touched.
 
-Design notes (from the §3.1 fresh review,:
+Design notes (from the §3.1 fresh review, rev 965):
   * The engine is the DPDK `net_af_packet` PMD on veths (the in-tree
     `scripts/local_testbed.py` exercises). The Rust-native AF_PACKET engine is
     a scheduler-less passthrough and cannot shape, so it is NOT used here.
   * `circuit_capacity` is AUTO-DERIVED from the live leaf count (leaves + 1
-    best-effort slot), never a raw default -- the shared host 17x lesson.
+    best-effort slot), never a raw default -- the production-host 17x lesson.
   * This script is v3-side only; it never edits the engine checkout.
 
 Run through `./build_rust.sh demo`. Needs root (veth/netns + AF_PACKET +

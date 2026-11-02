@@ -224,7 +224,7 @@
         );
     }
 
-/// R0 (remove_lpm_completeness_card, fresh-#12: a BARE device
+/// R0 (remove_lpm_completeness_card, fresh-#12 rev 307): a BARE device
 /// IP is a host address — /32 v4, /128 v6 — the same normalization the
 /// runtime_inputs normalizers apply. Before R0 the bare form was
 /// dropped SILENTLY (split_once('/')? returned None) and the whole

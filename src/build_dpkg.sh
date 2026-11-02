@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 PACKAGE=libreqos
-# The anti-skew rule: the release pipeline builds BOTH packages
+# The anti-skew rule (the coordinator rev 1532): the release pipeline builds BOTH packages
 # in ONE invocation with ONE version stamp, so the dataplane's exact
 # `Depends: libreqos (= <version>)` pin can never self-block on a BUILD_DATE
 # mismatch. LIBREQOS_VERSION (or --version) carries that shared stamp; the
@@ -89,7 +89,7 @@ RUSTPROGS=(
 )
 
 ####################################################
-# The control-plane deb (distribution split, driver;
+# The control-plane deb (distribution split, driver rev 1417/1418;
 # docs/distribution_split_card.md §4).  This package ships the CONTROL PLANE
 # only.  The DPDK bridge (binary + runtime closure + EAL PMDs + the bridge
 # unit/wrapper + the privilege grants) is a SEPARATE, PROPRIETARY artifact
@@ -102,6 +102,7 @@ for f in systemd/libreqos-lqosd.service systemd/libreqos-setup.service \
          systemd/libreqos-power.service \
          libexec/libreqos-setup-check libexec/libreqos-support-bundle \
          libexec/libreqos-api-legacy-cleanup libexec/libreqos-v3-rollback \
+         libexec/libreqos-tx-pin-migrate \
          bridge.env.example; do
   if [ ! -f "$BRIDGE_PKG/$f" ]; then
     echo "Missing packaging input: $BRIDGE_PKG/$f" >&2
@@ -128,6 +129,10 @@ mkdir -p $MOTD_DIR
 
 # Create the Debian control file
 pushd "$DEBIAN_DIR" > /dev/null || exit
+# `Breaks: libreqos-api` is UNVERSIONED on purpose: that package is retired, so
+# every copy of it (including a locally built one newer than this release) has
+# to go. With `Replaces` alongside it, apt removes the old package in the same
+# transaction; a manual `dpkg -i` is caught by the postinst purge below.
 cat <<EOF > control
 Package: $PACKAGE
 Version: $VERSION
@@ -137,15 +142,15 @@ Architecture: amd64
 Maintainer: Herbert Wolverson <herberticus@gmail.com>
 Depends: $APT_DEPENDENCIES
 Pre-Depends: libreqos-preflight
-Recommends: libreqos-api (= $VERSION)
-Replaces: libreqos-v3-bridge, dpdk
-Description: LibreQoS v3 — control plane + scheduler (dataplane/API are separate)
- The LibreQoS v3 control plane: the lqosd daemon, the scheduler integration
- hub, the first-run setup, and the web UI. Installs the AF_XDP BPF objects and
- the control-plane systemd census. The DPDK bridge dataplane is a SEPARATE,
- proprietary artifact (the libreqos-dataplane package); the optional API is the
- separate, version-pinned libreqos-api package (this package installs neither,
- and performs no network fetch at install time).
+Replaces: libreqos-v3-bridge, libreqos-api, dpdk
+Breaks: libreqos-api
+Description: LibreQoS v3 — control plane + scheduler + node API
+ The LibreQoS v3 control plane: the lqosd daemon, the node API it serves at
+ /api/v3, the scheduler integration hub, the first-run setup, and the web UI.
+ Installs the AF_XDP BPF objects and the control-plane systemd census. The DPDK
+ bridge dataplane is a SEPARATE, proprietary artifact (the libreqos-dataplane
+ package); this package installs no dataplane and performs no network fetch at
+ install time.
 EOF
 # The shared production env is operator-editable: declare it a conffile.
 cat <<'EOF' > conffiles
@@ -287,14 +292,14 @@ fi
 
 # - Setup the services (the canonical unit census; card 8dc53187).
 # libreqos-bridge/lqosd/setup ship as /etc/systemd/system files in the package;
-# the scheduler + first-run are installed here from the runtime tree. The API
-# unit is OWNED by the separate libreqos-api package (D2).
+# the scheduler + first-run are installed here from the runtime tree. There is no
+# API unit: the API is served by lqosd on the node manager listener.
 install -m 0644 /opt/libreqos/src/bin/libreqos-scheduler.service.example /etc/systemd/system/libreqos-scheduler.service
 install -m 0644 /opt/libreqos/src/bin/libreqos-first-run.service.example /etc/systemd/system/libreqos-first-run.service
 /bin/systemctl daemon-reload || true
 
 # Legacy-name sweep: stop + disable + REMOVE every pre-canonical unit name so
-# an upgrade-in-place cannot keep a stray service (the shared host May-6
+# an upgrade-in-place cannot keep a stray service (the production-host May-6
 # lqos_scheduler ghost class).
 unit_stop_disable_remove_if_present() {
 local unit="$1"
@@ -313,12 +318,23 @@ for legacy_unit in lqosd.service lqos_scheduler.service lqos_setup.service \
   unit_stop_disable_remove_if_present "$legacy_unit"
 done
 
+# beta18 upgrade guard (P0, lqos-74t.37.30): a preserved A0/beta17
+# `/etc/libreqos/bridge.env` pins LIBREQOS_DPDK_TRANSACTION_FILE at the
+# old-schema transaction. The bridge treats an explicitly pinned invalid file
+# as a MISCONFIG and FATALs instead of waiting for the seam. Comment stale pins
+# out (backup once), move a stale default-path transaction aside, and leave a
+# valid operator pin untouched. Idempotent; runs before the dataplane start.
+if [ -x /usr/libexec/libreqos/libreqos-tx-pin-migrate ]; then
+  /usr/libexec/libreqos/libreqos-tx-pin-migrate || true
+fi
+
 # The dataplane (the DPDK bridge) is NOT part of this package (the split,
 # docs/distribution_split_card.md §4): fetch + install the portal artifact
 # before any service starts. update_bridge.sh is graceful on an unreachable
-# endpoint (prints FETCHED / NOT FETCHED, exit 0); the bridge unit is enabled
-# ONLY on a successful fetch (fail-closed: a failed fetch leaves the control
-# plane running and the bridge inactive).
+# endpoint (prints FETCHED / NOT FETCHED, exit 0) and SKIPS the fetch when the
+# dataplane package is already present at this version; the bridge unit is
+# enabled ONLY on a successful fetch/skip (fail-closed: a failed fetch leaves
+# the control plane running and the bridge inactive).
 if [ -x /opt/libreqos/src/update_bridge.sh ]; then
   /opt/libreqos/src/update_bridge.sh --no-restart || true
 fi
@@ -336,23 +352,20 @@ else
   echo "libreqos postinst: the dataplane is not installed (fetch failed or offline); the bridge unit is left as-is" >&2
 fi
 
-# The API is a separate, versioned package now (libreqos-api; D1/D2): this
-# package ships NO update_api.sh, NO unit example, and performs NO network
-# fetch. Clean up the unowned leftovers of the old floating api3.zip fetch so
-# an upgrade cannot keep a stale API running against the new control plane.
-# The guard keys on the PACKAGED unit's Environment line: the old example had
-# none, while the new libreqos-api unit carries
-# `Environment=LQOS_CONFIG=/etc/libreqos/lqos.conf`. dpkg unpacks all packages
-# before configuring, so when libreqos-api is part of the same transaction its
-# new unit is already on disk and must NOT be touched here — in EITHER
-# configure order. The helper is standalone so the four shapes (fresh,
-# upgrade-from-fetch, Recommends-skipped, both configure orders) are unit
-# tested (scripts/test/test_api_legacy_cleanup.sh).
+# There is no API unit and no API binary any more: the API is a library inside
+# lqosd. The FILES below are the only thing left to sweep, and they belong to
+# the unofficially-installed world: the floating `api3.zip` fetch (via the old
+# update_api.sh) wrote `/opt/libreqos/src/bin/lqos_api` and an EXAMPLE unit that
+# dpkg never owned. Those are exactly the leftovers no package manager can
+# remove, so the helper stops, disables and deletes them. The packaged
+# `libreqos-api` world is handled by dpkg (Breaks/Replaces + the purge above),
+# and the helper is harmless for it — the unit is gone by then. The helper is
+# standalone and unit tested (scripts/test/test_api_legacy_cleanup.sh).
 if [ -x /usr/libexec/libreqos/libreqos-api-legacy-cleanup ]; then
   /usr/libexec/libreqos/libreqos-api-legacy-cleanup || true
 fi
 
-# Beta5-ghost purge c2): the retired split package can stay
+# Beta5-ghost purge (the coordinator rev 1225 c2): the retired split package can stay
 # registered (Replaces without Conflicts leaves `libreqos-v3-bridge` ii). Purge
 # it so an upgrade ends with exactly ONE libreqos package. beta5's postrm may
 # STOP the five units — the postinst-action handoff below then re-activates the
@@ -367,6 +380,17 @@ if dpkg-query -W -f='${Status}' libreqos-v3-bridge 2>/dev/null | grep -q 'instal
     /bin/systemctl enable libreqos-bridge.service 2>/dev/null || true
     /bin/systemctl restart --no-block libreqos-bridge.service 2>/dev/null || true
   fi
+fi
+
+# The retired `libreqos-api` package (the API became a library inside lqosd).
+# `Replaces`/`Breaks` make apt remove it in the same transaction; this purge is
+# the belt-and-braces arm for a manual `dpkg -i` upgrade, where apt never runs
+# and the package would otherwise stay installed as an orphan (`ii`) pointing at
+# a binary the cleanup below deletes. Idempotent; nothing runs it on a fresh
+# install.
+if dpkg-query -W -f='${Status}' libreqos-api 2>/dev/null | grep -q 'install ok installed'; then
+  echo "libreqos postinst: purging the retired libreqos-api package (the API is part of lqosd)"
+  dpkg --purge libreqos-api >/dev/null 2>&1 || true
 fi
 
 case "$(/opt/libreqos/src/bin/lqos_setup postinst-action)" in
@@ -389,9 +413,8 @@ cat <<EOF > postrm
 set +e
 /bin/systemctl stop libreqos-bridge libreqos-lqosd libreqos-scheduler libreqos-setup libreqos-power || true
 /bin/systemctl disable libreqos-bridge libreqos-lqosd libreqos-scheduler libreqos-setup libreqos-power || true
-# libreqos-api is NOT touched here: it belongs to the separate libreqos-api
-# package (its own prerm stops/disables it). systemd's Requires=libreqos-lqosd
-# stops the API when the control plane is stopped.
+# A legacy `libreqos-api.service` is removed by the postinst's cleanup helper on
+# the next install/upgrade; nothing here depends on it existing.
 /bin/rm -f /etc/systemd/system/lqos_netplan_helper.service || true
 # A3: a package REMOVAL restores the host power posture (else uninstalling
 # leaves the host pinned at the profile). NOT on upgrade.
@@ -514,6 +537,25 @@ if [ -f deb-requirements-constraints.txt ]; then
   cp deb-requirements-constraints.txt "$LQOS_DIR"
 fi
 
+# beta18 (P0, lqos-74t.37.30): vendor a Python WHEELHOUSE so the postinst's
+# venv install never needs the network. Network is used at BUILD time only;
+# `pip wheel` resolves the transitive set into install-ready wheels. The
+# ipaddress backport and setuptools were dropped from requirements.txt (stdlib
+# / not imported at runtime).
+PY_WHEELHOUSE="$LQOS_DIR/wheelhouse"
+rm -rf "$PY_WHEELHOUSE"
+mkdir -p "$PY_WHEELHOUSE"
+WHEEL_CONSTRAINT_ARGS=()
+if [ -f deb-requirements-constraints.txt ]; then
+  WHEEL_CONSTRAINT_ARGS=(-c deb-requirements-constraints.txt)
+fi
+python3 -m pip wheel --disable-pip-version-check --no-cache-dir \
+  --wheel-dir "$PY_WHEELHOUSE" "${WHEEL_CONSTRAINT_ARGS[@]}" -r ../requirements.txt \
+  || { echo "ERROR: offline Python wheelhouse build failed (network is required at BUILD time)" >&2; exit 1; }
+[ -n "$(ls -A "$PY_WHEELHOUSE" 2>/dev/null)" ] \
+  || { echo "ERROR: the offline Python wheelhouse is empty" >&2; exit 1; }
+echo "== vendored Python wheelhouse: $(ls "$PY_WHEELHOUSE" | wc -l) wheels"
+
 cp mikrotik_ipv6.example.toml "$ETC_LIBREQOS_DIR"/mikrotik_ipv6.example.toml
 
 # lqos-u5b: ship the v3 public keyring so a fresh v2->v3 install can create the
@@ -573,6 +615,9 @@ install -D -m 0755 "$BRIDGE_PKG/libexec/libreqos-api-legacy-cleanup" "$DPKG_DIR/
 # shipped. Install it with the control plane (the helper drives the v3 package
 # purge + v2 reinstall) and expose the documented PATH-stable command.
 install -D -m 0755 "$BRIDGE_PKG/libexec/libreqos-v3-rollback" "$DPKG_DIR/usr/libexec/libreqos/libreqos-v3-rollback"
+# beta18: the stale-transaction-pin migration helper (upgrade guard; runs from
+# the postinst before the dataplane fetch/start).
+install -D -m 0755 "$BRIDGE_PKG/libexec/libreqos-tx-pin-migrate" "$DPKG_DIR/usr/libexec/libreqos/libreqos-tx-pin-migrate"
 # The lqosd/setup units (the bridge unit ships in the dataplane artifact).
 install -D -m 0644 "$BRIDGE_PKG/systemd/libreqos-lqosd.service"  "$DPKG_DIR/etc/systemd/system/libreqos-lqosd.service"
 install -D -m 0644 "$BRIDGE_PKG/systemd/libreqos-setup.service"  "$DPKG_DIR/etc/systemd/system/libreqos-setup.service"
@@ -639,15 +684,14 @@ EOF
 popd || exit
 
 ####################################################
-# lqos_api is a separate, versioned package (libreqos-api; D1/D2): this
-# package ships neither the binary nor the unit nor a fetch script, and its
-# postinst performs no network access. The source tree keeps update_api.sh as a
-# developer tool only (versioned URL + sha256, never called from a package).
+# The API is not a package, a binary or a fetch: lqosd links it as a library and
+# serves it at /api/v3 on the node manager listener. This package ships no API
+# payload beyond that binary, and its postinst performs no network access.
 ####################################################
-# Deterministic file modes (reproducible-build rider, the deb
+# Deterministic file modes (reproducible-build rider, the coordinator rev 1147): the deb
 # must not inherit the BUILDER's umask.  A checkout with umask 002 ships
 # 0664/0775 files and produces a false file-list diff against a umask-022 build
-# (the 860-line case,. Remove the group/other write bit across the
+# (the 860-line case, rev 1146).  Remove the group/other write bit across the
 # packaged tree; restrictive modes such as /etc/sudoers.d/libreqos-bridge
 # (0440) carry no group/other write bit and are unaffected.
 chmod -R go-w "$DPKG_DIR"

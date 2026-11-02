@@ -7,7 +7,7 @@
 //! mtimes) against the last APPLIED state and emits only the delta:
 //!
 //! - rate/AQM changes on existing circuits → leaf `Upsert`s
-//! (batched); existing-site rate edits → inner `Upsert`s
+//!   (batched); existing-site rate edits → inner `Upsert`s (rev 264
 //!   ruling 1 — live-supported on the bridge; a changed parent id
 //!   rides along and IS live-emitted: same-owner moves apply and
 //!   spanning-changing moves are typed-rejected by the crossing belt,
@@ -24,7 +24,7 @@
 //! - new circuits → leaf `Upsert`s (+ their mapping ops) — under
 //!   any parent the payload's own inner `Upserts` create (the N1
 //!   derive installs payload sites before the leaf's activation walk;
-//! the withholding is UN-SCOPED now that the bridge pairs
+//!   the rev 261 withholding is UN-SCOPED now that the bridge pairs
 //!   with this broker by construction — an older bridge's UnknownName
 //!   reject is a typed urgent + one-generation fence, never a storm).
 //!   Inner `Remove` was never emitted pre-M1 (the bridge typed-rejects
@@ -236,10 +236,10 @@ type LeafKey = String;
 /// DNS, and a small HTTP GET pass, so a suspended customer still
 /// reaches a captive-portal/captive-billing page. Herbert may tune.
 ///
-/// FIELD CALIBRATION (F-E3 bench, the first live
+/// FIELD CALIBRATION (F-E3 bench, rev 434/435; the first live
 /// suspend ever drilled): the original 1 kbps floor was a 100%
 /// BLACKHOLE — the LKG proved the bridge applied commit=ceil=1 and
-/// ping AND iperf lost everything (docs/e3_derivation.md §.
+/// ping AND iperf lost everything (docs/e3_derivation.md §rev 435).
 /// The cliff probe passed the full portal simulation (ICMP 5/5 + DNS
 /// + TCP/HTTP GET) at 1000 kbps; the floor lands at the ladder's
 /// 1024 (≥ the tested 1000, passes a fortiori; 512 kbps is
@@ -418,7 +418,7 @@ impl DiffOutcome {
     }
 }
 
-/// The COMPOSED order source (R3c-2 amendment): the bridge's
+/// The COMPOSED order source (R3c-2 rev 322 amendment): the bridge's
 /// slot table is the FACT for everything it names; the BASELINE'S OWN
 /// LEAF ORDER extends it for anything the table predates — post-adoption
 /// adds append at the bridge's slot tail and the baseline tail grew in
@@ -549,7 +549,7 @@ impl HeldOp {
 /// L2-1: the held-op identities a REJECTED segment carries (segment bookkeeping
 /// — the in-flight/tx content is retained on `Pending`).
 ///
-/// ★ L2-1' (the implementer, REQUIRED): a segment tx is a **VIEW**, not a single op —
+/// ★ L2-1' (the reviewer, REQUIRED): a segment tx is a **VIEW**, not a single op —
 /// `mk_view` emits the whole world (every leaf in `order`, the full inner
 /// closure). Holding every op in the view would revert the WHOLE world and block
 /// independent appliable work (a rejected one-leaf move would hold all N leaves).
@@ -1021,7 +1021,7 @@ pub(crate) fn semantic_diff(
         }
         // New sites (node_id not in base) are NOT special-cased: the
         // structural view path carries their Upserts and the bridge's
- // N1 derive creates them (the withholding is
+        // N1 derive creates them (the rev 261 withholding is
         // un-scoped — the bridge pairs with this broker by
         // construction, and against an older bridge the UnknownName
         // reject is a typed urgent + one-generation fence, never a
@@ -1179,10 +1179,10 @@ pub(crate) fn semantic_diff(
         }
     }
 
- // The applied projection: with the withholding un-scoped,
+    // The applied projection: with the rev 261 withholding un-scoped,
     // the projection is simply the desired state (the bridge converges
     // to it once the sequence acks).
- // F3-P (D1 program; `#12` folded, the producer emits ONE
+    // F3-P (D1 program; `#12` folded, the coordinator rev 4955): the producer emits ONE
     // coherent change-set — the F3-B shape. The bridge topo-sorts it against its
     // OWN applied base and reconciles the mechanics; the producer no longer
     // encodes the dataplane's ordering (no shell → move → leaf sequence, no
@@ -1891,9 +1891,9 @@ mod tests {
 
     #[test]
     fn add_under_new_parent_emits_with_payload_site() {
- // UN-SCOPED: a new-site add now EMITS — the bridge's
+        // UN-SCOPED (rev 277): a new-site add now EMITS — the bridge's
         // N1 derive creates the payload site before the leaf's
- // activation walk (the withholding retired; against
+        // activation walk (the rev 261 withholding retired; against
         // an older bridge the UnknownName reject is a typed urgent +
         // one-generation fence, never a storm).
         let mut desired = base();
@@ -2358,7 +2358,7 @@ mod tests {
         );
     }
 
- /// L2-1' (the implementer REQUIRED): a segment tx is a VIEW — `held_ops_from_tx`
+    /// L2-1' (the reviewer REQUIRED): a segment tx is a VIEW — `held_ops_from_tx`
     /// must hold ONLY the op that differs from the applied base, not every op in
     /// the view. An 8-circuit world's single leaf re-parent must hold exactly 1.
     #[test]
@@ -2838,7 +2838,7 @@ mod tests {
         ];
         replay_invariants("generated-mixed", &gbase, &gdesired, true);
 
- // RATE under a generated umbrella: a rate change
+        // RATE under a generated umbrella (the reviewer rev 4643/4644): a rate change
         // to a node UNDER a held generated node must NOT pull it into the rate
         // path (the whole diff is held).
         let rgbase = bare(
@@ -2867,7 +2867,7 @@ mod tests {
         }
         replay_invariants("rate-under-generated", &rgbase, &rgdesired, true);
 
- // THE JACKRABBIT 2ND-LOOP SHAPE: a SITE UNDER the generated
+        // THE JACKRABBIT 2ND-LOOP SHAPE (the coordinator rev 4670): a SITE UNDER the generated
         // umbrella moves (apt2: orphans -> apt3) — changes orphans' owner set.
         let sgb = bare(
             vec![
@@ -2921,7 +2921,7 @@ mod tests {
 
 
 
- /// SCALE, the DRIVER's ask): N rate changes on EXISTING
+    /// SCALE (the coordinator rev 4650, the DRIVER's ask): N rate changes on EXISTING
     /// circuits must emit ONE rate tx (batched — NOT N txs), NO structural op,
     /// NOT Baseline, fit a 64 MiB seam, and hold nothing.
     #[test]
@@ -2978,7 +2978,7 @@ mod tests {
         // DEFAULT to the COMMITTED fixture so the class fence runs in EVERY
         // cargo test (local + CI) — a no-op-unless-env gate can be silently
         // skipped. `LQOSD_DIFF_REPLAY_DIR` OVERRIDES it for a custom/real capture
- // archive REQUIRED 1; the deriver/flash_1.
+        // archive (the reviewer rev 4651 REQUIRED 1; the coordinator/flash_1 rev 4653).
         let dir = std::env::var("LQOSD_DIFF_REPLAY_DIR").unwrap_or_else(|_| {
             concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -3002,7 +3002,7 @@ mod tests {
         for path in files {
             let raw = std::fs::read_to_string(&path).expect("read generation");
             // NON-SILENT: a malformed capture file must FAIL the gate, not be
- // skipped (the implementer) — a silent skip would hide a real transition.
+            // skipped (the reviewer) — a silent skip would hide a real transition.
             let tx = serde_json::from_str::<DataplaneTransaction>(&raw)
                 .unwrap_or_else(|e| panic!("unparseable generation {}: {e}", path.display()));
             if let Some(base) = prev.as_ref() {
@@ -3030,14 +3030,14 @@ mod tests {
         );
     }
 
- /// R-EMIT-ORDER: the L1 delta-apply is order-sensitive
+    /// R-EMIT-ORDER (the reviewer rev 3196): the L1 delta-apply is order-sensitive
     /// ONLY through the documented last-wins rule, so an emitted delta MUST
     /// carry at most ONE Map/Del per `(prefix_len, ip)` key. Then the applied
     /// world is independent of the emission order, whatever order the producer
     /// used. Also pins emission DETERMINISM (the same base+desired always
     /// yields the same op sequence).
     ///
- /// MOVE-COVERAGE: the three shapes exercised here are a
+    /// MOVE-COVERAGE (the reviewer rev 3198): the three shapes exercised here are a
     /// MOVE, an ADD and a REMOVE — and the MOVE **IS EMITTED**, not inert: a
     /// mapping `(32, 100.97.0.1) c1 -> c3` produces ONE `Map` op to `c3` (the
     /// key is present on both sides, so it is an upsert, NOT an add+del pair —

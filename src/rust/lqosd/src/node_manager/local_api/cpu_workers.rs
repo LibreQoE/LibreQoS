@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use lqos_api::api::CpuTopologySection;
 use lqos_bus::{BusRequest, BusResponse, LibreqosBusClient};
 use serde_json::{Value, json};
 use std::sync::OnceLock;
@@ -8,68 +9,39 @@ use std::sync::OnceLock;
 /// The shaping-CPU topology, computed once at daemon startup (off the request
 /// path). `None` = not initialized yet; the endpoint reports topology
 /// unavailable instead of guessing.
-static CPU_TOPOLOGY: OnceLock<Option<Value>> = OnceLock::new();
+///
+/// The cell holds the mount's own section type on purpose: the daemon's CPU &
+/// Workers page and `/api/v3/cpu_workers` read ONE detection result, so the
+/// two surfaces cannot disagree and no second detector runs.
+static CPU_TOPOLOGY: OnceLock<Option<CpuTopologySection>> = OnceLock::new();
+
+/// The cell above, for the process that builds the mount's state.
+pub(crate) fn topology_cell() -> &'static OnceLock<Option<CpuTopologySection>> {
+    &CPU_TOPOLOGY
+}
 
 /// `lqos-74t.118.3`: initialize the CPU topology section at startup from the
-/// same detector the public API uses.
+/// same detector the public API reads.
 pub(crate) fn init_topology(config: &lqos_config::Config) {
     let detection = lqos_config::detect_shaping_cpus(config);
-    let _ = CPU_TOPOLOGY.set(Some(topology_json(detection)));
+    let _ = CPU_TOPOLOGY.set(Some(CpuTopologySection::from_detection(detection)));
 }
 
-fn topology_source_str(source: lqos_config::ShapingCpuSource) -> &'static str {
-    match source {
-        lqos_config::ShapingCpuSource::ExclusionDisabled => "exclusion_disabled",
-        lqos_config::ShapingCpuSource::CoreTypeSysfs => "core_type_sysfs",
-        lqos_config::ShapingCpuSource::CpuCapacitySysfs => "cpu_capacity_sysfs",
-        lqos_config::ShapingCpuSource::CpuCoreSysfs => "cpu_core_sysfs",
-        lqos_config::ShapingCpuSource::PossibleMinusAtomSysfs => "possible_minus_atom_sysfs",
-        lqos_config::ShapingCpuSource::CpuidHybrid => "cpuid_hybrid",
-        lqos_config::ShapingCpuSource::MaxFrequencyHeuristic => "max_frequency_heuristic",
-        lqos_config::ShapingCpuSource::FallbackAllPossible => "fallback_all_possible",
-        lqos_config::ShapingCpuSource::FallbackAvailableParallelism => {
-            "fallback_available_parallelism"
-        }
-    }
-}
-
-fn topology_json(detection: lqos_config::ShapingCpuDetection) -> Value {
-    json!({
-        "available": true,
-        "reason": null,
-        "exclude_efficiency_cores": detection.exclude_efficiency_cores,
-        "source": topology_source_str(detection.source),
-        "from_cache": detection.from_cache,
-        "has_hybrid_split": detection.has_hybrid_split,
-        "possible": detection.possible,
-        "performance": detection.performance,
-        "efficiency": detection.efficiency,
-        "shaping": detection.shaping,
-        "detail": detection.detail,
-    })
-}
-
-fn unavailable_topology(reason: &str) -> Value {
-    json!({
-        "available": false,
-        "reason": reason,
-        "exclude_efficiency_cores": null,
-        "source": null,
-        "from_cache": null,
-        "has_hybrid_split": null,
-        "possible": null,
-        "performance": null,
-        "efficiency": null,
-        "shaping": null,
-        "detail": null,
-    })
-}
-
+/// The shared section as the page's JSON object.
+///
+/// The page and the API read one typed snapshot; serialising it here keeps a
+/// single construction of the shape (field names and order included).
 fn topology_section() -> Value {
-    CPU_TOPOLOGY
+    let section = CPU_TOPOLOGY
         .get()
-        .and_then(|value| value.clone())
-        .unwrap_or_else(|| unavailable_topology("topology_pending"))
+        .and_then(|section| section.clone())
+        .unwrap_or_else(|| CpuTopologySection::unavailable("topology_pending"));
+    serde_json::to_value(section).unwrap_or_else(|error| {
+        json!({
+            "available": false,
+            "reason": format!("topology_unserialisable: {error}"),
+        })
+    })
 }
 
 /// Build the CPU-usage section from the daemon's 1 Hz sampler. A 0 CPU count
@@ -186,10 +158,7 @@ pub(crate) fn assemble_cpu_workers(raw: &Value, cpu_usage: Value, topology: Valu
     } else {
         "unavailable"
     };
-    let generated_at_unix = raw
-        .get("generated_at_unix")
-        .cloned()
-        .unwrap_or(Value::Null);
+    let generated_at_unix = raw.get("generated_at_unix").cloned().unwrap_or(Value::Null);
 
     json!({
         "state": state,
@@ -234,10 +203,9 @@ pub async fn get_cpu_workers() -> Result<Response, (StatusCode, String)> {
             })?;
             let assembled = assemble_cpu_workers(&raw, cpu_usage_json(), topology_section());
             let mut response = Json(assembled).into_response();
-            response.headers_mut().insert(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("no-store"),
-            );
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
             return Ok(response);
         }
     }
@@ -352,7 +320,10 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        assert_eq!(keys, expected, "the local route must expose the public shape");
+        assert_eq!(
+            keys, expected,
+            "the local route must expose the public shape"
+        );
         assert!(
             assembled.get("schema").is_none(),
             "the raw bus schema marker must not leak into the page shape"
@@ -369,7 +340,10 @@ mod tests {
                 .iter()
                 .any(|reason| reason.as_str() == Some("no_history_source_v1"))
         );
-        assert_eq!(assembled["workers"]["counter_support"].as_str(), Some("unsupported"));
+        assert_eq!(
+            assembled["workers"]["counter_support"].as_str(),
+            Some("unsupported")
+        );
         assert!(assembled["workers"]["rows"][0]["throughput"].is_null());
         assert_eq!(
             assembled["workers"]["rows"][0]["throughput_support"].as_str(),
@@ -383,7 +357,10 @@ mod tests {
             assembled["ownership"]["circuits"][1]["name"].is_null(),
             "an absent name is null, never an empty string"
         );
-        assert_eq!(assembled["ownership"]["nodes"][0]["name"].as_str(), Some("Root"));
+        assert_eq!(
+            assembled["ownership"]["nodes"][0]["name"].as_str(),
+            Some("Root")
+        );
         assert!(assembled["ownership"]["nodes"][1]["name"].is_null());
         assert_eq!(assembled["generated_at_unix"].as_u64(), Some(123));
         assert!(!assembled.to_string().contains("\"throughput\":0"));
@@ -414,17 +391,5 @@ mod tests {
         assert_eq!(section["available"].as_bool(), Some(false));
         assert_eq!(section["reason"].as_str(), Some("cpu_id_mapping_unproven"));
         assert!(section["per_cpu"].is_null());
-    }
-
-    #[test]
-    fn topology_source_is_explicit_snake_case() {
-        assert_eq!(
-            topology_source_str(lqos_config::ShapingCpuSource::ExclusionDisabled),
-            "exclusion_disabled"
-        );
-        assert_eq!(
-            topology_source_str(lqos_config::ShapingCpuSource::CoreTypeSysfs),
-            "core_type_sysfs"
-        );
     }
 }

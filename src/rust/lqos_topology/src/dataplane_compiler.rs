@@ -54,7 +54,7 @@ pub fn compile_dataplane_transaction_with_ranges(
 
 /// Compiles the dataplane transaction honoring the box's configured
 /// `[queues] default_sqm` for every circuit WITHOUT a per-circuit override
-/// — the v2→v3 migration must not drop the SQM layer). The
+/// (the coordinator rev 1716 — the v2→v3 migration must not drop the SQM layer). The
 /// production caller (`publish.rs`) passes `config.queues.default_sqm`.
 pub fn compile_dataplane_transaction_with_ranges_and_sqm(
     effective_network: &Value,
@@ -74,7 +74,7 @@ pub fn compile_dataplane_transaction_with_ranges_and_sqm(
             collect_inner_ops(node, DATA_PLANE_ROOT_NODE_ID, &mut inner_ops, &keep);
         }
     }
- // 3b rate fix(i)): the leaf clamp needs the effective parent
+    // 3b rate fix (rev 889(i)): the leaf clamp needs the effective parent
     // ceils — one pass over the tree.
     let node_rates = effective_node_rates(effective_network);
 
@@ -298,7 +298,7 @@ fn effective_node_rates(
     out
 }
 
-/// 3b rate fix(i)): ports the bridge's `expected_manifest` leaf clamp
+/// 3b rate fix (rev 889(i)): ports the bridge's `expected_manifest` leaf clamp
 /// into the transaction — `ceil = min(own ceil, parent effective ceil)` and
 /// `commit = min(own commit, clamped ceil)`. The bridge's placement validation
 /// then passes BY CONSTRUCTION, and malformed upstream data (e.g. a client
@@ -466,7 +466,7 @@ fn node_rate_pair(
 ) -> DataplaneRatePair {
     let min_mbps = read_node_rate_mbps(obj, &format!("{direction}BandwidthMbpsMin")).unwrap_or(0);
     let ceil_mbps = read_node_rate_mbps(obj, &format!("{direction}BandwidthMbps")).unwrap_or(0);
- // §8b ruling: kbps-native; the shared fn converts x1000 at emit,
+    // §8b ruling (rev 161): kbps-native; the shared fn converts x1000 at emit,
     // exact + u32-safe (100G = 1e8 kbps).
     lqos_dataplane_types::inner_node_rate_pair(ceil_mbps, min_mbps)
 }
@@ -482,7 +482,7 @@ fn leaf_upsert(
     DataplaneLeafOp::Upsert {
         circuit_id: circuit.circuit_id.clone(),
         parent_node_id: circuit.effective_parent_node_id.clone(),
- // §8b ruling: Mbps inputs, kbps wire — x1000 at emit.
+        // §8b ruling (rev 161): Mbps inputs, kbps wire — x1000 at emit.
         download: clamp_leaf_to_parent(
             rate_pair(circuit.download_min_mbps, circuit.download_max_mbps),
             parent.map(|pair| pair.0),
@@ -514,7 +514,7 @@ pub fn aqm_from_override(override_token: Option<&str>) -> DataplaneLeafAqm {
     }
 }
 
-/// The leaf AQM for an upgrade-safe world: a per-circuit
+/// The leaf AQM for an upgrade-safe world (the coordinator rev 1716): a per-circuit
 /// `sqm_override` wins when present, otherwise the box's configured
 /// `[queues] default_sqm` applies — so a v2→v3 migration no longer silently
 /// drops the SQM layer and runs every leaf FIFO. An explicit `none` override
@@ -528,7 +528,7 @@ pub fn aqm_with_default(override_token: Option<&str>, default_sqm: &str) -> Data
 }
 
 /// Parses a `ip/prefix` CIDR string into `(prefix_len, ip)`. R0
-/// (remove_lpm_completeness_card, fresh-#12: a BARE IP is a
+/// (remove_lpm_completeness_card, fresh-#12 rev 307): a BARE IP is a
 /// host address (/32 v4, /128 v6) — the same normalization
 /// lqos_network_devices/runtime_inputs.rs already applies (its
 /// normalizers are why shaping_inputs carry bare IPs in the first
@@ -616,7 +616,7 @@ mod tests {
             .expect("leaf present")
     }
 
- /// 3b rate fix(i), the.9 fixture): a 98G/100G client leaf under
+    /// 3b rate fix (rev 889(i), the .9 fixture): a 98G/100G client leaf under
     /// a 322 Mbps parent clamps to 322 Mbps (ceil AND commit) — the transaction
     /// now matches the bridge `expected_manifest` by construction.
     #[test]
@@ -748,7 +748,7 @@ mod tests {
             .expect("leaf present")
     }
 
- /// the box's `[queues] default_sqm` reaches every circuit
+    /// the coordinator rev 1716: the box's `[queues] default_sqm` reaches every circuit
     /// WITHOUT a per-circuit override — the v2→v3 migration no longer drops
     /// the SQM layer (the fleet bufferbloat root cause).
     #[test]

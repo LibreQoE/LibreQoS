@@ -48,7 +48,7 @@ impl BaseProvenance {
 /// A2: the CAPABILITY the broker advertises in the convergence report — what the
 /// dataplane can apply live.
 ///
-/// ★ R1 (the implementer `7e17f1efc`): these are the broker's LOCALLY-RESOLVED knobs — a
+/// ★ R1 (the reviewer `7e17f1efc`): these are the broker's LOCALLY-RESOLVED knobs — a
 /// PLACEHOLDER for U2, which must carry the **observed** bridge capability from
 /// the report. `baseline_apply_armed` is the M-A `Baseline` ARM
 /// (`LIBREQOS_DPDK_BASELINE_APPLY`); it is **NOT** the bridge's `placement_mode`
@@ -122,7 +122,7 @@ pub struct AppliedState {
     /// A report OVERRODE a diverging interim ack-fold since the last agreement
     /// (A3 criterion 1/3: the divergence is surfaced; the report wins).
     ///
- /// N4 (the implementer `7e17f1efc`): a `fold_ack` does NOT clear this — the flag
+    /// N4 (the reviewer `7e17f1efc`): a `fold_ack` does NOT clear this — the flag
     /// tracks the LATEST reconciliation (cleared by the next adopting report),
     /// so a UI reader must not treat it as sticky-fatal.
     diverged: bool,

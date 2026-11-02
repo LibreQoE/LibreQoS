@@ -188,7 +188,7 @@ pub fn rebuild_circuit_live_snapshot() -> Arc<CircuitLiveSnapshot> {
                     device_names: sort_string_set(acc.device_names),
                     ip_addrs: sort_string_set(acc.ip_addrs),
                     plan_mbps: acc.plan_mbps,
- // 3b demand-source sweep: the rollup's
+                    // 3b (rev 861) demand-source sweep: the rollup's
                     // customer-facing throughput is the DELIVERED series
                     // (`live.bytes_per_second` is the bridge demand).
                     bytes_per_second: live.shaped_bytes_per_second,

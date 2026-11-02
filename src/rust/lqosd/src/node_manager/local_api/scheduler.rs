@@ -691,6 +691,14 @@ mod tests {
         ))
     }
 
+    /// Writes the shared scheduler-status test config from the v15 example.
+    ///
+    /// The topology source is moved to `splynx` on purpose: the fixture enables
+    /// `enable_splynx`, and a file source there would be a source/flag CONFLICT,
+    /// which makes `scheduler_status_data()` return the setup-required (`Idle`)
+    /// status instead of the scheduler status these tests assert on. An
+    /// integration source also needs no `network.json`/`ShapedDevices.csv` in the
+    /// temp runtime directory.
     fn write_scheduler_test_config(runtime_dir: &Path) -> PathBuf {
         let config_path = runtime_dir.join("lqos.conf");
         let runtime_dir_display = runtime_dir.to_string_lossy();
@@ -706,7 +714,8 @@ mod tests {
                 &format!("state_directory = {:?}", state_dir_display),
                 1,
             )
-            .replacen("enable_splynx = false", "enable_splynx = true", 1);
+            .replacen("enable_splynx = false", "enable_splynx = true", 1)
+            .replacen("source = \"shaped_devices\"", "source = \"splynx\"", 1);
         fs::write(&config_path, raw).expect("write scheduler test config");
         config_path
     }

@@ -94,7 +94,7 @@ pub fn bridge_health_status() -> Arc<Option<BridgeHealthStatus>> {
 /// Starts the Supervisor actor (idempotent). Same activation gate as
 /// the stats actor.
 pub fn start_bridge_supervisor(config: &lqos_config::Config) {
- // R1: the SINGLE shared active/socket predicate.
+    // R1 (the reviewer rev 4765): the SINGLE shared active/socket predicate.
     let Some(socket) = crate::bridge_analytics::analytics_socket_path_if_active(config) else {
         debug!("Bridge supervisor inactive: no [dataplane_bridge] config");
         return;

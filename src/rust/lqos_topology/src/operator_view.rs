@@ -339,7 +339,7 @@ fn collect_missing_effective_nodes(
         .map(str::to_string);
     if let Some(id) = id.filter(|id| !seen_ids.contains_key(id.as_str())) {
         seen_ids.insert(id.clone(), ());
- // the implementer `#12` R4: effective-dict nodes missing from canonical fold in
+        // the reviewer `#12` R4: effective-dict nodes missing from canonical fold in
         // here. A DEVICE with an EMPTY `type` is an attachment-only link
         // re-entering the view — it must NOT be fabricated as a `site` (this is
         // the `normalized_operator_node_type("") => "site"` home on the
@@ -435,7 +435,7 @@ mod operator_view_tests {
         assert_eq!(child.parent_id.as_deref(), Some("uisp:device:ap"));
     }
 
- /// the implementer `#12` R4: the operator view folds in effective-dict nodes MISSING
+    /// the reviewer `#12` R4: the operator view folds in effective-dict nodes MISSING
     /// from canonical (`collect_missing_effective_nodes`). An effective-dict
     /// DEVICE with an EMPTY `type` (an attachment-only link) must NOT re-enter
     /// the view fabricated as a `site`.

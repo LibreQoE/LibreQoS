@@ -52,7 +52,7 @@ fn default_decrease_fast_cooldown_seconds() -> f32 {
 }
 
 fn default_fallback_sqm() -> String {
- // K1b ph2 (driver: the shipped default serves the bridge path
+    // K1b ph2 (driver rev 636): the shipped default serves the bridge path
     // (the DPDK-only future). `fq_codel` remains accepted for explicitly-set
     // kernel-mode configs until K3; a bridge box rejects it loudly at the
     // write path.

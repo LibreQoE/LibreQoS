@@ -201,7 +201,7 @@ export function formatCakeMillisecondsFromUs(value) {
 }
 
 /**
- * Bridge mode (K2 slice 2 §7 /a): build a full per-direction
+ * Bridge mode (K2 slice 2 §7 / rev 729a): build a full per-direction
  * aggregate option for the marks/drops graphs. The bridge wire has no
  * per-tin drops/marks, so exactly one Down + one Up series are rendered from
  * `CakeDiffTransit.drops`/`.marks`, with the honest "per-direction" label.

@@ -112,7 +112,7 @@ fn run_ports_plan(
         gather_facts, managed_env_block_with_workers, plan, write_managed_ports_plan_at,
         MANAGED_DROPIN,
     };
- // (the implementer (1c)) ONE gather shared with the setup flow: the link demand
+    // (the reviewer (1c)) ONE gather shared with the setup flow: the link demand
     // (down+up, the shared pool), the HT-collapsed cores, the A0 queue fact, the
     // live override — never a second drifted derive.
     let cfg = match lqos_config::load_config() {
@@ -139,13 +139,13 @@ fn run_ports_plan(
     let driver = driver
         .or_else(|| lqos_setup::bootstrap::bridge_env_value("LQOS_DPDK_ORIG_WAN_DRIVER"))
         .unwrap_or_else(|| "mlx5_core".to_string());
- // (the implementer (3)) NEVER hardcode iommu_present: an Intel no-IOMMU host must
+    // (the reviewer (3)) NEVER hardcode iommu_present: an Intel no-IOMMU host must
     // get VfioNoiommu, else the bind fails.
     let Some(plan) = plan(&driver, lqos_setup::port_class::iommu_present()) else {
         eprintln!("ports-plan: unsupported NIC driver '{driver}' (Tier 3: no managed plan)");
         return 1;
     };
- // (the implementer (4)) the dry-run takes the SAME provenance-aware path as the
+    // (the reviewer (4)) the dry-run takes the SAME provenance-aware path as the
     // write, or it would print a different count than the file.
     let workers = facts.workers;
     // `lqos-74t.42`: the install-time VM/virtio warning on stderr (the persistent

@@ -142,7 +142,7 @@ fn resolved_circuit_hash_for_submission(
     })
 }
 
-/// 3b DEFECT 2: true when the SHAPED (post-shaping, delivered) rate
+/// 3b DEFECT 2 (rev 840): true when the SHAPED (post-shaping, delivered) rate
 /// exceeds the link cap — the only possible cause is counter corruption, since
 /// post-shaping is ≤ cap by construction. NEVER compare the pre-shaping ingress
 /// `actual` to the cap: the bridge actual is the DEMAND and legitimately exceeds
@@ -175,7 +175,7 @@ fn submit_bridge_throughput_stats(
     let snapshot = crate::bridge_analytics::snapshot();
     let shaped = snapshot.bridge_shaped_bytes_per_second;
 
- // 3b DEFECT 2: guard the SHAPED (delivered) rate against the
+    // 3b DEFECT 2 (rev 840): guard the SHAPED (delivered) rate against the
     // link cap. The bridge `actual` (pre-shaping ingress DEMAND) legitimately
     // exceeds the cap under load; guarding it suppressed every loaded
     // submission.
@@ -206,7 +206,7 @@ fn submit_bridge_throughput_stats(
         return false;
     }
 
- // 3b: push the topology on startup/topology change (the bridge
+    // 3b (rev 846): push the topology on startup/topology change (the bridge
     // path previously returned before the kernel-only topology block, so the
     // ingestor never registered the shaper — 0 time-series rows).
     submit_topology_to_lts_if_changed(now);
@@ -218,7 +218,7 @@ fn submit_bridge_throughput_stats(
         None => (None, None, None),
     };
     let tcp_retransmits = min_max_median_tcp_retransmits();
- // 3b display semantics: customer-facing throughput = the
+    // 3b display semantics (rev 846): customer-facing throughput = the
     // DELIVERED (shaped) rate — kernel parity, where the headline was the
     // observed/delivered rate. The bridge ingress DEMAND is a separate labeled
     // local metric and is not the LTS headline.
@@ -297,7 +297,7 @@ fn submit_bridge_throughput_stats(
     let mut circuit_rtt: Vec<crate::lts2_sys::shared_types::CircuitRtt> = Vec::new();
     for (circuit_id, row) in snapshot.by_circuit_id.iter() {
         let circuit_hash = hash_to_i64(circuit_id);
- // 3b display semantics: customer-facing per-circuit
+        // 3b (rev 851) display semantics: customer-facing per-circuit
         // throughput = the DELIVERED (shaped) series; `CircuitLiveRow.
         // bytes_per_second` is the enqueued demand.
         if let Some((dl, ul)) = plan_lookup.get(&circuit_hash)
@@ -580,14 +580,14 @@ fn submit_bridge_throughput_stats(
     true
 }
 
-/// 3b pure flush gate: flush ONLY after a completed submission
+/// 3b (rev 851) pure flush gate: flush ONLY after a completed submission
 /// batch — the config/license gates and the spike guard return before it, so a
 /// skipped submission never flushes. PURE.
 fn lts_flush_after(submitted: bool) -> bool {
     submitted
 }
 
-/// 3b: the ingest flush. `ingest_batch_complete` is the ONLY path
+/// 3b (rev 851): the ingest flush. `ingest_batch_complete()` is the ONLY path
 /// that turns the filled batch queue into `SubmitChunks`; K3-A deleted its
 /// caller, so a bridge shaper filled the queue forever and the ingestor saw
 /// nothing. Side effects: enqueues the batch-complete command.
@@ -663,7 +663,7 @@ pub(crate) fn submit_throughput_stats(
     // 3a LTS repoint: on a bridge box every payload comes from the actor's
     // snapshot + the tree live-view (the kernel stores are never written).
     if crate::bridge_analytics::is_active() {
- // 3b: flush the ingest batch after a completed submission
+        // 3b (rev 851): flush the ingest batch after a completed submission
         // (the K3-A deletion orphaned `ingest_batch_complete()`; without it the
         // queue fills forever and the ingestor never receives anything). The
         // flush is skipped exactly when the bridge submission bails (the
@@ -715,7 +715,7 @@ pub(crate) fn submit_throughput_stats(
     /////////////////////////////////////////////////////////////////
     // Insight Block
     if let Ok(now) = unix_now() {
- // 3b: the shared topology push (bridge + kernel).
+        // 3b (rev 846): the shared topology push (bridge + kernel).
         submit_topology_to_lts_if_changed(now);
 
         // Send top-level throughput stats to LTS2
@@ -1170,7 +1170,7 @@ fn lts2_needs_shaped_devices() -> bool {
     topology_hash_changed(stored_hash, new_hash)
 }
 
-/// 3b pure gate: the topology push fires ONLY when the combined
+/// 3b (rev 846) pure gate: the topology push fires ONLY when the combined
 /// devices/network hash changed — never a per-tick resend. PURE.
 fn topology_hash_changed(stored_hash: i64, new_hash: i64) -> bool {
     stored_hash != new_hash
@@ -1178,7 +1178,7 @@ fn topology_hash_changed(stored_hash: i64, new_hash: i64) -> bool {
 
 static LTS2_HASH: AtomicI64 = AtomicI64::new(0);
 
-/// 3b: push the Insight topology (`network_tree`, `shaped_devices`,
+/// 3b (rev 846): push the Insight topology (`network_tree`, `shaped_devices`,
 /// and IP policies) when the combined devices/network hash changed. Shared by
 /// the kernel AND bridge LTS paths: the bridge path used to return before the
 /// kernel-only topology block, so a bridge shaper never registered with the
@@ -1479,7 +1479,7 @@ mod tests {
         assert_eq!(circuit_hash, Some(hash_to_i64("circuit-1")));
     }
 
- /// 3b DEFECT 2 regression: loaded ingress DEMAND above the cap
+    /// 3b DEFECT 2 (rev 840) regression: loaded ingress DEMAND above the cap
     /// (1.11 Gbps actual vs 200 Mbps shaped on a 1 Gbps link) must still
     /// submit; only shaped corruption above the cap trips the guard.
     #[test]
@@ -1502,7 +1502,7 @@ mod tests {
         assert!(bridge_spike_guard(0, 200_000_000, 1_000, 1_000));
     }
 
- /// 3b: the topology push fires only on a hash change (startup
+    /// 3b rev 846: the topology push fires only on a hash change (startup
     /// included) and is silent on unchanged collation ticks.
     #[test]
     fn topology_push_gate_fires_only_on_hash_change() {
@@ -1517,7 +1517,7 @@ mod tests {
         );
     }
 
- /// 3b: the ingest flush fires only after a completed submission —
+    /// 3b rev 851: the ingest flush fires only after a completed submission —
     /// a guard/gate bail (returns false) never flushes.
     #[test]
     fn lts_flush_only_after_a_completed_submission() {

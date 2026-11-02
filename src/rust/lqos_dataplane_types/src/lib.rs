@@ -6,7 +6,7 @@
 //! page) for the flow, the four rules, and the failure model.
 //!
 //! Extracted 1:1 from lqos_topology::dataplane_transaction (driver ruling
-//! 2026-09-04, this crate is the SINGLE SOURCE OF TRUTH for the
+//! 2026-09-04, rev 149): this crate is the SINGLE SOURCE OF TRUTH for the
 //! transaction schema; the DPDK bridge consumes it via private git dep.
 //! Protocol-v2 types (PROTOCOL_VERSION const, FrameBody envelope) land
 //! here after the bridge switches to this crate — do not duplicate them.
@@ -142,7 +142,7 @@ pub fn structural_identity(tx: &DataplaneTransaction) -> String {
 }
 
 /// A directional commit/ceil pair in whole Kbps (the BRIDGE wire's
-/// native unit — protocol-v2 §8b ruling, driver-confirmed
+/// native unit — protocol-v2 §8b ruling rev 161, driver-confirmed
 /// option (a): the crate adopts kbps and the product compiler converts
 /// x1000 at emit; one crate means the units can never diverge again).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

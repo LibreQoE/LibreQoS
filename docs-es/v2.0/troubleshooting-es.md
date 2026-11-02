@@ -288,7 +288,7 @@ Checks recomendados:
 2. Revisar logs de `lqosd` para requested/allowed/dropped.
 3. Reducir circuitos mapeados (corto plazo) o ajustar licencia/límites (largo plazo).
 
-La API del nodo usa el mismo conteo a partir de LibreQoS 2.2. Con 1.000 circuitos mapeados o menos, confirme que haya una clave local con nombre (o una clave heredada/de licencia compatible) y que `lqos_api` esté en ejecución. Una clave nueva o revocada puede tardar hasta 30 segundos en surtir efecto. Por encima de 1.000, confirme además que el derecho efectivo de API o Insight sea válido.
+La API del nodo es parte de `lqosd` y no hay un servicio aparte que revisar. Si las llamadas a la API fallan con `401`, confirme que haya una clave local con nombre (o el token local heredado) configurada en **License & Services → Local API Keys**; crear o revocar una clave surte efecto en la siguiente solicitud, sin reinicio y sin un proceso `lqos_api` aparte.
 
 ### Códigos de problemas urgentes y primeras acciones
 

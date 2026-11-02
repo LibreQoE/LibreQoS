@@ -146,7 +146,7 @@ pub enum TopologyParentOverrideMode {
 
 /// The suspend floor in Mbps (the config suspend encoding: the v3
 /// compiler rounds 0.01 to 0, the broker floors 0/0 to the trickle —
-/// docs/e3_derivation.md.
+/// docs/e3_derivation.md rev 425/426).
 pub const SUSPEND_FLOOR_MBPS: f32 = 0.01;
 
 /// A circuit-level speed override as exposed to admin callers.

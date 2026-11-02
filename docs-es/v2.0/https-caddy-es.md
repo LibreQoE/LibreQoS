@@ -18,16 +18,13 @@ LibreQoS ofrece dos opciones simples:
 ## Qué cambia después de habilitarlo
 
 - Los operadores dejan de usar `http://tu_ip_del_shaper:9123` y pasan a usar `https://tu-hostname/` o `https://tu-ip-de-gestión/`.
-- LibreQoS mueve el listener de la WebUI a `127.0.0.1:9123`.
-- Caddy publica la WebUI y la documentación de la API por HTTPS.
-- En modo Caddy gestionado, las solicitudes de API se envían a `127.0.0.1:9122`, de modo que la API queda detrás del mismo origen HTTPS que la WebUI.
-- Swagger pasa a `/api/v1/api-docs` en el mismo origen HTTPS de la WebUI.
+- LibreQoS mueve el listener del node manager a `127.0.0.1:9123`.
+- Caddy publica todo por HTTPS hacia el node manager. La WebUI y la API comparten ese único listener, así que no hay un segundo upstream que configurar.
+- La API se sirve dentro del proceso en `/api/v3`, con su documentación en `/api/v3/docs`, en el mismo origen HTTPS que la WebUI.
 
-## Overrides del listener de la API
+## Acceso a la API a través de Caddy
 
-El modo Caddy gestionado espera que el servicio API permanezca en loopback y se alcance a través de Caddy en `/api/v1/`.
-
-`LQOS_API_LISTEN` es un override para despliegues avanzados. No lo configure en sistemas con Caddy gestionado, salvo que quiera exponer directamente el listener de la API y también haya planificado firewall, TLS y controles de acceso de operadores para ese listener directo.
+La API es parte de `lqosd` y no tiene un listener propio que publicar. Todo lo que llega al node manager a través de Caddy llega igual a `/api/v3`, y cada solicitud sigue necesitando una clave de API local en la cabecera `x-bearer`. Cree las claves en la WebUI, en **License & Services → Local API Keys**; vea [API del nodo de LibreQoS](api-es.md).
 
 ## Si usa el modo de certificado local
 

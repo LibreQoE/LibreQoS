@@ -297,7 +297,11 @@ async fn handle_socket(socket: WebSocket, context: WsUpgradeContext) {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<Vec<u8>>>(1024);
     let outbound_handle = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            if ws_tx.send(Message::Binary((*msg).clone())).await.is_err() {
+            if ws_tx
+                .send(Message::Binary((*msg).clone().into()))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -2777,7 +2781,7 @@ async fn receive_channel_message(
     false
 }
 
-fn is_benign_close_frame(frame: Option<&axum::extract::ws::CloseFrame<'_>>) -> bool {
+fn is_benign_close_frame(frame: Option<&axum::extract::ws::CloseFrame>) -> bool {
     frame.is_some_and(|frame| matches!(frame.code, 1000 | 1001))
 }
 

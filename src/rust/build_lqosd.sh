@@ -4,7 +4,7 @@
 set -e
 
 echo "Building lqosd..."
-cd /opt/libreqos/src/rust
+cd /home/libreqos/Rust/LibreQoS/libreqos/LibreQoS/src/rust
 
 # Build the lqosd package specifically
 cargo build --release --package lqosd

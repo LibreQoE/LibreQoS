@@ -72,7 +72,7 @@ fn bridge_metrics(query: &CircuitMetricsQuery) -> Vec<CircuitLiveMetrics> {
             }
             snapshot.by_circuit_id.get(trimmed).map(|row| CircuitLiveMetrics {
                 circuit_id: trimmed.to_string(),
- // 3b demand-source sweep: customer-facing throughput
+                // 3b (rev 861) demand-source sweep: customer-facing throughput
                 // is the DELIVERED series (`bytes_per_second` is the demand).
                 bytes_per_second: row.shaped_bytes_per_second,
                 rtt_current_p50_nanos: row.rtt_current_p50_nanos,
@@ -131,7 +131,7 @@ mod tests {
 
     fn bridge_row(bytes_down: u64) -> CircuitLiveRow {
         CircuitLiveRow {
- // 3b: the demand is deliberately LARGER than the
+            // 3b (rev 861): the demand is deliberately LARGER than the
             // delivered series, so an accidental demand read would fail.
             bytes_per_second: DownUpOrder {
                 down: bytes_down + 10_000,

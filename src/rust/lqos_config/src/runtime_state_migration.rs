@@ -776,7 +776,7 @@ mod tests {
             .expect("test should create topology state dir");
         fs::write(&runtime, "{\"schema_version\":1}").expect("test should write a custodied file");
 
- // TYPED-bar failures (the deriver ITEM 2): a parseable but structurally-wrong
+        // TYPED-bar failures (the coordinator ITEM 2): a parseable but structurally-wrong
         // body for a versioned generated doc is quarantined.
         let not_object = config.topology_state_read_path(TOPOLOGY_EFFECTIVE_STATE_FILENAME);
         fs::write(&not_object, "[]").expect("test should write a non-object body");

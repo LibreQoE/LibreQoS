@@ -1,3 +1,4 @@
+pub(crate) mod api_key_auth;
 pub(crate) mod circuit;
 pub(crate) mod circuit_activity;
 pub(crate) mod circuit_count;
@@ -44,7 +45,7 @@ use axum::{Extension, Router};
 
 pub fn local_api(shaper_query: tokio::sync::mpsc::Sender<ShaperQueryCommand>) -> Router {
     Router::new()
-        .route("/pcapDump/:id", get(packet_analysis::pcap_dump))
+        .route("/pcapDump/{id}", get(packet_analysis::pcap_dump))
         .route(
             "/throughputAttributionDebug",
             get(throughput_attribution_debug::throughput_attribution_debug),

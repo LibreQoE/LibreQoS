@@ -294,7 +294,7 @@ fn conflicting_sqm_owner(devices: &[ShapedDevice], circuit_id: &str) -> Result<O
         ));
     }
 
- // TreeGuard is retiring: the treeguard precedence arm collapses
+    // TreeGuard is retiring (rev 633): the treeguard precedence arm collapses
     // to stormguard > operator, so its ownership check is dropped here.
     Ok(None)
 }

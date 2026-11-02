@@ -23,7 +23,6 @@ const INSTALL_CADDY_SCRIPT: &str = "install_caddy.sh";
 const DISABLE_CADDY_SCRIPT: &str = "disable_caddy.sh";
 const RUNTIME_DIRECT_LISTEN: &str = ":::9123";
 const RUNTIME_SECURE_LISTEN: &str = "127.0.0.1:9123";
-const API_UPSTREAM: &str = "127.0.0.1:9122";
 const WEB_UPSTREAM: &str = "127.0.0.1:9123";
 const DELAYED_SWITCH_SHELL: &str = "/bin/sh";
 const SYSTEMD_RUN_BIN: &str = "/usr/bin/systemd-run";
@@ -102,7 +101,7 @@ pub fn ssl_status(config: &Config, preferred_host: Option<&str>) -> SslStatus {
 /// - updates `/etc/lqos.conf`
 /// - runs the Caddy installer helper if needed
 /// - writes `/etc/caddy/Caddyfile`
-/// - schedules a delayed service switch that restarts `caddy.service`, `libreqos-lqosd.service`, and `libreqos-api.service`
+/// - schedules a delayed service switch that restarts `caddy.service` and `libreqos-lqosd.service`
 pub fn enable_runtime_ssl(
     external_hostname: Option<String>,
     preferred_host: Option<&str>,
@@ -149,7 +148,7 @@ pub fn enable_runtime_ssl(
 /// - updates `/etc/lqos.conf`
 /// - removes the managed `/etc/caddy/Caddyfile`
 /// - runs the Caddy disable helper when LibreQoS owns that setup
-/// - schedules a delayed service switch that restarts `libreqos-lqosd.service` and `libreqos-api.service`
+/// - schedules a delayed service switch that restarts `libreqos-lqosd.service`
 pub fn disable_runtime_ssl(preferred_host: Option<&str>) -> Result<SslActionOutcome> {
     let existing = (*lqos_config::load_config()?).clone();
     let ssl = existing
@@ -547,16 +546,15 @@ fn render_managed_caddyfile(plan: &SslRuntimePlan) -> String {
     format!(
         "\
 {{\n    admin off\n}}\n\n\
-{site_address} {{{tls_block}\n    encode zstd gzip\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {api_upstream}\n    }}\n    reverse_proxy {web_upstream}\n}}\n",
+{site_address} {{{tls_block}\n    encode zstd gzip\n    reverse_proxy {web_upstream}\n}}\n",
         site_address = plan.caddy_site_address,
         tls_block = tls_block,
-        api_upstream = API_UPSTREAM,
         web_upstream = WEB_UPSTREAM,
     )
 }
 
 fn enable_runtime_command() -> &'static str {
-    "systemctl enable caddy.service && systemctl restart caddy.service && systemctl restart libreqos-lqosd.service && systemctl restart libreqos-api.service"
+    "systemctl enable caddy.service && systemctl restart caddy.service && systemctl restart libreqos-lqosd.service"
 }
 
 fn enable_setup_command() -> &'static str {
@@ -564,7 +562,7 @@ fn enable_setup_command() -> &'static str {
 }
 
 fn disable_runtime_command() -> &'static str {
-    "systemctl stop caddy.service || true; systemctl disable caddy.service || true; systemctl restart libreqos-lqosd.service && systemctl restart libreqos-api.service"
+    "systemctl stop caddy.service || true; systemctl disable caddy.service || true; systemctl restart libreqos-lqosd.service"
 }
 
 fn schedule_delayed_runtime_switch(command: &str) -> Result<()> {
@@ -625,8 +623,8 @@ fn caddy_binary_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        API_UPSTREAM, RUNTIME_DIRECT_LISTEN, RUNTIME_SECURE_LISTEN, WEB_UPSTREAM,
-        apply_ssl_to_config, build_runtime_plan, disable_ssl_in_config, normalize_preferred_host,
+        RUNTIME_DIRECT_LISTEN, RUNTIME_SECURE_LISTEN, WEB_UPSTREAM, apply_ssl_to_config,
+        build_runtime_plan, disable_ssl_in_config, normalize_preferred_host,
         render_managed_caddyfile,
     };
     use lqos_config::{Config, normalize_external_hostname};
@@ -640,31 +638,32 @@ mod tests {
     }
 
     #[test]
-    fn managed_caddyfile_proxies_api_prefix_and_web_ui() {
+    fn managed_caddyfile_proxies_the_node_manager_only() {
+        // There is no API upstream any more: lqosd serves /api/v3 on the node
+        // manager listener, so one loopback proxy covers UI + API.
         let plan = build_runtime_plan(Some("libreqos.example.com".to_string()), None);
         let caddyfile = render_managed_caddyfile(&plan);
         let expected = format!(
-            "{{\n    admin off\n}}\n\nlibreqos.example.com {{\n    encode zstd gzip\n    handle /api/v1 {{\n        redir /api/v1/ 308\n    }}\n    handle_path /api/v1/* {{\n        reverse_proxy {API_UPSTREAM}\n    }}\n    reverse_proxy {WEB_UPSTREAM}\n}}\n"
+            "{{\n    admin off\n}}\n\nlibreqos.example.com {{\n    encode zstd gzip\n    reverse_proxy {WEB_UPSTREAM}\n}}\n"
         );
         assert_eq!(caddyfile, expected);
     }
 
     #[test]
-    fn managed_caddyfile_keeps_api_and_webui_upstreams_loopback() {
+    fn managed_caddyfile_keeps_the_webui_upstream_loopback() {
         let plan = build_runtime_plan(Some("libreqos.example.com".to_string()), None);
         let caddyfile = render_managed_caddyfile(&plan);
 
-        assert!(caddyfile.contains(&format!("reverse_proxy {API_UPSTREAM}")));
         assert!(caddyfile.contains(&format!("reverse_proxy {WEB_UPSTREAM}")));
         for exposed_upstream in [
-            "reverse_proxy :9122",
-            "reverse_proxy 0.0.0.0:9122",
-            "reverse_proxy [::]:9122",
-            "reverse_proxy :::9122",
+            "reverse_proxy :9123",
+            "reverse_proxy 0.0.0.0:9123",
+            "reverse_proxy [::]:9123",
+            "reverse_proxy :::9123",
         ] {
             assert!(
                 !caddyfile.contains(exposed_upstream),
-                "managed Caddy should not proxy API traffic through {exposed_upstream}"
+                "managed Caddy should not proxy traffic through {exposed_upstream}"
             );
         }
     }
@@ -762,28 +761,30 @@ mod tests {
     }
 
     #[test]
-    fn runtime_enable_restarts_api_after_caddy_mode_change() {
+    fn runtime_enable_restarts_the_daemon_after_caddy_mode_change() {
         let command = super::enable_runtime_command();
 
         assert!(command.contains("systemctl restart caddy.service"));
         assert!(command.contains("systemctl restart libreqos-lqosd.service"));
-        assert!(command.contains("systemctl restart libreqos-api.service"));
-        assert!(
-            command.find("systemctl restart libreqos-lqosd.service")
-                < command.find("systemctl restart libreqos-api.service")
+        // Exactly those two units restart: the API has no unit of its own, it is
+        // served by lqosd on the listener this restart brings back.
+        assert_eq!(
+            command.matches("systemctl restart").count(),
+            2,
+            "unexpected restart set: {command}"
         );
     }
 
     #[test]
-    fn runtime_disable_restarts_api_after_caddy_mode_change() {
+    fn runtime_disable_restarts_the_daemon_after_caddy_mode_change() {
         let command = super::disable_runtime_command();
 
         assert!(command.contains("systemctl disable caddy.service"));
         assert!(command.contains("systemctl restart libreqos-lqosd.service"));
-        assert!(command.contains("systemctl restart libreqos-api.service"));
-        assert!(
-            command.find("systemctl restart libreqos-lqosd.service")
-                < command.find("systemctl restart libreqos-api.service")
+        assert_eq!(
+            command.matches("systemctl restart").count(),
+            1,
+            "unexpected restart set: {command}"
         );
     }
 }

@@ -23,7 +23,7 @@ use crate::DataplaneTransaction;
 /// R3 cold-rebuild arm), so the broker no longer conflates it with a mechanics
 /// `RejectedStructuralOp`.** The segment `version` == this const, so an OLD
 /// lqosd against a NEW bridge (or vice versa) FAILS attach rather than walking
-/// the ack ring at different strides (the silent split-brain, the implementer W2).
+/// the ack ring at different strides (the silent split-brain, the reviewer W2).
 /// Coordinate the upgrade (W5).
 pub const PROTOCOL_VERSION: u32 = 6;
 
@@ -45,7 +45,7 @@ pub const MAX_BATCH_FRAMES: u16 = 16;
 // lqosd's `bridge_broker/seam.rs`. A field added to one copy only is a SILENT
 // layout mismatch (both `size_of` asserts still pass) and the two sides walk
 // the ring with different strides. THE SINGLE HOME is HERE: both ends compile
-// THESE types — no third copy (the implementer W1).
+// THESE types — no third copy (the reviewer W1).
 // ---------------------------------------------------------------------------
 
 /// Segment header magic ("LQ3C").
@@ -61,7 +61,7 @@ pub const CMD_LEN_PREFIX_BYTES: usize = 8;
 ///
 /// W3 (U1): GROWN from 256 → 512 to carry the typed reject DETAIL (reason +
 /// op-class + identity). Both ends read THIS const (the hard-coded stride was
-/// the silent-misread hazard, the implementer W2); the growth is a wire break ⇒
+/// the silent-misread hazard, the reviewer W2); the growth is a wire break ⇒
 /// PROTOCOL_VERSION bump (below).
 pub const ACK_SLOT_BYTES: usize = 512;
 pub const ACK_SLOTS: usize = 8;

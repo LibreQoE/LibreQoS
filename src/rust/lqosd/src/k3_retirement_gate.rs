@@ -11,7 +11,7 @@
 //! accessors, TreeGuard config).
 //!
 //! The blackboard / remote-command / scheduler-control chain was deleted by
-//! K3-B as part of that chain but is NOT gated: ruled it
+//! K3-B as part of that chain but is NOT gated: rev 813 ruled it
 //! attach-orphans (bus/lts2-fed, not kernel-data consumers) and the 3a LTS
 //! reinstatement moved their spawns to the common startup path.
 //!
@@ -50,7 +50,7 @@ const FORBIDDEN: &[&str] = &[
     "FlowActor",
     "get_rtt_events_per_second",
     // NOTE: the blackboard / remote-command / scheduler-control chain is NOT
- // gated — ruled those attach-orphans (not kernel-data consumers)
+    // gated — rev 813 ruled those attach-orphans (not kernel-data consumers)
     // and the 3a LTS reinstatement moved their spawns to the common startup.
     // K3-B: kernel structures / queues / cpu affinity / schema.
     "QUEUE_STRUCTURE",
@@ -66,6 +66,27 @@ const FORBIDDEN: &[&str] = &[
     "TreeguardCpuMode",
     "TreeguardCircuitsConfig",
 ];
+
+/// Mentions that are deliberate and harmless: the token appears only in prose
+/// that states the surface does NOT exist. Counting is pinned, so a new mention
+/// (let alone real code) still trips the gate.
+const ALLOWED_MENTIONS: &[(&str, &str, usize)] = &[(
+    // The shipped API documents that the read-only CPU view has no kernel
+    // CPU-affinity field — the negation names the retired surface.
+    "lqos_api/src/api/cpu_workers.rs",
+    "cpu_affinity",
+    2,
+)];
+
+fn allowed_mentions(path: &Path, token: &str) -> usize {
+    ALLOWED_MENTIONS
+        .iter()
+        .filter(|(suffix, allowed_token, _)| {
+            *allowed_token == token && path.ends_with(Path::new(suffix))
+        })
+        .map(|(_, _, count)| *count)
+        .sum()
+}
 
 fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -113,8 +134,13 @@ fn kernel_datapath_tokens_do_not_reappear() {
             continue;
         };
         for token in FORBIDDEN {
-            if contents.contains(token) {
-                violations.push(format!("{}: {token}", path.display()));
+            let occurrences = contents.matches(token).count();
+            let allowed = allowed_mentions(&path, token);
+            if occurrences > allowed {
+                violations.push(format!(
+                    "{}: {token} ({occurrences} occurrences, {allowed} allowed)",
+                    path.display()
+                ));
             }
         }
     }

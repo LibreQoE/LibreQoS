@@ -308,7 +308,7 @@ mod tests {
                 remote_port: 443,
                 protocol: 6,
             },
- // 3b sweep-fixture guard: demand != delivered.
+            // 3b rev 866 sweep-fixture guard: demand != delivered.
             actual: analytics_ipc::DirectionalCounters {
                 download_bytes: down + 10_000,
                 upload_bytes: up + 10_000,

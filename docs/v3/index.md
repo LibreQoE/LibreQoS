@@ -1,7 +1,7 @@
 # LibreQoS v3 Documentation
 
-**Version: LibreQoS v3 (current).** This documentation set covers LibreQoS **v3**
-only. For the previous release, see the
+**Version: LibreQoS v3 beta (current pre-release).** This documentation set
+covers LibreQoS **v3** only. For the previous release, see the
 [LibreQoS v2.0 documentation (archived, v2.0-only)](../v2.0/index.md).
 
 LibreQoS v3 is a **DPDK-bridge** deployment: the Linux `tc`/eBPF datapath of
@@ -21,6 +21,7 @@ whats-new
 install
 upgrade-from-v2
 operate
+known-limitations
 troubleshooting
 ```
 
