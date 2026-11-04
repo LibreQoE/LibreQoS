@@ -191,6 +191,32 @@ static __always_inline struct ip_hash_info * setup_lookup_key_and_tc_cpu(
     return ip_info;
 }
 
+static __always_inline struct ip_hash_info tc_lookup_mapping(
+    struct ip_hash_key * lookup_key
+) {
+    struct ip_hash_info out = {0};
+    #ifdef USE_HOTCACHE
+    struct ip_hash_info * cached = bpf_map_lookup_elem(
+        &ip_to_cpu_and_tc_hotcache,
+        &lookup_key->address
+    );
+    if (cached) {
+        if (cached->cpu != NEGATIVE_HIT) {
+            out = *cached;
+        }
+        return out;
+    }
+    #endif
+    struct ip_hash_info * ip_info = bpf_map_lookup_elem(
+        &map_ip_to_cpu_and_tc,
+        lookup_key
+    );
+    if (ip_info) {
+        out = *ip_info;
+    }
+    return out;
+}
+
 // For the TC side, the dissector is different. Operates similarly to
 // `setup_lookup_key_and_tc_cpu`. Performs an LPM lookup for an `ip_hash.h` 
 // encoded address, taking into account redirection and "on a stick" setup.
@@ -219,13 +245,7 @@ static __always_inline struct ip_hash_info tc_setup_lookup_key_and_tc_cpu(
             dissector->dst_ip;
         *out_effective_direction = direction;
 
-        struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-            &map_ip_to_cpu_and_tc, 
-            lookup_key
-        );
-        if (ip_info) {
-            out = *ip_info;
-        }
+        out = tc_lookup_mapping(lookup_key);
         apply_stick_offset_to_mapping(*out_effective_direction, &out);
         return out;
     } else {
@@ -246,13 +266,7 @@ static __always_inline struct ip_hash_info tc_setup_lookup_key_and_tc_cpu(
 
         // Regardless of effective direction, we look up the base mapping in the
         // primary map. Upload mapping is derived via stick_offset.
-        struct ip_hash_info * ip_info = bpf_map_lookup_elem(
-            &map_ip_to_cpu_and_tc, 
-            lookup_key
-        );
-        if (ip_info) {
-            out = *ip_info;
-        }
+        out = tc_lookup_mapping(lookup_key);
         apply_stick_offset_to_mapping(*out_effective_direction, &out);
         return out;
     }

@@ -268,7 +268,9 @@ static __always_inline void process_icmp(
         );
         update_flow_rates(dissector, rate_index, new_data);
         if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
+            #ifdef VERBOSE
             bpf_debug("[FLOWS] Failed to add new flow to map");
+            #endif
             return;
         }
         return;
@@ -300,7 +302,9 @@ static __always_inline void process_udp(
         );
         update_flow_rates(dissector, rate_index, new_data);
         if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
+            #ifdef VERBOSE
             bpf_debug("[FLOWS] Failed to add new flow to map");
+            #endif
             return;
         }
         return;
@@ -501,7 +505,9 @@ static __always_inline void process_tcp(
             mapping_epoch
         );
         if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
+            #ifdef VERBOSE
             bpf_debug("[FLOWS] Failed to add new flow to map");
+            #endif
         }
         return;
     }
@@ -544,7 +550,9 @@ static __always_inline void process_tcp(
         }
 
         if (bpf_map_update_elem(&flowbee, key, new_data, BPF_ANY) != 0) {
+            #ifdef VERBOSE
             bpf_debug("[FLOWS] Failed to add new flow to map");
+            #endif
         }
         return;
     }
