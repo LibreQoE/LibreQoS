@@ -2,6 +2,10 @@
 
 The bus acts as an intermediary through which `lqosd` and various clients communicate. The Python integration system, `lqtop` and other CLI tools use it to interact with `lqosd`.
 
+The local bus listens at `/run/lqos/bus`. Local users may connect for query access, including `lqtop`. Requests that replace the LibreQoS configuration or reload LibreQoS require a root client. The server verifies the client UID from the Unix socket rather than trusting data sent by the client.
+
+`lqosd` creates `/run/lqos` with mode `0755` and the bus socket with mode `0666`. These modes allow local query clients to connect without making the runtime directory writable.
+
 The bus is intentionally not stable between releases. So if you integrate with it, you will need to update your integration *every time* you update `lqosd`. This:
 
 * Allows for rapid iteration on the back-end.
