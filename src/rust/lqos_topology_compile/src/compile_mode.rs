@@ -332,6 +332,64 @@ fn set_number(map: &mut Map<String, Value>, key: &str, value: Option<u64>, fallb
     );
 }
 
+/// 74t174 M1: unique DISPLAY names over the DISTINCT projection node ids,
+/// sorted by (name, node_id) — never HashMap iteration order. The base name
+/// when unique; on collision `{base} [AP <short>]`, then `{base} [{node_id}]`;
+/// a blank base always yields a NON-EMPTY name (`AP <short>`).
+fn unique_export_names<'a>(
+    nodes: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> HashMap<String, String> {
+    let mut entries: Vec<(&str, &str)> = nodes.into_iter().collect();
+    // DISTINCT ids only (the projection may repeat one AP many times).
+    entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+    entries.dedup_by(|(left, _), (right, _)| left == right);
+    // Deterministic order: (name, node_id).
+    entries.sort_unstable_by(|(left_id, left_name), (right_id, right_name)| {
+        left_name.cmp(right_name).then_with(|| left_id.cmp(right_id))
+    });
+    let mut counts = HashMap::<&str, usize>::new();
+    for (_, name) in &entries {
+        *counts.entry(*name).or_insert(0) += 1;
+    }
+    let mut used = HashSet::new();
+    let mut out = HashMap::with_capacity(entries.len());
+    for (node_id, base) in entries {
+        let short = node_id.rsplit(':').next().unwrap_or(node_id);
+        let short = &short[..short.len().min(8)];
+        let export = if !base.is_empty() && counts.get(base).copied().unwrap_or(0) <= 1 {
+            base.to_string()
+        } else if base.is_empty() {
+            let candidates = [format!("AP {short}"), format!("AP {node_id}")];
+            candidates
+                .into_iter()
+                .find(|candidate| !used.contains(candidate))
+                .unwrap_or_else(|| format!("AP {node_id}"))
+        } else {
+            let candidates = [
+                format!("{base} [AP {short}]"),
+                format!("{base} [{node_id}]"),
+            ];
+            candidates
+                .into_iter()
+                .find(|candidate| !used.contains(candidate))
+                .unwrap_or_else(|| format!("{base} [{node_id}]"))
+        };
+        used.insert(export.clone());
+        out.insert(node_id.to_string(), export);
+    }
+    out
+}
+
+/// 74t174 M1: the AP object with the DISAMBIGUATED display name (the id stays
+/// the anchor identity).
+fn ap_object_named(node: &ExportedNode, parent_site: Option<&str>, name: &str) -> Value {
+    let mut out = ap_object(node, parent_site);
+    if let Value::Object(map) = &mut out {
+        map.insert("name".to_string(), Value::String(name.to_string()));
+    }
+    out
+}
+
 fn ap_object(node: &ExportedNode, parent_site: Option<&str>) -> Value {
     let mut out = Map::new();
     out.insert("children".to_string(), Value::Object(Map::new()));
@@ -709,10 +767,28 @@ fn compile_flat(imported: ImportedTopologyBundle) -> CompiledTopologyBundle {
 
 fn compile_ap_only(imported: ImportedTopologyBundle) -> Result<CompiledTopologyBundle> {
     let source = compiled_source(&imported.source, TopologyCompileMode::ApOnly);
-    let projection = circuit_projection_map(&imported, |nodes_by_id, node_id| {
+    let mut projection = circuit_projection_map(&imported, |nodes_by_id, node_id| {
         nearest_kind(nodes_by_id, node_id, "AP")
     });
     let (nodes_by_id, _) = native_projection_index(&imported);
+    // 74t174 M1: disambiguate the AP display names over the DISTINCT projection
+    // node ids; propagate to the root key, the ap_object name, and the
+    // projection node_name (parent_node/anchor_node_name). The anchor id is
+    // unchanged.
+    let ap_names = unique_export_names(
+        projection
+            .values()
+            .filter_map(|parent| {
+                nodes_by_id
+                    .get(&parent.node_id)
+                    .map(|node| (parent.node_id.as_str(), node.name.as_str()))
+            }),
+    );
+    for parent in projection.values_mut() {
+        if let Some(name) = ap_names.get(&parent.node_id) {
+            parent.node_name = name.clone();
+        }
+    }
     let mut root = BTreeMap::<String, Value>::new();
     let mut seen = HashSet::new();
     for parent in projection.values() {
@@ -722,7 +798,11 @@ fn compile_ap_only(imported: ImportedTopologyBundle) -> Result<CompiledTopologyB
         let Some(node) = nodes_by_id.get(&parent.node_id) else {
             continue;
         };
-        root.insert(node.name.clone(), ap_object(node, None));
+        let name = ap_names
+            .get(&parent.node_id)
+            .cloned()
+            .unwrap_or_else(|| node.name.clone());
+        root.insert(name.clone(), ap_object_named(node, None, &name));
     }
     Ok(projected_outputs(
         imported,
@@ -735,10 +815,26 @@ fn compile_ap_only(imported: ImportedTopologyBundle) -> Result<CompiledTopologyB
 
 fn compile_ap_site(imported: ImportedTopologyBundle) -> Result<CompiledTopologyBundle> {
     let source = compiled_source(&imported.source, TopologyCompileMode::ApSite);
-    let projection = circuit_projection_map(&imported, |nodes_by_id, node_id| {
+    let mut projection = circuit_projection_map(&imported, |nodes_by_id, node_id| {
         nearest_kind(nodes_by_id, node_id, "AP")
     });
     let (nodes_by_id, _) = native_projection_index(&imported);
+    // 74t174 M1: the SAME disambiguation for the per-site AP children + the
+    // ap_object name (the identical collapse class).
+    let ap_names = unique_export_names(
+        projection
+            .values()
+            .filter_map(|parent| {
+                nodes_by_id
+                    .get(&parent.node_id)
+                    .map(|node| (parent.node_id.as_str(), node.name.as_str()))
+            }),
+    );
+    for parent in projection.values_mut() {
+        if let Some(name) = ap_names.get(&parent.node_id) {
+            parent.node_name = name.clone();
+        }
+    }
     let mut groups = BTreeMap::<String, (ExportedNode, BTreeMap<String, Value>)>::new();
     let mut synthetic_counter = 0usize;
     let mut seen = HashSet::new();
@@ -765,9 +861,13 @@ fn compile_ap_site(imported: ImportedTopologyBundle) -> Result<CompiledTopologyB
         let entry = groups
             .entry(site_entry.id.clone())
             .or_insert_with(|| (site_entry.clone(), BTreeMap::new()));
+        let ap_name = ap_names
+            .get(&ap.id)
+            .cloned()
+            .unwrap_or_else(|| ap.name.clone());
         entry.1.insert(
-            ap.name.clone(),
-            ap_object(&ap, Some(site_entry.name.as_str())),
+            ap_name.clone(),
+            ap_object_named(&ap, Some(site_entry.name.as_str()), &ap_name),
         );
     }
     let mut root = BTreeMap::<String, Value>::new();
@@ -1785,5 +1885,56 @@ mod tests {
         );
         assert!(compiled.editor.find_node("site-alpha").is_some());
         assert!(compiled.editor.find_node("ap-north").is_some());
+    }
+}
+
+/// 74t174 M1: the producer-disambiguation unit pins (the review's test list
+/// 1-5 at the helper level; the end-to-end fixtures ride the compile suite).
+#[cfg(test)]
+mod m1_name_disambiguation_tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_names_disambiguate_deterministically() {
+        let names = unique_export_names([
+            ("uisp:device:1001", "Wave AP"),
+            ("uisp:device:1002", "Wave AP"),
+        ]);
+        assert_eq!(names["uisp:device:1001"], "Wave AP [AP 1001]");
+        assert_eq!(names["uisp:device:1002"], "Wave AP [AP 1002]");
+        // Insertion-order permutation => the SAME names (sorted (name, id)).
+        let permuted = unique_export_names([
+            ("uisp:device:1002", "Wave AP"),
+            ("uisp:device:1001", "Wave AP"),
+        ]);
+        assert_eq!(names, permuted);
+    }
+
+    #[test]
+    fn empty_names_are_never_exported_empty() {
+        let names =
+            unique_export_names([("uisp:device:1", ""), ("uisp:device:2", "")]);
+        assert!(!names["uisp:device:1"].is_empty());
+        assert!(!names["uisp:device:2"].is_empty());
+        assert_ne!(names["uisp:device:1"], names["uisp:device:2"]);
+        // A lone empty name is also non-empty (the hostname-only source).
+        let lone = unique_export_names([("uisp:device:9", "")]);
+        assert!(!lone["uisp:device:9"].is_empty());
+    }
+
+    #[test]
+    fn unique_names_are_byte_identical() {
+        let names = unique_export_names([("a", "AP One"), ("b", "AP Two")]);
+        assert_eq!(names["a"], "AP One");
+        assert_eq!(names["b"], "AP Two");
+    }
+
+    #[test]
+    fn the_short_id_is_the_tail_at_most_eight_chars() {
+        let names = unique_export_names([
+            ("x:device:abcdef123456", "Same"),
+            ("x:device:zzz", "Same"),
+        ]);
+        assert!(names["x:device:abcdef123456"].contains("[AP abcdef12]"));
     }
 }

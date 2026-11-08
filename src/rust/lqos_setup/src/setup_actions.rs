@@ -255,6 +255,15 @@ pub(crate) fn persist_setup_success(
             path.display()
         ));
     }
+    // 74t168: migrate the legacy license grant to the canonical path, then
+    // emit LIBREQOS_DPDK_LICENSE_FILE (the bridge's grant_path() rung 1) —
+    // one setup pass does both; the bridge fail-closes to a 1000-circuit cap
+    // when it cannot read the grant lqosd wrote.
+    let license_grant = lqos_setup::bootstrap::ensure_license_grant_seam(config)?;
+    event_log.push(format!(
+        "License grant seam: LIBREQOS_DPDK_LICENSE_FILE={} (the bridge reads the grant lqosd writes).",
+        license_grant.display()
+    ));
 
     // B.4 (docs/zero_manual_ports_installer_card.md): derive + write the managed
     // ports plan NOW that the BDF + bandwidth keys exist. Never fatal (the plan

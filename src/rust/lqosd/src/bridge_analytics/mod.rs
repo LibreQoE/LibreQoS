@@ -140,6 +140,11 @@ pub struct BridgeStatsSnapshot {
     /// legacy COMBINED `flow_bytes_per_second` map it superseded — its only
     /// reader was the circuit page — is retired with the U=0 fix.)
     pub flow_bytes_per_second_directional: FxHashMap<analytics_ipc::FlowId, DownUpOrder<u64>>,
+    /// 74t171: the bridge snapshot's per-worker utilization rows (busy_ppm,
+    /// idle_ppm, laps_per_s, busy_laps, backlog_mean, cycles_per_busy_lap,
+    /// phase_cycles) — a READ-ONLY exposure of the wire `workers` section for
+    /// the CPU-page render. Empty on a pre-change bridge (never fabricated).
+    pub workers: Vec<analytics_ipc::WorkerUtilRow>,
     /// 3b §1.1 (rev 834 ruling c): per-protocol SENT packets/second,
     /// differenced per flow by the same seed pattern. `GetCurrentThroughput`
     /// reads these so the tcp/udp/icmp splits are true rates. CLASSIFIED-only:
@@ -1895,6 +1900,7 @@ fn poll_and_store_with(
                 bridge_mapped_bytes_per_second,
                 bridge_unmapped_bytes_per_second,
                 active_flows,
+                workers: next.workers,
                 flow_untracked_packets: next.diagnostics.flow_untracked_packets,
                 flow_bytes_per_second_directional,
                 protocol_packets_per_second,

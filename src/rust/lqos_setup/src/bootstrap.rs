@@ -325,8 +325,15 @@ fn single_vlan(value: u32, which: &str) -> Result<u16, String> {
 /// (the on-a-stick invariant); two DIFFERENT BDFs under a `[single_interface]`
 /// config are ambiguous and fail loud rather than guessing a trunk.
 fn persisted_single_bdf() -> Result<Option<String>, String> {
-    let wan = bridge_env_value(ENV_WAN_BDF).filter(|v| !v.trim().is_empty());
-    let lan = bridge_env_value(ENV_LAN_BDF).filter(|v| !v.trim().is_empty());
+    persisted_single_bdf_at(Path::new(BRIDGE_ENV_PATH))
+}
+
+/// The testable surface: the same derivation against an EXPLICIT env file —
+/// unit tests must not read the host's `/etc/libreqos/bridge.env` (a live
+/// deployment state that varies per host).
+fn persisted_single_bdf_at(env_file: &Path) -> Result<Option<String>, String> {
+    let wan = env_file_value(env_file, ENV_WAN_BDF).filter(|v| !v.trim().is_empty());
+    let lan = env_file_value(env_file, ENV_LAN_BDF).filter(|v| !v.trim().is_empty());
     match (wan, lan) {
         (Some(wan), Some(lan)) if wan.eq_ignore_ascii_case(&lan) => Ok(Some(wan)),
         (Some(wan), Some(lan)) => Err(format!(
@@ -348,6 +355,22 @@ fn derive_single_interface_topology_at(
     config: &Config,
     recorded_device: Option<&str>,
 ) -> Result<Option<StickTopology>, String> {
+    derive_single_interface_topology_at_with_env_file(
+        sysfs,
+        net_sysfs,
+        config,
+        recorded_device,
+        Path::new(BRIDGE_ENV_PATH),
+    )
+}
+
+fn derive_single_interface_topology_at_with_env_file(
+    sysfs: &Path,
+    net_sysfs: &Path,
+    config: &Config,
+    recorded_device: Option<&str>,
+    env_file: &Path,
+) -> Result<Option<StickTopology>, String> {
     let Some(single) = config.single_interface.as_ref() else {
         return Ok(None);
     };
@@ -363,7 +386,7 @@ fn derive_single_interface_topology_at(
         Some(device) => Some(device),
         None => match recorded_device.filter(|d| crate::port_class::is_pci_bdf(d)) {
             Some(recorded) => Some(recorded.to_string()),
-            None => persisted_single_bdf()?,
+            None => persisted_single_bdf_at(env_file)?,
         },
     };
     let Some(device) = device else {
@@ -429,6 +452,25 @@ pub fn ensure_bridge_interface_topology_at_with(
     sysfs: &Path,
     net_sysfs: &Path,
 ) -> Result<Option<PathBuf>> {
+    ensure_bridge_interface_topology_at_with_env_file(
+        path,
+        config,
+        sysfs,
+        net_sysfs,
+        Path::new(BRIDGE_ENV_PATH),
+    )
+}
+
+/// The hermetic surface: the derivation reads persisted BDFs from the GIVEN
+/// env file — unit tests must not read the host's `/etc/libreqos/bridge.env`
+/// (a live deployment state that varies per host).
+pub fn ensure_bridge_interface_topology_at_with_env_file(
+    path: &Path,
+    config: &Config,
+    sysfs: &Path,
+    net_sysfs: &Path,
+    env_file: &Path,
+) -> Result<Option<PathBuf>> {
     if config.single_interface.is_none() {
         return Ok(None);
     }
@@ -461,7 +503,8 @@ pub fn ensure_bridge_interface_topology_at_with(
         .as_ref()
         .and_then(|topology| topology.get("device"))
         .and_then(|device| device.as_str());
-    let Some(desired) = derive_single_interface_topology_at(sysfs, net_sysfs, config, recorded)
+    let Some(desired) =
+        derive_single_interface_topology_at_with_env_file(sysfs, net_sysfs, config, recorded, env_file)
         .map_err(anyhow::Error::msg)?
     else {
         return Ok(None);
@@ -823,6 +866,102 @@ pub fn set_bridge_env_value_at(path: &Path, key: &str, value: &str) -> Result<()
     Ok(())
 }
 
+/// 74t168 §(1): the license-grant path the bridge reads via
+/// `LIBREQOS_DPDK_LICENSE_FILE` (`grant_path()` rung 1) — byte-for-byte the
+/// path lts2_sys writes (`license_grant.rs`: `{lqos_directory}/.keys/
+/// insight_license`, mode 0600).
+pub fn license_grant_file_for(config: &lqos_config::Config) -> std::path::PathBuf {
+    std::path::Path::new(&config.lqos_directory)
+        .join(".keys")
+        .join("insight_license")
+}
+
+/// The 74t168 §(2) legacy→canonical grant migration decision
+/// (`config_migrate.rs` precedent: pure decision, caller owns the IO).
+/// `lqos_directory` wins — the writer's authority:
+/// - canonical present            => `CanonicalPresent` (strict no-op: never
+///   overwritten; the legacy file stays as operator material),
+/// - canonical absent + legacy    => `Move` (the manual-fix / pre-beta19 box),
+/// - neither                      => `Neither` (nothing to do).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LicenseGrantMigration {
+    Move,
+    CanonicalPresent,
+    Neither,
+}
+
+pub(crate) fn plan_license_grant_migration(
+    canonical_exists: bool,
+    legacy_exists: bool,
+) -> LicenseGrantMigration {
+    match (canonical_exists, legacy_exists) {
+        (true, _) => LicenseGrantMigration::CanonicalPresent,
+        (false, true) => LicenseGrantMigration::Move,
+        (false, false) => LicenseGrantMigration::Neither,
+    }
+}
+
+/// The testable IO surface for the 74t168 §(2) migration: apply the decision
+/// at explicit paths. The move preserves bytes (the signed CBOR envelope is
+/// integrity-critical) and the 0600 mode lts2_sys writes; the `.keys`
+/// directory is created 0700. Re-run => no-op by decision.
+pub fn migrate_license_grant_at(
+    canonical: &Path,
+    legacy: &Path,
+    decision: LicenseGrantMigration,
+) -> Result<()> {
+    if decision != LicenseGrantMigration::Move {
+        return Ok(());
+    }
+    let Some(keys_dir) = canonical.parent() else {
+        return Ok(());
+    };
+    fs::create_dir_all(keys_dir)
+        .with_context(|| format!("Unable to create {}", keys_dir.display()))?;
+    let bytes = fs::read(legacy)
+        .with_context(|| format!("Unable to read the legacy grant {}", legacy.display()))?;
+    // Same filesystem => rename (atomic); otherwise copy + verify + unlink.
+    match fs::rename(legacy, canonical) {
+        Ok(()) => {}
+        Err(_) => {
+            fs::write(canonical, &bytes)
+                .with_context(|| format!("Unable to write {}", canonical.display()))?;
+            let written = fs::read(canonical)
+                .with_context(|| format!("Unable to re-read {}", canonical.display()))?;
+            if written != bytes {
+                return Err(anyhow::anyhow!(
+                    "the migrated grant at {} does not match the legacy bytes — refusing to unlink {}",
+                    canonical.display(),
+                    legacy.display()
+                ));
+            }
+            fs::remove_file(legacy)
+                .with_context(|| format!("Unable to remove {}", legacy.display()))?;
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(canonical, fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("Unable to set 0600 on {}", canonical.display()))?;
+        fs::set_permissions(keys_dir, fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("Unable to set 0700 on {}", keys_dir.display()))?;
+    }
+    Ok(())
+}
+
+/// 74t168: ONE setup pass does BOTH — migrate the legacy grant to the
+/// canonical path, then emit `LIBREQOS_DPDK_LICENSE_FILE` (the bridge's
+/// `grant_path()` rung 1) pointing at it. Cold path; idempotent.
+pub fn ensure_license_grant_seam(config: &lqos_config::Config) -> Result<std::path::PathBuf> {
+    let canonical = license_grant_file_for(config);
+    let legacy = std::path::Path::new("/etc/libreqos/.keys/insight_license");
+    let decision = plan_license_grant_migration(canonical.exists(), legacy.exists());
+    migrate_license_grant_at(&canonical, legacy, decision)?;
+    set_bridge_env_value("LIBREQOS_DPDK_LICENSE_FILE", &canonical.to_string_lossy())?;
+    Ok(canonical)
+}
+
 /// The testable surface for [`ensure_bridge_env_bdf_pair`].
 pub fn ensure_bridge_env_bdf_pair_at(path: &Path, pair: &BridgeBdfPair) -> Result<Option<PathBuf>> {
     let existing = fs::read_to_string(path).unwrap_or_default();
@@ -1157,7 +1296,7 @@ mod tests {
     use super::{
         BridgeBdfPair, PostinstAction, TOKEN_TTL, classify_postinst_action_from_inputs,
         current_unix_seconds, ensure_bridge_conf_at, ensure_bridge_env_bdf_pair_at,
-        ensure_bridge_interface_topology_at_with, migrate_legacy_config_at, new_bootstrap_token,
+        ensure_bridge_interface_topology_at_with, ensure_bridge_interface_topology_at_with_env_file, migrate_legacy_config_at, new_bootstrap_token,
         resolve_bridge_bdf_pair_at, set_bridge_env_value_at, v3_runtime_ready,
         validate_bridge_bdf_pair,
     };
@@ -1362,6 +1501,13 @@ mod tests {
         fake_virtio(&root, "ens19", "0000:00:13.0", 0x1041);
         let path = root.join("bridge.conf");
         std::fs::write(&path, "{\"schema_version\":1}\n").unwrap();
+        // Hermetic: the derivation reads the BRIDGE env for persisted BDFs —
+        // an EMPTY scratch file keeps the host's /etc state out of the unit
+        // test (a live deployment file may carry two different BDFs, which
+        // fails the derivation with the BDF-mismatch error before this
+        // test's own assertions).
+        let env_file = root.join("bridge.env");
+        std::fs::write(&env_file, "").unwrap();
         let equal = single_config("ens19", 100, 100);
         assert!(
             ensure_bridge_interface_topology_at_with(
@@ -1385,11 +1531,12 @@ mod tests {
         // The netdev is gone and no persisted BDF exists -> named failure.
         std::fs::remove_dir_all(root.join("class/net")).unwrap();
         let config = single_config("ens19", 100, 200);
-        let error = ensure_bridge_interface_topology_at_with(
+        let error = ensure_bridge_interface_topology_at_with_env_file(
             &path,
             &config,
             &root,
             &root.join("class/net"),
+            &env_file,
         )
         .expect_err("must fail loud");
         assert!(
@@ -1630,5 +1777,135 @@ mod tests {
             classify_postinst_action_from_inputs(false, false),
             PostinstAction::ActivateSetup
         );
+    }
+}
+
+#[cfg(test)]
+mod license_grant_migrate_tests {
+    use super::{
+        LicenseGrantMigration, plan_license_grant_migration, migrate_license_grant_at,
+    };
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "lqos-license-migrate-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("scratch dir");
+        root
+    }
+
+    fn scratch_file(path: &Path, bytes: &[u8]) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("parent dir");
+        }
+        std::fs::write(path, bytes).expect("write scratch file");
+    }
+
+    fn scratch_bytes() -> Vec<u8> {
+        // Deterministic pseudo-envelope bytes (the signed CBOR envelope is
+        // integrity-critical — the migration must preserve them exactly).
+        (0u8..128).collect()
+    }
+
+    #[test]
+    fn plan_covers_all_four_combinations() {
+        assert_eq!(
+            plan_license_grant_migration(false, true),
+            LicenseGrantMigration::Move
+        );
+        assert_eq!(
+            plan_license_grant_migration(true, true),
+            LicenseGrantMigration::CanonicalPresent
+        );
+        assert_eq!(
+            plan_license_grant_migration(true, false),
+            LicenseGrantMigration::CanonicalPresent
+        );
+        assert_eq!(
+            plan_license_grant_migration(false, false),
+            LicenseGrantMigration::Neither
+        );
+    }
+
+    #[test]
+    fn move_preserves_bytes_and_the_0600_mode() {
+        let root = scratch("move");
+        let legacy = root.join("legacy").join("insight_license");
+        let canonical = root.join("keys").join("insight_license");
+        let bytes = scratch_bytes();
+        scratch_file(&legacy, &bytes);
+        let before = std::fs::metadata(&legacy).expect("legacy metadata");
+        let legacy_mode = before.permissions().mode();
+
+        migrate_license_grant_at(&canonical, &legacy, LicenseGrantMigration::Move);
+
+        let moved = std::fs::read(&canonical).expect("canonical grant");
+        assert_eq!(moved, bytes, "bytes preserved (the signed envelope)");
+        assert!(!legacy.exists(), "the legacy file moved");
+        let mode = std::fs::metadata(&canonical).expect("canonical metadata").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "0600 preserved/set (lts2_sys's write mode)");
+        let _ = legacy_mode;
+    }
+
+    #[test]
+    fn canonical_present_is_a_strict_noop() {
+        let root = scratch("noop-canonical");
+        let legacy = root.join("legacy").join("insight_license");
+        let canonical = root.join("keys").join("insight_license");
+        let canonical_bytes = scratch_bytes();
+        let legacy_bytes = scratch_bytes();
+        scratch_file(&canonical, &canonical_bytes);
+        scratch_file(&legacy, &legacy_bytes);
+
+        migrate_license_grant_at(&canonical, &legacy, LicenseGrantMigration::CanonicalPresent);
+
+        assert_eq!(
+            std::fs::read(&canonical).expect("canonical read"),
+            canonical_bytes,
+            "never overwritten"
+        );
+        assert!(legacy.exists(), "the legacy file stays as operator material");
+    }
+
+    #[test]
+    fn neither_is_a_noop_and_reruns_are_idempotent() {
+        let root = scratch("noop-neither");
+        let legacy = root.join("legacy").join("insight_license");
+        let canonical = root.join("keys").join("insight_license");
+        migrate_license_grant_at(&canonical, &legacy, LicenseGrantMigration::Neither);
+        assert!(!canonical.exists() && !legacy.exists(), "nothing created");
+
+        // Populate, move, then re-run: the decision flips to CanonicalPresent
+        // (a no-op) — the second pass must not move anything back or change
+        // the canonical bytes.
+        let bytes = scratch_bytes();
+        scratch_file(&legacy, &bytes);
+        migrate_license_grant_at(&canonical, &legacy, LicenseGrantMigration::Move);
+        let first = std::fs::read(&canonical).expect("canonical read");
+        migrate_license_grant_at(&canonical, &legacy, LicenseGrantMigration::Move);
+        let second = std::fs::read(&canonical).expect("canonical read");
+        assert_eq!(first, second, "idempotent re-run");
+        assert!(!legacy.exists(), "still moved");
+    }
+
+    #[test]
+    fn the_migration_writes_the_0700_keys_dir() {
+        let root = scratch("keys-dir");
+        let legacy = root.join("legacy").join("insight_license");
+        let canonical = root.join("conf").join("keys").join("insight_license");
+        scratch_file(&legacy, &scratch_bytes());
+        migrate_license_grant_at(&canonical, &legacy, LicenseGrantMigration::Move);
+        let mode = std::fs::metadata(canonical.parent().expect("keys dir"))
+            .expect("keys dir metadata")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700, "the .keys directory is 0700");
+        let _ = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock");
+        let _ = Path::new("");
     }
 }

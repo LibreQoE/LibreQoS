@@ -475,6 +475,8 @@ fn site_ceil_with_stormguard_layer(
                 intrinsic_upload_mbps: Some(1000),
                 legacy_imported_download_mbps: Some(1000),
                 legacy_imported_upload_mbps: Some(1000),
+                legacy_imported_download_mbps_min: None,
+                legacy_imported_upload_mbps_min: None,
                 source: TopologyCanonicalRateInputSource::OperatorOverride,
             },
             ..TopologyCanonicalNode::default()

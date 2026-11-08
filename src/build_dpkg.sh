@@ -198,6 +198,25 @@ HP_WANT="${LIBREQOS_HUGEPAGES_2M:-3072}"
 case "$HP_WANT" in
     ''|*[!0-9]*) echo "libreqos postinst: WARNING: invalid LIBREQOS_HUGEPAGES_2M='$HP_WANT'; using 3072" >&2; HP_WANT=3072 ;;
 esac
+# 74t169 P5 (card §P5): the demand-first provisioning is CAPPED at 75% of
+# MemTotal (the tunable LIBREQOS_DPDK_HUGEPAGE_BUDGET_PCT default; the bridge
+# prints the exact requirement + 25% margin at boot from the P2 identity).
+# Setup supplies the capped amount and never fails the install on a deficit;
+# the bridge's P2 boot check adjudicates the fit.
+HP_BUDGET_PCT="${LIBREQOS_DPDK_HUGEPAGE_BUDGET_PCT:-75}"
+case "$HP_BUDGET_PCT" in
+    ''|*[!0-9]*) HP_BUDGET_PCT=75 ;;
+esac
+[ "$HP_BUDGET_PCT" -gt 100 ] && HP_BUDGET_PCT=100
+MEM_KB="$(awk '/^MemTotal:/{print $2; exit}' /proc/meminfo 2>/dev/null || echo 0)"
+if [ "${MEM_KB:-0}" -gt 0 ]; then
+    # 2 MiB pages: cap_pages = MemTotal_bytes * pct / 100 / (2 MiB).
+    HP_CAP=$(( MEM_KB / 1024 * HP_BUDGET_PCT / 100 / 2 ))
+    if [ "$HP_WANT" -gt "$HP_CAP" ]; then
+        echo "libreqos postinst: WARNING: LIBREQOS_HUGEPAGES_2M=$HP_WANT exceeds the P5 ${HP_BUDGET_PCT}% RAM budget (${HP_CAP} x 2M pages); provisioning the budget cap. Provision the bridge's printed P2 requirement (+25% margin) within this cap, or use a bigger box / trim the world." >&2
+        HP_WANT="$HP_CAP"
+    fi
+fi
 ensure_hugepages() {
 local want="$HP_WANT"
 local have

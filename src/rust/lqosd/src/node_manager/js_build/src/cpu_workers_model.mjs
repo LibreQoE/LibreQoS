@@ -225,6 +225,19 @@ function normalizeMoves(section) {
     };
 }
 
+/// 74t171: the additive per-worker utilization section. An absent/old
+/// payload is an explicit unavailable state (never fabricated zeros).
+export function normalizeUtilization(section) {
+    if (!section || section.available !== true || !Array.isArray(section.rows)) {
+        return {
+            available: false,
+            reason: typeof section?.reason === "string" ? section.reason : "unavailable",
+            rows: [],
+        };
+    }
+    return {available: true, reason: null, rows: section.rows};
+}
+
 export function normalizeCpuWorkers(payload) {
     const source = payload && typeof payload === "object" ? payload : {};
     let state = ["ok", "partial", "unavailable"].includes(source.state)
@@ -238,6 +251,7 @@ export function normalizeCpuWorkers(payload) {
     const workers = normalizeWorkers(source.workers);
     const ownership = normalizeOwnership(source.ownership);
     const moves = normalizeMoves(source.moves);
+    const utilization = normalizeUtilization(source.utilization);
     // Move history is intentionally unsupported in v1. Don't let that one
     // expected absence turn an otherwise healthy page into "Partial", and
     // don't repeat the same message in the top reason strip.
@@ -265,6 +279,7 @@ export function normalizeCpuWorkers(payload) {
         workers,
         ownership,
         moves,
+        utilization,
     };
 }
 
@@ -298,6 +313,7 @@ export function sectionSignatures(payload) {
             topology: source.cpu_topology ?? null,
         }),
         moves: JSON.stringify(moves),
+        utilization: JSON.stringify(source.utilization ?? null),
     };
 }
 

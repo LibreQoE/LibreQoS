@@ -201,17 +201,6 @@ fn load_offline_grant() -> Result<()> {
     Ok(())
 }
 
-pub fn current_license_summary() -> (Option<Uuid>, Option<u64>) {
-    let Some(state) = GRANT_STATE.get() else {
-        return (None, None);
-    };
-    let guard = state.lock();
-    let Some(grant) = guard.as_ref() else {
-        return (None, None);
-    };
-    (grant.license_uuid, grant.max_circuits)
-}
-
 pub fn current_valid_grant() -> Option<LicenseGrant> {
     let state = GRANT_STATE.get()?;
     let guard = state.lock();

@@ -339,7 +339,12 @@ pub async fn lts_trial_signup_data(license_key: String) -> Result<(), StatusCode
         warn!("Free trial request failed");
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
-    apply_insight_license(license_key, true).await
+    apply_insight_license(license_key, true).await?;
+    // 74t168.b: the trial request SUCCEEDED — poll the server licence status
+    // instead of the passive push-wait (fixed 60s, 24h window; the push path
+    // is untouched and the bridge picks the cap up via its mtime cache).
+    crate::lts2_sys::trial_delivery::spawn_trial_delivery_poll();
+    Ok(())
 }
 
 pub fn lts_capabilities_data(login: LoginResult) -> Result<LtsCapabilitiesSummary, StatusCode> {

@@ -100,10 +100,6 @@ pub fn can_open_control_channel() -> bool {
     current_capabilities().can_open_control_channel
 }
 
-pub fn control_service_reachable() -> bool {
-    RUNTIME_LICENSE_STATE.lock().control_service_reachable
-}
-
 fn current_capabilities_for_config(config: &lqos_config::Config) -> LtsCapabilitiesSummary {
     let runtime = RUNTIME_LICENSE_STATE.lock();
     let configured_license_key = normalize_non_empty(config.long_term_stats.license_key.as_deref());

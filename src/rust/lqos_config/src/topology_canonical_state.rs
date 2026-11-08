@@ -183,6 +183,16 @@ pub struct TopologyCanonicalRateInput {
     /// Upload cap imported from legacy `network.json`, when canonical IR lacked richer data.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy_imported_upload_mbps: Option<u64>,
+    /// Operator node minimum imported from legacy `network.json`
+    /// (`downloadBandwidthMbpsMin`; 74t166 Bug A carry-through). `None` =
+    /// the file had no operator minimum; the 1-Mbps floor is applied when
+    /// the insight entry is built.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_imported_download_mbps_min: Option<u64>,
+    /// Operator node minimum imported from legacy `network.json`
+    /// (`uploadBandwidthMbpsMin`); see the download field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_imported_upload_mbps_min: Option<u64>,
     /// Where the chosen canonical rate inputs came from.
     #[serde(default)]
     pub source: TopologyCanonicalRateInputSource,
@@ -528,15 +538,27 @@ pub(crate) fn quarantine_stale_topology_state(
     Ok(())
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 struct InsightLogicalNodeEntry {
     node_id: String,
     export_name: String,
     node_kind: String,
     download_mbps: Option<u64>,
     upload_mbps: Option<u64>,
+    /// Operator node minimum (74t166): carries `downloadBandwidthMbpsMin`
+    /// through the rebuilt network json so `write_node_commits` sees it.
+    /// Serde default 1 for states persisted before the fields existed
+    /// (commit stays max(1, circuit sum) = the pre-74t166 behavior).
+    #[serde(default = "default_node_mbps_min")]
+    download_mbps_min: u64,
+    #[serde(default = "default_node_mbps_min")]
+    upload_mbps_min: u64,
     latitude: Option<f32>,
     longitude: Option<f32>,
+}
+
+fn default_node_mbps_min() -> u64 {
+    1
 }
 
 fn canonical_node_rates(node: &TopologyCanonicalNode) -> (Option<u64>, Option<u64>) {
@@ -689,6 +711,16 @@ fn build_insight_logical_entry_json(
         }
         map.insert("downloadBandwidthMbps".into(), download.into());
         map.insert("uploadBandwidthMbps".into(), upload.into());
+        // 74t166: the operator minimum rides the rebuilt json so
+        // `write_node_commits` sees it (Bug A carry-through).
+        map.insert(
+            "downloadBandwidthMbpsMin".into(),
+            entry.download_mbps_min.into(),
+        );
+        map.insert(
+            "uploadBandwidthMbpsMin".into(),
+            entry.upload_mbps_min.into(),
+        );
         map.insert("children".into(), Value::Object(Map::new()));
         return (Value::Object(map), download, upload);
     }
@@ -751,6 +783,16 @@ fn build_insight_logical_entry_json(
     }
     map.insert("downloadBandwidthMbps".into(), download.into());
     map.insert("uploadBandwidthMbps".into(), upload.into());
+    // 74t166: the operator minimum rides the rebuilt json so
+    // `write_node_commits` sees it (Bug A carry-through).
+    map.insert(
+        "downloadBandwidthMbpsMin".into(),
+        entry.download_mbps_min.into(),
+    );
+    map.insert(
+        "uploadBandwidthMbpsMin".into(),
+        entry.upload_mbps_min.into(),
+    );
     map.insert("children".into(), Value::Object(children));
 
     (Value::Object(map), download, upload)
@@ -806,6 +848,8 @@ fn canonical_rate_input_from_network_snapshot(
             intrinsic_upload_mbps: explicit_upload,
             legacy_imported_download_mbps: snapshot.and_then(|node| node.download_mbps),
             legacy_imported_upload_mbps: snapshot.and_then(|node| node.upload_mbps),
+                legacy_imported_download_mbps_min: None,
+                legacy_imported_upload_mbps_min: None,
             source: TopologyCanonicalRateInputSource::AttachmentMax,
         };
     }
@@ -815,6 +859,8 @@ fn canonical_rate_input_from_network_snapshot(
         intrinsic_upload_mbps: snapshot.and_then(|node| node.upload_mbps),
         legacy_imported_download_mbps: snapshot.and_then(|node| node.download_mbps),
         legacy_imported_upload_mbps: snapshot.and_then(|node| node.upload_mbps),
+                legacy_imported_download_mbps_min: None,
+                legacy_imported_upload_mbps_min: None,
         source: if snapshot.is_some() {
             TopologyCanonicalRateInputSource::CompatibilityExport
         } else {
@@ -1065,6 +1111,10 @@ fn import_legacy_network_children(
             .to_string();
         let download = read_u64_field(node, "downloadBandwidthMbps");
         let upload = read_u64_field(node, "uploadBandwidthMbps");
+        // 74t166 Bug A: carry the operator node minimums through the import
+        // (absent => None; the 1-Mbps floor is applied at the insight entry).
+        let download_min = read_u64_field(node, "downloadBandwidthMbpsMin");
+        let upload_min = read_u64_field(node, "uploadBandwidthMbpsMin");
         let latitude = read_f32_field(node, "latitude");
         let longitude = read_f32_field(node, "longitude");
 
@@ -1110,11 +1160,21 @@ fn import_legacy_network_children(
                 intrinsic_upload_mbps: upload,
                 legacy_imported_download_mbps: download,
                 legacy_imported_upload_mbps: upload,
+                legacy_imported_download_mbps_min: download_min,
+                legacy_imported_upload_mbps_min: upload_min,
                 source: TopologyCanonicalRateInputSource::ImportedNetworkJson,
             },
         });
 
-        let next_logical_parent = if node_kind.eq_ignore_ascii_case("site") {
+        // 74t166 Bug B: a node WITH CHILDREN is a logical parent regardless
+        // of Site/AP type — the operator's kind label is kept verbatim (no
+        // re-label); only the parent assignment changes, so an AP's children
+        // stay its own and its ceiling covers them.
+        let has_children = node
+            .get("children")
+            .and_then(Value::as_object)
+            .is_some_and(|children| !children.is_empty());
+        let next_logical_parent = if node_kind.eq_ignore_ascii_case("site") || has_children {
             Some((node_id.clone(), node_name.clone()))
         } else {
             logical_parent.clone()
@@ -1265,6 +1325,9 @@ impl TopologyCanonicalStateFile {
         let raw = std::fs::read_to_string(path)?;
         let mut state: Self = serde_json::from_str(&raw)?;
         state.normalize_legacy_compatibility_network_json_ids();
+        // 74t166 §2 migration: carry operator minimums into states persisted
+        // before the min fields existed (cold path, load-time only).
+        state.rederive_min_blind_nodes_from_compatibility();
         Ok(state)
     }
 
@@ -1429,6 +1492,14 @@ impl TopologyCanonicalStateFile {
                 continue;
             }
             let (download_mbps, upload_mbps) = canonical_node_rates(node);
+            let download_mbps_min = node
+                .rate_input
+                .legacy_imported_download_mbps_min
+                .unwrap_or(1);
+            let upload_mbps_min = node
+                .rate_input
+                .legacy_imported_upload_mbps_min
+                .unwrap_or(1);
             let export_name = export_names_by_id
                 .get(&node.node_id)
                 .cloned()
@@ -1441,6 +1512,8 @@ impl TopologyCanonicalStateFile {
                     node_kind: node.node_kind.clone(),
                     download_mbps,
                     upload_mbps,
+                    download_mbps_min,
+                    upload_mbps_min,
                     latitude: node.latitude,
                     longitude: node.longitude,
                 },
@@ -1582,6 +1655,60 @@ impl TopologyCanonicalStateFile {
             ingress_kind: TopologyCanonicalIngressKind::LegacyNetworkJson,
             nodes,
             compatibility_network_json,
+        }
+    }
+
+    /// 74t166 §2 migration: a canonical state persisted BEFORE the node-minimum
+    /// fields existed carries none of them (`serde` default 1 applies on
+    /// deserialize — safe, commit stays max(1, circuit sum), but NOT truthful:
+    /// the operator minimums survive only in `compatibility_network_json`).
+    /// When the state is min-blind AND the compatibility json carries at least
+    /// one operator minimum, re-run the legacy import over it once and keep the
+    /// re-derived node records. Idempotent: a min-carrying state early-returns,
+    /// so the same persisted digest re-derives the same records. A min-blind
+    /// compatibility json (non-legacy producers) stays on the serde default —
+    /// those nodes never had operator minimums.
+    fn rederive_min_blind_nodes_from_compatibility(&mut self) {
+        fn json_tree_has_operator_min(node: &serde_json::Value) -> bool {
+            let Some(obj) = node.as_object() else {
+                return false;
+            };
+            if obj.contains_key("downloadBandwidthMbpsMin")
+                || obj.contains_key("uploadBandwidthMbpsMin")
+            {
+                return true;
+            }
+            obj.get("children")
+                .and_then(serde_json::Value::as_object)
+                .map(|children| children.values().any(json_tree_has_operator_min))
+                .unwrap_or(false)
+        }
+        let min_blind = !self.nodes.is_empty()
+            && self.nodes.iter().all(|node| {
+                node.rate_input
+                    .legacy_imported_download_mbps_min
+                    .is_none()
+                    && node.rate_input.legacy_imported_upload_mbps_min.is_none()
+            });
+        if !min_blind {
+            return;
+        }
+        if !self
+            .compatibility_network_json
+            .as_object()
+            .map(|root| root.values().any(json_tree_has_operator_min))
+            .unwrap_or(false)
+        {
+            return; // absent or itself min-blind: stay on the serde default
+        }
+        let rederived = Self::from_legacy_network_json(&self.compatibility_network_json);
+        if rederived.nodes.iter().any(|node| {
+            node.rate_input
+                .legacy_imported_download_mbps_min
+                .is_some()
+                || node.rate_input.legacy_imported_upload_mbps_min.is_some()
+        }) {
+            self.nodes = rederived.nodes;
         }
     }
 
@@ -2470,6 +2597,8 @@ mod tests {
                     intrinsic_upload_mbps: Some(100),
                     legacy_imported_download_mbps: None,
                     legacy_imported_upload_mbps: None,
+                legacy_imported_download_mbps_min: None,
+                legacy_imported_upload_mbps_min: None,
                     source: TopologyCanonicalRateInputSource::AttachmentMax,
                 },
             }],
@@ -2557,6 +2686,8 @@ mod tests {
                     intrinsic_upload_mbps: Some(100),
                     legacy_imported_download_mbps: Some(100),
                     legacy_imported_upload_mbps: Some(100),
+                legacy_imported_download_mbps_min: None,
+                legacy_imported_upload_mbps_min: None,
                     source: TopologyCanonicalRateInputSource::ImportedNetworkJson,
                 },
             }],
@@ -3261,5 +3392,258 @@ mod t5_validate_tests {
             other => panic!("expected the Validation reject, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// 74t166: node-minimum carry-through + nested-AP normalization (the card is
+/// `docs/74t166_node_minimums_nested_aps_card.md` @ df1f19b37; the fixture is
+/// the driver's verbatim client network.json).
+#[cfg(test)]
+mod t166_node_minimums_tests {
+    use super::*;
+
+    /// The driver's verbatim client network.json (the acceptance fixture),
+    /// with explicit ids for deterministic assertions.
+    fn t166_network_json() -> Value {
+        serde_json::json!({
+            "Ship-232200": {
+                "id": "ship-232200",
+                "name": "Ship-232200",
+                "downloadBandwidthMbps": 12,
+                "uploadBandwidthMbps": 12,
+                "downloadBandwidthMbpsMin": 12,
+                "uploadBandwidthMbpsMin": 12,
+                "type": "Site",
+                "children": {
+                    "Ship-232200-Crew": {
+                        "id": "ship-232200-crew",
+                        "name": "Ship-232200-Crew",
+                        "downloadBandwidthMbps": 10,
+                        "uploadBandwidthMbps": 10,
+                        "downloadBandwidthMbpsMin": 8,
+                        "uploadBandwidthMbpsMin": 8,
+                        "type": "AP"
+                    },
+                    "Ship-232200-Guest": {
+                        "id": "ship-232200-guest",
+                        "name": "Ship-232200-Guest",
+                        "downloadBandwidthMbps": 12,
+                        "uploadBandwidthMbps": 12,
+                        "downloadBandwidthMbpsMin": 1,
+                        "uploadBandwidthMbpsMin": 1,
+                        "type": "AP"
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn t166_import_carries_operator_minimums_into_the_canonical_records() {
+        let canonical = TopologyCanonicalStateFile::from_legacy_network_json(&t166_network_json());
+        let crew = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "ship-232200-crew")
+            .expect("Crew imports");
+        assert_eq!(
+            crew.rate_input.legacy_imported_download_mbps_min,
+            Some(8),
+            "Bug A: the operator minimum is no longer dropped at import"
+        );
+        assert_eq!(
+            crew.rate_input.legacy_imported_upload_mbps_min,
+            Some(8)
+        );
+        let guest = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "ship-232200-guest")
+            .expect("Guest imports");
+        assert_eq!(
+            guest.rate_input.legacy_imported_download_mbps_min,
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn t166_ap_with_children_keeps_its_children_on_import() {
+        // Bug B: an AP WITH CHILDREN is a logical parent — the children keep
+        // the AP as their parent (the old Site-only promotion silently
+        // re-parented them to the enclosing Site, leaving the AP childless
+        // with commit 0 and an unarmed ceiling).
+        let canonical = TopologyCanonicalStateFile::from_legacy_network_json(&serde_json::json!({
+            "Site": {
+                "id": "site",
+                "name": "Site",
+                "downloadBandwidthMbps": 30,
+                "uploadBandwidthMbps": 30,
+                "type": "Site",
+                "children": {
+                    "Crew AP": {
+                        "id": "crew-ap",
+                        "name": "Crew AP",
+                        "downloadBandwidthMbps": 10,
+                        "uploadBandwidthMbps": 10,
+                        "type": "AP",
+                        "children": {
+                            "Crew radio": {
+                                "id": "crew-radio",
+                                "name": "Crew radio",
+                                "downloadBandwidthMbps": 5,
+                                "uploadBandwidthMbps": 5,
+                                "type": "AP"
+                            }
+                        }
+                    }
+                }
+            }
+        }));
+        let radio = canonical
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "crew-radio")
+            .expect("the nested radio imports");
+        assert_eq!(
+            radio.current_parent_node_id.as_deref(),
+            Some("crew-ap"),
+            "no silent re-parenting to the enclosing Site"
+        );
+    }
+
+    #[test]
+    fn t166_insight_rebuild_emits_the_operator_minimums() {
+        let canonical = TopologyCanonicalStateFile::from_legacy_network_json(&t166_network_json());
+        let rebuilt = canonical.insight_topology_network_json();
+        let crew = &rebuilt["Ship-232200"]["children"]["Ship-232200-Crew"];
+        assert_eq!(crew["downloadBandwidthMbpsMin"], 8, "Bug A: the writer emits the operator minimum");
+        assert_eq!(crew["uploadBandwidthMbpsMin"], 8);
+        let site = &rebuilt["Ship-232200"];
+        assert_eq!(site["downloadBandwidthMbpsMin"], 12);
+    }
+
+    #[test]
+    fn t166_old_state_defaults_to_min_blind_then_migration_rederives() {
+        // A pre-min persisted state: rate_input WITHOUT the min fields (the
+        // serde default leaves them None). The compatibility json still holds
+        // the operator minimums (retention verified on the client's VM).
+        let old_state = serde_json::json!({
+            "schema_version": default_topology_canonical_schema_version(),
+            "source": "legacy/network.json",
+            "ingress_kind": "legacy_network_json",
+            "nodes": [
+                {
+                    "node_id": "ship-232200",
+                    "node_name": "Ship-232200",
+                    "node_kind": "Site",
+                    "rate_input": {
+                        "intrinsic_download_mbps": 12,
+                        "intrinsic_upload_mbps": 12,
+                        "legacy_imported_download_mbps": 12,
+                        "legacy_imported_upload_mbps": 12,
+                        "source": "imported_network_json"
+                    }
+                },
+                {
+                    "node_id": "ship-232200-crew",
+                    "node_name": "Ship-232200-Crew",
+                    "node_kind": "AP",
+                    "current_parent_node_id": "ship-232200",
+                    "current_parent_node_name": "Ship-232200",
+                    "rate_input": {
+                        "intrinsic_download_mbps": 10,
+                        "intrinsic_upload_mbps": 10,
+                        "legacy_imported_download_mbps": 10,
+                        "legacy_imported_upload_mbps": 10,
+                        "source": "imported_network_json"
+                    }
+                }
+            ],
+            "compatibility_network_json": t166_network_json()
+        });
+        let mut state: TopologyCanonicalStateFile = serde_json::from_value(old_state)
+            .expect("a pre-min state deserializes (serde defaults)");
+        assert!(
+            state
+                .nodes
+                .iter()
+                .all(|node| node.rate_input.legacy_imported_download_mbps_min.is_none()),
+            "the pre-min state is min-blind on deserialize"
+        );
+        state.rederive_min_blind_nodes_from_compatibility();
+        let crew = state
+            .nodes
+            .iter()
+            .find(|node| node.node_id == "ship-232200-crew")
+            .expect("Crew survives the re-derivation");
+        assert_eq!(
+            crew.rate_input.legacy_imported_download_mbps_min,
+            Some(8),
+            "the migration re-derives the operator minimums from the compatibility json"
+        );
+        // Idempotence (card §2: same canonical digest in => same digest out):
+        let before = serde_json::to_string(&state.nodes).expect("serialize");
+        state.rederive_min_blind_nodes_from_compatibility();
+        let after = serde_json::to_string(&state.nodes).expect("serialize");
+        assert_eq!(before, after, "the migration must be re-run safe");
+    }
+
+    #[test]
+    fn t166_min_blind_state_without_compatibility_mins_stays_on_the_default() {
+        let old_state = serde_json::json!({
+            "schema_version": default_topology_canonical_schema_version(),
+            "source": "legacy/network.json",
+            "ingress_kind": "legacy_network_json",
+            "nodes": [
+                {
+                    "node_id": "ship-232200",
+                    "node_name": "Ship-232200",
+                    "node_kind": "Site",
+                    "rate_input": {
+                        "intrinsic_download_mbps": 12,
+                        "intrinsic_upload_mbps": 12,
+                        "legacy_imported_download_mbps": 12,
+                        "legacy_imported_upload_mbps": 12,
+                        "source": "imported_network_json"
+                    }
+                }
+            ],
+            "compatibility_network_json": {
+                "Ship-232200": {
+                    "downloadBandwidthMbps": 12,
+                    "uploadBandwidthMbps": 12,
+                    "type": "Site"
+                }
+            }
+        });
+        let mut state: TopologyCanonicalStateFile = serde_json::from_value(old_state)
+            .expect("a pre-min state deserializes");
+        state.rederive_min_blind_nodes_from_compatibility();
+        assert!(
+            state.nodes[0]
+                .rate_input
+                .legacy_imported_download_mbps_min
+                .is_none(),
+            "a min-blind compatibility json stays on the serde default (those nodes never had operator mins)"
+        );
+    }
+
+    #[test]
+    fn t166_insight_entry_serde_defaults_the_minimums_to_one() {
+        // An entry serialized BEFORE the min fields existed round-trips with
+        // the driver-specified 1-Mbps floor.
+        let legacy_entry_json = serde_json::json!({
+            "node_id": "ship-232200-crew",
+            "export_name": "Ship-232200-Crew",
+            "node_kind": "AP",
+            "download_mbps": 10,
+            "upload_mbps": 10,
+            "latitude": null,
+            "longitude": null
+        });
+        let entry: InsightLogicalNodeEntry = serde_json::from_value(legacy_entry_json)
+            .expect("a pre-min entry deserializes");
+        assert_eq!(entry.download_mbps_min, 1, "the driver-specified floor");
+        assert_eq!(entry.upload_mbps_min, 1);
     }
 }

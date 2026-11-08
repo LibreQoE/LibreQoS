@@ -17,6 +17,11 @@ import {
     topologySummary,
     workerColor,
 } from "./cpu_workers_model.mjs";
+import {
+    WORKER_OCCUPANCY_LABEL,
+    fleetOccupancy,
+    normalizeWorkerRows,
+} from "./worker_occupancy_model.mjs";
 
 const REFRESH_MS = 5000;
 let refreshTimer = null;
@@ -28,6 +33,7 @@ const lastSignatures = {
     workers: null,
     tree: null,
     moves: null,
+    utilization: null,
 };
 let lastOwnershipView = null;
 let lastCpuUsage = null;
@@ -260,6 +266,54 @@ function signaturesEqual(left, right) {
     return Object.keys(left).every((key) => left[key] === right[key]);
 }
 
+/// 74t171: per-worker occupancy + the 6-segment phase stack. The label and
+/// the 85% warning color match the autobalance arm; empty_rx is excluded.
+function renderWorkerOccupancy(utilization) {
+    let host = document.getElementById("workerOccupancy");
+    if (!host) {
+        host = document.createElement("section");
+        host.id = "workerOccupancy";
+        host.className = "mb-4";
+        const main = document.querySelector("main") || document.body;
+        main.appendChild(host);
+    }
+    if (!utilization || utilization.available !== true) {
+        host.innerHTML = `<h2>${WORKER_OCCUPANCY_LABEL}</h2>`
+            + `<p class="text-muted">No per-worker utilization rows yet`
+            + ` (${utilization?.reason ?? "unavailable"}).</p>`;
+        return;
+    }
+    const fleet = fleetOccupancy(utilization.rows);
+    const rows = normalizeWorkerRows(utilization.rows);
+    const fleetClass = fleet.warning ? "bg-warning text-dark" : "bg-secondary";
+    let html = `<h2>${WORKER_OCCUPANCY_LABEL}</h2>`
+        + `<p class="small text-muted">Busy time excludes empty-RX idle polling `
+        + `(the autobalance signal). 85% is the warning line.</p>`
+        + `<p><span class="badge ${fleetClass}">fleet max ${fleet.max_pct.toFixed(1)}%</span> `
+        + `mean ${fleet.mean_pct.toFixed(1)}% &middot; p95 ${fleet.p95_pct.toFixed(1)}% `
+        + `&middot; ${fleet.count} workers</p>`
+        + `<div class="table-responsive"><table class="table table-sm align-middle">`
+        + `<thead><tr><th>Worker</th><th style="width:18%">Busy</th>`
+        + `<th>Phase stack (RX / classify / enqueue / dequeue / TX / handoff)</th>`
+        + `<th>Backlog</th></tr></thead><tbody>`;
+    for (const row of rows) {
+        const barClass = row.color === "warning" ? "bg-warning" : "bg-success";
+        const segments = row.phases.map((phase) =>
+            `<span title="${phase.name} ${(phase.fraction * 100).toFixed(1)}%"`
+            + ` style="display:inline-block;width:${(phase.fraction * 100).toFixed(3)}%;"`
+            + ` height:12px;background:var(--bs-${phase.name === "TX" ? "primary" : phase.name === "handoff" ? "info" : phase.name === "dequeue" ? "danger" : phase.name === "enqueue" ? "warning" : phase.name === "classify" ? "secondary" : "success"});"></span>`
+        ).join("");
+        html += `<tr><td>${row.queueId ?? "?"}</td>`
+            + `<td><div class="progress" style="height:14px"><div class="progress-bar ${barClass}"`
+            + ` style="width:${row.busyPct.toFixed(1)}%"></div></div>`
+            + `<small>${row.busyPct.toFixed(1)}%</small></td>`
+            + `<td><div style="white-space:nowrap;background:var(--bs-light);">${segments}</div></td>`
+            + `<td>${row.backlogMean}</td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+    host.innerHTML = html;
+}
+
 function render(data, raw) {
     const signatures = sectionSignatures(raw);
     if (signatures.state !== lastSignatures.state) {
@@ -283,6 +337,10 @@ function render(data, raw) {
     }
     if (signatures.moves !== lastSignatures.moves) {
         lastSignatures.moves = signatures.moves;
+    }
+    if (signatures.utilization !== lastSignatures.utilization) {
+        renderWorkerOccupancy(data.utilization);
+        lastSignatures.utilization = signatures.utilization;
     }
     text("cpuWorkersUpdated", data.generatedAtUnix
         ? `Snapshot ${new Date(data.generatedAtUnix * 1000).toLocaleTimeString()}`

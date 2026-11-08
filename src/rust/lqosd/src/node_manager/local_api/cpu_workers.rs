@@ -173,6 +173,25 @@ pub(crate) fn assemble_cpu_workers(raw: &Value, cpu_usage: Value, topology: Valu
     })
 }
 
+/// 74t171: the additive per-worker utilization section for the CPU page.
+/// Served from the bridge snapshot's `workers` rows (busy_ppm/phase_cycles/…)
+/// — read-only; an empty set is an explicit unavailable object, never zeros.
+pub(crate) fn utilization_section(workers: &[analytics_ipc::WorkerUtilRow]) -> Value {
+    if workers.is_empty() {
+        json!({
+            "available": false,
+            "reason": "no_worker_utilization_rows",
+            "rows": [],
+        })
+    } else {
+        json!({
+            "available": true,
+            "reason": null,
+            "rows": workers,
+        })
+    }
+}
+
 /// `GET /local-api/cpu-workers` — the same-origin browser surface for the CPU &
 /// Workers page. It reuses the daemon's `GetCpuWorkers` bus request and
 /// assembles the SAME shape as the public `/cpu_workers` endpoint; the session
@@ -201,7 +220,11 @@ pub async fn get_cpu_workers() -> Result<Response, (StatusCode, String)> {
                     "cpu-workers payload invalid".to_string(),
                 )
             })?;
-            let assembled = assemble_cpu_workers(&raw, cpu_usage_json(), topology_section());
+            let mut assembled = assemble_cpu_workers(&raw, cpu_usage_json(), topology_section());
+            // 74t171: additive read-only worker-utilization section (the CPU
+            // page's occupancy + phase stack). Empty on an old bridge.
+            assembled["utilization"] =
+                utilization_section(&crate::bridge_analytics::snapshot().workers);
             let mut response = Json(assembled).into_response();
             response
                 .headers_mut()
@@ -391,5 +414,36 @@ mod tests {
         assert_eq!(section["available"].as_bool(), Some(false));
         assert_eq!(section["reason"].as_str(), Some("cpu_id_mapping_unproven"));
         assert!(section["per_cpu"].is_null());
+    }
+}
+
+#[cfg(test)]
+mod utilization_section_tests {
+    use super::*;
+
+    #[test]
+    fn empty_rows_are_an_explicit_unavailable_not_zeroed() {
+        let section = utilization_section(&[]);
+        assert_eq!(section["available"], false);
+        assert_eq!(section["reason"], "no_worker_utilization_rows");
+        assert_eq!(section["rows"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn rows_are_served_additively() {
+        let row = analytics_ipc::WorkerUtilRow {
+            queue_id: 3,
+            busy_ppm: 850_000,
+            idle_ppm: 150_000,
+            laps_per_s: 40,
+            busy_laps: 34,
+            backlog_mean: 12,
+            cycles_per_busy_lap: 1_000,
+            phase_cycles: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        };
+        let section = utilization_section(&[row]);
+        assert_eq!(section["available"], true);
+        assert_eq!(section["rows"][0]["busy_ppm"], 850_000);
+        assert_eq!(section["rows"][0]["phase_cycles"][0], 1);
     }
 }

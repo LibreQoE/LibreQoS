@@ -216,6 +216,158 @@ pub struct Diagnostics {
     pub bulk_swap_dropped_packets: u64,
     #[serde(default)]
     pub bulk_swap_dropped_bytes: u64,
+    /// 74t169: the POOL-AWARE LOCAL-LONGEST-FIRST head-drop accounting. The
+    /// trigger is the burst-boundary live mempool avail read; these fields are
+    /// the operator-visible aggregate (packets + FULL-cost mbuf-bytes + the
+    /// last victim identity worker/leaf/tin). ADDITIVE (serde default).
+    #[serde(default)]
+    pub pool_drop_packets: u64,
+    #[serde(default)]
+    pub pool_drop_mbuf_bytes: u64,
+    #[serde(default)]
+    pub pool_drop_worker: u16,
+    #[serde(default)]
+    pub pool_drop_leaf: u64,
+    #[serde(default)]
+    pub pool_drop_tin: u8,
+    /// Diagnostics-only: the drop mode bit is NEVER the trigger.
+    #[serde(default)]
+    pub pool_drop_mode: bool,
+    /// 74t169: the PMD `rx_nombuf` liveness signal for the pool-drop's
+    /// residual case (per-core-cache exhaustion with global avail > 0):
+    /// cumulative across sampled ports + the last-sample delta. ADDITIVE.
+    #[serde(default)]
+    pub rx_nombuf: u64,
+    #[serde(default)]
+    pub rx_nombuf_delta: u64,
+    /// 74t169 instrument §2.6: the robust ~1 s window (sum/max) of the
+    /// ~200 ms interval deltas — the corroborating liveness signal.
+    #[serde(default)]
+    pub rx_nombuf_window_sum_1s: u64,
+    #[serde(default)]
+    pub rx_nombuf_window_max_1s: u64,
+    /// 74t169 instrument §2.1-2.5: the pool-drop decomposition —
+    /// triggers, victim-None, the 8-bucket drops-per-trigger histogram,
+    /// the per-trigger min/max, and the queue-head scan iterations.
+    #[serde(default)]
+    pub pool_drop_triggers: u64,
+    #[serde(default)]
+    pub pool_drop_victim_none: u64,
+    #[serde(default)]
+    pub pool_drop_histogram: Vec<u64>,
+    #[serde(default)]
+    pub pool_drop_min_per_trigger: u64,
+    #[serde(default)]
+    pub pool_drop_max_per_trigger: u64,
+    #[serde(default)]
+    pub pool_drop_scan_iterations: u64,
+    /// 74t169 instrument §2.4: handoff-ring occupancy at the collector
+    /// cadence (aggregate used/free/capacity, max depth + identity,
+    /// over-75%-full count). ADDITIVE.
+    #[serde(default)]
+    pub ring_count: u64,
+    #[serde(default)]
+    pub ring_used: u64,
+    #[serde(default)]
+    pub ring_free: u64,
+    #[serde(default)]
+    pub ring_capacity: u64,
+    #[serde(default)]
+    pub ring_max_depth: u64,
+    #[serde(default)]
+    pub ring_max_producer: u16,
+    #[serde(default)]
+    pub ring_max_owner: u16,
+    #[serde(default)]
+    pub ring_max_direction: u8,
+    #[serde(default)]
+    pub rings_over_75: u64,
+    /// 74t169 conservation identity (instrument arm): the components the
+    /// collector needs for `total = free + leaf_used + ring_used + fixed +
+    /// UNTRACKED`; `untracked_mbufs` is the residual (the HOLDER).
+    #[serde(default)]
+    pub pool_total_mbufs: u64,
+    #[serde(default)]
+    pub pool_free_mbufs: u64,
+    #[serde(default)]
+    pub leaf_used_mbufs: u64,
+    #[serde(default)]
+    pub fixed_lines_mbufs: u64,
+    #[serde(default)]
+    pub untracked_mbufs: u64,
+    /// 74t169 §5c.3: the bounded per-worker trigger/drop series (the
+    /// "allocating worker pays" evidence). Indices are worker ids.
+    #[serde(default)]
+    pub pool_drop_triggers_per_worker: Vec<u64>,
+    #[serde(default)]
+    pub pool_drop_victim_none_per_worker: Vec<u64>,
+    #[serde(default)]
+    pub pool_drop_packets_per_worker: Vec<u64>,
+    /// 74t169 §5c.2: the instantaneous handoff-inbound depth (the same ring
+    /// walk, separated from the leaf backlog); staging is the classify-batch
+    /// scratch sampled during the pass.
+    #[serde(default)]
+    pub handoff_inbound_instant: u64,
+    #[serde(default)]
+    pub staging_instant: u64,
+    /// 74t169 §5c.1: the SAME-INSTANT leaf backlog (the per-worker
+    /// circuits[].pending sum) vs the interval MEAN; the gap is diagnostic.
+    #[serde(default)]
+    pub leaf_used_instant: u64,
+    #[serde(default)]
+    pub leaf_used_mean: u64,
+    #[serde(default)]
+    pub mean_vs_instant_gap: i64,
+    /// 74t169 §5c.4: the untracked attribution terms. rx_fill/caches/
+    /// tx_inflight are 0 beyond their boot-pinned maxima (carried in fixed);
+    /// move_abort_leak is derived by the arm at idle (0 in the online sample).
+    #[serde(default)]
+    pub rx_fill_beyond_estimate: u64,
+    #[serde(default)]
+    pub caches: u64,
+    #[serde(default)]
+    pub tx_inflight: u64,
+    #[serde(default)]
+    pub move_abort_leak: u64,
+    /// 74t169 shadow-vs-fold card: the three EXISTING leaf-depth notions at
+    /// the sample (shadow = the maintained pending_shadow, fold = the
+    /// per-circuit count sum, scan = the CAUSE-aware per-circuit sum the
+    /// victim scan uses) + their signed deltas. Measurement-only.
+    #[serde(default)]
+    pub leaf_shadow: u64,
+    #[serde(default)]
+    pub leaf_fold: u64,
+    #[serde(default)]
+    pub leaf_scan: u64,
+    #[serde(default)]
+    pub shadow_minus_fold: i64,
+    #[serde(default)]
+    pub fold_minus_scan: i64,
+    #[serde(default)]
+    pub shadow_minus_scan: i64,
+    #[serde(default)]
+    pub capture_mirror_clone: u64,
+    /// 74t169 residual attribution: the ACTUAL per-lcore cache occupancy
+    /// (the standing component; the `caches` term reads this, not 0), the
+    /// fixed-line budget (the §5b caveat), and the POST-DRAIN IDLE instant
+    /// (the decisive no-traffic standing residual).
+    #[serde(default)]
+    pub caches_actual: u64,
+    #[serde(default)]
+    pub fixed_lines_reserve_budget: u64,
+    #[serde(default)]
+    pub post_drain_idle: bool,
+    #[serde(default)]
+    pub post_drain_residual: u64,
+    #[serde(default)]
+    pub post_drain_caches: u64,
+    /// 74t169 fix (b): the worker aggregate is last-active, not live at idle;
+    /// when a worker's flush is stale the identity excludes it (and
+    /// `untracked_live_mbufs` is the live-at-idle residual).
+    #[serde(default)]
+    pub worker_terms_stale: bool,
+    #[serde(default)]
+    pub untracked_live_mbufs: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
@@ -390,6 +542,41 @@ pub struct AnalyticsSnapshot {
     /// K2 slice 2 §7: whole-bridge qdisc totals (additive field).
     #[serde(default)]
     pub qdisc_totals: QdiscTotals,
+    /// 74t171: per-worker forwarding utilization (the UI's worker occupancy
+    /// view). ADDITIVE (`serde(default)`): an older reader ignores it; a new
+    /// reader against an older bridge sees an empty list (never a fabricated
+    /// zero row). `busy_ppm` excludes empty-RX idle polling — the signal
+    /// autobalance already acts on (`lqos-74t.159` definition).
+    #[serde(default)]
+    pub workers: Vec<WorkerUtilRow>,
+}
+
+/// 74t171: one worker's utilization row (the UI feed).
+///
+/// `busy_ppm + idle_ppm == 1_000_000`; `phase_cycles` is cumulative and in
+/// the bridge's stable phase order: rx, dissect, select, charge, leaf, tx,
+/// begin_cycle, drop_overdue, handoff, empty_rx.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct WorkerUtilRow {
+    pub queue_id: u16,
+    /// Busy-nanos / interval-nanos x 1e6 (poll-excluded), clamped to 1e6.
+    pub busy_ppm: u64,
+    /// `1_000_000 - busy_ppm`.
+    #[serde(default)]
+    pub idle_ppm: u64,
+    /// Cumulative average laps per second over the rollup interval.
+    #[serde(default)]
+    pub laps_per_s: u64,
+    #[serde(default)]
+    pub busy_laps: u64,
+    /// Mean backlog packets over the rollup samples.
+    #[serde(default)]
+    pub backlog_mean: u64,
+    #[serde(default)]
+    pub cycles_per_busy_lap: u64,
+    /// Cumulative per-phase TSC cycles (the stable order documented above).
+    #[serde(default)]
+    pub phase_cycles: Vec<u64>,
 }
 
 impl AnalyticsSnapshot {
@@ -662,6 +849,10 @@ pub struct WorkerHealth {
     pub deadline_aqm_degraded: bool,
     pub unowned_admission_refusals: u64,
     pub parked_admission_refusals: u64,
+    /// 74t171: the SAME poll-excluded busy fraction exposed on the snapshot's
+    /// worker rows (single definition, supervision/UI agree). ADDITIVE.
+    #[serde(default)]
+    pub busy_ppm: u64,
 }
 
 /// Control-channel counters (L4; the driver thread mirrors them per tick).
@@ -951,5 +1142,118 @@ mod queue_stats_metadata_tests {
             "worst-case QueueStats reply is {} B",
             bytes.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod worker_util_exposure_tests {
+    use super::*;
+    use serde::Serialize;
+
+    /// The pre-74t171 wire shape (no `workers`, no `busy_ppm`).
+    #[derive(Serialize)]
+    struct OldSnapshot {
+        captured_at_millis: u64,
+        actual: Option<DirectionalCounters>,
+        shaped: Option<DirectionalCounters>,
+        hosts: Vec<HostRow>,
+        active_flows: Vec<FlowRow>,
+        recent_flows: Vec<FlowRow>,
+        diagnostics: Diagnostics,
+    }
+
+    #[derive(Serialize)]
+    struct OldWorkerHealth {
+        queue_id: u16,
+        rollup_age_ms: Option<u64>,
+        laps: u64,
+        busy_laps: u64,
+        deadline_aqm_degraded: bool,
+        unowned_admission_refusals: u64,
+        parked_admission_refusals: u64,
+    }
+
+    /// 74t171 additive contract: a frame without the new fields still
+    /// decodes (an older producer against a newer reader).
+    #[test]
+    fn old_frames_decode_with_the_worker_section_defaulted() {
+        let old = OldSnapshot {
+            captured_at_millis: 1,
+            actual: None,
+            shaped: None,
+            hosts: Vec::new(),
+            active_flows: Vec::new(),
+            recent_flows: Vec::new(),
+            diagnostics: Diagnostics::default(),
+        };
+        let bytes = serde_cbor::to_vec(&old).unwrap();
+        let decoded: AnalyticsSnapshot = serde_cbor::from_slice(&bytes).unwrap();
+        assert!(decoded.workers.is_empty());
+
+        let old = OldWorkerHealth {
+            queue_id: 3,
+            rollup_age_ms: Some(10),
+            laps: 99,
+            busy_laps: 90,
+            deadline_aqm_degraded: false,
+            unowned_admission_refusals: 0,
+            parked_admission_refusals: 0,
+        };
+        let bytes = serde_cbor::to_vec(&old).unwrap();
+        let decoded: WorkerHealth = serde_cbor::from_slice(&bytes).unwrap();
+        assert_eq!(decoded.busy_ppm, 0);
+        assert_eq!(decoded.laps, 99);
+    }
+
+    /// 74t171: the new row round-trips (additive wire).
+    #[test]
+    fn worker_util_row_round_trips() {
+        let row = WorkerUtilRow {
+            queue_id: 7,
+            busy_ppm: 850_000,
+            idle_ppm: 150_000,
+            laps_per_s: 42,
+            busy_laps: 35,
+            backlog_mean: 12,
+            cycles_per_busy_lap: 1_000,
+            phase_cycles: vec![1, 2, 3],
+        };
+        let bytes = serde_cbor::to_vec(&row).unwrap();
+        let decoded: WorkerUtilRow = serde_cbor::from_slice(&bytes).unwrap();
+        assert_eq!(decoded, row);
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_rx_nombuf_tests {
+    use super::*;
+    use serde_cbor::Value;
+
+    /// 74t169: a pre-wiring Diagnostics frame (no rx_nombuf fields) still
+    /// decodes; the new fields default to 0.
+    #[test]
+    fn old_diagnostics_decode_with_rx_nombuf_defaulted() {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(
+            Value::Text("worker_push_drops".into()),
+            Value::Integer(0),
+        );
+        map.insert(
+            Value::Text("flow_untracked_packets".into()),
+            Value::Integer(0),
+        );
+        map.insert(
+            Value::Text("host_capacity_drops".into()),
+            Value::Integer(0),
+        );
+        map.insert(
+            Value::Text("flow_capacity_drops".into()),
+            Value::Integer(0),
+        );
+        let bytes = serde_cbor::to_vec(&Value::Map(map)).unwrap();
+        let diagnostics: Diagnostics = serde_cbor::from_slice(&bytes).unwrap();
+        assert_eq!(diagnostics.rx_nombuf, 0);
+        assert_eq!(diagnostics.rx_nombuf_delta, 0);
+        assert_eq!(diagnostics.pool_drop_packets, 0);
     }
 }

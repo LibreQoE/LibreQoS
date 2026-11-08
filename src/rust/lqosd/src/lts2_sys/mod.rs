@@ -2,6 +2,7 @@
 
 use parking_lot::Mutex;
 pub mod capabilities;
+pub mod trial_delivery;
 pub mod license_grant;
 pub(crate) mod lts2_client;
 pub mod shared_types;
