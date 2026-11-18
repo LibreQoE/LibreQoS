@@ -113,6 +113,13 @@ fn mode_label(config: &Config) -> String {
     }
 }
 
+fn is_xdp_bridge(config: &Config) -> bool {
+    config
+        .bridge
+        .as_ref()
+        .is_some_and(|bridge| bridge.use_xdp_bridge)
+}
+
 fn mode_interfaces(config: &Config) -> Vec<String> {
     if let Some(bridge) = &config.bridge {
         [bridge.to_internet.trim(), bridge.to_network.trim()]
@@ -141,6 +148,22 @@ fn load_config_from_path(path: &Path) -> Result<Config> {
 fn write_config_to_path(path: &Path, config: &Config) -> Result<()> {
     let serialized = toml::to_string_pretty(config).context("Unable to serialize config")?;
     fs::write(path, serialized).with_context(|| format!("Unable to write {}", path.display()))
+}
+
+fn write_xdp_config_only(path: &Path, config: &Config) -> Result<()> {
+    if path.exists() {
+        let mut backup_name = path.as_os_str().to_os_string();
+        backup_name.push(".webbackup");
+        let backup_path = PathBuf::from(backup_name);
+        fs::copy(path, &backup_path).with_context(|| {
+            format!(
+                "Unable to back up {} to {}",
+                path.display(),
+                backup_path.display()
+            )
+        })?;
+    }
+    write_config_to_path(path, config)
 }
 
 fn ensure_parent(path: &Path) -> Result<()> {
@@ -207,6 +230,15 @@ fn inspect_with_paths_and_interfaces(
         .iter()
         .map(|iface| (iface.clone(), supports_multi_queue(iface)))
         .collect::<BTreeMap<_, _>>();
+    inspect_with_paths_and_capabilities(paths, config, system_ifaces, queue_caps)
+}
+
+fn inspect_with_paths_and_capabilities(
+    paths: &HelperPaths,
+    config: &Config,
+    system_ifaces: BTreeSet<String>,
+    queue_caps: BTreeMap<String, bool>,
+) -> NetworkModeInspection {
     inspect_network_mode_with_paths(
         config,
         &paths.netplan_dir,
@@ -719,6 +751,13 @@ fn validate_apply_request(
         );
     }
 
+    if is_xdp_bridge(&request.config) && matches!(request.mode, ApplyMode::Apply) {
+        if !inspection.can_apply {
+            bail!("{}", inspection.summary);
+        }
+        return Ok(());
+    }
+
     match request.mode {
         ApplyMode::Apply => {
             if inspection.can_take_over {
@@ -731,9 +770,7 @@ fn validate_apply_request(
                     "Adopt into libreqos.yaml is required before LibreQoS can manage the external compatible netplan file."
                 );
             }
-            if inspection.inspector_state != "Ready"
-                && inspection.inspector_state != "ManagedByLibreQoS"
-            {
+            if !inspection.can_apply {
                 bail!("{}", inspection.summary);
             }
         }
@@ -767,6 +804,20 @@ fn apply_transaction_with_interfaces(
     request: ApplyRequest,
     system_ifaces: BTreeSet<String>,
 ) -> Result<ApplyResponse> {
+    let queue_caps = system_ifaces
+        .iter()
+        .map(|iface| (iface.clone(), supports_multi_queue(iface)))
+        .collect::<BTreeMap<_, _>>();
+    apply_transaction_with_capabilities(paths, pending_children, request, system_ifaces, queue_caps)
+}
+
+fn apply_transaction_with_capabilities(
+    paths: &HelperPaths,
+    pending_children: &mut PendingChildren,
+    request: ApplyRequest,
+    system_ifaces: BTreeSet<String>,
+    queue_caps: BTreeMap<String, bool>,
+) -> Result<ApplyResponse> {
     normalize_pending_children(paths, pending_children)?;
     if !list_pending_records(paths)?.is_empty() {
         bail!("A pending network change already exists. Confirm or revert it first.");
@@ -777,8 +828,22 @@ fn apply_transaction_with_interfaces(
     } else {
         Config::default()
     };
-    let inspection = inspect_with_paths_and_interfaces(paths, &request.config, system_ifaces);
+    let inspection =
+        inspect_with_paths_and_capabilities(paths, &request.config, system_ifaces, queue_caps);
     validate_apply_request(&request, &inspection, &previous_config)?;
+
+    if is_xdp_bridge(&request.config) {
+        write_xdp_config_only(&paths.config_path, &request.config)?;
+        lqos_config::clear_cached_config();
+        return Ok(ApplyResponse {
+            ok: true,
+            message:
+                "XDP bridge configuration saved. Netplan was not changed. Restart lqosd to activate the new XDP interfaces."
+                    .to_string(),
+            operation: None,
+            last_backup_id: None,
+        });
+    }
 
     let preview_yaml = inspection.managed_preview_yaml.as_ref().ok_or_else(|| {
         anyhow!(
@@ -1065,6 +1130,116 @@ esac
             single_interface: None,
             ..Config::default()
         }
+    }
+
+    fn xdp_bond_config() -> Config {
+        Config {
+            bridge: Some(lqos_config::BridgeConfig {
+                use_xdp_bridge: true,
+                to_internet: "bond-wan".to_string(),
+                to_network: "bond-lan".to_string(),
+                mtu: None,
+            }),
+            single_interface: None,
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn xdp_apply_updates_only_config_and_keeps_a_backup() {
+        let root = base_dir("xdp-config-only");
+        write_netplan_stub(&root);
+        let paths = helper_paths(&root);
+        let mut pending = PendingChildren::default();
+        let existing = linux_bridge_config();
+        write_config(&paths.config_path, &existing);
+        write_text_file(&paths.managed_netplan_path, "network:\n  version: 2\n")
+            .expect("seed managed netplan");
+        write_text_file(
+            &paths.netplan_dir.join("50-bonded.yaml"),
+            r#"
+network:
+  version: 2
+  ethernets:
+    enp1s0:
+      dhcp4: false
+      dhcp6: false
+    enp2s0:
+      dhcp4: false
+      dhcp6: false
+    enp3s0:
+      dhcp4: false
+      dhcp6: false
+    enp4s0:
+      dhcp4: false
+      dhcp6: false
+  bonds:
+    bond-wan:
+      interfaces: [enp1s0, enp2s0]
+      parameters:
+        mode: 802.3ad
+    bond-lan:
+      interfaces: [enp3s0, enp4s0]
+      parameters:
+        mode: 802.3ad
+"#,
+        )
+        .expect("seed selected bonded netplan");
+        write_text_file(
+            &paths.netplan_dir.join("99-unrelated.yaml"),
+            "network: [invalid",
+        )
+        .expect("seed unrelated invalid netplan");
+
+        let system_ifaces = BTreeSet::from([
+            "bond-lan".to_string(),
+            "bond-wan".to_string(),
+            "enp1s0".to_string(),
+            "enp2s0".to_string(),
+            "enp3s0".to_string(),
+            "enp4s0".to_string(),
+        ]);
+        let queue_caps = system_ifaces
+            .iter()
+            .map(|interface| (interface.clone(), true))
+            .collect();
+        let apply = apply_transaction_with_capabilities(
+            &paths,
+            &mut pending,
+            ApplyRequest {
+                config: xdp_bond_config(),
+                source: "ui".to_string(),
+                operator_username: Some("admin".to_string()),
+                mode: ApplyMode::Apply,
+                confirm_dangerous_changes: true,
+            },
+            system_ifaces,
+            queue_caps,
+        )
+        .expect("XDP config-only apply should succeed");
+
+        assert!(apply.ok);
+        assert!(apply.operation.is_none());
+        assert!(apply.message.contains("Netplan was not changed"));
+        assert!(
+            load_config_from_path(&paths.config_path)
+                .expect("load updated config")
+                .bridge
+                .expect("bridge")
+                .use_xdp_bridge
+        );
+        let mut backup_name = paths.config_path.as_os_str().to_os_string();
+        backup_name.push(".webbackup");
+        let backup = load_config_from_path(&PathBuf::from(backup_name))
+            .expect("load previous config backup");
+        assert_eq!(backup.bridge, existing.bridge);
+        assert_eq!(
+            fs::read_to_string(&paths.managed_netplan_path).expect("read managed netplan"),
+            "network:\n  version: 2\n"
+        );
+        assert!(!root.join("netplan.log").exists());
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

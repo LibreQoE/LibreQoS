@@ -34,13 +34,13 @@
 
             <div class="lqos-config-section">
                 <h6 class="lqos-config-section-title">Operating Mode</h6>
-                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs. XDP bridge mode remains manual.</div>
+                <div class="lqos-config-section-subtitle">Select either a two-interface bridge or a single trunk interface using VLANs. XDP bridge mode leaves Netplan unchanged.</div>
 
                 <div class="mb-3">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="networkMode" id="bridgeMode" value="bridge">
                         <label class="form-check-label" for="bridgeMode">Bridge Mode</label>
-                        <div class="form-text">Two physical interfaces: one facing the Internet and one facing the LAN. Linux bridge mode is the managed netplan path.</div>
+                        <div class="form-text">Two interfaces: one facing the Internet and one facing the LAN. Linux bridge mode is the managed Netplan path.</div>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="networkMode" id="singleInterfaceMode" value="single">
@@ -60,23 +60,23 @@
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="useXdpBridge" aria-describedby="useXdpBridgeHelp">
                         <label class="form-check-label" for="useXdpBridge">Use XDP Bridge</label>
-                        <div id="useXdpBridgeHelp" class="form-text">XDP does not write Netplan or apply Bridge MTU.</div>
+                        <div id="useXdpBridgeHelp" class="form-text">XDP does not write Netplan or apply Bridge MTU. Eligible bond masters are selectable after they are configured in Netplan; member NIC drivers must also support native XDP.</div>
                     </div>
 
                     <div class="mb-3">
                         <label for="toInternet" class="form-label">Internet-Facing Interface</label>
-                        <select class="form-select" id="toInternet">
+                        <select class="form-select" id="toInternet" aria-describedby="useXdpBridgeHelp toInternetHelp bridgeInterfaceHelp">
                             <option value="">Select an eligible interface</option>
                         </select>
-                        <div class="form-text">Eligible non-management interfaces with LibreQoS-friendly queue support.</div>
+                        <div id="toInternetHelp" class="form-text">Eligible non-management interfaces with LibreQoS-friendly queue support. XDP mode also offers eligible bond masters.</div>
                     </div>
 
                     <div class="mb-2">
                         <label for="toNetwork" class="form-label">LAN-Facing Interface</label>
-                        <select class="form-select" id="toNetwork">
+                        <select class="form-select" id="toNetwork" aria-describedby="useXdpBridgeHelp toNetworkHelp bridgeInterfaceHelp">
                             <option value="">Select an eligible interface</option>
                         </select>
-                        <div class="form-text">Pick a different eligible interface for the LAN side.</div>
+                        <div id="toNetworkHelp" class="form-text">Pick a different eligible interface for the LAN side.</div>
                     </div>
 
                     <div class="mb-2">
@@ -85,7 +85,7 @@
                         <div id="bridgeMtuHelp" class="form-text">Applies to the bridge members and br0.</div>
                         <div id="bridgeMtuError" class="invalid-feedback" role="alert"></div>
                     </div>
-                    <div id="bridgeInterfaceHelp" class="small text-secondary"></div>
+                    <div id="bridgeInterfaceHelp" class="small text-secondary" aria-live="polite"></div>
                 </div>
             </section>
         </div>
